@@ -4,15 +4,17 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+pydantic = "*"
 requests = "*"
 beautifulsoup4 = "*"
-sqlalchemy = "*"
 cinemagoer = "*"
-pydantic = "*"
-cloudscraper = "*"
-fastapi = "*"
+sqlalchemy = "*"
 alembic = "*"
+psycopg2-binary = "*"
 gunicorn = "*"
+cloudscraper = "*"
 
 [dev-packages]
 
