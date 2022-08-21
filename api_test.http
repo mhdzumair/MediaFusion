@@ -1,0 +1,36 @@
+# Test FastAPI endpoints
+
+###
+
+GET http://127.0.0.1:8000/manifest.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/catalog/movie/tamil_hd.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/catalog/movie/tamil_new/skip=10.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/catalog/movie/tamil_dubbed.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/stream/movie/tt11468258.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/stream/movie/ty59908866309236.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/meta/movie/ty219661034922033.json
+Accept: application/json
