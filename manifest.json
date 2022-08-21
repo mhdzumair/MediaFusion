@@ -1,9 +1,9 @@
 {
     "id": "mhdzumair.addons.tamilblasters",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "name": "Tamil Blasters",
-    "description" : "TamilBlasters add-on for watch tamil, hindi, malayalam, kannada movies & tamil dubbed movies",
-    "logo": "https://tamilblasters.cloud/uploads/monthly_2021_06/TBLORG.png.fe46cd789d5ef8c84ab9195a2d7c66b5.png",
+    "description" : "TamilBlasters add-on for watch tamil, hindi, malayalam, kannada movies & tamil dubbed movies. Created By: Mohamed Zumair",
+    "logo": "https://streamio-addon-tamilblasters.herokuapp.com/static/tamilblasters.png",
     "resources": [
         "catalog",
         {

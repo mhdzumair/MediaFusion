@@ -3,6 +3,7 @@ import json
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from starlette.staticfiles import StaticFiles
 
 import schemas
 import utils
@@ -17,6 +18,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/static", StaticFiles(directory="resources"), name="static")
 
 with open("manifest.json") as file:
     manifest = json.load(file)

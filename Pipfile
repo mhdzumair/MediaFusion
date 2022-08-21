@@ -12,6 +12,7 @@ pydantic = "*"
 cloudscraper = "*"
 fastapi = "*"
 alembic = "*"
+gunicorn = "*"
 
 [dev-packages]
 

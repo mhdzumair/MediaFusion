@@ -26,7 +26,6 @@ class Movie(BaseModel):
 class Stream(BaseModel):
     name: str
     infoHash: str
-    behaviorHints: dict = {"notWebReady": True}
 
 
 class Streams(BaseModel):

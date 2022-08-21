@@ -45,10 +45,10 @@ def get_movie_streams(db: Session, video_id: str):
         return []
 
     stream_data = []
-    for name, url in movie_data.video_qualities.items():
+    for name, info_hash in movie_data.video_qualities.items():
         stream_data.append({
             "name": name,
-            "infoHash": url,
+            "infoHash": info_hash,
         })
 
     return stream_data
