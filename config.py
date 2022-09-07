@@ -2,7 +2,7 @@ from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str
+    mongo_uri: str
 
     class Config:
         env_file = ".env"

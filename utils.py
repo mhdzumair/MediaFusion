@@ -1,46 +1,38 @@
 import logging
+from typing import Optional
 from uuid import uuid4
 
 from imdb import Cinemagoer
-from sqlalchemy.orm import Session
 
 import schemas
 from models import TamilBlasterMovie
 
-
 ia = Cinemagoer()
 
 
-def get_movies_meta(db: Session, catalog: str, skip: int = 0, limit: int = 25):
+async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 25):
     movies_meta = []
-    language, video_type = catalog.split("_")
-    movies = db.query(TamilBlasterMovie).filter(
-        TamilBlasterMovie.language == language,
-        TamilBlasterMovie.video_type == video_type,
-    ).order_by(TamilBlasterMovie.id.desc()).offset(skip).limit(limit).all()
+    movies = await TamilBlasterMovie.find(TamilBlasterMovie.catalog == catalog).sort("-created_at").skip(skip).limit(
+        limit).to_list()
 
     for movie in movies:
-        meta_data = schemas.Meta.from_orm(movie)
+        meta_data = schemas.Meta.parse_obj(movie)
         meta_data.id = movie.imdb_id if movie.imdb_id else movie.tamilblaster_id
         movies_meta.append(meta_data)
     return movies_meta
 
 
-def get_movie_data(db: Session, video_id: str) -> TamilBlasterMovie | None:
+async def get_movie_data(video_id: str) -> Optional[TamilBlasterMovie]:
     if video_id.startswith("tt"):
-        movie_data = db.query(TamilBlasterMovie).filter(TamilBlasterMovie.imdb_id == video_id).order_by(
-            TamilBlasterMovie.created_at.desc()
-        ).first()
+        movie_data = await TamilBlasterMovie.find_one(TamilBlasterMovie.imdb_id == video_id)
     else:
-        movie_data = db.query(TamilBlasterMovie).filter(TamilBlasterMovie.tamilblaster_id == video_id).order_by(
-            TamilBlasterMovie.created_at.desc()
-        ).first()
+        movie_data = await TamilBlasterMovie.find_one(TamilBlasterMovie.tamilblaster_id == video_id)
 
     return movie_data
 
 
-def get_movie_streams(db: Session, video_id: str):
-    movie_data = get_movie_data(db, video_id)
+async def get_movie_streams(video_id: str):
+    movie_data = await get_movie_data(video_id)
     if not movie_data:
         return []
 
@@ -54,8 +46,8 @@ def get_movie_streams(db: Session, video_id: str):
     return stream_data
 
 
-def get_movie_meta(db: Session, meta_id: str):
-    movie_data = get_movie_data(db, meta_id)
+async def get_movie_meta(meta_id: str):
+    movie_data = await get_movie_data(meta_id)
     if not movie_data:
         return
 
@@ -77,14 +69,17 @@ def search_imdb(title: str):
             return f"tt{movie.movieID}"
 
 
-def save_movie_metadata(db: Session, metadata: dict):
-    movie_data: TamilBlasterMovie = db.query(TamilBlasterMovie).filter(TamilBlasterMovie.name == metadata["name"]).one_or_none()
+async def save_movie_metadata(metadata: dict):
+    movie_data = await TamilBlasterMovie.find_one(
+        TamilBlasterMovie.name == metadata["name"], TamilBlasterMovie.catalog == metadata["catalog"]
+    )
+
     if movie_data:
         movie_data.video_qualities.update(metadata["video_qualities"])
         movie_data.created_at = metadata["created_at"]
         logging.info(f"update video qualities for {metadata['name']}")
     else:
-        movie_data = TamilBlasterMovie(**metadata)
+        movie_data = TamilBlasterMovie.parse_obj(metadata)
         movie_data.video_qualities = metadata["video_qualities"]
         imdb_id = search_imdb(movie_data.name)
         if imdb_id:
@@ -92,7 +87,6 @@ def save_movie_metadata(db: Session, metadata: dict):
         else:
             movie_data.tamilblaster_id = f"tb{uuid4().fields[-1]}"
 
-        db.add(movie_data)
         logging.info(f"new movie '{metadata['name']}' added.")
 
-    db.commit()
+    await movie_data.save()

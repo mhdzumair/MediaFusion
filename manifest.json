@@ -1,9 +1,10 @@
 {
     "id": "mhdzumair.addons.tamilblasters",
-    "version": "1.0.1",
+    "version": "1.0.0",
     "name": "Tamil Blasters",
-    "description" : "TamilBlasters add-on for watch tamil, hindi, malayalam, kannada movies & tamil dubbed movies. Created By: Mohamed Zumair",
-    "logo": "https://streamio-addon-tamilblasters.herokuapp.com/static/tamilblasters.png",
+    "contactEmail": "mhdzumair@gmail",
+    "description" : "TamilBlasters add-on for watch tamil, hindi, malayalam, kannada, english movies & dubbed movies. Created By: Mohamed Zumair. Source: https://github.com/mhdzumair/tamilblasters_streamio_addon",
+    "logo": "https://882b9915d0fe-stremio-tamilblasters.baby-beamup.club/static/tamilblasters.png",
     "resources": [
         "catalog",
         {
@@ -20,6 +21,22 @@
     "types": ["movies"],
     "catalogs": [
         {"id": "any_any", "type": "movie", "name": "TamilBlaster New Movies"},
-        {"id": "tamil_hdrip", "type": "movie", "name": "Tamil HD Movies"}
+        {"id": "tamil_hdrip", "type": "movie", "name": "Tamil HD Movies"},
+        {"id": "tamil_tcrip", "type": "movie", "name": "Tamil TCRip/DVDScr/HDCAM Movies"},
+        {"id": "tamil_dubbed", "type": "movie", "name": "Tamil Dubbed Movies"},
+        {"id": "malayalam_tcrip", "type": "movie", "name": "Malayalam TCRip/DVDScr/HDCAM Movies"},
+        {"id": "malayalam_hdrip", "type": "movie", "name": "Malayalam HD Movies"},
+        {"id": "malayalam_dubbed", "type": "movie", "name": "Malayalam Dubbed Movies"},
+        {"id": "telugu_tcrip", "type": "movie", "name": "Telugu TCRip/DVDScr/HDCAM Movies"},
+        {"id": "telugu_hdrip", "type": "movie", "name": "Telugu HD Movies"},
+        {"id": "telugu_dubbed", "type": "movie", "name": "Telugu Dubbed Movies"},
+        {"id": "hindi_tcrip", "type": "movie", "name": "Hindi TCRip/DVDScr/HDCAM Movies"},
+        {"id": "hindi_hdrip", "type": "movie", "name": "Hindi HD Movies"},
+        {"id": "hindi_dubbed", "type": "movie", "name": "Hindi Dubbed Movies"},
+        {"id": "kannada_tcrip", "type": "movie", "name": "Kannada TCRip/DVDScr/HDCAM Movies"},
+        {"id": "kannada_hdrip", "type": "movie", "name": "Kannada HD Movies"},
+        {"id": "kannada_dubbed", "type": "movie", "name": "Kannada Dubbed Movies"},
+        {"id": "english_hdrip", "type": "movie", "name": "English HD Movies"},
+        {"id": "english_dubbed", "type": "movie", "name": "English Dubbed Movies"}
     ]
 }

@@ -1,13 +1,15 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+import motor.motor_asyncio
+from beanie import init_beanie
 
 from config import settings
+from models import TamilBlasterMovie
 
-engine = create_engine(
-    settings.database_url.replace("postgres://", "postgresql://")
-)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+async def init():
+    # Create Motor client
+    client = motor.motor_asyncio.AsyncIOMotorClient(
+        settings.mongo_uri
+    )
 
-Base = declarative_base()
+    # Init beanie with the Product document class
+    await init_beanie(database=client.streamio, document_models=[TamilBlasterMovie])

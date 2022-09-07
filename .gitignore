@@ -130,6 +130,3 @@ dmypy.json
 
 .idea/
 *.service
-
-# remove scraping file from git.
-scrap.py

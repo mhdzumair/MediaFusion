@@ -1,13 +1,14 @@
 import json
+from pathlib import Path
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from starlette.staticfiles import StaticFiles
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
+import database
 import schemas
 import utils
-from database import SessionLocal
 
 app = FastAPI()
 
@@ -19,39 +20,65 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory="resources"), name="static")
+BASE_PATH = Path(__file__).resolve().parent
+TEMPLATES = Jinja2Templates(directory=str(BASE_PATH / "resources"))
 
 with open("manifest.json") as file:
     manifest = json.load(file)
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+@app.on_event("startup")
+async def init_db():
+    await database.init()
+
+
+@app.get("/")
+async def get_home(request: Request):
+    return TEMPLATES.TemplateResponse(
+        "home.html",
+        {
+            "request": request, "name": manifest.get("name"), "version": manifest.get("version"),
+            "description": manifest.get("description"), "gives": [
+            "Tamil Movies", "Malayalam Movies", "Telugu Movies", "Hindi Movies", "Kannada Movies", "English Movies",
+            "Dubbed Movies"
+        ],
+            "logo": "static/tamilblasters.png"
+        },
+    )
 
 
 @app.get("/manifest.json")
-async def get_manifest():
+async def get_manifest(response: Response):
+    response.headers.update({
+        "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
+    })
     return manifest
 
 
 @app.get("/catalog/movie/{catalog_id}.json", response_model=schemas.Movie)
 @app.get("/catalog/movie/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
-async def get_catalog(catalog_id: str, skip: int = 0, db: Session = Depends(get_db)):
+async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
+    response.headers.update({
+        "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
+    })
     movies = schemas.Movie()
-    movies.metas.extend(utils.get_movies_meta(db, catalog_id, skip))
+    movies.metas.extend(await utils.get_movies_meta(catalog_id, skip))
     return movies
 
 
 @app.get("/meta/movie/{meta_id}.json")
-async def get_meta(meta_id: str, db: Session = Depends(get_db)):
-    return utils.get_movie_meta(db, meta_id)
+async def get_meta(meta_id: str, response: Response):
+    response.headers.update({
+        "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
+    })
+    return await utils.get_movie_meta(meta_id)
 
 
 @app.get("/stream/movie/{video_id}.json", response_model=schemas.Streams)
-async def get_stream(video_id: str, db: Session = Depends(get_db)):
+async def get_stream(video_id: str, response: Response):
+    response.headers.update({
+        "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
+    })
     streams = schemas.Streams()
-    streams.streams.extend(utils.get_movie_streams(db, video_id))
+    streams.streams.extend(await utils.get_movie_streams(video_id))
     return streams
