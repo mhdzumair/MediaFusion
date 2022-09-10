@@ -11,8 +11,7 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-import database
-import utils
+from db import database, crud
 
 homepage = "https://tamilblasters.cloud"
 
@@ -104,7 +103,7 @@ async def scrap_page(url, language, video_type):
         metadata = {"name": title, "catalog": f"{language}_{video_type}",
                     "video_qualities": {video_quality: info_hash},
                     "poster": poster, "created_at": created_at}
-        await utils.save_movie_metadata(metadata)
+        await crud.save_movie_metadata(metadata)
 
 
 async def scrap_homepage():
@@ -154,7 +153,7 @@ async def scrap_homepage():
             metadata["video_qualities"][video_quality_name] = info_hash
 
         if all([metadata.get("created_at"), metadata.get("poster"), metadata.get("video_qualities")]):
-            await utils.save_movie_metadata(metadata)
+            await crud.save_movie_metadata(metadata)
 
 
 async def run_scraper(language: str = None, video_type: str = None, pages: int = None, start_page: int = None,

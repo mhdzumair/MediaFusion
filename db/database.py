@@ -1,8 +1,8 @@
 import motor.motor_asyncio
 from beanie import init_beanie
 
-from config import settings
-from models import TamilBlasterMovie
+from db.config import settings
+from db.models import TamilBlasterMovie
 
 
 async def init():

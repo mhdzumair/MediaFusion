@@ -7,7 +7,7 @@ All the credits goes to Tamil Blasters.
 ![alt TamilBlasters](resources/tamilblasters.png?raw=true)
 # Tamil Blasters Stremio Addon
 Stremio Addon for Tamil Blasters Movies.
-
+![alt TamilBlasters](resources/ss.png?raw=true)
 
 ## Installation
 1. Install from home page: https://882b9915d0fe-stremio-tamilblasters.baby-beamup.club

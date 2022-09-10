@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from imdb import Cinemagoer
 
-import schemas
-from models import TamilBlasterMovie
+from api import schemas
+from db.models import TamilBlasterMovie
 
 ia = Cinemagoer()
 

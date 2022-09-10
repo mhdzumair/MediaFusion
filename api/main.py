@@ -1,6 +1,5 @@
 import json
 import logging
-from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -9,10 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-import database
-import schemas
-import scrap
-import utils
+from api import schemas
+from db import database, crud
+from utils import scrap
 
 logging.basicConfig(format='%(levelname)s::%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 app = FastAPI()
@@ -25,14 +23,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory="resources"), name="static")
-BASE_PATH = Path(__file__).resolve().parent
-TEMPLATES = Jinja2Templates(directory=str(BASE_PATH / "resources"))
+TEMPLATES = Jinja2Templates(directory="resources")
 scheduler = AsyncIOScheduler()
 scheduler.add_job(
     scrap.run_schedule_scrape, CronTrigger(hour="*/3")
 )
 
-with open("manifest.json") as file:
+with open("resources/manifest.json") as file:
     manifest = json.load(file)
 
 
@@ -71,7 +68,7 @@ async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
         "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
     })
     movies = schemas.Movie()
-    movies.metas.extend(await utils.get_movies_meta(catalog_id, skip))
+    movies.metas.extend(await crud.get_movies_meta(catalog_id, skip))
     return movies
 
 
@@ -80,7 +77,7 @@ async def get_meta(meta_id: str, response: Response):
     response.headers.update({
         "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
     })
-    return await utils.get_movie_meta(meta_id)
+    return await crud.get_movie_meta(meta_id)
 
 
 @app.get("/stream/movie/{video_id}.json", response_model=schemas.Streams)
@@ -89,7 +86,7 @@ async def get_stream(video_id: str, response: Response):
         "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"
     })
     streams = schemas.Streams()
-    streams.streams.extend(await utils.get_movie_streams(video_id))
+    streams.streams.extend(await crud.get_movie_streams(video_id))
     return streams
 
 
