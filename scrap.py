@@ -48,22 +48,26 @@ tamil_blaster_links = {
     }
 }
 
-session = requests.session()
-adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3, allowed_methods=False))
-session.mount('http://', adapter)
-session.mount('https://', adapter)
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'firefox',
-        'platform': 'windows',
-        'mobile': False
-    },
-    delay=10,
-    sess=session
-)
+
+def get_scrapper_session():
+    session = requests.session()
+    adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3, allowed_methods=False))
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'firefox',
+            'platform': 'windows',
+            'mobile': False
+        },
+        delay=10,
+        sess=session
+    )
+    return scraper
 
 
 async def scrap_page(url, language, video_type):
+    scraper = get_scrapper_session()
     response = scraper.get(url)
     response.raise_for_status()
 
@@ -104,6 +108,7 @@ async def scrap_page(url, language, video_type):
 
 
 async def scrap_homepage():
+    scraper = get_scrapper_session()
     response = scraper.get(homepage)
     response.raise_for_status()
     tamil_blasters = BeautifulSoup(response.content, "html.parser")
@@ -152,7 +157,8 @@ async def scrap_homepage():
             await utils.save_movie_metadata(metadata)
 
 
-async def run_scraper(language: str, video_type: str, pages: int, start_page: int, is_scrape_home: bool):
+async def run_scraper(language: str = None, video_type: str = None, pages: int = None, start_page: int = None,
+                      is_scrape_home: bool = True):
     await database.init()
     if is_scrape_home:
         await scrap_homepage()
@@ -162,6 +168,13 @@ async def run_scraper(language: str, video_type: str, pages: int, start_page: in
             scrap_link = f"{scrap_link}/page/{page}/"
             logging.info(f"Scrap page: {page}")
             await scrap_page(scrap_link, language, video_type)
+
+
+async def run_schedule_scrape():
+    for language in tamil_blaster_links:
+        for video_type in tamil_blaster_links[language]:
+            await run_scraper(language, video_type, pages=1, start_page=1, is_scrape_home=False)
+    await run_scraper(is_scrape_home=True)
 
 
 if __name__ == '__main__':

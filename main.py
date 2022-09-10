@@ -2,6 +2,8 @@ import json
 import logging
 from pathlib import Path
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +27,10 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="resources"), name="static")
 BASE_PATH = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_PATH / "resources"))
+scheduler = AsyncIOScheduler()
+scheduler.add_job(
+    scrap.run_schedule_scrape, CronTrigger(hour="*/3")
+)
 
 with open("manifest.json") as file:
     manifest = json.load(file)

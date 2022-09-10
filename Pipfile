@@ -17,6 +17,7 @@ motor = "*"
 pymongo = {extras = ["srv"], version = "*"}
 dnspython = "*"
 jinja2 = "*"
+apscheduler = "*"
 
 [dev-packages]
 
