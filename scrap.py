@@ -6,7 +6,10 @@ import logging
 import re
 
 import cloudscraper
+import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 import database
 import utils
@@ -17,16 +20,46 @@ tamil_blaster_links = {
     "tamil": {
         "hdrip": f"{homepage}/index.php?/forums/forum/7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
         "tcrip": f"{homepage}/index.php?/forums/forum/8-tamil-new-movies-tcrip-dvdscr-hdcam-predvd",
+        "dubbed": f"{homepage}/index.php?/forums/forum/9-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios"
+    },
+    "malayalam": {
+        "tcrip": f"{homepage}/index.php?/forums/forum/75-malayalam-new-movies-tcrip-dvdscr-hdcam-predvd",
+        "hdrip": f"{homepage}/index.php?/forums/forum/74-malayalam-new-movies-hdrips-bdrips-dvdrips-hdtv",
+        "dubbed": f"{homepage}/index.php?/forums/forum/76-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+    },
+    "telugu": {
+        "tcrip": f"{homepage}/index.php?/forums/forum/79-telugu-new-movies-tcrip-dvdscr-hdcam-predvd",
+        "hdrip": f"{homepage}/index.php?/forums/forum/78-telugu-new-movies-hdrips-bdrips-dvdrips-hdtv",
+        "dubbed": f"{homepage}/index.php?/forums/forum/80-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+    },
+    "hindi": {
+        "tcrip": f"{homepage}/index.php?/forums/forum/87-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
+        "hdrip": f"{homepage}/index.php?/forums/forum/86-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
+        "dubbed": f"{homepage}/index.php?/forums/forum/88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+    },
+    "kannada": {
+        "tcrip": f"{homepage}/index.php?/forums/forum/83-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
+        "hdrip": f"{homepage}/index.php?/forums/forum/82-kannada-new-movies-hdrips-bdrips-dvdrips-hdtv",
+        "dubbed": f"{homepage}/index.php?/forums/forum/84-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+    },
+    "english": {
+        "tcrip": f"{homepage}/index.php?/forums/forum/52-english-movies-hdcam-dvdscr-predvd",
+        "hdrip": f"{homepage}/index.php?/forums/forum/53-english-movies-hdrips-bdrips-dvdrips"
     }
 }
 
+session = requests.session()
+adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3, allowed_methods=False))
+session.mount('http://', adapter)
+session.mount('https://', adapter)
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'firefox',
         'platform': 'windows',
         'mobile': False
     },
-    delay=10
+    delay=10,
+    sess=session
 )
 
 
@@ -56,6 +89,9 @@ async def scrap_page(url, language, video_type):
             info_hash = re.search(r"urn:btih:(.{32,40})&", magnet_link)[1]
         except AttributeError:
             logging.warning(f"skipping due to, megnet link not found in {page_link}")
+            continue
+        except TypeError:
+            logging.error(f"not able to parse magnet link in : {page_link}")
             continue
 
         poster = movie_page.select_one("img[data-src]").get("data-src")
@@ -116,16 +152,17 @@ async def scrap_homepage():
             await utils.save_movie_metadata(metadata)
 
 
-async def run_scrape(language: str, video_type: str, pages: int, is_scrape_home: bool):
+async def run_scraper(language: str, video_type: str, pages: int, start_page: int, is_scrape_home: bool):
     await database.init()
     if is_scrape_home:
         await scrap_homepage()
     else:
         scrap_link = tamil_blaster_links[language][video_type]
-        for page in range(1, pages + 1):
+        for page in range(start_page, pages + 1):
             scrap_link = f"{scrap_link}/page/{page}/"
             logging.info(f"Scrap page: {page}")
             await scrap_page(scrap_link, language, video_type)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Scrap Movie metadata from TamilBlasters")
@@ -133,8 +170,9 @@ if __name__ == '__main__':
     parser.add_argument("-l", "--language", help="scrap movie language", default="tamil")
     parser.add_argument("-t", "--video-type", help="scrap movie video type", default="hdrip")
     parser.add_argument("-p", "--pages", type=int, default=1, help="number of scrap pages")
+    parser.add_argument("-s", "--start-pages", type=int, default=1, help="page number to start scrap.")
     args = parser.parse_args()
 
     logging.basicConfig(format='%(levelname)s::%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S',
                         level=logging.INFO)
-    asyncio.run(run_scrape(args.language, args.video_type, args.pages, args.home))
+    asyncio.run(run_scraper(args.language, args.video_type, args.pages, args.start_pages, args.home))

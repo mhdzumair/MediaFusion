@@ -1,15 +1,18 @@
 import json
+import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import database
 import schemas
+import scrap
 import utils
 
+logging.basicConfig(format='%(levelname)s::%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 app = FastAPI()
 
 app.add_middleware(
@@ -82,3 +85,13 @@ async def get_stream(video_id: str, response: Response):
     streams = schemas.Streams()
     streams.streams.extend(await utils.get_movie_streams(video_id))
     return streams
+
+
+@app.post("/scraper")
+async def run_scraper(
+        background_tasks: BackgroundTasks,
+        language: str = "tamil", video_type: str = "hdrip", pages: int = 1, start_page: int = 1,
+        is_scrape_home: bool = False,
+):
+    background_tasks.add_task(scrap.run_scraper, language, video_type, pages, start_page, is_scrape_home)
+    return {"message": "Scraping in background..."}
