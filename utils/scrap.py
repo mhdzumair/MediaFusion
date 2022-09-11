@@ -162,11 +162,16 @@ async def run_scraper(language: str = None, video_type: str = None, pages: int =
     if is_scrape_home:
         await scrap_homepage()
     else:
-        scrap_link = tamil_blaster_links[language][video_type]
+        try:
+            scrap_link = tamil_blaster_links[language][video_type]
+        except KeyError:
+            logging.error(f"Unsupported language or video type: {language}_{video_type}")
+            return
         for page in range(start_page, pages + 1):
             scrap_link = f"{scrap_link}/page/{page}/"
             logging.info(f"Scrap page: {page}")
             await scrap_page(scrap_link, language, video_type)
+    logging.info(f"Scrap completed for : {language}_{video_type}")
 
 
 async def run_schedule_scrape():

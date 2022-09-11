@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -24,10 +25,6 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory="resources"), name="static")
 TEMPLATES = Jinja2Templates(directory="resources")
-scheduler = AsyncIOScheduler()
-scheduler.add_job(
-    scrap.run_schedule_scrape, CronTrigger(hour="*/3")
-)
 
 with open("resources/manifest.json") as file:
     manifest = json.load(file)
@@ -36,6 +33,21 @@ with open("resources/manifest.json") as file:
 @app.on_event("startup")
 async def init_db():
     await database.init()
+
+
+@app.on_event("startup")
+async def start_scheduler():
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        scrap.run_schedule_scrape, CronTrigger(hour="*/3")
+    )
+    scheduler.start()
+    app.state.scheduler = scheduler
+
+
+@app.on_event("shutdown")
+async def stop_scheduler():
+    app.state.scheduler.shutdown(wait=False)
 
 
 @app.get("/")
@@ -91,9 +103,10 @@ async def get_stream(video_id: str, response: Response):
 
 
 @app.post("/scraper")
-async def run_scraper(
+def run_scraper(
         background_tasks: BackgroundTasks,
-        language: str = "tamil", video_type: str = "hdrip", pages: int = 1, start_page: int = 1,
+        language: Literal["tamil", "malayalam", "telugu", "hindi", "kannada", "english"] = "tamil",
+        video_type: Literal["hdrip", "tcrip", "dubbed"] = "hdrip", pages: int = 1, start_page: int = 1,
         is_scrape_home: bool = False,
 ):
     background_tasks.add_task(scrap.run_scraper, language, video_type, pages, start_page, is_scrape_home)
