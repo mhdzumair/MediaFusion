@@ -78,7 +78,7 @@ async def scrap_page(url, language, video_type):
         movie = movie.find("a")
         data = re.search(r"^(.+\(\d{4}\))(.+)", movie.text.strip())
         try:
-            title, video_quality = data[1].strip(), data[2].strip("[] ")
+            title, video_quality = re.sub(r'\s+', ' ', data[1].strip()), data[2].strip("[] ")
         except TypeError:
             logging.error(f"not able to parse: {movie.text}")
             continue
@@ -117,7 +117,7 @@ async def scrap_homepage():
     for movie in movie_list:
         data = re.search(r"^(.+\(\d{4}\))", movie.text.strip())
         try:
-            title = data[1].strip()
+            title = re.sub(r'\s+', ' ', data[1].strip())
         except TypeError:
             logging.error(movie.text)
             continue
