@@ -22,42 +22,43 @@ async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 25):
     return movies_meta
 
 
-async def get_movie_data(video_id: str) -> Optional[TamilBlasterMovie]:
+async def get_movies_data(video_id: str) -> list[Optional[TamilBlasterMovie]]:
     if video_id.startswith("tt"):
-        movie_data = await TamilBlasterMovie.find_one(TamilBlasterMovie.imdb_id == video_id)
+        movie_data = await TamilBlasterMovie.find(TamilBlasterMovie.imdb_id == video_id).to_list()
     else:
-        movie_data = await TamilBlasterMovie.find_one(TamilBlasterMovie.tamilblaster_id == video_id)
+        movie_data = await TamilBlasterMovie.find(TamilBlasterMovie.tamilblaster_id == video_id).to_list()
 
     return movie_data
 
 
 async def get_movie_streams(video_id: str):
-    movie_data = await get_movie_data(video_id)
-    if not movie_data:
+    movies_data = await get_movies_data(video_id)
+    if not movies_data:
         return []
 
     stream_data = []
-    for name, info_hash in movie_data.video_qualities.items():
-        stream_data.append({
-            "name": name,
-            "infoHash": info_hash,
-        })
+    for movie_data in movies_data:
+        for name, info_hash in movie_data.video_qualities.items():
+            stream_data.append({
+                "name": name,
+                "infoHash": info_hash,
+            })
 
     return stream_data
 
 
 async def get_movie_meta(meta_id: str):
-    movie_data = await get_movie_data(meta_id)
-    if not movie_data:
+    movies_data = await get_movies_data(meta_id)
+    if not movies_data:
         return
 
     return {
         "meta": {
             "id": meta_id,
             "type": "movie",
-            "name": movie_data.name,
-            "poster": movie_data.poster,
-            "background": movie_data.poster
+            "name": movies_data[0].name,
+            "poster": movies_data[0].poster,
+            "background": movies_data[0].poster
         }
     }
 
