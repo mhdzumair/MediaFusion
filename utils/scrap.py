@@ -13,7 +13,7 @@ from urllib3.util.retry import Retry
 
 from db import database, crud
 
-homepage = "https://tamilblasters.cloud"
+homepage = "https://tamilblasters.life"
 
 tamil_blaster_links = {
     "tamil": {
