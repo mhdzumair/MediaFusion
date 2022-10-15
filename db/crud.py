@@ -10,7 +10,7 @@ from db.models import TamilBlasterMovie
 ia = Cinemagoer()
 
 
-async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 25):
+async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 100):
     movies_meta = []
     movies = await TamilBlasterMovie.find(TamilBlasterMovie.catalog == catalog).sort("-created_at").skip(skip).limit(
         limit).to_list()
