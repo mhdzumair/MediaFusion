@@ -18,6 +18,7 @@ pymongo = {extras = ["srv"], version = "*"}
 dnspython = "*"
 jinja2 = "*"
 apscheduler = "*"
+python-dateutil = "*"
 
 [dev-packages]
 

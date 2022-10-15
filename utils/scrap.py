@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
+from dateutil.parser import parse as dateparser
 from db import database, crud
 
 homepage = "https://tamilblasters.life"
@@ -98,7 +98,7 @@ async def scrap_page(url, language, video_type):
             continue
 
         poster = movie_page.select_one("img[data-src]").get("data-src")
-        created_at = movie_page.find("time").get("datetime")
+        created_at = dateparser(movie_page.find("time").get("datetime"))
 
         metadata = {"name": title, "catalog": f"{language}_{video_type}",
                     "video_qualities": {video_quality: info_hash},
@@ -148,7 +148,7 @@ async def scrap_homepage():
                 continue
 
             poster = movie_page.select_one("img[data-src]").get("data-src")
-            metadata["created_at"] = movie_page.find("time").get("datetime")
+            metadata["created_at"] = dateparser(movie_page.find("time").get("datetime"))
             metadata["poster"] = poster
             metadata["video_qualities"][video_quality_name] = info_hash
 
