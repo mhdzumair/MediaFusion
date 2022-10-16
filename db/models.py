@@ -22,8 +22,12 @@ class TamilBlasterMovie(Document):
     class Settings:
         indexes = [
             IndexModel(
-                [("name", pymongo.ASCENDING), ("catalog", pymongo.ASCENDING),
-                 ("season", pymongo.ASCENDING), ("episode", pymongo.ASCENDING)],
+                [
+                    ("name", pymongo.ASCENDING),
+                    ("catalog", pymongo.ASCENDING),
+                    ("season", pymongo.ASCENDING),
+                    ("episode", pymongo.ASCENDING),
+                ],
                 unique=True,
             )
         ]

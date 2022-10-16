@@ -7,9 +7,7 @@ from db.models import TamilBlasterMovie
 
 async def init():
     # Create Motor client
-    client = motor.motor_asyncio.AsyncIOMotorClient(
-        settings.mongo_uri
-    )
+    client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongo_uri)
 
     # Init beanie with the Product document class
     await init_beanie(database=client.streamio, document_models=[TamilBlasterMovie])

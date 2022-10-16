@@ -5,7 +5,7 @@ name = "pypi"
 
 [packages]
 fastapi = "*"
-uvicorn = {extras = ["standard"], version = "*"}
+uvicorn = { extras = ["standard"], version = "*" }
 pydantic = "*"
 requests = "*"
 beautifulsoup4 = "*"
@@ -14,7 +14,7 @@ gunicorn = "*"
 cloudscraper = "*"
 beanie = "*"
 motor = "*"
-pymongo = {extras = ["srv"], version = "*"}
+pymongo = { extras = ["srv"], version = "*" }
 dnspython = "*"
 jinja2 = "*"
 apscheduler = "*"
