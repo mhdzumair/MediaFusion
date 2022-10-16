@@ -10,6 +10,9 @@ from pymongo import IndexModel
 class TamilBlasterMovie(Document):
     name: str
     catalog: str
+    type: str
+    season: Optional[int]
+    episode: Optional[str]
     poster: str
     imdb_id: Optional[str]
     tamilblaster_id: Optional[str]
@@ -19,7 +22,8 @@ class TamilBlasterMovie(Document):
     class Settings:
         indexes = [
             IndexModel(
-                [("name", pymongo.ASCENDING), ("catalog", pymongo.ASCENDING)],
+                [("name", pymongo.ASCENDING), ("catalog", pymongo.ASCENDING),
+                 ("season", pymongo.ASCENDING), ("episode", pymongo.ASCENDING)],
                 unique=True,
             )
         ]
