@@ -57,8 +57,8 @@ async def get_home(request: Request):
         {
             "request": request, "name": manifest.get("name"), "version": manifest.get("version"),
             "description": manifest.get("description"), "gives": [
-            "Tamil Movies", "Malayalam Movies", "Telugu Movies", "Hindi Movies", "Kannada Movies", "English Movies",
-            "Dubbed Movies", "Series"
+            "Tamil Movies & Series", "Malayalam Movies & Series", "Telugu Movies & Series", "Hindi Movies & Series",
+            "Kannada Movies & Series", "English Movies & Series", "Dubbed Movies & Series"
         ],
             "logo": "static/tamilblasters.png"
         },

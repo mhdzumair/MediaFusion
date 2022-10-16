@@ -1,12 +1,12 @@
 # Disclaimer :warning: :warning: :warning:
 >The contents of these scripts and files are created for Educational Purpose. Use of the Add-on is at your own risk. 
 This scrapper is written in python and serves API for [stremio](https://www.stremio.com/). 
-All the credits goes to Tamil Blasters. 
+All the credits goes to Tamil Blasters. I encourage you to use the website.
 
 
 ![alt TamilBlasters](resources/tamilblasters.png?raw=true)
 # Tamil Blasters Stremio Addon
-Stremio Addon for Tamil Blasters Movies.
+Stremio Addon for Tamil Blasters Movies & Series.
 ![alt TamilBlasters](resources/ss.png?raw=true)
 
 ## Installation
