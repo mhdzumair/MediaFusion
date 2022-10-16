@@ -19,31 +19,37 @@ tamil_blaster_links = {
     "tamil": {
         "hdrip": f"{homepage}/index.php?/forums/forum/7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
         "tcrip": f"{homepage}/index.php?/forums/forum/8-tamil-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "dubbed": f"{homepage}/index.php?/forums/forum/9-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios"
+        "dubbed": f"{homepage}/index.php?/forums/forum/9-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios",
+        "series": f"{homepage}/index.php?/forums/forum/63-tamil-new-web-series-tv-shows"
     },
     "malayalam": {
         "tcrip": f"{homepage}/index.php?/forums/forum/75-malayalam-new-movies-tcrip-dvdscr-hdcam-predvd",
         "hdrip": f"{homepage}/index.php?/forums/forum/74-malayalam-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/76-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+        "dubbed": f"{homepage}/index.php?/forums/forum/76-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+        "series": f"{homepage}/index.php?/forums/forum/98-malayalam-new-web-series-tv-shows"
     },
     "telugu": {
         "tcrip": f"{homepage}/index.php?/forums/forum/79-telugu-new-movies-tcrip-dvdscr-hdcam-predvd",
         "hdrip": f"{homepage}/index.php?/forums/forum/78-telugu-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/80-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+        "dubbed": f"{homepage}/index.php?/forums/forum/80-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+        "series": f"{homepage}/index.php?/forums/forum/96-telugu-new-web-series-tv-shows"
     },
     "hindi": {
         "tcrip": f"{homepage}/index.php?/forums/forum/87-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
         "hdrip": f"{homepage}/index.php?/forums/forum/86-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+        "dubbed": f"{homepage}/index.php?/forums/forum/88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+        "series": f"{homepage}/index.php?/forums/forum/89-hindi-new-web-series-tv-shows"
     },
     "kannada": {
         "tcrip": f"{homepage}/index.php?/forums/forum/83-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
         "hdrip": f"{homepage}/index.php?/forums/forum/82-kannada-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/84-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam"
+        "dubbed": f"{homepage}/index.php?/forums/forum/84-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+        "series": f"{homepage}/index.php?/forums/forum/103-kannada-new-web-series-tv-shows"
     },
     "english": {
         "tcrip": f"{homepage}/index.php?/forums/forum/52-english-movies-hdcam-dvdscr-predvd",
-        "hdrip": f"{homepage}/index.php?/forums/forum/53-english-movies-hdrips-bdrips-dvdrips"
+        "hdrip": f"{homepage}/index.php?/forums/forum/53-english-movies-hdrips-bdrips-dvdrips",
+        "series": f"{homepage}/index.php?/forums/forum/92-english-web-series-tv-shows"
     }
 }
 
@@ -72,15 +78,27 @@ async def scrap_page(url, language, video_type):
 
     tamil_blasters = BeautifulSoup(response.content, "html.parser")
 
-    movies = tamil_blasters.find("ol").select("li[data-rowid]")
+    try:
+        movies = tamil_blasters.find("ol").select("li[data-rowid]")
+    except AttributeError:
+        logging.error(f"No data found for {language}:{video_type}")
+        return
 
     for movie in movies:
         movie = movie.find("a")
-        data = re.search(r"^(.+\(\d{4}\))(.+)", movie.text.strip())
+        season = episode = None
         try:
-            title, video_quality = re.sub(r'\s+', ' ', data[1].strip()), data[2].strip("[] ")
+            if video_type == "series":
+                data = re.search(r"^(.+\(\d{4}\)).*S(\d+).*EP?\s?(\d+|\(\d+\s?-\s?\d+\))(.+)", movie.text.strip())
+                title, season, video_quality = data[1], int(data[2]), data[4].strip("[] ")
+                episode = str(int(data[3])) if data[3].isdigit() else data[3].strip("()")
+                metadata = {"type": "series"}
+            else:
+                data = re.search(r"^(.+\(\d{4}\))(.+)", movie.text.strip())
+                title, video_quality = re.sub(r'\s+', ' ', data[1].strip()), data[2].strip("[] ")
+                metadata = {"type": "movie"}
         except TypeError:
-            logging.error(f"not able to parse: {movie.text}")
+            logging.error(f"not able to parse: {movie.text.strip()}")
             continue
         logging.info(f"getting movie data for '{title}'")
 
@@ -100,9 +118,11 @@ async def scrap_page(url, language, video_type):
         poster = movie_page.select_one("img[data-src]").get("data-src")
         created_at = dateparser(movie_page.find("time").get("datetime"))
 
-        metadata = {"name": title, "catalog": f"{language}_{video_type}",
-                    "video_qualities": {video_quality: info_hash},
-                    "poster": poster, "created_at": created_at}
+        metadata.update({
+            "name": title, "catalog": f"{language}_{video_type}",
+            "video_qualities": {video_quality: info_hash},
+            "poster": poster, "created_at": created_at, "season": season, "episode": episode
+        })
         await crud.save_movie_metadata(metadata)
 
 
@@ -115,6 +135,9 @@ async def scrap_homepage():
     movie_list = movie_list_div.find_all("p")[2:-2]
 
     for movie in movie_list:
+        if re.search(r"S(\d+).*EP?\s?(\d+|\(\d+\s?-\s?\d+\))", movie.text.strip()):
+            continue
+
         data = re.search(r"^(.+\(\d{4}\))", movie.text.strip())
         try:
             title = re.sub(r'\s+', ' ', data[1].strip())
@@ -128,6 +151,9 @@ async def scrap_homepage():
             "name": title,
             "catalog": "any_any",
             "video_qualities": {},
+            "type": "movie",
+            "season": None,
+            "episode": None
         }
 
         for video_quality in video_qualities:
