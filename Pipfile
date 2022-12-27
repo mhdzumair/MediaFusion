@@ -9,7 +9,7 @@ uvicorn = { extras = ["standard"], version = "*" }
 pydantic = "*"
 requests = "*"
 beautifulsoup4 = "*"
-cinemagoer = "*"
+cinemagoer = {editable = true, git = "https://github.com/cinemagoer/cinemagoer"}
 gunicorn = "*"
 cloudscraper = "*"
 beanie = "*"
