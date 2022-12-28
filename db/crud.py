@@ -84,7 +84,12 @@ async def get_series_streams(video_id: str, season: int, episode: str):
 async def get_movie_meta(meta_id: str):
     movies_data = await get_movies_data(meta_id)
     if not movies_data:
-        return
+        return {
+            "meta": {
+                "id": meta_id,
+                "type": "movie",
+            }
+        }
 
     return {
         "meta": {
@@ -100,7 +105,12 @@ async def get_movie_meta(meta_id: str):
 async def get_series_meta(meta_id: str):
     series_data = await get_movies_data(meta_id, video_type="series")
     if not series_data:
-        return
+        return {
+            "meta": {
+                "id": meta_id,
+                "type": "series",
+            }
+        }
 
     metadata = {
         "meta": {
