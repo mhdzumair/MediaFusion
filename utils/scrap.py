@@ -191,7 +191,7 @@ async def scrap_homepage():
                 logging.error(f"info hash not found for {page_link}")
                 continue
 
-            poster = movie_page.select_one("img[data-src]").get("data-src")
+            poster = movie_page.select_one("div[data-commenttype='forums'] img[data-src]").get("data-src")
             metadata["created_at"] = dateparser(movie_page.find("time").get("datetime"))
             metadata["poster"] = poster
             metadata["video_qualities"][video_quality_name] = info_hash
