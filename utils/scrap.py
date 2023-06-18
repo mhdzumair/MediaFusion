@@ -13,8 +13,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from db import database, crud
+from utils.torrent import get_info_hash_from_url
 
-homepage = "https://tamilblasters.pm"
+homepage = "https://www.1tamilblasters.site"
 
 tamil_blaster_links = {
     "tamil": {
@@ -57,7 +58,7 @@ tamil_blaster_links = {
 
 def get_scrapper_session():
     session = requests.session()
-    adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3, allowed_methods=False))
+    adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3))
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     scraper = cloudscraper.create_scraper(
@@ -66,6 +67,22 @@ def get_scrapper_session():
         sess=session,
     )
     return scraper
+
+
+def extract_info_hash(movie_page):
+    try:
+        magnet_link = movie_page.find("a", class_="magnet-plugin").get("href")
+        info_hash = re.search(r"urn:btih:(.{32,40})&", magnet_link).group(1)
+        return info_hash
+    except AttributeError:
+        logging.warning("magnet link not found")
+        try:
+            torrent_link = movie_page.select_one("a[data-fileext='torrent']").get("href")
+            return get_info_hash_from_url(torrent_link)
+        except AttributeError:
+            logging.warning("Torrent link not found either")
+    except TypeError:
+        logging.error("Not able to parse magnet link")
 
 
 async def scrap_page(url, language, video_type):
@@ -109,17 +126,12 @@ async def scrap_page(url, language, video_type):
         page_link = movie.get("href")
         response = scraper.get(page_link)
         movie_page = BeautifulSoup(response.content, "html.parser")
-        try:
-            magnet_link = movie_page.find("a", class_="magnet-plugin").get("href")
-            info_hash = re.search(r"urn:btih:(.{32,40})&", magnet_link)[1]
-        except AttributeError:
-            logging.warning(f"skipping due to, megnet link not found in {page_link}")
-            continue
-        except TypeError:
-            logging.error(f"not able to parse magnet link in : {page_link}")
+        info_hash = extract_info_hash(movie_page)
+        if not info_hash:
+            logging.error(f"info hash not found for {page_link}")
             continue
 
-        poster = movie_page.select_one("img[data-src]").get("data-src")
+        poster = movie_page.select_one("div[data-commenttype='forums'] img[data-src]").get("data-src")
         created_at = dateparser(movie_page.find("time").get("datetime"))
 
         metadata.update(
@@ -141,7 +153,9 @@ async def scrap_homepage():
     response = scraper.get(homepage)
     response.raise_for_status()
     tamil_blasters = BeautifulSoup(response.content, "html.parser")
-    movie_list_div = tamil_blasters.find("div", class_="ipsWidget_inner ipsPad ipsType_richText")
+    movie_list_div = tamil_blasters.select(
+        "div[id='ipsLayout_mainArea'] div[class='ipsWidget_inner ipsPad ipsType_richText']"
+    )[1]
     movie_list = movie_list_div.find_all("p")[2:-2]
 
     for movie in movie_list:
@@ -172,15 +186,9 @@ async def scrap_homepage():
             page_link = video_quality.get("href")
             response = scraper.get(page_link)
             movie_page = BeautifulSoup(response.content, "html.parser")
-            magnet_link = None
-            try:
-                magnet_link = movie_page.find("a", class_="magnet-plugin").get("href")
-                info_hash = re.search(r"urn:btih:(.{32,40})&", magnet_link)[1]
-            except AttributeError:
-                logging.warning(f"skipping due to, megnet link not found in {page_link}")
-                continue
-            except TypeError:
-                logging.error(magnet_link)
+            info_hash = extract_info_hash(movie_page)
+            if not info_hash:
+                logging.error(f"info hash not found for {page_link}")
                 continue
 
             poster = movie_page.select_one("img[data-src]").get("data-src")

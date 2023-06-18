@@ -10,7 +10,6 @@ pydantic = "*"
 requests = "*"
 beautifulsoup4 = "*"
 cinemagoer = {editable = true, git = "https://github.com/cinemagoer/cinemagoer"}
-gunicorn = "*"
 cloudscraper = "*"
 beanie = "*"
 motor = "*"
@@ -19,6 +18,7 @@ dnspython = "*"
 jinja2 = "*"
 apscheduler = "*"
 python-dateutil = "*"
+bencodepy = "*"
 
 [dev-packages]
 
