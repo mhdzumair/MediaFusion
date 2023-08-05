@@ -8,6 +8,7 @@ import re
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
 from dateutil.parser import parse as dateparser
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -15,7 +16,7 @@ from urllib3.util.retry import Retry
 from db import database, crud
 from utils.torrent import get_info_hash_from_url
 
-homepage = "https://www.1tamilblasters.site"
+homepage = "https://www.1tamilblasters.co"
 
 tamil_blaster_links = {
     "tamil": {
@@ -57,7 +58,9 @@ tamil_blaster_links = {
 
 
 def get_scrapper_session():
+    ua = UserAgent()
     session = requests.session()
+    session.headers = {"User-Agent": ua.random}
     adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3))
     session.mount("http://", adapter)
     session.mount("https://", adapter)

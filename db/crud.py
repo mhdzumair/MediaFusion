@@ -4,8 +4,10 @@ from uuid import uuid4
 
 from imdb import Cinemagoer, IMDbDataAccessError
 
-from api import schemas
+from db import schemas
 from db.models import TamilBlasterMovie
+from db.schemas import Stream
+from utils.parser import extract_stream_details
 
 ia = Cinemagoer()
 
@@ -23,7 +25,7 @@ async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 100):
     unique_names = []
 
     for movie in movies:
-        meta_data = schemas.Meta.parse_obj(movie)
+        meta_data = schemas.Meta.model_validate(movie.model_dump())
         meta_data.id = movie.imdb_id if movie.imdb_id else movie.tamilblaster_id
         if movie.name not in unique_names:
             movies_meta.append(meta_data)
@@ -44,25 +46,19 @@ async def get_movies_data(video_id: str, video_type: str = "movie") -> list[Opti
     return movie_data
 
 
-async def get_movie_streams(video_id: str):
+async def get_movie_streams(video_id: str) -> list[Stream]:
     movies_data = await get_movies_data(video_id)
     if not movies_data:
         return []
 
     stream_data = []
     for movie_data in movies_data:
-        for name, info_hash in movie_data.video_qualities.items():
-            stream_data.append(
-                {
-                    "name": name,
-                    "infoHash": info_hash,
-                }
-            )
+        stream_data.extend(extract_stream_details(movie_data.video_qualities))
 
     return stream_data
 
 
-async def get_series_streams(video_id: str, season: int, episode: str):
+async def get_series_streams(video_id: str, season: int, episode: str) -> list[Stream]:
     series_data = await get_movies_data(video_id, video_type="series")
     if not series_data:
         return []
@@ -70,13 +66,7 @@ async def get_series_streams(video_id: str, season: int, episode: str):
     stream_data = []
     for series in series_data:
         if series.episode == episode and series.season == season:
-            for name, info_hash in series.video_qualities.items():
-                stream_data.append(
-                    {
-                        "name": name,
-                        "infoHash": info_hash,
-                    }
-                )
+            stream_data.extend(extract_stream_details(series.video_qualities))
 
     return stream_data
 
