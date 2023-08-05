@@ -55,7 +55,7 @@ async def get_home(request: Request):
         {
             "request": request,
             "name": manifest.get("name"),
-            "version": f"{manifest.get('version')}-{settings.git_rev}",
+            "version": f"{manifest.get('version')}-{settings.git_rev[:7]}",
             "description": manifest.get("description"),
             "gives": [
                 "Tamil Movies & Series",
