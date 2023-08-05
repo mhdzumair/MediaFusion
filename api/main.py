@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from db import database, crud, schemas
+from db.config import settings
 from utils import scrap
 
 logging.basicConfig(format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=logging.INFO)
@@ -54,7 +55,7 @@ async def get_home(request: Request):
         {
             "request": request,
             "name": manifest.get("name"),
-            "version": manifest.get("version"),
+            "version": f"{manifest.get('version')}-{settings.git_rev}",
             "description": manifest.get("description"),
             "gives": [
                 "Tamil Movies & Series",
