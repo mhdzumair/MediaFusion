@@ -88,6 +88,14 @@ async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
     return movies
 
 
+@app.get("/catalog/{content_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
+async def search_movie(response: Response, content_type: Literal["movie", "series"], search_query: str):
+    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    logging.info(f"Searching for {search_query}")
+
+    return await crud.process_search_query(search_query, content_type)
+
+
 @app.get("/meta/movie/{meta_id}.json")
 async def get_meta(meta_id: str, response: Response):
     response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})

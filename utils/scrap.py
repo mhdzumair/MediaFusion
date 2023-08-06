@@ -225,22 +225,23 @@ async def run_scraper(
         except KeyError:
             logging.error(f"Unsupported language or video type: {language}_{video_type}")
             return
-        for page in range(start_page, pages + 1):
+        for page in range(start_page, pages + start_page):
             scrap_link = f"{scrap_link}/page/{page}/"
             logging.info(f"Scrap page: {page}")
             await scrap_page(scrap_link, language, video_type)
     logging.info(f"Scrap completed for : {language}_{video_type}")
 
 
-async def run_schedule_scrape():
+async def run_schedule_scrape(pages: int = 1, start_page: int = 1):
     for language in tamil_blaster_links:
         for video_type in tamil_blaster_links[language]:
-            await run_scraper(language, video_type, pages=1, start_page=1, is_scrape_home=False)
+            await run_scraper(language, video_type, pages=pages, start_page=start_page, is_scrape_home=False)
     await run_scraper(is_scrape_home=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrap Movie metadata from TamilBlasters")
+    parser.add_argument("--all", action="store_true", help="scrap all type of movies & series")
     parser.add_argument("--home", action="store_true", help="scrap home page")
     parser.add_argument("-l", "--language", help="scrap movie language", default="tamil")
     parser.add_argument("-t", "--video-type", help="scrap movie video type", default="hdrip")
@@ -253,4 +254,7 @@ if __name__ == "__main__":
         datefmt="%d-%b-%y %H:%M:%S",
         level=logging.INFO,
     )
-    asyncio.run(run_scraper(args.language, args.video_type, args.pages, args.start_pages, args.home))
+    if args.all:
+        asyncio.run(run_schedule_scrape(args.pages, args.start_pages))
+    else:
+        asyncio.run(run_scraper(args.language, args.video_type, args.pages, args.start_pages, args.home))

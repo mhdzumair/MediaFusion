@@ -12,7 +12,7 @@ from utils.parser import extract_stream_details
 ia = Cinemagoer()
 
 
-async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 100):
+async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 100) -> list[schemas.Meta]:
     movies_meta = []
     movies = (
         await TamilBlasterMovie.find(TamilBlasterMovie.catalog == catalog)
@@ -149,7 +149,7 @@ async def save_movie_metadata(metadata: dict):
         movie_data.created_at = metadata["created_at"]
         logging.info(f"update video qualities for {metadata['name']}")
     else:
-        movie_data = TamilBlasterMovie.parse_obj(metadata)
+        movie_data = TamilBlasterMovie.model_validate(metadata)
         movie_data.video_qualities = metadata["video_qualities"]
 
         series_data = await TamilBlasterMovie.find_one(
@@ -175,3 +175,21 @@ async def save_movie_metadata(metadata: dict):
         logging.info(f"new movie '{metadata['name']}' added.")
 
     await movie_data.save()
+
+
+async def process_search_query(search_query: str, content_type: str) -> dict:
+    query = {"$text": {"$search": search_query}, "type": content_type}
+    search_results = await TamilBlasterMovie.find(query).to_list()
+    logging.info(f"Found {len(search_results)} results for {search_query} in {content_type}")
+
+    movies_meta = []
+    unique_names = []
+
+    for movie in search_results:
+        meta_data = schemas.Meta.model_validate(movie.model_dump())
+        meta_data.id = movie.imdb_id or movie.tamilblaster_id
+        if movie.name not in unique_names:
+            movies_meta.append(meta_data)
+            unique_names.append(movie.name)
+
+    return {"metas": movies_meta}
