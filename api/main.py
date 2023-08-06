@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from db import database, crud, schemas
+from db.config import settings
 from utils import scrap
 
 logging.basicConfig(format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=logging.INFO)
@@ -54,7 +55,7 @@ async def get_home(request: Request):
         {
             "request": request,
             "name": manifest.get("name"),
-            "version": manifest.get("version"),
+            "version": f"{manifest.get('version')}-{settings.git_rev[:7]}",
             "description": manifest.get("description"),
             "gives": [
                 "Tamil Movies & Series",
@@ -85,6 +86,14 @@ async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
     movies = schemas.Movie()
     movies.metas.extend(await crud.get_movies_meta(catalog_id, skip))
     return movies
+
+
+@app.get("/catalog/{content_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
+async def search_movie(response: Response, content_type: Literal["movie", "series"], search_query: str):
+    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    logging.info(f"Searching for {search_query}")
+
+    return await crud.process_search_query(search_query, content_type)
 
 
 @app.get("/meta/movie/{meta_id}.json")

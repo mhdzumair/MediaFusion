@@ -17,7 +17,7 @@ class Meta(BaseModel):
 
 
 class Movie(BaseModel):
-    metas: Optional[List[Meta]] = []
+    metas: list[Meta] = []
 
 
 class Stream(BaseModel):

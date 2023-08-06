@@ -11,11 +11,11 @@ class TamilBlasterMovie(Document):
     name: str
     catalog: str
     type: str
-    season: Optional[int]
-    episode: Optional[str]
+    season: Optional[int] = None
+    episode: Optional[str] = None
     poster: str
-    imdb_id: Optional[str]
-    tamilblaster_id: Optional[str]
+    imdb_id: Optional[str] = None
+    tamilblaster_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     video_qualities: dict
 
@@ -29,5 +29,6 @@ class TamilBlasterMovie(Document):
                     ("episode", pymongo.ASCENDING),
                 ],
                 unique=True,
-            )
+            ),
+            IndexModel([("name", pymongo.TEXT)]),
         ]

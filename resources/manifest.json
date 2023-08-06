@@ -36,6 +36,28 @@
   ],
   "catalogs": [
 	{
+	  "id": "tamil_blasters",
+	  "type": "movie",
+	  "name": "Movies",
+	  "extra": [
+		{
+		  "name": "search",
+		  "isRequired": true
+		}
+	  ]
+	},
+	{
+	  "id": "tamil_blasters",
+	  "type": "series",
+	  "name": "Series",
+	  "extra": [
+		{
+		  "name": "search",
+		  "isRequired": true
+		}
+	  ]
+	},
+	{
 	  "id": "any_any",
 	  "type": "movie",
 	  "name": "TamilBlaster New Movies"
