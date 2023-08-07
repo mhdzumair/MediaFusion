@@ -25,7 +25,11 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory="resources"), name="static")
 TEMPLATES = Jinja2Templates(directory="resources")
-
+headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=604800, public",
+}
 with open("resources/manifest.json") as file:
     manifest = json.load(file)
 
@@ -73,7 +77,7 @@ async def get_home(request: Request):
 
 @app.get("/manifest.json")
 async def get_manifest(response: Response):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     return manifest
 
 
@@ -82,7 +86,7 @@ async def get_manifest(response: Response):
 @app.get("/catalog/series/{catalog_id}.json", response_model=schemas.Movie)
 @app.get("/catalog/series/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
 async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     movies = schemas.Movie()
     movies.metas.extend(await crud.get_movies_meta(catalog_id, skip))
     return movies
@@ -90,7 +94,7 @@ async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
 
 @app.get("/catalog/{content_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
 async def search_movie(response: Response, content_type: Literal["movie", "series"], search_query: str):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     logging.info(f"Searching for {search_query}")
 
     return await crud.process_search_query(search_query, content_type)
@@ -98,13 +102,13 @@ async def search_movie(response: Response, content_type: Literal["movie", "serie
 
 @app.get("/meta/movie/{meta_id}.json")
 async def get_meta(meta_id: str, response: Response):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     return await crud.get_movie_meta(meta_id)
 
 
 @app.get("/stream/movie/{video_id}.json", response_model=schemas.Streams)
 async def get_stream(video_id: str, response: Response):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     streams = schemas.Streams()
     streams.streams.extend(await crud.get_movie_streams(video_id))
     return streams
@@ -125,13 +129,13 @@ def run_scraper(
 
 @app.get("/meta/series/{meta_id}.json")
 async def get_series_meta(meta_id: str, response: Response):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     return await crud.get_series_meta(meta_id)
 
 
 @app.get("/stream/series/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
 async def get_series_streams(video_id: str, season: int, episode: str, response: Response):
-    response.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+    response.headers.update(headers)
     streams = schemas.Streams()
     streams.streams.extend(await crud.get_series_streams(video_id, season, episode))
     return streams
