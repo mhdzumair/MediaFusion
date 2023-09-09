@@ -7,6 +7,11 @@ Accept: application/json
 
 ###
 
+GET http://127.0.0.1:8000/{{secret_str}}/manifest.json
+Accept: application/json
+
+###
+
 GET http://127.0.0.1:8000/catalog/movie/tamil_hd.json
 Accept: application/json
 
@@ -23,6 +28,13 @@ Accept: application/json
 ###
 
 GET http://127.0.0.1:8000/stream/movie/tt11468258.json
+Accept: application/json
+
+###
+
+###
+
+GET http://127.0.0.1:8000/{{secret_str}}/stream/movie/tt11468258.json
 Accept: application/json
 
 ###

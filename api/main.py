@@ -1,17 +1,24 @@
+from urllib.parse import quote
+
 import json
 import logging
 from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, Request, Response, BackgroundTasks
+from fastapi import FastAPI, Request, Response, BackgroundTasks, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse, FileResponse
 
+from streaming_providers.exceptions import ProviderException
+from streaming_providers.seedr.api import router as seedr_router
 from db import database, crud, schemas
 from db.config import settings
-from utils import scrap
+from streaming_providers.seedr.utils import get_direct_link_from_seedr
+from utils import scrap, crypto, torrent
+from utils.parser import generate_catalog_ids, clean_name
 
 logging.basicConfig(format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=logging.INFO)
 app = FastAPI()
@@ -29,6 +36,11 @@ headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "*",
     "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=604800, public",
+}
+no_cache_headers = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
 }
 with open("resources/manifest.json") as file:
     manifest = json.load(file)
@@ -75,42 +87,100 @@ async def get_home(request: Request):
     )
 
 
+@app.get("/favicon.ico")
+async def get_favicon():
+    return FileResponse("resources/tamilblasters.png", media_type="image/x-icon")
+
+
+@app.get("/configure")
+@app.get("/{secret_str}/configure")
+async def configure(request: Request, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)):
+    if user_data.streaming_provider:
+        user_data.streaming_provider.token = None
+    return TEMPLATES.TemplateResponse("configure.html", {"request": request, "user_data": user_data.model_dump()})
+
+
 @app.get("/manifest.json")
-async def get_manifest(response: Response):
+@app.get("/{secret_str}/manifest.json")
+async def get_manifest(response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)):
     response.headers.update(headers)
+    user_catalog_ids = generate_catalog_ids(user_data.preferred_movie_languages, user_data.preferred_series_languages)
+    filtered_catalogs = [cat for cat in manifest["catalogs"] if cat["id"] in user_catalog_ids]
+    manifest["catalogs"] = filtered_catalogs
+
     return manifest
 
 
-@app.get("/catalog/movie/{catalog_id}.json", response_model=schemas.Movie)
-@app.get("/catalog/movie/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
-@app.get("/catalog/series/{catalog_id}.json", response_model=schemas.Movie)
-@app.get("/catalog/series/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
-async def get_catalog(response: Response, catalog_id: str, skip: int = 0):
+@app.get("/{secret_str}/catalog/{catalog_type}/{catalog_id}.json", response_model=schemas.Movie)
+@app.get("/catalog/{catalog_type}/{catalog_id}.json", response_model=schemas.Movie)
+@app.get("/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
+@app.get("/catalog/{catalog_type}/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
+async def get_catalog(
+    response: Response,
+    catalog_type: Literal["movie", "series"],
+    catalog_id: str,
+    skip: int = 0,
+):
     response.headers.update(headers)
     movies = schemas.Movie()
-    movies.metas.extend(await crud.get_movies_meta(catalog_id, skip))
+    movies.metas.extend(await crud.get_movies_and_series_meta(catalog_id, skip))
     return movies
 
 
-@app.get("/catalog/{content_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
-async def search_movie(response: Response, content_type: Literal["movie", "series"], search_query: str):
+@app.get("/{secret_str}/catalog/{catalog_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
+@app.get("/catalog/{catalog_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
+async def search_movie(
+    response: Response,
+    catalog_type: Literal["movie", "series"],
+    search_query: str,
+):
     response.headers.update(headers)
-    logging.info(f"Searching for {search_query}")
+    logging.debug("Searching for %s", search_query)
 
-    return await crud.process_search_query(search_query, content_type)
+    return await crud.process_search_query(search_query, catalog_type)
 
 
-@app.get("/meta/movie/{meta_id}.json")
-async def get_meta(meta_id: str, response: Response):
+@app.get("/{secret_str}/meta/{catalog_type}/{meta_id}.json")
+@app.get("/meta/{catalog_type}/{meta_id}.json")
+async def get_meta(catalog_type: Literal["movie", "series"], meta_id: str, response: Response):
     response.headers.update(headers)
-    return await crud.get_movie_meta(meta_id)
+    if catalog_type == "movie":
+        return await crud.get_movie_meta(meta_id)
+    return await crud.get_series_meta(meta_id)
 
 
-@app.get("/stream/movie/{video_id}.json", response_model=schemas.Streams)
-async def get_stream(video_id: str, response: Response):
+@app.get("/{secret_str}/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams)
+@app.get("/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams)
+@app.get("/{secret_str}/stream/{catalog_type}/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
+@app.get("/stream/{catalog_type}/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
+async def get_movie_streams(
+    catalog_type: Literal["movie", "series"],
+    video_id: str,
+    response: Response,
+    request: Request,
+    secret_str: str = None,
+    season: int = None,
+    episode: str = None,
+    user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
+):
     response.headers.update(headers)
+    response.headers.update(no_cache_headers)
     streams = schemas.Streams()
-    streams.streams.extend(await crud.get_movie_streams(video_id))
+    if catalog_type == "movie":
+        fetched_streams = await crud.get_movie_streams(user_data, video_id)
+    else:
+        fetched_streams = await crud.get_series_streams(user_data, video_id, season, episode)
+
+    if user_data.streaming_provider:
+        base_url = str(request.base_url)
+        for stream in fetched_streams:
+            torrent_name = quote(clean_name(f"{stream.stream_name} {stream.description}"))
+            proxy_url = f"{base_url}{secret_str}/streaming_provider?info_hash={stream.infoHash}&name={torrent_name}"
+            stream.url = proxy_url
+            stream.infoHash = None
+            stream.behaviorHints = {"notWebReady": True}
+
+    streams.streams.extend(fetched_streams)
     return streams
 
 
@@ -127,15 +197,33 @@ def run_scraper(
     return {"message": "Scraping in background..."}
 
 
-@app.get("/meta/series/{meta_id}.json")
-async def get_series_meta(meta_id: str, response: Response):
-    response.headers.update(headers)
-    return await crud.get_series_meta(meta_id)
+@app.post("/encrypt-user-data")
+async def encrypt_user_data(user_data: schemas.UserData):
+    encrypted_str = crypto.encrypt_user_data(user_data)
+    return {"encrypted_str": encrypted_str}
 
 
-@app.get("/stream/series/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
-async def get_series_streams(video_id: str, season: int, episode: str, response: Response):
+@app.get("/{secret_str}/streaming_provider")
+async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str, response: Response, request: Request):
     response.headers.update(headers)
-    streams = schemas.Streams()
-    streams.streams.extend(await crud.get_series_streams(video_id, season, episode))
-    return streams
+    response.headers.update(no_cache_headers)
+
+    user_data = crypto.decrypt_user_data(secret_str)
+    if not user_data.streaming_provider:
+        raise HTTPException(status_code=400, detail="No streaming provider set.")
+
+    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, name)
+
+    if user_data.streaming_provider.service == "seedr":
+        try:
+            video_url = get_direct_link_from_seedr(magnet_link, user_data.streaming_provider.token, name)
+        except ProviderException as error:
+            logging.error(error)
+            video_url = f"{request.base_url}static/{error.video_file_name}"
+    else:
+        raise HTTPException(status_code=400, detail="Streaming provider not supported.")
+
+    return RedirectResponse(url=video_url, headers=response.headers)
+
+
+app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])

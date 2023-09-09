@@ -21,6 +21,9 @@ python-dateutil = "*"
 bencodepy = "*"
 pydantic-settings = "*"
 fake-useragent = "*"
+pycryptodome = "*"
+seedrcc = "*"
+pybittorrent = "*"
 
 [dev-packages]
 

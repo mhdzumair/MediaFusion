@@ -130,3 +130,5 @@ dmypy.json
 
 .idea/
 *.service
+
+http-client.private.env.json

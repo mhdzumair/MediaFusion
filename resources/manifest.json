@@ -1,10 +1,14 @@
 {
   "id": "mhdzumair.addons.tamilblasters",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "name": "Tamil Blasters",
   "contactEmail": "mhdzumair@gmail",
   "description": "TamilBlasters add-on for watch tamil, hindi, malayalam, kannada, english, dubbed movies & series . Created By: Mohamed Zumair. Source: https://github.com/mhdzumair/tamilblasters_streamio_addon",
   "logo": "https://882b9915d0fe-stremio-tamilblasters.baby-beamup.club/static/tamilblasters.png",
+  "behaviorHints": {
+	"configurable": true,
+	"configurationRequired": false
+  },
   "resources": [
 	"catalog",
 	{

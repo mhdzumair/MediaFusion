@@ -1,4 +1,4 @@
-from typing import List, Optional, Any
+from typing import Optional, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -23,8 +23,36 @@ class Movie(BaseModel):
 class Stream(BaseModel):
     name: str | None = None
     description: str | None = None
-    infoHash: str
+    infoHash: str | None = None
+    url: str | None = None
+    stream_name: str | None = Field(exclude=True)
+    behaviorHints: dict[str, Any] | None = None
 
 
 class Streams(BaseModel):
-    streams: Optional[List[Stream]] = []
+    streams: Optional[list[Stream]] = []
+
+
+class StreamingProvider(BaseModel):
+    service: Literal["realdebrid", "alldebrid", "debridcloud", "seedr"]
+    token: str
+
+    class Config:
+        extra = "ignore"
+
+
+class UserData(BaseModel):
+    streaming_provider: StreamingProvider | None = None
+    preferred_movie_languages: list[str] = Field(
+        default=["Tamil", "Malayalam", "Telugu", "Hindi", "Kannada", "English", "Dubbed"]
+    )
+    preferred_series_languages: list[str] = Field(
+        default=["Tamil", "Malayalam", "Telugu", "Hindi", "Kannada", "English", "Dubbed"]
+    )
+
+    class Config:
+        extra = "ignore"
+
+
+class SeedrAuthorizeData(BaseModel):
+    device_code: str
