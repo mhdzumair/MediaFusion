@@ -1,8 +1,10 @@
+import bencodepy
 import hashlib
 import logging
-
-import bencodepy
 import requests
+from urllib.parse import quote
+
+from utils.site_data import TRACKERS
 
 
 def get_info_hash_from_url(torrent_url):
@@ -22,3 +24,14 @@ def get_info_hash_from_url(torrent_url):
     except Exception as e:
         logging.error(f"Error occurred: {e}")
         return False
+
+
+def convert_info_hash_to_magnet(info_hash: str, name: str = "") -> str:
+    magnet_link = f"magnet:?xt=urn:btih:{info_hash}"
+    if name:
+        encoded_name = quote(name, safe="")
+        magnet_link += f"&dn={encoded_name}"
+    for tracker in TRACKERS:
+        encoded_tracker = quote(tracker, safe="")
+        magnet_link += f"&tr={encoded_tracker}"
+    return magnet_link

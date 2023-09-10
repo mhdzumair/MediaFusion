@@ -1,9 +1,10 @@
 import re
 
 from db.schemas import Stream
+from utils.site_data import ALWAYS_ENABLED, LANGUAGE_CATALOGS
 
 
-def extract_stream_details(video_qualities: dict) -> list[Stream]:
+def extract_stream_details(stream_name, video_qualities: dict, user_data) -> list[Stream]:
     stream_list = []
     for quality_string, hash_value in video_qualities.items():
         stream_details = {}
@@ -40,13 +41,34 @@ def extract_stream_details(video_qualities: dict) -> list[Stream]:
                 languages.append(full)
 
         stream_details["name"] = "TamilBlasters"
-
-        # Concatenate the description components
-        stream_details["description"] = f"{quality}, {size}, {' + '.join(languages)}"
-
-        # Add the info hash
+        stream_details["stream_name"] = stream_name
+        streaming_provider = user_data.streaming_provider.service.title() if user_data.streaming_provider else "Torrent"
+        stream_details["description"] = f"{quality}, {size}, {' + '.join(languages)}, {streaming_provider}"
         stream_details["infoHash"] = hash_value
 
         stream_list.append(Stream(**stream_details))
 
     return stream_list
+
+
+def generate_catalog_ids(preferred_movie_languages, preferred_series_languages):
+    catalog_ids = ALWAYS_ENABLED.copy()
+
+    for language, catalogs in LANGUAGE_CATALOGS.items():
+        if language in preferred_movie_languages:
+            catalog_ids.extend(catalogs["movie"])
+
+        if language in preferred_series_languages:
+            catalog_ids.extend(catalogs["series"])
+
+        # Handle the dubbed option
+        if "Dubbed" in preferred_movie_languages and language + "_dubbed" in catalogs["movie"]:
+            catalog_ids.append(language.lower() + "_dubbed")
+
+    return catalog_ids
+
+
+def clean_name(name: str) -> str:
+    # Only allow alphanumeric characters, spaces, and `.,:_-`
+    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,:_-]", "", name)
+    return cleaned_name

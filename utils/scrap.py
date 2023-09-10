@@ -8,66 +8,25 @@ import re
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
 from dateutil.parser import parse as dateparser
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from db import database, crud
+from utils.site_data import HOMEPAGE, TAMIL_BLASTER_LINKS
 from utils.torrent import get_info_hash_from_url
-
-homepage = "https://www.1tamilblasters.co"
-
-tamil_blaster_links = {
-    "tamil": {
-        "hdrip": f"{homepage}/index.php?/forums/forum/7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "tcrip": f"{homepage}/index.php?/forums/forum/8-tamil-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "dubbed": f"{homepage}/index.php?/forums/forum/9-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios",
-        "series": f"{homepage}/index.php?/forums/forum/63-tamil-new-web-series-tv-shows",
-    },
-    "malayalam": {
-        "tcrip": f"{homepage}/index.php?/forums/forum/75-malayalam-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": f"{homepage}/index.php?/forums/forum/74-malayalam-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/76-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": f"{homepage}/index.php?/forums/forum/98-malayalam-new-web-series-tv-shows",
-    },
-    "telugu": {
-        "tcrip": f"{homepage}/index.php?/forums/forum/79-telugu-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": f"{homepage}/index.php?/forums/forum/78-telugu-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/80-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": f"{homepage}/index.php?/forums/forum/96-telugu-new-web-series-tv-shows",
-    },
-    "hindi": {
-        "tcrip": f"{homepage}/index.php?/forums/forum/87-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": f"{homepage}/index.php?/forums/forum/86-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": f"{homepage}/index.php?/forums/forum/89-hindi-new-web-series-tv-shows",
-    },
-    "kannada": {
-        "tcrip": f"{homepage}/index.php?/forums/forum/83-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": f"{homepage}/index.php?/forums/forum/82-kannada-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": f"{homepage}/index.php?/forums/forum/84-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": f"{homepage}/index.php?/forums/forum/103-kannada-new-web-series-tv-shows",
-    },
-    "english": {
-        "tcrip": f"{homepage}/index.php?/forums/forum/52-english-movies-hdcam-dvdscr-predvd",
-        "hdrip": f"{homepage}/index.php?/forums/forum/53-english-movies-hdrips-bdrips-dvdrips",
-        "series": f"{homepage}/index.php?/forums/forum/92-english-web-series-tv-shows",
-    },
-}
 
 
 def get_scrapper_session():
-    ua = UserAgent()
     session = requests.session()
-    session.headers = {"User-Agent": ua.random}
+    session.headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 7.1.2; MI 5X; Flow) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/347.0.0.268 Mobile Safari/537.36"
+    }
     adapter = HTTPAdapter(max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3))
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     scraper = cloudscraper.create_scraper(
-        browser={"browser": "firefox", "platform": "windows", "mobile": False},
-        delay=10,
-        sess=session,
+        browser={"browser": "chrome", "platform": "android", "desktop": False}, delay=10, sess=session
     )
     return scraper
 
@@ -153,12 +112,12 @@ async def scrap_page(url, language, video_type):
 
 async def scrap_homepage():
     scraper = get_scrapper_session()
-    response = scraper.get(homepage)
+    response = scraper.get(HOMEPAGE)
     response.raise_for_status()
     tamil_blasters = BeautifulSoup(response.content, "html.parser")
     movie_list_div = tamil_blasters.select(
         "div[id='ipsLayout_mainArea'] div[class='ipsWidget_inner ipsPad ipsType_richText']"
-    )[1]
+    )[2]
     movie_list = movie_list_div.find_all("p")[2:-2]
 
     for movie in movie_list:
@@ -221,7 +180,7 @@ async def run_scraper(
         await scrap_homepage()
     else:
         try:
-            scrap_link = tamil_blaster_links[language][video_type]
+            scrap_link = TAMIL_BLASTER_LINKS[language][video_type]
         except KeyError:
             logging.error(f"Unsupported language or video type: {language}_{video_type}")
             return
@@ -233,8 +192,8 @@ async def run_scraper(
 
 
 async def run_schedule_scrape(pages: int = 1, start_page: int = 1):
-    for language in tamil_blaster_links:
-        for video_type in tamil_blaster_links[language]:
+    for language in TAMIL_BLASTER_LINKS:
+        for video_type in TAMIL_BLASTER_LINKS[language]:
             await run_scraper(language, video_type, pages=pages, start_page=start_page, is_scrape_home=False)
     await run_scraper(is_scrape_home=True)
 

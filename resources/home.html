@@ -112,15 +112,11 @@
     </ul>
     {% endfor %}
 
-    <a id="installLink" class="install-link" href="">
-        <button name="Install">Install Add-on</button>
+    <a id="installLink" class="install-link" href="/configure">
+        <button name="Install">Configure Add-on</button>
     </a>
 
 </div>
-<script>
-    installLink.href = 'stremio://' + window.location.host + '/manifest.json'
-</script>
-
 
 </body>
 </html>

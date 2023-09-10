@@ -20,7 +20,8 @@ apscheduler = "*"
 python-dateutil = "*"
 bencodepy = "*"
 pydantic-settings = "*"
-fake-useragent = "*"
+pycryptodome = "*"
+seedrcc = "*"
 
 [dev-packages]
 

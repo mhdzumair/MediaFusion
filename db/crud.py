@@ -12,7 +12,7 @@ from utils.parser import extract_stream_details
 ia = Cinemagoer()
 
 
-async def get_movies_meta(catalog: str, skip: int = 0, limit: int = 100) -> list[schemas.Meta]:
+async def get_movies_and_series_meta(catalog: str, skip: int = 0, limit: int = 100) -> list[schemas.Meta]:
     movies_meta = []
     movies = (
         await TamilBlasterMovie.find(TamilBlasterMovie.catalog == catalog)
@@ -46,19 +46,19 @@ async def get_movies_data(video_id: str, video_type: str = "movie") -> list[Opti
     return movie_data
 
 
-async def get_movie_streams(video_id: str) -> list[Stream]:
+async def get_movie_streams(user_data, video_id: str) -> list[Stream]:
     movies_data = await get_movies_data(video_id)
     if not movies_data:
         return []
 
     stream_data = []
     for movie_data in movies_data:
-        stream_data.extend(extract_stream_details(movie_data.video_qualities))
+        stream_data.extend(extract_stream_details(movie_data.name, movie_data.video_qualities, user_data))
 
     return stream_data
 
 
-async def get_series_streams(video_id: str, season: int, episode: str) -> list[Stream]:
+async def get_series_streams(user_data, video_id: str, season: int, episode: str) -> list[Stream]:
     series_data = await get_movies_data(video_id, video_type="series")
     if not series_data:
         return []
@@ -66,7 +66,11 @@ async def get_series_streams(video_id: str, season: int, episode: str) -> list[S
     stream_data = []
     for series in series_data:
         if series.episode == episode and series.season == season:
-            stream_data.extend(extract_stream_details(series.video_qualities))
+            stream_data.extend(
+                extract_stream_details(
+                    f"{series.name} {series.season}:{series.episode}", series.video_qualities, user_data
+                )
+            )
 
     return stream_data
 
@@ -147,7 +151,7 @@ async def save_movie_metadata(metadata: dict):
     if movie_data:
         movie_data.video_qualities.update(metadata["video_qualities"])
         movie_data.created_at = metadata["created_at"]
-        logging.info(f"update video qualities for {metadata['name']}")
+        logging.debug("updated video qualities for: %s", metadata["name"])
     else:
         movie_data = TamilBlasterMovie.model_validate(metadata)
         movie_data.video_qualities = metadata["video_qualities"]
@@ -177,10 +181,10 @@ async def save_movie_metadata(metadata: dict):
     await movie_data.save()
 
 
-async def process_search_query(search_query: str, content_type: str) -> dict:
-    query = {"$text": {"$search": search_query}, "type": content_type}
+async def process_search_query(search_query: str, catalog_type: str) -> dict:
+    query = {"$text": {"$search": search_query}, "type": catalog_type}
     search_results = await TamilBlasterMovie.find(query).to_list()
-    logging.info(f"Found {len(search_results)} results for {search_query} in {content_type}")
+    logging.debug("Found %s results for %s in %s", len(search_results), search_query, catalog_type)
 
     movies_meta = []
     unique_names = []
