@@ -176,7 +176,7 @@ async def get_movie_streams(
         for stream in fetched_streams:
             torrent_name = quote(clean_name(f"{stream.stream_name} {stream.description}"))
             proxy_url = (
-                f"{settings.host_url}{secret_str}/streaming_provider?info_hash={stream.infoHash}&name={torrent_name}"
+                f"{settings.host_url}/{secret_str}/streaming_provider?info_hash={stream.infoHash}&name={torrent_name}"
             )
             stream.url = proxy_url
             stream.infoHash = None
@@ -223,7 +223,7 @@ async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str
             video_url = get_direct_link_from_realdebrid(info_hash, magnet_link, user_data.streaming_provider.token)
     except ProviderException as error:
         logging.info("Exception occurred: %s", error.message)
-        video_url = f"{settings.host_url}static/{error.video_file_name}"
+        video_url = f"{settings.host_url}/static/{error.video_file_name}"
 
     return RedirectResponse(url=video_url, headers=response.headers)
 
