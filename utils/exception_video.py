@@ -23,14 +23,6 @@ def create_text_video(output_path, text, duration=30, resolution=(1280, 720), fo
 
 if __name__ == "__main__":
     create_text_video(
-        "not_enough_space.mp4",
-        "Not enough space in Seedr account to add this torrent.\n Please remove some files and try again.",
-    )
-    create_text_video(
-        "transfer_error.mp4",
-        "Error transferring magnet link to Seedr",
-    )
-    create_text_video(
-        "torrent_not_downloaded.mp4",
-        "Torrent not downloaded yet. Please try again shortly.",
+        "../resources/transfer_error.mp4",
+        "Error transferring magnet link.\nProbably be No seeders available for this torrent.",
     )

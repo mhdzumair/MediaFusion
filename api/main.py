@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, FileResponse
 
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from db import database, crud, schemas
@@ -215,14 +216,14 @@ async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str
 
     magnet_link = torrent.convert_info_hash_to_magnet(info_hash, name)
 
-    if user_data.streaming_provider.service == "seedr":
-        try:
-            video_url = get_direct_link_from_seedr(magnet_link, user_data.streaming_provider.token, name)
-        except ProviderException as error:
-            logging.error(error)
-            video_url = f"{request.base_url}static/{error.video_file_name}"
-    else:
-        raise HTTPException(status_code=400, detail="Streaming provider not supported.")
+    try:
+        if user_data.streaming_provider.service == "seedr":
+            video_url = get_direct_link_from_seedr(info_hash, magnet_link, user_data.streaming_provider.token, name)
+        else:
+            video_url = get_direct_link_from_realdebrid(info_hash, magnet_link, user_data.streaming_provider.token)
+    except ProviderException as error:
+        logging.info("Exception occurred: %s", error.message)
+        video_url = f"{request.base_url}static/{error.video_file_name}"
 
     return RedirectResponse(url=video_url, headers=response.headers)
 
