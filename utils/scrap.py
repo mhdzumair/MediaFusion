@@ -117,7 +117,7 @@ async def scrap_homepage():
     tamil_blasters = BeautifulSoup(response.content, "html.parser")
     movie_list_div = tamil_blasters.select(
         "div[id='ipsLayout_mainArea'] div[class='ipsWidget_inner ipsPad ipsType_richText']"
-    )[1]
+    )[2]
     movie_list = movie_list_div.find_all("p")[2:-2]
 
     for movie in movie_list:

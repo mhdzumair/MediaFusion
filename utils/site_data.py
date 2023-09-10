@@ -1,4 +1,4 @@
-HOMEPAGE = "https://www.1tamilblasters.co"
+HOMEPAGE = "https://www.1tamilblasters.lat"
 
 TAMIL_BLASTER_LINKS = {
     "tamil": {
