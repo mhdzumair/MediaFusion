@@ -34,7 +34,7 @@ class Streams(BaseModel):
 
 
 class StreamingProvider(BaseModel):
-    service: Literal["realdebrid", "alldebrid", "debridcloud", "seedr"]
+    service: Literal["realdebrid", "seedr"]
     token: str
 
     class Config:
@@ -54,5 +54,5 @@ class UserData(BaseModel):
         extra = "ignore"
 
 
-class SeedrAuthorizeData(BaseModel):
+class AuthorizeData(BaseModel):
     device_code: str

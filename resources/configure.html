@@ -65,22 +65,25 @@
                 <div class="mb-3">
                     <label for="provider_service">Streaming Provider:</label>
                     <select class="form-control" name="provider_service" id="provider_service" onchange="updateProviderFields()">
-                        <option value="" {% if not user_data.streaming_provider.service %}selected{% endif %}>None (Direct Torrent)</option>
-                        <option value="realdebrid" {% if user_data.streaming_provider.service=='realdebrid' %}selected{% endif %}>Real Debrid</option>
-                        <option value="alldebrid" {% if user_data.streaming_provider.service=='alldebrid' %}selected{% endif %}>All Debrid</option>
-                        <option value="debridcloud" {% if user_data.streaming_provider.service=='debridcloud' %}selected{% endif %}>Debrid Cloud</option>
+                        <option value="" {% if not user_data.streaming_provider.service %}selected{% endif %}>Direct Torrent</option>
+                        <option value="realdebrid" {% if user_data.streaming_provider.service=='realdebrid' %}selected{% endif %}>Real-Debrid</option>
                         <option value="seedr" {% if user_data.streaming_provider.service=='seedr' %}selected{% endif %}>Seedr.cc</option>
                     </select>
                 </div>
 
-                <!-- Seedr OAuth -->
-                <div id="seedr_oauth" class="mb-3" style="display:none">
-                    <button type="button" id="seedr_oauth_btn" class="btn">Authorize with Seedr</button>
-                    <div id="seedr_device_code" class="mt-2" style="display:none;">
-                        Your device code: <span id="device_code_display"></span><br>
-                        Please go to <a href="https://www.seedr.cc/devices" target="_blank">https://www.seedr.cc/devices</a> and enter the code.
+                <!-- OAuth Section -->
+                <div id="oauth_section" class="mb-3" style="display:none">
+                    <button type="button" id="oauth_btn" class="btn">Authorize</button>
+                    <div id="device_code_section" class="mt-2" style="display:none;">
+                        To complete the authorization, follow these steps:
+                        <ol>
+                            <li>Visit the authorization link: <a id="verification_link" href="#" target="_blank">#</a></li>
+                            <li>Enter the device code provided below into the authorization page.</li>
+                        </ol>
+                        Your device code: <strong><span id="device_code_display"></span></strong>
                     </div>
                 </div>
+
 
                 <!-- Token for Providers -->
                 <div id="token_input" class="mb-3" style="display:none">
@@ -134,159 +137,7 @@
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-<script>
-    const seedrOAuthBtn = document.getElementById('seedr_oauth_btn');
-    let isAuthorizing = false;
-
-    function updateProviderFields() {
-        const provider = document.getElementById('provider_service').value;
-        const providerToken = document.getElementById('provider_token').value;
-        const seedrOauthDiv = document.getElementById('seedr_oauth');
-        const tokenInputDiv = document.getElementById('token_input');
-
-        if (provider === 'seedr') {
-            tokenInputDiv.style.display = 'block';
-            // If the token input is filled, hide the seedr_oauth div, else show it.
-            if (providerToken) {
-                seedrOauthDiv.style.display = 'none';
-            } else {
-                seedrOauthDiv.style.display = 'block';
-            }
-        } else if (provider) {  // Handle other providers
-            tokenInputDiv.style.display = 'block';
-            seedrOauthDiv.style.display = 'none';
-        } else {
-            tokenInputDiv.style.display = 'none';
-            seedrOauthDiv.style.display = 'none';
-        }
-    }
-
-
-    document.getElementById('provider_token').addEventListener('input', function () {
-        const provider = document.getElementById('provider_service').value;
-        const providerToken = this.value;
-        const seedrOauthDiv = document.getElementById('seedr_oauth');
-
-        // Only show/hide the seedr_oauth div if the provider is Seedr.
-        if (provider === 'seedr') {
-            if (providerToken) {
-                seedrOauthDiv.style.display = 'none';
-            } else {
-                seedrOauthDiv.style.display = 'block';
-            }
-        }
-    });
-
-
-    seedrOAuthBtn.addEventListener('click', async function () {
-        if (isAuthorizing) {
-            return;  // Don't proceed if there's an ongoing authorization process
-        }
-
-        // Disable the button immediately to prevent multiple requests
-        seedrOAuthBtn.disabled = true;
-        document.getElementById('provider_token').disabled = true;  // Disable the token input
-
-        try {
-            const response = await fetch('/seedr/get-device-code');
-            const data = await response.json();
-            if (data.device_code) {
-                document.getElementById('device_code_display').textContent = data.user_code;
-                document.getElementById('seedr_device_code').style.display = 'block';
-                isAuthorizing = true;
-                checkAuthorization(data.device_code);
-            }
-        } catch (error) {
-            console.error('Error fetching Seedr device code from backend:', error);
-        }
-    });
-
-
-    function checkAuthorization(deviceCode) {
-        setTimeout(async function () {
-            try {
-                const response = await fetch('/seedr/authorize', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({device_code: deviceCode})
-                });
-                const data = await response.json();
-                if (data.token) {
-                    const tokenInput = document.getElementById('provider_token');
-                    tokenInput.value = data.token;
-                    isAuthorizing = false;  // Authorization process is complete
-                    seedrOAuthBtn.disabled = false;  // Re-enable the button
-                    tokenInput.disabled = false;
-                    document.getElementById('seedr_oauth').style.display = 'none';
-                } else {
-                    checkAuthorization(deviceCode);  // Continue checking
-                }
-            } catch (error) {
-                console.error('Error checking Seedr authorization from backend:', error);
-                isAuthorizing = false;  // Authorization process has failed
-                seedrOAuthBtn.disabled = false;  // Re-enable the button
-            }
-        }, 10000); // Checking every 10 seconds
-    }
-
-
-    document.getElementById('configForm').addEventListener('submit', async function (event) {
-        event.preventDefault();
-
-        const provider = document.getElementById('provider_service').value;
-        let isValid = true;
-
-        const validateInput = (elementId, condition) => {
-            const element = document.getElementById(elementId);
-            if (condition) {
-                element.classList.remove('is-invalid');
-            } else {
-                element.classList.add('is-invalid');
-                isValid = false;
-            }
-        };
-
-        if (provider) {
-            validateInput('provider_token', document.getElementById('provider_token').value);
-        }
-
-        if (isValid) {
-            let streamingProviderData = null;
-            let tokenValue = document.getElementById('provider_token').value;
-
-            if (provider) {
-                streamingProviderData = {
-                    service: provider,
-                    token: tokenValue ? tokenValue : null,
-                };
-            }
-            const userData = {
-                streaming_provider: streamingProviderData,
-                preferred_movie_languages: Array.from(document.querySelectorAll('input[name="preferred_movie_languages"]:checked')).map(el => el.value),
-                preferred_series_languages: Array.from(document.querySelectorAll('input[name="preferred_series_languages"]:checked')).map(el => el.value)
-            };
-
-            try {
-                const response = await fetch('/encrypt-user-data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(userData)
-                });
-
-                const data = await response.json();
-                window.location.href = "stremio://" + window.location.host + "/" + data.encrypted_str + "/manifest.json";
-            } catch (error) {
-                console.error('Error encrypting user data:', error);
-            }
-        }
-    });
-
-    updateProviderFields();
-</script>
+<script src="/static/config_script.js"></script>
 </body>
 
 </html>

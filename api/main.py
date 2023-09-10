@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse, FileResponse
 
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.seedr.api import router as seedr_router
+from streaming_providers.realdebrid.api import router as realdebrid_router
 from db import database, crud, schemas
 from db.config import settings
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
@@ -227,3 +228,4 @@ async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str
 
 
 app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
+app.include_router(realdebrid_router, prefix="/realdebrid", tags=["realdebrid"])
