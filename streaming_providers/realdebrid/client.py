@@ -101,7 +101,6 @@ class RealDebrid:
             token = self.encode_token_data(
                 response_data["client_id"], response_data["client_secret"], token_data["refresh_token"]
             )
-            self.encoded_token = token
             return {"token": token}
         else:
             return token_data
