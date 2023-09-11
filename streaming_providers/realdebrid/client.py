@@ -21,7 +21,9 @@ class RealDebrid:
         if self.encoded_token:
             self.disable_access_token()
 
-    def _make_request(self, method: str, url: str, data=None, params=None, is_return_none=False) -> dict:
+    def _make_request(
+        self, method: str, url: str, data=None, params=None, is_return_none=False, is_expected_to_fail=False
+    ) -> dict:
         if method == "GET":
             response = requests.get(url, params=params, headers=self.headers)
         elif method == "POST":
@@ -34,11 +36,14 @@ class RealDebrid:
         try:
             response.raise_for_status()
         except RequestException as e:
-            if e.response.status_code == 401:
+            if is_expected_to_fail:
+                pass
+            elif e.response.status_code == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
-            raise ProviderException(
-                f"status code: {e.response.status_code}, data: {e.response.content}", "api_error.mp4"
-            )
+            else:
+                raise ProviderException(
+                    f"status code: {e.response.status_code}, data: {e.response.content}", "api_error.mp4"
+                )
 
         if is_return_none:
             return {}
@@ -90,6 +95,7 @@ class RealDebrid:
             "GET",
             f"{self.OAUTH_URL}/device/credentials",
             params={"client_id": self.OPENSOURCE_CLIENT_ID, "code": device_code},
+            is_expected_to_fail=True,
         )
 
         if "client_secret" not in response_data:
