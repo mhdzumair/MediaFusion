@@ -96,7 +96,11 @@ async def get_favicon():
 
 @app.get("/configure")
 @app.get("/{secret_str}/configure")
-async def configure(request: Request, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)):
+async def configure(
+    response: Response, request: Request, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)
+):
+    response.headers.update(headers)
+    response.headers.update(no_cache_headers)
     if user_data.streaming_provider:
         user_data.streaming_provider.token = None
     return TEMPLATES.TemplateResponse("configure.html", {"request": request, "user_data": user_data.model_dump()})
@@ -106,6 +110,7 @@ async def configure(request: Request, user_data: schemas.UserData = Depends(cryp
 @app.get("/{secret_str}/manifest.json")
 async def get_manifest(response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)):
     response.headers.update(headers)
+    response.headers.update(no_cache_headers)
     user_catalog_ids = generate_catalog_ids(user_data.preferred_movie_languages, user_data.preferred_series_languages)
     filtered_catalogs = [cat for cat in manifest["catalogs"] if cat["id"] in user_catalog_ids]
     manifest["catalogs"] = filtered_catalogs
