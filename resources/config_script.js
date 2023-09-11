@@ -70,7 +70,7 @@ function checkAuthorization(deviceCode, authorizeUrl) {
             console.error('Error checking authorization:', error);
             oAuthBtn.disabled = false;
         }
-    }, 10000);
+    }, 5000);
 }
 
 
