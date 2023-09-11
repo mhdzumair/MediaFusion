@@ -44,8 +44,6 @@ no_cache_headers = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
-with open("resources/manifest.json") as file:
-    manifest = json.load(file)
 
 
 @app.on_event("startup")
@@ -111,6 +109,9 @@ async def configure(
 async def get_manifest(response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
+    with open("resources/manifest.json") as file:
+        manifest = json.load(file)
+
     user_catalog_ids = generate_catalog_ids(user_data.preferred_movie_languages, user_data.preferred_series_languages)
     filtered_catalogs = [cat for cat in manifest["catalogs"] if cat["id"] in user_catalog_ids]
     manifest["catalogs"] = filtered_catalogs
