@@ -47,7 +47,7 @@ LANGUAGE_CATALOGS = {
     "English": {"movie": ["english_hdrip", "english_tcrip"], "series": ["english_series"]},
 }
 
-ALWAYS_ENABLED = ["tamil_blasters", "tamil_blasters", "any_any"]
+ALWAYS_ENABLED = ["tamil_blasters"]
 
 TRACKERS = [
     "udp://tracker.openbittorrent.com:80/announce",

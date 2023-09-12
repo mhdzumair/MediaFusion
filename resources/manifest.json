@@ -62,17 +62,6 @@
 	  ]
 	},
 	{
-	  "id": "any_any",
-	  "type": "movie",
-	  "name": "TamilBlaster New Movies",
-	  "extra": [
-		{
-		  "name": "skip",
-		  "isRequired": false
-		}
-	  ]
-	},
-	{
 	  "id": "tamil_hdrip",
 	  "type": "movie",
 	  "name": "Tamil HD Movies",
