@@ -161,11 +161,23 @@ async def get_meta(catalog_type: Literal["movie", "series"], meta_id: str, respo
     return await crud.get_series_meta(meta_id)
 
 
-@app.get("/{secret_str}/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams)
-@app.get("/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams)
-@app.get("/{secret_str}/stream/{catalog_type}/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
-@app.get("/stream/{catalog_type}/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
-async def get_movie_streams(
+@app.get(
+    "/{secret_str}/stream/{catalog_type}/{video_id}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+)
+@app.get("/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams, response_model_exclude_none=True)
+@app.get(
+    "/{secret_str}/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+)
+@app.get(
+    "/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+)
+async def get_streams(
     catalog_type: Literal["movie", "series"],
     video_id: str,
     response: Response,
