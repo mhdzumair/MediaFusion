@@ -204,6 +204,7 @@ async def get_streams(
             stream.infoHash = None
             stream.behaviorHints = {"notWebReady": True}
 
+    fetched_streams.reverse()
     streams.streams.extend(fetched_streams)
     return streams
 
