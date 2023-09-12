@@ -1,3 +1,5 @@
+import traceback
+
 from requests import RequestException, JSONDecodeError
 from typing import Any
 
@@ -35,22 +37,28 @@ class RealDebrid:
 
         try:
             response.raise_for_status()
-        except RequestException as e:
+        except RequestException as error:
             if is_expected_to_fail:
                 pass
-            elif e.response.status_code == 401:
+            elif error.response.status_code == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
             else:
+                formatted_traceback = "".join(traceback.format_exception(error))
                 raise ProviderException(
-                    f"status code: {e.response.status_code}, data: {e.response.content}", "api_error.mp4"
+                    f"status code: {error.response.status_code}, data: {error.response.content}, trace log:\n {formatted_traceback}",
+                    "api_error.mp4",
                 )
 
         if is_return_none:
             return {}
         try:
             return response.json()
-        except JSONDecodeError:
-            raise ProviderException(f"Failed to parse response. content: {response.text}", "api_error.mp4")
+        except JSONDecodeError as error:
+            formatted_traceback = "".join(traceback.format_exception(error))
+            raise ProviderException(
+                f"Failed to parse response. content: {response.text}, trace log:\n {formatted_traceback}",
+                "api_error.mp4",
+            )
 
     def initialize_headers(self):
         if self.encoded_token:

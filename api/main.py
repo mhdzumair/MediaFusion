@@ -22,7 +22,9 @@ from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from utils import scrap, crypto, torrent
 from utils.parser import generate_catalog_ids, clean_name
 
-logging.basicConfig(format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=logging.INFO)
+logging.basicConfig(
+    format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=settings.logging_level
+)
 app = FastAPI()
 
 app.add_middleware(
