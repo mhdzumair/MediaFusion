@@ -241,9 +241,13 @@ async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str
 
     try:
         if user_data.streaming_provider.service == "seedr":
-            video_url = get_direct_link_from_seedr(info_hash, magnet_link, user_data.streaming_provider.token, name)
+            video_url = get_direct_link_from_seedr(
+                info_hash, magnet_link, user_data.streaming_provider.token, name, max_retries=3, retry_interval=1
+            )
         else:
-            video_url = get_direct_link_from_realdebrid(info_hash, magnet_link, user_data.streaming_provider.token)
+            video_url = get_direct_link_from_realdebrid(
+                info_hash, magnet_link, user_data.streaming_provider.token, max_retries=3, retry_interval=1
+            )
     except ProviderException as error:
         logging.info("Exception occurred: %s", error.message)
         video_url = f"{settings.host_url}/static/{error.video_file_name}"
