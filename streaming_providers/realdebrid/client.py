@@ -146,4 +146,13 @@ class RealDebrid:
                 return torrent
 
     def create_download_link(self, link):
-        return self._make_request("POST", f"{self.BASE_URL}/unrestrict/link", data={"link": link})
+        response = self._make_request(
+            "POST", f"{self.BASE_URL}/unrestrict/link", data={"link": link}, is_expected_to_fail=True
+        )
+        if "download" in response:
+            return response
+
+        if "error_code" in response:
+            if response["error_code"] == 23:
+                raise ProviderException("Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4")
+        raise ProviderException(f"Failed to create download link. response: {response}", "api_error.mp4")
