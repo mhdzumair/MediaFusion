@@ -187,7 +187,6 @@ async def get_streams(
     user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
-    response.headers.update(no_cache_headers)
     streams = schemas.Streams()
     if catalog_type == "movie":
         fetched_streams = await crud.get_movie_streams(user_data, video_id)
