@@ -22,7 +22,9 @@ from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from utils import scrap, crypto, torrent
 from utils.parser import generate_catalog_ids, clean_name
 
-logging.basicConfig(format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=logging.INFO)
+logging.basicConfig(
+    format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=settings.logging_level
+)
 app = FastAPI()
 
 app.add_middleware(
@@ -66,6 +68,8 @@ async def stop_scheduler():
 
 @app.get("/")
 async def get_home(request: Request):
+    with open("resources/manifest.json") as file:
+        manifest = json.load(file)
     return TEMPLATES.TemplateResponse(
         "home.html",
         {
@@ -157,11 +161,23 @@ async def get_meta(catalog_type: Literal["movie", "series"], meta_id: str, respo
     return await crud.get_series_meta(meta_id)
 
 
-@app.get("/{secret_str}/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams)
-@app.get("/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams)
-@app.get("/{secret_str}/stream/{catalog_type}/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
-@app.get("/stream/{catalog_type}/{video_id}:{season}:{episode}.json", response_model=schemas.Streams)
-async def get_movie_streams(
+@app.get(
+    "/{secret_str}/stream/{catalog_type}/{video_id}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+)
+@app.get("/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams, response_model_exclude_none=True)
+@app.get(
+    "/{secret_str}/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+)
+@app.get(
+    "/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+)
+async def get_streams(
     catalog_type: Literal["movie", "series"],
     video_id: str,
     response: Response,
@@ -171,7 +187,6 @@ async def get_movie_streams(
     user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
-    response.headers.update(no_cache_headers)
     streams = schemas.Streams()
     if catalog_type == "movie":
         fetched_streams = await crud.get_movie_streams(user_data, video_id)
@@ -188,6 +203,7 @@ async def get_movie_streams(
             stream.infoHash = None
             stream.behaviorHints = {"notWebReady": True}
 
+    fetched_streams.reverse()
     streams.streams.extend(fetched_streams)
     return streams
 
@@ -224,9 +240,13 @@ async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str
 
     try:
         if user_data.streaming_provider.service == "seedr":
-            video_url = get_direct_link_from_seedr(info_hash, magnet_link, user_data.streaming_provider.token, name)
+            video_url = get_direct_link_from_seedr(
+                info_hash, magnet_link, user_data.streaming_provider.token, name, max_retries=3, retry_interval=1
+            )
         else:
-            video_url = get_direct_link_from_realdebrid(info_hash, magnet_link, user_data.streaming_provider.token)
+            video_url = get_direct_link_from_realdebrid(
+                info_hash, magnet_link, user_data.streaming_provider.token, max_retries=3, retry_interval=1
+            )
     except ProviderException as error:
         logging.info("Exception occurred: %s", error.message)
         video_url = f"{settings.host_url}/static/{error.video_file_name}"
