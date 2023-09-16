@@ -39,7 +39,12 @@ Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/stream/movie/ty59908866309236.json
+GET http://127.0.0.1:8000/meta/series/tb167521139113435.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/{{secret_str}}/stream/series/tb167521139113435:2:132.json
 Accept: application/json
 
 ###

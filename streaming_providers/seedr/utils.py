@@ -2,6 +2,7 @@ import time
 from seedrcc import Seedr
 
 from streaming_providers.exceptions import ProviderException
+from utils.parser import select_episode_file
 
 
 def check_torrent_status(seedr, info_hash: str):
@@ -46,6 +47,8 @@ def wait_for_torrent_to_complete(seedr, info_hash: str, max_retries: int, retry_
     retries = 0
     while retries < max_retries:
         torrent = check_torrent_status(seedr, info_hash)
+        if torrent is None:
+            return  # Torrent was already downloaded
         if torrent and torrent.get("progress") == "100":
             return
         time.sleep(retry_interval)
@@ -54,14 +57,22 @@ def wait_for_torrent_to_complete(seedr, info_hash: str, max_retries: int, retry_
     raise ProviderException("Torrent not downloaded yet.", "torrent_not_downloaded.mp4")
 
 
-def get_largest_file_details_from_folder(seedr, folder_id: int):
+def get_file_details_from_folder(seedr, folder_id: int, episode: int | None):
     """Gets the details of the largest file in a given folder."""
     folder_content = seedr.listContents(folder_id)
+    if episode:
+        return select_episode_file(folder_content["files"], episode, "name")
     return max(folder_content["files"], key=lambda x: x["size"])
 
 
 def get_direct_link_from_seedr(
-    info_hash: str, magnet_link: str, token: str, torrent_name: str, max_retries=5, retry_interval=5
+    info_hash: str,
+    magnet_link: str,
+    token: str,
+    torrent_name: str,
+    episode: str | None,
+    max_retries=5,
+    retry_interval=5,
 ) -> str:
     """Gets a direct download link from Seedr using a magnet link and token."""
     seedr = Seedr(token=token)
@@ -78,13 +89,15 @@ def get_direct_link_from_seedr(
             folder_title = torrent["name"]
         else:
             folder_title = add_magnet_and_get_torrent(seedr, magnet_link, info_hash)
-        wait_for_torrent_to_complete(seedr, info_hash, max_retries, retry_interval)
-        folder_id = check_folder_status(seedr, folder_title)["id"]
+        folder = check_folder_status(seedr, folder_title)
+        if not folder:
+            wait_for_torrent_to_complete(seedr, info_hash, max_retries, retry_interval)
+            folder = check_folder_status(seedr, folder_title)
+        folder_id = folder["id"]
         if torrent_name != folder_title:
             seedr.renameFolder(folder_id, torrent_name)
 
-    # Get the largest file's direct link
-    largest_file = get_largest_file_details_from_folder(seedr, folder_id)
-    video_link = seedr.fetchFile(largest_file["folder_file_id"])["url"]
+    selected_file = get_file_details_from_folder(seedr, folder_id, episode)
+    video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
     return video_link

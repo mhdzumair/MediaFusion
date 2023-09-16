@@ -58,18 +58,25 @@ async def get_movie_streams(user_data, video_id: str) -> list[Stream]:
     return stream_data
 
 
-async def get_series_streams(user_data, video_id: str, season: int, episode: str) -> list[Stream]:
+async def get_series_streams(user_data, video_id: str, season: int, episode: int) -> list[Stream]:
     series_data = await get_movies_data(video_id, video_type="series")
     if not series_data:
         return []
 
     stream_data = []
     for series in series_data:
-        if series.episode == episode and series.season == season:
-            stream_data.extend(
-                extract_stream_details(
-                    f"{series.name} {series.season}:{series.episode}", series.video_qualities, user_data
+        if "-" in series.episode:
+            # Episode range detected in the database
+            start_ep, end_ep = map(int, series.episode.split("-"))
+            if start_ep <= episode <= end_ep and series.season == season:
+                stream_data.extend(
+                    extract_stream_details(
+                        f"{series.name} {series.season}:{series.episode}", series.video_qualities, user_data
+                    )
                 )
+        elif int(series.episode) == episode and series.season == season:
+            stream_data.extend(
+                extract_stream_details(f"{series.name} {series.season}:{episode}", series.video_qualities, user_data)
             )
 
     return stream_data
@@ -117,15 +124,30 @@ async def get_series_meta(meta_id: str):
         }
     }
     for series in series_data:
-        metadata["meta"]["videos"].append(
-            {
-                "id": f"{meta_id}:{series.season}:{series.episode}",
-                "name": f"{series.name} S{series.season} EP{series.episode}",
-                "season": series.season,
-                "episode": series.episode,
-                "released": series.created_at,
-            }
-        )
+        if "-" in series.episode:
+            # Episode range detected
+            start_ep, end_ep = map(int, series.episode.split("-"))
+            for ep_num in range(start_ep, end_ep + 1):
+                metadata["meta"]["videos"].append(
+                    {
+                        "id": f"{meta_id}:{series.season}:{ep_num}",
+                        "name": f"S{series.season} EP{ep_num}",
+                        "season": series.season,
+                        "episode": ep_num,
+                        "released": series.created_at,
+                    }
+                )
+        else:
+            episode = int(series.episode)
+            metadata["meta"]["videos"].append(
+                {
+                    "id": f"{meta_id}:{series.season}:{episode}",
+                    "name": f"S{series.season} EP{episode}",
+                    "season": series.season,
+                    "episode": episode,
+                    "released": series.created_at,
+                }
+            )
 
     return metadata
 
