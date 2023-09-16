@@ -1,6 +1,8 @@
+import PTN
 import re
 
 from db.schemas import Stream
+from streaming_providers.exceptions import ProviderException
 from utils.site_data import ALWAYS_ENABLED, LANGUAGE_CATALOGS
 
 
@@ -72,3 +74,15 @@ def clean_name(name: str) -> str:
     # Only allow alphanumeric characters, spaces, and `.,:_-`
     cleaned_name = re.sub(r"[^a-zA-Z0-9 .,:_-]", "", name)
     return cleaned_name
+
+
+def select_episode_file(torrent_files: list, episode: int, file_name_key: str) -> dict:
+    """Select the file with the specified episode number."""
+
+    for file in torrent_files:
+        torrent_data = PTN.parse(file[file_name_key])
+        file_episode = torrent_data.get("episode")
+        if file_episode and int(file_episode) == episode:
+            return file
+    else:
+        raise ProviderException(f"Episode {episode} not found in this torrent", "episode_not_found.mp4")

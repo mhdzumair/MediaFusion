@@ -1,23 +1,21 @@
-from urllib.parse import quote
-
 import json
 import logging
-from typing import Literal
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, BackgroundTasks, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse, FileResponse
+from typing import Literal
+from urllib.parse import quote
 
-from streaming_providers.exceptions import ProviderException
-from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
-from streaming_providers.seedr.api import router as seedr_router
-from streaming_providers.realdebrid.api import router as realdebrid_router
 from db import database, crud, schemas
 from db.config import settings
+from streaming_providers.exceptions import ProviderException
+from streaming_providers.realdebrid.api import router as realdebrid_router
+from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
+from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from utils import scrap, crypto, torrent
 from utils.parser import generate_catalog_ids, clean_name
@@ -183,7 +181,7 @@ async def get_streams(
     response: Response,
     secret_str: str = None,
     season: int = None,
-    episode: str = None,
+    episode: int = None,
     user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
@@ -196,9 +194,10 @@ async def get_streams(
     if user_data.streaming_provider:
         for stream in fetched_streams:
             torrent_name = quote(clean_name(f"{stream.stream_name} {stream.description}"))
-            proxy_url = (
+            base_proxy_url = (
                 f"{settings.host_url}/{secret_str}/streaming_provider?info_hash={stream.infoHash}&name={torrent_name}"
             )
+            proxy_url = f"{base_proxy_url}&episode={episode}" if episode is not None else base_proxy_url
             stream.url = proxy_url
             stream.infoHash = None
             stream.behaviorHints = {"notWebReady": True}
@@ -228,7 +227,9 @@ async def encrypt_user_data(user_data: schemas.UserData):
 
 
 @app.get("/{secret_str}/streaming_provider")
-async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str, response: Response, request: Request):
+async def streaming_provider_endpoint(
+    secret_str: str, info_hash: str, name: str, response: Response, episode: int = None
+):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
 
@@ -241,11 +242,11 @@ async def streaming_provider_endpoint(secret_str: str, info_hash: str, name: str
     try:
         if user_data.streaming_provider.service == "seedr":
             video_url = get_direct_link_from_seedr(
-                info_hash, magnet_link, user_data.streaming_provider.token, name, max_retries=3, retry_interval=1
+                info_hash, magnet_link, user_data.streaming_provider.token, name, episode, 3, 1
             )
         else:
             video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data.streaming_provider.token, max_retries=3, retry_interval=1
+                info_hash, magnet_link, user_data.streaming_provider.token, episode, 3, 1
             )
     except ProviderException as error:
         logging.info("Exception occurred: %s", error.message)

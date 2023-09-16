@@ -1,3 +1,4 @@
+import PTN
 import traceback
 
 from requests import RequestException, JSONDecodeError
@@ -139,11 +140,15 @@ class RealDebrid:
             "POST", f"{self.BASE_URL}/torrents/selectFiles/{torrent_id}", data={"files": file_ids}, is_return_none=True
         )
 
-    def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
+    def get_available_torrent(self, info_hash, episode: int | None) -> dict[str, Any] | None:
         available_torrents = self.get_user_torrent_list()
         for torrent in available_torrents:
             if torrent["hash"] == info_hash:
-                return torrent
+                if episode is None:
+                    return torrent
+                torrent_name = PTN.parse(torrent["filename"])
+                if "episode" in torrent_name and int(torrent_name["episode"]) == episode:
+                    return torrent
 
     def create_download_link(self, link):
         response = self._make_request(
