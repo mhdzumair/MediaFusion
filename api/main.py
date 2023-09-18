@@ -17,7 +17,8 @@ from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
-from utils import scrap, crypto, torrent
+from scrappers import tamil_blasters_scrapper as tb_scrapper
+from utils import crypto, torrent
 from utils.parser import generate_catalog_ids, clean_name
 
 logging.basicConfig(
@@ -54,7 +55,7 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(scrap.run_schedule_scrape, CronTrigger(hour="*/3"))
+    scheduler.add_job(tb_scrapper.run_schedule_scrape, CronTrigger(hour="*/3"))
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -216,7 +217,7 @@ def run_scraper(
     start_page: int = 1,
     is_scrape_home: bool = False,
 ):
-    background_tasks.add_task(scrap.run_scraper, language, video_type, pages, start_page, is_scrape_home)
+    background_tasks.add_task(tb_scrapper.run_scraper, language, video_type, pages, start_page, is_scrape_home)
     return {"message": "Scraping in background..."}
 
 

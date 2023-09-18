@@ -5,12 +5,12 @@
 > All the credits goes to Tamil Blasters. I encourage you to use the website.
 
 
-![alt TamilBlasters](resources/tamilblasters.png?raw=true)
+![alt TamilBlasters](resources/images/tamilblasters.png?raw=true)
 
 # Tamil Blasters Stremio Addon
 
 Stremio Addon for Tamil Blasters Movies & Series.
-![alt TamilBlasters](resources/ss.png?raw=true)
+![alt TamilBlasters](resources/images/ss.png?raw=true)
 
 ## Installation
 
