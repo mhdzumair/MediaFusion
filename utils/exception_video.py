@@ -23,6 +23,6 @@ def create_text_video(output_path, text, duration=30, resolution=(1280, 720), fo
 
 if __name__ == "__main__":
     create_text_video(
-        "../resources/transfer_error.mp4",
+        "../resources/exceptions/transfer_error.mp4",
         "Error transferring magnet link.\nProbably be No seeders available for this torrent.",
     )

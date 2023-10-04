@@ -1,10 +1,10 @@
 {
-  "id": "mhdzumair.addons.tamilblasters",
-  "version": "2.0.0",
-  "name": "Tamil Blasters",
+  "id": "mhdzumair.addons.mediafusion",
+  "version": "3.0.0",
+  "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
-  "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series with the TamilBlasters add-on. Created by Mohamed Zumair. Source: https://github.com/mhdzumair/tamilblasters_streamio_addon",
-  "logo": "https://882b9915d0fe-stremio-tamilblasters.baby-beamup.club/static/tamilblasters.png",
+  "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
+  "logo": "http://127.0.0.1:8000/static/images/mediafusion_logo.png",
   "behaviorHints": {
 	"configurable": true,
 	"configurationRequired": false
@@ -19,7 +19,7 @@
 	  ],
 	  "idPrefixes": [
 		"tt",
-		"tb"
+		"mf"
 	  ]
 	},
 	{
@@ -30,7 +30,7 @@
 	  ],
 	  "idPrefixes": [
 		"tt",
-		"tb"
+		"mf"
 	  ]
 	}
   ],

@@ -10,22 +10,23 @@ class Catalog(BaseModel):
 
 
 class Meta(BaseModel):
-    id: Any
-    name: str
+    id: str
+    name: str = Field(alias="title")
     type: str = Field(default="movie")
     poster: str
+    videos: list | None = None
 
 
-class Movie(BaseModel):
+class Metas(BaseModel):
     metas: list[Meta] = []
 
 
 class Stream(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    name: str
+    description: str
     infoHash: str | None = None
+    fileIdx: int | None = None
     url: str | None = None
-    stream_name: str | None = Field(exclude=True)
     behaviorHints: dict[str, Any] | None = None
 
 
@@ -44,10 +45,26 @@ class StreamingProvider(BaseModel):
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
     preferred_movie_languages: list[str] = Field(
-        default=["Tamil", "Malayalam", "Telugu", "Hindi", "Kannada", "English", "Dubbed"]
+        default=[
+            "Tamil",
+            "Malayalam",
+            "Telugu",
+            "Hindi",
+            "Kannada",
+            "English",
+            "Dubbed",
+        ]
     )
     preferred_series_languages: list[str] = Field(
-        default=["Tamil", "Malayalam", "Telugu", "Hindi", "Kannada", "English", "Dubbed"]
+        default=[
+            "Tamil",
+            "Malayalam",
+            "Telugu",
+            "Hindi",
+            "Kannada",
+            "English",
+            "Dubbed",
+        ]
     )
 
     class Config:
@@ -56,3 +73,7 @@ class UserData(BaseModel):
 
 class AuthorizeData(BaseModel):
     device_code: str
+
+
+class MetaIdProjection(BaseModel):
+    id: str

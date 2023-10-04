@@ -1,5 +1,7 @@
 import json
 import logging
+from typing import Literal, Optional
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, BackgroundTasks, Depends, HTTPException
@@ -7,21 +9,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from typing import Literal
-from urllib.parse import quote
 
 from db import database, crud, schemas
 from db.config import settings
+from scrappers import tamil_blasters_scrapper as tb_scrapper
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
-from utils import scrap, crypto, torrent
-from utils.parser import generate_catalog_ids, clean_name
+from utils import crypto, torrent
+from utils.parser import generate_catalog_ids
 
 logging.basicConfig(
-    format="%(levelname)s::%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S", level=settings.logging_level
+    format="%(levelname)s::%(asctime)s - %(message)s",
+    datefmt="%d-%b-%y %H:%M:%S",
+    level=settings.logging_level,
 )
 app = FastAPI()
 
@@ -54,7 +57,7 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(scrap.run_schedule_scrape, CronTrigger(hour="*/3"))
+    scheduler.add_job(tb_scrapper.run_schedule_scrape, CronTrigger(hour="*/3"))
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -64,12 +67,12 @@ async def stop_scheduler():
     app.state.scheduler.shutdown(wait=False)
 
 
-@app.get("/")
+@app.get("/", tags=["home"])
 async def get_home(request: Request):
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
     return TEMPLATES.TemplateResponse(
-        "home.html",
+        "html/home.html",
         {
             "request": request,
             "name": manifest.get("name"),
@@ -84,47 +87,81 @@ async def get_home(request: Request):
                 "English Movies & Series",
                 "Dubbed Movies & Series",
             ],
-            "logo": "static/tamilblasters.png",
+            "logo": "static/images/mediafusion_logo.png",
         },
     )
 
 
 @app.get("/favicon.ico")
 async def get_favicon():
-    return FileResponse("resources/tamilblasters.png", media_type="image/x-icon")
+    return FileResponse(
+        "resources/images/mediafusion_logo.png", media_type="image/x-icon"
+    )
 
 
-@app.get("/configure")
-@app.get("/{secret_str}/configure")
+@app.get("/configure", tags=["configure"])
+@app.get("/{secret_str}/configure", tags=["configure"])
 async def configure(
-    response: Response, request: Request, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)
+    response: Response,
+    request: Request,
+    user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
-    if user_data.streaming_provider:
-        user_data.streaming_provider.token = None
-    return TEMPLATES.TemplateResponse("configure.html", {"request": request, "user_data": user_data.model_dump()})
+    return TEMPLATES.TemplateResponse(
+        "html/configure.html", {"request": request, "user_data": user_data.model_dump()}
+    )
 
 
-@app.get("/manifest.json")
-@app.get("/{secret_str}/manifest.json")
-async def get_manifest(response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)):
+@app.get("/manifest.json", tags=["manifest"])
+@app.get("/{secret_str}/manifest.json", tags=["manifest"])
+async def get_manifest(
+    response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)
+):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
 
-    user_catalog_ids = generate_catalog_ids(user_data.preferred_movie_languages, user_data.preferred_series_languages)
-    filtered_catalogs = [cat for cat in manifest["catalogs"] if cat["id"] in user_catalog_ids]
+    user_catalog_ids = generate_catalog_ids(
+        user_data.preferred_movie_languages, user_data.preferred_series_languages
+    )
+    filtered_catalogs = [
+        cat for cat in manifest["catalogs"] if cat["id"] in user_catalog_ids
+    ]
     manifest["catalogs"] = filtered_catalogs
 
     return manifest
 
 
-@app.get("/{secret_str}/catalog/{catalog_type}/{catalog_id}.json", response_model=schemas.Movie)
-@app.get("/catalog/{catalog_type}/{catalog_id}.json", response_model=schemas.Movie)
-@app.get("/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
-@app.get("/catalog/{catalog_type}/{catalog_id}/skip={skip}.json", response_model=schemas.Movie)
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/catalog/{catalog_type}/{catalog_id}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/catalog/{catalog_type}/{catalog_id}/skip={skip}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
 async def get_catalog(
     response: Response,
     catalog_type: Literal["movie", "series"],
@@ -132,13 +169,21 @@ async def get_catalog(
     skip: int = 0,
 ):
     response.headers.update(headers)
-    movies = schemas.Movie()
-    movies.metas.extend(await crud.get_movies_and_series_meta(catalog_id, skip))
-    return movies
+    metas = schemas.Metas()
+    metas.metas.extend(await crud.get_meta_list(catalog_type, catalog_id, skip))
+    return metas
 
 
-@app.get("/{secret_str}/catalog/{catalog_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
-@app.get("/catalog/{catalog_type}/tamil_blasters/search={search_query}.json", response_model=schemas.Movie)
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/tamil_blasters/search={search_query}.json",
+    response_model=schemas.Metas,
+    tags=["search"],
+)
+@app.get(
+    "/catalog/{catalog_type}/tamil_blasters/search={search_query}.json",
+    response_model=schemas.Metas,
+    tags=["search"],
+)
 async def search_movie(
     response: Response,
     catalog_type: Literal["movie", "series"],
@@ -150,9 +195,11 @@ async def search_movie(
     return await crud.process_search_query(search_query, catalog_type)
 
 
-@app.get("/{secret_str}/meta/{catalog_type}/{meta_id}.json")
-@app.get("/meta/{catalog_type}/{meta_id}.json")
-async def get_meta(catalog_type: Literal["movie", "series"], meta_id: str, response: Response):
+@app.get("/{secret_str}/meta/{catalog_type}/{meta_id}.json", tags=["meta"])
+@app.get("/meta/{catalog_type}/{meta_id}.json", tags=["meta"])
+async def get_meta(
+    catalog_type: Literal["movie", "series"], meta_id: str, response: Response
+):
     response.headers.update(headers)
     if catalog_type == "movie":
         return await crud.get_movie_meta(meta_id)
@@ -163,17 +210,25 @@ async def get_meta(catalog_type: Literal["movie", "series"], meta_id: str, respo
     "/{secret_str}/stream/{catalog_type}/{video_id}.json",
     response_model=schemas.Streams,
     response_model_exclude_none=True,
+    tags=["stream"],
 )
-@app.get("/stream/{catalog_type}/{video_id}.json", response_model=schemas.Streams, response_model_exclude_none=True)
+@app.get(
+    "/stream/{catalog_type}/{video_id}.json",
+    response_model=schemas.Streams,
+    response_model_exclude_none=True,
+    tags=["stream"],
+)
 @app.get(
     "/{secret_str}/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
     response_model=schemas.Streams,
     response_model_exclude_none=True,
+    tags=["stream"],
 )
 @app.get(
     "/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
     response_model=schemas.Streams,
     response_model_exclude_none=True,
+    tags=["stream"],
 )
 async def get_streams(
     catalog_type: Literal["movie", "series"],
@@ -185,50 +240,46 @@ async def get_streams(
     user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
-    streams = schemas.Streams()
+
     if catalog_type == "movie":
-        fetched_streams = await crud.get_movie_streams(user_data, video_id)
+        fetched_streams = await crud.get_movie_streams(user_data, secret_str, video_id)
     else:
-        fetched_streams = await crud.get_series_streams(user_data, video_id, season, episode)
+        fetched_streams = await crud.get_series_streams(
+            user_data, secret_str, video_id, season, episode
+        )
 
-    if user_data.streaming_provider:
-        for stream in fetched_streams:
-            torrent_name = quote(clean_name(f"{stream.stream_name} {stream.description}"))
-            base_proxy_url = (
-                f"{settings.host_url}/{secret_str}/streaming_provider?info_hash={stream.infoHash}&name={torrent_name}"
-            )
-            proxy_url = f"{base_proxy_url}&episode={episode}" if episode is not None else base_proxy_url
-            stream.url = proxy_url
-            stream.infoHash = None
-            stream.behaviorHints = {"notWebReady": True}
-
-    fetched_streams.reverse()
-    streams.streams.extend(fetched_streams)
-    return streams
+    return {"streams": fetched_streams}
 
 
-@app.post("/scraper")
+@app.post("/scraper", tags=["scraper"])
 def run_scraper(
     background_tasks: BackgroundTasks,
-    language: Literal["tamil", "malayalam", "telugu", "hindi", "kannada", "english"] = "tamil",
+    language: Literal[
+        "tamil", "malayalam", "telugu", "hindi", "kannada", "english"
+    ] = "tamil",
     video_type: Literal["hdrip", "tcrip", "dubbed", "series"] = "hdrip",
     pages: int = 1,
     start_page: int = 1,
-    is_scrape_home: bool = False,
 ):
-    background_tasks.add_task(scrap.run_scraper, language, video_type, pages, start_page, is_scrape_home)
+    background_tasks.add_task(
+        tb_scrapper.run_scraper, language, video_type, pages, start_page
+    )
     return {"message": "Scraping in background..."}
 
 
-@app.post("/encrypt-user-data")
+@app.post("/encrypt-user-data", tags=["user_data"])
 async def encrypt_user_data(user_data: schemas.UserData):
     encrypted_str = crypto.encrypt_user_data(user_data)
     return {"encrypted_str": encrypted_str}
 
 
-@app.get("/{secret_str}/streaming_provider")
+@app.get("/{secret_str}/streaming_provider", tags=["streaming_provider"])
 async def streaming_provider_endpoint(
-    secret_str: str, info_hash: str, name: str, response: Response, episode: int = None
+    secret_str: str,
+    info_hash: str,
+    response: Response,
+    season: int = None,
+    episode: int = None,
 ):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
@@ -237,20 +288,28 @@ async def streaming_provider_endpoint(
     if not user_data.streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
 
-    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, name)
+    stream = await crud.get_stream_by_info_hash(info_hash)
+    if not stream:
+        raise HTTPException(status_code=400, detail="Stream not found.")
+
+    magnet_link = torrent.convert_info_hash_to_magnet(
+        info_hash, stream.announce_list, stream.torrent_name
+    )
+
+    episode_data = stream.get_episode(season, episode)
 
     try:
         if user_data.streaming_provider.service == "seedr":
-            video_url = get_direct_link_from_seedr(
-                info_hash, magnet_link, user_data.streaming_provider.token, name, episode, 3, 1
+            video_url = await get_direct_link_from_seedr(
+                info_hash, magnet_link, user_data, stream, episode_data, 3, 1
             )
         else:
             video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data.streaming_provider.token, episode, 3, 1
+                info_hash, magnet_link, user_data, stream, episode_data, 3, 1
             )
     except ProviderException as error:
         logging.info("Exception occurred: %s", error.message)
-        video_url = f"{settings.host_url}/static/{error.video_file_name}"
+        video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
 
     return RedirectResponse(url=video_url, headers=response.headers)
 

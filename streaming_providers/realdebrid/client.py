@@ -25,7 +25,13 @@ class RealDebrid:
             self.disable_access_token()
 
     def _make_request(
-        self, method: str, url: str, data=None, params=None, is_return_none=False, is_expected_to_fail=False
+        self,
+        method: str,
+        url: str,
+        data=None,
+        params=None,
+        is_return_none=False,
+        is_expected_to_fail=False,
     ) -> dict:
         if method == "GET":
             response = requests.get(url, params=params, headers=self.headers)
@@ -64,8 +70,12 @@ class RealDebrid:
     def initialize_headers(self):
         if self.encoded_token:
             token_data = self.decode_token_str(self.encoded_token)
-            access_token_data = self.get_token(token_data["client_id"], token_data["client_secret"], token_data["code"])
-            self.headers = {"Authorization": f"Bearer {access_token_data['access_token']}"}
+            access_token_data = self.get_token(
+                token_data["client_id"], token_data["client_secret"], token_data["code"]
+            )
+            self.headers = {
+                "Authorization": f"Bearer {access_token_data['access_token']}"
+            }
 
     @staticmethod
     def encode_token_data(client_id: str, client_secret: str, code: str):
@@ -110,18 +120,24 @@ class RealDebrid:
         if "client_secret" not in response_data:
             return response_data
 
-        token_data = self.get_token(response_data["client_id"], response_data["client_secret"], device_code)
+        token_data = self.get_token(
+            response_data["client_id"], response_data["client_secret"], device_code
+        )
 
         if "access_token" in token_data:
             token = self.encode_token_data(
-                response_data["client_id"], response_data["client_secret"], token_data["refresh_token"]
+                response_data["client_id"],
+                response_data["client_secret"],
+                token_data["refresh_token"],
             )
             return {"token": token}
         else:
             return token_data
 
     def add_magent_link(self, magnet_link):
-        return self._make_request("POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link})
+        return self._make_request(
+            "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
+        )
 
     def get_user_torrent_list(self):
         return self._make_request("GET", f"{self.BASE_URL}/torrents")
@@ -130,34 +146,44 @@ class RealDebrid:
         return self._make_request("GET", f"{self.BASE_URL}/torrents/info/{torrent_id}")
 
     def get_torrent_instant_availability(self, torrent_hash):
-        return self._make_request("GET", f"{self.BASE_URL}/torrents/instantAvailability/{torrent_hash}")
+        return self._make_request(
+            "GET", f"{self.BASE_URL}/torrents/instantAvailability/{torrent_hash}"
+        )
 
     def disable_access_token(self):
-        return self._make_request("GET", f"{self.BASE_URL}/disable_access_token", is_return_none=True)
+        return self._make_request(
+            "GET", f"{self.BASE_URL}/disable_access_token", is_return_none=True
+        )
 
     def start_torrent_download(self, torrent_id, file_ids="all"):
         return self._make_request(
-            "POST", f"{self.BASE_URL}/torrents/selectFiles/{torrent_id}", data={"files": file_ids}, is_return_none=True
+            "POST",
+            f"{self.BASE_URL}/torrents/selectFiles/{torrent_id}",
+            data={"files": file_ids},
+            is_return_none=True,
         )
 
-    def get_available_torrent(self, info_hash, episode: int | None) -> dict[str, Any] | None:
+    def get_available_torrent(self, info_hash, filename: str) -> dict[str, Any] | None:
         available_torrents = self.get_user_torrent_list()
         for torrent in available_torrents:
-            if torrent["hash"] == info_hash:
-                if episode is None:
-                    return torrent
-                torrent_name = PTN.parse(torrent["filename"])
-                if "episode" in torrent_name and int(torrent_name["episode"]) == episode:
-                    return torrent
+            if torrent["hash"] == info_hash and torrent["filename"] == filename:
+                return torrent
 
     def create_download_link(self, link):
         response = self._make_request(
-            "POST", f"{self.BASE_URL}/unrestrict/link", data={"link": link}, is_expected_to_fail=True
+            "POST",
+            f"{self.BASE_URL}/unrestrict/link",
+            data={"link": link},
+            is_expected_to_fail=True,
         )
         if "download" in response:
             return response
 
         if "error_code" in response:
             if response["error_code"] == 23:
-                raise ProviderException("Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4")
-        raise ProviderException(f"Failed to create download link. response: {response}", "api_error.mp4")
+                raise ProviderException(
+                    "Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4"
+                )
+        raise ProviderException(
+            f"Failed to create download link. response: {response}", "api_error.mp4"
+        )
