@@ -57,7 +57,7 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(tb_scrapper.run_schedule_scrape, CronTrigger(hour="*/3"))
+    # scheduler.add_job(tb_scrapper.run_schedule_scrape, CronTrigger(hour="*/3"))
     scheduler.start()
     app.state.scheduler = scheduler
 
