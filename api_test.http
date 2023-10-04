@@ -12,17 +12,17 @@ Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/catalog/movie/tamil_hd.json
+GET http://127.0.0.1:8000/catalog/movie/tamil_hdrip.json
 Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/catalog/movie/tamil_new/skip=10.json
+GET http://127.0.0.1:8000/catalog/movie/tamil_hdrip/skip=10.json
 Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/catalog/movie/tamil_dubbed.json
+GET http://127.0.0.1:8000/{{secret_str}}/catalog/series/tamil_series.json
 Accept: application/json
 
 ###
@@ -32,22 +32,25 @@ Accept: application/json
 
 ###
 
-###
-
 GET http://127.0.0.1:8000/{{secret_str}}/stream/movie/tt11468258.json
 Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/meta/series/tb167521139113435.json
+GET http://127.0.0.1:8000/{{secret_str}}/meta/series/mf39644457048721.json
 Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/{{secret_str}}/stream/series/tb167521139113435:2:132.json
+GET http://127.0.0.1:8000/meta/series/mf113075207220135:1:1.json
 Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/meta/movie/ty219661034922033.json
+GET http://127.0.0.1:8000/{{secret_str}}/stream/series/mf113075207220135:1:1.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/meta/movie/tt11468258.json
 Accept: application/json

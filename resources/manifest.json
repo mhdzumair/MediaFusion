@@ -1,13 +1,13 @@
 {
   "id": "mhdzumair.addons.mediafusion",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
   "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
-  "logo": "https://882b9915d0fe-stremio-tamilblasters.baby-beamup.club/static/tamilblasters.png",
+  "logo": "http://127.0.0.1:8000/static/images/mediafusion_logo.png",
   "behaviorHints": {
 	"configurable": true,
-	"configurationRequired": true
+	"configurationRequired": false
   },
   "resources": [
 	"catalog",
@@ -30,7 +30,7 @@
 	  ],
 	  "idPrefixes": [
 		"tt",
-		"tb"
+		"mf"
 	  ]
 	}
   ],

@@ -22,6 +22,9 @@ bencodepy = "*"
 pydantic-settings = "*"
 pycryptodome = "*"
 seedrcc = "*"
+parse-torrent-title = {editable = true, git = "https://github.com/mhdzumair/parse-torrent-title"}
+playwright = "==1.38.0"
+playwright-stealth = "*"
 
 [dev-packages]
 
