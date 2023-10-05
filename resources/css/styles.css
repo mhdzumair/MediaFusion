@@ -1,0 +1,136 @@
+body, html {
+    margin: 0px;
+    padding: 0px;
+    font-family: 'OpenSans', arial, sans-serif;
+    font-weight: 300;
+    color: white;
+    width: 100%;
+    height: 100%;
+    background-image: url(https://dl.strem.io/addon-background.jpg);
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+}
+
+.config-container, .content-container {
+    margin: 5% auto;
+    padding: 30px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 10px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.btn, button {
+    border: 0px;
+    outline: 0px;
+    color: white;
+    background: #4a47a3;
+    padding: 13px 22px;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 300;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 0.3s;
+}
+
+.btn:hover {
+    opacity: 1;
+}
+
+.invalid-feedback {
+    display: none;
+    color: red;
+}
+
+.logo {
+    max-width: 300px;
+    display: block;
+    margin: 0 auto 20px;
+}
+
+
+/* Catalog Style */
+.form-check {
+    position: relative;
+    display: block;
+    align-items: center;
+    border: 2px solid transparent;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: transform 0.3s, background-color 0.3s, border-color 0.3s;
+    background: rgba(74, 71, 163, 0.2);
+}
+
+.form-check:hover {
+    transform: translateY(-5px);
+}
+
+.form-check-input {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    opacity: 0;
+    z-index: 2;
+    cursor: pointer;
+}
+
+.form-check-label {
+    padding: 0.5rem;
+    border-radius: 5px;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.form-check-label::before {
+    content: none; /* Remove the round indicator */
+}
+
+.form-check-input:checked + .form-check-label {
+    background: rgba(74, 71, 163, 0.6);
+    border-color: #4a47a3; /* Highlight the border of the selected catalog */
+}
+
+.form-check-input:checked + .form-check-label::before {
+    background: #4a47a3;
+}
+
+/* Custom dropdown design */
+.custom-select {
+    background: rgba(74, 71, 163, 0.5);
+    border: none;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    appearance: none;
+    cursor: pointer;
+}
+
+.custom-select:focus {
+    outline: none;
+    box-shadow: none;
+    border-color: rgba(74, 71, 163, 1);
+}
+
+.custom-dropdown::after {
+    content: "▾";
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: white;
+    pointer-events: none;
+}
+
+@media (max-width: 768px) {
+    .config-container, .content-container {
+        padding: 15px;
+    }
+}

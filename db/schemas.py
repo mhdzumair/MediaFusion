@@ -2,6 +2,8 @@ from typing import Optional, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from utils.const import CATALOG_ID_DATA
+
 
 class Catalog(BaseModel):
     id: str
@@ -44,28 +46,7 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    preferred_movie_languages: list[str] = Field(
-        default=[
-            "Tamil",
-            "Malayalam",
-            "Telugu",
-            "Hindi",
-            "Kannada",
-            "English",
-            "Dubbed",
-        ]
-    )
-    preferred_series_languages: list[str] = Field(
-        default=[
-            "Tamil",
-            "Malayalam",
-            "Telugu",
-            "Hindi",
-            "Kannada",
-            "English",
-            "Dubbed",
-        ]
-    )
+    selected_catalogs: list[str] = Field(default=CATALOG_ID_DATA)
 
     class Config:
         extra = "ignore"

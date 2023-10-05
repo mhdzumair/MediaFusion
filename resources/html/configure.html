@@ -6,57 +6,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Configuration - Stremio Addon</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <style>
-        body, html {
-            margin: 0px;
-            padding: 0px;
-            font-family: OpenSans, arial, sans-serif;
-            font-weight: 300;
-            color: white;
-            width: 100%;
-            height: 100%;
-            background-image: url(https://dl.strem.io/addon-background.jpg);
-            background-size: cover;
-            background-position: center center;
-            background-repeat: no-repeat;
-        }
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
 
-        .config-container {
-            margin: 5% auto;
-            padding: 30px;
-            background: rgba(0, 0, 0, 0.7);
-            border-radius: 10px;
-        }
-
-        .btn, button {
-            border: 0px;
-            outline: 0px;
-            color: white;
-            background: rgba(125, 79, 158, 0.85);
-            padding: 13px 22px;
-            text-align: center;
-            font-size: 17px;
-            font-weight: 300;
-            cursor: pointer;
-            opacity: 0.9;
-        }
-
-        .logo {
-            max-width: 300px;
-            display: block;
-            margin: 0 auto 20px;
-        }
-
-        button:hover {
-            opacity: 1;
-        }
-
-        .invalid-feedback {
-            display: none;
-            color: red;
-        }
-    </style>
 </head>
 
 <body>
@@ -70,6 +22,7 @@
             <form id="configForm">
                 <!-- Streaming Provider -->
                 <div class="mb-3">
+                    <h4>Select Stream Provider</h4>
                     <label for="provider_service">Streaming Provider:</label>
                     <select class="form-control" name="provider_service" id="provider_service" onchange="updateProviderFields()">
                         <option value="" {% if not user_data.streaming_provider.service %}selected{% endif %}>Direct Torrent</option>
@@ -102,33 +55,23 @@
                     </div>
                 </div>
 
-                <!-- Preferred Movie Languages -->
                 <div class="mb-3">
-                    <h4>Preferred Movie Catalog:</h4>
-                    {% for language in ["Tamil", "Malayalam", "Telugu", "Hindi", "Kannada", "English", "Dubbed"] %}
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" name="preferred_movie_languages" value="{{ language }}" id="{{ language }}_movie" {% if language in
-                               user_data.preferred_movie_languages %}checked{% endif %}>
-                        <label class="form-check-label" for="{{ language }}_movie">
-                            {{ language }}
-                        </label>
+                    <h4>Select Catalogs:</h4>
+                    <div class="row"> <!-- Added row class -->
+                        {% for catalog in catalogs %}
+                        <div class="col-12 col-md-6 col-lg-4"> <!-- Define widths for different screens -->
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="selected_catalogs" value="{{ catalog[0] }}" id="{{ catalog[0] }}" {% if catalog[0] in user_data.selected_catalogs
+                                       %}checked{% endif %}>
+                                <label class="form-check-label" for="{{ catalog[0] }}">
+                                    {{ catalog[1] }}
+                                </label>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
                 </div>
 
-                <!-- Preferred Series Languages -->
-                <div class="mb-3">
-                    <h4>Preferred Series Catalog:</h4>
-                    {% for language in ["Tamil", "Malayalam", "Telugu", "Hindi", "Kannada", "English", "Dubbed"] %}
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" name="preferred_series_languages" value="{{ language }}" id="{{ language }}_series" {% if language in
-                               user_data.preferred_series_languages %}checked{% endif %}>
-                        <label class="form-check-label" for="{{ language }}_series">
-                            {{ language }}
-                        </label>
-                    </div>
-                    {% endfor %}
-                </div>
 
                 <!-- Submit Button -->
                 <button type="submit" class="mt-3 btn btn-block custom-btn mx-auto">
@@ -142,8 +85,8 @@
 
 <!-- JS for Bootstrap and form validation -->
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
 <script src="/static/js/config_script.js"></script>
 </body>
 

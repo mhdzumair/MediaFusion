@@ -172,8 +172,7 @@ document.getElementById('configForm').addEventListener('submit', async function 
         }
         const userData = {
             streaming_provider: streamingProviderData,
-            preferred_movie_languages: Array.from(document.querySelectorAll('input[name="preferred_movie_languages"]:checked')).map(el => el.value),
-            preferred_series_languages: Array.from(document.querySelectorAll('input[name="preferred_series_languages"]:checked')).map(el => el.value)
+            selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value)
         };
 
         try {

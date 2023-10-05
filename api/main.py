@@ -1,9 +1,8 @@
 import json
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, BackgroundTasks, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse
@@ -12,14 +11,13 @@ from fastapi.templating import Jinja2Templates
 
 from db import database, crud, schemas
 from db.config import settings
-from scrappers import tamil_blasters_scrapper as tb_scrapper
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from utils import crypto, torrent
-from utils.parser import generate_catalog_ids
+from utils.const import CATALOG_ID_DATA, CATALOG_NAME_DATA
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -109,7 +107,12 @@ async def configure(
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
     return TEMPLATES.TemplateResponse(
-        "html/configure.html", {"request": request, "user_data": user_data.model_dump()}
+        "html/configure.html",
+        {
+            "request": request,
+            "user_data": user_data.model_dump(),
+            "catalogs": zip(CATALOG_ID_DATA, CATALOG_NAME_DATA),
+        },
     )
 
 
@@ -123,14 +126,10 @@ async def get_manifest(
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
 
-    user_catalog_ids = generate_catalog_ids(
-        user_data.preferred_movie_languages, user_data.preferred_series_languages
-    )
     filtered_catalogs = [
-        cat for cat in manifest["catalogs"] if cat["id"] in user_catalog_ids
+        cat for cat in manifest["catalogs"] if cat["id"] in user_data.selected_catalogs
     ]
     manifest["catalogs"] = filtered_catalogs
-
     return manifest
 
 
@@ -249,22 +248,6 @@ async def get_streams(
         )
 
     return {"streams": fetched_streams}
-
-
-@app.post("/scraper", tags=["scraper"])
-def run_scraper(
-    background_tasks: BackgroundTasks,
-    language: Literal[
-        "tamil", "malayalam", "telugu", "hindi", "kannada", "english"
-    ] = "tamil",
-    video_type: Literal["hdrip", "tcrip", "dubbed", "series"] = "hdrip",
-    pages: int = 1,
-    start_page: int = 1,
-):
-    background_tasks.add_task(
-        tb_scrapper.run_scraper, language, video_type, pages, start_page
-    )
-    return {"message": "Scraping in background..."}
 
 
 @app.post("/encrypt-user-data", tags=["user_data"])
