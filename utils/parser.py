@@ -4,7 +4,6 @@ import re
 from db.config import settings
 from db.models import Streams
 from db.schemas import Stream, UserData
-from utils.site_data import ALWAYS_ENABLED, LANGUAGE_CATALOGS
 
 
 def extract_stream_details(
@@ -69,26 +68,6 @@ def extract_stream_details(
         stream_list.append(Stream(**stream_details))
 
     return stream_list
-
-
-def generate_catalog_ids(preferred_movie_languages, preferred_series_languages):
-    catalog_ids = ALWAYS_ENABLED.copy()
-
-    for language, catalogs in LANGUAGE_CATALOGS.items():
-        if language in preferred_movie_languages:
-            catalog_ids.extend(catalogs["movie"])
-
-        if language in preferred_series_languages:
-            catalog_ids.extend(catalogs["series"])
-
-        # Handle the dubbed option
-        if (
-            "Dubbed" in preferred_movie_languages
-            and language + "_dubbed" in catalogs["movie"]
-        ):
-            catalog_ids.append(language.lower() + "_dubbed")
-
-    return catalog_ids
 
 
 def clean_name(name: str) -> str:
