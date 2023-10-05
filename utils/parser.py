@@ -19,6 +19,12 @@ def extract_stream_details(
     streams = sorted(streams, key=lambda x: x.created_at, reverse=True)
 
     for stream_data in streams:
+        # Check if the stream's catalog is not in user's selected catalogs
+        if not any(
+            catalog in user_data.selected_catalogs for catalog in stream_data.catalog
+        ):
+            continue
+
         quality_detail = " - ".join(
             filter(
                 None,
