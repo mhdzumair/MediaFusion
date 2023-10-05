@@ -4,7 +4,7 @@
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
   "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
-  "logo": "http://127.0.0.1:8000/static/images/mediafusion_logo.png",
+  "logo": "https://882b9915d0fe-mediafusion.baby-beamup.club/static/images/mediafusion_logo.png",
   "behaviorHints": {
 	"configurable": true,
 	"configurationRequired": false
