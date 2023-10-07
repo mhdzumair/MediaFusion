@@ -15,7 +15,7 @@ from db.models import (
     MediaFusionMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
-from utils.parser import extract_stream_details, get_catalogs
+from utils.parser import parse_stream_data, get_catalogs
 
 ia = Cinemagoer()
 
@@ -97,7 +97,7 @@ async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[S
     if not movie_data:
         return []
 
-    return extract_stream_details(movie_data.streams, user_data, secret_str)
+    return parse_stream_data(movie_data.streams, user_data, secret_str)
 
 
 async def get_series_streams(
@@ -111,7 +111,7 @@ async def get_series_streams(
         stream for stream in series_data.streams if stream.get_episode(season, episode)
     ]
 
-    return extract_stream_details(
+    return parse_stream_data(
         matched_episode_streams, user_data, secret_str, season, episode
     )
 

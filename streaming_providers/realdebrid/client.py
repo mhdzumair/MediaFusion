@@ -1,11 +1,9 @@
-import PTN
 import traceback
-
-from requests import RequestException, JSONDecodeError
+from base64 import b64encode, b64decode
 from typing import Any
 
 import requests
-from base64 import b64encode, b64decode
+from requests import RequestException, JSONDecodeError
 
 from streaming_providers.exceptions import ProviderException
 
@@ -163,10 +161,10 @@ class RealDebrid:
             is_return_none=True,
         )
 
-    def get_available_torrent(self, info_hash, filename: str) -> dict[str, Any] | None:
+    def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = self.get_user_torrent_list()
         for torrent in available_torrents:
-            if torrent["hash"] == info_hash and torrent["filename"] == filename:
+            if torrent["hash"] == info_hash:
                 return torrent
 
     def create_download_link(self, link):
@@ -186,4 +184,11 @@ class RealDebrid:
                 )
         raise ProviderException(
             f"Failed to create download link. response: {response}", "api_error.mp4"
+        )
+
+    def delete_torrent(self, torrent_id):
+        return self._make_request(
+            "DELETE",
+            f"{self.BASE_URL}/torrents/delete/{torrent_id}",
+            is_return_none=True,
         )

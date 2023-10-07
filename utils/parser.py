@@ -4,9 +4,12 @@ import re
 from db.config import settings
 from db.models import Streams
 from db.schemas import Stream, UserData
+from streaming_providers.realdebrid.utils import (
+    order_streams_by_instant_availability_and_date,
+)
 
 
-def extract_stream_details(
+def parse_stream_data(
     streams: list[Streams],
     user_data: UserData,
     secret_str: str,
@@ -15,16 +18,24 @@ def extract_stream_details(
 ) -> list[Stream]:
     stream_list = []
 
-    # Sort the streams by created_at time
-    streams = sorted(streams, key=lambda x: x.created_at, reverse=True)
+    # filter out streams that are not available in the user's selected catalog
+    streams = [
+        stream
+        for stream in streams
+        if any(catalog in stream.catalog for catalog in user_data.selected_catalogs)
+    ]
+
+    # sort streams by instant availability and date if realdebrid is selected
+    if (
+        user_data.streaming_provider
+        and user_data.streaming_provider.service == "realdebrid"
+    ):
+        streams = order_streams_by_instant_availability_and_date(streams, user_data)
+    else:
+        # Sort the streams by created_at time
+        streams = sorted(streams, key=lambda x: x.created_at, reverse=True)
 
     for stream_data in streams:
-        # Check if the stream's catalog is not in user's selected catalogs
-        if not any(
-            catalog in user_data.selected_catalogs for catalog in stream_data.catalog
-        ):
-            continue
-
         quality_detail = " - ".join(
             filter(
                 None,
@@ -39,6 +50,13 @@ def extract_stream_details(
 
         episode_data = stream_data.get_episode(season, episode)
 
+        if user_data.streaming_provider:
+            streaming_provider = user_data.streaming_provider.service.title()
+            if stream_data.cached:
+                streaming_provider += " (Cached)"
+        else:
+            streaming_provider = "Torrent"
+
         description_parts = [
             quality_detail,
             convert_bytes_to_readable(
@@ -46,9 +64,7 @@ def extract_stream_details(
             ),
             " + ".join(stream_data.languages),
             stream_data.source,
-            user_data.streaming_provider.service.title()
-            if user_data.streaming_provider
-            else "Torrent",
+            streaming_provider,
         ]
         description = ", ".join(filter(lambda x: bool(x), description_parts))
 
