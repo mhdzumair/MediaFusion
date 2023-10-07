@@ -37,6 +37,7 @@ class Streams(Document):
     audio: Optional[str]
     encoder: Optional[str]
     seeders: Optional[int] = None
+    cached: Optional[bool] = None
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
