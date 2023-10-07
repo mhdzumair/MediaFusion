@@ -116,7 +116,7 @@ async def get_direct_link_from_seedr(
     selected_file = get_file_details_from_folder(
         seedr,
         folder_id,
-        clean_name(episode_data.filename if episode_data else stream.filename),
+        clean_name(episode_data.filename if episode_data else stream.filename, ""),
     )
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 

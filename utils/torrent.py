@@ -82,10 +82,8 @@ def extract_torrent_metadata(content) -> dict:
         return {}
 
 
-def convert_info_hash_to_magnet(info_hash: str, trackers: list[str], name: str) -> str:
+def convert_info_hash_to_magnet(info_hash: str, trackers: list[str]) -> str:
     magnet_link = f"magnet:?xt=urn:btih:{info_hash}"
-    encoded_name = quote(clean_name(name), safe="")
-    magnet_link += f"&dn={encoded_name}"
     for tracker in trackers or TRACKERS:
         encoded_tracker = quote(tracker, safe="")
         magnet_link += f"&tr={encoded_tracker}"

@@ -275,9 +275,7 @@ async def streaming_provider_endpoint(
     if not stream:
         raise HTTPException(status_code=400, detail="Stream not found.")
 
-    magnet_link = torrent.convert_info_hash_to_magnet(
-        info_hash, stream.announce_list, stream.torrent_name
-    )
+    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
 
     episode_data = stream.get_episode(season, episode)
 
