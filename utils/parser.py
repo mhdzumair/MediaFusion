@@ -92,9 +92,9 @@ def parse_stream_data(
     return stream_list
 
 
-def clean_name(name: str) -> str:
+def clean_name(name: str, replace: str = " ") -> str:
     # Only allow alphanumeric characters, spaces, and `.,;:_~-[]()`
-    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()\[\]]", "", name)
+    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()\[\]]", replace, name)
     return cleaned_name
 
 
