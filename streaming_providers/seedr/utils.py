@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime
 
 from seedrcc import Seedr
 
@@ -102,6 +103,7 @@ async def get_direct_link_from_seedr(
         if torrent:
             folder_title = torrent["name"]
         else:
+            free_up_space(seedr, stream.size)
             folder_title = add_magnet_and_get_torrent(seedr, magnet_link, info_hash)
         if clean_name(stream.torrent_name) != folder_title:
             logging.warning(
@@ -121,3 +123,26 @@ async def get_direct_link_from_seedr(
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
     return video_link
+
+
+def free_up_space(seedr, required_space):
+    """Frees up space in the Seedr account by deleting folders until the required space is available."""
+    contents = seedr.listContents()
+    available_space = contents["space_max"] - contents["space_used"]
+
+    if available_space >= required_space:
+        return  # There's enough space, no need to delete anything
+
+    folders = sorted(
+        contents["folders"],
+        key=lambda x: (
+            -x["size"],
+            datetime.strptime(x["last_update"], "%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+
+    for folder in folders:
+        if available_space >= required_space:
+            break
+        seedr.deleteFolder(folder["id"])
+        available_space += folder["size"]
