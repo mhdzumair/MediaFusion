@@ -37,7 +37,7 @@ class Streams(BaseModel):
 
 
 class StreamingProvider(BaseModel):
-    service: Literal["realdebrid", "seedr"]
+    service: Literal["realdebrid", "seedr", "debridlink"]
     token: str
 
     class Config:
