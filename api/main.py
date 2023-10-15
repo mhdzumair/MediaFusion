@@ -16,6 +16,8 @@ from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
+from streaming_providers.debridlink.api import router as debridlink_router
+from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
 from utils import crypto, torrent
 from utils.const import CATALOG_ID_DATA, CATALOG_NAME_DATA
 
@@ -284,8 +286,12 @@ async def streaming_provider_endpoint(
             video_url = await get_direct_link_from_seedr(
                 info_hash, magnet_link, user_data, stream, episode_data, 3, 1
             )
-        else:
+        elif user_data.streaming_provider.service == "realdebrid":
             video_url = get_direct_link_from_realdebrid(
+                info_hash, magnet_link, user_data, stream, episode_data, 3, 1
+            )
+        else:
+            video_url = get_direct_link_from_debridlink(
                 info_hash, magnet_link, user_data, stream, episode_data, 3, 1
             )
     except ProviderException as error:
@@ -297,3 +303,4 @@ async def streaming_provider_endpoint(
 
 app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
 app.include_router(realdebrid_router, prefix="/realdebrid", tags=["realdebrid"])
+app.include_router(debridlink_router, prefix="/debridlink", tags=["debridlink"])
