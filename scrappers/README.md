@@ -1,6 +1,8 @@
 # Scrapping with Media Fusion
 
-Currently, the project supports scraping from TamilBlasters. Here's how to use the scraper:
+The project offers scraping capabilities for TamilBlasters and TamilMV. Here are the guidelines on how to use these scrapers:
+
+## TamilBlasters
 
 1. **Setup Playwright**:
 
@@ -10,38 +12,12 @@ Currently, the project supports scraping from TamilBlasters. Here's how to use t
    pipenv run playwright install firefox
    ```
 
-2. **Get Help on Available Options **:
+2. **Get Help on Available Options**:
    
    To understand the available options for the scraper, run:
     
    ```bash
-   pipenv run python3 -m scrappers.tamil_blasters_scrapper --help
-   ```
-   
-   This will display the available options:
-    
-   ```bash
-   usage: tamil_blasters_scrapper.py [-h] [--all] [-l {tamil,malayalam,telugu,hindi,kannada,english}] [-t {hdrip,tcrip,dubbed,series}] [-p PAGES] [-s START_PAGES] [-k SEARCH_KEYWORD] [--scrap-with-playwright] [--proxy-url PROXY_URL]
-   
-   Scrap Movie metadata from TamilBlasters
-   
-   options:
-     -h, --help            show this help message and exit
-     --all                 scrap all type of movies & series
-     -l {tamil,malayalam,telugu,hindi,kannada,english}, --language {tamil,malayalam,telugu,hindi,kannada,english}
-                           scrap movie language
-     -t {hdrip,tcrip,dubbed,series}, --video-type {hdrip,tcrip,dubbed,series}
-                           scrap movie video type
-     -p PAGES, --pages PAGES
-                           number of scrap pages
-     -s START_PAGES, --start-pages START_PAGES
-                           page number to start scrap.
-     -k SEARCH_KEYWORD, --search-keyword SEARCH_KEYWORD
-                           search keyword to scrap movies & series. ex: 'bigg boss'
-     --scrap-with-playwright
-                           scrap with playwright
-     --proxy-url PROXY_URL
-                           proxy url to scrap. ex: socks5://127.0.0.1:1080
+   pipenv run python3 -m scrappers.tamil_blasters --help
    ```
 
 3. **Run the Scraper**:
@@ -51,7 +27,30 @@ Currently, the project supports scraping from TamilBlasters. Here's how to use t
    e.g. To scrap all movies & series, run:
    
    ```bash
-   pipenv run python3 -m scrappers.tamil_blasters_scrapper --all --scrap-with-playwright
+   pipenv run python3 -m scrappers.tamil_blasters --all --scrap-with-playwright
    ```
 
    Note: You may have to solve the cloudflare validation challenge manually when its required.
+
+
+## TamilMV
+
+1. **Get Help on Available Options**:
+
+    To understand the available options for the TamilMV scraper, run:
+
+    ```bash
+     pipenv run python3 -m scrappers.tamilmv --help
+    ```
+
+2. **Run the TamilMV Scraper**:
+
+    Execute the scraper with the desired options based on your requirements.
+
+    e.g. To scrap all movies & series from TamilMV for 5 pages, run:
+
+    ```bash
+     pipenv run python3 -m scrappers.tamilmv --all -p 5
+    ```
+
+    Note: Ensure you have Playwright set up as mentioned in the TamilBlasters section if you intend to use it with the TamilMV scraper.
