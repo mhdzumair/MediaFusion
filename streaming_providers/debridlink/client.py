@@ -25,7 +25,13 @@ class DebridLink:
             self.disable_access_token()
 
     def _make_request(
-        self, method: str, url: str, data=None, params=None, is_return_none=False, is_expected_to_fail=False
+        self,
+        method: str,
+        url: str,
+        data=None,
+        params=None,
+        is_return_none=False,
+        is_expected_to_fail=False,
     ) -> dict:
         if method == "GET":
             response = requests.get(url, params=params, headers=self.headers)
@@ -43,6 +49,13 @@ class DebridLink:
                 pass
             elif error.response.status_code == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
+            elif (
+                error.response.status_code == 400
+                and response.json().get("error") == "freeServerOverload"
+            ):
+                raise ProviderException(
+                    "Debrid-Link free servers are overloaded", "need_premium.mp4"
+                )
             else:
                 formatted_traceback = "".join(traceback.format_exception(error))
                 raise ProviderException(
@@ -64,8 +77,12 @@ class DebridLink:
     def initialize_headers(self):
         if self.encoded_token:
             token_data = self.decode_token_str(self.encoded_token)
-            access_token_data = self.refresh_token(token_data["client_id"], token_data["code"])
-            self.headers = {"Authorization": f"Bearer {access_token_data['access_token']}"}
+            access_token_data = self.refresh_token(
+                token_data["client_id"], token_data["code"]
+            )
+            self.headers = {
+                "Authorization": f"Bearer {access_token_data['access_token']}"
+            }
 
     @staticmethod
     def encode_token_data(client_id: str, code: str):
@@ -86,7 +103,7 @@ class DebridLink:
             f"{self.OAUTH_URL}/device/code",
             data={
                 "client_id": self.OPENSOURCE_CLIENT_ID,
-                "scope": "get.post.downloader get.post.seedbox get.account get.files get.post.stream"
+                "scope": "get.post.downloader get.post.seedbox get.account get.files get.post.stream",
             },
         )
 
@@ -101,7 +118,7 @@ class DebridLink:
             },
             is_expected_to_fail=True,
         )
-    
+
     def refresh_token(self, client_id, refresh_token):
         return self._make_request(
             "POST",
@@ -128,27 +145,37 @@ class DebridLink:
             return token_data
 
     def add_magent_link(self, magnet_link):
-        return self._make_request("POST", f"{self.BASE_URL}/seedbox/add", data={"url": magnet_link})
+        return self._make_request(
+            "POST", f"{self.BASE_URL}/seedbox/add", data={"url": magnet_link}
+        )
 
     def get_user_torrent_list(self):
         return self._make_request("GET", f"{self.BASE_URL}/seedbox/list")
-    
+
     def get_torrent_info(self, torrent_id):
-        return self._make_request("GET", f"{self.BASE_URL}/seedbox/list", data={"url": torrent_id})
+        return self._make_request(
+            "GET", f"{self.BASE_URL}/seedbox/list", data={"url": torrent_id}
+        )
 
     def get_torrent_files_list(self, torrent_id):
         return self._make_request("GET", f"{self.BASE_URL}/files/{torrent_id}/list")
 
     def get_torrent_instant_availability(self, torrent_hash):
-        return self._make_request("GET", f"{self.BASE_URL}/seedbox/cached/", data={"url": torrent_hash})
+        return self._make_request(
+            "GET", f"{self.BASE_URL}/seedbox/cached/", data={"url": torrent_hash}
+        )
 
     def disable_access_token(self):
-        return self._make_request("GET", f"{self.OAUTH_URL}/revoke", is_return_none=True)
+        return self._make_request(
+            "GET", f"{self.OAUTH_URL}/revoke", is_return_none=True
+        )
 
     def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
         torrent_list_response = self.get_user_torrent_list()
         if "error" in torrent_list_response:
-            raise ProviderException("Failed to get torrent info from Debrid-Link", "transfer_error.mp4")
+            raise ProviderException(
+                "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
+            )
 
         available_torrents = torrent_list_response["value"]
         for torrent in available_torrents:
