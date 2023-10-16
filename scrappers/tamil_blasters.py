@@ -138,14 +138,21 @@ async def process_movie(
             return
 
         for torrent_element in torrent_elements:
-            await download_and_save_torrent(
-                torrent_element,
-                scraper=scraper,
-                page=page,
-                metadata=metadata.copy(),
-                media_type=media_type,
-                page_link=page_link,
-            )
+            try:
+                await download_and_save_torrent(
+                    torrent_element,
+                    scraper=scraper,
+                    page=page,
+                    metadata=metadata.copy(),
+                    media_type=media_type,
+                    page_link=page_link,
+                )
+            except Exception as e:
+                logging.error(
+                    f"Error processing torrent {page_link}: {e}",
+                    exc_info=True,
+                    stack_info=True,
+                )
 
         return True
     except Exception as e:
