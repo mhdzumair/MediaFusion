@@ -7,7 +7,6 @@ import math
 import random
 import re
 
-import PTN
 from bs4 import BeautifulSoup
 from dateutil.parser import parse as dateparser
 from playwright.async_api import async_playwright
@@ -20,53 +19,64 @@ from scrappers.helpers import (
     download_and_save_torrent,
 )
 
-HOMEPAGE = "https://www.tamilblasters.life"
-TAMIL_BLASTER_LINKS = {
+HOMEPAGE = "https://www.1tamilmv.prof"
+TAMIL_MV_LINKS = {
     "tamil": {
-        "hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "tcrip": "8-tamil-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "dubbed": "9-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios",
-        "series": "63-tamil-new-web-series-tv-shows",
+        "hdrip": [
+            "11-web-hd-itunes-hd-bluray",
+            "12-hd-rips-dvd-rips-br-rips",
+            "14-hdtv-sdtv-hdtv-rips",
+        ],
+        "tcrip": "10-predvd-dvdscr-cam-tc",
+        "dubbed": "17-hollywood-movies-in-multi-audios",
+        "series": "19-web-series-tv-shows",
     },
     "malayalam": {
-        "tcrip": "75-malayalam-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": "74-malayalam-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": "76-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": "98-malayalam-new-web-series-tv-shows",
+        "hdrip": [
+            "36-web-hd-itunes-hd-bluray",
+            "37-hd-rips-dvd-rips-br-rips",
+            "39-hdtv-sdtv-hdtv-rips",
+        ],
+        "tcrip": "35-predvd-dvdscr-cam-tc",
+        "dubbed": "42-malayalam-dubbed-subtitled-movies",
+        "series": "44-web-series-tv-shows",
     },
     "telugu": {
-        "tcrip": "79-telugu-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": "78-telugu-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": "80-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": "96-telugu-new-web-series-tv-shows",
+        "tcrip": "23-predvd-dvdscr-cam-tc",
+        "hdrip": [
+            "24-web-hd-itunes-hd-bluray",
+            "25-hd-rips-dvd-rips-br-rips",
+            "27-hdtv-sdtv-hdtv-rips",
+        ],
+        "dubbed": "31-telugu-dubbed-movies",
+        "series": "33-web-series-tv-shows",
     },
     "hindi": {
-        "tcrip": "87-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": "86-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": "88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": "forums/forum/89-hindi-new-web-series-tv-shows",
+        "tcrip": "57-predvd-dvdscr-cam-tc",
+        "hdrip": [
+            "58-web-hd-itunes-hd-bluray",
+            "59-hd-rips-dvd-rips-br-rips",
+            "61-hdtv-sdtv-hdtv-rips",
+        ],
+        "dubbed": "64-hindi-dubbed-movies",
+        "series": "66-web-series-tv-shows",
     },
     "kannada": {
-        "tcrip": "83-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
-        "hdrip": "82-kannada-new-movies-hdrips-bdrips-dvdrips-hdtv",
-        "dubbed": "84-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": "103-kannada-new-web-series-tv-shows",
+        "tcrip": "68-predvd-dvdscr-cam-tc",
+        "hdrip": [
+            "69-web-hd-itunes-hd-bluray",
+            "70-hd-rips-dvd-rips-br-rips",
+            "72-hdtv-sdtv-hdtv-rips",
+        ],
+        "dubbed": "75-watch-kannada-movies-online",
+        "series": "77-web-series-tv-shows",
     },
     "english": {
-        "tcrip": "52-english-movies-hdcam-dvdscr-predvd",
-        "hdrip": "53-english-movies-hdrips-bdrips-dvdrips",
-        "series": "92-english-web-series-tv-shows",
+        "tcrip": "46-predvd-dvdscr-cam-tc",
+        "hdrip": ["49-web-hd-itunes-hd-bluray", "50-hd-rips-dvd-rips-br-rips"],
+        "series": "55-web-series-tv-shows",
     },
 }
-
-
-async def get_search_results(page, keyword, page_number=1):
-    search_link = f"{HOMEPAGE}/index.php?/search/&q={keyword}&type=forums_topic&page={page_number}&search_and_or=or&search_in=titles&sortby=relevancy"
-    # Get page content and initialize BeautifulSoup
-    page_content = await get_page_content(page, search_link)
-    soup = BeautifulSoup(page_content, "html.parser")
-
-    return soup
 
 
 async def process_movie(
@@ -95,7 +105,6 @@ async def process_movie(
         logging.error(f"Movie link not found")
         return
 
-    metadata = PTN.parse(re.sub(r"\s+", " ", movie_link.text))
     page_link = movie_link.get("href")
 
     try:
@@ -108,26 +117,22 @@ async def process_movie(
         movie_page = BeautifulSoup(movie_page_content, "html.parser")
 
         # Extracting other details
-        poster_element = movie_page.select_one(
-            "div[data-commenttype='forums'] img[data-src]"
-        )
-        poster = poster_element.get("data-src") if poster_element else None
+        poster_element = movie_page.select_one("div[data-commenttype='forums'] img")
+        poster = poster_element.get("src") if poster_element else None
 
         datetime_element = movie_page.select_one("time")
         created_at = (
             dateparser(datetime_element.get("datetime")) if datetime_element else None
         )
 
-        # Updating metadata
-        metadata.update(
-            {
-                "catalog": f"{language}_{media_type}",
-                "poster": poster,
-                "created_at": created_at,
-                "scrap_language": language.title(),
-                "source": "TamilBlasters",
-            }
-        )
+        # Define metadata
+        metadata = {
+            "catalog": f"{language}_{media_type}",
+            "poster": poster,
+            "created_at": created_at,
+            "scrap_language": language.title(),
+            "source": "TamilMV",
+        }
 
         # Extracting torrent details
         torrent_elements = movie_page.select("a[data-fileext='torrent']")
@@ -141,7 +146,7 @@ async def process_movie(
                 torrent_element,
                 scraper=scraper,
                 page=page,
-                metadata=metadata,
+                metadata=metadata.copy(),
                 media_type=media_type,
                 page_link=page_link,
             )
@@ -197,47 +202,54 @@ async def scrap_page_with_playwright(url, language, media_type, proxy_url=None):
         await browser.close()
 
 
+async def get_search_results(scraper, keyword, page_number=1):
+    search_link = f"{HOMEPAGE}/index.php?/search/&q={keyword}&type=forums_topic&page={page_number}&search_and_or=or&search_in=titles&sortby=relevancy"
+    # Get page content and initialize BeautifulSoup
+    response = scraper.get(search_link)
+    response.raise_for_status()
+    page_content = response.content
+    soup = BeautifulSoup(page_content, "html.parser")
+
+    return soup
+
+
 async def scrap_search_keyword(keyword, proxy_url=None):
-    supported_forums = {
-        TAMIL_BLASTER_LINKS[language][media_type]: {
-            "language": language,
-            "media_type": media_type,
-        }
-        for language in TAMIL_BLASTER_LINKS
-        for media_type in TAMIL_BLASTER_LINKS[language]
-    }
+    supported_forums = {}
+    for language in TAMIL_MV_LINKS:
+        for video_type in TAMIL_MV_LINKS[language]:
+            forum_ids = TAMIL_MV_LINKS[language][video_type]
+            if isinstance(forum_ids, list):
+                for forum_id in forum_ids:
+                    supported_forums[forum_id] = {
+                        "language": language,
+                        "media_type": video_type,
+                    }
+            else:
+                supported_forums[forum_ids] = {
+                    "language": language,
+                    "media_type": video_type,
+                }
 
-    async with async_playwright() as p:
-        # Launch a new browser session
-        browser = await p.firefox.launch(
-            headless=False,
-            proxy={"server": proxy_url} if proxy_url else None,
+    scraper = get_scrapper_session(proxy_url)
+    soup = await get_search_results(scraper, keyword)
+    results_element = soup.find("div", {"data-role": "resultsArea"})
+
+    results_count = int(re.search(r"\d+", results_element.find("p").text).group())
+    logging.info(f"Found {results_count} results for {keyword}")
+
+    movies = results_element.select("li[data-role='activityItem']")
+    if results_count > 25:
+        number_of_pages = math.ceil(results_count / 25)
+        logging.info(f"Found {number_of_pages} pages for {keyword}")
+        for page_number in range(2, number_of_pages + 1):
+            soup = await get_search_results(scraper, keyword, page_number)
+            movies.extend(soup.select("li[data-role='activityItem']"))
+            await asyncio.sleep(random.randint(2, 5))
+
+    for movie in movies:
+        await process_movie(
+            movie, scraper=scraper, keyword=keyword, supported_forums=supported_forums
         )
-        page = await browser.new_page()
-        await stealth_async(page)
-        await asyncio.sleep(2)
-
-        soup = await get_search_results(page, keyword)
-        results_element = soup.find("div", {"data-role": "resultsArea"})
-
-        results_count = int(re.search(r"\d+", results_element.find("p").text).group())
-        logging.info(f"Found {results_count} results for {keyword}")
-
-        movies = results_element.select("li[data-role='activityItem']")
-        if results_count > 25:
-            number_of_pages = math.ceil(results_count / 25)
-            logging.info(f"Found {number_of_pages} pages for {keyword}")
-            for page_number in range(2, number_of_pages + 1):
-                soup = await get_search_results(page, keyword, page_number)
-                movies.extend(soup.select("li[data-role='activityItem']"))
-                await asyncio.sleep(random.randint(2, 5))
-
-        for movie in movies:
-            await process_movie(
-                movie, page=page, keyword=keyword, supported_forums=supported_forums
-            )
-
-        await browser.close()
 
 
 async def run_scraper(
@@ -253,20 +265,27 @@ async def run_scraper(
     if search_keyword:
         await scrap_search_keyword(search_keyword, proxy_url)
         return
+    link_prefix = f"{HOMEPAGE}/index.php?/forums/forum/"
     try:
-        scrap_link = f"{HOMEPAGE}/index.php?/forums/forum/{TAMIL_BLASTER_LINKS[language][video_type]}"
+        forum_ids = TAMIL_MV_LINKS[language][video_type]
+        scrap_links = (
+            [link_prefix + link for link in forum_ids]
+            if isinstance(forum_ids, list)
+            else [link_prefix + forum_ids]
+        )
     except KeyError:
         logging.error(f"Unsupported language or video type: {language}_{video_type}")
         return
-    for page in range(start_page, pages + start_page):
-        scrap_link = f"{scrap_link}/page/{page}/"
-        logging.info(f"Scrap page: {page}")
-        if scrap_with_playwright is True:
-            await scrap_page_with_playwright(
-                scrap_link, language, video_type, proxy_url
-            )
-        else:
-            await scrap_page(scrap_link, language, video_type, proxy_url)
+    for scrap_link_prefix in scrap_links:
+        for page in range(start_page, pages + start_page):
+            scrap_link = f"{scrap_link_prefix}/page/{page}/"
+            logging.info(f"Scrap page: {scrap_link}")
+            if scrap_with_playwright is True:
+                await scrap_page_with_playwright(
+                    scrap_link, language, video_type, proxy_url
+                )
+            else:
+                await scrap_page(scrap_link, language, video_type, proxy_url)
 
     logging.info(f"Scrap completed for : {language}_{video_type}")
 
@@ -277,8 +296,8 @@ async def run_schedule_scrape(
     scrap_with_playwright: bool = None,
     proxy_url: str = None,
 ):
-    for language in TAMIL_BLASTER_LINKS:
-        for video_type in TAMIL_BLASTER_LINKS[language]:
+    for language in TAMIL_MV_LINKS:
+        for video_type in TAMIL_MV_LINKS[language]:
             await run_scraper(
                 language,
                 video_type,
@@ -290,9 +309,7 @@ async def run_schedule_scrape(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Scrap Movie metadata from TamilBlasters"
-    )
+    parser = argparse.ArgumentParser(description="Scrap Movie metadata from TamilMV")
     parser.add_argument(
         "--all", action="store_true", help="scrap all type of movies & series"
     )
