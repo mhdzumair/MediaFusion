@@ -59,8 +59,14 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(tamil_blasters.run_schedule_scrape, CronTrigger(hour="*/3"))
-    scheduler.add_job(tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"))
+    scheduler.add_job(
+        tamil_blasters.run_schedule_scrape,
+        CronTrigger(hour="*/3"),
+        name="tamil_blasters",
+    )
+    scheduler.add_job(
+        tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
+    )
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -199,13 +205,13 @@ async def search_movie(
 @app.get(
     "/{secret_str}/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
-    response_model=schemas.Meta,
+    response_model=schemas.MetaItem,
     response_model_exclude_none=True,
 )
 @app.get(
     "/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
-    response_model=schemas.Meta,
+    response_model=schemas.MetaItem,
     response_model_exclude_none=True,
 )
 async def get_meta(
