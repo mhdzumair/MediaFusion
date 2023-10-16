@@ -1,17 +1,19 @@
+import PTN
 import traceback
-from base64 import b64encode, b64decode
+
+from requests import RequestException, JSONDecodeError
 from typing import Any
 
 import requests
-from requests import RequestException, JSONDecodeError
+from base64 import b64encode, b64decode
 
 from streaming_providers.exceptions import ProviderException
 
 
-class RealDebrid:
-    BASE_URL = "https://api.real-debrid.com/rest/1.0"
-    OAUTH_URL = "https://api.real-debrid.com/oauth/v2"
-    OPENSOURCE_CLIENT_ID = "X245A4XAIBGVM"
+class DebridLink:
+    BASE_URL = "https://debrid-link.com/api/v2"
+    OAUTH_URL = "https://debrid-link.com/api/oauth"
+    OPENSOURCE_CLIENT_ID = "RyrV22FOg30DsxjYPziRKA"
 
     def __init__(self, encoded_token=None):
         self.encoded_token = encoded_token
@@ -48,11 +50,11 @@ class RealDebrid:
             elif error.response.status_code == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
             elif (
-                error.response.status_code == 403
-                and response.json().get("error_code") == 9
+                error.response.status_code == 400
+                and response.json().get("error") == "freeServerOverload"
             ):
                 raise ProviderException(
-                    "Real-Debrid Permission denied for free account", "need_premium.mp4"
+                    "Debrid-Link free servers are overloaded", "need_premium.mp4"
                 )
             else:
                 formatted_traceback = "".join(traceback.format_exception(error))
@@ -75,65 +77,68 @@ class RealDebrid:
     def initialize_headers(self):
         if self.encoded_token:
             token_data = self.decode_token_str(self.encoded_token)
-            access_token_data = self.get_token(
-                token_data["client_id"], token_data["client_secret"], token_data["code"]
+            access_token_data = self.refresh_token(
+                token_data["client_id"], token_data["code"]
             )
             self.headers = {
                 "Authorization": f"Bearer {access_token_data['access_token']}"
             }
 
     @staticmethod
-    def encode_token_data(client_id: str, client_secret: str, code: str):
-        token = f"{client_id}:{client_secret}:{code}"
+    def encode_token_data(client_id: str, code: str):
+        token = f"{client_id}:{code}"
         return b64encode(str(token).encode()).decode()
 
     @staticmethod
     def decode_token_str(token: str) -> dict[str, str]:
         try:
-            client_id, client_secret, code = b64decode(token).decode().split(":")
+            client_id, code = b64decode(token).decode().split(":")
         except ValueError:
             raise ProviderException("Invalid token", "invalid_token.mp4")
-        return {"client_id": client_id, "client_secret": client_secret, "code": code}
+        return {"client_id": client_id, "code": code}
 
     def get_device_code(self):
         return self._make_request(
-            "GET",
+            "POST",
             f"{self.OAUTH_URL}/device/code",
-            params={"client_id": self.OPENSOURCE_CLIENT_ID, "new_credentials": "yes"},
+            data={
+                "client_id": self.OPENSOURCE_CLIENT_ID,
+                "scope": "get.post.downloader get.post.seedbox get.account get.files get.post.stream",
+            },
         )
 
-    def get_token(self, client_id, client_secret, device_code):
+    def get_token(self, client_id, device_code):
         return self._make_request(
             "POST",
             f"{self.OAUTH_URL}/token",
             data={
                 "client_id": client_id,
-                "client_secret": client_secret,
                 "code": device_code,
                 "grant_type": "http://oauth.net/grant_type/device/1.0",
+            },
+            is_expected_to_fail=True,
+        )
+
+    def refresh_token(self, client_id, refresh_token):
+        return self._make_request(
+            "POST",
+            f"{self.OAUTH_URL}/token",
+            data={
+                "client_id": client_id,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
             },
         )
 
     def authorize(self, device_code):
-        response_data = self._make_request(
-            "GET",
-            f"{self.OAUTH_URL}/device/credentials",
-            params={"client_id": self.OPENSOURCE_CLIENT_ID, "code": device_code},
-            is_expected_to_fail=True,
-        )
+        token_data = self.get_token(self.OPENSOURCE_CLIENT_ID, device_code)
 
-        if "client_secret" not in response_data:
-            return response_data
-
-        token_data = self.get_token(
-            response_data["client_id"], response_data["client_secret"], device_code
-        )
+        if "error" in token_data:
+            return token_data
 
         if "access_token" in token_data:
             token = self.encode_token_data(
-                response_data["client_id"],
-                response_data["client_secret"],
-                token_data["refresh_token"],
+                self.OPENSOURCE_CLIENT_ID, token_data["refresh_token"]
             )
             return {"token": token}
         else:
@@ -141,61 +146,38 @@ class RealDebrid:
 
     def add_magent_link(self, magnet_link):
         return self._make_request(
-            "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
+            "POST", f"{self.BASE_URL}/seedbox/add", data={"url": magnet_link}
         )
 
     def get_user_torrent_list(self):
-        return self._make_request("GET", f"{self.BASE_URL}/torrents")
+        return self._make_request("GET", f"{self.BASE_URL}/seedbox/list")
 
     def get_torrent_info(self, torrent_id):
-        return self._make_request("GET", f"{self.BASE_URL}/torrents/info/{torrent_id}")
+        return self._make_request(
+            "GET", f"{self.BASE_URL}/seedbox/list", data={"url": torrent_id}
+        )
+
+    def get_torrent_files_list(self, torrent_id):
+        return self._make_request("GET", f"{self.BASE_URL}/files/{torrent_id}/list")
 
     def get_torrent_instant_availability(self, torrent_hash):
         return self._make_request(
-            "GET", f"{self.BASE_URL}/torrents/instantAvailability/{torrent_hash}"
+            "GET", f"{self.BASE_URL}/seedbox/cached/", data={"url": torrent_hash}
         )
 
     def disable_access_token(self):
         return self._make_request(
-            "GET", f"{self.BASE_URL}/disable_access_token", is_return_none=True
+            "GET", f"{self.OAUTH_URL}/revoke", is_return_none=True
         )
 
-    def start_torrent_download(self, torrent_id, file_ids="all"):
-        return self._make_request(
-            "POST",
-            f"{self.BASE_URL}/torrents/selectFiles/{torrent_id}",
-            data={"files": file_ids},
-            is_return_none=True,
-        )
+    def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
+        torrent_list_response = self.get_user_torrent_list()
+        if "error" in torrent_list_response:
+            raise ProviderException(
+                "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
+            )
 
-    def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
-        available_torrents = self.get_user_torrent_list()
+        available_torrents = torrent_list_response["value"]
         for torrent in available_torrents:
-            if torrent["hash"] == info_hash:
+            if torrent["hashString"] == info_hash:
                 return torrent
-
-    def create_download_link(self, link):
-        response = self._make_request(
-            "POST",
-            f"{self.BASE_URL}/unrestrict/link",
-            data={"link": link},
-            is_expected_to_fail=True,
-        )
-        if "download" in response:
-            return response
-
-        if "error_code" in response:
-            if response["error_code"] == 23:
-                raise ProviderException(
-                    "Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4"
-                )
-        raise ProviderException(
-            f"Failed to create download link. response: {response}", "api_error.mp4"
-        )
-
-    def delete_torrent(self, torrent_id):
-        return self._make_request(
-            "DELETE",
-            f"{self.BASE_URL}/torrents/delete/{torrent_id}",
-            is_return_none=True,
-        )

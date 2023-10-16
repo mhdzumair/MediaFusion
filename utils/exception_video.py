@@ -1,11 +1,11 @@
 import os
 
 
-def create_text_video(output_path, text, duration=30, resolution=(1280, 720), fontsize=45, bgcolor="black"):
+def create_text_video(
+    output_path, text, duration=30, resolution=(1280, 720), fontsize=45, bgcolor="black"
+):
     # Create a solid color background using FFmpeg
-    background_command = (
-        f"ffmpeg -f lavfi -i color=c={bgcolor}:s={resolution[0]}x{resolution[1]} -t {duration} -y background.mp4"
-    )
+    background_command = f"ffmpeg -f lavfi -i color=c={bgcolor}:s={resolution[0]}x{resolution[1]} -t {duration} -y background.mp4"
     os.system(background_command)
 
     # Overlay the text with shadow and fade-in and fade-out effects

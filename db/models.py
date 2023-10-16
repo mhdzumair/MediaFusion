@@ -55,7 +55,9 @@ class MediaFusionMetaData(Document):
     title: str
     year: Optional[int]
     poster: str
+    background: str
     streams: list[Link[Streams]]
+    type: str
 
     class Settings:
         is_root = True
