@@ -205,13 +205,13 @@ async def search_movie(
 @app.get(
     "/{secret_str}/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
-    response_model=schemas.Meta,
+    response_model=schemas.MetaItem,
     response_model_exclude_none=True,
 )
 @app.get(
     "/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
-    response_model=schemas.Meta,
+    response_model=schemas.MetaItem,
     response_model_exclude_none=True,
 )
 async def get_meta(

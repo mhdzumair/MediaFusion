@@ -20,6 +20,10 @@ class Meta(BaseModel):
     videos: list | None = None
 
 
+class MetaItem(BaseModel):
+    meta: Meta
+
+
 class Metas(BaseModel):
     metas: list[Meta] = []
 
