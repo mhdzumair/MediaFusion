@@ -47,6 +47,13 @@ class RealDebrid:
                 pass
             elif error.response.status_code == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
+            elif (
+                error.response.status_code == 403
+                and response.json().get("error_code") == 9
+            ):
+                raise ProviderException(
+                    "Real-Debrid Permission denied for free account", "need_premium.mp4"
+                )
             else:
                 formatted_traceback = "".join(traceback.format_exception(error))
                 raise ProviderException(
