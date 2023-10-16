@@ -84,6 +84,17 @@
 	  ]
 	},
 	{
+	  "id": "tamil_old",
+	  "type": "movie",
+	  "name": "Tamil Old Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
 	  "id": "tamil_dubbed",
 	  "type": "movie",
 	  "name": "Tamil Dubbed Movies",
@@ -120,6 +131,17 @@
 	  "id": "malayalam_hdrip",
 	  "type": "movie",
 	  "name": "Malayalam HD Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "malayalam_old",
+	  "type": "movie",
+	  "name": "Malayalam Old Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -172,6 +194,17 @@
 	  ]
 	},
 	{
+	  "id": "telugu_old",
+	  "type": "movie",
+	  "name": "Telugu Old Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
 	  "id": "telugu_dubbed",
 	  "type": "movie",
 	  "name": "Telugu Dubbed Movies",
@@ -216,6 +249,17 @@
 	  ]
 	},
 	{
+	  "id": "hindi_old",
+	  "type": "movie",
+	  "name": "Hindi Old Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
 	  "id": "hindi_dubbed",
 	  "type": "movie",
 	  "name": "Hindi Dubbed Movies",
@@ -252,6 +296,17 @@
 	  "id": "kannada_hdrip",
 	  "type": "movie",
 	  "name": "Kannada HD Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "kannada_old",
+	  "type": "movie",
+	  "name": "Kannada Old Movies",
 	  "extra": [
 		{
 		  "name": "skip",
