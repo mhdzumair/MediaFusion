@@ -219,8 +219,14 @@ async def get_meta(
 ):
     response.headers.update(headers)
     if catalog_type == "movie":
-        return await crud.get_movie_meta(meta_id)
-    return await crud.get_series_meta(meta_id)
+        data = await crud.get_movie_meta(meta_id)
+    else:
+        data = await crud.get_series_meta(meta_id)
+
+    if not data:
+        raise HTTPException(status_code=404, detail="Meta ID not found.")
+
+    return data
 
 
 @app.get(
@@ -333,6 +339,9 @@ async def get_poster(catalog_type: Literal["movie", "series"], mediafusion_id: s
         return StreamingResponse(
             image_byte_io, media_type="image/jpeg", headers=headers
         )
+    except ValueError as e:
+        logging.error(f"Unexpected error while creating poster: {e}")
+        raise HTTPException(status_code=404, detail="Failed to create poster.")
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}", exc_info=True)
         raise HTTPException(status_code=404, detail="Failed to create poster.")
