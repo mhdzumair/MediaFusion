@@ -38,7 +38,7 @@ def add_elements_to_poster(
 
     # Adding IMDb rating at the bottom left with a semi-transparent background
     if imdb_rating:
-        font = ImageFont.truetype("Arial.ttf", size=24)
+        font = ImageFont.truetype("resources/fonts/IBMPlexSans-Medium.ttf", size=24)
         imdb_text = f"IMDb: {imdb_rating}/10"
 
         # Calculate text bounding box using the draw instance
