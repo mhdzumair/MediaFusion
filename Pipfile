@@ -25,8 +25,11 @@ seedrcc = "*"
 parse-torrent-title = {editable = true, git = "https://github.com/mhdzumair/parse-torrent-title"}
 playwright = "==1.38.0"
 playwright-stealth = "*"
+pillow = "*"
+httpx = "*"
 
 [dev-packages]
+pysocks = "*"
 
 [requires]
 python_version = "3.11"

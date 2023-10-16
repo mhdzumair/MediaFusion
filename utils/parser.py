@@ -1,12 +1,17 @@
 import math
 import re
 
+import requests
+from imdb import Cinemagoer, IMDbDataAccessError
+
 from db.config import settings
 from db.models import Streams
 from db.schemas import Stream, UserData
 from streaming_providers.realdebrid.utils import (
     order_streams_by_instant_availability_and_date,
 )
+
+ia = Cinemagoer()
 
 
 def parse_stream_data(
@@ -120,3 +125,27 @@ def get_catalogs(catalog: str, languages: list[str]) -> list[str]:
 
     # Generate the catalog for each supported language
     return [f"{lang.lower()}_{base_catalog}" for lang in languages]
+
+
+def search_imdb(title: str, year: int, retry: int = 5) -> dict:
+    try:
+        result = ia.search_movie(f"{title} {year}")
+    except IMDbDataAccessError:
+        return search_imdb(title, year, retry - 1) if retry > 0 else {}
+    for movie in result:
+        if movie.get("year") == year and movie.get("title").lower() in title.lower():
+            imdb_id = f"tt{movie.movieID}"
+            poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
+            if requests.get(poster).status_code == 200:
+                return {
+                    "imdb_id": imdb_id,
+                    "poster": poster.replace("small", "medium"),
+                    "background": f"https://live.metahub.space/background/medium/{imdb_id}/img",
+                }
+            poster = movie.get("full-size cover url")
+            return {
+                "imdb_id": imdb_id,
+                "poster": poster,
+                "background": poster,
+            }
+    return {}

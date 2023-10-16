@@ -12,10 +12,11 @@ class Catalog(BaseModel):
 
 
 class Meta(BaseModel):
-    id: str
+    id: str = Field(alias="_id")
     name: str = Field(alias="title")
     type: str = Field(default="movie")
     poster: str
+    background: str
     videos: list | None = None
 
 
@@ -57,4 +58,4 @@ class AuthorizeData(BaseModel):
 
 
 class MetaIdProjection(BaseModel):
-    id: str
+    id: str = Field(alias="_id")
