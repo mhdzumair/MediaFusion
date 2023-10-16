@@ -59,8 +59,14 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(tamil_blasters.run_schedule_scrape, CronTrigger(hour="*/3"))
-    scheduler.add_job(tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"))
+    scheduler.add_job(
+        tamil_blasters.run_schedule_scrape,
+        CronTrigger(hour="*/3"),
+        name="tamil_blasters",
+    )
+    scheduler.add_job(
+        tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
+    )
     scheduler.start()
     app.state.scheduler = scheduler
 
