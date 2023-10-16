@@ -3,76 +3,43 @@ from typing import Optional
 from uuid import uuid4
 
 from beanie import WriteRules
-from imdb import Cinemagoer, IMDbDataAccessError
+from beanie.operators import In
 
 from db import schemas
+from db.config import settings
 from db.models import (
     MediaFusionMovieMetaData,
     MediaFusionSeriesMetaData,
     Streams,
     Season,
     Episode,
-    MediaFusionMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
-from utils.parser import parse_stream_data, get_catalogs
-
-ia = Cinemagoer()
+from utils.parser import parse_stream_data, get_catalogs, search_imdb
 
 
 async def get_meta_list(
-    catalog_type: str, catalog: str, skip: int = 0, limit: int = 100
+    catalog_type: str, catalog: str, skip: int = 0, limit: int = 25
 ) -> list[schemas.Meta]:
-
-    pipeline = [
-        # Lookup to join with the Streams collection
-        {
-            "$lookup": {
-                "from": "Streams",
-                "localField": "streams.$id",
-                "foreignField": "_id",
-                "as": "joined_streams",
-            }
-        },
-        # Unwind the joined streams to process each stream separately
-        {"$unwind": "$joined_streams"},
-        # Match the series based on catalog
-        {"$match": {"joined_streams.catalog": catalog}},
-        # Group by series ID and determine the latest date
-        {
-            "$group": {
-                "_id": "$_id",
-                "latest_date": {"$max": "$joined_streams.created_at"},
-                "title": {"$first": "$title"},
-                "poster": {"$first": "$poster"},
-                "type": {"$first": "$type"},
-            }
-        },
-        # Rename _id to id
-        {
-            "$project": {
-                "id": "$_id",
-                "latest_date": 1,
-                "title": 1,
-                "poster": 1,
-                "type": 1,
-            }
-        },
-        # Sort by the latest_date in descending order
-        {"$sort": {"latest_date": -1}},
-        # Pagination
-        {"$skip": skip},
-        {"$limit": limit},
-    ]
-
     if catalog_type == "movie":
-        meta_list = await MediaFusionMovieMetaData.aggregate(
-            pipeline, projection_model=schemas.Meta
-        ).to_list()
+        meta_class = MediaFusionMovieMetaData
     else:
-        meta_list = await MediaFusionSeriesMetaData.aggregate(
-            pipeline, projection_model=schemas.Meta
-        ).to_list()
+        meta_class = MediaFusionSeriesMetaData
+
+    meta_list = (
+        await meta_class.find(
+            In(meta_class.streams.catalog, [catalog]),
+            fetch_links=True,
+        )
+        .sort(-meta_class.streams.created_at)
+        .skip(skip)
+        .limit(limit)
+        .project(schemas.Meta)
+        .to_list()
+    )
+    for meta in meta_list:
+        meta.poster = f"{settings.host_url}/poster/{catalog_type}/{meta.id}.jpg"
+
     return meta_list
 
 
@@ -124,10 +91,10 @@ async def get_movie_meta(meta_id: str):
 
     return {
         "meta": {
-            "id": meta_id,
+            "_id": meta_id,
             "type": "movie",
-            "name": movie_data.title,
-            "poster": movie_data.poster,
+            "title": movie_data.title,
+            "poster": f"{settings.host_url}/poster/movie/{meta_id}.jpg",
             "background": movie_data.poster,
         }
     }
@@ -141,10 +108,10 @@ async def get_series_meta(meta_id: str):
 
     metadata = {
         "meta": {
-            "id": meta_id,
+            "_id": meta_id,
             "type": "series",
-            "name": series_data.title,
-            "poster": series_data.poster,
+            "title": series_data.title,
+            "poster": f"{settings.host_url}/poster/series/{meta_id}.jpg",
             "background": series_data.poster,
             "videos": [],
         }
@@ -168,20 +135,6 @@ async def get_series_meta(meta_id: str):
     return metadata
 
 
-def search_imdb(title: str, year: int, retry: int = 5) -> dict:
-    try:
-        result = ia.search_movie(f"{title} {year}")
-    except IMDbDataAccessError:
-        return search_imdb(title, year, retry - 1) if retry > 0 else {}
-    for movie in result:
-        if movie.get("year") == year and movie.get("title").lower() in title.lower():
-            return {
-                "imdb_id": f"tt{movie.movieID}",
-                "poster": movie.get("full-size cover url"),
-            }
-    return {}
-
-
 async def save_movie_metadata(metadata: dict):
     # Try to get the existing movie
     existing_movie = await MediaFusionMovieMetaData.find_one(
@@ -200,8 +153,10 @@ async def save_movie_metadata(metadata: dict):
             meta_id = f"mf{uuid4().fields[-1]}"
         # Update the poster from IMDb if available
         poster = imdb_data.get("poster") or metadata["poster"]
+        background = imdb_data.get("background") or metadata["poster"]
     else:
         poster = existing_movie.poster
+        background = existing_movie.background
         meta_id = existing_movie.id
 
     # Determine file index for the main movie file (largest file)
@@ -255,6 +210,7 @@ async def save_movie_metadata(metadata: dict):
             title=metadata["title"],
             year=metadata["year"],
             poster=poster,
+            background=background,
             streams=[new_stream],
         )
         await movie_data.insert(link_rule=WriteRules.WRITE)
@@ -277,6 +233,7 @@ async def save_series_metadata(metadata: dict):
         if not series:
             meta_id = meta_id or f"mf{uuid4().fields[-1]}"
             poster = imdb_data.get("poster") or metadata["poster"]
+            background = imdb_data.get("background") or metadata["poster"]
 
             # Create an initial entry for the series
             series = MediaFusionSeriesMetaData(
@@ -284,6 +241,7 @@ async def save_series_metadata(metadata: dict):
                 title=metadata["title"],
                 year=metadata["year"],
                 poster=poster,
+                background=background,
                 streams=[],
             )
             await series.insert()
@@ -353,15 +311,18 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
-    # Define the query with the text search and catalog type
-    query = {"$text": {"$search": search_query}, "type": catalog_type}
+    if catalog_type == "movie":
+        meta_class = MediaFusionMovieMetaData
+    else:
+        meta_class = MediaFusionSeriesMetaData
 
-    # Perform the search
     search_results = (
-        await MediaFusionMetaData.find(query).project(MetaIdProjection).to_list()
+        await meta_class.find({"$text": {"$search": search_query}})
+        .project(MetaIdProjection)
+        .to_list()
     )
 
-    logging.debug(
+    logging.info(
         "Found %s results for %s in %s", len(search_results), search_query, catalog_type
     )
 
@@ -377,7 +338,7 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
         if not meta:
             continue
 
-        metas.append(meta["meta"])  # Extract the 'meta' key from the result
+        metas.append(meta["meta"])
 
     return {"metas": metas}
 

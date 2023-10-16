@@ -29,6 +29,7 @@
 
 - **Python**: This project uses Python version 3.11. Ensure you have it installed.
 - **MongoDB**: Set up a MongoDB server. You can use [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) to create a free MongoDB cluster.
+- **mkcert**: To set up local HTTPS, you'll need to use mkcert to generate SSL certificates. If not installed, get it from [here](https://github.com/FiloSottile/mkcert).
 
 ### Setup
 
@@ -44,9 +45,35 @@
     ```bash
     MONGO_URI=<Your_MongoDB_URI>
     SECRET_KEY=<Your_Random_32_Character_Secret>
-    HOST_URL=http://127.0.0.1:8000
+    HOST_URL=https://localhost:8443
     ```
-4. **For scraping instructions**: refer to the [scrapping README](/scrappers/README.md).
+4. **Local HTTPS Setup**:
+
+   - Navigate to the MediaFusion directory.
+   - Generate local SSL certificates using mkcert:
+
+   ```bash
+   mkcert -install
+   mkcert localhost
+   ```
+
+   This will generate two files: localhost.pem and localhost-key.pem.
+
+5. **Run Servers**:
+
+   - To serve your application over HTTPS on port 8443:
+
+   ```bash
+   pipenv run uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile localhost-key.pem --ssl-certfile localhost.pem
+   ```
+
+   - Since Stremio doesn't support localhost HTTPS servers to install add-on, also run an HTTP server on port 8000:
+
+   ```bash
+   pipenv run uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+
+6. **For scraping instructions**: refer to the [scrapping README](/scrappers/README.md).
 
 ## :books: References
 

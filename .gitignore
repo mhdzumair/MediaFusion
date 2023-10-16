@@ -132,3 +132,6 @@ dmypy.json
 *.service
 
 http-client.private.env.json
+
+localhost.pem
+localhost-key.pem

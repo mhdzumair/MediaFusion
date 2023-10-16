@@ -3,9 +3,10 @@ import logging
 from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Request, Response, BackgroundTasks, Depends, HTTPException
+from apscheduler.triggers.cron import CronTrigger
+from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -18,8 +19,9 @@ from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
-from utils import crypto, torrent
+from utils import crypto, torrent, poster
 from utils.const import CATALOG_ID_DATA, CATALOG_NAME_DATA
+from scrappers import tamil_blasters, tamilmv
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -57,7 +59,8 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    # scheduler.add_job(tb_scrapper.run_schedule_scrape, CronTrigger(hour="*/3"))
+    scheduler.add_job(tamil_blasters.run_schedule_scrape, CronTrigger(hour="*/3"))
+    scheduler.add_job(tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"))
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -176,28 +179,35 @@ async def get_catalog(
 
 
 @app.get(
-    "/{secret_str}/catalog/{catalog_type}/tamil_blasters/search={search_query}.json",
-    response_model=schemas.Metas,
+    "/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
     tags=["search"],
-)
-@app.get(
-    "/catalog/{catalog_type}/tamil_blasters/search={search_query}.json",
     response_model=schemas.Metas,
-    tags=["search"],
+    response_model_exclude_none=True,
 )
 async def search_movie(
     response: Response,
     catalog_type: Literal["movie", "series"],
+    catalog_id: Literal["mediafusion_search_movies", "mediafusion_search_series"],
     search_query: str,
 ):
     response.headers.update(headers)
-    logging.debug("Searching for %s", search_query)
+    logging.debug("Searching for %s : %s", catalog_id, search_query)
 
     return await crud.process_search_query(search_query, catalog_type)
 
 
-@app.get("/{secret_str}/meta/{catalog_type}/{meta_id}.json", tags=["meta"])
-@app.get("/meta/{catalog_type}/{meta_id}.json", tags=["meta"])
+@app.get(
+    "/{secret_str}/meta/{catalog_type}/{meta_id}.json",
+    tags=["meta"],
+    response_model=schemas.Meta,
+    response_model_exclude_none=True,
+)
+@app.get(
+    "/meta/{catalog_type}/{meta_id}.json",
+    tags=["meta"],
+    response_model=schemas.Meta,
+    response_model_exclude_none=True,
+)
 async def get_meta(
     catalog_type: Literal["movie", "series"], meta_id: str, response: Response
 ):
@@ -299,6 +309,27 @@ async def streaming_provider_endpoint(
         video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
 
     return RedirectResponse(url=video_url, headers=response.headers)
+
+
+@app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
+async def get_poster(catalog_type: Literal["movie", "series"], mediafusion_id: str):
+    # Query the MediaFusion data
+    if catalog_type == "movie":
+        mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
+    else:
+        mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
+
+    if not mediafusion_data:
+        raise HTTPException(status_code=404, detail="MediaFusion ID not found.")
+
+    try:
+        image_byte_io = await poster.create_poster(mediafusion_data)
+        return StreamingResponse(
+            image_byte_io, media_type="image/jpeg", headers=headers
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error while creating poster: {e}", exc_info=True)
+        raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 
 app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
