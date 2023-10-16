@@ -7,7 +7,6 @@ import math
 import random
 import re
 
-import PTN
 from bs4 import BeautifulSoup
 from dateutil.parser import parse as dateparser
 from playwright.async_api import async_playwright
@@ -20,7 +19,7 @@ from scrappers.helpers import (
     download_and_save_torrent,
 )
 
-HOMEPAGE = "https://www.tamilblasters.life"
+HOMEPAGE = "https://www.1tamilblasters.art"
 TAMIL_BLASTER_LINKS = {
     "tamil": {
         "hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
@@ -44,7 +43,7 @@ TAMIL_BLASTER_LINKS = {
         "tcrip": "87-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
         "hdrip": "86-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
         "dubbed": "88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-        "series": "forums/forum/89-hindi-new-web-series-tv-shows",
+        "series": "89-hindi-new-web-series-tv-shows",
     },
     "kannada": {
         "tcrip": "83-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
@@ -95,7 +94,6 @@ async def process_movie(
         logging.error(f"Movie link not found")
         return
 
-    metadata = PTN.parse(re.sub(r"\s+", " ", movie_link.text))
     page_link = movie_link.get("href")
 
     try:
@@ -118,16 +116,14 @@ async def process_movie(
             dateparser(datetime_element.get("datetime")) if datetime_element else None
         )
 
-        # Updating metadata
-        metadata.update(
-            {
-                "catalog": f"{language}_{media_type}",
-                "poster": poster,
-                "created_at": created_at,
-                "scrap_language": language.title(),
-                "source": "TamilBlasters",
-            }
-        )
+        # Define metadata
+        metadata = {
+            "catalog": f"{language}_{media_type}",
+            "poster": poster,
+            "created_at": created_at,
+            "scrap_language": language.title(),
+            "source": "TamilBlasters",
+        }
 
         # Extracting torrent details
         torrent_elements = movie_page.select("a[data-fileext='torrent']")
@@ -141,7 +137,7 @@ async def process_movie(
                 torrent_element,
                 scraper=scraper,
                 page=page,
-                metadata=metadata,
+                metadata=metadata.copy(),
                 media_type=media_type,
                 page_link=page_link,
             )
@@ -254,12 +250,12 @@ async def run_scraper(
         await scrap_search_keyword(search_keyword, proxy_url)
         return
     try:
-        scrap_link = f"{HOMEPAGE}/index.php?/forums/forum/{TAMIL_BLASTER_LINKS[language][video_type]}"
+        scrap_link_prefix = f"{HOMEPAGE}/index.php?/forums/forum/{TAMIL_BLASTER_LINKS[language][video_type]}"
     except KeyError:
         logging.error(f"Unsupported language or video type: {language}_{video_type}")
         return
     for page in range(start_page, pages + start_page):
-        scrap_link = f"{scrap_link}/page/{page}/"
+        scrap_link = f"{scrap_link_prefix}/page/{page}/"
         logging.info(f"Scrap page: {page}")
         if scrap_with_playwright is True:
             await scrap_page_with_playwright(
@@ -308,7 +304,7 @@ if __name__ == "__main__":
         "--video-type",
         help="scrap movie video type",
         default="hdrip",
-        choices=["hdrip", "tcrip", "dubbed", "series"],
+        choices=["hdrip", "tcrip", "dubbed", "series", "old"],
     )
     parser.add_argument(
         "-p", "--pages", type=int, default=1, help="number of scrap pages"
