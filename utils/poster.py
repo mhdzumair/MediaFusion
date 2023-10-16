@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from imdb import Cinemagoer
 import requests
 
@@ -11,15 +11,29 @@ ia = Cinemagoer()
 
 async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
     response = requests.get(mediafusion_data.poster, timeout=10)
-
     response.raise_for_status()
+
+    # Check if the response content type is an image
+    if not response.headers["Content-Type"].startswith("image/"):
+        raise ValueError(
+            f"Unexpected content type: {response.headers['Content-Type']} for URL: {mediafusion_data.poster}"
+        )
+
+    # Check if the response content is not empty
+    if not response.content:
+        raise ValueError(f"Empty content for URL: {mediafusion_data.poster}")
+
+    try:
+        image = Image.open(BytesIO(response.content))
+    except UnidentifiedImageError:
+        raise ValueError(f"Cannot identify image from URL: {mediafusion_data.poster}")
+
+    image = image.resize((300, 450))
     imdb_rating = None
     if mediafusion_data.id.startswith("tt"):
         result = ia.get_movie(mediafusion_data.id[2:], info="main")
         imdb_rating = result.get("rating")
 
-    image = Image.open(BytesIO(response.content))
-    image = image.resize((300, 450))
     image = add_elements_to_poster(image, imdb_rating)
     image = image.convert("RGB")
 
