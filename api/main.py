@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Literal
 
+from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, Depends, HTTPException
@@ -59,21 +60,25 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        tamil_blasters.run_schedule_scrape,
-        CronTrigger(hour="*/3"),
-        name="tamil_blasters",
-    )
-    scheduler.add_job(
-        tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
-    )
-    scheduler.start()
+    if settings.enable_scrapper:
+        scheduler.add_job(
+            tamil_blasters.run_schedule_scrape,
+            CronTrigger(hour="*/3"),
+            name="tamil_blasters",
+        )
+        scheduler.add_job(
+            tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
+        )
+        scheduler.start()
     app.state.scheduler = scheduler
 
 
 @app.on_event("shutdown")
 async def stop_scheduler():
-    app.state.scheduler.shutdown(wait=False)
+    try:
+        app.state.scheduler.shutdown(wait=False)
+    except SchedulerNotRunningError:
+        pass
 
 
 @app.get("/", tags=["home"])
