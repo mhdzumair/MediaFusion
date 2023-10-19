@@ -2,7 +2,6 @@ import json
 import logging
 from typing import Literal
 
-from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, Depends, HTTPException
