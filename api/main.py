@@ -75,10 +75,8 @@ async def start_scheduler():
 
 @app.on_event("shutdown")
 async def stop_scheduler():
-    try:
+    if settings.enable_scrapper:
         app.state.scheduler.shutdown(wait=False)
-    except SchedulerNotRunningError:
-        pass
 
 
 @app.get("/", tags=["home"])
