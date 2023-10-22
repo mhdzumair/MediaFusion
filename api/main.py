@@ -209,12 +209,14 @@ async def search_movie(
     tags=["meta"],
     response_model=schemas.MetaItem,
     response_model_exclude_none=True,
+    response_model_by_alias=False,
 )
 @app.get(
     "/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
     response_model=schemas.MetaItem,
     response_model_exclude_none=True,
+    response_model_by_alias=False,
 )
 async def get_meta(
     catalog_type: Literal["movie", "series"], meta_id: str, response: Response
