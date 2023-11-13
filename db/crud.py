@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from typing import Optional
 from uuid import uuid4
@@ -5,7 +6,7 @@ from uuid import uuid4
 from beanie import WriteRules
 from beanie.operators import In
 
-from db import schemas
+from db import schemas, models
 from db.config import settings
 from db.models import (
     MediaFusionMovieMetaData,
@@ -13,9 +14,15 @@ from db.models import (
     Streams,
     Season,
     Episode,
+    MediaFusionTVMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
-from utils.parser import parse_stream_data, get_catalogs, search_imdb
+from utils.parser import (
+    parse_stream_data,
+    get_catalogs,
+    search_imdb,
+    parse_tv_stream_data,
+)
 
 
 async def get_meta_list(
@@ -43,6 +50,29 @@ async def get_meta_list(
     return meta_list
 
 
+async def get_tv_meta_list(
+    genre: Optional[str] = None, skip: int = 0, limit: int = 25
+) -> list[schemas.Meta]:
+    query = MediaFusionTVMetaData.find(
+        MediaFusionTVMetaData.is_approved == True, fetch_links=True
+    )
+    if genre:
+        query = query.find(In(MediaFusionTVMetaData.genres, [genre]))
+
+    tv_meta_list = (
+        await query.skip(skip)
+        .limit(limit)
+        .sort(-MediaFusionTVMetaData.streams.created_at)
+        .project(schemas.Meta)
+        .to_list()
+    )
+
+    for meta in tv_meta_list:
+        meta.poster = f"{settings.host_url}/poster/tv/{meta.id}.jpg"
+
+    return tv_meta_list
+
+
 async def get_movie_data_by_id(
     movie_id: str, fetch_links: bool = False
 ) -> Optional[MediaFusionMovieMetaData]:
@@ -57,6 +87,13 @@ async def get_series_data_by_id(
         series_id, fetch_links=fetch_links
     )
     return series_data
+
+
+async def get_tv_data_by_id(
+    tv_id: str, fetch_links: bool = False
+) -> Optional[MediaFusionTVMetaData]:
+    tv_data = await MediaFusionTVMetaData.get(tv_id, fetch_links=fetch_links)
+    return tv_data
 
 
 async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[Stream]:
@@ -81,6 +118,14 @@ async def get_series_streams(
     return parse_stream_data(
         matched_episode_streams, user_data, secret_str, season, episode
     )
+
+
+async def get_tv_streams(video_id: str) -> list[Stream]:
+    tv_data = await get_tv_data_by_id(video_id, True)
+    if not tv_data:
+        return []
+
+    return parse_tv_stream_data(tv_data.streams)
 
 
 async def get_movie_meta(meta_id: str):
@@ -122,9 +167,23 @@ async def get_series_meta(meta_id: str):
         stream: Streams
         if stream.season:  # Ensure the stream has season data
             for episode in stream.season.episodes:
+                stream_id = (
+                    f"{meta_id}:{stream.season.season_number}:{episode.episode_number}"
+                )
+                # check if the stream is already in the list
+                if next(
+                    (
+                        video
+                        for video in metadata["meta"]["videos"]
+                        if video["id"] == stream_id
+                    ),
+                    None,
+                ):
+                    continue
+
                 metadata["meta"]["videos"].append(
                     {
-                        "id": f"{meta_id}:{stream.season.season_number}:{episode.episode_number}",
+                        "id": stream_id,
                         "name": f"S{stream.season.season_number} EP{episode.episode_number}",
                         "season": stream.season.season_number,
                         "episode": episode.episode_number,
@@ -133,6 +192,17 @@ async def get_series_meta(meta_id: str):
                 )
 
     return metadata
+
+
+async def get_tv_meta(meta_id: str):
+    tv_data = await get_tv_data_by_id(meta_id)
+
+    if not tv_data:
+        return {}
+
+    return {
+        "meta": {"_id": meta_id, **tv_data.model_dump()},
+    }
 
 
 async def save_movie_metadata(metadata: dict):
@@ -313,6 +383,8 @@ async def save_series_metadata(metadata: dict):
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
+    elif catalog_type == "tv":
+        meta_class = MediaFusionTVMetaData
     else:
         meta_class = MediaFusionSeriesMetaData
 
@@ -332,6 +404,8 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
         # Use the appropriate function to get the meta data
         if catalog_type == "movie":
             meta = await get_movie_meta(item.id)
+        elif catalog_type == "tv":
+            meta = await get_tv_meta(item.id)
         else:
             meta = await get_series_meta(item.id)
 
@@ -346,3 +420,65 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
 async def get_stream_by_info_hash(info_hash: str) -> Streams | None:
     stream = await Streams.get(info_hash)
     return stream
+
+
+async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> tuple[str, bool]:
+    # Try to get the existing TV channel
+    channel_id = "mf" + hashlib.sha256(tv_metadata.title.encode()).hexdigest()[:10]
+    logging.info(f"Processing TV channel id {channel_id}")
+    existing_channel = await models.MediaFusionTVMetaData.get(channel_id)
+
+    # Map the TVStreams schema to the TVStreams model
+    streams_models = []
+    for stream in tv_metadata.streams:
+        streams_models.append(
+            models.TVStreams(
+                url=stream.url,
+                name=stream.name,
+                behaviorHints=stream.behaviorHints.model_dump(exclude_none=True),
+                ytId=stream.ytId,
+                source=stream.source,
+            )
+        )
+
+    if existing_channel:
+        # Check for existing streams and update if necessary
+        await existing_channel.fetch_all_links()
+        for new_stream in streams_models:
+            matching_stream = next(
+                (
+                    s
+                    for s in existing_channel.streams
+                    if (s.url and s.url == new_stream.url)
+                    or (s.ytId and s.ytId == new_stream.ytId)
+                ),
+                None,
+            )
+            if not matching_stream:
+                existing_channel.streams.append(new_stream)
+        await existing_channel.save(link_rule=WriteRules.WRITE)
+        logging.info(f"Updated TV channel {existing_channel.title}")
+        is_new = False
+    else:
+        tv_metadata.genres.extend([tv_metadata.country, tv_metadata.tv_language])
+        genres = list(set(tv_metadata.genres))
+
+        # If the channel doesn't exist, create a new one
+        tv_channel_data = models.MediaFusionTVMetaData(
+            id=channel_id,
+            title=tv_metadata.title,
+            poster=tv_metadata.poster,
+            background=tv_metadata.background,
+            streams=streams_models,
+            type="tv",
+            country=tv_metadata.country,
+            tv_language=tv_metadata.tv_language,
+            logo=tv_metadata.logo,
+            genres=genres,
+            is_approved=False,
+        )
+        await tv_channel_data.insert(link_rule=WriteRules.WRITE)
+        logging.info(f"Added TV channel {tv_channel_data.title}")
+        is_new = True
+
+    return channel_id, is_new

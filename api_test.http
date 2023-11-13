@@ -17,6 +17,21 @@ Accept: application/json
 
 ###
 
+GET http://127.0.0.1:8000/catalog/series/tamil_series.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/catalog/tv/live_tv.json
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/stream/tv/mf7c537827a3.json
+Accept: application/json
+
+###
+
 GET http://127.0.0.1:8000/catalog/movie/tamil_hdrip/skip=10.json
 Accept: application/json
 
@@ -37,7 +52,7 @@ Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/{{secret_str}}/meta/series/mf39644457048721.json
+GET http://127.0.0.1:8000/{{secret_str}}/meta/series/mf279172080279251.json
 Accept: application/json
 
 ###
@@ -54,3 +69,10 @@ Accept: application/json
 
 GET http://127.0.0.1:8000/meta/movie/tt11468258.json
 Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/stream/tv/mf1358a3be25.json
+Accept: application/json
+
+###

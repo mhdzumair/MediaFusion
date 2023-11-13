@@ -29,6 +29,8 @@ CATALOG_ID_DATA = [
     "english_hdrip",
     "english_tcrip",
     "english_series",
+    "live_tv",
+    "mediafusion_search_tv",
 ]
 
 CATALOG_NAME_DATA = [
@@ -62,4 +64,6 @@ CATALOG_NAME_DATA = [
     "English HD Movies",
     "English TCRip/DVDScr/HDCAM Movies",
     "English Series",
+    "Live TV",
+    "MediaFusion Search TV",
 ]

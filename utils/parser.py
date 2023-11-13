@@ -5,7 +5,7 @@ import requests
 from imdb import Cinemagoer, IMDbDataAccessError
 
 from db.config import settings
-from db.models import Streams
+from db.models import Streams, TVStreams
 from db.schemas import Stream, UserData
 from streaming_providers.realdebrid.utils import (
     order_streams_by_instant_availability_and_date,
@@ -149,3 +149,27 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
                 "background": poster,
             }
     return {}
+
+
+def parse_tv_stream_data(stream: list[TVStreams]) -> list[Stream]:
+    stream_list = []
+    for stream in stream:
+        if stream.behaviorHints.get("is_redirect", False):
+            response = requests.get(
+                stream.url,
+                headers=stream.behaviorHints["proxyHeaders"]["request"],
+                allow_redirects=False,
+            )
+            if response.status_code == 302:
+                stream.url = response.headers["Location"]
+        stream_list.append(
+            Stream(
+                name="MediaFusion",
+                description=f"{stream.name}, {stream.source}",
+                url=stream.url,
+                ytId=stream.ytId,
+                behaviorHints=stream.behaviorHints,
+            )
+        )
+
+    return stream_list
