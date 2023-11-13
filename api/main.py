@@ -4,7 +4,7 @@ from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, Request, Response, Depends, HTTPException
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +19,7 @@ from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
-from utils import crypto, torrent, poster
+from utils import crypto, torrent, poster, validation_helper
 from utils.const import CATALOG_ID_DATA, CATALOG_NAME_DATA
 from scrappers import tamil_blasters, tamilmv
 
@@ -59,21 +59,23 @@ async def init_db():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        tamil_blasters.run_schedule_scrape,
-        CronTrigger(hour="*/3"),
-        name="tamil_blasters",
-    )
-    scheduler.add_job(
-        tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
-    )
-    scheduler.start()
+    if settings.enable_scrapper:
+        scheduler.add_job(
+            tamil_blasters.run_schedule_scrape,
+            CronTrigger(hour="*/3"),
+            name="tamil_blasters",
+        )
+        scheduler.add_job(
+            tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
+        )
+        scheduler.start()
     app.state.scheduler = scheduler
 
 
 @app.on_event("shutdown")
 async def stop_scheduler():
-    app.state.scheduler.shutdown(wait=False)
+    if settings.enable_scrapper:
+        app.state.scheduler.shutdown(wait=False)
 
 
 @app.get("/", tags=["home"])
@@ -172,18 +174,47 @@ async def get_manifest(
     response_model_by_alias=False,
     tags=["catalog"],
 )
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/genre={genre}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/catalog/{catalog_type}/{catalog_id}/genre={genre}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
 async def get_catalog(
     response: Response,
-    catalog_type: Literal["movie", "series"],
+    catalog_type: Literal["movie", "series", "tv"],
     catalog_id: str,
     skip: int = 0,
+    genre: str = None,
 ):
     response.headers.update(headers)
+    if genre and "&" in genre:
+        genre, skip = genre.split("&")
+        skip = skip.split("=")[1] if "=" in skip else "0"
+        skip = int(skip) if skip and skip.isdigit() else 0
+
     metas = schemas.Metas()
-    metas.metas.extend(await crud.get_meta_list(catalog_type, catalog_id, skip))
+    if catalog_type == "tv":
+        metas.metas.extend(await crud.get_tv_meta_list(genre, skip))
+    else:
+        metas.metas.extend(await crud.get_meta_list(catalog_type, catalog_id, skip))
     return metas
 
 
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
+    tags=["search"],
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+)
 @app.get(
     "/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
     tags=["search"],
@@ -192,8 +223,12 @@ async def get_catalog(
 )
 async def search_movie(
     response: Response,
-    catalog_type: Literal["movie", "series"],
-    catalog_id: Literal["mediafusion_search_movies", "mediafusion_search_series"],
+    catalog_type: Literal["movie", "series", "tv"],
+    catalog_id: Literal[
+        "mediafusion_search_movies",
+        "mediafusion_search_series",
+        "mediafusion_search_tv",
+    ],
     search_query: str,
 ):
     response.headers.update(headers)
@@ -207,21 +242,25 @@ async def search_movie(
     tags=["meta"],
     response_model=schemas.MetaItem,
     response_model_exclude_none=True,
+    response_model_by_alias=False,
 )
 @app.get(
     "/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
     response_model=schemas.MetaItem,
     response_model_exclude_none=True,
+    response_model_by_alias=False,
 )
 async def get_meta(
-    catalog_type: Literal["movie", "series"], meta_id: str, response: Response
+    catalog_type: Literal["movie", "series", "tv"], meta_id: str, response: Response
 ):
     response.headers.update(headers)
     if catalog_type == "movie":
         data = await crud.get_movie_meta(meta_id)
-    else:
+    elif catalog_type == "series":
         data = await crud.get_series_meta(meta_id)
+    else:
+        data = await crud.get_tv_meta(meta_id)
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
@@ -254,7 +293,7 @@ async def get_meta(
     tags=["stream"],
 )
 async def get_streams(
-    catalog_type: Literal["movie", "series"],
+    catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
     response: Response,
     secret_str: str = None,
@@ -266,10 +305,12 @@ async def get_streams(
 
     if catalog_type == "movie":
         fetched_streams = await crud.get_movie_streams(user_data, secret_str, video_id)
-    else:
+    elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
             user_data, secret_str, video_id, season, episode
         )
+    else:
+        fetched_streams = await crud.get_tv_streams(video_id)
 
     return {"streams": fetched_streams}
 
@@ -324,12 +365,16 @@ async def streaming_provider_endpoint(
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
-async def get_poster(catalog_type: Literal["movie", "series"], mediafusion_id: str):
+async def get_poster(
+    catalog_type: Literal["movie", "series", "tv"], mediafusion_id: str
+):
     # Query the MediaFusion data
     if catalog_type == "movie":
         mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
-    else:
+    elif catalog_type == "series":
         mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
+    else:
+        mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
 
     if not mediafusion_data:
         raise HTTPException(status_code=404, detail="MediaFusion ID not found.")
@@ -345,6 +390,25 @@ async def get_poster(catalog_type: Literal["movie", "series"], mediafusion_id: s
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}", exc_info=True)
         raise HTTPException(status_code=404, detail="Failed to create poster.")
+
+
+@app.post("/tv-metadata", status_code=status.HTTP_201_CREATED, tags=["tv"])
+async def add_tv_metadata(metadata: schemas.TVMetaData):
+    try:
+        metadata.streams = validation_helper.validate_tv_metadata(metadata)
+    except validation_helper.ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    tv_channel_id, is_new = await crud.save_tv_channel_metadata(metadata)
+
+    if is_new:
+        return {
+            "status": f"Metadata with ID {tv_channel_id} has been created and is pending approval. Thanks for your contribution."
+        }
+
+    return {
+        "status": f"Tv Channel with ID {tv_channel_id} Streams has been updated. Thanks for your contribution."
+    }
 
 
 app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])

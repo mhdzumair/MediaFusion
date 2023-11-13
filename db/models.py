@@ -1,9 +1,10 @@
+import hashlib
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from pymongo import IndexModel, ASCENDING
 
 
@@ -50,12 +51,21 @@ class Streams(Document):
         return None
 
 
+class TVStreams(Document):
+    name: str
+    url: str | None = None
+    ytId: str | None = None
+    source: str
+    behaviorHints: dict[str, Any] | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 class MediaFusionMetaData(Document):
     id: str
     title: str
-    year: Optional[int]
+    year: Optional[int] = None
     poster: str
-    background: str
+    background: Optional[str] = None
     streams: list[Link[Streams]]
     type: str
 
@@ -73,3 +83,13 @@ class MediaFusionMovieMetaData(MediaFusionMetaData):
 
 class MediaFusionSeriesMetaData(MediaFusionMetaData):
     type: str = "series"
+
+
+class MediaFusionTVMetaData(MediaFusionMetaData):
+    type: str = "tv"
+    country: str
+    tv_language: str
+    logo: Optional[str] = None
+    genres: Optional[list[str]] = None
+    is_approved: bool = False
+    streams: list[Link[TVStreams]]

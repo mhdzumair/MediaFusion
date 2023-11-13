@@ -2,7 +2,13 @@ import motor.motor_asyncio
 from beanie import init_beanie
 
 from db.config import settings
-from db.models import MediaFusionSeriesMetaData, MediaFusionMovieMetaData, Streams
+from db.models import (
+    MediaFusionSeriesMetaData,
+    MediaFusionMovieMetaData,
+    Streams,
+    TVStreams,
+    MediaFusionTVMetaData,
+)
 
 
 async def init():
@@ -10,4 +16,13 @@ async def init():
     client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongo_uri)
 
     # Init beanie with the Product document class
-    await init_beanie(database=client.mediafusion, document_models=[MediaFusionMovieMetaData, MediaFusionSeriesMetaData, Streams])
+    await init_beanie(
+        database=client.mediafusion,
+        document_models=[
+            MediaFusionMovieMetaData,
+            MediaFusionSeriesMetaData,
+            Streams,
+            TVStreams,
+            MediaFusionTVMetaData,
+        ],
+    )

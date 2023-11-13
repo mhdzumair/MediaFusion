@@ -14,7 +14,7 @@ async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
     response.raise_for_status()
 
     # Check if the response content type is an image
-    if not response.headers["Content-Type"].startswith("image/"):
+    if not response.headers["Content-Type"].lower().startswith("image/"):
         raise ValueError(
             f"Unexpected content type: {response.headers['Content-Type']} for URL: {mediafusion_data.poster}"
         )
@@ -24,7 +24,7 @@ async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
         raise ValueError(f"Empty content for URL: {mediafusion_data.poster}")
 
     try:
-        image = Image.open(BytesIO(response.content))
+        image = Image.open(BytesIO(response.content)).convert("RGBA")
     except UnidentifiedImageError:
         raise ValueError(f"Cannot identify image from URL: {mediafusion_data.poster}")
 

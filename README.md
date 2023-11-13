@@ -41,39 +41,43 @@
    ```bash
    git clone https://github.com/mhdzumair/MediaFusion
    ```
-3. **Environment Variables**: Create a `.env` file in the root directory with the following variables:
+3. **Install Dependencies**: Navigate to the MediaFusion directory and install dependencies with:
+   ```bash
+   pipenv install
+   ```
+4. **Environment Variables**: Create a `.env` file in the root directory with the following variables:
     ```bash
     MONGO_URI=<Your_MongoDB_URI>
     SECRET_KEY=<Your_Random_32_Character_Secret>
-    HOST_URL=https://localhost:8443
+    HOST_URL=https://127.0.0.1:8443
     ```
-4. **Local HTTPS Setup**:
+5. **Local HTTPS Setup**:
 
    - Navigate to the MediaFusion directory.
    - Generate local SSL certificates using mkcert:
 
    ```bash
    mkcert -install
-   mkcert localhost
+   mkcert 127.0.0.1
    ```
 
    This will generate two files: localhost.pem and localhost-key.pem.
 
-5. **Run Servers**:
+6. **Run Servers**:
 
-   - To serve your application over HTTPS on port 8443:
+   - To serve application over HTTPS on port 8443:
 
    ```bash
-   pipenv run uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile localhost-key.pem --ssl-certfile localhost.pem
+   pipenv run uvicorn api.main:app --host 127.0.0.1 --port 8443 --ssl-keyfile 127.0.0.1-key.pem --ssl-certfile 127.0.0.1.pem
    ```
 
    - Since Stremio doesn't support localhost HTTPS servers to install add-on, also run an HTTP server on port 8000:
 
    ```bash
-   pipenv run uvicorn main:app --host 0.0.0.0 --port 8000
+   pipenv run uvicorn api.main:app --host 127.0.0.1 --port 8000
    ```
 
-6. **For scraping instructions**: refer to the [scrapping README](/scrappers/README.md).
+7. **For scraping instructions**: refer to the [scrapping README](/scrappers/README.md).
 
 ## :books: References
 

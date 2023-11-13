@@ -1,9 +1,9 @@
 {
   "id": "mhdzumair.addons.mediafusion",
-  "version": "3.4.2",
+  "version": "3.5.0",
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
-  "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
+  "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies, series & live TV with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
   "logo": "https://882b9915d0fe-mediafusion.baby-beamup.club/static/images/mediafusion_logo.png",
   "behaviorHints": {
 	"configurable": true,
@@ -15,7 +15,8 @@
 	  "name": "stream",
 	  "types": [
 		"movie",
-		"series"
+		"series",
+		"tv"
 	  ],
 	  "idPrefixes": [
 		"tt",
@@ -26,7 +27,8 @@
 	  "name": "meta",
 	  "types": [
 		"movie",
-		"series"
+		"series",
+		"tv"
 	  ],
 	  "idPrefixes": [
 		"tt",
@@ -36,7 +38,8 @@
   ],
   "types": [
 	"movie",
-	"series"
+	"series",
+	"tv"
   ],
   "catalogs": [
 	{
@@ -366,6 +369,47 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "live_tv",
+	  "type": "tv",
+	  "name": "Live TV",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Tamil",
+			"Malayalam",
+			"English",
+			"Sports",
+			"Tamil Entertainment",
+			"India",
+			"Sri Lanka",
+			"Tamil Infotainment",
+			"Tamil Movies",
+			"Tamil Music",
+			"Tamil News",
+			"Tamil Kids",
+			"Hindi"
+		  ]
+		}
+	  ]
+	},
+	{
+	  "id": "mediafusion_search_tv",
+	  "type": "tv",
+	  "name": "Live TV",
+	  "extra": [
+		{
+		  "name": "search",
+		  "isRequired": true
 		}
 	  ]
 	}
