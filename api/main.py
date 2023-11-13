@@ -62,7 +62,7 @@ async def start_scheduler():
     if settings.enable_scrapper:
         scheduler.add_job(
             tamil_blasters.run_schedule_scrape,
-            CronTrigger(hour="*/3"),
+            CronTrigger(hour="*/6"),
             name="tamil_blasters",
         )
         scheduler.add_job(
