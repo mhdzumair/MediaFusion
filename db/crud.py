@@ -208,7 +208,7 @@ async def get_tv_meta(meta_id: str):
 async def save_movie_metadata(metadata: dict):
     # Try to get the existing movie
     existing_movie = await MediaFusionMovieMetaData.find_one(
-        {"title": metadata["title"], "year": metadata.get("year")}
+        {"title": metadata["title"], "year": metadata.get("year")}, fetch_links=True
     )
 
     if not existing_movie:
@@ -218,7 +218,9 @@ async def save_movie_metadata(metadata: dict):
 
         if meta_id:
             # Check if the movie with the found IMDb ID already exists in our DB
-            existing_movie = await MediaFusionMovieMetaData.get(meta_id)
+            existing_movie = await MediaFusionMovieMetaData.get(
+                meta_id, fetch_links=True
+            )
         else:
             meta_id = f"mf{uuid4().fields[-1]}"
         # Update the poster from IMDb if available
@@ -264,7 +266,6 @@ async def save_movie_metadata(metadata: dict):
 
     if existing_movie:
         # Check if the stream with the same info_hash already exists
-        await existing_movie.fetch_all_links()
         matching_stream = next(
             (stream for stream in existing_movie.streams if stream.id == new_stream.id),
             None,
@@ -289,7 +290,9 @@ async def save_movie_metadata(metadata: dict):
 
 async def save_series_metadata(metadata: dict):
     # Try to get the existing series
-    series = await MediaFusionSeriesMetaData.find_one({"title": metadata["title"]})
+    series = await MediaFusionSeriesMetaData.find_one(
+        {"title": metadata["title"]}, fetch_links=True
+    )
 
     if not series:
         # If the series doesn't exist in our DB, search for IMDb ID
@@ -298,7 +301,7 @@ async def save_series_metadata(metadata: dict):
 
         if meta_id:
             # Check if the series with the found IMDb ID already exists in our DB
-            series = await MediaFusionSeriesMetaData.get(meta_id)
+            series = await MediaFusionSeriesMetaData.get(meta_id, fetch_links=True)
 
         if not series:
             meta_id = meta_id or f"mf{uuid4().fields[-1]}"
@@ -317,7 +320,6 @@ async def save_series_metadata(metadata: dict):
             await series.insert()
             logging.info("Added series %s", series.title)
 
-    await series.fetch_all_links()
     existing_stream = next(
         (
             s
