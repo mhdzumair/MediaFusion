@@ -310,6 +310,7 @@ async def get_streams(
             user_data, secret_str, video_id, season, episode
         )
     else:
+        response.headers.update(no_cache_headers)
         fetched_streams = await crud.get_tv_streams(video_id)
 
     return {"streams": fetched_streams}
