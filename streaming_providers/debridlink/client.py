@@ -162,7 +162,7 @@ class DebridLink:
 
     def get_torrent_instant_availability(self, torrent_hash):
         return self._make_request(
-            "GET", f"{self.BASE_URL}/seedbox/cached/", data={"url": torrent_hash}
+            "GET", f"{self.BASE_URL}/seedbox/cached", params={"url": torrent_hash}
         )
 
     def disable_access_token(self):

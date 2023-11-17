@@ -101,3 +101,28 @@ def select_episode_file(torrent_files: list, episode: int, file_name_key: str) -
             return file
     else:
         raise ProviderException(f"Episode {episode} not found in this torrent", "episode_not_found.mp4")
+    
+
+def order_streams_by_instant_availability_and_date(
+    streams: list[Streams], user_data: UserData
+) -> list[Streams]:
+    """Orders the streams by instant availability."""
+
+    try:
+        dl_client = DebridLink(encoded_token=user_data.streaming_provider.token)
+        instant_availability_response = dl_client.get_torrent_instant_availability(",".join([stream.id for stream in streams]))
+        for stream in streams:
+            stream.cached = bool(
+                stream.id in instant_availability_response["value"]
+            )
+    except ProviderException:
+        return streams
+
+    return sorted(
+        streams,
+        key=lambda x: (
+            x.cached,
+            x.created_at,
+        ),
+        reverse=True,
+    )

@@ -7,9 +7,8 @@ from imdb import Cinemagoer, IMDbDataAccessError
 from db.config import settings
 from db.models import Streams, TVStreams
 from db.schemas import Stream, UserData
-from streaming_providers.realdebrid.utils import (
-    order_streams_by_instant_availability_and_date,
-)
+from streaming_providers.realdebrid import utils as rd_utils
+from streaming_providers.debridlink import utils as dl_utils
 
 ia = Cinemagoer()
 
@@ -35,7 +34,12 @@ def parse_stream_data(
         user_data.streaming_provider
         and user_data.streaming_provider.service == "realdebrid"
     ):
-        streams = order_streams_by_instant_availability_and_date(streams, user_data)
+        streams = rd_utils.order_streams_by_instant_availability_and_date(streams, user_data)
+    elif (
+        user_data.streaming_provider
+        and user_data.streaming_provider.service == "debridlink"
+    ):
+        streams = dl_utils.order_streams_by_instant_availability_and_date(streams, user_data)
     else:
         # Sort the streams by created_at time
         streams = sorted(streams, key=lambda x: x.created_at, reverse=True)
