@@ -23,13 +23,15 @@ pydantic-settings = "*"
 pycryptodome = "*"
 seedrcc = "*"
 parse-torrent-title = {editable = true, git = "https://github.com/mhdzumair/parse-torrent-title"}
-playwright = "==1.38.0"
-playwright-stealth = "*"
 pillow = "*"
 httpx = "*"
+uvloop = { version = "*", markers = "sys_platform != 'win32'" }
+thefuzz = "*"
 
 [dev-packages]
 pysocks = "*"
+playwright = "==1.38.0"
+playwright-stealth = "*"
 
 [requires]
 python_version = "3.11"
