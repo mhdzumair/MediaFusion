@@ -150,9 +150,10 @@ class RealDebrid:
     def get_torrent_info(self, torrent_id):
         return self._make_request("GET", f"{self.BASE_URL}/torrents/info/{torrent_id}")
 
-    def get_torrent_instant_availability(self, torrent_hash):
+    def get_torrent_instant_availability(self, torrent_hashes: list[str]):
         return self._make_request(
-            "GET", f"{self.BASE_URL}/torrents/instantAvailability/{torrent_hash}"
+            "GET",
+            f"{self.BASE_URL}/torrents/instantAvailability/{'/'.join(torrent_hashes)}",
         )
 
     def disable_access_token(self):

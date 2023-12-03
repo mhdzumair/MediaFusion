@@ -387,11 +387,8 @@ async def get_poster(
         return StreamingResponse(
             image_byte_io, media_type="image/jpeg", headers=headers
         )
-    except ValueError as e:
-        logging.error(f"Unexpected error while creating poster: {e}")
-        raise HTTPException(status_code=404, detail="Failed to create poster.")
     except Exception as e:
-        logging.error(f"Unexpected error while creating poster: {e}", exc_info=True)
+        logging.error(f"Unexpected error while creating poster: {e}")
         raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 

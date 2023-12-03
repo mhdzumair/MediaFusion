@@ -92,12 +92,14 @@ def order_streams_by_instant_availability_and_date(
 
     try:
         rd_client = RealDebrid(encoded_token=user_data.streaming_provider.token)
+        instant_availability_data = rd_client.get_torrent_instant_availability(
+            [stream.id for stream in streams]
+        )
         for stream in streams:
-            stream.cached = bool(
-                rd_client.get_torrent_instant_availability(stream.id)[stream.id]
-            )
+            stream.cached = bool(instant_availability_data.get(stream.id, False))
+
     except ProviderException:
-        return streams
+        return sorted(streams, key=lambda x: x.created_at, reverse=True)
 
     return sorted(
         streams,
