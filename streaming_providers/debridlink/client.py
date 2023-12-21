@@ -1,82 +1,27 @@
-import PTN
-import traceback
-
-from requests import RequestException, JSONDecodeError
+from base64 import b64encode, b64decode
 from typing import Any
 
-import requests
-from base64 import b64encode, b64decode
-
+from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
 
-class DebridLink:
+class DebridLink(DebridClient):
     BASE_URL = "https://debrid-link.com/api/v2"
     OAUTH_URL = "https://debrid-link.com/api/oauth"
     OPENSOURCE_CLIENT_ID = "RyrV22FOg30DsxjYPziRKA"
 
-    def __init__(self, encoded_token=None):
-        self.encoded_token = encoded_token
-        self.headers = {}
-        self.initialize_headers()
-
-    def __del__(self):
-        if self.encoded_token:
-            self.disable_access_token()
-
-    def _make_request(
-        self,
-        method: str,
-        url: str,
-        data=None,
-        params=None,
-        is_return_none=False,
-        is_expected_to_fail=False,
-    ) -> dict:
-        if method == "GET":
-            response = requests.get(url, params=params, headers=self.headers)
-        elif method == "POST":
-            response = requests.post(url, data=data, headers=self.headers)
-        elif method == "DELETE":
-            response = requests.delete(url, headers=self.headers)
-        else:
-            raise ValueError(f"Unsupported method: {method}")
-
-        try:
-            response.raise_for_status()
-        except RequestException as error:
-            if is_expected_to_fail:
-                pass
-            elif error.response.status_code == 401:
-                raise ProviderException("Invalid token", "invalid_token.mp4")
-            elif (
-                error.response.status_code == 400
-                and response.json().get("error") == "freeServerOverload"
-            ):
-                raise ProviderException(
-                    "Debrid-Link free servers are overloaded", "need_premium.mp4"
-                )
-            else:
-                formatted_traceback = "".join(traceback.format_exception(error))
-                raise ProviderException(
-                    f"status code: {error.response.status_code}, data: {error.response.content}, trace log:\n {formatted_traceback}",
-                    "api_error.mp4",
-                )
-
-        if is_return_none:
-            return {}
-        try:
-            return response.json()
-        except JSONDecodeError as error:
-            formatted_traceback = "".join(traceback.format_exception(error))
+    def _handle_service_specific_errors(self, error):
+        if (
+            error.response.status_code == 400
+            and error.response.json().get("error") == "freeServerOverload"
+        ):
             raise ProviderException(
-                f"Failed to parse response. content: {response.text}, trace log:\n {formatted_traceback}",
-                "api_error.mp4",
+                "Debrid-Link free servers are overloaded", "need_premium.mp4"
             )
 
     def initialize_headers(self):
-        if self.encoded_token:
-            token_data = self.decode_token_str(self.encoded_token)
+        if self.token:
+            token_data = self.decode_token_str(self.token)
             access_token_data = self.refresh_token(
                 token_data["client_id"], token_data["code"]
             )
@@ -167,7 +112,10 @@ class DebridLink:
 
     def disable_access_token(self):
         return self._make_request(
-            "GET", f"{self.OAUTH_URL}/revoke", is_return_none=True
+            "GET",
+            f"{self.OAUTH_URL}/revoke",
+            is_return_none=True,
+            is_expected_to_fail=True,
         )
 
     def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:

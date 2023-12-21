@@ -17,7 +17,7 @@ def get_direct_link_from_debridlink(
     max_retries=5,
     retry_interval=5,
 ) -> str:
-    dl_client = DebridLink(encoded_token=user_data.streaming_provider.token)
+    dl_client = DebridLink(token=user_data.streaming_provider.token)
     filename = episode_data.filename if episode_data else stream.filename
 
     # Check if the torrent already exists
@@ -47,7 +47,7 @@ def check_existing_torrent(
     episode_data: Episode | None,
     max_retries: int,
     retry_interval: int,
-) -> str:
+) -> str | None:
     """Check if the torrent is already in torrent list and return the direct link if available."""
     retries = 0
 
@@ -134,7 +134,7 @@ def order_streams_by_instant_availability_and_date(
     """Orders the streams by instant availability."""
 
     try:
-        dl_client = DebridLink(encoded_token=user_data.streaming_provider.token)
+        dl_client = DebridLink(token=user_data.streaming_provider.token)
         instant_availability_response = dl_client.get_torrent_instant_availability(
             ",".join([stream.id for stream in streams])
         )
