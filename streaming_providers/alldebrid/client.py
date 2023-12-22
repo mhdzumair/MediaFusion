@@ -67,7 +67,8 @@ class AllDebrid(DebridClient):
         if response.get("status") == "success":
             return response
         raise ProviderException(
-            "Failed to create download link from AllDebrid", "transfer_error.mp4"
+            f"Failed to create download link from AllDebrid {response}",
+            "transfer_error.mp4",
         )
 
     def delete_torrent(self, magnet_id):
