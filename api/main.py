@@ -235,7 +235,6 @@ async def search_meta(
     search_query: str,
 ):
     response.headers.update(headers)
-    logging.debug("Searching for %s : %s", catalog_id, search_query)
 
     return await crud.process_search_query(search_query, catalog_type)
 

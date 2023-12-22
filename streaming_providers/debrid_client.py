@@ -80,7 +80,6 @@ class DebridClient:
         retries = 0
         while retries < max_retries:
             torrent_info = self.get_torrent_info(torrent_id)
-            print(torrent_info)
             if torrent_info["status"] == target_status:
                 return torrent_info
             time.sleep(retry_interval)
