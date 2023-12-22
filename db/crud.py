@@ -396,10 +396,6 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
         .to_list()
     )
 
-    logging.info(
-        "Found %s results for %s in %s", len(search_results), search_query, catalog_type
-    )
-
     metas = []
 
     for item in search_results:
