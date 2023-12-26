@@ -40,7 +40,8 @@ class AllDebrid(DebridClient):
 
         if response_data.get("status") != "success":
             raise ProviderException(
-                f"Failed to add magnet link to AllDebrid {response_data}", "transfer_error.mp4"
+                f"Failed to add magnet link to AllDebrid {response_data}",
+                "transfer_error.mp4",
             )
         return response_data
 
