@@ -37,10 +37,6 @@ def get_direct_link_from_alldebrid(
     else:
         # If torrent doesn't exist, add it
         response_data = ad_client.add_magent_link(magnet_link)
-        if response_data.get("status") != "success":
-            raise ProviderException(
-                "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"
-            )
         torrent_id = response_data["data"]["magnets"][0]["id"]
 
     # Wait for download completion and get the direct link

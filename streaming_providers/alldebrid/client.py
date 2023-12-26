@@ -34,9 +34,15 @@ class AllDebrid(DebridClient):
         )
 
     def add_magent_link(self, magnet_link):
-        return self._make_request(
+        response_data = self._make_request(
             "POST", f"/magnet/upload", data={"magnets[]": magnet_link}
         )
+
+        if response_data.get("status") != "success":
+            raise ProviderException(
+                f"Failed to add magnet link to AllDebrid {response_data}", "transfer_error.mp4"
+            )
+        return response_data
 
     def get_user_torrent_list(self):
         return self._make_request("GET", "/magnet/status")
