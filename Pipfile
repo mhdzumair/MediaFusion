@@ -27,11 +27,11 @@ pillow = "*"
 httpx = "*"
 uvloop = { version = "*", markers = "sys_platform != 'win32'" }
 thefuzz = "*"
+playwright = "==1.38.0"
+playwright-stealth = "*"
 
 [dev-packages]
 pysocks = "*"
-playwright = "==1.38.0"
-playwright-stealth = "*"
 
 [requires]
 python_version = "3.11"
