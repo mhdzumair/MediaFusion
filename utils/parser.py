@@ -10,6 +10,7 @@ from db.schemas import Stream, UserData
 from streaming_providers.realdebrid import utils as rd_utils
 from streaming_providers.debridlink import utils as dl_utils
 from streaming_providers.alldebrid import utils as ad_utils
+from streaming_providers.offcloud import utils as oc_utils
 
 ia = Cinemagoer()
 
@@ -50,6 +51,13 @@ def parse_stream_data(
         and user_data.streaming_provider.service == "alldebrid"
     ):
         streams = ad_utils.order_streams_by_instant_availability_and_date(
+            streams, user_data
+        )
+    elif (
+        user_data.streaming_provider
+        and user_data.streaming_provider.service == "offcloud"
+    ):
+        streams = oc_utils.order_streams_by_instant_availability_and_date(
             streams, user_data
         )
     else:
