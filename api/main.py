@@ -14,6 +14,7 @@ from db import database, crud, schemas
 from db.config import settings
 from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.offcloud.utils import get_direct_link_from_offcloud
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
@@ -358,6 +359,10 @@ async def streaming_provider_endpoint(
             )
         elif user_data.streaming_provider.service == "alldebrid":
             video_url = get_direct_link_from_alldebrid(
+                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
+            )
+        elif user_data.streaming_provider.service == "offcloud":
+            video_url = get_direct_link_from_offcloud(
                 info_hash, magnet_link, user_data, stream, episode_data, 1, 0
             )
         else:
