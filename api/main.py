@@ -145,6 +145,10 @@ async def get_manifest(
         cat for cat in manifest["catalogs"] if cat["id"] in user_data.selected_catalogs
     ]
     manifest["catalogs"] = filtered_catalogs
+
+    # Customize the name of the addon if a streaming provider is configured
+    if user_data.streaming_provider is not None:
+        manifest["name"] = f"{manifest['name']} {user_data.streaming_provider.service}"
     return manifest
 
 
