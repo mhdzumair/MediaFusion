@@ -374,7 +374,11 @@ async def streaming_provider_endpoint(
                 info_hash, magnet_link, user_data, stream, episode_data, 1, 0
             )
     except ProviderException as error:
-        logging.error("Exception occurred: %s", error.message, exc_info=True)
+        logging.error(
+            "Exception occurred: %s",
+            error.message,
+            exc_info=True if error.video_file_name == "api_error.mp4" else False,
+        )
         video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
 
     return RedirectResponse(url=video_url, headers=response.headers)

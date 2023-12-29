@@ -66,7 +66,8 @@ class DebridClient:
             return response.json()
         except JSONDecodeError as error:
             raise ProviderException(
-                f"Failed to parse response: {error}", "api_error.mp4"
+                f"Failed to parse response error: {error}. \nresponse: {response.text}",
+                "api_error.mp4",
             )
 
     def initialize_headers(self):
