@@ -36,7 +36,7 @@ def get_direct_link_from_alldebrid(
             )
     else:
         # If torrent doesn't exist, add it
-        response_data = ad_client.add_magent_link(magnet_link)
+        response_data = ad_client.add_magnet_link(magnet_link)
         torrent_id = response_data["data"]["magnets"][0]["id"]
 
     # Wait for download completion and get the direct link

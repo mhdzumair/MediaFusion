@@ -33,7 +33,7 @@ class AllDebrid(DebridClient):
             method, url, data, params, is_return_none, is_expected_to_fail
         )
 
-    def add_magent_link(self, magnet_link):
+    def add_magnet_link(self, magnet_link):
         response_data = self._make_request(
             "POST", f"/magnet/upload", data={"magnets[]": magnet_link}
         )
@@ -60,6 +60,8 @@ class AllDebrid(DebridClient):
 
     def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = self.get_user_torrent_list()
+        if not available_torrents.get("data"):
+            return None
         for torrent in available_torrents["data"]["magnets"]:
             if torrent["hash"] == info_hash:
                 return torrent

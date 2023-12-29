@@ -45,9 +45,11 @@ class DebridClient:
 
             if error.response.status_code == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
+
             formatted_traceback = "".join(traceback.format_exception(error))
             raise ProviderException(
-                f"API Error: {formatted_traceback}", "api_error.mp4"
+                f"API Error {error.response.text} \n{formatted_traceback}",
+                "api_error.mp4",
             )
 
     def _handle_service_specific_errors(self, error):
