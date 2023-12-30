@@ -93,12 +93,11 @@ def parse_stream_data(
             ),
             " + ".join(stream_data.languages),
             stream_data.source,
-            streaming_provider,
         ]
         description = ", ".join(filter(lambda x: bool(x), description_parts))
 
         stream_details = {
-            "name": "MediaFusion",
+            "name": f"MediaFusion {streaming_provider}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index
