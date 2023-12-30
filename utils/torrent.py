@@ -5,8 +5,6 @@ from urllib.parse import quote
 import PTN
 import bencodepy
 
-from utils.parser import clean_name
-
 TRACKERS = [
     "udp://tracker.openbittorrent.com:80/announce",
     "udp://tracker.opentrackr.org:1337/announce",

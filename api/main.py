@@ -241,6 +241,7 @@ async def search_meta(
     search_query: str,
 ):
     response.headers.update(headers)
+    logging.debug("search for catalog_id: %s", catalog_id)
 
     return await crud.process_search_query(search_query, catalog_type)
 
@@ -352,23 +353,24 @@ async def streaming_provider_endpoint(
     magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
 
     episode_data = stream.get_episode(season, episode)
+    filename = episode_data.filename if episode_data else stream.filename
 
     try:
         if user_data.streaming_provider.service == "seedr":
             video_url = await get_direct_link_from_seedr(
-                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
+                info_hash, magnet_link, user_data, stream, filename, 1, 0
             )
         elif user_data.streaming_provider.service == "realdebrid":
             video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
+                info_hash, magnet_link, user_data, filename, 1, 0
             )
         elif user_data.streaming_provider.service == "alldebrid":
             video_url = get_direct_link_from_alldebrid(
-                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
+                info_hash, magnet_link, user_data, filename, 1, 0
             )
         elif user_data.streaming_provider.service == "offcloud":
             video_url = get_direct_link_from_offcloud(
-                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
+                info_hash, magnet_link, user_data, filename, 1, 0
             )
         else:
             video_url = get_direct_link_from_debridlink(

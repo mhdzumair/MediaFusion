@@ -4,7 +4,7 @@ from datetime import datetime
 from seedrcc import Seedr
 from thefuzz import fuzz
 
-from db.models import Streams, Episode
+from db.models import Streams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from utils.parser import clean_name
@@ -104,7 +104,7 @@ async def get_direct_link_from_seedr(
     magnet_link: str,
     user_data: UserData,
     stream: Streams,
-    episode_data: Episode = None,
+    filename: str,
     max_retries=5,
     retry_interval=5,
 ) -> str:
@@ -128,7 +128,7 @@ async def get_direct_link_from_seedr(
     selected_file = get_file_details_from_folder(
         seedr,
         folder_id,
-        clean_name(episode_data.filename if episode_data else stream.filename, ""),
+        clean_name(filename, ""),
     )
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
@@ -154,5 +154,11 @@ def free_up_space(seedr, required_space):
     for folder in folders:
         if available_space >= required_space:
             break
+        # delete sub folder torrents and folders
+        sub_folder_content = seedr.listContents(folder["id"])
+        for sub_folder in sub_folder_content["folders"]:
+            seedr.deleteFolder(sub_folder["id"])
+        for sub_folder_torrent in sub_folder_content["torrents"]:
+            seedr.deleteTorrent(sub_folder_torrent["id"])
         seedr.deleteFolder(folder["id"])
         available_space += folder["size"]

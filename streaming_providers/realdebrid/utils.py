@@ -1,6 +1,6 @@
 from typing import Any
 
-from db.models import Streams, Episode
+from db.models import Streams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.realdebrid.client import RealDebrid
@@ -17,13 +17,11 @@ def get_direct_link_from_realdebrid(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: Streams,
-    episode_data: Episode = None,
+    filename: str,
     max_retries=5,
     retry_interval=5,
 ) -> str:
     rd_client = RealDebrid(token=user_data.streaming_provider.token)
-    filename = episode_data.filename if episode_data else stream.filename
 
     # Check if the torrent already exists
     torrent_info = rd_client.get_available_torrent(info_hash)
