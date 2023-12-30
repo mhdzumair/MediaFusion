@@ -100,7 +100,7 @@ function adjustOAuthSectionDisplay() {
     }
 }
 
-function updateProviderFields() {
+function updateProviderFields(isChangeEvent = false) {
     const provider = document.getElementById('provider_service').value;
     const tokenInput = document.getElementById('provider_token');
 
@@ -111,12 +111,14 @@ function updateProviderFields() {
         setElementDisplay('token_input', 'none');
     }
 
-    // Reset on provider change
-    tokenInput.value = '';
-    tokenInput.disabled = false;
-    currentAuthorizationToken = null;
-    oAuthBtn.disabled = false;
-    setElementDisplay('device_code_section', 'none');
+    // Reset the fields only if this is triggered by an onchange event
+    if (isChangeEvent) {
+        tokenInput.value = '';
+        tokenInput.disabled = false;
+        currentAuthorizationToken = null;
+        oAuthBtn.disabled = false;
+        setElementDisplay('device_code_section', 'none');
+    }
 
     adjustOAuthSectionDisplay();
 }

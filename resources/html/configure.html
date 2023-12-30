@@ -24,7 +24,7 @@
                 <div class="mb-3">
                     <h4>Select Stream Provider</h4>
                     <label for="provider_service">Streaming Provider:</label>
-                    <select class="form-control" name="provider_service" id="provider_service" onchange="updateProviderFields()">
+                    <select class="form-control" name="provider_service" id="provider_service" onchange="updateProviderFields(true)">
                         <option value="" {% if not user_data.streaming_provider.service %}selected{% endif %}>Direct Torrent</option>
                         <option value="realdebrid" {% if user_data.streaming_provider.service=='realdebrid' %}selected{% endif %}>Real-Debrid</option>
                         <option value="seedr" {% if user_data.streaming_provider.service=='seedr' %}selected{% endif %}>Seedr.cc</option>
