@@ -82,9 +82,11 @@ def parse_stream_data(
         if user_data.streaming_provider:
             streaming_provider = user_data.streaming_provider.service.title()
             if stream_data.cached:
-                streaming_provider += " (Cached)"
+                streaming_provider += " ⚡️"
+            else:
+                streaming_provider += " ⏳"
         else:
-            streaming_provider = "Torrent"
+            streaming_provider = "Torrent ⏳"
 
         description_parts = [
             quality_detail,
