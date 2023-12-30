@@ -11,17 +11,25 @@ class Catalog(BaseModel):
     type: str
 
 
+class Video(BaseModel):
+    id: str
+    title: str
+    released: str
+    season: int | None = None
+    episode: int | None = None
+
+
 class Meta(BaseModel):
     id: str = Field(alias="_id")
     name: str = Field(alias="title")
     type: str = Field(default="movie")
     poster: str
     background: str | None = None
-    videos: list | None = None
+    videos: list[Video] | None = None
     country: str | None = None
     language: str | None = Field(None, alias="tv_language")
-    logo: Optional[str] = None
-    genres: Optional[list[str]] = None
+    logo: str | None = None
+    genres: list[str] | None = None
 
 
 class MetaItem(BaseModel):

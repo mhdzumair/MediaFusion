@@ -184,12 +184,19 @@ async def get_series_meta(meta_id: str):
                 metadata["meta"]["videos"].append(
                     {
                         "id": stream_id,
-                        "name": f"S{stream.season.season_number} EP{episode.episode_number}",
+                        "title": f"S{stream.season.season_number} EP{episode.episode_number}",
                         "season": stream.season.season_number,
                         "episode": episode.episode_number,
-                        "released": stream.created_at,
+                        "released": stream.created_at.strftime(
+                            "%Y-%m-%dT%H:%M:%S.000Z"
+                        ),
                     }
                 )
+
+    # Sort the videos by season and episode
+    metadata["meta"]["videos"] = sorted(
+        metadata["meta"]["videos"], key=lambda x: (x["season"], x["episode"])
+    )
 
     return metadata
 
