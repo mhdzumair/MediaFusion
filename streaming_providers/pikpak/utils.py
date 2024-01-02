@@ -110,7 +110,10 @@ async def initialize_pikpak(user_data: UserData):
         password=user_data.streaming_provider.password,
         httpx_client_args={"transport": httpx.AsyncHTTPTransport(retries=3)},
     )
-    await pikpak.login()
+    try:
+        await pikpak.login()
+    except PikpakException:
+        raise ProviderException("Invalid PikPak credentials", "invalid_credentials.mp4")
     return pikpak
 
 
