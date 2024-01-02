@@ -15,6 +15,7 @@ from db.config import settings
 from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.utils import get_direct_link_from_offcloud
+from streaming_providers.pikpak.utils import get_direct_link_from_pikpak
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
@@ -121,6 +122,11 @@ async def configure(
 ):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
+
+    # Remove the password from the streaming provider
+    if user_data.streaming_provider:
+        user_data.streaming_provider.password = None
+
     return TEMPLATES.TemplateResponse(
         "html/configure.html",
         {
@@ -372,6 +378,10 @@ async def streaming_provider_endpoint(
             video_url = get_direct_link_from_offcloud(
                 info_hash, magnet_link, user_data, filename, 1, 0
             )
+        elif user_data.streaming_provider.service == "pikpak":
+            video_url = await get_direct_link_from_pikpak(
+                info_hash, magnet_link, user_data, stream, filename, 1, 0
+            )
         else:
             video_url = get_direct_link_from_debridlink(
                 info_hash, magnet_link, user_data, stream, episode_data, 1, 0
@@ -383,6 +393,9 @@ async def streaming_provider_endpoint(
             exc_info=True if error.video_file_name == "api_error.mp4" else False,
         )
         video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
+    except Exception as e:
+        logging.error("Exception occurred: %s", e, exc_info=True)
+        video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
 
     return RedirectResponse(url=video_url, headers=response.headers)
 

@@ -61,8 +61,19 @@ class Streams(BaseModel):
 
 
 class StreamingProvider(BaseModel):
-    service: Literal["realdebrid", "seedr", "debridlink", "alldebrid", "offcloud"]
-    token: str
+    service: Literal[
+        "realdebrid", "seedr", "debridlink", "alldebrid", "offcloud", "pikpak"
+    ]
+    token: str | None = None
+    username: str | None = None
+    password: str | None = None
+
+    @model_validator(mode="after")
+    def validate_token_or_username_password(self) -> "StreamingProvider":
+        # validating the token or username and password
+        if not self.token and not self.username and not self.password:
+            raise ValueError("Either token or username and password must be present")
+        return self
 
     class Config:
         extra = "ignore"
