@@ -29,6 +29,7 @@ uvloop = { version = "*", markers = "sys_platform != 'win32'" }
 thefuzz = "*"
 playwright = "==1.38.0"
 playwright-stealth = "*"
+pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
 
 [dev-packages]
 pysocks = "*"

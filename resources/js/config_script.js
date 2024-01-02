@@ -1,6 +1,15 @@
 // ---- Variables ----
 const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
+const servicesRequiringCredentials = ['pikpak',];
+const providerSignupLinks = {
+    pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
+    seedr: 'https://www.seedr.cc/?r=2726511',
+    offcloud: 'https://offcloud.com/?=9932cd9f',
+    realdebrid: 'http://real-debrid.com/?id=9490816',
+    debridlink: 'https://debrid-link.com/id/kHgZs',
+    alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en'
+};
 
 // ---- OAuth-related Functions ----
 
@@ -104,10 +113,24 @@ function updateProviderFields(isChangeEvent = false) {
     const provider = document.getElementById('provider_service').value;
     const tokenInput = document.getElementById('provider_token');
 
-    if (provider) {
-        setOAuthBtnTextContent(provider);
-        setElementDisplay('token_input', 'block');
+    if (provider in providerSignupLinks) {
+        document.getElementById('signup_link').href = providerSignupLinks[provider];
+        setElementDisplay('signup_section', 'block');
     } else {
+        setElementDisplay('signup_section', 'none');
+    }
+
+    // Toggle visibility of credentials and token input based on provider
+    if (provider) {
+        if (servicesRequiringCredentials.includes(provider)) {
+            setElementDisplay('credentials', 'block');
+            setElementDisplay('token_input', 'none');
+        } else {
+            setElementDisplay('credentials', 'none');
+            setElementDisplay('token_input', 'block');
+        }
+    } else {
+        setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
     }
 
@@ -127,6 +150,18 @@ function updateProviderFields(isChangeEvent = false) {
 
 document.getElementById('provider_token').addEventListener('input', function () {
     adjustOAuthSectionDisplay();
+});
+
+document.getElementById('togglePassword').addEventListener('click', function (e) {
+    const passwordInput = document.getElementById('password');
+    const passwordIcon = document.getElementById('togglePasswordIcon');
+    if (passwordInput.type === "password") {
+        passwordInput.type = "text";
+        passwordIcon.className = "bi bi-eye-slash";
+    } else {
+        passwordInput.type = "password";
+        passwordIcon.className = "bi bi-eye";
+    }
 });
 
 oAuthBtn.addEventListener('click', async function () {
@@ -160,20 +195,30 @@ document.getElementById('configForm').addEventListener('submit', async function 
         }
     };
 
-    if (provider) {
+    // Conditional validation based on provider
+    if (provider && !servicesRequiringCredentials.includes(provider)) {
+        // Validate token for providers that use token-based authentication
         validateInput('provider_token', document.getElementById('provider_token').value);
+    } else if (servicesRequiringCredentials.includes(provider)) {
+        // Validate username and password for providers requiring credentials
+        validateInput('username', document.getElementById('username').value);
+        validateInput('password', document.getElementById('password').value);
     }
 
     if (isValid) {
-        let streamingProviderData = null;
-        let tokenValue = document.getElementById('provider_token').value;
-
+        let streamingProviderData = {};
         if (provider) {
-            streamingProviderData = {
-                service: provider,
-                token: tokenValue ? tokenValue : null,
-            };
+            if (servicesRequiringCredentials.includes(provider)) {
+                // Include username and password
+                streamingProviderData.username = document.getElementById('username').value;
+                streamingProviderData.password = document.getElementById('password').value;
+            } else {
+                // Include token
+                streamingProviderData.token = document.getElementById('provider_token').value;
+            }
+            streamingProviderData.service = provider;
         }
+
         const userData = {
             streaming_provider: streamingProviderData,
             selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value)
