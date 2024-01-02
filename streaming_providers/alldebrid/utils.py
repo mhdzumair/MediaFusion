@@ -33,9 +33,8 @@ def get_direct_link_from_alldebrid(
                 "transfer_error.mp4",
             )
     else:
-        # If torrent doesn't exist, add it
-        response_data = ad_client.add_magnet_link(magnet_link)
-        torrent_id = response_data["data"]["magnets"][0]["id"]
+        # alldebrid does not support adding magnet links from server side. We need to add it from client side.
+        return f"https://api.alldebrid.com/v4/magnet/upload?agent={ad_client.AGENT}&apikey={user_data.streaming_provider.token}&magnets[]={magnet_link}"
 
     # Wait for download completion and get the direct link
     torrent_info = ad_client.wait_for_status(
