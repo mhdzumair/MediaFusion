@@ -1,4 +1,5 @@
 from typing import Any
+from urllib.parse import quote_plus
 
 from db.models import Streams
 from db.schemas import UserData
@@ -22,10 +23,7 @@ def get_direct_link_from_alldebrid(
         torrent_id = torrent_info.get("id")
         if torrent_info["status"] == "Ready":
             file_index = select_file_index_from_torrent(torrent_info, filename)
-            response = ad_client.create_download_link(
-                torrent_info["links"][file_index]["link"]
-            )
-            return response["data"]["link"]
+            return f"https://alldebrid.com/service/?url={quote_plus(torrent_info['links'][file_index]['link'])}"
         elif torrent_info["statusCode"] == 7:
             ad_client.delete_torrent(torrent_id)
             raise ProviderException(
@@ -41,8 +39,7 @@ def get_direct_link_from_alldebrid(
         torrent_id, "Ready", max_retries, retry_interval
     )
     file_index = select_file_index_from_torrent(torrent_info, filename)
-    response = ad_client.create_download_link(torrent_info["links"][file_index]["link"])
-    return response["data"]["link"]
+    return f"https://alldebrid.com/link/unlock?link={quote_plus(torrent_info['links'][file_index]['link'])}"
 
 
 def order_streams_by_instant_availability_and_date(
