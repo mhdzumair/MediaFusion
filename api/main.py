@@ -12,16 +12,18 @@ from fastapi.templating import Jinja2Templates
 
 from db import database, crud, schemas
 from db.config import settings
+from scrappers import tamil_blasters, tamilmv
+from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
+from streaming_providers.debridlink.api import router as debridlink_router
+from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.offcloud.utils import get_direct_link_from_offcloud
+from streaming_providers.pikpak.utils import get_direct_link_from_pikpak
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
-from streaming_providers.debridlink.api import router as debridlink_router
-from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
-from utils import crypto, torrent, poster, validation_helper
-from utils.const import CATALOG_ID_DATA, CATALOG_NAME_DATA
-from scrappers import tamil_blasters, tamilmv
+from utils import crypto, torrent, poster, validation_helper, const
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -62,7 +64,7 @@ async def start_scheduler():
     if settings.enable_scrapper:
         scheduler.add_job(
             tamil_blasters.run_schedule_scrape,
-            CronTrigger(hour="*/3"),
+            CronTrigger(hour="*/6"),
             name="tamil_blasters",
         )
         scheduler.add_job(
@@ -119,12 +121,18 @@ async def configure(
 ):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
+
+    # Remove the password from the streaming provider
+    if user_data.streaming_provider:
+        user_data.streaming_provider.password = None
+
     return TEMPLATES.TemplateResponse(
         "html/configure.html",
         {
             "request": request,
             "user_data": user_data.model_dump(),
-            "catalogs": zip(CATALOG_ID_DATA, CATALOG_NAME_DATA),
+            "catalogs": zip(const.CATALOG_ID_DATA, const.CATALOG_NAME_DATA),
+            "resolutions": const.RESOLUTIONS,
         },
     )
 
@@ -143,6 +151,11 @@ async def get_manifest(
         cat for cat in manifest["catalogs"] if cat["id"] in user_data.selected_catalogs
     ]
     manifest["catalogs"] = filtered_catalogs
+
+    # Customize the name of the addon if a streaming provider is configured
+    if user_data.streaming_provider:
+        manifest["name"] += f" {user_data.streaming_provider.service.title()}"
+        manifest["id"] += f".{user_data.streaming_provider.service}"
     return manifest
 
 
@@ -214,14 +227,16 @@ async def get_catalog(
     tags=["search"],
     response_model=schemas.Metas,
     response_model_exclude_none=True,
+    response_model_by_alias=False,
 )
 @app.get(
     "/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
     tags=["search"],
     response_model=schemas.Metas,
     response_model_exclude_none=True,
+    response_model_by_alias=False,
 )
-async def search_movie(
+async def search_meta(
     response: Response,
     catalog_type: Literal["movie", "series", "tv"],
     catalog_id: Literal[
@@ -232,7 +247,7 @@ async def search_movie(
     search_query: str,
 ):
     response.headers.update(headers)
-    logging.debug("Searching for %s : %s", catalog_id, search_query)
+    logging.debug("search for catalog_id: %s", catalog_id)
 
     return await crud.process_search_query(search_query, catalog_type)
 
@@ -310,6 +325,7 @@ async def get_streams(
             user_data, secret_str, video_id, season, episode
         )
     else:
+        response.headers.update(no_cache_headers)
         fetched_streams = await crud.get_tv_streams(video_id)
 
     return {"streams": fetched_streams}
@@ -343,23 +359,43 @@ async def streaming_provider_endpoint(
     magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
 
     episode_data = stream.get_episode(season, episode)
+    filename = episode_data.filename if episode_data else stream.filename
 
     try:
         if user_data.streaming_provider.service == "seedr":
             video_url = await get_direct_link_from_seedr(
-                info_hash, magnet_link, user_data, stream, episode_data, 3, 1
+                info_hash, magnet_link, user_data, stream, filename, 1, 0
             )
         elif user_data.streaming_provider.service == "realdebrid":
             video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data, stream, episode_data, 3, 1
+                info_hash, magnet_link, user_data, filename, 1, 0
+            )
+        elif user_data.streaming_provider.service == "alldebrid":
+            video_url = get_direct_link_from_alldebrid(
+                info_hash, magnet_link, user_data, filename, 1, 0
+            )
+        elif user_data.streaming_provider.service == "offcloud":
+            video_url = get_direct_link_from_offcloud(
+                info_hash, magnet_link, user_data, filename, 1, 0
+            )
+        elif user_data.streaming_provider.service == "pikpak":
+            video_url = await get_direct_link_from_pikpak(
+                info_hash, magnet_link, user_data, stream, filename, 1, 0
             )
         else:
             video_url = get_direct_link_from_debridlink(
-                info_hash, magnet_link, user_data, stream, episode_data, 3, 1
+                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
             )
     except ProviderException as error:
-        logging.info("Exception occurred: %s", error.message)
+        logging.error(
+            "Exception occurred: %s",
+            error.message,
+            exc_info=True if error.video_file_name == "api_error.mp4" else False,
+        )
         video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
+    except Exception as e:
+        logging.error("Exception occurred: %s", e, exc_info=True)
+        video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
 
     return RedirectResponse(url=video_url, headers=response.headers)
 
@@ -384,11 +420,8 @@ async def get_poster(
         return StreamingResponse(
             image_byte_io, media_type="image/jpeg", headers=headers
         )
-    except ValueError as e:
-        logging.error(f"Unexpected error while creating poster: {e}")
-        raise HTTPException(status_code=404, detail="Failed to create poster.")
     except Exception as e:
-        logging.error(f"Unexpected error while creating poster: {e}", exc_info=True)
+        logging.error(f"Unexpected error while creating poster: {e}")
         raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 

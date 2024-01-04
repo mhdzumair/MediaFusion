@@ -7,11 +7,47 @@ from imdb import Cinemagoer, IMDbDataAccessError
 from db.config import settings
 from db.models import Streams, TVStreams
 from db.schemas import Stream, UserData
-from streaming_providers.realdebrid.utils import (
-    order_streams_by_instant_availability_and_date,
-)
+from streaming_providers.alldebrid.utils import update_ad_cache_status
+from streaming_providers.debridlink.utils import update_dl_cache_status
+from streaming_providers.offcloud.utils import update_oc_cache_status
+from streaming_providers.realdebrid.utils import update_rd_cache_status
 
 ia = Cinemagoer()
+
+
+def filter_and_sort_streams(
+    streams: list[Streams], user_data: UserData
+) -> list[Streams]:
+    # Filter streams by selected catalogs and resolutions
+    filtered_streams = [
+        stream
+        for stream in streams
+        if any(catalog in stream.catalog for catalog in user_data.selected_catalogs)
+        and stream.resolution in user_data.selected_resolutions
+    ]
+
+    if not filtered_streams:
+        return []
+
+    # Define provider-specific cache update functions
+    cache_update_functions = {
+        "realdebrid": update_rd_cache_status,
+        "debridlink": update_dl_cache_status,
+        "alldebrid": update_ad_cache_status,
+        "offcloud": update_oc_cache_status,
+    }
+
+    # Update cache status based on provider
+    if user_data.streaming_provider:
+        if cache_update_function := cache_update_functions.get(
+            user_data.streaming_provider.service
+        ):
+            cache_update_function(streams, user_data)
+
+    # Sort streams by cache status, creation date, and size
+    return sorted(
+        filtered_streams, key=lambda x: (x.size, x.cached, x.created_at), reverse=True
+    )
 
 
 def parse_stream_data(
@@ -23,22 +59,7 @@ def parse_stream_data(
 ) -> list[Stream]:
     stream_list = []
 
-    # filter out streams that are not available in the user's selected catalog
-    streams = [
-        stream
-        for stream in streams
-        if any(catalog in stream.catalog for catalog in user_data.selected_catalogs)
-    ]
-
-    # sort streams by instant availability and date if realdebrid is selected
-    if (
-        user_data.streaming_provider
-        and user_data.streaming_provider.service == "realdebrid"
-    ):
-        streams = order_streams_by_instant_availability_and_date(streams, user_data)
-    else:
-        # Sort the streams by created_at time
-        streams = sorted(streams, key=lambda x: x.created_at, reverse=True)
+    streams = filter_and_sort_streams(streams, user_data)
 
     for stream_data in streams:
         quality_detail = " - ".join(
@@ -58,9 +79,11 @@ def parse_stream_data(
         if user_data.streaming_provider:
             streaming_provider = user_data.streaming_provider.service.title()
             if stream_data.cached:
-                streaming_provider += " (Cached)"
+                streaming_provider += " ⚡️"
+            else:
+                streaming_provider += " ⏳"
         else:
-            streaming_provider = "Torrent"
+            streaming_provider = "Torrent ⏳"
 
         description_parts = [
             quality_detail,
@@ -69,12 +92,11 @@ def parse_stream_data(
             ),
             " + ".join(stream_data.languages),
             stream_data.source,
-            streaming_provider,
         ]
         description = ", ".join(filter(lambda x: bool(x), description_parts))
 
         stream_details = {
-            "name": "MediaFusion",
+            "name": f"MediaFusion {streaming_provider}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index

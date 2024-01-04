@@ -2,7 +2,7 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from utils.const import CATALOG_ID_DATA
+from utils import const
 
 
 class Catalog(BaseModel):
@@ -11,17 +11,25 @@ class Catalog(BaseModel):
     type: str
 
 
+class Video(BaseModel):
+    id: str
+    title: str
+    released: str
+    season: int | None = None
+    episode: int | None = None
+
+
 class Meta(BaseModel):
     id: str = Field(alias="_id")
     name: str = Field(alias="title")
     type: str = Field(default="movie")
     poster: str
     background: str | None = None
-    videos: list | None = None
+    videos: list[Video] | None = None
     country: str | None = None
     language: str | None = Field(None, alias="tv_language")
-    logo: Optional[str] = None
-    genres: Optional[list[str]] = None
+    logo: str | None = None
+    genres: list[str] | None = None
 
 
 class MetaItem(BaseModel):
@@ -53,8 +61,19 @@ class Streams(BaseModel):
 
 
 class StreamingProvider(BaseModel):
-    service: Literal["realdebrid", "seedr", "debridlink"]
-    token: str
+    service: Literal[
+        "realdebrid", "seedr", "debridlink", "alldebrid", "offcloud", "pikpak"
+    ]
+    token: str | None = None
+    username: str | None = None
+    password: str | None = None
+
+    @model_validator(mode="after")
+    def validate_token_or_username_password(self) -> "StreamingProvider":
+        # validating the token or username and password
+        if not self.token and not self.username and not self.password:
+            raise ValueError("Either token or username and password must be present")
+        return self
 
     class Config:
         extra = "ignore"
@@ -62,7 +81,8 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    selected_catalogs: list[str] = Field(default=CATALOG_ID_DATA)
+    selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
+    selected_resolutions: list[str] = Field(default=const.RESOLUTIONS)
 
     class Config:
         extra = "ignore"
