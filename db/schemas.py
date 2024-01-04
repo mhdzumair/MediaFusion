@@ -2,7 +2,7 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from utils.const import CATALOG_ID_DATA
+from utils import const
 
 
 class Catalog(BaseModel):
@@ -81,7 +81,8 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    selected_catalogs: list[str] = Field(default=CATALOG_ID_DATA)
+    selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
+    selected_resolutions: list[str] = Field(default=const.RESOLUTIONS)
 
     class Config:
         extra = "ignore"

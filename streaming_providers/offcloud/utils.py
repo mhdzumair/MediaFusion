@@ -38,10 +38,8 @@ def get_direct_link_from_offcloud(
     return oc_client.create_download_link(request_id, torrent_info, filename)
 
 
-def order_streams_by_instant_availability_and_date(
-    streams: list[Streams], user_data: UserData
-) -> list[Streams]:
-    """Orders the streams by instant availability."""
+def update_oc_cache_status(streams: list[Streams], user_data: UserData):
+    """Updates the cache status of streams based on OffCloud's instant availability."""
 
     try:
         oc_client = OffCloud(token=user_data.streaming_provider.token)
@@ -50,17 +48,8 @@ def order_streams_by_instant_availability_and_date(
         )
         for stream in streams:
             stream.cached = any(
-                [True for torrent in instant_availability_data if torrent == stream.id]
+                torrent == stream.id for torrent in instant_availability_data
             )
 
     except ProviderException:
-        return sorted(streams, key=lambda x: x.created_at, reverse=True)
-
-    return sorted(
-        streams,
-        key=lambda x: (
-            x.cached,
-            x.created_at,
-        ),
-        reverse=True,
-    )
+        pass
