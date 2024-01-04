@@ -217,6 +217,8 @@ document.getElementById('configForm').addEventListener('submit', async function 
                 streamingProviderData.token = document.getElementById('provider_token').value;
             }
             streamingProviderData.service = provider;
+        } else {
+            streamingProviderData = null;
         }
 
         const userData = {
