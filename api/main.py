@@ -12,7 +12,10 @@ from fastapi.templating import Jinja2Templates
 
 from db import database, crud, schemas
 from db.config import settings
+from scrappers import tamil_blasters, tamilmv
 from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
+from streaming_providers.debridlink.api import router as debridlink_router
+from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.utils import get_direct_link_from_offcloud
 from streaming_providers.pikpak.utils import get_direct_link_from_pikpak
@@ -20,11 +23,7 @@ from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
-from streaming_providers.debridlink.api import router as debridlink_router
-from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
-from utils import crypto, torrent, poster, validation_helper
-from utils.const import CATALOG_ID_DATA, CATALOG_NAME_DATA
-from scrappers import tamil_blasters, tamilmv
+from utils import crypto, torrent, poster, validation_helper, const
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -132,7 +131,8 @@ async def configure(
         {
             "request": request,
             "user_data": user_data.model_dump(),
-            "catalogs": zip(CATALOG_ID_DATA, CATALOG_NAME_DATA),
+            "catalogs": zip(const.CATALOG_ID_DATA, const.CATALOG_NAME_DATA),
+            "resolutions": const.RESOLUTIONS,
         },
     )
 

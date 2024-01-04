@@ -22,7 +22,6 @@ bencodepy = "*"
 pydantic-settings = "*"
 pycryptodome = "*"
 seedrcc = "*"
-parse-torrent-title = {editable = true, git = "https://github.com/mhdzumair/parse-torrent-title"}
 pillow = "*"
 httpx = "*"
 uvloop = { version = "*", markers = "sys_platform != 'win32'" }
@@ -30,6 +29,7 @@ thefuzz = "*"
 playwright = "==1.38.0"
 playwright-stealth = "*"
 pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
+parse-torrent-title = {git = "git+https://github.com/mhdzumair/parse-torrent-title"}
 
 [dev-packages]
 pysocks = "*"

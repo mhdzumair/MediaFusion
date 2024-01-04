@@ -60,10 +60,8 @@ def get_direct_link_from_realdebrid(
     return create_download_link(rd_client, torrent_id, filename)
 
 
-def order_streams_by_instant_availability_and_date(
-    streams: list[Streams], user_data: UserData
-) -> list[Streams]:
-    """Orders the streams by instant availability."""
+def update_rd_cache_status(streams: list[Streams], user_data: UserData):
+    """Updates the cache status of streams based on RealDebrid's instant availability."""
 
     try:
         rd_client = RealDebrid(token=user_data.streaming_provider.token)
@@ -74,16 +72,7 @@ def order_streams_by_instant_availability_and_date(
             stream.cached = bool(instant_availability_data.get(stream.id, False))
 
     except ProviderException:
-        return sorted(streams, key=lambda x: x.created_at, reverse=True)
-
-    return sorted(
-        streams,
-        key=lambda x: (
-            x.cached,
-            x.created_at,
-        ),
-        reverse=True,
-    )
+        pass
 
 
 def select_file_index_from_torrent(torrent_info: dict[str, Any], filename: str) -> int:

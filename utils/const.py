@@ -67,3 +67,15 @@ CATALOG_NAME_DATA = [
     "Live TV",
     "MediaFusion Search TV",
 ]
+
+RESOLUTIONS = [
+    "4K",
+    "2160p",
+    "1440p",
+    "1080p",
+    "720p",
+    "480p",
+    "360p",
+    "240p",
+    None,
+]

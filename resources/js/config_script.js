@@ -221,7 +221,8 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
         const userData = {
             streaming_provider: streamingProviderData,
-            selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value)
+            selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
+            selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
         };
 
         try {
