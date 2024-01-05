@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime
 
@@ -7,7 +8,6 @@ from thefuzz import fuzz
 from db.models import Streams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
-from utils.parser import clean_name
 
 
 def get_info_hash_folder_id(seedr, info_hash: str):
@@ -99,6 +99,12 @@ def get_file_details_from_folder(seedr, folder_id: int, filename: str):
     )[0]
 
 
+def seedr_clean_name(name: str, replace: str = " ") -> str:
+    # Only allow alphanumeric characters, spaces, and `.,;:_~-[]()`
+    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()\[\]]", replace, name)
+    return cleaned_name
+
+
 async def get_direct_link_from_seedr(
     info_hash: str,
     magnet_link: str,
@@ -128,7 +134,7 @@ async def get_direct_link_from_seedr(
     selected_file = get_file_details_from_folder(
         seedr,
         folder_id,
-        clean_name(filename, ""),
+        seedr_clean_name(filename, ""),
     )
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
@@ -162,3 +168,20 @@ def free_up_space(seedr, required_space):
             seedr.deleteTorrent(sub_folder_torrent["id"])
         seedr.deleteFolder(folder["id"])
         available_space += folder["size"]
+
+
+def update_seedr_cache_status(streams: list[Streams], user_data: UserData):
+    """Updates the cache status of the streams based on the user's Seedr account."""
+    seedr = Seedr(token=user_data.streaming_provider.token)
+    folder_content = {
+        folder["name"]: folder["id"] for folder in seedr.listContents()["folders"]
+    }
+
+    for stream in streams:
+        if stream.id in folder_content:
+            # check if folder is not empty
+            sub_folder_content = seedr.listContents(folder_content[stream.id])
+            if sub_folder_content["folders"]:
+                stream.cached = True
+                continue
+        stream.cached = False

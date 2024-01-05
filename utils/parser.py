@@ -1,3 +1,4 @@
+import asyncio
 import math
 import re
 
@@ -10,12 +11,14 @@ from db.schemas import Stream, UserData
 from streaming_providers.alldebrid.utils import update_ad_cache_status
 from streaming_providers.debridlink.utils import update_dl_cache_status
 from streaming_providers.offcloud.utils import update_oc_cache_status
+from streaming_providers.pikpak.utils import update_pikpak_cache_status
 from streaming_providers.realdebrid.utils import update_rd_cache_status
+from streaming_providers.seedr.utils import update_seedr_cache_status
 
 ia = Cinemagoer()
 
 
-def filter_and_sort_streams(
+async def filter_and_sort_streams(
     streams: list[Streams], user_data: UserData
 ) -> list[Streams]:
     # Filter streams by selected catalogs and resolutions
@@ -35,6 +38,8 @@ def filter_and_sort_streams(
         "debridlink": update_dl_cache_status,
         "alldebrid": update_ad_cache_status,
         "offcloud": update_oc_cache_status,
+        "seedr": update_seedr_cache_status,
+        "pikpak": update_pikpak_cache_status,
     }
 
     # Update cache status based on provider
@@ -42,15 +47,18 @@ def filter_and_sort_streams(
         if cache_update_function := cache_update_functions.get(
             user_data.streaming_provider.service
         ):
-            cache_update_function(streams, user_data)
+            if asyncio.iscoroutinefunction(cache_update_function):
+                await cache_update_function(streams, user_data)
+            else:
+                await asyncio.to_thread(cache_update_function, streams, user_data)
 
     # Sort streams by cache status, creation date, and size
     return sorted(
-        filtered_streams, key=lambda x: (x.size, x.cached, x.created_at), reverse=True
+        filtered_streams, key=lambda x: (x.cached, x.size, x.created_at), reverse=True
     )
 
 
-def parse_stream_data(
+async def parse_stream_data(
     streams: list[Streams],
     user_data: UserData,
     secret_str: str,
@@ -59,7 +67,7 @@ def parse_stream_data(
 ) -> list[Stream]:
     stream_list = []
 
-    streams = filter_and_sort_streams(streams, user_data)
+    streams = await filter_and_sort_streams(streams, user_data)
 
     for stream_data in streams:
         quality_detail = " - ".join(
@@ -117,12 +125,6 @@ def parse_stream_data(
         stream_list.append(Stream(**stream_details))
 
     return stream_list
-
-
-def clean_name(name: str, replace: str = " ") -> str:
-    # Only allow alphanumeric characters, spaces, and `.,;:_~-[]()`
-    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()\[\]]", replace, name)
-    return cleaned_name
 
 
 def convert_bytes_to_readable(size_bytes: int) -> str:
