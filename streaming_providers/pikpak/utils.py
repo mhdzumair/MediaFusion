@@ -230,3 +230,17 @@ async def get_direct_link_from_pikpak(
 
     file_data = await pikpak.get_download_url(selected_file["id"])
     return file_data["web_content_link"]
+
+
+async def update_pikpak_cache_status(streams: list[Streams], user_data: UserData):
+    """Updates the cache status of streams based on PikPak's instant availability."""
+    try:
+        pikpak = await initialize_pikpak(user_data)
+    except ProviderException:
+        return
+    tasks = await pikpak.offline_list(phase=["PHASE_TYPE_COMPLETE"])
+    for stream in streams:
+        stream.cached = any(
+            task["name"] == stream.torrent_name or task["name"] == stream.id
+            for task in tasks["tasks"]
+        )

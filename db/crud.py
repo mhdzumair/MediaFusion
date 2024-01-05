@@ -101,7 +101,7 @@ async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[S
     if not movie_data:
         return []
 
-    return parse_stream_data(movie_data.streams, user_data, secret_str)
+    return await parse_stream_data(movie_data.streams, user_data, secret_str)
 
 
 async def get_series_streams(
@@ -115,7 +115,7 @@ async def get_series_streams(
         stream for stream in series_data.streams if stream.get_episode(season, episode)
     ]
 
-    return parse_stream_data(
+    return await parse_stream_data(
         matched_episode_streams, user_data, secret_str, season, episode
     )
 
