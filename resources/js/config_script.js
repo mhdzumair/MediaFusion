@@ -112,6 +112,8 @@ function adjustOAuthSectionDisplay() {
 function updateProviderFields(isChangeEvent = false) {
     const provider = document.getElementById('provider_service').value;
     const tokenInput = document.getElementById('provider_token');
+    const watchlistLabel = document.getElementById('watchlist_label');
+
 
     if (provider in providerSignupLinks) {
         document.getElementById('signup_link').href = providerSignupLinks[provider];
@@ -129,9 +131,12 @@ function updateProviderFields(isChangeEvent = false) {
             setElementDisplay('credentials', 'none');
             setElementDisplay('token_input', 'block');
         }
+        setElementDisplay('watchlist_section', 'block');
+        watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
     } else {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
+        setElementDisplay('watchlist_section', 'none');
     }
 
     // Reset the fields only if this is triggered by an onchange event
@@ -217,6 +222,7 @@ document.getElementById('configForm').addEventListener('submit', async function 
                 streamingProviderData.token = document.getElementById('provider_token').value;
             }
             streamingProviderData.service = provider;
+            streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
         } else {
             streamingProviderData = null;
         }

@@ -244,3 +244,16 @@ async def update_pikpak_cache_status(streams: list[Streams], user_data: UserData
             task["name"] == stream.torrent_name or task["name"] == stream.id
             for task in tasks["tasks"]
         )
+
+
+async def fetch_downloaded_info_hashes_from_pikpak(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all torrents downloaded in the PikPak account."""
+    try:
+        pikpak = await initialize_pikpak(user_data)
+    except ProviderException:
+        return []
+
+    file_list_content = await pikpak.file_list()
+    return [
+        file["name"] for file in file_list_content["files"] if file["name"] != "My Pack"
+    ]

@@ -53,3 +53,17 @@ def update_oc_cache_status(streams: list[Streams], user_data: UserData):
 
     except ProviderException:
         pass
+
+
+def fetch_downloaded_info_hashes_from_oc(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all torrents downloaded in the OffCloud account."""
+    try:
+        oc_client = OffCloud(token=user_data.streaming_provider.token)
+        available_torrents = oc_client.get_user_torrent_list()
+        magnet_links = [torrent["originalLink"] for torrent in available_torrents]
+        return [
+            magnet_link.split("btih:")[1].split("&")[0] for magnet_link in magnet_links
+        ]
+
+    except ProviderException:
+        return []

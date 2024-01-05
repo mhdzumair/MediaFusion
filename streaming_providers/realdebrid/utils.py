@@ -84,3 +84,14 @@ def select_file_index_from_torrent(torrent_info: dict[str, Any], filename: str) 
     raise ProviderException(
         "No matching file available for this torrent", "api_error.mp4"
     )
+
+
+def fetch_downloaded_info_hashes_from_rd(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all torrents downloaded in the RealDebrid account."""
+    try:
+        rd_client = RealDebrid(token=user_data.streaming_provider.token)
+        available_torrents = rd_client.get_user_torrent_list()
+        return [torrent["hash"] for torrent in available_torrents]
+
+    except ProviderException:
+        return []

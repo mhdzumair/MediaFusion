@@ -129,6 +129,18 @@
                     </div>
                 </div>
 
+                <!-- Enable Provider Watchlist -->
+                <div id="watchlist_section" style="display:none" class="mb-3">
+                    <h4>Provider Watchlist Catalog:</h4>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="enable_watchlist"
+                               id="enable_watchlist" {% if user_data.streaming_provider and user_data.streaming_provider.enable_watchlist_catalogs %}checked{% endif %}>
+                        <label class="form-check-label" for="enable_watchlist" id="watchlist_label">
+                            Enable Watchlist
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Submit Button -->
                 <button type="submit" class="mt-3 btn btn-block custom-btn mx-auto">
                     Install Addon
