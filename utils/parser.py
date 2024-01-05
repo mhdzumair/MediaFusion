@@ -8,12 +8,30 @@ from imdb import Cinemagoer, IMDbDataAccessError
 from db.config import settings
 from db.models import Streams, TVStreams
 from db.schemas import Stream, UserData
-from streaming_providers.alldebrid.utils import update_ad_cache_status
-from streaming_providers.debridlink.utils import update_dl_cache_status
-from streaming_providers.offcloud.utils import update_oc_cache_status
-from streaming_providers.pikpak.utils import update_pikpak_cache_status
-from streaming_providers.realdebrid.utils import update_rd_cache_status
-from streaming_providers.seedr.utils import update_seedr_cache_status
+from streaming_providers.alldebrid.utils import (
+    update_ad_cache_status,
+    fetch_downloaded_info_hashes_from_ad,
+)
+from streaming_providers.debridlink.utils import (
+    update_dl_cache_status,
+    fetch_downloaded_info_hashes_from_dl,
+)
+from streaming_providers.offcloud.utils import (
+    update_oc_cache_status,
+    fetch_downloaded_info_hashes_from_oc,
+)
+from streaming_providers.pikpak.utils import (
+    update_pikpak_cache_status,
+    fetch_downloaded_info_hashes_from_pikpak,
+)
+from streaming_providers.realdebrid.utils import (
+    update_rd_cache_status,
+    fetch_downloaded_info_hashes_from_rd,
+)
+from streaming_providers.seedr.utils import (
+    update_seedr_cache_status,
+    fetch_downloaded_info_hashes_from_seedr,
+)
 
 ia = Cinemagoer()
 
@@ -34,12 +52,12 @@ async def filter_and_sort_streams(
 
     # Define provider-specific cache update functions
     cache_update_functions = {
-        "realdebrid": update_rd_cache_status,
-        "debridlink": update_dl_cache_status,
         "alldebrid": update_ad_cache_status,
+        "debridlink": update_dl_cache_status,
         "offcloud": update_oc_cache_status,
-        "seedr": update_seedr_cache_status,
         "pikpak": update_pikpak_cache_status,
+        "realdebrid": update_rd_cache_status,
+        "seedr": update_seedr_cache_status,
     }
 
     # Update cache status based on provider
@@ -197,3 +215,30 @@ def parse_tv_stream_data(stream: list[TVStreams]) -> list[Stream]:
         )
 
     return stream_list
+
+
+async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
+    fetch_downloaded_info_hashes_functions = {
+        "alldebrid": fetch_downloaded_info_hashes_from_ad,
+        "debridlink": fetch_downloaded_info_hashes_from_dl,
+        "offcloud": fetch_downloaded_info_hashes_from_oc,
+        "pikpak": fetch_downloaded_info_hashes_from_pikpak,
+        "realdebrid": fetch_downloaded_info_hashes_from_rd,
+        "seedr": fetch_downloaded_info_hashes_from_seedr,
+    }
+
+    if fetch_downloaded_info_hashes_function := fetch_downloaded_info_hashes_functions.get(
+        user_data.streaming_provider.service
+    ):
+        if asyncio.iscoroutinefunction(fetch_downloaded_info_hashes_function):
+            downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
+                user_data
+            )
+        else:
+            downloaded_info_hashes = await asyncio.to_thread(
+                fetch_downloaded_info_hashes_function, user_data
+            )
+
+        return downloaded_info_hashes
+
+    return []

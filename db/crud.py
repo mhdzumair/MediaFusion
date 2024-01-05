@@ -22,20 +22,37 @@ from utils.parser import (
     get_catalogs,
     search_imdb,
     parse_tv_stream_data,
+    fetch_downloaded_info_hashes,
 )
 
 
 async def get_meta_list(
-    catalog_type: str, catalog: str, skip: int = 0, limit: int = 25
+    user_data: schemas.UserData,
+    catalog_type: str,
+    catalog: str,
+    skip: int = 0,
+    limit: int = 25,
 ) -> list[schemas.Meta]:
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     else:
         meta_class = MediaFusionSeriesMetaData
 
+    query_conditions = []
+
+    if user_data.streaming_provider and catalog.startswith(
+        user_data.streaming_provider.service
+    ):
+        downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data)
+        if not downloaded_info_hashes:
+            return []
+        query_conditions.append(In(meta_class.streams.id, downloaded_info_hashes))
+    else:
+        query_conditions.append(In(meta_class.streams.catalog, [catalog]))
+
     meta_list = (
         await meta_class.find(
-            In(meta_class.streams.catalog, [catalog]),
+            *query_conditions,
             fetch_links=True,
         )
         .sort(-meta_class.streams.created_at)

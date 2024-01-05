@@ -142,20 +142,40 @@ async def configure(
 async def get_manifest(
     response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)
 ):
-    response.headers.update(headers)
-    response.headers.update(no_cache_headers)
+    response.headers.update({**headers, **no_cache_headers})
+
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
 
-    filtered_catalogs = [
+    # Filter catalogs based on user's selection
+    manifest["catalogs"] = [
         cat for cat in manifest["catalogs"] if cat["id"] in user_data.selected_catalogs
     ]
-    manifest["catalogs"] = filtered_catalogs
 
-    # Customize the name of the addon if a streaming provider is configured
+    # Customize addon name and id if a streaming provider is configured
     if user_data.streaming_provider:
-        manifest["name"] += f" {user_data.streaming_provider.service.title()}"
-        manifest["id"] += f".{user_data.streaming_provider.service}"
+        provider_name = user_data.streaming_provider.service.title()
+        manifest["name"] += f" {provider_name}"
+        manifest["id"] += f".{provider_name.lower()}"
+
+        # Add watchlist catalogs for streaming provider
+        if user_data.streaming_provider.enable_watchlist_catalogs:
+            watchlist_catalogs = [
+                {
+                    "id": f"{provider_name.lower()}_watchlist_movies",
+                    "name": f"{provider_name} Watchlist",
+                    "type": "movie",
+                    "extra": [{"name": "skip", "isRequired": False}],
+                },
+                {
+                    "id": f"{provider_name.lower()}_watchlist_series",
+                    "name": f"{provider_name} Watchlist",
+                    "type": "series",
+                    "extra": [{"name": "skip", "isRequired": False}],
+                },
+            ]
+            manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
+
     return manifest
 
 
@@ -207,8 +227,14 @@ async def get_catalog(
     catalog_id: str,
     skip: int = 0,
     genre: str = None,
+    user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
+    if user_data.streaming_provider and catalog_id.startswith(
+        user_data.streaming_provider.service
+    ):
+        response.headers.update(no_cache_headers)
+
     if genre and "&" in genre:
         genre, skip = genre.split("&")
         skip = skip.split("=")[1] if "=" in skip else "0"
@@ -218,7 +244,9 @@ async def get_catalog(
     if catalog_type == "tv":
         metas.metas.extend(await crud.get_tv_meta_list(genre, skip))
     else:
-        metas.metas.extend(await crud.get_meta_list(catalog_type, catalog_id, skip))
+        metas.metas.extend(
+            await crud.get_meta_list(user_data, catalog_type, catalog_id, skip)
+        )
     return metas
 
 

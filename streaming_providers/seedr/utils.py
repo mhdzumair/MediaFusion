@@ -44,9 +44,7 @@ def add_magnet_and_get_torrent(seedr, magnet_link: str, info_hash: str) -> None:
     info_hash_folder_id = get_info_hash_folder_id(seedr, info_hash)
     transfer = seedr.addTorrent(magnet_link, folderId=info_hash_folder_id)
 
-    if "error" in transfer and transfer["error"] == "invalid_token":
-        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
-    elif transfer["result"] is True:
+    if transfer["result"] is True:
         return
     elif transfer["result"] in (
         "not_enough_space_added_to_wishlist",
@@ -105,6 +103,18 @@ def seedr_clean_name(name: str, replace: str = " ") -> str:
     return cleaned_name
 
 
+def get_seedr_client(user_data: UserData) -> Seedr:
+    """Returns a Seedr client with the user's token."""
+    try:
+        seedr = Seedr(token=user_data.streaming_provider.token)
+    except Exception:
+        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+    response = seedr.testToken()
+    if "error" in response:
+        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+    return seedr
+
+
 async def get_direct_link_from_seedr(
     info_hash: str,
     magnet_link: str,
@@ -115,7 +125,7 @@ async def get_direct_link_from_seedr(
     retry_interval=5,
 ) -> str:
     """Gets a direct download link from Seedr using a magnet link and token."""
-    seedr = Seedr(token=user_data.streaming_provider.token)
+    seedr = get_seedr_client(user_data)
 
     # Check for existing torrent or folder
     torrent = check_torrent_status(seedr, info_hash)
@@ -172,7 +182,11 @@ def free_up_space(seedr, required_space):
 
 def update_seedr_cache_status(streams: list[Streams], user_data: UserData):
     """Updates the cache status of the streams based on the user's Seedr account."""
-    seedr = Seedr(token=user_data.streaming_provider.token)
+    try:
+        seedr = get_seedr_client(user_data)
+    except ProviderException:
+        return
+
     folder_content = {
         folder["name"]: folder["id"] for folder in seedr.listContents()["folders"]
     }
@@ -185,3 +199,13 @@ def update_seedr_cache_status(streams: list[Streams], user_data: UserData):
                 stream.cached = True
                 continue
         stream.cached = False
+
+
+def fetch_downloaded_info_hashes_from_seedr(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all the torrents downloaded in the user's Seedr account."""
+    try:
+        seedr = get_seedr_client(user_data)
+    except ProviderException:
+        return []
+
+    return [folder["name"] for folder in seedr.listContents()["folders"]]

@@ -67,6 +67,7 @@ class StreamingProvider(BaseModel):
     token: str | None = None
     username: str | None = None
     password: str | None = None
+    enable_watchlist_catalogs: bool = True
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":

@@ -141,3 +141,16 @@ def update_dl_cache_status(streams: list[Streams], user_data: UserData):
 
     except ProviderException:
         pass
+
+
+def fetch_downloaded_info_hashes_from_dl(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all torrents downloaded in the DebridLink account."""
+    try:
+        dl_client = DebridLink(token=user_data.streaming_provider.token)
+        available_torrents = dl_client.get_user_torrent_list()
+        if "error" in available_torrents:
+            return []
+        return [torrent["hashString"] for torrent in available_torrents["value"]]
+
+    except ProviderException:
+        return []
