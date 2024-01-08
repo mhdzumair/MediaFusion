@@ -23,6 +23,7 @@ from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
+from streaming_providers.torbox.utils import get_direct_link_from_torbox
 from utils import crypto, torrent, poster, validation_helper, const
 
 logging.basicConfig(
@@ -409,6 +410,10 @@ async def streaming_provider_endpoint(
         elif user_data.streaming_provider.service == "pikpak":
             video_url = await get_direct_link_from_pikpak(
                 info_hash, magnet_link, user_data, stream, filename, 1, 0
+            )
+        elif user_data.streaming_provider.service == "torbox":
+            video_url = get_direct_link_from_torbox(
+                info_hash, magnet_link, user_data, filename, 1, 0
             )
         else:
             video_url = get_direct_link_from_debridlink(

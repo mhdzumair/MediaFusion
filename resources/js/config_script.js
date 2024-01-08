@@ -8,7 +8,8 @@ const providerSignupLinks = {
     offcloud: 'https://offcloud.com/?=9932cd9f',
     realdebrid: 'http://real-debrid.com/?id=9490816',
     debridlink: 'https://debrid-link.com/id/kHgZs',
-    alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en'
+    alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
+    torbox: 'https://torbox.app/'
 };
 
 // ---- OAuth-related Functions ----
