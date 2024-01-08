@@ -25,7 +25,7 @@ def get_direct_link_from_torbox(
             return response["data"]
     else:
         # If torrent doesn't exist, add it
-        _ = torbox_client.add_magent_link(magnet_link)
+        torbox_client.add_magent_link(magnet_link)
 
     # Do not wait for download completion, just let the user retry again.
     raise ProviderException(
