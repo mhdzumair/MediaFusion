@@ -62,7 +62,7 @@ class Streams(BaseModel):
 
 class StreamingProvider(BaseModel):
     service: Literal[
-        "realdebrid", "seedr", "debridlink", "alldebrid", "offcloud", "pikpak"
+        "realdebrid", "seedr", "debridlink", "alldebrid", "offcloud", "pikpak", "torbox"
     ]
     token: str | None = None
     username: str | None = None

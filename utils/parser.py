@@ -32,6 +32,10 @@ from streaming_providers.seedr.utils import (
     update_seedr_cache_status,
     fetch_downloaded_info_hashes_from_seedr,
 )
+from streaming_providers.torbox.utils import (
+    update_torbox_cache_status,
+    fetch_downloaded_info_hashes_from_torbox,
+)
 
 ia = Cinemagoer()
 
@@ -58,6 +62,7 @@ async def filter_and_sort_streams(
         "pikpak": update_pikpak_cache_status,
         "realdebrid": update_rd_cache_status,
         "seedr": update_seedr_cache_status,
+        "torbox": update_torbox_cache_status,
     }
 
     # Update cache status based on provider
@@ -225,6 +230,7 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
         "pikpak": fetch_downloaded_info_hashes_from_pikpak,
         "realdebrid": fetch_downloaded_info_hashes_from_rd,
         "seedr": fetch_downloaded_info_hashes_from_seedr,
+        "torbox": fetch_downloaded_info_hashes_from_torbox,
     }
 
     if fetch_downloaded_info_hashes_function := fetch_downloaded_info_hashes_functions.get(
