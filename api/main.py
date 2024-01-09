@@ -419,6 +419,9 @@ async def get_poster(
     if not mediafusion_data:
         raise HTTPException(status_code=404, detail="MediaFusion ID not found.")
 
+    if mediafusion_data.is_poster_working is False:
+        raise HTTPException(status_code=404, detail="Poster not found.")
+
     try:
         image_byte_io = await poster.create_poster(mediafusion_data)
         return StreamingResponse(
@@ -426,6 +429,8 @@ async def get_poster(
         )
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}")
+        mediafusion_data.is_poster_working = False
+        await mediafusion_data.save()
         raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 

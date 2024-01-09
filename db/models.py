@@ -65,6 +65,7 @@ class MediaFusionMetaData(Document):
     title: str
     year: Optional[int] = None
     poster: str
+    is_poster_working: Optional[bool] = True
     background: Optional[str] = None
     streams: list[Link[Streams]]
     type: str
