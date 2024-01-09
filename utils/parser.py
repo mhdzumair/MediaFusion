@@ -1,6 +1,5 @@
 import asyncio
 import math
-import re
 
 import requests
 from imdb import Cinemagoer, IMDbDataAccessError
@@ -251,19 +250,29 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
 
 
 def generate_manifest(manifest: dict, user_data: UserData) -> dict:
-    provider_name = None
-    if user_data.streaming_provider:
-        provider_name = user_data.streaming_provider.service.title()
-        manifest["name"] += f" {provider_name}"
-        manifest["id"] += f".{provider_name.lower()}"
-
+    resources = manifest["resources"]
     if user_data.enable_catalogs:
         manifest["catalogs"] = [
             cat
             for cat in manifest["catalogs"]
             if cat["id"] in user_data.selected_catalogs
         ]
-        if provider_name and user_data.streaming_provider.enable_watchlist_catalogs:
+    else:
+        manifest["catalogs"] = []
+        resources = [
+            {
+                "name": "stream",
+                "types": ["movie", "series", "tv"],
+                "idPrefixes": ["tt", "mf"],
+            }
+        ]
+
+    if user_data.streaming_provider:
+        provider_name = user_data.streaming_provider.service.title()
+        manifest["name"] += f" {provider_name}"
+        manifest["id"] += f".{provider_name.lower()}"
+
+        if user_data.streaming_provider.enable_watchlist_catalogs:
             watchlist_catalogs = [
                 {
                     "id": f"{provider_name.lower()}_watchlist_movies",
@@ -279,13 +288,7 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
                 },
             ]
             manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
-    else:
-        manifest["catalogs"] = []
-        manifest["resources"] = [
-            {
-                "name": "stream",
-                "types": ["movie", "series", "tv"],
-                "idPrefixes": ["tt", "mf"],
-            }
-        ]
+            resources = manifest["resources"]
+
+    manifest["resources"] = resources
     return manifest
