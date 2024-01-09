@@ -232,6 +232,7 @@ document.getElementById('configForm').addEventListener('submit', async function 
             streaming_provider: streamingProviderData,
             selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
             selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
+            enable_catalogs: document.getElementById('enable_catalogs').checked,
         };
 
         try {
@@ -256,3 +257,11 @@ document.getElementById('configForm').addEventListener('submit', async function 
 document.addEventListener('DOMContentLoaded', function () {
     updateProviderFields();
 });
+
+document.addEventListener('DOMContentLoaded', function () {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+});
+

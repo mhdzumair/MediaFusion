@@ -84,6 +84,7 @@ class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
     selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
     selected_resolutions: list[str] = Field(default=const.RESOLUTIONS)
+    enable_catalogs: bool = True
 
     class Config:
         extra = "ignore"

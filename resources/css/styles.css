@@ -1,42 +1,97 @@
 body, html {
-    margin: 0px;
-    padding: 0px;
-    font-family: 'OpenSans', arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    font-family: 'OpenSans', Arial, sans-serif;
     font-weight: 300;
     color: white;
     width: 100%;
     height: 100%;
-    background-image: url(https://dl.strem.io/addon-background.jpg);
+    background-image: url('https://dl.strem.io/addon-background.jpg');
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
 }
 
-.config-container, .content-container {
-    margin: 5% auto;
-    padding: 30px;
-    background: rgba(0, 0, 0, 0.7);
+.config-container {
+    margin: 2% auto;
+    padding: 2%;
+    background: rgba(0, 0, 0, 0.85);
     border-radius: 10px;
-    max-height: 90vh;
+    max-height: 95vh;
     overflow-y: auto;
+    transition: padding 0.3s ease;
+}
+
+.section-container {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.37);
+    border-radius: 8px;
+    transition: margin-bottom 0.3s ease, padding 0.3s ease;
+}
+
+.section-header {
+    color: #E0E0E0;
+    margin-bottom: 0.5rem;
+}
+
+.section-divider {
+    border: 0;
+    height: 2px;
+    background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(74, 71, 163, 0.75), rgba(0, 0, 0, 0));
+    margin-bottom: 1rem;
 }
 
 .btn, button {
-    border: 0px;
-    outline: 0px;
+    border: none;
+    outline: none;
     color: white;
     background: #4a47a3;
-    padding: 13px 22px;
+    padding: 0.8rem 1.5rem;
     text-align: center;
-    font-size: 17px;
+    font-size: 1rem;
     font-weight: 300;
     cursor: pointer;
     opacity: 0.9;
-    transition: opacity 0.3s;
+    transition: opacity 0.3s, background-color 0.3s;
 }
 
-.btn:hover {
+.btn:hover, button:hover {
     opacity: 1;
+}
+
+input[type="text"], input[type="password"], select.form-control {
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+}
+
+input[type="text"]:focus, input[type="password"]:focus, select.form-control:focus {
+    border-color: #4a47a3;
+    box-shadow: 0 0 8px rgba(74, 71, 163, 0.2);
+}
+
+.btn.custom-btn {
+    background-color: #4a47a3;
+    color: white;
+    padding: 0.8rem 1.2rem;
+    font-size: 1.1rem;
+    border-radius: 4px;
+}
+
+.btn.custom-btn:hover {
+    background-color: #39358b;
+}
+
+.tooltip-inner {
+    background-color: #4a47a3;
+    color: white;
+}
+
+.tooltip-arrow::before {
+    border-top-color: #4a47a3;
 }
 
 .invalid-feedback {
@@ -47,11 +102,10 @@ body, html {
 .logo {
     max-width: 300px;
     display: block;
-    margin: 0 auto 20px;
+    margin: 0 auto 1.5rem;
 }
 
-
-/* Catalog Style */
+/* Catalog Style Adjustments */
 .form-check {
     position: relative;
     display: block;
@@ -102,35 +156,70 @@ body, html {
     background: #4a47a3;
 }
 
-/* Custom dropdown design */
-.custom-select {
-    background: rgba(74, 71, 163, 0.5);
-    border: none;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 5px;
+.form-control {
+    display: block;
+    width: 100%;
+    padding: 0.375rem 0.75rem;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #212529;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    -webkit-appearance: none;
+    -moz-appearance: none;
     appearance: none;
-    cursor: pointer;
+    border-radius: 0.25rem;
+    transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
 }
 
-.custom-select:focus {
-    outline: none;
-    box-shadow: none;
-    border-color: rgba(74, 71, 163, 1);
+#signup_section {
+    margin-top: 1rem;
 }
 
-.custom-dropdown::after {
-    content: "▾";
-    position: absolute;
-    right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: white;
-    pointer-events: none;
-}
-
+/* Responsive Design */
 @media (max-width: 768px) {
-    .config-container, .content-container {
+    .config-container {
         padding: 15px;
+    }
+
+    .section-container {
+        margin-bottom: 15px;
+        padding: 15px;
+    }
+
+    h4 {
+        font-size: 1.2rem;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+    .config-container {
+        padding: 30px;
+    }
+
+    .section-container {
+        margin-bottom: 20px;
+        padding: 20px;
+    }
+
+    h4 {
+        font-size: 1.4rem;
+    }
+}
+
+@media (min-width: 1201px) {
+    .config-container {
+        padding: 50px;
+    }
+
+    .section-container {
+        margin-bottom: 30px;
+        padding: 30px;
+    }
+
+    h4 {
+        font-size: 1.6rem;
     }
 }

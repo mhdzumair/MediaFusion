@@ -248,3 +248,44 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
         return downloaded_info_hashes
 
     return []
+
+
+def generate_manifest(manifest: dict, user_data: UserData) -> dict:
+    provider_name = None
+    if user_data.streaming_provider:
+        provider_name = user_data.streaming_provider.service.title()
+        manifest["name"] += f" {provider_name}"
+        manifest["id"] += f".{provider_name.lower()}"
+
+    if user_data.enable_catalogs:
+        manifest["catalogs"] = [
+            cat
+            for cat in manifest["catalogs"]
+            if cat["id"] in user_data.selected_catalogs
+        ]
+        if provider_name and user_data.streaming_provider.enable_watchlist_catalogs:
+            watchlist_catalogs = [
+                {
+                    "id": f"{provider_name.lower()}_watchlist_movies",
+                    "name": f"{provider_name} Watchlist",
+                    "type": "movie",
+                    "extra": [{"name": "skip", "isRequired": False}],
+                },
+                {
+                    "id": f"{provider_name.lower()}_watchlist_series",
+                    "name": f"{provider_name} Watchlist",
+                    "type": "series",
+                    "extra": [{"name": "skip", "isRequired": False}],
+                },
+            ]
+            manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
+    else:
+        manifest["catalogs"] = []
+        manifest["resources"] = [
+            {
+                "name": "stream",
+                "types": ["movie", "series", "tv"],
+                "idPrefixes": ["tt", "mf"],
+            }
+        ]
+    return manifest

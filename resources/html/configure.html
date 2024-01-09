@@ -16,15 +16,18 @@
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-lg-6 col-md-8 col-sm-10 config-container">
-            <img class="logo" src="/static/images/mediafusion_logo.png">
-            <h3 class="text-center mb-5">MediaFusion Addon Configuration</h3>
+            <img class="logo" src="/static/images/mediafusion_logo.png" alt="MediaFusion Logo">
+            <h3 class="text-center mb-4">MediaFusion Addon Configuration</h3>
 
             <!-- Configuration Form -->
             <form id="configForm">
                 <!-- Streaming Provider -->
-                <div class="mb-3">
-                    <h4>Select Stream Provider</h4>
-                    <label for="provider_service">Streaming Provider:</label>
+                <div class="section-container">
+                    <h4 class="section-header">Streaming Provider Configuration</h4>
+                    <hr class="section-divider">
+
+                    <label for="provider_service">Streaming Provider: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                            title="Choose a streaming provider to integrate with the addon. Each has unique features and capabilities."></span></label>
                     <select class="form-control" name="provider_service" id="provider_service" onchange="updateProviderFields(true)">
                         <option value="" {% if not user_data.streaming_provider.service %}selected{% endif %}>Direct Torrent (Free)</option>
                         <option value="pikpak" {% if user_data.streaming_provider.service=='pikpak' %}selected{% endif %}>PikPak (Free Quota)</option>
@@ -35,118 +38,146 @@
                         <option value="debridlink" {% if user_data.streaming_provider.service=='debridlink' %}selected{% endif %}>Debrid-Link (Premium)</option>
                         <option value="alldebrid" {% if user_data.streaming_provider.service=='alldebrid' %}selected{% endif %}>AllDebrid (Premium)</option>
                     </select>
-                </div>
 
-                <!-- Affiliate Signup Links -->
-                <div id="signup_section" style="display:none" class="mb-3">
-                    <h5>Don't have an account?</h5>
-                    <a id="signup_link" href="#" class="btn btn-primary" target="_blank">Create Account</a>
-                </div>
-
-                <!-- Credentials Input -->
-                <div id="credentials" style="display:none">
-                    <h5>Enter Credentials</h5>
-                    <div class="mb-3">
-                        <label for="username">Username:</label>
-                        <input class="form-control" type="text" id="username" name="username" placeholder="Enter Username"
-                               value="{{ user_data.streaming_provider.username if user_data.streaming_provider.username else '' }}">
-                        <div class="invalid-feedback">
-                            Username is required.
-                        </div>
+                    <!-- Affiliate Signup Links -->
+                    <div id="signup_section" style="display:none" class="mb-4">
+                        <h6>Don't have an account?</h6>
+                        <a id="signup_link" href="#" class="btn btn-primary" target="_blank">Create Account</a>
                     </div>
-                    <div class="mb-3">
-                        <label for="password">Password:</label>
-                        <div class="input-group">
-                            <input class="form-control" type="password" id="password" name="password" placeholder="Enter Password">
-                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
-                                <span id="togglePasswordIcon" class="bi bi-eye"></span>
-                            </button>
+
+                    <!-- Credentials Input -->
+                    <div id="credentials" style="display:none">
+                        <h6>Enter Credentials</h6>
+                        <div class="mb-3">
+                            <label for="username">Username:</label>
+                            <input class="form-control" type="text" id="username" name="username" placeholder="Enter Username" aria-label="Username"
+                                   value="{{ user_data.streaming_provider.username if user_data.streaming_provider.username else '' }}">
                             <div class="invalid-feedback">
-                                Password is required.
+                                Username is required.
                             </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password">Password:</label>
+                            <div class="input-group">
+                                <input class="form-control" type="password" id="password" name="password" placeholder="Enter Password">
+                                <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                    <span id="togglePasswordIcon" class="bi bi-eye"></span>
+                                </button>
+                                <div class="invalid-feedback">
+                                    Password is required.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OAuth Section -->
+                    <div id="oauth_section" class="mb-3" style="display:none">
+                        <h6>Authorize Addon (Recommended) <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                title="Authorize the addon to access your streaming provider account. This is recommended instead using your private token."></span>
+                        </h6>
+                        <button type="button" id="oauth_btn" class="btn">Authorize</button>
+                        <div id="device_code_section" class="mt-2" style="display:none;">
+                            To complete the authorization, follow these steps:
+                            <ol>
+                                <li>Visit the authorization link: <a id="verification_link" href="#" target="_blank">#</a></li>
+                                <li>Enter the device code provided below into the authorization page.</li>
+                            </ol>
+                            Your device code: <strong><span id="device_code_display"></span></strong>
+                        </div>
+                    </div>
+
+
+                    <!-- Token for Providers -->
+                    <div id="token_input" class="mb-3" style="display:none">
+                        <label for="provider_token" class="mb-3">Token: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                              title="Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token."></span></label>
+                        <input class="form-control" type="text" name="provider_token" id="provider_token" placeholder="Enter Token"
+                               value="{{ user_data.streaming_provider.token if user_data.streaming_provider.token else '' }}">
+                        <div class="invalid-feedback">
+                            Token is required.
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Catalog Configuration -->
+                <div class="section-container">
+                    <h4 class="section-header">Catalog Configuration</h4>
+                    <hr class="section-divider">
+
+                    <div class="mb-3">
+                        <h6>Select Catalogs: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                   title="Select the types of content you wish to see in your Stremio's catalog. Uncheck to hide specific categories."></span></h6>
+                        <div class="row"> <!-- Added row class -->
+                            {% for catalog in catalogs %}
+                            <div class="col-12 col-md-6 col-lg-4"> <!-- Define widths for different screens -->
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="selected_catalogs" value="{{ catalog[0] }}" id="{{ catalog[0] }}" {% if catalog[0] in
+                                           user_data.selected_catalogs
+                                           %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ catalog[0] }}">
+                                        {{ catalog[1] }}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Enable Provider Watchlist -->
+                    <div id="watchlist_section" style="display:none" class="mb-3">
+                        <h6>Provider Watchlist Catalog:</h6>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="enable_watchlist"
+                                   id="enable_watchlist" {% if user_data.streaming_provider and user_data.streaming_provider.enable_watchlist_catalogs %}checked{% endif %}>
+                            <label class="form-check-label" for="enable_watchlist" id="watchlist_label">
+                                Enable Watchlist
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Enable Catalogs Checkbox -->
+                    <div class="mb-3">
+                        <h6>Enable Catalogs:</h6>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="enable_catalogs"
+                                   id="enable_catalogs" {% if user_data.enable_catalogs %}checked{% endif %}>
+                            <label class="form-check-label" for="enable_catalogs">
+                                Show Catalogs in Stremio <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                               title="Toggle to add or hide catalogs in Stremio. This is perfect for when you want to install multiple addons without creating duplicate catalog content and only want to display streams."></span>
+                            </label>
                         </div>
                     </div>
                 </div>
 
-                <!-- OAuth Section -->
-                <div id="oauth_section" class="mb-3" style="display:none">
-                    <h5>Authorize Addon (Recommended)</h5>
-                    <button type="button" id="oauth_btn" class="btn">Authorize</button>
-                    <div id="device_code_section" class="mt-2" style="display:none;">
-                        To complete the authorization, follow these steps:
-                        <ol>
-                            <li>Visit the authorization link: <a id="verification_link" href="#" target="_blank">#</a></li>
-                            <li>Enter the device code provided below into the authorization page.</li>
-                        </ol>
-                        Your device code: <strong><span id="device_code_display"></span></strong>
-                    </div>
-                </div>
-
-
-                <!-- Token for Providers -->
-                <div id="token_input" class="mb-3" style="display:none">
-                    <label for="provider_token">Token:</label>
-                    <input class="form-control" type="text" name="provider_token" id="provider_token" placeholder="Enter Token"
-                           value="{{ user_data.streaming_provider.token if user_data.streaming_provider.token else '' }}">
-                    <div class="invalid-feedback">
-                        Token is required.
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <h4>Select Catalogs:</h4>
-                    <div class="row"> <!-- Added row class -->
-                        {% for catalog in catalogs %}
-                        <div class="col-12 col-md-6 col-lg-4"> <!-- Define widths for different screens -->
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="selected_catalogs" value="{{ catalog[0] }}" id="{{ catalog[0] }}" {% if catalog[0] in user_data.selected_catalogs
-                                       %}checked{% endif %}>
-                                <label class="form-check-label" for="{{ catalog[0] }}">
-                                    {{ catalog[1] }}
-                                </label>
+                <!-- Streaming Filter Configuration -->
+                <div class="section-container">
+                    <h4 class="section-header">Streaming Filters</h4>
+                    <hr class="section-divider">
+                    <!-- Select Streaming Resolutions -->
+                    <div class="mb-3">
+                        <h6>Select Streaming Resolutions: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                title="Select the streaming resolutions that you prefer. The addon will filter these when fetching streams."></span></h6>
+                        <div class="row">
+                            {% for resolution in resolutions %}
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="selected_resolutions"
+                                           value="{{ resolution }}"
+                                           id="resolution_{{ resolution if resolution else 'unknown' }}"
+                                           {% if resolution in user_data.selected_resolutions %}checked{% endif %}>
+                                    <label class="form-check-label" for="resolution_{{ resolution if resolution else 'unknown' }}">
+                                        {{ resolution if resolution else 'Unknown' }}
+                                    </label>
+                                </div>
                             </div>
+                            {% endfor %}
                         </div>
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <!-- Select Streaming Resolutions -->
-                <div class="mb-3">
-                    <h4>Select Streaming Resolutions:</h4>
-                    <div class="row">
-                        {% for resolution in resolutions %}
-                        <div class="col-12 col-md-6 col-lg-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="selected_resolutions"
-                                       value="{{ resolution if resolution else '' }}"
-                                       id="resolution_{{ resolution if resolution else 'unknown' }}"
-                                       {% if resolution in user_data.selected_resolutions %}checked{% endif %}>
-                                <label class="form-check-label" for="resolution_{{ resolution if resolution else 'unknown' }}">
-                                    {{ resolution if resolution else 'Unknown' }}
-                                </label>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <!-- Enable Provider Watchlist -->
-                <div id="watchlist_section" style="display:none" class="mb-3">
-                    <h4>Provider Watchlist Catalog:</h4>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" name="enable_watchlist"
-                               id="enable_watchlist" {% if user_data.streaming_provider and user_data.streaming_provider.enable_watchlist_catalogs %}checked{% endif %}>
-                        <label class="form-check-label" for="enable_watchlist" id="watchlist_label">
-                            Enable Watchlist
-                        </label>
                     </div>
                 </div>
 
                 <!-- Submit Button -->
-                <button type="submit" class="mt-3 btn btn-block custom-btn mx-auto">
-                    Install Addon
-                </button>
-
+                <button type="submit" class="mt-3 btn btn-block custom-btn mx-auto">Install Addon</button>
             </form>
         </div>
     </div>
