@@ -59,12 +59,9 @@ class Torbox(DebridClient):
 
     def get_torrent_instant_availability(self, torrent_hashes: list[str]):
         response = self._make_request(
-            "GET", "/torrents/checkcached", params={"hash": torrent_hashes, "format": "list"}
+            "GET", "/torrents/checkcached", params={"hash": torrent_hashes, "format": "object"}
         )
-        data = response.get("data", {})
-        if type(data) is dict and data.get("data", False) is False:
-            return []
-        return data
+        return response.get("data", {})
 
     def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         response = self.get_user_torrent_list()

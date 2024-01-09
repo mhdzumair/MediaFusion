@@ -43,9 +43,7 @@ def update_torbox_cache_status(streams: list[Streams], user_data: UserData):
             [stream.id for stream in streams]
         )
         for stream in streams:
-            stream.cached = any(
-                torrent["hash"] == stream.id for torrent in instant_availability_data
-            )
+            stream.cached = bool(stream.id in instant_availability_data)
     except ProviderException:
         pass
 
