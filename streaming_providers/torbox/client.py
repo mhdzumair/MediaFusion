@@ -31,11 +31,16 @@ class Torbox(DebridClient):
             method, url, data, params, is_return_none, is_expected_to_fail
         )
 
-    def add_magent_link(self, magnet_link):
-        response_data = self._make_request("POST", "/torrents/createtorrent", data={"magnet": magnet_link})
+    def add_magnet_link(self, magnet_link):
+        response_data = self._make_request(
+            "POST",
+            "/torrents/createtorrent",
+            data={"magnet": magnet_link},
+            is_expected_to_fail=True
+        )
 
-        # Response when created successfully shows up as "Torrent queued successfully"
-        if "successfully" not in response_data.get("detail"):
+        detail = response_data.get("detail")
+        if type(detail) is bool and detail is False:
             raise ProviderException(
                 f"Failed to add magnet link to Torbox {response_data}",
                 "transfer_error.mp4",
@@ -53,8 +58,14 @@ class Torbox(DebridClient):
                 return torrent
         return {}
 
-    def get_torrent_instant_availability(self):
-        return self.get_user_torrent_list().get("data", {})
+    def get_torrent_instant_availability(self, torrent_hashes: list[str]):
+        response = self._make_request(
+            "GET", "/torrents/checkcached", params={"hash": torrent_hashes, "format": "list"}
+        )
+        data = response.get("data", {})
+        if type(data) is dict and data.get("data", False) is False:
+            return []
+        return data
 
     def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         response = self.get_user_torrent_list()

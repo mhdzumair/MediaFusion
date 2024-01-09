@@ -25,7 +25,7 @@ def get_direct_link_from_torbox(
             return response["data"]
     else:
         # If torrent doesn't exist, add it
-        torbox_client.add_magent_link(magnet_link)
+        torbox_client.add_magnet_link(magnet_link)
 
     # Do not wait for download completion, just let the user retry again.
     raise ProviderException(
@@ -39,12 +39,12 @@ def update_torbox_cache_status(streams: list[Streams], user_data: UserData):
 
     try:
         torbox_client = Torbox(token=user_data.streaming_provider.token)
-        instant_availability_data = torbox_client.get_torrent_instant_availability()
+        instant_availability_data = torbox_client.get_torrent_instant_availability(
+            [stream.id for stream in streams]
+        )
         for stream in streams:
             stream.cached = any(
-                torrent["download_finished"] is True and torrent["download_present"] is True
-                for torrent in instant_availability_data
-                if torrent["hash"] == stream.id
+                torrent["hash"] == stream.id for torrent in instant_availability_data
             )
     except ProviderException:
         pass
