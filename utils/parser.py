@@ -198,9 +198,9 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     return {}
 
 
-def parse_tv_stream_data(stream: list[TVStreams]) -> list[Stream]:
+def parse_tv_stream_data(streams: list[TVStreams]) -> list[Stream]:
     stream_list = []
-    for stream in stream:
+    for stream in streams:
         if stream.behaviorHints.get("is_redirect", False):
             response = requests.get(
                 stream.url,
