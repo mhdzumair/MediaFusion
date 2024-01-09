@@ -39,8 +39,7 @@ class Torbox(DebridClient):
             is_expected_to_fail=True
         )
 
-        detail = response_data.get("detail")
-        if type(detail) is bool and detail is False:
+        if response_data.get("detail") is False:
             raise ProviderException(
                 f"Failed to add magnet link to Torbox {response_data}",
                 "transfer_error.mp4",
