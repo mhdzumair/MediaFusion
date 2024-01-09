@@ -25,6 +25,7 @@ from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.torbox.utils import get_direct_link_from_torbox
 from utils import crypto, torrent, poster, validation_helper, const
+from utils.parser import generate_manifest
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -147,37 +148,7 @@ async def get_manifest(
 
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
-
-    # Filter catalogs based on user's selection
-    manifest["catalogs"] = [
-        cat for cat in manifest["catalogs"] if cat["id"] in user_data.selected_catalogs
-    ]
-
-    # Customize addon name and id if a streaming provider is configured
-    if user_data.streaming_provider:
-        provider_name = user_data.streaming_provider.service.title()
-        manifest["name"] += f" {provider_name}"
-        manifest["id"] += f".{provider_name.lower()}"
-
-        # Add watchlist catalogs for streaming provider
-        if user_data.streaming_provider.enable_watchlist_catalogs:
-            watchlist_catalogs = [
-                {
-                    "id": f"{provider_name.lower()}_watchlist_movies",
-                    "name": f"{provider_name} Watchlist",
-                    "type": "movie",
-                    "extra": [{"name": "skip", "isRequired": False}],
-                },
-                {
-                    "id": f"{provider_name.lower()}_watchlist_series",
-                    "name": f"{provider_name} Watchlist",
-                    "type": "series",
-                    "extra": [{"name": "skip", "isRequired": False}],
-                },
-            ]
-            manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
-
-    return manifest
+    return generate_manifest(manifest, user_data)
 
 
 @app.get(
