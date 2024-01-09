@@ -6,7 +6,7 @@ import requests
 from imdb import Cinemagoer, IMDbDataAccessError
 
 from db.config import settings
-from db.models import Streams, TVStreams
+from db.models import Streams, MediaFusionTVMetaData
 from db.schemas import Stream, UserData
 from streaming_providers.alldebrid.utils import (
     update_ad_cache_status,
@@ -198,9 +198,9 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     return {}
 
 
-def parse_tv_stream_data(streams: list[TVStreams]) -> list[Stream]:
+def parse_tv_stream_data(tv_data: MediaFusionTVMetaData) -> list[Stream]:
     stream_list = []
-    for stream in streams:
+    for stream in tv_data.streams:
         if stream.behaviorHints.get("is_redirect", False):
             response = requests.get(
                 stream.url,
@@ -212,7 +212,7 @@ def parse_tv_stream_data(streams: list[TVStreams]) -> list[Stream]:
         stream_list.append(
             Stream(
                 name="MediaFusion",
-                description=f"{stream.name}, {stream.source}",
+                description=f"{stream.name}, {tv_data.tv_language}, {stream.source}",
                 url=stream.url,
                 ytId=stream.ytId,
                 behaviorHints=stream.behaviorHints,
