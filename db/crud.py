@@ -142,7 +142,7 @@ async def get_tv_streams(video_id: str) -> list[Stream]:
     if not tv_data:
         return []
 
-    return parse_tv_stream_data(tv_data.streams)
+    return parse_tv_stream_data(tv_data)
 
 
 async def get_movie_meta(meta_id: str):
