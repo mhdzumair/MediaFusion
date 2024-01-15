@@ -7,7 +7,6 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from db import database, crud, schemas
@@ -41,7 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory="resources"), name="static")
 TEMPLATES = Jinja2Templates(directory="resources")
 headers = {
     "Access-Control-Allow-Origin": "*",
@@ -112,6 +110,13 @@ async def get_favicon():
     return FileResponse(
         "resources/images/mediafusion_logo.png", media_type="image/x-icon"
     )
+
+
+@app.get("/static/{file_path:path}")
+async def function(file_path: str):
+    response = FileResponse(f"resources/{file_path}")
+    response.headers.update(headers)
+    return response
 
 
 @app.get("/configure", tags=["configure"])
