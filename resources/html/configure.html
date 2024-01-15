@@ -163,7 +163,7 @@
                             <div class="col-12 col-md-6 col-lg-4">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" name="selected_resolutions"
-                                           value="{{ resolution }}"
+                                           value="{{ resolution if resolution else '' }}"
                                            id="resolution_{{ resolution if resolution else 'unknown' }}"
                                            {% if resolution in user_data.selected_resolutions %}checked{% endif %}>
                                     <label class="form-check-label" for="resolution_{{ resolution if resolution else 'unknown' }}">

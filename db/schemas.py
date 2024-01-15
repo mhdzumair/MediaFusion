@@ -83,8 +83,20 @@ class StreamingProvider(BaseModel):
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
     selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
-    selected_resolutions: list[str] = Field(default=const.RESOLUTIONS)
+    selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True
+
+    @model_validator(mode="after")
+    def validate_selected_resolutions(self) -> "UserData":
+        if "" in self.selected_resolutions:
+            self.selected_resolutions.remove("")
+            self.selected_resolutions.append(None)
+
+        # validating the selected resolutions
+        for resolution in self.selected_resolutions:
+            if resolution not in const.RESOLUTIONS:
+                raise ValueError("Invalid resolution")
+        return self
 
     class Config:
         extra = "ignore"
