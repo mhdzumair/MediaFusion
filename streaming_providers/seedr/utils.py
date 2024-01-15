@@ -91,15 +91,18 @@ def get_file_details_from_folder(seedr, folder_id: int, filename: str):
 
     # If the file is not found with exact match, try to find it by fuzzy ratio
     for file in folder_content["files"]:
+        # rename file to remove any special characters
+        file["name"] = seedr_clean_name(file["name"])
+        seedr.renameFile(file["folder_file_id"], file["name"])
         file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
     return sorted(
         folder_content["files"], key=lambda x: x["fuzzy_ratio"], reverse=True
     )[0]
 
 
-def seedr_clean_name(name: str, replace: str = " ") -> str:
-    # Only allow alphanumeric characters, spaces, and `.,;:_~-[]()`
-    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()\[\]]", replace, name)
+def seedr_clean_name(name: str, replace: str = "") -> str:
+    # Only allow alphanumeric characters, spaces, and `.,;:_~-()`
+    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()]", replace, name)
     return cleaned_name
 
 
@@ -144,7 +147,7 @@ async def get_direct_link_from_seedr(
     selected_file = get_file_details_from_folder(
         seedr,
         folder_id,
-        seedr_clean_name(filename, ""),
+        seedr_clean_name(filename),
     )
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
