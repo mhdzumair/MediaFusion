@@ -30,6 +30,7 @@ playwright = "==1.38.0"
 playwright-stealth = "*"
 pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
 parse-torrent-title = {git = "git+https://github.com/mhdzumair/parse-torrent-title"}
+diskcache = "*"
 
 [dev-packages]
 pysocks = "*"

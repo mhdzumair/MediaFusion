@@ -4,6 +4,7 @@ from typing import Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from diskcache import Cache
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
@@ -51,6 +52,9 @@ no_cache_headers = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+cache = Cache(
+    settings.poster_cache_path,
+)
 
 
 @app.on_event("startup")
@@ -418,6 +422,15 @@ async def streaming_provider_endpoint(
 async def get_poster(
     catalog_type: Literal["movie", "series", "tv"], mediafusion_id: str
 ):
+    cache_key = f"{catalog_type}_{mediafusion_id}.jpg"
+
+    # Check if the poster is cached
+    image_byte_io = cache.get(cache_key, read=True)
+    if image_byte_io:
+        return StreamingResponse(
+            image_byte_io, media_type="image/jpeg", headers=headers
+        )
+
     # Query the MediaFusion data
     if catalog_type == "movie":
         mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
@@ -434,6 +447,10 @@ async def get_poster(
 
     try:
         image_byte_io = await poster.create_poster(mediafusion_data)
+        # Save the generated image to the cache. expire in 7 days
+        cache.set(cache_key, image_byte_io, expire=604800, read=True, tag="poster")
+        image_byte_io.seek(0)
+
         return StreamingResponse(
             image_byte_io, media_type="image/jpeg", headers=headers
         )
