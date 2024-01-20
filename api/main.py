@@ -105,6 +105,11 @@ async def get_home(request: Request):
     )
 
 
+@app.get("/health", tags=["health"])
+async def health():
+    return {"status": "healthy"}
+
+
 @app.get("/favicon.ico")
 async def get_favicon():
     return FileResponse(
