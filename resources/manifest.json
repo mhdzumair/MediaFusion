@@ -1,6 +1,6 @@
 {
   "id": "mhdzumair.addons.mediafusion",
-  "version": "3.6.4",
+  "version": "3.6.5",
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
   "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies, series & live TV with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
@@ -400,7 +400,9 @@
 			"Hindi",
 			"Arabic",
 			"Religious",
-			"Sony"
+			"Sony",
+			"Music",
+			"Z5"
 		  ]
 		}
 	  ]
