@@ -17,66 +17,11 @@ from scrappers.helpers import (
     get_page_content,
     get_scrapper_session,
     download_and_save_torrent,
+    get_scrapper_config,
 )
 
-HOMEPAGE = "https://www.1tamilmv.prof"
-TAMIL_MV_LINKS = {
-    "tamil": {
-        "hdrip": [
-            "11-web-hd-itunes-hd-bluray",
-            "12-hd-rips-dvd-rips-br-rips",
-            "14-hdtv-sdtv-hdtv-rips",
-        ],
-        "tcrip": "10-predvd-dvdscr-cam-tc",
-        "dubbed": "17-hollywood-movies-in-multi-audios",
-        "series": "19-web-series-tv-shows",
-    },
-    "malayalam": {
-        "hdrip": [
-            "36-web-hd-itunes-hd-bluray",
-            "37-hd-rips-dvd-rips-br-rips",
-            "39-hdtv-sdtv-hdtv-rips",
-        ],
-        "tcrip": "35-predvd-dvdscr-cam-tc",
-        "dubbed": "42-malayalam-dubbed-subtitled-movies",
-        "series": "44-web-series-tv-shows",
-    },
-    "telugu": {
-        "tcrip": "23-predvd-dvdscr-cam-tc",
-        "hdrip": [
-            "24-web-hd-itunes-hd-bluray",
-            "25-hd-rips-dvd-rips-br-rips",
-            "27-hdtv-sdtv-hdtv-rips",
-        ],
-        "dubbed": "31-telugu-dubbed-movies",
-        "series": "33-web-series-tv-shows",
-    },
-    "hindi": {
-        "tcrip": "57-predvd-dvdscr-cam-tc",
-        "hdrip": [
-            "58-web-hd-itunes-hd-bluray",
-            "59-hd-rips-dvd-rips-br-rips",
-            "61-hdtv-sdtv-hdtv-rips",
-        ],
-        "dubbed": "64-hindi-dubbed-movies",
-        "series": "66-web-series-tv-shows",
-    },
-    "kannada": {
-        "tcrip": "68-predvd-dvdscr-cam-tc",
-        "hdrip": [
-            "69-web-hd-itunes-hd-bluray",
-            "70-hd-rips-dvd-rips-br-rips",
-            "72-hdtv-sdtv-hdtv-rips",
-        ],
-        "dubbed": "75-watch-kannada-movies-online",
-        "series": "77-web-series-tv-shows",
-    },
-    "english": {
-        "tcrip": "46-predvd-dvdscr-cam-tc",
-        "hdrip": ["49-web-hd-itunes-hd-bluray", "50-hd-rips-dvd-rips-br-rips"],
-        "series": "55-web-series-tv-shows",
-    },
-}
+HOMEPAGE = get_scrapper_config("tamilmv", "homepage")
+TAMIL_MV_CATALOGS = get_scrapper_config("tamilmv", "catalogs")
 
 
 async def process_movie(
@@ -215,9 +160,9 @@ async def get_search_results(scraper, keyword, page_number=1):
 
 async def scrap_search_keyword(keyword, proxy_url=None):
     supported_forums = {}
-    for language in TAMIL_MV_LINKS:
-        for video_type in TAMIL_MV_LINKS[language]:
-            forum_ids = TAMIL_MV_LINKS[language][video_type]
+    for language in TAMIL_MV_CATALOGS:
+        for video_type in TAMIL_MV_CATALOGS[language]:
+            forum_ids = TAMIL_MV_CATALOGS[language][video_type]
             if isinstance(forum_ids, list):
                 for forum_id in forum_ids:
                     supported_forums[forum_id] = {
@@ -267,7 +212,7 @@ async def run_scraper(
         return
     link_prefix = f"{HOMEPAGE}/index.php?/forums/forum/"
     try:
-        forum_ids = TAMIL_MV_LINKS[language][video_type]
+        forum_ids = TAMIL_MV_CATALOGS[language][video_type]
         scrap_links = (
             [link_prefix + link for link in forum_ids]
             if isinstance(forum_ids, list)
@@ -296,8 +241,8 @@ async def run_schedule_scrape(
     scrap_with_playwright: bool = None,
     proxy_url: str = None,
 ):
-    for language in TAMIL_MV_LINKS:
-        for video_type in TAMIL_MV_LINKS[language]:
+    for language in TAMIL_MV_CATALOGS:
+        for video_type in TAMIL_MV_CATALOGS[language]:
             await run_scraper(
                 language,
                 video_type,

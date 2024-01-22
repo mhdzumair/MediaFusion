@@ -1,3 +1,4 @@
+import json
 import logging
 
 import PTN
@@ -94,3 +95,10 @@ async def download_and_save_torrent(
             await crud.save_movie_metadata(metadata)
 
     return True
+
+
+def get_scrapper_config(site_name: str, get_key: str) -> dict:
+    with open("resources/json/scrapper_config.json") as file:
+        config = json.load(file)
+
+    return config.get(site_name, {}).get(get_key, {})
