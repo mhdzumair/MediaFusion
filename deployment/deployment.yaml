@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediafusion-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mediafusion
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: mediafusion
+    spec:
+      imagePullSecrets:
+        - name: ocirsecret
+      containers:
+      - name: mediafusion
+        image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.5
+        ports:
+        - containerPort: 80
+        env:
+          - name: MONGO_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: MONGO_URI
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: HOST_URL
+            value: "https://mediafusion.fun"
+          - name: ENABLE_SCRAPPER
+            value: "false"
+          - name: POSTER_CACHE_PATH
+            value: "/covers"
+        volumeMounts:
+          - name: mediafusion-volume
+            mountPath: /covers
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 60
+          failureThreshold: 5
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 10
+      volumes:
+        - name: mediafusion-volume
+          persistentVolumeClaim:
+            claimName: mediafusion-pvc
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediafusion-service
+spec:
+  selector:
+    app: mediafusion
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mediafusion-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
