@@ -1,8 +1,8 @@
 from io import BytesIO
 
-from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
-from imdb import Cinemagoer, IMDbDataAccessError
 import requests
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
+from imdb import Cinemagoer
 
 from db.models import MediaFusionMetaData
 
@@ -34,7 +34,7 @@ async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
         try:
             result = ia.get_movie(mediafusion_data.id[2:], info="main")
             imdb_rating = result.get("rating")
-        except (IMDbDataAccessError, Exception):
+        except Exception:
             pass
 
     image = add_elements_to_poster(image, imdb_rating)

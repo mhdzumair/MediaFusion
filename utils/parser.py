@@ -2,7 +2,7 @@ import asyncio
 import math
 
 import requests
-from imdb import Cinemagoer, IMDbDataAccessError
+from imdb import Cinemagoer
 
 from db.config import settings
 from db.models import Streams, MediaFusionTVMetaData
@@ -176,7 +176,7 @@ def get_catalogs(catalog: str, languages: list[str]) -> list[str]:
 def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     try:
         result = ia.search_movie(f"{title} {year}")
-    except IMDbDataAccessError:
+    except Exception:
         return search_imdb(title, year, retry - 1) if retry > 0 else {}
     for movie in result:
         if movie.get("year") == year and movie.get("title").lower() in title.lower():
