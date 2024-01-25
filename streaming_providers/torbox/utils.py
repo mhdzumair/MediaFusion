@@ -1,27 +1,32 @@
 from typing import Any
 
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.torbox.client import Torbox
 
 
 def get_direct_link_from_torbox(
-        info_hash: str,
-        magnet_link: str,
-        user_data: UserData,
-        filename: str,
-        max_retries=5,
-        retry_interval=5,
+    info_hash: str,
+    magnet_link: str,
+    user_data: UserData,
+    filename: str,
+    max_retries=5,
+    retry_interval=5,
 ) -> str:
     torbox_client = Torbox(token=user_data.streaming_provider.token)
 
     # Check if the torrent already exists
     torrent_info = torbox_client.get_available_torrent(info_hash)
     if torrent_info:
-        if torrent_info["download_finished"] is True and torrent_info["download_present"] is True:
+        if (
+            torrent_info["download_finished"] is True
+            and torrent_info["download_present"] is True
+        ):
             file_id = select_file_id_from_torrent(torrent_info, filename)
-            response = torbox_client.create_download_link(torrent_info.get("id"), file_id)
+            response = torbox_client.create_download_link(
+                torrent_info.get("id"), file_id
+            )
             return response["data"]
     else:
         # If torrent doesn't exist, add it
@@ -34,7 +39,7 @@ def get_direct_link_from_torbox(
     )
 
 
-def update_torbox_cache_status(streams: list[Streams], user_data: UserData):
+def update_torbox_cache_status(streams: list[TorrentStreams], user_data: UserData):
     """Updates the cache status of streams based on Torbox's instant availability."""
 
     try:

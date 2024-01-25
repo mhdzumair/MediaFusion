@@ -5,7 +5,7 @@ from db.config import settings
 from db.models import (
     MediaFusionSeriesMetaData,
     MediaFusionMovieMetaData,
-    Streams,
+    TorrentStreams,
     TVStreams,
     MediaFusionTVMetaData,
 )
@@ -21,7 +21,7 @@ async def init():
         document_models=[
             MediaFusionMovieMetaData,
             MediaFusionSeriesMetaData,
-            Streams,
+            TorrentStreams,
             TVStreams,
             MediaFusionTVMetaData,
         ],

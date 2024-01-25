@@ -1,11 +1,12 @@
 import asyncio
 import math
+import re
 
 import requests
 from imdb import Cinemagoer
 
 from db.config import settings
-from db.models import Streams, MediaFusionTVMetaData
+from db.models import TorrentStreams, MediaFusionTVMetaData
 from db.schemas import Stream, UserData
 from streaming_providers.alldebrid.utils import (
     update_ad_cache_status,
@@ -40,8 +41,8 @@ ia = Cinemagoer()
 
 
 async def filter_and_sort_streams(
-    streams: list[Streams], user_data: UserData
-) -> list[Streams]:
+    streams: list[TorrentStreams], user_data: UserData
+) -> list[TorrentStreams]:
     # Filter streams by selected catalogs and resolutions
     filtered_streams = [
         stream
@@ -81,7 +82,7 @@ async def filter_and_sort_streams(
 
 
 async def parse_stream_data(
-    streams: list[Streams],
+    streams: list[TorrentStreams],
     user_data: UserData,
     secret_str: str,
     season: int = None,
@@ -115,11 +116,14 @@ async def parse_stream_data(
         else:
             streaming_provider = "Torrent ⏳"
 
+        seeders = f"👤 {stream_data.seeders}" if stream_data.seeders else None
+
         description_parts = [
             quality_detail,
             convert_bytes_to_readable(
                 episode_data.size if episode_data else stream_data.size
             ),
+            seeders,
             " + ".join(stream_data.languages),
             stream_data.source,
         ]
@@ -159,7 +163,17 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
     s = round(size_bytes / p, 2)
-    return f"{s} {size_name[i]}"
+    return f"💾 {s} {size_name[i]}"
+
+
+def convert_size_to_bytes(size_str: str) -> int:
+    """Convert size string to bytes."""
+    match = re.match(r"(\d+(?:\.\d+)?)\s*(GB|MB)", size_str, re.IGNORECASE)
+    if match:
+        size, unit = match.groups()
+        size = float(size)
+        return int(size * 1024**3) if "GB" in unit.upper() else int(size * 1024**2)
+    return 0
 
 
 def get_catalogs(catalog: str, languages: list[str]) -> list[str]:

@@ -1,22 +1,25 @@
 import hashlib
 import logging
+from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
 
 from beanie import WriteRules
 from beanie.operators import In
+from fastapi import BackgroundTasks
 
 from db import schemas, models
 from db.config import settings
 from db.models import (
     MediaFusionMovieMetaData,
     MediaFusionSeriesMetaData,
-    Streams,
+    TorrentStreams,
     Season,
     Episode,
     MediaFusionTVMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
+from scrappers.torrentio import scrap_streams_from_torrentio
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
@@ -113,12 +116,28 @@ async def get_tv_data_by_id(
     return tv_data
 
 
-async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[Stream]:
-    movie_data = await get_movie_data_by_id(video_id, True)
-    if not movie_data:
-        return []
+async def get_movie_streams(
+    user_data, secret_str: str, video_id: str, background_tasks: BackgroundTasks
+) -> list[Stream]:
+    streams = (
+        await TorrentStreams.find({"meta_id": video_id})
+        .sort(-TorrentStreams.updated_at)
+        .to_list()
+    )
+    last_torrentio_stream = next(
+        (stream for stream in streams if stream.source == "Torrentio"), None
+    )
 
-    return await parse_stream_data(movie_data.streams, user_data, secret_str)
+    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
+        if (
+            last_torrentio_stream is None
+            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=1)
+        ):
+            streams.extend(
+                await scrap_streams_from_torrentio(video_id, "movie", background_tasks)
+            )
+
+    return await parse_stream_data(streams, user_data, secret_str)
 
 
 async def get_series_streams(
@@ -181,7 +200,7 @@ async def get_series_meta(meta_id: str):
 
     # Loop through streams to populate the videos list
     for stream in series_data.streams:
-        stream: Streams
+        stream: TorrentStreams
         if stream.season:  # Ensure the stream has season data
             for episode in stream.season.episodes:
                 stream_id = (
@@ -256,9 +275,7 @@ async def save_movie_metadata(metadata: dict):
         meta_id = existing_movie.id
 
     # Determine file index for the main movie file (largest file)
-    largest_file = max(
-        metadata["torrent_metadata"]["file_data"], key=lambda x: x["size"]
-    )
+    largest_file = max(metadata["file_data"], key=lambda x: x["size"])
 
     if "language" in metadata:
         languages = (
@@ -270,11 +287,11 @@ async def save_movie_metadata(metadata: dict):
         languages = [metadata["scrap_language"]]
 
     # Create the stream object
-    new_stream = Streams(
-        id=metadata["torrent_metadata"]["info_hash"],
-        torrent_name=metadata["torrent_metadata"]["torrent_name"],
-        announce_list=metadata["torrent_metadata"]["announce_list"],
-        size=metadata["torrent_metadata"]["total_size"],
+    new_stream = TorrentStreams(
+        id=metadata["info_hash"],
+        torrent_name=metadata["torrent_name"],
+        announce_list=metadata["announce_list"],
+        size=metadata["total_size"],
         filename=largest_file["filename"],
         file_index=largest_file["index"],
         languages=languages,
@@ -286,6 +303,7 @@ async def save_movie_metadata(metadata: dict):
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
+        meta_id=meta_id,
     )
 
     if existing_movie:
@@ -349,19 +367,13 @@ async def save_series_metadata(metadata: dict):
             logging.info("Added series %s", series.title)
 
     existing_stream = next(
-        (
-            s
-            for s in series.streams
-            if s.id == metadata["torrent_metadata"]["info_hash"]
-        ),
+        (s for s in series.streams if s.id == metadata["info_hash"]),
         None,
     )
     if existing_stream:
         # If the stream already exists, return
         logging.info("Stream already exists for series %s", series.title)
         return
-
-    season_number = metadata["season"]
 
     # Extract episodes
     episodes = [
@@ -371,7 +383,7 @@ async def save_series_metadata(metadata: dict):
             size=file["size"],
             file_index=file["index"],
         )
-        for file in metadata["torrent_metadata"]["file_data"]
+        for file in metadata["file_data"]
         if file["episode"]
     ]
 
@@ -386,11 +398,11 @@ async def save_series_metadata(metadata: dict):
         languages = [metadata["scrap_language"]]
 
     # Create the stream
-    stream = Streams(
-        id=metadata["torrent_metadata"]["info_hash"],
-        torrent_name=metadata["torrent_metadata"]["torrent_name"],
-        announce_list=metadata["torrent_metadata"]["announce_list"],
-        size=metadata["torrent_metadata"]["total_size"],
+    stream = TorrentStreams(
+        id=metadata["info_hash"],
+        torrent_name=metadata["torrent_name"],
+        announce_list=metadata["announce_list"],
+        size=metadata["total_size"],
         languages=languages,
         resolution=metadata.get("resolution"),
         codec=metadata.get("codec"),
@@ -400,7 +412,8 @@ async def save_series_metadata(metadata: dict):
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
-        season=Season(season_number=season_number, episodes=episodes),
+        season=Season(season_number=metadata["season"], episodes=episodes),
+        meta_id=series.id,
     )
 
     # Add the stream to the series
@@ -443,8 +456,8 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
     return {"metas": metas}
 
 
-async def get_stream_by_info_hash(info_hash: str) -> Streams | None:
-    stream = await Streams.get(info_hash)
+async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
+    stream = await TorrentStreams.get(info_hash)
     return stream
 
 

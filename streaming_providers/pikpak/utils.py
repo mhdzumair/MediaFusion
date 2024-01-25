@@ -5,7 +5,7 @@ import httpx
 from pikpakapi import PikPakApi, PikpakException
 from thefuzz import fuzz
 
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 
@@ -101,7 +101,18 @@ async def find_file_in_folder_tree(
     # Fuzzy matching as a fallback
     for file in files:
         file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    return sorted(files, key=lambda x: x["fuzzy_ratio"], reverse=True)[0]
+    selected_file = max(files, key=lambda x: x["fuzzy_ratio"])
+
+    # If the fuzzy ratio is less than 50, then select the largest file
+    if selected_file["fuzzy_ratio"] < 50:
+        selected_file = max(files, key=lambda x: x["size"])
+
+    if "video" not in selected_file["mime_type"]:
+        raise ProviderException(
+            "No matching file available for this torrent", "no_matching_file.mp4"
+        )
+
+    return selected_file
 
 
 async def initialize_pikpak(user_data: UserData):
@@ -154,7 +165,7 @@ async def retrieve_or_download_file(
     filename: str,
     magnet_link: str,
     info_hash: str,
-    stream: Streams,
+    stream: TorrentStreams,
     max_retries: int,
     retry_interval: int,
 ):
@@ -206,7 +217,7 @@ async def get_direct_link_from_pikpak(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: Streams,
+    stream: TorrentStreams,
     filename: str,
     max_retries=5,
     retry_interval=5,
@@ -220,7 +231,7 @@ async def get_direct_link_from_pikpak(
     selected_file = await retrieve_or_download_file(
         pikpak,
         folder_id,
-        filename,
+        filename or stream.torrent_name,
         magnet_link,
         info_hash,
         stream,
@@ -232,7 +243,9 @@ async def get_direct_link_from_pikpak(
     return file_data["web_content_link"]
 
 
-async def update_pikpak_cache_status(streams: list[Streams], user_data: UserData):
+async def update_pikpak_cache_status(
+    streams: list[TorrentStreams], user_data: UserData
+):
     """Updates the cache status of streams based on PikPak's instant availability."""
     try:
         pikpak = await initialize_pikpak(user_data)

@@ -5,7 +5,15 @@ from typing import Literal
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from diskcache import Cache
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
+from fastapi import (
+    FastAPI,
+    Request,
+    Response,
+    Depends,
+    HTTPException,
+    status,
+    BackgroundTasks,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -58,8 +66,9 @@ cache = Cache(
 
 
 @app.on_event("startup")
-async def init_db():
+async def init_server():
     await database.init()
+    await torrent.init_best_trackers()
 
 
 @app.on_event("startup")
@@ -325,6 +334,7 @@ async def get_streams(
     catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
     response: Response,
+    background_tasks: BackgroundTasks,
     secret_str: str = None,
     season: int = None,
     episode: int = None,
@@ -333,7 +343,9 @@ async def get_streams(
     response.headers.update(headers)
 
     if catalog_type == "movie":
-        fetched_streams = await crud.get_movie_streams(user_data, secret_str, video_id)
+        fetched_streams = await crud.get_movie_streams(
+            user_data, secret_str, video_id, background_tasks
+        )
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
             user_data, secret_str, video_id, season, episode
@@ -370,7 +382,9 @@ async def streaming_provider_endpoint(
     if not stream:
         raise HTTPException(status_code=400, detail="Stream not found.")
 
-    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
+    magnet_link = await torrent.convert_info_hash_to_magnet(
+        info_hash, stream.announce_list
+    )
 
     episode_data = stream.get_episode(season, episode)
     filename = episode_data.filename if episode_data else stream.filename
@@ -382,7 +396,7 @@ async def streaming_provider_endpoint(
             )
         elif user_data.streaming_provider.service == "realdebrid":
             video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data, filename, 1, 0
+                info_hash, magnet_link, user_data, filename, stream.file_index, 1, 0
             )
         elif user_data.streaming_provider.service == "alldebrid":
             video_url = get_direct_link_from_alldebrid(

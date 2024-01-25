@@ -31,6 +31,7 @@ playwright-stealth = "*"
 pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
 parse-torrent-title = {git = "git+https://github.com/mhdzumair/parse-torrent-title"}
 diskcache = "*"
+demagnetize = "*"
 
 [dev-packages]
 pysocks = "*"

@@ -1,10 +1,9 @@
-import hashlib
 from datetime import datetime
 from typing import Optional, Any
 
 import pymongo
-from beanie import Document, Link
-from pydantic import BaseModel, Field, computed_field
+from beanie import Document, Link, BackLink
+from pydantic import BaseModel, Field
 from pymongo import IndexModel, ASCENDING
 
 
@@ -20,7 +19,7 @@ class Season(BaseModel):
     episodes: list[Episode]
 
 
-class Streams(Document):
+class TorrentStreams(Document):
     id: str
     torrent_name: str
     size: int
@@ -32,6 +31,7 @@ class Streams(Document):
     source: str
     catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = None
     resolution: Optional[str]
     codec: Optional[str]
     quality: Optional[str]
@@ -39,6 +39,7 @@ class Streams(Document):
     encoder: Optional[str]
     seeders: Optional[int] = None
     cached: Optional[bool] = None
+    meta_id: Optional[str] = None
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
@@ -58,6 +59,7 @@ class TVStreams(Document):
     source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
+    meta_id: Optional[str] = None
 
 
 class MediaFusionMetaData(Document):
@@ -67,7 +69,7 @@ class MediaFusionMetaData(Document):
     poster: str
     is_poster_working: Optional[bool] = True
     background: Optional[str] = None
-    streams: list[Link[Streams]]
+    streams: list[Link[TorrentStreams]]
     type: str
 
     class Settings:

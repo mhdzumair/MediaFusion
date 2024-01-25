@@ -2,7 +2,7 @@ import time
 
 import PTN
 
-from db.models import Streams, Episode
+from db.models import TorrentStreams, Episode
 from db.schemas import UserData
 from streaming_providers.debridlink.client import DebridLink
 from streaming_providers.exceptions import ProviderException
@@ -12,7 +12,7 @@ def get_direct_link_from_debridlink(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: Streams,
+    stream: TorrentStreams,
     episode_data: Episode = None,
     max_retries=5,
     retry_interval=5,
@@ -128,7 +128,7 @@ def select_episode_file(torrent_files: list, episode: int, file_name_key: str) -
         )
 
 
-def update_dl_cache_status(streams: list[Streams], user_data: UserData):
+def update_dl_cache_status(streams: list[TorrentStreams], user_data: UserData):
     """Updates the cache status of streams based on DebridLink's instant availability."""
 
     try:

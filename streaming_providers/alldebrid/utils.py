@@ -1,6 +1,6 @@
 from typing import Any
 
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
@@ -46,7 +46,7 @@ def get_direct_link_from_alldebrid(
     return response["data"]["link"]
 
 
-def update_ad_cache_status(streams: list[Streams], user_data: UserData):
+def update_ad_cache_status(streams: list[TorrentStreams], user_data: UserData):
     """Updates the cache status of streams based on AllDebrid's instant availability."""
 
     try:

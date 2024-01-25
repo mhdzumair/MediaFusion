@@ -75,8 +75,7 @@ async def download_and_save_torrent(
         logging.error(f"Info hash not found for {torrent_link}")
         return False
 
-    parsed_data = PTN.parse(torrent_metadata["torrent_name"])
-    metadata.update({"torrent_metadata": torrent_metadata, **parsed_data})
+    metadata.update(torrent_metadata)
 
     if not metadata.get("year"):
         logging.error(f"Year not found for {page_link}")

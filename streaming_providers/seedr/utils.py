@@ -5,7 +5,7 @@ from datetime import datetime
 from seedrcc import Seedr
 from thefuzz import fuzz
 
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 
@@ -91,13 +91,18 @@ def get_file_details_from_folder(seedr, folder_id: int, filename: str):
 
     # If the file is not found with exact match, try to find it by fuzzy ratio
     for file in folder_content["files"]:
-        # rename file to remove any special characters
-        file["name"] = seedr_clean_name(file["name"])
-        seedr.renameFile(file["folder_file_id"], file["name"])
         file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    return sorted(
-        folder_content["files"], key=lambda x: x["fuzzy_ratio"], reverse=True
-    )[0]
+    selected_file = max(folder_content["files"], key=lambda x: x["fuzzy_ratio"])
+
+    # If the fuzzy ratio is less than 50, then select the largest file
+    if selected_file["fuzzy_ratio"] < 50:
+        selected_file = max(folder_content["files"], key=lambda x: x["size"])
+
+    if selected_file["play_video"] is False:
+        raise ProviderException(
+            "No matching file available for this torrent", "no_matching_file.mp4"
+        )
+    return selected_file
 
 
 def seedr_clean_name(name: str, replace: str = "") -> str:
@@ -118,11 +123,20 @@ def get_seedr_client(user_data: UserData) -> Seedr:
     return seedr
 
 
+def rename_seedr_files(seedr, folder_id):
+    """rename filenames to fix stremio android client bug."""
+    folder_content = seedr.listContents(folder_id)
+    for file in folder_content["files"]:
+        # rename file to remove any special characters
+        if file["name"] != seedr_clean_name(file["name"]):
+            seedr.renameFile(file["folder_file_id"], seedr_clean_name(file["name"]))
+
+
 async def get_direct_link_from_seedr(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: Streams,
+    stream: TorrentStreams,
     filename: str,
     max_retries=5,
     retry_interval=5,
@@ -144,10 +158,13 @@ async def get_direct_link_from_seedr(
         folder = check_folder_status(seedr, info_hash)
     folder_id = folder["id"]
 
+    # rename filenames to fix stremio android client bug.
+    rename_seedr_files(seedr, folder_id)
+
     selected_file = get_file_details_from_folder(
         seedr,
         folder_id,
-        seedr_clean_name(filename),
+        seedr_clean_name(filename or stream.torrent_name),
     )
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
@@ -183,7 +200,7 @@ def free_up_space(seedr, required_space):
         available_space += folder["size"]
 
 
-def update_seedr_cache_status(streams: list[Streams], user_data: UserData):
+def update_seedr_cache_status(streams: list[TorrentStreams], user_data: UserData):
     """Updates the cache status of the streams based on the user's Seedr account."""
     try:
         seedr = get_seedr_client(user_data)
