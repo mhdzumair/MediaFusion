@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.6.7
+        image: mhdzumair/mediafusion:v3.6.8
         ports:
         - containerPort: 80
         resources:
@@ -163,7 +163,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.6.7
+            image: mhdzumair/mediafusion:v3.6.8
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -195,7 +195,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.6.7
+            image: mhdzumair/mediafusion:v3.6.8
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
             resources:
               requests:

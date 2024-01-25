@@ -1,13 +1,11 @@
 import json
 import logging
 
-import PTN
 import cloudscraper
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from db import crud
 from utils.torrent import extract_torrent_metadata
 
 
@@ -54,6 +52,8 @@ async def download_and_save_torrent(
     scraper=None,
     page=None,
 ):
+    from db import crud  # Avoid circular import
+
     torrent_link = torrent_element.get("href")
     logging.info(f"Downloading torrent: {torrent_link}")
 
