@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: mediafusion-deployment
 spec:
-  replicas: 2
+  replicas: 4
   selector:
     matchLabels:
       app: mediafusion
@@ -17,19 +17,17 @@ spec:
       labels:
         app: mediafusion
     spec:
-      imagePullSecrets:
-        - name: ocirsecret
       containers:
       - name: mediafusion
-        image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.6
+        image: mhdzumair/mediafusion:v3.6.6
         ports:
         - containerPort: 80
         resources:
           requests:
-            memory: "128Mi"
+            memory: "512Mi"
             cpu: "250m"
           limits:
-            memory: "256Mi"
+            memory: "1Gi"
             cpu: "500m"
         env:
           - name: MONGO_URI
@@ -165,7 +163,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.6
+            image: mhdzumair/mediafusion:v3.6.6
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -182,12 +180,6 @@ spec:
                   secretKeyRef:
                     name: mediafusion-secrets
                     key: SECRET_KEY
-              - name: HOST_URL
-                value: "https://mediafusion.fun"
-              - name: ENABLE_SCRAPPER
-                value: "false"
-              - name: POSTER_CACHE_PATH
-                value: "/covers"
           restartPolicy: OnFailure
 
 ---
@@ -203,7 +195,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.6
+            image: mhdzumair/mediafusion:v3.6.6
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
             resources:
               requests:
@@ -220,10 +212,4 @@ spec:
                   secretKeyRef:
                     name: mediafusion-secrets
                     key: SECRET_KEY
-              - name: HOST_URL
-                value: "https://mediafusion.fun"
-              - name: ENABLE_SCRAPPER
-                value: "false"
-              - name: POSTER_CACHE_PATH
-                value: "/covers"
           restartPolicy: OnFailure
