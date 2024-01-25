@@ -177,6 +177,10 @@ async def retrieve_or_download_file(
             pikpak, info_hash, stream.torrent_name, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(pikpak, folder_id, filename)
+    if selected_file is None:
+        raise ProviderException(
+            "No matching file available for this torrent", "no_matching_file.mp4"
+        )
     return selected_file
 
 
