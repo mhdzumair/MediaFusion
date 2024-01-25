@@ -80,11 +80,20 @@ def select_file_index_from_torrent(
     torrent_info: dict[str, Any], filename: str, file_index: int
 ) -> int:
     """Select the file index from the torrent info."""
-    selected_files = [file for file in torrent_info["files"] if file["selected"] == 1]
-    for index, file in enumerate(selected_files):
-        if file["path"] == "/" + filename:
-            return index
-    return file_index
+    if file_index and file_index < len(torrent_info["links"]):
+        return file_index
+
+    if filename:
+        selected_files = [
+            file for file in torrent_info["files"] if file["selected"] == 1
+        ]
+        for index, file in enumerate(selected_files):
+            if file["path"] == "/" + filename:
+                return index
+
+    # If no file index is provided, select the largest file
+    largest_file = max(torrent_info["files"], key=lambda file: file["bytes"])
+    return torrent_info["files"].index(largest_file)
 
 
 def fetch_downloaded_info_hashes_from_rd(user_data: UserData) -> list[str]:
