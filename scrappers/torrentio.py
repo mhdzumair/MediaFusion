@@ -5,6 +5,7 @@ import PTN
 import httpx
 from fastapi import BackgroundTasks
 
+from db.config import settings
 from db.models import TorrentStreams
 from utils.parser import convert_size_to_bytes
 from utils.torrent import info_hashes_to_torrent_metadata
@@ -24,7 +25,7 @@ async def scrap_streams_from_torrentio(
     """
     Get streams by IMDb ID from torrentio stremio addon.
     """
-    url = f"https://torrentio.strem.fun/stream/{catalog_type}/{video_id}.json"
+    url = f"{settings.torrentio_url}/stream/{catalog_type}/{video_id}.json"
     try:
         stream_data = await fetch_stream_data(url)
         return await store_and_parse_stream_data(

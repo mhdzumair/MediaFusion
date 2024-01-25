@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     logging_level: str = "INFO"
     enable_scrapper: bool = False
     poster_cache_path: str = "resources/poster_cache"
+    torrentio_url: str = "https://torrentio.strem.fun"
 
     class Config:
         env_file = ".env"
