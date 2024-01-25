@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     torrentio_url: str = "https://torrentio.strem.fun"
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
+    prowlarr_url: str = "http://prowlarr-service:9696"
+    prowlarr_api_key: str
 
     class Config:
         env_file = ".env"

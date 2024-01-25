@@ -21,6 +21,7 @@ from db.models import (
 )
 from db.schemas import Stream, MetaIdProjection
 from scrappers import tamilmv
+from scrappers.prowlarr import scrap_streams_from_prowlarr
 from scrappers.torrentio import scrap_streams_from_torrentio
 from utils.parser import (
     parse_stream_data,
@@ -129,14 +130,27 @@ async def get_movie_streams(
     last_torrentio_stream = next(
         (stream for stream in streams if stream.source == "Torrentio"), None
     )
+    last_prowlarr_stream = next(
+        (stream for stream in streams if stream.source == "Prowlarr"), None
+    )
 
-    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
-        if (
-            last_torrentio_stream is None
-            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
-        ):
+    if video_id.startswith("tt"):
+        if "torrentio_streams" in user_data.selected_catalogs:
+            if (
+                last_torrentio_stream is None
+                or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
+            ):
+                streams.extend(
+                    await scrap_streams_from_torrentio(video_id, "movie", background_tasks)
+                )
+        if "prowlarr_streams" in user_data.selected_catalogs:
+            # TODO ADD ME LATER
+            #if (
+            #        last_prowlarr_stream is None
+            #        or last_prowlarr_stream.updated_at < datetime.now() - timedelta(days=1)
+            #):
             streams.extend(
-                await scrap_streams_from_torrentio(video_id, "movie", background_tasks)
+                await scrap_streams_from_prowlarr(video_id, "movie", background_tasks)
             )
 
     return await parse_stream_data(streams, user_data, secret_str)

@@ -32,6 +32,7 @@ CATALOG_ID_DATA = [
     "live_tv",
     "mediafusion_search_tv",
     "torrentio_streams",
+    "prowlarr_streams",
 ]
 
 CATALOG_NAME_DATA = [
@@ -68,6 +69,7 @@ CATALOG_NAME_DATA = [
     "Live TV",
     "MediaFusion Search TV",
     "Torrentio Streams",
+    "Prowlarr Streams",
 ]
 
 RESOLUTIONS = [

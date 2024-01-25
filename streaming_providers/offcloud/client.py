@@ -2,6 +2,7 @@ from typing import Any
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
+from utils.validation_helper import is_video_file
 
 
 class OffCloud(DebridClient):
@@ -75,7 +76,10 @@ class OffCloud(DebridClient):
 
         response = self.explore_folder_links(request_id)
         for link in response:
-            if filename in link:
+            if filename is None:
+                if is_video_file(link):
+                    return link
+            if filename is not None and filename in link:
                 return link
         raise ProviderException(
             "No matching file available for this torrent", "api_error.mp4"

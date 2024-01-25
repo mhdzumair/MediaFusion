@@ -32,11 +32,11 @@ class TorrentStreams(Document):
     catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
-    resolution: Optional[str]
-    codec: Optional[str]
-    quality: Optional[str]
-    audio: Optional[str]
-    encoder: Optional[str]
+    resolution: Optional[str] = None
+    codec: Optional[str] = None
+    quality: Optional[str] = None
+    audio: Optional[str] = None
+    encoder: Optional[str] = None
     seeders: Optional[int] = None
     cached: Optional[bool] = None
     meta_id: Optional[str] = None
