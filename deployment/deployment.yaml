@@ -21,15 +21,19 @@ spec:
         - name: ocirsecret
       containers:
       - name: mediafusion
-        image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.5
+        image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.6
         ports:
         - containerPort: 80
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
         env:
           - name: MONGO_URI
-            valueFrom:
-              secretKeyRef:
-                name: mediafusion-secrets
-                key: MONGO_URI
+            value: "mongodb://mongodb-service:27017"
           - name: SECRET_KEY
             valueFrom:
               secretKeyRef:
@@ -63,6 +67,34 @@ spec:
         - name: mediafusion-volume
           persistentVolumeClaim:
             claimName: mediafusion-pvc
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-storage
+        persistentVolumeClaim:
+          claimName: mongo-pvc
 
 ---
 
@@ -82,6 +114,20 @@ spec:
 ---
 
 apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+
+---
+
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mediafusion-pvc
@@ -91,3 +137,93 @@ spec:
   resources:
     requests:
       storage: 1Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tamil-blasters-scraper
+spec:
+  schedule: "0 */3 * * *"  # At minute 0 past every 3rd hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: tamil-blasters-scraper
+            image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.6
+            command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "250m"
+              limits:
+                memory: "256Mi"
+                cpu: "500m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+              - name: HOST_URL
+                value: "https://mediafusion.fun"
+              - name: ENABLE_SCRAPPER
+                value: "false"
+              - name: POSTER_CACHE_PATH
+                value: "/covers"
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tamilmv-scraper
+spec:
+  schedule: "30 */3 * * *"  # At minute 30 past every 3rd hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: tamilmv-scraper
+            image: ap-singapore-1.ocir.io/axykuon5aont/mediafusion:v3.6.6
+            command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "250m"
+              limits:
+                memory: "256Mi"
+                cpu: "500m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+              - name: HOST_URL
+                value: "https://mediafusion.fun"
+              - name: ENABLE_SCRAPPER
+                value: "false"
+              - name: POSTER_CACHE_PATH
+                value: "/covers"
+          restartPolicy: OnFailure

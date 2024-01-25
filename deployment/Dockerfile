@@ -2,14 +2,13 @@ FROM python:3.11-slim-bullseye
 
 WORKDIR /mediafusion
 
-COPY ../Pipfile Pipfile.lock ./
-
 # Install dependencies
 RUN pip install --upgrade pip && \
     pip install pipenv && \
     apt-get update && \
     apt-get install -y git
 
+COPY ../Pipfile Pipfile.lock ./
 
 RUN pipenv install --deploy --ignore-pipfile
 
