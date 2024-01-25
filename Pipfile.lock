@@ -51,12 +51,12 @@
         },
         "beanie": {
             "hashes": [
-                "sha256:2328f0f745ea8b4626a818c79ed71021a5c4362fc2c0adc48a59e6b40c5ce54b",
-                "sha256:d48b047c9640d8b4312b781254fcf808ad03262321f1793cf1228972953e3649"
+                "sha256:4436ac740718ccd62b21576778679ac972359fce2938557890c576adbbf5e244",
+                "sha256:f153866b9ba015274102e10a397602d088fc039b705bd806cb447c898cd2979b"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.7' and python_version < '4.0'",
-            "version": "==1.24.0"
+            "version": "==1.25.0"
         },
         "beautifulsoup4": {
             "hashes": [
@@ -659,7 +659,7 @@
         },
         "parse-torrent-title": {
             "git": "git+https://github.com/mhdzumair/parse-torrent-title",
-            "ref": "c3002b767de54ffdcf633e60a16567b49cc7e0e6"
+            "ref": "d9a21d2fdc18471eef54fb39a5a7be37335afbf8"
         },
         "pikpakapi": {
             "git": "git+https://github.com/mhdzumair/PikPakAPI.git",
@@ -1049,11 +1049,11 @@
         },
         "python-dotenv": {
             "hashes": [
-                "sha256:a8df96034aae6d2d50a4ebe8216326c61c3eb64836776504fcca410e5937a3ba",
-                "sha256:f5971a9226b701070a4bf2c38c89e5a3f0d64de8debda981d1db98583009122a"
+                "sha256:e324ee90a023d808f1959c46bcbc04446a10ced277783dc6ee09987c37ec10ca",
+                "sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.0"
+            "version": "==1.0.1"
         },
         "pytz": {
             "hashes": [
@@ -1381,11 +1381,11 @@
                 "standard"
             ],
             "hashes": [
-                "sha256:48bfd350fce3c5c57af5fb4995fded8fb50da3b4feb543eb18ad7e0d54589602",
-                "sha256:cdb58ef6b8188c6c174994b2b1ba2150a9a8ae7ea5fb2f1b856b94a815d6071d"
+                "sha256:890b00f6c537d58695d3bb1f28e23db9d9e7a17cbcc76d7457c499935f933e24",
+                "sha256:c855578045d45625fd027367f7653d249f7c49f9361ba15cf9624186b26b8eb6"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==0.26.0"
+            "version": "==0.27.0"
         },
         "uvloop": {
             "hashes": [
