@@ -79,6 +79,24 @@
 
 7. **For scraping instructions**: refer to the [scrapping README](/scrappers/README.md).
 
+
+## :heart: Acknowledgments
+
+<a href="https://github.com/AnTuDu">
+  <img src="https://github.com/AnTuDu.png" width="50" height="50" alt="AnTuDu's Profile Picture" style="border-radius: 50%;">
+</a>
+
+
+Special thanks to [AnTuDu](https://github.com/AnTuDu) for providing the infrastructure support for deploying MediaFusion.
+
+### :sparkles: Contributors
+
+A special thank you to all our contributors!
+
+<a href="https://github.com/mhdzumair/MediaFusion/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=mhdzumair/MediaFusion" />
+</a>
+
 ## :books: References
 
 - [Stremio Generic Add-on Guide](https://stremio.github.io/stremio-addon-guide/basics)
