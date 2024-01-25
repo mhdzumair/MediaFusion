@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.6.8
+        image: mhdzumair/mediafusion:v3.6.9
         ports:
         - containerPort: 80
         resources:
@@ -163,7 +163,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.6.8
+            image: mhdzumair/mediafusion:v3.6.9
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -171,7 +171,7 @@ spec:
                 cpu: "250m"
               limits:
                 memory: "256Mi"
-                cpu: "500m"
+                cpu: "250m"
             env:
               - name: MONGO_URI
                 value: "mongodb://mongodb-service:27017"
@@ -195,7 +195,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.6.8
+            image: mhdzumair/mediafusion:v3.6.9
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
             resources:
               requests:
@@ -203,7 +203,7 @@ spec:
                 cpu: "250m"
               limits:
                 memory: "256Mi"
-                cpu: "500m"
+                cpu: "250m"
             env:
               - name: MONGO_URI
                 value: "mongodb://mongodb-service:27017"
