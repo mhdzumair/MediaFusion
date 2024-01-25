@@ -22,6 +22,7 @@ from scrappers.helpers import (
 
 HOMEPAGE = get_scrapper_config("tamilmv", "homepage")
 TAMIL_MV_CATALOGS = get_scrapper_config("tamilmv", "catalogs")
+SUPPORTED_SEARCH_FORUMS = get_scrapper_config("tamilmv", "supported_search_forums")
 
 
 async def process_movie(
@@ -159,22 +160,6 @@ async def get_search_results(scraper, keyword, page_number=1):
 
 
 async def scrap_search_keyword(keyword, proxy_url=None):
-    supported_forums = {}
-    for language in TAMIL_MV_CATALOGS:
-        for video_type in TAMIL_MV_CATALOGS[language]:
-            forum_ids = TAMIL_MV_CATALOGS[language][video_type]
-            if isinstance(forum_ids, list):
-                for forum_id in forum_ids:
-                    supported_forums[forum_id] = {
-                        "language": language,
-                        "media_type": video_type,
-                    }
-            else:
-                supported_forums[forum_ids] = {
-                    "language": language,
-                    "media_type": video_type,
-                }
-
     scraper = get_scrapper_session(proxy_url)
     soup = await get_search_results(scraper, keyword)
     results_element = soup.find("div", {"data-role": "resultsArea"})
@@ -193,7 +178,10 @@ async def scrap_search_keyword(keyword, proxy_url=None):
 
     for movie in movies:
         await process_movie(
-            movie, scraper=scraper, keyword=keyword, supported_forums=supported_forums
+            movie,
+            scraper=scraper,
+            keyword=keyword,
+            supported_forums=SUPPORTED_SEARCH_FORUMS,
         )
 
 

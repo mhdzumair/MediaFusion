@@ -19,6 +19,7 @@ from db.models import (
     MediaFusionTVMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
+from scrappers import tamilmv
 from scrappers.torrentio import scrap_streams_from_torrentio
 from utils.parser import (
     parse_stream_data,
@@ -424,6 +425,12 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
+    if catalog_type in ["movie", "series"]:
+        try:
+            await tamilmv.scrap_search_keyword(search_query)
+        except Exception as e:
+            logging.error(e)
+
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     elif catalog_type == "tv":

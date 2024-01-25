@@ -105,6 +105,144 @@
 		],
 		"series": "55-web-series-tv-shows"
 	  }
+	},
+	"supported_search_forums": {
+	  "11-web-hd-itunes-hd-bluray": {
+		"language": "tamil",
+		"media_type": "hdrip"
+	  },
+	  "12-hd-rips-dvd-rips-br-rips": {
+		"language": "tamil",
+		"media_type": "hdrip"
+	  },
+	  "14-hdtv-sdtv-hdtv-rips": {
+		"language": "tamil",
+		"media_type": "hdrip"
+	  },
+	  "10-predvd-dvdscr-cam-tc": {
+		"language": "tamil",
+		"media_type": "tcrip"
+	  },
+	  "17-hollywood-movies-in-multi-audios": {
+		"language": "tamil",
+		"media_type": "dubbed"
+	  },
+	  "19-web-series-tv-shows": {
+		"language": "tamil",
+		"media_type": "series"
+	  },
+	  "36-web-hd-itunes-hd-bluray": {
+		"language": "malayalam",
+		"media_type": "hdrip"
+	  },
+	  "37-hd-rips-dvd-rips-br-rips": {
+		"language": "malayalam",
+		"media_type": "hdrip"
+	  },
+	  "39-hdtv-sdtv-hdtv-rips": {
+		"language": "malayalam",
+		"media_type": "hdrip"
+	  },
+	  "35-predvd-dvdscr-cam-tc": {
+		"language": "malayalam",
+		"media_type": "tcrip"
+	  },
+	  "42-malayalam-dubbed-subtitled-movies": {
+		"language": "malayalam",
+		"media_type": "dubbed"
+	  },
+	  "44-web-series-tv-shows": {
+		"language": "malayalam",
+		"media_type": "series"
+	  },
+	  "23-predvd-dvdscr-cam-tc": {
+		"language": "telugu",
+		"media_type": "tcrip"
+	  },
+	  "24-web-hd-itunes-hd-bluray": {
+		"language": "telugu",
+		"media_type": "hdrip"
+	  },
+	  "25-hd-rips-dvd-rips-br-rips": {
+		"language": "telugu",
+		"media_type": "hdrip"
+	  },
+	  "27-hdtv-sdtv-hdtv-rips": {
+		"language": "telugu",
+		"media_type": "hdrip"
+	  },
+	  "31-telugu-dubbed-movies": {
+		"language": "telugu",
+		"media_type": "dubbed"
+	  },
+	  "33-web-series-tv-shows": {
+		"language": "telugu",
+		"media_type": "series"
+	  },
+	  "57-predvd-dvdscr-cam-tc": {
+		"language": "hindi",
+		"media_type": "tcrip"
+	  },
+	  "58-web-hd-itunes-hd-bluray": {
+		"language": "hindi",
+		"media_type": "hdrip"
+	  },
+	  "59-hd-rips-dvd-rips-br-rips": {
+		"language": "hindi",
+		"media_type": "hdrip"
+	  },
+	  "61-hdtv-sdtv-hdtv-rips": {
+		"language": "hindi",
+		"media_type": "hdrip"
+	  },
+	  "64-hindi-dubbed-movies": {
+		"language": "hindi",
+		"media_type": "dubbed"
+	  },
+	  "66-web-series-tv-shows": {
+		"language": "hindi",
+		"media_type": "series"
+	  },
+	  "68-predvd-dvdscr-cam-tc": {
+		"language": "kannada",
+		"media_type": "tcrip"
+	  },
+	  "69-web-hd-itunes-hd-bluray": {
+		"language": "kannada",
+		"media_type": "hdrip"
+	  },
+	  "70-hd-rips-dvd-rips-br-rips": {
+		"language": "kannada",
+		"media_type": "hdrip"
+	  },
+	  "72-hdtv-sdtv-hdtv-rips": {
+		"language": "kannada",
+		"media_type": "hdrip"
+	  },
+	  "75-watch-kannada-movies-online": {
+		"language": "kannada",
+		"media_type": "dubbed"
+	  },
+	  "77-web-series-tv-shows": {
+		"language": "kannada",
+		"media_type": "series"
+	  },
+	  "46-predvd-dvdscr-cam-tc": {
+		"language": "english",
+		"media_type": "tcrip"
+	  },
+	  "49-web-hd-itunes-hd-bluray": {
+		"language": "english",
+		"media_type": "hdrip"
+	  },
+	  "50-hd-rips-dvd-rips-br-rips": {
+		"language": "english",
+		"media_type": "hdrip"
+	  },
+	  "55-web-series-tv-shows": {
+		"language": "english",
+		"media_type": "series"
+	  }
 	}
   },
   "mhdtvplay": {
