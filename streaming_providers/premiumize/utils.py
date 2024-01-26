@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Any
 
 from thefuzz import fuzz
@@ -18,7 +17,7 @@ def create_or_get_folder_id(pm_client: Premiumize, info_hash: str):
     folder_data = pm_client.create_folder(info_hash)
     if folder_data.get("status") != "success":
         raise ProviderException(
-            f"Failed to create folder with name {info_hash}", "api_error.mp4"
+            "Folder already created in meanwhile", "torrent_not_downloaded.mp4"
         )
     return folder_data.get("id")
 
@@ -92,35 +91,6 @@ def get_stream_link(
         )
 
     return selected_file["link"]
-
-
-def free_up_space(pm_client: Premiumize, required_space: int):
-    """Frees up space in the Premiumize account by deleting torrents until the required space is available."""
-    contents = pm_client.get_folder_list()
-    available_space = contents["space_max"] - contents["space_used"]
-
-    if available_space >= required_space:
-        return  # There's enough space, no need to delete anything
-
-    folders = sorted(
-        contents["folders"],
-        key=lambda x: (
-            -x["size"],
-            datetime.strptime(x["last_update"], "%Y-%m-%d %H:%M:%S"),
-        ),
-    )
-
-    for folder in folders:
-        if available_space >= required_space:
-            break
-        # delete sub folder torrents and folders
-        sub_folder_content = seedr.listContents(folder["id"])
-        for sub_folder in sub_folder_content["folders"]:
-            seedr.deleteFolder(sub_folder["id"])
-        for sub_folder_torrent in sub_folder_content["torrents"]:
-            seedr.deleteTorrent(sub_folder_torrent["id"])
-        seedr.deleteFolder(folder["id"])
-        available_space += folder["size"]
 
 
 def update_pm_cache_status(streams: list[TorrentStreams], user_data: UserData):
