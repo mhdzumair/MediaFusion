@@ -37,6 +37,11 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: SECRET_KEY
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
           - name: HOST_URL
             value: "https://mediafusion.fun"
           - name: ENABLE_SCRAPPER
@@ -96,6 +101,49 @@ spec:
 
 ---
 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prowlarr-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: prowlarr
+  template:
+    metadata:
+      labels:
+        app: prowlarr
+    spec:
+      containers:
+      - name: prowlarr
+        image: ghcr.io/hotio/prowlarr:latest
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+          - name: PUID
+            value: 1000
+          - name: PGID
+            value: 1000
+          - name: UMASK
+            value: 002
+        ports:
+        - containerPort: 9696
+        volumeMounts:
+        - name: prowlarr-storage
+          mountPath: /config
+      volumes:
+      - name: prowlarr-storage
+        persistentVolumeClaim:
+          claimName: prowlarr-pvc
+
+---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -126,6 +174,20 @@ spec:
 ---
 
 apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr-service
+spec:
+  selector:
+    app: prowlarr
+  ports:
+    - protocol: TCP
+      port: 9696
+      targetPort: 9696
+
+---
+
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mediafusion-pvc
@@ -142,6 +204,19 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mongo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prowlarr-pvc
 spec:
   accessModes:
     - ReadWriteOnce
