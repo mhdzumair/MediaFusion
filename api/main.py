@@ -80,6 +80,10 @@ async def init_server():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
+    )
+
     if settings.enable_scrapper:
         scheduler.add_job(
             tamil_blasters.run_schedule_scrape,

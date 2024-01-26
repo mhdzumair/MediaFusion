@@ -426,10 +426,20 @@ async def save_series_metadata(metadata: dict):
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
     if catalog_type in ["movie", "series"]:
-        try:
-            await tamilmv.scrap_search_keyword(search_query)
-        except Exception as e:
-            logging.error(e)
+        # check if the search query is already searched in for last 24 hours or not
+        last_search = await models.SearchHistory.find_one(
+            {
+                "query": search_query,
+                "last_searched": {"$gte": datetime.now() - timedelta(days=1)},
+            }
+        )
+        if not last_search:
+            await models.SearchHistory(query=search_query).save()
+            # if the query is not searched in last 24 hours, search in tamilmv
+            try:
+                await tamilmv.scrap_search_keyword(search_query)
+            except Exception as e:
+                logging.error(e)
 
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
@@ -528,3 +538,11 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> tuple[str
         is_new = True
 
     return channel_id, is_new
+
+
+async def delete_search_history():
+    # Delete search history older than 3 days
+    await models.SearchHistory.delete_many(
+        {"last_searched": {"$lt": datetime.now() - timedelta(days=3)}}
+    )
+    logging.info("Deleted search history")
