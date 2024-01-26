@@ -148,12 +148,20 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
 }
 
 .form-check-input:checked + .form-check-label {
-    background: rgba(74, 71, 163, 0.6);
-    border-color: #4a47a3; /* Highlight the border of the selected catalog */
+    background: #4a47a3;
+    border-color: #4a47a3;
+    color: white;
+    position: relative;
 }
 
-.form-check-input:checked + .form-check-label::before {
-    background: #4a47a3;
+.form-check-input:checked + .form-check-label::after {
+    content: '✔';
+    font-size: 1em;
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: white;
 }
 
 .form-control {
@@ -174,7 +182,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
 }
 
-#signup_section {
+#signup_section, #oauth_section, #token_input {
     margin-top: 1rem;
 }
 
