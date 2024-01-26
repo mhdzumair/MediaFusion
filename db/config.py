@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     enable_scrapper: bool = False
     poster_cache_path: str = "resources/poster_cache"
     torrentio_url: str = "https://torrentio.strem.fun"
+    premiumize_oauth_client_id: str | None = None
+    premiumize_oauth_client_secret: str | None = None
 
     class Config:
         env_file = ".env"

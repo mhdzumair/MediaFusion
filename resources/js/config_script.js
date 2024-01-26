@@ -103,7 +103,7 @@ function adjustOAuthSectionDisplay() {
     const providerToken = document.getElementById('provider_token').value;
     setOAuthBtnTextContent(provider)
 
-    if ((provider === 'seedr' || provider === 'realdebrid' || provider === 'debridlink') && !providerToken) {
+    if ((provider === 'seedr' || provider === 'realdebrid' || provider === 'debridlink' || provider === "premiumize") && !providerToken) {
         setElementDisplay('oauth_section', 'block');
     } else {
         setElementDisplay('oauth_section', 'none');
@@ -181,6 +181,8 @@ oAuthBtn.addEventListener('click', async function () {
         await initiateOAuthFlow('/realdebrid/get-device-code', '/realdebrid/authorize');
     } else if (provider === 'debridlink') {
         await initiateOAuthFlow('/debridlink/get-device-code', '/debridlink/authorize')
+    } else if (provider === 'premiumize') {
+        return window.location.href = "/premiumize/authorize";
     }
 });
 

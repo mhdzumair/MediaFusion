@@ -37,6 +37,16 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: SECRET_KEY
+          - name: PREMIUMIZE_OAUTH_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PREMIUMIZE_OAUTH_CLIENT_ID
+          - name: PREMIUMIZE_OAUTH_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PREMIUMIZE_OAUTH_CLIENT_SECRET
           - name: PROWLARR_API_KEY
             valueFrom:
               secretKeyRef:
@@ -120,10 +130,10 @@ spec:
         image: ghcr.io/hotio/prowlarr:latest
         resources:
           requests:
-            memory: "512Mi"
+            memory: "256Mi"
             cpu: "250m"
           limits:
-            memory: "1Gi"
+            memory: "512Mi"
             cpu: "500m"
         env:
           - name: PUID
@@ -231,7 +241,7 @@ kind: CronJob
 metadata:
   name: tamil-blasters-scraper
 spec:
-  schedule: "0 */3 * * *"  # At minute 0 past every 3rd hour
+  schedule: "0 */6 * * *"  # At minute 0 past every 6th hour
   jobTemplate:
     spec:
       template:
@@ -263,7 +273,7 @@ kind: CronJob
 metadata:
   name: tamilmv-scraper
 spec:
-  schedule: "30 */3 * * *"  # At minute 30 past every 3rd hour
+  schedule: "30 */6 * * *"  # At minute 30 past every 6th hour
   jobTemplate:
     spec:
       template:

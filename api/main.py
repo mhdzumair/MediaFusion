@@ -28,6 +28,8 @@ from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.utils import get_direct_link_from_offcloud
 from streaming_providers.pikpak.utils import get_direct_link_from_pikpak
+from streaming_providers.premiumize.api import router as premiumize_router
+from streaming_providers.premiumize.utils import get_direct_link_from_premiumize
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
@@ -424,6 +426,10 @@ async def streaming_provider_endpoint(
             video_url = get_direct_link_from_torbox(
                 info_hash, magnet_link, user_data, filename, 1, 0
             )
+        elif user_data.streaming_provider.service == "premiumize":
+            video_url = get_direct_link_from_premiumize(
+                info_hash, magnet_link, user_data, stream.torrent_name, filename, 1, 0
+            )
         else:
             video_url = get_direct_link_from_debridlink(
                 info_hash, magnet_link, user_data, stream, episode_data, 1, 0
@@ -507,3 +513,4 @@ async def add_tv_metadata(metadata: schemas.TVMetaData):
 app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
 app.include_router(realdebrid_router, prefix="/realdebrid", tags=["realdebrid"])
 app.include_router(debridlink_router, prefix="/debridlink", tags=["debridlink"])
+app.include_router(premiumize_router, prefix="/premiumize", tags=["premiumize"])

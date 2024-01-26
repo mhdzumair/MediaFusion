@@ -24,6 +24,10 @@ from streaming_providers.pikpak.utils import (
     update_pikpak_cache_status,
     fetch_downloaded_info_hashes_from_pikpak,
 )
+from streaming_providers.premiumize.utils import (
+    update_pm_cache_status,
+    fetch_downloaded_info_hashes_from_premiumize,
+)
 from streaming_providers.realdebrid.utils import (
     update_rd_cache_status,
     fetch_downloaded_info_hashes_from_rd,
@@ -63,6 +67,7 @@ async def filter_and_sort_streams(
         "realdebrid": update_rd_cache_status,
         "seedr": update_seedr_cache_status,
         "torbox": update_torbox_cache_status,
+        "premiumize": update_pm_cache_status,
     }
 
     # Update cache status based on provider
@@ -244,6 +249,7 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
         "realdebrid": fetch_downloaded_info_hashes_from_rd,
         "seedr": fetch_downloaded_info_hashes_from_seedr,
         "torbox": fetch_downloaded_info_hashes_from_torbox,
+        "premiumize": fetch_downloaded_info_hashes_from_premiumize,
     }
 
     if fetch_downloaded_info_hashes_function := fetch_downloaded_info_hashes_functions.get(
