@@ -7,6 +7,7 @@ from uuid import uuid4
 from beanie import WriteRules
 from beanie.operators import In
 from fastapi import BackgroundTasks
+from pymongo.errors import DuplicateKeyError
 
 from db import schemas, models
 from db.config import settings
@@ -331,7 +332,10 @@ async def save_movie_metadata(metadata: dict):
             background=background,
             streams=[new_stream],
         )
-        await movie_data.insert(link_rule=WriteRules.WRITE)
+        try:
+            await movie_data.insert(link_rule=WriteRules.WRITE)
+        except DuplicateKeyError:
+            logging.warning("Duplicate movie found: %s", movie_data.title)
         logging.info("Added movie %s", movie_data.title)
 
 
