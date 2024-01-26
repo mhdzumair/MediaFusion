@@ -142,7 +142,7 @@ class Premiumize(DebridClient):
         available_torrents = torrent_list_response["transfers"]
         for torrent in available_torrents:
             if (
-                info_hash in torrent["src"]
+                info_hash in torrent.get("src", "")
                 or info_hash == torrent["name"]
                 or torrent_name == torrent["name"]
             ):
