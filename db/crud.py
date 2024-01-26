@@ -133,7 +133,7 @@ async def get_movie_streams(
     if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
         if (
             last_torrentio_stream is None
-            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=1)
+            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
         ):
             streams.extend(
                 await scrap_streams_from_torrentio(video_id, "movie", background_tasks)
