@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from api.middleware import SecureLoggingMiddleware
 from db import database, crud, schemas
 from db.config import settings
 from scrappers import tamil_blasters, tamilmv
@@ -63,6 +64,11 @@ no_cache_headers = {
 cache = Cache(
     settings.poster_cache_path,
 )
+
+
+@app.middleware("http")
+async def add_custom_logging(request: Request, call_next):
+    return await SecureLoggingMiddleware()(request, call_next)
 
 
 @app.on_event("startup")
