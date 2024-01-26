@@ -37,7 +37,7 @@ def get_direct_link_from_debridlink(
     torrent_id = response_data["value"]["id"]
 
     return wait_for_torrent_download(
-        dl_client, torrent_id, filename, max_retries, retry_interval
+        dl_client, torrent_id, episode_data, max_retries, retry_interval
     )
 
 
