@@ -96,3 +96,8 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     genres: Optional[list[str]] = None
     is_approved: bool = False
     streams: list[Link[TVStreams]]
+
+
+class SearchHistory(Document):
+    query: str
+    last_searched: datetime = Field(default_factory=datetime.now)
