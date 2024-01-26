@@ -9,7 +9,8 @@ const providerSignupLinks = {
     realdebrid: 'http://real-debrid.com/?id=9490816',
     debridlink: 'https://debrid-link.com/id/kHgZs',
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
-    torbox: 'https://torbox.app/'
+    torbox: 'https://torbox.app/',
+    premiumize: 'https://www.premiumize.me',
 };
 
 // ---- OAuth-related Functions ----
