@@ -137,11 +137,11 @@ spec:
             cpu: "500m"
         env:
           - name: PUID
-            value: 1000
+            value: "1000"
           - name: PGID
-            value: 1000
+            value: "1000"
           - name: UMASK
-            value: 002
+            value: "002"
         ports:
         - containerPort: 9696
         volumeMounts:
