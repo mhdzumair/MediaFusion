@@ -1,5 +1,8 @@
 FROM python:3.11-slim-bullseye
 
+ARG GIT_REV="dev"
+ENV GIT_REV=$GIT_REV
+
 WORKDIR /mediafusion
 
 # Install dependencies
