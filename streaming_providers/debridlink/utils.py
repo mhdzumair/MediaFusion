@@ -1,131 +1,72 @@
-import time
+from typing import Any
 
-import PTN
-
-from db.models import TorrentStreams, Episode
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.debridlink.client import DebridLink
 from streaming_providers.exceptions import ProviderException
+
+
+def get_download_link(torrent_info: dict, filename: str, file_index: int) -> str:
+    file_index = select_file_index_from_torrent(torrent_info, filename, file_index)
+    if torrent_info["files"][file_index]["downloadPercent"] != 100:
+        raise ProviderException(
+            "Torrent not downloaded yet.", "torrent_not_downloaded.mp4"
+        )
+    return torrent_info["files"][file_index]["downloadUrl"]
+
+
+def select_file_index_from_torrent(
+    torrent_info: dict[str, Any], filename: str, file_index: int
+) -> int:
+    """Select the file index from the torrent info."""
+    if file_index is not None and file_index < len(torrent_info["files"]):
+        return file_index
+
+    if filename:
+        for index, file in enumerate(torrent_info["files"]):
+            if file["name"] == filename:
+                return index
+
+    # If no file index is provided, select the largest file
+    largest_file = max(torrent_info["files"], key=lambda x: x["size"])
+    return torrent_info["files"].index(largest_file)
 
 
 def get_direct_link_from_debridlink(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
-    episode_data: Episode = None,
+    filename: str,
+    file_index: int,
     max_retries=5,
     retry_interval=5,
 ) -> str:
     dl_client = DebridLink(token=user_data.streaming_provider.token)
-    filename = episode_data.filename if episode_data else stream.filename
-
-    # Check if the torrent already exists
-    download_url = check_existing_torrent(
-        dl_client, info_hash, episode_data, max_retries, retry_interval
-    )
-    if download_url:
-        return download_url
-
-    # If torrent doesn't exist, add it
-    response_data = dl_client.add_magent_link(magnet_link)
-    if "error" in response_data:
-        raise ProviderException(
-            "Failed to add magnet link to Debrid-Link", "transfer_error.mp4"
-        )
-
-    torrent_id = response_data["value"]["id"]
-
-    return wait_for_torrent_download(
-        dl_client, torrent_id, episode_data, max_retries, retry_interval
-    )
-
-
-def check_existing_torrent(
-    dl_client: DebridLink,
-    info_hash: str,
-    episode_data: Episode | None,
-    max_retries: int,
-    retry_interval: int,
-) -> str | None:
-    """Check if the torrent is already in torrent list and return the direct link if available."""
-    retries = 0
 
     torrent_info = dl_client.get_available_torrent(info_hash)
     if not torrent_info:
-        return None
-
-    torrent_id = torrent_info.get("id")
-    while retries < max_retries:
-        torrent_info_response = dl_client.get_torrent_info(torrent_id)
-        if not torrent_info_response["success"] and not torrent_info_response["value"]:
-            raise ProviderException(
-                "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
-            )
-
-        torrent_info = torrent_info_response["value"][0]
-        if torrent_info["downloadPercent"] == 100:
-            return get_direct_link(torrent_info, episode_data)
-
-        time.sleep(retry_interval)
-        retries += 1
-    raise ProviderException("Torrent not downloaded yet.", "torrent_not_downloaded.mp4")
-
-
-def wait_for_torrent_download(
-    dl_client,
-    torrent_id: str,
-    episode_data: Episode | None,
-    max_retries: int,
-    retry_interval: int,
-) -> str:
-    """Wait for the torrent to be downloaded and return the direct link."""
-    retries = 0
-    while retries < max_retries:
-        torrent_info_response = dl_client.get_torrent_info(torrent_id)
-
-        if not torrent_info_response["success"] and not torrent_info_response["value"]:
-            raise ProviderException(
-                "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
-            )
-
-        torrent_info = torrent_info_response["value"][0]
-        if not torrent_info["files"]:
-            raise ProviderException(
-                "No files available for this torrent", "transfer_error.mp4"
-            )
-
-        if torrent_info["downloadPercent"] == 100:
-            return get_direct_link(torrent_info, episode_data)
-
-        time.sleep(retry_interval)
-        retries += 1
-    raise ProviderException("Torrent not downloaded yet.", "torrent_not_downloaded.mp4")
-
-
-def get_direct_link(torrent_info, episode_data: Episode | None) -> str:
-    if episode_data:
-        selected_file = select_episode_file(
-            torrent_info["files"], episode_data.episode_number, "name"
-        )
+        torrent_id = dl_client.add_magent_link(magnet_link).get("id")
+        torrent_info = dl_client.get_torrent_info(torrent_id)
     else:
-        # Otherwise, select the largest file for download
-        selected_file = max(torrent_info["files"], key=lambda x: x["size"])
-    return selected_file["downloadUrl"]
+        torrent_id = torrent_info.get("id")
 
-
-def select_episode_file(torrent_files: list, episode: int, file_name_key: str) -> dict:
-    """Select the file with the specified episode number."""
-
-    for file in torrent_files:
-        torrent_data = PTN.parse(file[file_name_key])
-        file_episode = torrent_data.get("episode")
-        if file_episode and int(file_episode) == episode:
-            return file
-    else:
+    if not torrent_id:
         raise ProviderException(
-            f"Episode {episode} not found in this torrent", "episode_not_found.mp4"
+            "Failed to add magnet link to DebridLink", "transfer_error.mp4"
         )
+
+    if torrent_info.get("error"):
+        dl_client.delete_torrent(torrent_id)
+        raise ProviderException(
+            f"Torrent cannot be downloaded due to error: {torrent_info.get('errorString')}",
+            "transfer_error.mp4",
+        )
+
+    torrent_info = dl_client.wait_for_status(
+        torrent_id, 100, max_retries, retry_interval
+    )
+
+    return get_download_link(torrent_info, filename, file_index)
 
 
 def update_dl_cache_status(streams: list[TorrentStreams], user_data: UserData):

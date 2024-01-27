@@ -77,7 +77,11 @@ class DebridClient:
         raise NotImplementedError
 
     def wait_for_status(
-        self, torrent_id: str, target_status: str, max_retries: int, retry_interval: int
+        self,
+        torrent_id: str,
+        target_status: str | int,
+        max_retries: int,
+        retry_interval: int,
     ):
         """Wait for the torrent to reach a particular status."""
         retries = 0

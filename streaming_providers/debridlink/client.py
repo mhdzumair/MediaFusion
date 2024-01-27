@@ -90,16 +90,30 @@ class DebridLink(DebridClient):
             return token_data
 
     def add_magent_link(self, magnet_link):
-        return self._make_request(
-            "POST", f"{self.BASE_URL}/seedbox/add", data={"url": magnet_link}
+        response = self._make_request(
+            "POST",
+            f"{self.BASE_URL}/seedbox/add",
+            data={"url": magnet_link},
+            is_expected_to_fail=True,
         )
+        if response.get("success") is False or response.get("error"):
+            raise ProviderException(
+                f"Failed to add magnet link to Debrid-Link: {response.get('error')}",
+                "transfer_error.mp4",
+            )
+        return response.get("value", {})
 
     def get_user_torrent_list(self):
         return self._make_request("GET", f"{self.BASE_URL}/seedbox/list")
 
     def get_torrent_info(self, torrent_id):
-        return self._make_request(
-            "GET", f"{self.BASE_URL}/seedbox/list", data={"url": torrent_id}
+        response = self._make_request(
+            "GET", f"{self.BASE_URL}/seedbox/list", params={"ids": torrent_id}
+        )
+        if response.get("value"):
+            return response.get("value")[0]
+        raise ProviderException(
+            "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
         )
 
     def get_torrent_files_list(self, torrent_id):
@@ -108,6 +122,11 @@ class DebridLink(DebridClient):
     def get_torrent_instant_availability(self, torrent_hash):
         return self._make_request(
             "GET", f"{self.BASE_URL}/seedbox/cached", params={"url": torrent_hash}
+        )
+
+    def delete_torrent(self, torrent_id):
+        return self._make_request(
+            "DELETE", f"{self.BASE_URL}/seedbox/{torrent_id}/delete"
         )
 
     def disable_access_token(self):

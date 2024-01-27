@@ -432,7 +432,7 @@ async def streaming_provider_endpoint(
             )
         else:
             video_url = get_direct_link_from_debridlink(
-                info_hash, magnet_link, user_data, stream, episode_data, 1, 0
+                info_hash, magnet_link, user_data, filename, stream.file_index, 1, 0
             )
     except ProviderException as error:
         logging.error(
