@@ -9,7 +9,12 @@ from streaming_providers.realdebrid.client import RealDebrid
 def create_download_link(rd_client, torrent_id, filename, file_index):
     torrent_info = rd_client.get_torrent_info(torrent_id)
     file_index = select_file_index_from_torrent(torrent_info, filename, file_index)
-    response = rd_client.create_download_link(torrent_info["links"][file_index])
+    try:
+        response = rd_client.create_download_link(torrent_info["links"][file_index])
+    except IndexError:
+        raise ProviderException(
+            "No matching file available for this torrent", "no_matching_file.mp4"
+        )
     return response.get("download")
 
 
@@ -83,17 +88,15 @@ def select_file_index_from_torrent(
     if file_index and file_index < len(torrent_info["links"]):
         return file_index
 
+    selected_files = [file for file in torrent_info["files"] if file["selected"] == 1]
     if filename:
-        selected_files = [
-            file for file in torrent_info["files"] if file["selected"] == 1
-        ]
         for index, file in enumerate(selected_files):
             if file["path"] == "/" + filename:
                 return index
 
     # If no file index is provided, select the largest file
-    largest_file = max(torrent_info["files"], key=lambda file: file["bytes"])
-    return torrent_info["files"].index(largest_file)
+    largest_file = max(selected_files, key=lambda file: file["bytes"])
+    return selected_files.index(largest_file)
 
 
 def fetch_downloaded_info_hashes_from_rd(user_data: UserData) -> list[str]:
