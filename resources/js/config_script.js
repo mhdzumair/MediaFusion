@@ -84,11 +84,37 @@ function checkAuthorization(deviceCode, authorizeUrl) {
     }, 5000);
 }
 
+// Function to update the file size output display
+function updateSizeOutput() {
+    const slider = document.getElementById('max_size_slider');
+    const output = document.getElementById('max_size_output');
+    const value = slider.value;
+    const maxSize = slider.max;
+    output.textContent = value === maxSize ? 'Unlimited' : formatBytes(value);
+    updateSliderTrack(slider);
+}
+
 
 // ---- Helper Functions ----
 
 function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
+}
+
+// Function to format bytes into a human-readable format
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === "0") return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// Function to update the slider track based on the current value
+function updateSliderTrack(slider) {
+    const percentage = (slider.value / slider.max) * 100;
+    slider.style.background = `linear-gradient(to right, #4a47a3 ${percentage}%, #ddd ${percentage}%, #ddd 100%)`;
 }
 
 function setOAuthBtnTextContent(provider) {
@@ -158,6 +184,9 @@ function updateProviderFields(isChangeEvent = false) {
 document.getElementById('provider_token').addEventListener('input', function () {
     adjustOAuthSectionDisplay();
 });
+
+// Event listener for the slider
+document.getElementById('max_size_slider').addEventListener('input', updateSizeOutput);
 
 document.getElementById('togglePassword').addEventListener('click', function (e) {
     const passwordInput = document.getElementById('password');
@@ -231,11 +260,21 @@ document.getElementById('configForm').addEventListener('submit', async function 
             streamingProviderData = null;
         }
 
+        // Get the max size value from the slider
+        const maxSizeSlider = document.getElementById('max_size_slider');
+        const maxSizeValue = maxSizeSlider.value;
+        const maxSize = maxSizeSlider.max;
+
+        // Check if the max size is set to the slider's max value, which we treat as 'infinity'
+        const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
+
+
         const userData = {
             streaming_provider: streamingProviderData,
             selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
             selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
             enable_catalogs: document.getElementById('enable_catalogs').checked,
+            max_size: maxSizeBytes,
         };
 
         try {
@@ -259,6 +298,7 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
 document.addEventListener('DOMContentLoaded', function () {
     updateProviderFields();
+    updateSizeOutput();
 });
 
 document.addEventListener('DOMContentLoaded', function () {

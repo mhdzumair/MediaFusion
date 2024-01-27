@@ -155,6 +155,7 @@
                 <div class="section-container">
                     <h4 class="section-header">Streaming Filters</h4>
                     <hr class="section-divider">
+
                     <!-- Select Streaming Resolutions -->
                     <div class="mb-3">
                         <h6>Select Streaming Resolutions: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
@@ -175,6 +176,18 @@
                             {% endfor %}
                         </div>
                     </div>
+
+                    <!-- File Size Range Filter -->
+                    <div class="mb-3">
+                        <h6>Select File Size Filter: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                   title="Select the file size range for the streams. Slide to the end for no limit."></span></h6>
+                        <!-- Slider for the file size -->
+                        <input type="range" class="form-range" id="max_size_slider" name="size_slider" min="0" max="21000000000" value="{{ user_data.max_size if user_data.max_size < 21000000000 else 21000000000 }}" step="1000000">
+                        <label for="max_size_slider">Max File Size:</label>
+                        <span id="max_size_output">Unlimited</span>
+                    </div>
+
+
                 </div>
 
                 <!-- Submit Button -->

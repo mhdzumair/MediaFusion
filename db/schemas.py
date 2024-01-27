@@ -1,6 +1,7 @@
+import math
 from typing import Optional, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 from utils import const
 
@@ -92,6 +93,7 @@ class UserData(BaseModel):
     selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
     selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True
+    max_size: int | str | float = math.inf
 
     @model_validator(mode="after")
     def validate_selected_resolutions(self) -> "UserData":
@@ -104,6 +106,16 @@ class UserData(BaseModel):
             if resolution not in const.RESOLUTIONS:
                 raise ValueError("Invalid resolution")
         return self
+
+    @field_validator("max_size", mode="before")
+    def parse_max_size(cls, v):
+        if isinstance(v, int):
+            return v
+        elif v == "inf":
+            return math.inf
+        if v.isdigit():
+            return int(v)
+        raise ValueError("Invalid max_size")
 
     class Config:
         extra = "ignore"

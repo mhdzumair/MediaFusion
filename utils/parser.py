@@ -53,6 +53,7 @@ async def filter_and_sort_streams(
         for stream in streams
         if any(catalog in stream.catalog for catalog in user_data.selected_catalogs)
         and stream.resolution in user_data.selected_resolutions
+        and stream.size <= user_data.max_size
     ]
 
     if not filtered_streams:
