@@ -6,8 +6,7 @@ from streaming_providers.exceptions import ProviderException
 from streaming_providers.realdebrid.client import RealDebrid
 
 
-def create_download_link(rd_client, torrent_id, filename, file_index):
-    torrent_info = rd_client.get_torrent_info(torrent_id)
+def create_download_link(rd_client, torrent_info, filename, file_index):
     file_index = select_file_index_from_torrent(torrent_info, filename, file_index)
     try:
         response = rd_client.create_download_link(torrent_info["links"][file_index])
@@ -28,42 +27,39 @@ def get_direct_link_from_realdebrid(
     retry_interval=5,
 ) -> str:
     rd_client = RealDebrid(token=user_data.streaming_provider.token)
-
-    # Check if the torrent already exists
     torrent_info = rd_client.get_available_torrent(info_hash)
-    if torrent_info:
-        torrent_id = torrent_info.get("id")
-        if torrent_info["status"] == "downloaded":
-            return create_download_link(rd_client, torrent_id, filename, file_index)
-        elif torrent_info["status"] == "downloading":
-            rd_client.wait_for_status(
-                torrent_id, "downloaded", max_retries, retry_interval
-            )
-            return create_download_link(rd_client, torrent_id, filename, file_index)
-        elif torrent_info["status"] == "magnet_error":
-            rd_client.delete_torrent(torrent_id)
-            raise ProviderException(
-                "Not enough seeders available for parse magnet link",
-                "transfer_error.mp4",
-            )
+    if not torrent_info:
+        torrent_id = rd_client.add_magent_link(magnet_link).get("id")
+        torrent_info = rd_client.get_torrent_info(torrent_id)
     else:
-        # If torrent doesn't exist, add it
-        response_data = rd_client.add_magent_link(magnet_link)
-        if "id" not in response_data:
-            raise ProviderException(
-                "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"
-            )
-        torrent_id = response_data["id"]
+        torrent_id = torrent_info.get("id")
 
-    # Wait for file selection and then start torrent download
-    rd_client.wait_for_status(
-        torrent_id, "waiting_files_selection", max_retries, retry_interval
+    if not torrent_id:
+        raise ProviderException(
+            "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"
+        )
+
+    status = torrent_info["status"]
+    if status in ["magnet_error", "error", "virus", "dead"]:
+        rd_client.delete_torrent(torrent_id)
+        raise ProviderException(
+            f"Torrent cannot be downloaded due to status: {status}",
+            "transfer_error.mp4",
+        )
+    elif status in ["queued", "downloading", "downloaded"]:
+        pass  # No action needed, proceed to create download link
+    else:
+        # "waiting_files_selection", "magnet_conversion", "compressing", "uploading"
+        rd_client.wait_for_status(
+            torrent_id, "waiting_files_selection", max_retries, retry_interval
+        )
+        rd_client.start_torrent_download(torrent_id)
+
+    torrent_info = rd_client.wait_for_status(
+        torrent_id, "downloaded", max_retries, retry_interval
     )
-    rd_client.start_torrent_download(torrent_id)
 
-    # Wait for download completion and get the direct link
-    rd_client.wait_for_status(torrent_id, "downloaded", max_retries, retry_interval)
-    return create_download_link(rd_client, torrent_id, filename, file_index)
+    return create_download_link(rd_client, torrent_info, filename, file_index)
 
 
 def update_rd_cache_status(streams: list[TorrentStreams], user_data: UserData):
