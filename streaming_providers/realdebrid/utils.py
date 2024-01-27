@@ -81,7 +81,7 @@ def select_file_index_from_torrent(
     torrent_info: dict[str, Any], filename: str, file_index: int
 ) -> int:
     """Select the file index from the torrent info."""
-    if file_index and file_index < len(torrent_info["links"]):
+    if file_index is not None and file_index < len(torrent_info["links"]):
         return file_index
 
     selected_files = [file for file in torrent_info["files"] if file["selected"] == 1]
