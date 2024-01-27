@@ -429,7 +429,7 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
-    if catalog_type in ["movie", "series"]:
+    if settings.enable_search_scrapper and catalog_type in ["movie", "series"]:
         # check if the search query is already searched in for last 24 hours or not
         last_search = await models.SearchHistory.find_one(
             {

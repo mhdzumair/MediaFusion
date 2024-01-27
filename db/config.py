@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     host_url: str = "https://mediafusion.fun"
     logging_level: str = "INFO"
     enable_scrapper: bool = False
+    enable_search_scrapper: bool = False
     poster_cache_path: str = "resources/poster_cache"
     torrentio_url: str = "https://torrentio.strem.fun"
     premiumize_oauth_client_id: str | None = None
