@@ -12,7 +12,7 @@ class SecureLoggingMiddleware:
 
     @staticmethod
     def custom_log(request: Request, response: Response):
-        url_path = request.url.path
+        url_path = str(request.url)
         if request.path_params.get("secret_str"):
             url_path = url_path.replace(
                 request.path_params.get("secret_str"), "***MASKED***"
