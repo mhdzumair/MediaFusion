@@ -83,7 +83,9 @@ def get_stream_link(
 
     # If the fuzzy ratio is less than 50, then select the largest file
     if selected_file["fuzzy_ratio"] < 50:
-        selected_file = max(torrent_folder_data["content"], key=lambda x: x["size"])
+        selected_file = max(
+            torrent_folder_data["content"], key=lambda x: x.get("size", 0)
+        )
 
     if "video" not in selected_file["mime_type"]:
         raise ProviderException(
