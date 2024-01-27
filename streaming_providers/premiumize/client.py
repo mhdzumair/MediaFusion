@@ -74,9 +74,6 @@ class Premiumize(DebridClient):
     def get_transfer_list(self):
         return self._make_request("GET", f"{self.BASE_URL}/transfer/list")
 
-    def get_user_torrent_list(self):
-        return self._make_request("GET", f"{self.BASE_URL}/item/listall")
-
     def get_torrent_info(self, torrent_id):
         transfer_list = self.get_transfer_list()
         torrent_info = next(
@@ -106,25 +103,6 @@ class Premiumize(DebridClient):
             "GET", f"{self.BASE_URL}/cache/check", params={"items[]": torrent_hashes}
         )
 
-    def create_download_link(self, link):
-        response = self._make_request(
-            "POST",
-            f"{self.BASE_URL}/transfer/directdl",
-            data={"link": link},
-            is_expected_to_fail=True,
-        )
-        if "download" in response:
-            return response
-
-        if "error_code" in response:
-            if response["error_code"] == 23:
-                raise ProviderException(
-                    "Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4"
-                )
-        raise ProviderException(
-            f"Failed to create download link. response: {response}", "api_error.mp4"
-        )
-
     def disable_access_token(self):
         pass
 
@@ -134,7 +112,9 @@ class Premiumize(DebridClient):
         torrent_list_response = self.get_transfer_list()
         if torrent_list_response.get("status") != "success":
             if torrent_list_response.get("message") == "Not logged in.":
-                raise ProviderException("Premiumize is not logged in.", "ap.mp4")
+                raise ProviderException(
+                    "Premiumize is not logged in.", "invalid_token.mp4"
+                )
             raise ProviderException(
                 "Failed to get torrent info from Premiumize", "transfer_error.mp4"
             )
