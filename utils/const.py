@@ -81,3 +81,6 @@ RESOLUTIONS = [
     "240p",
     None,
 ]
+
+
+DEBRID_SERVER_TIMEOUT = 15

@@ -5,6 +5,7 @@ import requests
 from requests import RequestException, JSONDecodeError
 
 from streaming_providers.exceptions import ProviderException
+from utils import const
 
 
 class DebridClient:
@@ -15,7 +16,10 @@ class DebridClient:
 
     def __del__(self):
         if self.token:
-            self.disable_access_token()
+            try:
+                self.disable_access_token()
+            except ProviderException:
+                pass
 
     def _make_request(
         self,
@@ -31,9 +35,21 @@ class DebridClient:
         return self._parse_response(response, is_return_none)
 
     def _perform_request(self, method, url, data, params):
-        return requests.request(
-            method, url, params=params, data=data, headers=self.headers
-        )
+        try:
+            return requests.request(
+                method,
+                url,
+                params=params,
+                data=data,
+                headers=self.headers,
+                timeout=const.DEBRID_SERVER_TIMEOUT,
+            )
+        except requests.exceptions.Timeout:
+            raise ProviderException("Request timed out.", "torrent_not_downloaded.mp4")
+        except requests.exceptions.ConnectionError:
+            raise ProviderException(
+                "Failed to connect to Debrid service.", "debrid_service_down_error.mp4"
+            )
 
     def _handle_errors(self, response, is_expected_to_fail):
         try:
