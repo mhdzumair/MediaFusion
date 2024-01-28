@@ -15,10 +15,9 @@ from db.models import (
 async def init():
     # Create Motor client
     client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongo_uri)
-
     # Init beanie with the Product document class
     await init_beanie(
-        database=client.mediafusion,
+        database=client.get_default_database(),  # Note that the database needs to be passed as part of the URI
         document_models=[
             MediaFusionMovieMetaData,
             MediaFusionSeriesMetaData,
