@@ -308,9 +308,19 @@ async def search_meta(
     response_model_by_alias=False,
 )
 async def get_meta(
-    catalog_type: Literal["movie", "series", "tv"], meta_id: str, response: Response
+    catalog_type: Literal["movie", "series", "tv"],
+    meta_id: str,
+    response: Response,
+    request: Request,
 ):
     response.headers.update(headers)
+
+    cache_key = f"{catalog_type}_{meta_id}_meta"
+    # Try retrieving the cached data
+    cached_data = await request.app.state.redis.get(cache_key)
+    if cached_data:
+        return json.loads(cached_data)
+
     if catalog_type == "movie":
         data = await crud.get_movie_meta(meta_id)
     elif catalog_type == "series":
@@ -320,6 +330,9 @@ async def get_meta(
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
+
+    # Cache the data with a TTL of 6 hours
+    await request.app.state.redis.set(cache_key, json.dumps(data), ex=21600)
 
     return data
 
