@@ -19,7 +19,8 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.6.9
+        image: mhdzumair/mediafusion:beta
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
         resources:
@@ -56,11 +57,8 @@ spec:
             value: "https://mediafusion.fun"
           - name: ENABLE_SCRAPPER
             value: "false"
-          - name: POSTER_CACHE_PATH
-            value: "/covers"
-        volumeMounts:
-          - name: mediafusion-volume
-            mountPath: /covers
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
         livenessProbe:
           httpGet:
             path: /health
@@ -76,10 +74,6 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 10
-      volumes:
-        - name: mediafusion-volume
-          persistentVolumeClaim:
-            claimName: mediafusion-pvc
 ---
 
 apiVersion: apps/v1
@@ -154,6 +148,28 @@ spec:
 
 ---
 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:latest
+        ports:
+        - containerPort: 6379
+
+---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -198,15 +214,16 @@ spec:
 ---
 
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: mediafusion-pvc
+  name: redis-service
 spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
 
 ---
 
@@ -248,7 +265,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.6.9
+            image: mhdzumair/mediafusion:beta
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -259,7 +276,7 @@ spec:
                 cpu: "250m"
             env:
               - name: MONGO_URI
-                value: "mongodb://mongodb-service:27017"
+                value: "mongodb://mongodb-service:27017/mediafusion"
               - name: SECRET_KEY
                 valueFrom:
                   secretKeyRef:
@@ -280,7 +297,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.6.9
+            image: mhdzumair/mediafusion:beta
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
             resources:
               requests:
@@ -291,7 +308,7 @@ spec:
                 cpu: "250m"
             env:
               - name: MONGO_URI
-                value: "mongodb://mongodb-service:27017"
+                value: "mongodb://mongodb-service:27017/mediafusion"
               - name: SECRET_KEY
                 valueFrom:
                   secretKeyRef:

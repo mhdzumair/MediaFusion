@@ -1,10 +1,11 @@
 import json
 import logging
+from io import BytesIO
 from typing import Literal
 
+import redis.asyncio as redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from diskcache import Cache
 from fastapi import (
     FastAPI,
     Request,
@@ -63,9 +64,6 @@ no_cache_headers = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
-cache = Cache(
-    settings.poster_cache_path,
-)
 
 
 @app.middleware("http")
@@ -77,6 +75,9 @@ async def add_custom_logging(request: Request, call_next):
 async def init_server():
     await database.init()
     await torrent.init_best_trackers()
+    app.state.redis = redis.Redis(
+        connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
+    )
 
 
 @app.on_event("startup")
@@ -103,6 +104,11 @@ async def start_scheduler():
 async def stop_scheduler():
     if settings.enable_scrapper:
         app.state.scheduler.shutdown(wait=False)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await app.state.redis.aclose()
 
 
 @app.get("/", tags=["home"])
@@ -451,16 +457,17 @@ async def streaming_provider_endpoint(
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
 async def get_poster(
-    catalog_type: Literal["movie", "series", "tv"], mediafusion_id: str
+    catalog_type: Literal["movie", "series", "tv"],
+    mediafusion_id: str,
+    request: Request,
 ):
     cache_key = f"{catalog_type}_{mediafusion_id}.jpg"
 
-    # Check if the poster is cached
-    image_byte_io = cache.get(cache_key, read=True)
-    if image_byte_io:
-        return StreamingResponse(
-            image_byte_io, media_type="image/jpeg", headers=headers
-        )
+    # Check if the poster is cached in Redis
+    cached_image = await request.app.state.redis.get(cache_key)
+    if cached_image:
+        image_byte_io = BytesIO(cached_image)
+        return StreamingResponse(image_byte_io, media_type="image/jpeg")
 
     # Query the MediaFusion data
     if catalog_type == "movie":
@@ -478,8 +485,10 @@ async def get_poster(
 
     try:
         image_byte_io = await poster.create_poster(mediafusion_data)
-        # Save the generated image to the cache. expire in 7 days
-        cache.set(cache_key, image_byte_io, expire=604800, read=True, tag="poster")
+        # Convert BytesIO to bytes for Redis
+        image_bytes = image_byte_io.getvalue()
+        # Save the generated image to Redis. expire in 7 days
+        await request.app.state.redis.set(cache_key, image_bytes, ex=604800)
         image_byte_io.seek(0)
 
         return StreamingResponse(
