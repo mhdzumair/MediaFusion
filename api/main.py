@@ -236,6 +236,7 @@ async def get_manifest(
 )
 async def get_catalog(
     response: Response,
+    request: Request,
     catalog_type: Literal["movie", "series", "tv"],
     catalog_id: str,
     skip: int = 0,
@@ -243,15 +244,22 @@ async def get_catalog(
     user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
 ):
     response.headers.update(headers)
-    if user_data.streaming_provider and catalog_id.startswith(
-        user_data.streaming_provider.service
-    ):
-        response.headers.update(no_cache_headers)
-
     if genre and "&" in genre:
         genre, skip = genre.split("&")
         skip = skip.split("=")[1] if "=" in skip else "0"
         skip = int(skip) if skip and skip.isdigit() else 0
+
+    cache_key = f"{catalog_type}_{catalog_id}_{skip}_{genre}_catalog"
+    if user_data.streaming_provider and catalog_id.startswith(
+        user_data.streaming_provider.service
+    ):
+        response.headers.update(no_cache_headers)
+        cache_key = None
+
+    # Try retrieving the cached data
+    if cache_key:
+        if cached_data := await request.app.state.redis.get(cache_key):
+            return json.loads(cached_data)
 
     metas = schemas.Metas()
     if catalog_type == "tv":
@@ -260,6 +268,13 @@ async def get_catalog(
         metas.metas.extend(
             await crud.get_meta_list(user_data, catalog_type, catalog_id, skip)
         )
+
+    if cache_key:
+        # Cache the data with a TTL of 6 hours
+        await request.app.state.redis.set(
+            cache_key, metas.model_dump_json(exclude_none=True, by_alias=True), ex=21600
+        )
+
     return metas
 
 
