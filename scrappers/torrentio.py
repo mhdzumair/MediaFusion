@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime
 
@@ -9,12 +10,14 @@ from db.config import settings
 from db.models import TorrentStreams
 from utils.parser import convert_size_to_bytes
 from utils.torrent import info_hashes_to_torrent_metadata
-from scrappers.helpers import UA_HEADER, PROXIES
+from scrappers.helpers import UA_HEADER
 
 
 async def fetch_stream_data(url: str) -> dict:
     """Fetch stream data asynchronously."""
-    async with httpx.AsyncClient(headers=UA_HEADER, proxies=PROXIES) as client:
+    async with httpx.AsyncClient(
+        headers=UA_HEADER, proxy=settings.scrapper_proxy_url
+    ) as client:
         response = await client.get(url, timeout=10)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
         return response.json()
@@ -34,6 +37,9 @@ async def scrap_streams_from_torrentio(
         )
     except (httpx.HTTPError, httpx.TimeoutException):
         return []  # Return empty list in case of HTTP errors or timeouts
+    except Exception as e:
+        logging.error(f"Error while fetching stream data from torrentio: {e}")
+        return []
 
 
 def parse_stream_title(stream: dict) -> dict:
