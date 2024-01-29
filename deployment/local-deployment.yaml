@@ -1,0 +1,316 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediafusion-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mediafusion
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: mediafusion
+    spec:
+      containers:
+      - name: mediafusion
+        image: mhdzumair/mediafusion:v3.6.9
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+          - name: MONGO_URI
+            value: "mongodb://mongodb-service:27017/mediafusion"
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: PREMIUMIZE_OAUTH_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PREMIUMIZE_OAUTH_CLIENT_ID
+          - name: PREMIUMIZE_OAUTH_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PREMIUMIZE_OAUTH_CLIENT_SECRET
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
+          - name: HOST_URL
+            value: "https://mediafusion.fun"
+          - name: ENABLE_SCRAPPER
+            value: "false"
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 60
+          failureThreshold: 5
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 10
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-storage
+        persistentVolumeClaim:
+          claimName: mongo-pvc
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prowlarr-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prowlarr
+  template:
+    metadata:
+      labels:
+        app: prowlarr
+    spec:
+      containers:
+      - name: prowlarr
+        image: ghcr.io/hotio/prowlarr:latest
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+          - name: PUID
+            value: "1000"
+          - name: PGID
+            value: "1000"
+          - name: UMASK
+            value: "002"
+        ports:
+        - containerPort: 9696
+        volumeMounts:
+        - name: prowlarr-storage
+          mountPath: /config
+      volumes:
+      - name: prowlarr-storage
+        persistentVolumeClaim:
+          claimName: prowlarr-pvc
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:latest
+        ports:
+        - containerPort: 6379
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediafusion-service
+spec:
+  selector:
+    app: mediafusion
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr-service
+spec:
+  selector:
+    app: prowlarr
+  ports:
+    - protocol: TCP
+      port: 9696
+      targetPort: 9696
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+spec:
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prowlarr-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tamil-blasters-scraper
+spec:
+  schedule: "0 */6 * * *"  # At minute 0 past every 6th hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: tamil-blasters-scraper
+            image: mhdzumair/mediafusion:beta
+            command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "250m"
+              limits:
+                memory: "256Mi"
+                cpu: "250m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017/mediafusion"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tamilmv-scraper
+spec:
+  schedule: "30 */6 * * *"  # At minute 30 past every 6th hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: tamilmv-scraper
+            image: mhdzumair/mediafusion:beta
+            command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "250m"
+              limits:
+                memory: "256Mi"
+                cpu: "250m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017/mediafusion"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+          restartPolicy: OnFailure
