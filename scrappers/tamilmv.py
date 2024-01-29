@@ -13,6 +13,7 @@ from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async
 
 from db import database
+from db.config import settings
 from scrappers.helpers import (
     get_page_content,
     get_scrapper_session,
@@ -111,8 +112,8 @@ async def process_movie(
         return False
 
 
-async def scrap_page(url, language, media_type, proxy_url=None):
-    scraper = get_scrapper_session(proxy_url)
+async def scrap_page(url, language, media_type):
+    scraper = get_scrapper_session()
     response = scraper.get(url)
     if response.status_code == 403:
         logging.error(
@@ -130,12 +131,14 @@ async def scrap_page(url, language, media_type, proxy_url=None):
         )
 
 
-async def scrap_page_with_playwright(url, language, media_type, proxy_url=None):
+async def scrap_page_with_playwright(url, language, media_type):
     async with async_playwright() as p:
         # Launch a new browser session
         browser = await p.firefox.launch(
             headless=False,
-            proxy={"server": proxy_url} if proxy_url else None,
+            proxy={"server": settings.scrapper_proxy_url}
+            if settings.scrapper_proxy_url
+            else None,
         )
         page = await browser.new_page()
         await stealth_async(page)
@@ -165,8 +168,8 @@ async def get_search_results(scraper, keyword, page_number=1):
     return soup
 
 
-async def scrap_search_keyword(keyword, proxy_url=None):
-    scraper = get_scrapper_session(proxy_url)
+async def scrap_search_keyword(keyword):
+    scraper = get_scrapper_session()
     soup = await get_search_results(scraper, keyword)
     results_element = soup.find("div", {"data-role": "resultsArea"})
 
@@ -198,11 +201,10 @@ async def run_scraper(
     start_page: int = None,
     search_keyword: str = None,
     scrap_with_playwright: bool = None,
-    proxy_url: str = None,
 ):
     await database.init()
     if search_keyword:
-        await scrap_search_keyword(search_keyword, proxy_url)
+        await scrap_search_keyword(search_keyword)
         return
     link_prefix = f"{HOMEPAGE}/index.php?/forums/forum/"
     try:
@@ -220,11 +222,9 @@ async def run_scraper(
             scrap_link = f"{scrap_link_prefix}/page/{page}/"
             logging.info(f"Scrap page: {scrap_link}")
             if scrap_with_playwright is True:
-                await scrap_page_with_playwright(
-                    scrap_link, language, video_type, proxy_url
-                )
+                await scrap_page_with_playwright(scrap_link, language, video_type)
             else:
-                await scrap_page(scrap_link, language, video_type, proxy_url)
+                await scrap_page(scrap_link, language, video_type)
 
     logging.info(f"Scrap completed for : {language}_{video_type}")
 
@@ -233,7 +233,6 @@ async def run_schedule_scrape(
     pages: int = 1,
     start_page: int = 1,
     scrap_with_playwright: bool = None,
-    proxy_url: str = None,
 ):
     for language in TAMIL_MV_CATALOGS:
         for video_type in TAMIL_MV_CATALOGS[language]:
@@ -243,7 +242,6 @@ async def run_schedule_scrape(
                 pages=pages,
                 start_page=start_page,
                 scrap_with_playwright=scrap_with_playwright,
-                proxy_url=proxy_url,
             )
 
 
@@ -296,7 +294,7 @@ if __name__ == "__main__":
     if args.all:
         asyncio.run(
             run_schedule_scrape(
-                args.pages, args.start_pages, args.scrap_with_playwright, args.proxy_url
+                args.pages, args.start_pages, args.scrap_with_playwright
             )
         )
     else:
@@ -308,6 +306,5 @@ if __name__ == "__main__":
                 args.start_pages,
                 args.search_keyword,
                 args.scrap_with_playwright,
-                args.proxy_url,
             )
         )

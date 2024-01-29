@@ -62,6 +62,8 @@ spec:
             value: "false"
           - name: REDIS_URL
             value: "redis://redis-service:6379"
+          - name: SCRAPPER_PROXY_URL
+            value: "http://proxybroker-service:8888"
         livenessProbe:
           httpGet:
             path: /health
@@ -145,6 +147,36 @@ spec:
 
 ---
 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxybroker-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxybroker
+  template:
+    metadata:
+      labels:
+        app: proxybroker
+    spec:
+      containers:
+      - name: proxybroker
+        image: bluet/proxybroker2:latest
+        args: ["serve", "--host", "0.0.0.0", "--port", "8888", "--types", "HTTP", "HTTPS", "--lvl", "High", "--min-queue", "5"]
+        ports:
+        - containerPort: 8888
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "100Mi"
+          limits:
+            cpu: "500m"
+            memory: "500Mi"
+
+---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -185,6 +217,20 @@ spec:
     - protocol: TCP
       port: 6379
       targetPort: 6379
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxybroker-service
+spec:
+  selector:
+    app: proxybroker
+  ports:
+    - protocol: TCP
+      port: 8888
+      targetPort: 8888
 
 ---
 

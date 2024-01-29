@@ -7,10 +7,22 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from db.config import settings
 from utils.torrent import extract_torrent_metadata
 
 
-def get_scrapper_session(proxy_url=None):
+UA_HEADER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+PROXIES = (
+    {
+        "http": settings.scrapper_proxy_url,
+        "https": settings.scrapper_proxy_url,
+    }
+    if settings.scrapper_proxy_url
+    else None
+)
+
+
+def get_scrapper_session():
     session = requests.session()
     session.headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
@@ -20,11 +32,7 @@ def get_scrapper_session(proxy_url=None):
     )
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    if proxy_url:
-        session.proxies = {
-            "http": proxy_url,
-            "https": proxy_url,
-        }
+    session.proxies = PROXIES
     scraper = cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "mobile": False},
         delay=10,
@@ -107,9 +115,11 @@ def get_scrapper_config(site_name: str, get_key: str) -> dict:
 async def add_to_bitsearch(magnet_link: str):
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            "https://bitsearch.to/add-torrent", data={'infohash': magnet_link}
+            "https://bitsearch.to/add-torrent", data={"infohash": magnet_link}
         )
         if response.status_code == 200:
             logging.info(f"Added {magnet_link} to bitsearch")
         else:
-            logging.error(f"Failed to add magnet link {magnet_link}: {response.status_code}")
+            logging.error(
+                f"Failed to add magnet link {magnet_link}: {response.status_code}"
+            )

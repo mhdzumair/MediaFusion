@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     logging_level: str = "INFO"
     enable_scrapper: bool = False
     enable_search_scrapper: bool = False
+    scrapper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
