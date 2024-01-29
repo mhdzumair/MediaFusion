@@ -11,7 +11,9 @@ from db.config import settings
 from utils.torrent import extract_torrent_metadata
 
 
-UA_HEADER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+UA_HEADER = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+}
 PROXIES = (
     {
         "http": settings.scrapper_proxy_url,
@@ -24,9 +26,7 @@ PROXIES = (
 
 def get_scrapper_session():
     session = requests.session()
-    session.headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
-    }
+    session.headers = UA_HEADER
     adapter = HTTPAdapter(
         max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.5)
     )
