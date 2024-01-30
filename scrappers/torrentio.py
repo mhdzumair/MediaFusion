@@ -185,7 +185,13 @@ async def store_and_parse_series_stream_data(
             torrent_stream.updated_at = datetime.now()
             episode_item = torrent_stream.get_episode(season, episode)
             if episode_item is None:
-                torrent_stream.season.episodes.extend(episode_data)
+                if torrent_stream.season:
+                    torrent_stream.season.episodes.extend(episode_data)
+                else:
+                    torrent_stream.season = Season(
+                        season_number=season_number,
+                        episodes=episode_data,
+                    )
                 episode_item = torrent_stream.get_episode(season, episode)
             await torrent_stream.save()
         else:
