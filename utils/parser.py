@@ -127,7 +127,9 @@ async def parse_stream_data(
         description_parts = [
             quality_detail,
             convert_bytes_to_readable(
-                episode_data.size if episode_data else stream_data.size
+                episode_data.size or stream_data.size
+                if episode_data
+                else stream_data.size
             ),
             seeders,
             " + ".join(stream_data.languages),
@@ -163,7 +165,7 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     """
     Convert a size in bytes into a more human-readable format.
     """
-    if size_bytes == 0:
+    if not size_bytes:
         return "0B"
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(size_bytes, 1024)))

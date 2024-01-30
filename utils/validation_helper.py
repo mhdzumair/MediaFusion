@@ -76,3 +76,44 @@ def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVStreams
 
     unique_streams = {stream.url or stream.ytId: stream for stream in valid_streams}
     return list(unique_streams.values())
+
+
+def is_video_file(filename: str) -> bool:
+    return filename.lower().endswith(
+        (
+            ".3g2",
+            ".3gp",
+            ".amv",
+            ".asf",
+            ".avi",
+            ".drc",
+            ".flv",
+            ".gif",
+            ".gifv",
+            ".m2v",
+            ".m4p",
+            ".m4v",
+            ".mkv",
+            ".mng",
+            ".mov",
+            ".mp2",
+            ".mp4",
+            ".mpe",
+            ".mpeg",
+            ".mpg",
+            ".mpv",
+            ".mxf",
+            ".nsv",
+            ".ogg",
+            ".ogv",
+            ".qt",
+            ".rm",
+            ".rmvb",
+            ".roq",
+            ".svi",
+            ".vob",
+            ".webm",
+            ".wmv",
+            ".yuv",
+        )
+    )

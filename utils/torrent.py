@@ -16,6 +16,9 @@ from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
 from torf import Magnet, Torrent
 
+# remove logging from demagnetize
+logging.getLogger("demagnetize").setLevel(logging.NOTSET)
+
 TRACKERS = [
     "http://tracker3.itzmx.com:8080/announce",
     "udp://9.rarbg.me:2710/announce",

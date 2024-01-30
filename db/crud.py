@@ -21,7 +21,10 @@ from db.models import (
 )
 from db.schemas import Stream, MetaIdProjection
 from scrappers import tamilmv
-from scrappers.torrentio import scrap_streams_from_torrentio
+from scrappers.torrentio import (
+    scrap_streams_from_torrentio,
+    scrap_series_streams_from_torrentio,
+)
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
@@ -143,14 +146,43 @@ async def get_movie_streams(
 
 
 async def get_series_streams(
-    user_data, secret_str: str, video_id: str, season: int, episode: int
+    user_data,
+    secret_str: str,
+    video_id: str,
+    season: int,
+    episode: int,
+    background_tasks: BackgroundTasks,
 ) -> list[Stream]:
-    series_data = await get_series_data_by_id(video_id, True)
-    if not series_data:
-        return []
+    streams = (
+        await TorrentStreams.find({"meta_id": video_id})
+        .find(
+            {"season.season_number": season, "season.episodes.episode_number": episode}
+        )
+        .sort(-TorrentStreams.updated_at)
+        .to_list()
+    )
+    last_torrentio_stream = next(
+        (
+            stream
+            for stream in streams
+            if stream.source == "Torrentio" and stream.get_episode(season, episode)
+        ),
+        None,
+    )
+
+    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
+        if (
+            last_torrentio_stream is None
+            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
+        ):
+            streams.extend(
+                await scrap_series_streams_from_torrentio(
+                    video_id, "series", season, episode, background_tasks
+                )
+            )
 
     matched_episode_streams = [
-        stream for stream in series_data.streams if stream.get_episode(season, episode)
+        stream for stream in streams if stream.get_episode(season, episode)
     ]
 
     return await parse_stream_data(
