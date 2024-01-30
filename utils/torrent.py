@@ -17,7 +17,7 @@ from demagnetize.core import Demagnetizer
 from torf import Magnet, Torrent
 
 # remove logging from demagnetize
-logging.getLogger("demagnetize").setLevel(logging.NOTSET)
+logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 TRACKERS = [
     "http://tracker3.itzmx.com:8080/announce",
