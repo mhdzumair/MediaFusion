@@ -129,18 +129,25 @@ async def get_movie_streams(
         .sort(-TorrentStreams.updated_at)
         .to_list()
     )
-    last_torrentio_stream = next(
-        (stream for stream in streams if stream.source == "Torrentio"), None
-    )
 
-    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
+    if settings.is_scrap_from_torrentio:
+        last_torrentio_stream = next(
+            (stream for stream in streams if stream.source == "Torrentio"), None
+        )
+
         if (
-            last_torrentio_stream is None
-            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
+            video_id.startswith("tt")
+            and "torrentio_streams" in user_data.selected_catalogs
         ):
-            streams.extend(
-                await scrap_streams_from_torrentio(video_id, "movie", background_tasks)
-            )
+            if (
+                last_torrentio_stream is None
+                or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
+            ):
+                streams.extend(
+                    await scrap_streams_from_torrentio(
+                        video_id, "movie", background_tasks
+                    )
+                )
 
     return await parse_stream_data(streams, user_data, secret_str)
 
@@ -161,25 +168,30 @@ async def get_series_streams(
         .sort(-TorrentStreams.updated_at)
         .to_list()
     )
-    last_torrentio_stream = next(
-        (
-            stream
-            for stream in streams
-            if stream.source == "Torrentio" and stream.get_episode(season, episode)
-        ),
-        None,
-    )
 
-    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
+    if settings.is_scrap_from_torrentio:
+        last_torrentio_stream = next(
+            (
+                stream
+                for stream in streams
+                if stream.source == "Torrentio" and stream.get_episode(season, episode)
+            ),
+            None,
+        )
+
         if (
-            last_torrentio_stream is None
-            or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
+            video_id.startswith("tt")
+            and "torrentio_streams" in user_data.selected_catalogs
         ):
-            streams.extend(
-                await scrap_series_streams_from_torrentio(
-                    video_id, "series", season, episode, background_tasks
+            if (
+                last_torrentio_stream is None
+                or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
+            ):
+                streams.extend(
+                    await scrap_series_streams_from_torrentio(
+                        video_id, "series", season, episode, background_tasks
+                    )
                 )
-            )
 
     matched_episode_streams = [
         stream for stream in streams if stream.get_episode(season, episode)

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     enable_search_scrapper: bool = False
     scrapper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
+    is_scrap_from_torrentio: bool = False
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
 
