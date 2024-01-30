@@ -394,7 +394,7 @@ async def get_streams(
         )
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
-            user_data, secret_str, video_id, season, episode
+            user_data, secret_str, video_id, season, episode, background_tasks
         )
     else:
         response.headers.update(no_cache_headers)

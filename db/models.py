@@ -9,9 +9,9 @@ from pymongo import IndexModel, ASCENDING
 
 class Episode(BaseModel):
     episode_number: int
-    filename: str
-    size: int
-    file_index: int
+    filename: str | None = None
+    size: int | None = None
+    file_index: int | None = None
 
 
 class Season(BaseModel):

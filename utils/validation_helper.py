@@ -79,6 +79,41 @@ def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVStreams
 
 
 def is_video_file(filename: str) -> bool:
-    video_extensions = ["3gp", "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "mpg", "flv"]
-    ans = any(filename.endswith(x) for x in video_extensions)
-    return ans
+    return filename.lower().endswith(
+        (
+            ".3g2",
+            ".3gp",
+            ".amv",
+            ".asf",
+            ".avi",
+            ".drc",
+            ".flv",
+            ".gif",
+            ".gifv",
+            ".m2v",
+            ".m4p",
+            ".m4v",
+            ".mkv",
+            ".mng",
+            ".mov",
+            ".mp2",
+            ".mp4",
+            ".mpe",
+            ".mpeg",
+            ".mpg",
+            ".mpv",
+            ".mxf",
+            ".nsv",
+            ".ogg",
+            ".ogv",
+            ".qt",
+            ".rm",
+            ".rmvb",
+            ".roq",
+            ".svi",
+            ".vob",
+            ".webm",
+            ".wmv",
+            ".yuv",
+        )
+    )
