@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
     prowlarr_url: str = "http://prowlarr-service:9696"
-    prowlarr_api_key: str
+    prowlarr_api_key: str | None = None
+    prowlarr_search_interval_hour: int = 6
 
     class Config:
         env_file = ".env"

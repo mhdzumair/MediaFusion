@@ -21,17 +21,15 @@ from db.models import (
 )
 from db.schemas import Stream, MetaIdProjection
 from scrappers import tamilmv
-from scrappers.prowlarr import scrap_streams_from_prowlarr
-from scrappers.torrentio import (
-    scrap_streams_from_torrentio,
-    scrap_series_streams_from_torrentio,
-)
+from scrappers.prowlarr import get_streams_from_prowlarr
+from scrappers.torrentio import get_streams_from_torrentio
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
     search_imdb,
     parse_tv_stream_data,
     fetch_downloaded_info_hashes,
+    get_imdb_data,
 )
 
 
@@ -131,37 +129,19 @@ async def get_movie_streams(
         .to_list()
     )
 
-
     if settings.is_scrap_from_torrentio:
-        last_torrentio_stream = next(
-            (stream for stream in streams if stream.source == "Torrentio"), None
+        streams = await get_streams_from_torrentio(
+            user_data, streams, video_id, "movie", background_tasks
         )
-
-        if (
-            video_id.startswith("tt")
-            and "torrentio_streams" in user_data.selected_catalogs
-        ):
-            if (
-                last_torrentio_stream is None
-                or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
-            ):
-                streams.extend(
-                        await scrap_streams_from_torrentio(
-                        video_id, "movie", background_tasks
-                    )
-                )
-
-    last_prowlarr_stream = next(
-        (stream for stream in streams if stream.source == "Prowlarr"), None
-    )
-    if "prowlarr_streams" in user_data.selected_catalogs:
-        if (
-               last_prowlarr_stream is None
-               or last_prowlarr_stream.updated_at < datetime.now() - timedelta(hours=6)
-        ):
-            streams.extend(
-                await scrap_streams_from_prowlarr(video_id, "movie", background_tasks)
-            )
+    if settings.prowlarr_api_key:
+        movie_metadata = await get_movie_data_by_id(video_id, False)
+        if movie_metadata:
+            title, year = movie_metadata.title, movie_metadata.year
+        else:
+            title, year = get_imdb_data(video_id)
+        streams = await get_streams_from_prowlarr(
+            user_data, streams, video_id, "movie", title, year, background_tasks
+        )
 
     return await parse_stream_data(streams, user_data, secret_str)
 
@@ -184,32 +164,30 @@ async def get_series_streams(
     )
 
     if settings.is_scrap_from_torrentio:
-        last_torrentio_stream = next(
-            (
-                stream
-                for stream in streams
-                if stream.source == "Torrentio" and stream.get_episode(season, episode)
-            ),
-            None,
+        streams = await get_streams_from_torrentio(
+            user_data, streams, video_id, "series", background_tasks, season, episode
+        )
+    if settings.prowlarr_api_key:
+        series_metadata = await get_series_data_by_id(video_id, False)
+        if series_metadata:
+            title, year = series_metadata.title, series_metadata.year
+        else:
+            title, year = get_imdb_data(video_id)
+        streams = await get_streams_from_prowlarr(
+            user_data,
+            streams,
+            video_id,
+            "series",
+            title,
+            year,
+            background_tasks,
+            season,
+            episode,
         )
 
-        if (
-            video_id.startswith("tt")
-            and "torrentio_streams" in user_data.selected_catalogs
-        ):
-            if (
-                last_torrentio_stream is None
-                or last_torrentio_stream.updated_at < datetime.now() - timedelta(days=3)
-            ):
-                streams.extend(
-                    await scrap_series_streams_from_torrentio(
-                        video_id, "series", season, episode, background_tasks
-                    )
-                )
-
-    matched_episode_streams = [
-        stream for stream in streams if stream.get_episode(season, episode)
-    ]
+    matched_episode_streams = filter(
+        lambda stream: stream.get_episode(season, episode), streams
+    )
 
     return await parse_stream_data(
         matched_episode_streams, user_data, secret_str, season, episode
@@ -334,9 +312,6 @@ async def save_movie_metadata(metadata: dict):
         background = existing_movie.background
         meta_id = existing_movie.id
 
-    # Determine file index for the main movie file (largest file)
-    largest_file = max(metadata["file_data"], key=lambda x: x["size"])
-
     if "language" in metadata:
         languages = (
             [metadata["language"]]
@@ -352,8 +327,8 @@ async def save_movie_metadata(metadata: dict):
         torrent_name=metadata["torrent_name"],
         announce_list=metadata["announce_list"],
         size=metadata["total_size"],
-        filename=largest_file["filename"],
-        file_index=largest_file["index"],
+        filename=metadata["largest_file"]["filename"],
+        file_index=metadata["largest_file"]["index"],
         languages=languages,
         resolution=metadata.get("resolution"),
         codec=metadata.get("codec"),

@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from os import path
 
 import PTN
@@ -9,10 +9,45 @@ from fastapi import BackgroundTasks
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
-from scrappers.helpers import UA_HEADER
+from db.schemas import UserData
+from scrappers.helpers import (
+    UA_HEADER,
+    update_torrent_series_streams_metadata,
+    update_torrent_movie_streams_metadata,
+)
 from utils.parser import convert_size_to_bytes
-from utils.torrent import info_hashes_to_torrent_metadata
 from utils.validation_helper import is_video_file
+
+
+async def get_streams_from_torrentio(
+    user_data: UserData,
+    streams: list[TorrentStreams],
+    video_id: str,
+    catalog_type: str,
+    background_tasks: BackgroundTasks,
+    season: int = None,
+    episode: int = None,
+):
+    last_stream = next(
+        (stream for stream in streams if stream.source == "Torrentio"), None
+    )
+    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
+        if last_stream is None or last_stream.updated_at < datetime.now() - timedelta(
+            days=3
+        ):
+            if catalog_type == "movie":
+                streams.extend(
+                    await scrap_movie_streams_from_torrentio(
+                        video_id, catalog_type, background_tasks
+                    )
+                )
+            elif catalog_type == "series":
+                streams.extend(
+                    await scrap_series_streams_from_torrentio(
+                        video_id, catalog_type, season, episode, background_tasks
+                    )
+                )
+    return streams
 
 
 async def fetch_stream_data(url: str) -> dict:
@@ -25,7 +60,7 @@ async def fetch_stream_data(url: str) -> dict:
         return response.json()
 
 
-async def scrap_streams_from_torrentio(
+async def scrap_movie_streams_from_torrentio(
     video_id: str, catalog_type: str, background_tasks: BackgroundTasks
 ) -> list[TorrentStreams]:
     """
@@ -34,11 +69,11 @@ async def scrap_streams_from_torrentio(
     url = f"{settings.torrentio_url}/stream/{catalog_type}/{video_id}.json"
     try:
         stream_data = await fetch_stream_data(url)
-        return await store_and_parse_stream_data(
+        return await store_and_parse_movie_stream_data(
             video_id, stream_data.get("streams", []), background_tasks
         )
     except (httpx.HTTPError, httpx.TimeoutException):
-        return []  # Return empty list in case of HTTP errors or timeouts
+        return []  # Return an empty list in case of HTTP errors or timeouts
     except Exception as e:
         logging.error(f"Error while fetching stream data from torrentio: {e}")
         return []
@@ -61,7 +96,7 @@ async def scrap_series_streams_from_torrentio(
             video_id, season, episode, stream_data.get("streams", []), background_tasks
         )
     except (httpx.HTTPError, httpx.TimeoutException):
-        return []  # Return empty list in case of HTTP errors or timeouts
+        return []  # Return an empty list in case of HTTP errors or timeouts
     except Exception as e:
         logging.error(f"Error while fetching stream data from torrentio: {e}")
         return []
@@ -82,7 +117,7 @@ def parse_stream_title(stream: dict) -> dict:
     }
 
 
-async def store_and_parse_stream_data(
+async def store_and_parse_movie_stream_data(
     video_id: str, stream_data: list, background_tasks: BackgroundTasks
 ) -> list[TorrentStreams]:
     streams = []
@@ -126,7 +161,7 @@ async def store_and_parse_stream_data(
         if torrent_stream.filename is None:
             info_hashes.append(stream["infoHash"])
 
-    background_tasks.add_task(update_torrent_streams_metadata, info_hashes)
+    background_tasks.add_task(update_torrent_movie_streams_metadata, info_hashes)
 
     return streams
 
@@ -268,56 +303,3 @@ def extract_size_string(details: str) -> str:
     """Extract the size string from the details."""
     size_match = re.search(r"💾 (\d+(?:\.\d+)?\s*(GB|MB))", details, re.IGNORECASE)
     return size_match.group(1) if size_match else ""
-
-
-async def update_torrent_streams_metadata(info_hashes: list[str]):
-    """Update torrent streams metadata."""
-    streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
-
-    for stream_metadata in streams_metadata:
-        if not stream_metadata:
-            continue
-
-        torrent_stream = await TorrentStreams.get(stream_metadata["info_hash"])
-        if torrent_stream:
-            torrent_stream.torrent_name = stream_metadata["torrent_name"]
-            torrent_stream.size = stream_metadata["total_size"]
-
-            largest_file = max(stream_metadata["file_data"], key=lambda x: x["size"])
-            torrent_stream.filename = largest_file["filename"]
-            torrent_stream.file_index = largest_file["index"]
-            torrent_stream.updated_at = datetime.now()
-            await torrent_stream.save()
-
-
-async def update_torrent_series_streams_metadata(info_hashes: list[str]):
-    """Update torrent streams metadata."""
-    streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
-
-    for stream_metadata in streams_metadata:
-        if not stream_metadata:
-            continue
-
-        torrent_stream = await TorrentStreams.get(stream_metadata["info_hash"])
-        if torrent_stream:
-            episodes = [
-                Episode(
-                    episode_number=file["episode"],
-                    filename=file["filename"],
-                    size=file["size"],
-                    file_index=file["index"],
-                )
-                for file in stream_metadata["file_data"]
-                if file["episode"]
-            ]
-            torrent_stream.season = Season(
-                season_number=stream_metadata["season"],
-                episodes=episodes,
-            )
-
-            torrent_stream.torrent_name = stream_metadata["torrent_name"]
-            torrent_stream.size = stream_metadata["total_size"]
-
-            torrent_stream.updated_at = datetime.now()
-
-            await torrent_stream.save()

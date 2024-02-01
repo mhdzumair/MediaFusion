@@ -221,9 +221,9 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     return {}
 
 
-def get_imdb_title(video_id:str) -> str:
-    movie = ia.get_movie(video_id)
-    return movie.get("title")
+def get_imdb_data(video_id: str) -> tuple[str, str]:
+    movie = ia.get_movie(video_id.removeprefix("tt"))
+    return movie.get("title"), movie.get("year")
 
 
 def parse_tv_stream_data(tv_data: MediaFusionTVMetaData) -> list[Stream]:
