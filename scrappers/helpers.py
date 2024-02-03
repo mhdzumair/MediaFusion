@@ -3,11 +3,13 @@ import logging
 from datetime import datetime
 
 import cloudscraper
+import dramatiq
 import httpx
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from db import database
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
@@ -140,8 +142,10 @@ async def add_to_bitsearch(magnet_link: str):
             )
 
 
+@dramatiq.actor(time_limit=30 * 60 * 1000)
 async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
     """Update torrent streams metadata."""
+    await database.init()
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:
@@ -159,8 +163,10 @@ async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
             await torrent_stream.save()
 
 
+@dramatiq.actor(time_limit=30 * 60 * 1000)
 async def update_torrent_series_streams_metadata(info_hashes: list[str]):
     """Update torrent streams metadata."""
+    await database.init()
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:

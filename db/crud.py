@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from beanie import WriteRules
 from beanie.operators import In
-from fastapi import BackgroundTasks
 from pymongo.errors import DuplicateKeyError
 
 from db import schemas, models
@@ -120,9 +119,7 @@ async def get_tv_data_by_id(
     return tv_data
 
 
-async def get_movie_streams(
-    user_data, secret_str: str, video_id: str, background_tasks: BackgroundTasks
-) -> list[Stream]:
+async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[Stream]:
     streams = (
         await TorrentStreams.find({"meta_id": video_id})
         .sort(-TorrentStreams.updated_at)
@@ -131,7 +128,7 @@ async def get_movie_streams(
 
     if settings.is_scrap_from_torrentio:
         streams = await get_streams_from_torrentio(
-            user_data, streams, video_id, "movie", background_tasks
+            user_data, streams, video_id, "movie"
         )
     if settings.prowlarr_api_key:
         movie_metadata = await get_movie_data_by_id(video_id, False)
@@ -140,7 +137,7 @@ async def get_movie_streams(
         else:
             title, year = get_imdb_data(video_id)
         streams = await get_streams_from_prowlarr(
-            user_data, streams, video_id, "movie", title, year, background_tasks
+            user_data, streams, video_id, "movie", title, year
         )
 
     return await parse_stream_data(streams, user_data, secret_str)
@@ -152,7 +149,6 @@ async def get_series_streams(
     video_id: str,
     season: int,
     episode: int,
-    background_tasks: BackgroundTasks,
 ) -> list[Stream]:
     streams = (
         await TorrentStreams.find({"meta_id": video_id})
@@ -165,7 +161,7 @@ async def get_series_streams(
 
     if settings.is_scrap_from_torrentio:
         streams = await get_streams_from_torrentio(
-            user_data, streams, video_id, "series", background_tasks, season, episode
+            user_data, streams, video_id, "series", season, episode
         )
     if settings.prowlarr_api_key:
         series_metadata = await get_series_data_by_id(video_id, False)
@@ -174,15 +170,7 @@ async def get_series_streams(
         else:
             title, year = get_imdb_data(video_id)
         streams = await get_streams_from_prowlarr(
-            user_data,
-            streams,
-            video_id,
-            "series",
-            title,
-            year,
-            background_tasks,
-            season,
-            episode,
+            user_data, streams, video_id, "series", title, year, season, episode
         )
 
     matched_episode_streams = filter(

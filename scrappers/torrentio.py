@@ -5,7 +5,6 @@ from os import path
 
 import PTN
 import httpx
-from fastapi import BackgroundTasks
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
@@ -24,7 +23,6 @@ async def get_streams_from_torrentio(
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
-    background_tasks: BackgroundTasks,
     season: int = None,
     episode: int = None,
 ):
@@ -37,14 +35,12 @@ async def get_streams_from_torrentio(
         ):
             if catalog_type == "movie":
                 streams.extend(
-                    await scrap_movie_streams_from_torrentio(
-                        video_id, catalog_type, background_tasks
-                    )
+                    await scrap_movie_streams_from_torrentio(video_id, catalog_type)
                 )
             elif catalog_type == "series":
                 streams.extend(
                     await scrap_series_streams_from_torrentio(
-                        video_id, catalog_type, season, episode, background_tasks
+                        video_id, catalog_type, season, episode
                     )
                 )
     return streams
@@ -61,7 +57,7 @@ async def fetch_stream_data(url: str) -> dict:
 
 
 async def scrap_movie_streams_from_torrentio(
-    video_id: str, catalog_type: str, background_tasks: BackgroundTasks
+    video_id: str, catalog_type: str
 ) -> list[TorrentStreams]:
     """
     Get streams by IMDb ID from torrentio stremio addon.
@@ -70,7 +66,7 @@ async def scrap_movie_streams_from_torrentio(
     try:
         stream_data = await fetch_stream_data(url)
         return await store_and_parse_movie_stream_data(
-            video_id, stream_data.get("streams", []), background_tasks
+            video_id, stream_data.get("streams", [])
         )
     except (httpx.HTTPError, httpx.TimeoutException):
         return []  # Return an empty list in case of HTTP errors or timeouts
@@ -84,7 +80,6 @@ async def scrap_series_streams_from_torrentio(
     catalog_type: str,
     season: int,
     episode: int,
-    background_tasks: BackgroundTasks,
 ) -> list[TorrentStreams]:
     """
     Get streams by IMDb ID from torrentio stremio addon.
@@ -93,7 +88,7 @@ async def scrap_series_streams_from_torrentio(
     try:
         stream_data = await fetch_stream_data(url)
         return await store_and_parse_series_stream_data(
-            video_id, season, episode, stream_data.get("streams", []), background_tasks
+            video_id, season, episode, stream_data.get("streams", [])
         )
     except (httpx.HTTPError, httpx.TimeoutException):
         return []  # Return an empty list in case of HTTP errors or timeouts
@@ -118,7 +113,7 @@ def parse_stream_title(stream: dict) -> dict:
 
 
 async def store_and_parse_movie_stream_data(
-    video_id: str, stream_data: list, background_tasks: BackgroundTasks
+    video_id: str, stream_data: list
 ) -> list[TorrentStreams]:
     streams = []
     info_hashes = []
@@ -161,7 +156,7 @@ async def store_and_parse_movie_stream_data(
         if torrent_stream.filename is None:
             info_hashes.append(stream["infoHash"])
 
-    background_tasks.add_task(update_torrent_movie_streams_metadata, info_hashes)
+    update_torrent_movie_streams_metadata.send(info_hashes)
 
     return streams
 
@@ -171,7 +166,6 @@ async def store_and_parse_series_stream_data(
     season: int,
     episode: int,
     stream_data: list,
-    background_tasks: BackgroundTasks,
 ) -> list[TorrentStreams]:
     streams = []
     info_hashes = []
@@ -261,7 +255,7 @@ async def store_and_parse_series_stream_data(
         if episode_item and episode_item.size is None:
             info_hashes.append(stream["infoHash"])
 
-    background_tasks.add_task(update_torrent_series_streams_metadata, info_hashes)
+    update_torrent_series_streams_metadata.send(info_hashes)
 
     return streams
 

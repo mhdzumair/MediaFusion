@@ -33,6 +33,7 @@ parse-torrent-title = {git = "git+https://github.com/mhdzumair/parse-torrent-tit
 diskcache = "*"
 demagnetize = "*"
 redis = {extras = ["hiredis"], version = "*"}
+dramatiq = {extras = ["redis", "watch"], version = "*"}
 
 [dev-packages]
 pysocks = "*"

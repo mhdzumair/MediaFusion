@@ -13,7 +13,6 @@ from fastapi import (
     Depends,
     HTTPException,
     status,
-    BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
@@ -380,7 +379,6 @@ async def get_streams(
     catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
     response: Response,
-    background_tasks: BackgroundTasks,
     secret_str: str = None,
     season: int = None,
     episode: int = None,
@@ -389,12 +387,10 @@ async def get_streams(
     response.headers.update(headers)
 
     if catalog_type == "movie":
-        fetched_streams = await crud.get_movie_streams(
-            user_data, secret_str, video_id, background_tasks
-        )
+        fetched_streams = await crud.get_movie_streams(user_data, secret_str, video_id)
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
-            user_data, secret_str, video_id, season, episode, background_tasks
+            user_data, secret_str, video_id, season, episode
         )
     else:
         response.headers.update(no_cache_headers)
