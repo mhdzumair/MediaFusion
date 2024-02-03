@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: mediafusion-deployment
 spec:
-  replicas: 6
+  replicas: 4
   selector:
     matchLabels:
       app: mediafusion
@@ -25,11 +25,11 @@ spec:
         - containerPort: 80
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: "200Mi"
+            cpu: "200m"
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "300Mi"
+            cpu: "200m"
         env:
           - name: MONGO_URI
             valueFrom:
@@ -60,8 +60,6 @@ spec:
             value: "https://mediafusion.fun"
           - name: ENABLE_SCRAPPER
             value: "false"
-          - name: REDIS_URL
-            value: "redis://redis-service:6379"
           - name: SCRAPPER_PROXY_URL
             value: "http://proxybroker-service:8888"
         livenessProbe:
@@ -81,13 +79,56 @@ spec:
           timeoutSeconds: 10
 
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dramatiq-worker-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dramatiq-worker
+  template:
+    metadata:
+      labels:
+        app: dramatiq-worker
+    spec:
+      containers:
+      - name: dramatiq-worker
+        image: mhdzumair/mediafusion:beta
+        command: ["dramatiq", "api.task"]
+        env:
+          - name: MONGO_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: MONGO_URI
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
+        resources:
+          requests:
+            memory: "200Mi"
+            cpu: "200m"
+          limits:
+            memory: "300Mi"
+            cpu: "200m"
+
+---
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prowlarr-deployment
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: prowlarr
@@ -101,11 +142,11 @@ spec:
         image: ghcr.io/hotio/prowlarr:latest
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "250m"
+            memory: "100Mi"
+            cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "200Mi"
+            cpu: "200m"
         env:
           - name: PUID
             value: "1000"
@@ -172,8 +213,8 @@ spec:
             cpu: "100m"
             memory: "100Mi"
           limits:
-            cpu: "500m"
-            memory: "500Mi"
+            cpu: "200m"
+            memory: "200Mi"
 
 ---
 
@@ -264,7 +305,7 @@ spec:
             resources:
               requests:
                 memory: "128Mi"
-                cpu: "250m"
+                cpu: "200m"
               limits:
                 memory: "256Mi"
                 cpu: "250m"
@@ -279,6 +320,8 @@ spec:
                   secretKeyRef:
                     name: mediafusion-secrets
                     key: SECRET_KEY
+              - name: SCRAPPER_PROXY_URL
+                value: "http://proxybroker-service:8888"
           restartPolicy: OnFailure
 
 ---
@@ -299,7 +342,7 @@ spec:
             resources:
               requests:
                 memory: "128Mi"
-                cpu: "250m"
+                cpu: "200m"
               limits:
                 memory: "256Mi"
                 cpu: "250m"
@@ -314,4 +357,6 @@ spec:
                   secretKeyRef:
                     name: mediafusion-secrets
                     key: SECRET_KEY
+              - name: SCRAPPER_PROXY_URL
+                value: "http://proxybroker-service:8888"
           restartPolicy: OnFailure

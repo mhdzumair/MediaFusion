@@ -70,6 +70,7 @@ def extract_torrent_metadata(content: Torrent | bytes) -> dict:
                     "episode": parsed_data.get("episode"),
                 }
             )
+        largest_file = max(file_data, key=lambda x: x["size"])
 
         return {
             **PTN.parse(torrent.name),
@@ -78,6 +79,7 @@ def extract_torrent_metadata(content: Torrent | bytes) -> dict:
             "total_size": total_size,
             "file_data": file_data,
             "torrent_name": torrent.name,
+            "largest_file": largest_file,
         }
     except Exception as e:
         logging.error(f"Error occurred: {e}")

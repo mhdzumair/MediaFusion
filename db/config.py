@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     is_scrap_from_torrentio: bool = False
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
+    prowlarr_url: str = "http://prowlarr-service:9696"
+    prowlarr_api_key: str | None = None
+    prowlarr_search_interval_hour: int = 24
+    prowlarr_immediate_max_process: int = 10
 
     class Config:
         env_file = ".env"
