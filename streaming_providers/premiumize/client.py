@@ -107,6 +107,7 @@ class Premiumize(DebridClient):
                 "Failed to get instant availability from Premiumize",
                 "transfer_error.mp4",
             )
+        return results
 
     def disable_access_token(self):
         pass
