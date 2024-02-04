@@ -99,9 +99,14 @@ class Premiumize(DebridClient):
         )
 
     def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        return self._make_request(
+        results = self._make_request(
             "GET", f"{self.BASE_URL}/cache/check", params={"items[]": torrent_hashes}
         )
+        if results.get("status") != "success":
+            raise ProviderException(
+                "Failed to get instant availability from Premiumize",
+                "transfer_error.mp4",
+            )
 
     def disable_access_token(self):
         pass

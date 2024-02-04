@@ -104,7 +104,7 @@ def update_pm_cache_status(streams: list[TorrentStreams], user_data: UserData):
             [stream.id for stream in streams]
         )
         for stream, cached_status in zip(
-            streams, instant_availability_data["response"]
+            streams, instant_availability_data.get("response")
         ):
             stream.cached = cached_status
 
