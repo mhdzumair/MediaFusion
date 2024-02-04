@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: mediafusion-deployment
 spec:
-  replicas: 4
+  replicas: 6
   selector:
     matchLabels:
       app: mediafusion
@@ -28,7 +28,7 @@ spec:
             memory: "200Mi"
             cpu: "200m"
           limits:
-            memory: "300Mi"
+            memory: "500Mi"
             cpu: "200m"
         env:
           - name: MONGO_URI
@@ -62,6 +62,8 @@ spec:
             value: "false"
           - name: SCRAPPER_PROXY_URL
             value: "http://proxybroker-service:8888"
+          - name: PROWLARR_IMMEDIATE_MAX_PROCESS
+            value: "3"
         livenessProbe:
           httpGet:
             path: /health
@@ -84,7 +86,7 @@ kind: Deployment
 metadata:
   name: dramatiq-worker-deployment
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: dramatiq-worker
@@ -96,7 +98,8 @@ spec:
       containers:
       - name: dramatiq-worker
         image: mhdzumair/mediafusion:beta
-        command: ["dramatiq", "api.task"]
+        imagePullPolicy: Always
+        command: ["pipenv", "run", "dramatiq", "api.task"]
         env:
           - name: MONGO_URI
             valueFrom:
@@ -116,10 +119,10 @@ spec:
         resources:
           requests:
             memory: "200Mi"
-            cpu: "200m"
+            cpu: "400m"
           limits:
-            memory: "300Mi"
-            cpu: "200m"
+            memory: "500Mi"
+            cpu: "400m"
 
 ---
 
@@ -193,7 +196,7 @@ kind: Deployment
 metadata:
   name: proxybroker-deployment
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: proxybroker
@@ -308,7 +311,7 @@ spec:
                 cpu: "200m"
               limits:
                 memory: "256Mi"
-                cpu: "250m"
+                cpu: "200m"
             env:
               - name: MONGO_URI
                 valueFrom:
@@ -320,8 +323,6 @@ spec:
                   secretKeyRef:
                     name: mediafusion-secrets
                     key: SECRET_KEY
-              - name: SCRAPPER_PROXY_URL
-                value: "http://proxybroker-service:8888"
           restartPolicy: OnFailure
 
 ---
@@ -345,7 +346,7 @@ spec:
                 cpu: "200m"
               limits:
                 memory: "256Mi"
-                cpu: "250m"
+                cpu: "200m"
             env:
               - name: MONGO_URI
                 valueFrom:
@@ -357,6 +358,4 @@ spec:
                   secretKeyRef:
                     name: mediafusion-secrets
                     key: SECRET_KEY
-              - name: SCRAPPER_PROXY_URL
-                value: "http://proxybroker-service:8888"
           restartPolicy: OnFailure

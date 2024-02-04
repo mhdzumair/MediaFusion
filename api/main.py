@@ -379,6 +379,7 @@ async def get_streams(
     catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
     response: Response,
+    request: Request,
     secret_str: str = None,
     season: int = None,
     episode: int = None,
@@ -387,10 +388,12 @@ async def get_streams(
     response.headers.update(headers)
 
     if catalog_type == "movie":
-        fetched_streams = await crud.get_movie_streams(user_data, secret_str, video_id)
+        fetched_streams = await crud.get_movie_streams(
+            user_data, secret_str, request.app.state.redis, video_id
+        )
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
-            user_data, secret_str, video_id, season, episode
+            user_data, secret_str, request.app.state.redis, video_id, season, episode
         )
     else:
         response.headers.update(no_cache_headers)

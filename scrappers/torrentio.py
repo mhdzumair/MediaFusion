@@ -26,10 +26,10 @@ async def get_streams_from_torrentio(
     season: int = None,
     episode: int = None,
 ):
-    last_stream = next(
-        (stream for stream in streams if stream.source == "Torrentio"), None
-    )
     if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
+        last_stream = next(
+            (stream for stream in streams if stream.source == "Torrentio"), None
+        )
         if last_stream is None or last_stream.updated_at < datetime.now() - timedelta(
             days=3
         ):

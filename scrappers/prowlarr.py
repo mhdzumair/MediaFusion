@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 import PTN
 import dramatiq
 import httpx
+from redis.asyncio import Redis
 from torf import Magnet
 
 from db import database
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
-from db.schemas import UserData
 from scrappers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
@@ -20,7 +20,7 @@ from utils.torrent import extract_torrent_metadata
 
 
 async def get_streams_from_prowlarr(
-    user_data: UserData,
+    redis: Redis,
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
@@ -29,23 +29,24 @@ async def get_streams_from_prowlarr(
     season: int = None,
     episode: int = None,
 ):
-    last_stream = next(
-        (stream for stream in streams if "prowlarr_streams" in stream.catalog), None
+    cache_key = f"{catalog_type}_{video_id}_{year}_{season}_{episode}_prowlarr_streams"
+    cached_data = await redis.get(cache_key)
+    if cached_data:
+        return streams
+
+    if catalog_type == "movie":
+        streams.extend(await scrap_movies_streams_from_prowlarr(video_id, title, year))
+    elif catalog_type == "series":
+        streams.extend(
+            await scrap_series_streams_from_prowlarr(video_id, title, season, episode)
+        )
+    # Cache the data for 24 hours
+    await redis.set(
+        cache_key,
+        "True",
+        ex=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds()),
     )
-    if video_id.startswith("tt") and "prowlarr_streams" in user_data.selected_catalogs:
-        if last_stream is None or last_stream.updated_at < datetime.now() - timedelta(
-            hours=settings.prowlarr_search_interval_hour
-        ):
-            if catalog_type == "movie":
-                streams.extend(
-                    await scrap_movies_streams_from_prowlarr(video_id, title, year)
-                )
-            elif catalog_type == "series":
-                streams.extend(
-                    await scrap_series_streams_from_prowlarr(
-                        video_id, title, season, episode
-                    )
-                )
+
     return streams
 
 
@@ -96,8 +97,10 @@ async def scrap_movies_streams_from_prowlarr(
         stream_data.extend(imdb_search)
         stream_data.extend(title_search)
     except (httpx.HTTPError, httpx.TimeoutException):
+        logging.warning(f"Failed to fetch API data from prowlarr for {title} ({year})")
         return []  # Return an empty list in case of HTTP errors or timeouts
 
+    logging.info(f"Found {len(stream_data)} streams for {title} ({year})")
     # Slice the results to process only the first 10 immediately
     immediate_processing_data = stream_data[: settings.prowlarr_immediate_max_process]
     remaining_data = stream_data[settings.prowlarr_immediate_max_process :]
@@ -153,8 +156,12 @@ async def scrap_series_streams_from_prowlarr(
         stream_data.extend(imdb_search)
         stream_data.extend(title_search)
     except (httpx.HTTPError, httpx.TimeoutException):
+        logging.warning(
+            f"Failed to fetch API data from prowlarr for {title} ({season}) ({episode})"
+        )
         return []  # Return an empty list in case of HTTP errors or timeouts
 
+    logging.info(f"Found {len(stream_data)} streams for {title} ({season}) ({episode})")
     # Slice the results to process only the first 10 immediately
     immediate_processing_data = stream_data[: settings.prowlarr_immediate_max_process]
     remaining_data = stream_data[settings.prowlarr_immediate_max_process :]
@@ -265,12 +272,13 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
 
         if torrent_stream:
             # Update existing stream
+            torrent_stream.source = parsed_data.get("source")
             torrent_stream.seeders = parsed_data["seeders"]
             torrent_stream.updated_at = datetime.now()
             torrent_stream.catalog.extend(
                 [c for c in prowlarr_catalogs if c not in torrent_stream.catalog]
             )
-            await torrent_stream.save()
+            logging.info(f"Updated movies stream {info_hash} for {video_id}")
         else:
             # Create new stream
             torrent_stream = TorrentStreams(
@@ -293,7 +301,9 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
                 created_at=parsed_data.get("created_at"),
                 meta_id=video_id,
             )
-            await torrent_stream.save()
+            logging.info(f"Created movies stream {info_hash} for {video_id}")
+
+        await torrent_stream.save()
 
         # Determine if filename is None, indicating metadata update is needed
         torrent_needed_update = torrent_stream.filename is None
@@ -343,11 +353,27 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
 
     # Fetch or create the torrent stream object
     torrent_stream = await TorrentStreams.get(info_hash)
+    prowlarr_catalog = [
+        "prowlarr_streams",
+        "prowlarr_series",
+        f"{parsed_data.get('source').lower()}_series",
+    ]
 
     if torrent_stream:
         # Update existing stream
+        torrent_stream.source = parsed_data.get("source")
         torrent_stream.seeders = parsed_data["seeders"]
         torrent_stream.updated_at = datetime.now()
+        torrent_stream.catalog.extend(
+            [c for c in prowlarr_catalog if c not in torrent_stream.catalog]
+        )
+        available_episodes = [
+            ep.episode_number for ep in torrent_stream.season.episodes
+        ]
+        torrent_stream.season.episodes.extend(
+            [ep for ep in episode_data if ep.episode_number not in available_episodes]
+        )
+        logging.info(f"Updated series stream {info_hash} for {video_id}")
     else:
         # Create new stream, initially without episodes
         torrent_stream = TorrentStreams(
@@ -363,11 +389,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
             audio=parsed_data.get("audio"),
             encoder=parsed_data.get("encoder"),
             source=parsed_data.get("source"),
-            catalog=[
-                "prowlarr_streams",
-                "prowlarr_series",
-                f"{parsed_data.get('source').lower()}_series",
-            ],
+            catalog=prowlarr_catalog,
             updated_at=datetime.now(),
             seeders=parsed_data.get("seeders"),
             created_at=parsed_data.get("created_at"),
@@ -376,6 +398,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
                 season_number=season_number, episodes=episode_data
             ),  # Add episodes
         )
+        logging.info(f"Created series stream {info_hash} for {video_id}")
 
     await torrent_stream.save()
 
@@ -442,6 +465,9 @@ async def parse_and_store_movie_stream_data(
     year: str,
     stream_data: list,
 ) -> list[TorrentStreams]:
+    if not stream_data:
+        return []
+
     circuit_breaker = CircuitBreaker(
         failure_threshold=2, recovery_timeout=10, half_open_attempts=2
     )
@@ -485,6 +511,9 @@ async def parse_and_store_series_stream_data(
     season: int,
     stream_data: list,
 ) -> list[TorrentStreams]:
+    if not stream_data:
+        return []
+
     circuit_breaker = CircuitBreaker(
         failure_threshold=2, recovery_timeout=10, half_open_attempts=2
     )

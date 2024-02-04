@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     mongo_uri: str
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = "redis://redis-service:6379"
     git_rev: str = "stable"
     secret_key: str
     host_url: str = "https://mediafusion.fun"

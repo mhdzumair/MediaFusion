@@ -7,6 +7,7 @@ from uuid import uuid4
 from beanie import WriteRules
 from beanie.operators import In
 from pymongo.errors import DuplicateKeyError
+from redis.asyncio import Redis
 
 from db import schemas, models
 from db.config import settings
@@ -119,7 +120,9 @@ async def get_tv_data_by_id(
     return tv_data
 
 
-async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[Stream]:
+async def get_movie_streams(
+    user_data, secret_str: str, redis: Redis, video_id: str
+) -> list[Stream]:
     streams = (
         await TorrentStreams.find({"meta_id": video_id})
         .sort(-TorrentStreams.updated_at)
@@ -131,14 +134,19 @@ async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[S
             user_data, streams, video_id, "movie"
         )
     if settings.prowlarr_api_key:
-        movie_metadata = await get_movie_data_by_id(video_id, False)
-        if movie_metadata:
-            title, year = movie_metadata.title, movie_metadata.year
-        else:
-            title, year = get_imdb_data(video_id)
-        streams = await get_streams_from_prowlarr(
-            user_data, streams, video_id, "movie", title, year
-        )
+        if (
+            video_id.startswith("tt")
+            and "prowlarr_streams" in user_data.selected_catalogs
+        ):
+            movie_metadata = await get_movie_data_by_id(video_id, False)
+            if movie_metadata:
+                title, year = movie_metadata.title, movie_metadata.year
+            else:
+                title, year = get_imdb_data(video_id)
+            if title:
+                streams = await get_streams_from_prowlarr(
+                    redis, streams, video_id, "movie", title, year
+                )
 
     return await parse_stream_data(streams, user_data, secret_str)
 
@@ -146,6 +154,7 @@ async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[S
 async def get_series_streams(
     user_data,
     secret_str: str,
+    redis: Redis,
     video_id: str,
     season: int,
     episode: int,
@@ -164,14 +173,19 @@ async def get_series_streams(
             user_data, streams, video_id, "series", season, episode
         )
     if settings.prowlarr_api_key:
-        series_metadata = await get_series_data_by_id(video_id, False)
-        if series_metadata:
-            title, year = series_metadata.title, series_metadata.year
-        else:
-            title, year = get_imdb_data(video_id)
-        streams = await get_streams_from_prowlarr(
-            user_data, streams, video_id, "series", title, year, season, episode
-        )
+        if (
+            video_id.startswith("tt")
+            and "prowlarr_streams" in user_data.selected_catalogs
+        ):
+            series_metadata = await get_series_data_by_id(video_id, False)
+            if series_metadata:
+                title, year = series_metadata.title, series_metadata.year
+            else:
+                title, year = get_imdb_data(video_id)
+            if title:
+                streams = await get_streams_from_prowlarr(
+                    redis, streams, video_id, "series", title, year, season, episode
+                )
 
     matched_episode_streams = filter(
         lambda stream: stream.get_episode(season, episode), streams

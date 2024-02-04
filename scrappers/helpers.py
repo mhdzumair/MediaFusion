@@ -161,6 +161,7 @@ async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
             torrent_stream.file_index = stream_metadata["largest_file"]["index"]
             torrent_stream.updated_at = datetime.now()
             await torrent_stream.save()
+            logging.info(f"Updated {torrent_stream.id} metadata")
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000)
@@ -196,3 +197,4 @@ async def update_torrent_series_streams_metadata(info_hashes: list[str]):
             torrent_stream.updated_at = datetime.now()
 
             await torrent_stream.save()
+            logging.info(f"Updated {torrent_stream.id} metadata")

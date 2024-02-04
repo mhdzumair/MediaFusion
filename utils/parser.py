@@ -222,7 +222,10 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
 
 
 def get_imdb_data(video_id: str) -> tuple[str, str]:
-    movie = ia.get_movie(video_id.removeprefix("tt"))
+    try:
+        movie = ia.get_movie(video_id.removeprefix("tt"), info="main")
+    except Exception:
+        return "", ""
     return movie.get("title"), movie.get("year")
 
 
