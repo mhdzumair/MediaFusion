@@ -2,6 +2,8 @@ import asyncio
 import logging
 from typing import Callable
 
+import httpx
+
 
 class CircuitBreakerOpenException(Exception):
     """Custom exception to indicate the circuit breaker is open."""
@@ -82,6 +84,10 @@ async def batch_process_with_circuit_breaker(
                 successful_results, retry_batch = [], []
                 for item, result in zip(batch, batch_results):
                     if isinstance(result, CircuitBreakerOpenException):
+                        retry_batch.append(item)
+                    if isinstance(result, httpx.ReadTimeout):
+                        retry_batch.append(item)
+                    if isinstance(result, httpx.HTTPStatusError):
                         retry_batch.append(item)
                     elif isinstance(result, Exception):
                         logging.error(

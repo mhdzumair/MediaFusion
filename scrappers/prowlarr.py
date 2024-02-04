@@ -88,15 +88,18 @@ async def scrap_movies_streams_from_prowlarr(
         "type": "search",
     }
 
-    try:
-        # Fetch data for both searches simultaneously
-        imdb_search, title_search = await asyncio.gather(
-            fetch_stream_data(url, params_imdb),
-            fetch_stream_data(url, params_title),
-        )
+    # Fetch data for both searches simultaneously
+    imdb_search, title_search = await asyncio.gather(
+        fetch_stream_data(url, params_imdb),
+        fetch_stream_data(url, params_title),
+        return_exceptions=True,
+    )
+    if not isinstance(imdb_search, Exception):
         stream_data.extend(imdb_search)
+    if not isinstance(title_search, Exception):
         stream_data.extend(title_search)
-    except (httpx.HTTPError, httpx.TimeoutException):
+
+    if not stream_data:
         logging.warning(f"Failed to fetch API data from prowlarr for {title} ({year})")
         return []  # Return an empty list in case of HTTP errors or timeouts
 
@@ -147,15 +150,18 @@ async def scrap_series_streams_from_prowlarr(
         "type": "search",
     }
 
-    try:
-        # Fetch data for both searches simultaneously
-        imdb_search, title_search = await asyncio.gather(
-            fetch_stream_data(url, params_imdb),
-            fetch_stream_data(url, params_title),
-        )
+    # Fetch data for both searches simultaneously
+    imdb_search, title_search = await asyncio.gather(
+        fetch_stream_data(url, params_imdb),
+        fetch_stream_data(url, params_title),
+        return_exceptions=True,
+    )
+    if not isinstance(imdb_search, Exception):
         stream_data.extend(imdb_search)
+    if not isinstance(title_search, Exception):
         stream_data.extend(title_search)
-    except (httpx.HTTPError, httpx.TimeoutException):
+
+    if not stream_data:
         logging.warning(
             f"Failed to fetch API data from prowlarr for {title} ({season}) ({episode})"
         )
