@@ -21,4 +21,4 @@ COPY .. .
 # Expose the port
 EXPOSE 80
 
-CMD ["pipenv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "80", "--no-access-log"]
+CMD ["pipenv", "run", "gunicorn", "api.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:80", "--timeout", "120"]

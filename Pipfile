@@ -34,6 +34,7 @@ diskcache = "*"
 demagnetize = "*"
 redis = {extras = ["hiredis"], version = "*"}
 dramatiq = {extras = ["redis", "watch"], version = "*"}
+gunicorn = "*"
 
 [dev-packages]
 pysocks = "*"

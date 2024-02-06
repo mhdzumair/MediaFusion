@@ -25,10 +25,10 @@ spec:
         - containerPort: 80
         resources:
           requests:
-            memory: "200Mi"
+            memory: "500Mi"
             cpu: "200m"
           limits:
-            memory: "500Mi"
+            memory: "800Mi"
             cpu: "200m"
         env:
           - name: MONGO_URI
@@ -131,7 +131,7 @@ kind: Deployment
 metadata:
   name: prowlarr-deployment
 spec:
-  replicas: 2
+  replicas: 7
   selector:
     matchLabels:
       app: prowlarr
@@ -140,6 +140,15 @@ spec:
       labels:
         app: prowlarr
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: prowlarr-storage
+                operator: In
+                values:
+                - "true"
       containers:
       - name: prowlarr
         image: ghcr.io/hotio/prowlarr:latest
@@ -275,6 +284,22 @@ spec:
     - protocol: TCP
       port: 8888
       targetPort: 8888
+
+---
+
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mediafusion-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mediafusion-deployment
+  minReplicas: 7
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 50
 
 ---
 
