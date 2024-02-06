@@ -236,7 +236,9 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
                 e, httpx.HTTPStatusError
             ):
                 raise e
-            logging.error(f"Error getting torrent data: {e} {e.__class__.__name__}")
+            logging.error(
+                f"Error getting torrent data: {e} {e.__class__.__name__}", exc_info=True
+            )
             return {}, False
 
     torrent_data.update(
