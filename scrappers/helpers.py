@@ -4,7 +4,6 @@ from datetime import datetime
 
 import cloudscraper
 import dramatiq
-import httpx
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -127,19 +126,6 @@ def get_scrapper_config(site_name: str, get_key: str) -> dict:
         config = json.load(file)
 
     return config.get(site_name, {}).get(get_key, {})
-
-
-async def add_to_bitsearch(magnet_link: str):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://bitsearch.to/add-torrent", data={"infohash": magnet_link}
-        )
-        if response.status_code == 200:
-            logging.info(f"Added {magnet_link} to bitsearch")
-        else:
-            logging.error(
-                f"Failed to add magnet link {magnet_link}: {response.status_code}"
-            )
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000)

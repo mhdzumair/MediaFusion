@@ -19,7 +19,6 @@ from scrappers.helpers import (
     get_scrapper_session,
     download_and_save_torrent,
     get_scrapper_config,
-    add_to_bitsearch,
 )
 
 HOMEPAGE = get_scrapper_config("tamil_blasters", "homepage")
@@ -94,7 +93,6 @@ async def process_movie(
 
         # Extracting torrent details
         torrent_elements = movie_page.select("a[data-fileext='torrent']")
-        magnet_elements = movie_page.select("a[class='magnet-plugin']")
 
         if not torrent_elements:
             logging.error(f"No torrents found for {page_link}")
@@ -116,10 +114,6 @@ async def process_movie(
                     exc_info=True,
                     stack_info=True,
                 )
-        if magnet_elements:
-            for magnet_element in magnet_elements:
-                magnet_link = magnet_element.get("href")
-                await add_to_bitsearch(magnet_link)
 
         return True
     except Exception as e:
