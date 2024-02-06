@@ -234,11 +234,7 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
         else:
             if isinstance(
                 e,
-                (
-                    httpx.TimeoutException,
-                    httpx.HTTPStatusError,
-                    httpx.RemoteProtocolError,
-                ),
+                httpx.HTTPError,
             ):
                 raise e
             logging.error(
