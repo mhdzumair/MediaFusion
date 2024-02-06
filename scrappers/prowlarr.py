@@ -232,8 +232,13 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
             }
             is_torrent_downloaded = False
         else:
-            if isinstance(e, httpx.TimeoutException) or isinstance(
-                e, httpx.HTTPStatusError
+            if isinstance(
+                e,
+                (
+                    httpx.TimeoutException,
+                    httpx.HTTPStatusError,
+                    httpx.RemoteProtocolError,
+                ),
             ):
                 raise e
             logging.error(
