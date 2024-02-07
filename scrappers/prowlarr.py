@@ -571,3 +571,25 @@ async def parse_and_store_series_stream_data_actor(
 ):
     await parse_and_store_series_stream_data(video_id, title, season, stream_data)
 
+
+async def init_indexers():
+    """Initialize indexers in prowlarr."""
+    url = f"{settings.prowlarr_url}/api/v1/indexer"
+    headers = {
+        "accept": "application/json",
+        "X-Api-Key": settings.prowlarr_api_key,
+    }
+    with open("resources/json/prowlarr-indexers.json") as file:
+        indexers = json.load(file)
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        available_indexers = [indexer["name"] for indexer in data]
+        for indexer in indexers:
+            if indexer["name"] not in available_indexers:
+                response = await client.post(url, headers=headers, json=indexer)
+                response.raise_for_status()
+                logging.info(f"Added {indexer['name']} to prowlarr")
+            else:
+                logging.info(f"{indexer['name']} already exists in prowlarr")

@@ -137,3 +137,5 @@ http-client.private.env.json
 127.0.0.1-key.pem
 
 resources/poster_cache
+prowlarr-config/
+config/

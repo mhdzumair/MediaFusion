@@ -37,3 +37,5 @@ http-client.private.env.json
 
 resources/poster_cache
 deployment
+prowlarr-config/
+config/

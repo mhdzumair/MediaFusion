@@ -76,7 +76,7 @@ spec:
           httpGet:
             path: /health
             port: 80
-          initialDelaySeconds: 5
+          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 10
 
@@ -118,11 +118,11 @@ spec:
                 key: PROWLARR_API_KEY
         resources:
           requests:
-            memory: "200Mi"
-            cpu: "400m"
+            memory: "300Mi"
+            cpu: "200m"
           limits:
-            memory: "500Mi"
-            cpu: "400m"
+            memory: "800Mi"
+            cpu: "200m"
 
 ---
 
@@ -131,7 +131,7 @@ kind: Deployment
 metadata:
   name: prowlarr-deployment
 spec:
-  replicas: 7
+  replicas: 10
   selector:
     matchLabels:
       app: prowlarr
@@ -166,8 +166,23 @@ spec:
             value: "1000"
           - name: UMASK
             value: "002"
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
         ports:
         - containerPort: 9696
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - 'curl -H "X-API-KEY: $PROWLARR_API_KEY" http://localhost:9696/api/v1/health'
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          failureThreshold: 5
+          timeoutSeconds: 10
         volumeMounts:
         - name: prowlarr-storage
           mountPath: /config
@@ -297,7 +312,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: mediafusion-deployment
-  minReplicas: 7
+  minReplicas: 5
   maxReplicas: 15
   targetCPUUtilizationPercentage: 50
 
