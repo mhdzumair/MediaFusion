@@ -12,9 +12,11 @@ from torf import Magnet
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
+from scrappers import therarbg, torrent_downloads
 from scrappers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
+    UA_HEADER,
 )
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.torrent import extract_torrent_metadata
@@ -194,22 +196,23 @@ async def scrap_series_streams_from_prowlarr(
 async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]:
     """Get torrent data from prowlarr."""
     if not download_url:
-        return {}, False
+        raise ValueError("No download URL provided")
     if download_url.startswith("magnet:"):
         magnet = Magnet.from_string(download_url)
         return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, False
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(download_url, follow_redirects=False, timeout=20)
+        response = await client.get(
+            download_url, follow_redirects=False, timeout=20, headers=UA_HEADER
+        )
 
     if response.status_code == 301:
-        magnet_url = response.headers.get("Location")
-        magnet = Magnet.from_string(magnet_url)
-        return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, False
+        redirect_url = response.headers.get("Location")
+        return await get_torrent_data_from_prowlarr(redirect_url)
     elif response.status_code == 200:
         return extract_torrent_metadata(response.content), True
     response.raise_for_status()
-    return {}, False
+    raise ValueError(f"Failed to fetch torrent data from {download_url}")
 
 
 async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
@@ -223,6 +226,13 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
         # For these indexers, the guid is a direct torrent file download link
         download_url = meta_data.get("guid")
     else:
+        if meta_data.get("indexer") == "TheRARBG":
+            meta_data.update(await therarbg.get_torrent_info(meta_data.get("infoUrl")))
+        elif meta_data.get("indexer") == "Torrent Downloads":
+            meta_data.update(
+                await torrent_downloads.get_torrent_info(meta_data.get("infoUrl"))
+            )
+
         download_url = meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
 
     try:
@@ -244,10 +254,7 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
             }
             is_torrent_downloaded = False
         else:
-            if isinstance(
-                e,
-                httpx.HTTPError,
-            ):
+            if isinstance(e, (httpx.HTTPError, ValueError)):
                 return {}, False
             logging.error(
                 f"Error getting torrent data: {e} {e.__class__.__name__}", exc_info=True

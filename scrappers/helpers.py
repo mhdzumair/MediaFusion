@@ -8,7 +8,6 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from db import database
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
