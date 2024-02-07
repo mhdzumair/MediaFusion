@@ -131,7 +131,6 @@ def get_scrapper_config(site_name: str, get_key: str) -> dict:
 @dramatiq.actor(time_limit=30 * 60 * 1000)
 async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
     """Update torrent streams metadata."""
-    await database.init()
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:
@@ -153,7 +152,6 @@ async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
 @dramatiq.actor(time_limit=30 * 60 * 1000)
 async def update_torrent_series_streams_metadata(info_hashes: list[str]):
     """Update torrent streams metadata."""
-    await database.init()
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:

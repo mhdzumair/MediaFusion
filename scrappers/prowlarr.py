@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -6,9 +7,9 @@ import PTN
 import dramatiq
 import httpx
 from redis.asyncio import Redis
+from thefuzz import fuzz
 from torf import Magnet
 
-from db import database
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
 from scrappers.helpers import (
@@ -213,9 +214,20 @@ async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]
 
 async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
     """Parse prowlarr data."""
+    if meta_data.get("indexer") in [
+        "Torlock",
+        "YourBittorrent",
+        "The Pirate Bay",
+        "BitSearch",
+    ]:
+        # For these indexers, the guid is a direct torrent file download link
+        download_url = meta_data.get("guid")
+    else:
+        download_url = meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
+
     try:
         torrent_data, is_torrent_downloaded = await get_torrent_data_from_prowlarr(
-            meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
+            download_url
         )
     except Exception as e:
         if meta_data.get("infoHash"):
@@ -236,11 +248,15 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
                 e,
                 httpx.HTTPError,
             ):
-                raise e
+                return {}, False
             logging.error(
                 f"Error getting torrent data: {e} {e.__class__.__name__}", exc_info=True
             )
             return {}, False
+
+    info_hash = torrent_data.get("info_hash")
+    if not info_hash:
+        return {}, False
 
     torrent_data.update(
         {
@@ -276,7 +292,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         prowlarr_catalogs = [
             "prowlarr_streams",
             "prowlarr_movies",
-            f"{parsed_data.get('source').lower()}_movies",
+            f"{parsed_data.get('source', '').lower()}_movies",
         ]
 
         if torrent_stream:
@@ -365,7 +381,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
     prowlarr_catalog = [
         "prowlarr_streams",
         "prowlarr_series",
-        f"{parsed_data.get('source').lower()}_series",
+        f"{parsed_data.get('source', '').lower()}_series",
     ]
 
     if torrent_stream:
@@ -429,22 +445,23 @@ async def parse_and_store_stream(
     info_hash = parsed_data.get("info_hash", "").lower()
     torrent_stream, torrent_needed_update = None, False
 
-    if not info_hash or parsed_data.get("seeders", 0) == 0:
+    if not info_hash:
         logging.warning(
-            f"Skipping {info_hash} due to missing info_hash or seeders: {parsed_data.get('seeders')}"
+            f"Skipping {stream_data.get('title')} due to missing info_hash."
         )
         return torrent_stream, torrent_needed_update
 
+    title_similarity_ratio = fuzz.ratio(
+        parsed_data.get("title", "").lower(), title.lower()
+    )
+
     if catalog_type == "movie":
         if (
-            not (
-                parsed_data.get("title").lower() == title.lower()
-                and parsed_data.get("year") == year
-            )
+            not (title_similarity_ratio > 80 and parsed_data.get("year") == year)
             and parsed_data.get("imdb_id") != video_id
         ):
             logging.warning(
-                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' or year mismatch: '{parsed_data.get('year')}' != '{year}'"
+                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {title_similarity_ratio} or year mismatch: '{parsed_data.get('year')}' != '{year}'"
             )
             return torrent_stream, torrent_needed_update
 
@@ -452,12 +469,9 @@ async def parse_and_store_stream(
             info_hash, parsed_data, video_id
         )
     elif catalog_type == "series":
-        if (
-            parsed_data.get("title").lower() != title.lower()
-            and parsed_data.get("imdb_id") != video_id
-        ):
+        if title_similarity_ratio < 80 and parsed_data.get("imdb_id") != video_id:
             logging.warning(
-                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}'"
+                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {title_similarity_ratio}"
             )
             return torrent_stream, torrent_needed_update
 
@@ -509,9 +523,8 @@ async def parse_and_store_movie_stream_data_actor(
     title: str,
     year: str,
     stream_data: list,
-) -> list[TorrentStreams]:
-    await database.init()
-    return await parse_and_store_movie_stream_data(video_id, title, year, stream_data)
+):
+    await parse_and_store_movie_stream_data(video_id, title, year, stream_data)
 
 
 async def parse_and_store_series_stream_data(
@@ -555,8 +568,6 @@ async def parse_and_store_series_stream_data_actor(
     title: str,
     season: int,
     stream_data: list,
-) -> list[TorrentStreams]:
-    await database.init()
-    return await parse_and_store_series_stream_data(
-        video_id, title, season, stream_data
-    )
+):
+    await parse_and_store_series_stream_data(video_id, title, season, stream_data)
+

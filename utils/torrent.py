@@ -1,4 +1,4 @@
-import io
+import hashlib
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar
@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 import PTN
 import anyio
+import bencodepy
 import httpx
 from anyio import (
     create_task_group,
@@ -14,7 +15,7 @@ from anyio import (
 )
 from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
-from torf import Magnet, Torrent
+from torf import Magnet
 
 # remove logging from demagnetize
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
@@ -35,50 +36,50 @@ TRACKERS = [
 ]
 
 
-def response_content_to_torrent(content) -> Torrent | None:
+def extract_torrent_metadata(content: bytes) -> dict:
     try:
-        return Torrent.read_stream(io.BytesIO(content))
-    except Exception as e:
-        logging.error(f"Error occurred: {e}")
-        return
+        torrent_data = bencodepy.decode(content)
+        info = torrent_data[b"info"]
+        info_encoded = bencodepy.encode(info)
+        m = hashlib.sha1()
+        m.update(info_encoded)
+        info_hash = m.hexdigest()
 
-
-def extract_torrent_metadata(content: Torrent | bytes) -> dict:
-    if isinstance(content, bytes):
-        torrent = response_content_to_torrent(content)
-        if not torrent:
-            return {}
-    else:
-        torrent = content
-
-    try:
-        info_hash = torrent.infohash
-        total_size = torrent.size
+        # Extract file size, file list, and announce list
+        files = info[b"files"] if b"files" in info else [info]
+        total_size = sum(file[b"length"] for file in files)
         file_data = []
 
-        for idx, file in enumerate(
-            torrent.files if torrent.mode == "multifile" else [torrent.name]
-        ):
-            filename = str(file).split("/")[-1]
+        for idx, file in enumerate(files):
+            filename = (
+                file[b"path"][0].decode()
+                if b"files" in info
+                else file[b"name"].decode()
+            )
             parsed_data = PTN.parse(filename)
             file_data.append(
                 {
                     "filename": filename,
-                    "size": file.size if torrent.mode == "multifile" else total_size,
+                    "size": file[b"length"],
                     "index": idx,
                     "season": parsed_data.get("season"),
                     "episode": parsed_data.get("episode"),
                 }
             )
+
+        announce_list = [
+            tracker[0].decode() for tracker in torrent_data.get(b"announce-list", [])
+        ]
+        torrent_name = info.get(b"name", b"").decode() or file_data[0]["filename"]
         largest_file = max(file_data, key=lambda x: x["size"])
 
         return {
-            **PTN.parse(torrent.name),
+            **PTN.parse(torrent_name),
             "info_hash": info_hash,
-            "announce_list": sorted(list(torrent.trackers.flat)),
+            "announce_list": announce_list,
             "total_size": total_size,
             "file_data": file_data,
-            "torrent_name": torrent.name,
+            "torrent_name": torrent_name,
             "largest_file": largest_file,
         }
     except Exception as e:
@@ -134,21 +135,24 @@ async def _acollect_pipe(
 async def info_hashes_to_torrent_metadata(
     info_hashes: list[str], trackers: list[str]
 ) -> list[dict]:
-    magnets = [
-        Magnet(xt=info_hash, tr=trackers or TRACKERS) for info_hash in info_hashes
-    ]
     torrents_data = []
 
     demagnetizer = Demagnetizer()
     async with acollect(
-        [demagnetizer.demagnetize(magnet) for magnet in magnets], timeout=60
+        [
+            demagnetizer.demagnetize(Magnet(xt=info_hash, tr=trackers or TRACKERS))
+            for info_hash in info_hashes
+        ],
+        timeout=60,
     ) as async_iterator:
         async for torrent_result in async_iterator:
             try:
                 if isinstance(torrent_result, Exception):
                     pass
                 else:
-                    torrents_data.append(extract_torrent_metadata(torrent_result))
+                    torrents_data.append(
+                        extract_torrent_metadata(torrent_result.dump())
+                    )
             except Exception as e:
                 logging.error(f"Error processing torrent: {e}")
 
