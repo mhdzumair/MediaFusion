@@ -240,17 +240,17 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
             download_url
         )
     except Exception as e:
-        if meta_data.get("infoHash"):
-            torrent_data = {
-                "info_hash": meta_data.get("infoHash"),
-                "announce_list": [],
-            }
-            is_torrent_downloaded = False
-        elif meta_data.get("magnetUrl"):
+        if meta_data.get("magnetUrl"):
             magnet = Magnet.from_string(meta_data.get("magnetUrl"))
             torrent_data = {
                 "info_hash": magnet.infohash,
                 "announce_list": magnet.tr,
+            }
+            is_torrent_downloaded = False
+        elif meta_data.get("infoHash"):
+            torrent_data = {
+                "info_hash": meta_data.get("infoHash"),
+                "announce_list": [],
             }
             is_torrent_downloaded = False
         else:
