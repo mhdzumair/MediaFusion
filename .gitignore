@@ -139,3 +139,4 @@ http-client.private.env.json
 resources/poster_cache
 prowlarr-config/
 config/
+mediafusion.local*

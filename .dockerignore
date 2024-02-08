@@ -39,3 +39,4 @@ resources/poster_cache
 deployment
 prowlarr-config/
 config/
+mediafusion.local*
