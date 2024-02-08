@@ -19,8 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:beta
-        imagePullPolicy: Always
+        image: mhdzumair/mediafusion:v3.7.0
         ports:
         - containerPort: 80
         resources:
@@ -93,8 +92,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:beta
-        imagePullPolicy: Always
+        image: mhdzumair/mediafusion:v3.7.0
         command: ["pipenv", "run", "dramatiq", "api.task"]
         env:
           - name: MONGO_URI
@@ -144,7 +142,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - >
-            curl -o /config/config.xml https://raw.githubusercontent.com/mhdzumair/MediaFusion/develop/resources/xml/prowlarr-config.xml;
+            curl -o /config/config.xml https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/xml/prowlarr-config.xml;
             sed -i 's/$PROWLARR_API_KEY/'"$PROWLARR_API_KEY"'/g' /config/config.xml;
             chmod 664 /config/config.xml;
             echo "Prowlarr config setup complete.";
@@ -204,7 +202,7 @@ spec:
               sleep 5;
             done;
             echo "Prowlarr is ready, setting up indexers...";
-            curl -LO https://github.com/mhdzumair/MediaFusion/raw/develop/resources/json/prowlarr-indexers.json;
+            curl -LO https://github.com/mhdzumair/MediaFusion/raw/main/resources/json/prowlarr-indexers.json;
             jq -c '.[]' prowlarr-indexers.json | while read indexer; do
               echo "Adding indexer named: $(echo $indexer | jq -r '.name')";
               curl -H "Content-Type: application/json" -H "X-API-KEY: $PROWLARR_API_KEY" -X POST http://localhost:9696/api/v1/indexer -d "$indexer";
@@ -351,19 +349,6 @@ spec:
 
 ---
 
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: prowlarr-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-
----
-
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -376,7 +361,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:beta
+            image: mhdzumair/mediafusion:v3.7.0
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -411,7 +396,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:beta
+            image: mhdzumair/mediafusion:v3.7.0
             command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
             resources:
               requests:
