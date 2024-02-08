@@ -8,11 +8,11 @@ class Settings(BaseSettings):
     secret_key: str
     host_url: str = "https://mediafusion.fun"
     logging_level: str = "INFO"
-    enable_scrapper: bool = False
-    enable_search_scrapper: bool = False
+    enable_tamilmv_search_scrapper: bool = False
     scrapper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     is_scrap_from_torrentio: bool = False
+    torrentio_search_interval_days: int = 3
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
     prowlarr_url: str = "http://prowlarr-service:9696"

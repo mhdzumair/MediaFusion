@@ -5,6 +5,7 @@ from os import path
 
 import PTN
 import httpx
+from redis.asyncio import Redis
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
@@ -19,30 +20,34 @@ from utils.validation_helper import is_video_file
 
 
 async def get_streams_from_torrentio(
-    user_data: UserData,
+    redis: Redis,
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
     season: int = None,
     episode: int = None,
 ):
-    if video_id.startswith("tt") and "torrentio_streams" in user_data.selected_catalogs:
-        last_stream = next(
-            (stream for stream in streams if stream.source == "Torrentio"), None
+    cache_key = f"{catalog_type}_{video_id}_{season}_{episode}_torrentio_streams"
+    cached_data = await redis.get(cache_key)
+    if cached_data:
+        return streams
+
+    if catalog_type == "movie":
+        streams.extend(await scrap_movie_streams_from_torrentio(video_id, catalog_type))
+    elif catalog_type == "series":
+        streams.extend(
+            await scrap_series_streams_from_torrentio(
+                video_id, catalog_type, season, episode
+            )
         )
-        if last_stream is None or last_stream.updated_at < datetime.now() - timedelta(
-            days=3
-        ):
-            if catalog_type == "movie":
-                streams.extend(
-                    await scrap_movie_streams_from_torrentio(video_id, catalog_type)
-                )
-            elif catalog_type == "series":
-                streams.extend(
-                    await scrap_series_streams_from_torrentio(
-                        video_id, catalog_type, season, episode
-                    )
-                )
+
+    # Cache the data for 24 hours
+    await redis.set(
+        cache_key,
+        "True",
+        ex=int(timedelta(days=settings.torrentio_search_interval_days).total_seconds()),
+    )
+
     return streams
 
 
@@ -156,7 +161,8 @@ async def store_and_parse_movie_stream_data(
         if torrent_stream.filename is None:
             info_hashes.append(stream["infoHash"])
 
-    update_torrent_movie_streams_metadata.send(info_hashes)
+    if info_hashes:
+        update_torrent_movie_streams_metadata.send(info_hashes)
 
     return streams
 
@@ -255,7 +261,8 @@ async def store_and_parse_series_stream_data(
         if episode_item and episode_item.size is None:
             info_hashes.append(stream["infoHash"])
 
-    update_torrent_series_streams_metadata.send(info_hashes)
+    if info_hashes:
+        update_torrent_series_streams_metadata.send(info_hashes)
 
     return streams
 

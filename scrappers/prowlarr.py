@@ -7,7 +7,7 @@ import dramatiq
 import httpx
 from redis.asyncio import Redis
 from thefuzz import fuzz
-from torf import Magnet
+from torf import Magnet, MagnetError
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
@@ -240,7 +240,13 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
         )
     except Exception as e:
         if meta_data.get("magnetUrl"):
-            magnet = Magnet.from_string(meta_data.get("magnetUrl"))
+            try:
+                magnet = Magnet.from_string(meta_data.get("magnetUrl"))
+            except MagnetError:
+                logging.error(
+                    f"Error parsing {meta_data.get('indexer')} magnet link: {meta_data.get('magnetUrl')}",
+                )
+                return {}, False
             torrent_data = {
                 "info_hash": magnet.infohash,
                 "announce_list": magnet.tr,
@@ -518,7 +524,8 @@ async def parse_and_store_movie_stream_data(
     ]
 
     # Continue to use background tasks for demagnetization
-    update_torrent_movie_streams_metadata.send(info_hashes)
+    if info_hashes:
+        update_torrent_movie_streams_metadata.send(info_hashes)
 
     return streams
 
@@ -563,7 +570,8 @@ async def parse_and_store_series_stream_data(
     ]
 
     # Use background tasks for metadata updates
-    update_torrent_series_streams_metadata.send(info_hashes)
+    if info_hashes:
+        update_torrent_series_streams_metadata.send(info_hashes)
 
     return streams
 

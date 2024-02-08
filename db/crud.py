@@ -129,13 +129,16 @@ async def get_movie_streams(
         .to_list()
     )
 
-    if settings.is_scrap_from_torrentio:
-        streams = await get_streams_from_torrentio(
-            user_data, streams, video_id, "movie"
-        )
-    if settings.prowlarr_api_key:
+    if video_id.startswith("tt"):
         if (
-            video_id.startswith("tt")
+            settings.is_scrap_from_torrentio
+            and "torrentio_streams" in user_data.selected_catalogs
+        ):
+            streams = await get_streams_from_torrentio(
+                redis, streams, video_id, "movie"
+            )
+        if (
+            settings.prowlarr_api_key
             and "prowlarr_streams" in user_data.selected_catalogs
         ):
             movie_metadata = await get_movie_data_by_id(video_id, False)
@@ -168,13 +171,17 @@ async def get_series_streams(
         .to_list()
     )
 
-    if settings.is_scrap_from_torrentio:
-        streams = await get_streams_from_torrentio(
-            user_data, streams, video_id, "series", season, episode
-        )
-    if settings.prowlarr_api_key:
+    if video_id.startswith("tt"):
         if (
-            video_id.startswith("tt")
+            settings.is_scrap_from_torrentio
+            and "torrentio_streams" in user_data.selected_catalogs
+        ):
+            streams = await get_streams_from_torrentio(
+                redis, streams, video_id, "series", season, episode
+            )
+
+        if (
+            settings.prowlarr_api_key
             and "prowlarr_streams" in user_data.selected_catalogs
         ):
             series_metadata = await get_series_data_by_id(video_id, False)
@@ -464,7 +471,7 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
-    if settings.enable_search_scrapper and catalog_type in ["movie", "series"]:
+    if settings.enable_tamilmv_search_scrapper and catalog_type in ["movie", "series"]:
         # check if the search query is already searched in for last 24 hours or not
         last_search = await models.SearchHistory.find_one(
             {

@@ -85,24 +85,15 @@ async def start_scheduler():
     scheduler.add_job(
         crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
     )
-
-    if settings.enable_scrapper:
-        scheduler.add_job(
-            tamil_blasters.run_schedule_scrape,
-            CronTrigger(hour="*/6"),
-            name="tamil_blasters",
-        )
-        scheduler.add_job(
-            tamilmv.run_schedule_scrape, CronTrigger(hour="*/3"), name="tamilmv"
-        )
-        scheduler.start()
     app.state.scheduler = scheduler
 
 
 @app.on_event("shutdown")
 async def stop_scheduler():
-    if settings.enable_scrapper:
+    try:
         app.state.scheduler.shutdown(wait=False)
+    except AttributeError:
+        pass
 
 
 @app.on_event("shutdown")
