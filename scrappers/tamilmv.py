@@ -13,70 +13,17 @@ from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async
 
 from db import database
+from db.config import settings
 from scrappers.helpers import (
     get_page_content,
     get_scrapper_session,
     download_and_save_torrent,
+    get_scrapper_config,
 )
 
-HOMEPAGE = "https://www.1tamilmv.prof"
-TAMIL_MV_LINKS = {
-    "tamil": {
-        "hdrip": [
-            "11-web-hd-itunes-hd-bluray",
-            "12-hd-rips-dvd-rips-br-rips",
-            "14-hdtv-sdtv-hdtv-rips",
-        ],
-        "tcrip": "10-predvd-dvdscr-cam-tc",
-        "dubbed": "17-hollywood-movies-in-multi-audios",
-        "series": "19-web-series-tv-shows",
-    },
-    "malayalam": {
-        "hdrip": [
-            "36-web-hd-itunes-hd-bluray",
-            "37-hd-rips-dvd-rips-br-rips",
-            "39-hdtv-sdtv-hdtv-rips",
-        ],
-        "tcrip": "35-predvd-dvdscr-cam-tc",
-        "dubbed": "42-malayalam-dubbed-subtitled-movies",
-        "series": "44-web-series-tv-shows",
-    },
-    "telugu": {
-        "tcrip": "23-predvd-dvdscr-cam-tc",
-        "hdrip": [
-            "24-web-hd-itunes-hd-bluray",
-            "25-hd-rips-dvd-rips-br-rips",
-            "27-hdtv-sdtv-hdtv-rips",
-        ],
-        "dubbed": "31-telugu-dubbed-movies",
-        "series": "33-web-series-tv-shows",
-    },
-    "hindi": {
-        "tcrip": "57-predvd-dvdscr-cam-tc",
-        "hdrip": [
-            "58-web-hd-itunes-hd-bluray",
-            "59-hd-rips-dvd-rips-br-rips",
-            "61-hdtv-sdtv-hdtv-rips",
-        ],
-        "dubbed": "64-hindi-dubbed-movies",
-        "series": "66-web-series-tv-shows",
-    },
-    "kannada": {
-        "tcrip": "68-predvd-dvdscr-cam-tc",
-        "hdrip": [
-            "69-web-hd-itunes-hd-bluray",
-            "70-hd-rips-dvd-rips-br-rips",
-            "72-hdtv-sdtv-hdtv-rips",
-        ],
-        "dubbed": "75-watch-kannada-movies-online",
-        "series": "77-web-series-tv-shows",
-    },
-    "english": {
-        "tcrip": "46-predvd-dvdscr-cam-tc",
-        "hdrip": ["49-web-hd-itunes-hd-bluray", "50-hd-rips-dvd-rips-br-rips"],
-        "series": "55-web-series-tv-shows",
-    },
-}
+HOMEPAGE = get_scrapper_config("tamilmv", "homepage")
+TAMIL_MV_CATALOGS = get_scrapper_config("tamilmv", "catalogs")
+SUPPORTED_SEARCH_FORUMS = get_scrapper_config("tamilmv", "supported_search_forums")
 
 
 async def process_movie(
@@ -159,8 +106,8 @@ async def process_movie(
         return False
 
 
-async def scrap_page(url, language, media_type, proxy_url=None):
-    scraper = get_scrapper_session(proxy_url)
+async def scrap_page(url, language, media_type):
+    scraper = get_scrapper_session()
     response = scraper.get(url)
     if response.status_code == 403:
         logging.error(
@@ -178,12 +125,14 @@ async def scrap_page(url, language, media_type, proxy_url=None):
         )
 
 
-async def scrap_page_with_playwright(url, language, media_type, proxy_url=None):
+async def scrap_page_with_playwright(url, language, media_type):
     async with async_playwright() as p:
         # Launch a new browser session
         browser = await p.firefox.launch(
             headless=False,
-            proxy={"server": proxy_url} if proxy_url else None,
+            proxy={"server": settings.scrapper_proxy_url}
+            if settings.scrapper_proxy_url
+            else None,
         )
         page = await browser.new_page()
         await stealth_async(page)
@@ -213,24 +162,8 @@ async def get_search_results(scraper, keyword, page_number=1):
     return soup
 
 
-async def scrap_search_keyword(keyword, proxy_url=None):
-    supported_forums = {}
-    for language in TAMIL_MV_LINKS:
-        for video_type in TAMIL_MV_LINKS[language]:
-            forum_ids = TAMIL_MV_LINKS[language][video_type]
-            if isinstance(forum_ids, list):
-                for forum_id in forum_ids:
-                    supported_forums[forum_id] = {
-                        "language": language,
-                        "media_type": video_type,
-                    }
-            else:
-                supported_forums[forum_ids] = {
-                    "language": language,
-                    "media_type": video_type,
-                }
-
-    scraper = get_scrapper_session(proxy_url)
+async def scrap_search_keyword(keyword):
+    scraper = get_scrapper_session()
     soup = await get_search_results(scraper, keyword)
     results_element = soup.find("div", {"data-role": "resultsArea"})
 
@@ -248,7 +181,10 @@ async def scrap_search_keyword(keyword, proxy_url=None):
 
     for movie in movies:
         await process_movie(
-            movie, scraper=scraper, keyword=keyword, supported_forums=supported_forums
+            movie,
+            scraper=scraper,
+            keyword=keyword,
+            supported_forums=SUPPORTED_SEARCH_FORUMS,
         )
 
 
@@ -259,15 +195,14 @@ async def run_scraper(
     start_page: int = None,
     search_keyword: str = None,
     scrap_with_playwright: bool = None,
-    proxy_url: str = None,
 ):
     await database.init()
     if search_keyword:
-        await scrap_search_keyword(search_keyword, proxy_url)
+        await scrap_search_keyword(search_keyword)
         return
     link_prefix = f"{HOMEPAGE}/index.php?/forums/forum/"
     try:
-        forum_ids = TAMIL_MV_LINKS[language][video_type]
+        forum_ids = TAMIL_MV_CATALOGS[language][video_type]
         scrap_links = (
             [link_prefix + link for link in forum_ids]
             if isinstance(forum_ids, list)
@@ -281,11 +216,9 @@ async def run_scraper(
             scrap_link = f"{scrap_link_prefix}/page/{page}/"
             logging.info(f"Scrap page: {scrap_link}")
             if scrap_with_playwright is True:
-                await scrap_page_with_playwright(
-                    scrap_link, language, video_type, proxy_url
-                )
+                await scrap_page_with_playwright(scrap_link, language, video_type)
             else:
-                await scrap_page(scrap_link, language, video_type, proxy_url)
+                await scrap_page(scrap_link, language, video_type)
 
     logging.info(f"Scrap completed for : {language}_{video_type}")
 
@@ -294,17 +227,15 @@ async def run_schedule_scrape(
     pages: int = 1,
     start_page: int = 1,
     scrap_with_playwright: bool = None,
-    proxy_url: str = None,
 ):
-    for language in TAMIL_MV_LINKS:
-        for video_type in TAMIL_MV_LINKS[language]:
+    for language in TAMIL_MV_CATALOGS:
+        for video_type in TAMIL_MV_CATALOGS[language]:
             await run_scraper(
                 language,
                 video_type,
                 pages=pages,
                 start_page=start_page,
                 scrap_with_playwright=scrap_with_playwright,
-                proxy_url=proxy_url,
             )
 
 
@@ -357,7 +288,7 @@ if __name__ == "__main__":
     if args.all:
         asyncio.run(
             run_schedule_scrape(
-                args.pages, args.start_pages, args.scrap_with_playwright, args.proxy_url
+                args.pages, args.start_pages, args.scrap_with_playwright
             )
         )
     else:
@@ -369,6 +300,5 @@ if __name__ == "__main__":
                 args.start_pages,
                 args.search_keyword,
                 args.scrap_with_playwright,
-                args.proxy_url,
             )
         )

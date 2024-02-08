@@ -1,6 +1,6 @@
 from typing import Any
 
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
@@ -46,7 +46,7 @@ def get_direct_link_from_alldebrid(
     return response["data"]["link"]
 
 
-def update_ad_cache_status(streams: list[Streams], user_data: UserData):
+def update_ad_cache_status(streams: list[TorrentStreams], user_data: UserData):
     """Updates the cache status of streams based on AllDebrid's instant availability."""
 
     try:
@@ -73,3 +73,16 @@ def select_file_index_from_torrent(torrent_info: dict[str, Any], filename: str) 
     raise ProviderException(
         "No matching file available for this torrent", "api_error.mp4"
     )
+
+
+def fetch_downloaded_info_hashes_from_ad(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all torrents downloaded in the AllDebrid account."""
+    try:
+        ad_client = AllDebrid(token=user_data.streaming_provider.token)
+        available_torrents = ad_client.get_user_torrent_list()
+        if not available_torrents.get("data"):
+            return []
+        return [torrent["hash"] for torrent in available_torrents["data"]["magnets"]]
+
+    except ProviderException:
+        return []

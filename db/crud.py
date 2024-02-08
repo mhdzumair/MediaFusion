@@ -1,41 +1,65 @@
 import hashlib
 import logging
+from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
 
 from beanie import WriteRules
 from beanie.operators import In
+from pymongo.errors import DuplicateKeyError
+from redis.asyncio import Redis
 
 from db import schemas, models
 from db.config import settings
 from db.models import (
     MediaFusionMovieMetaData,
     MediaFusionSeriesMetaData,
-    Streams,
+    TorrentStreams,
     Season,
     Episode,
     MediaFusionTVMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
+from scrappers import tamilmv
+from scrappers.prowlarr import get_streams_from_prowlarr
+from scrappers.torrentio import get_streams_from_torrentio
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
     search_imdb,
     parse_tv_stream_data,
+    fetch_downloaded_info_hashes,
+    get_imdb_data,
 )
 
 
 async def get_meta_list(
-    catalog_type: str, catalog: str, skip: int = 0, limit: int = 25
+    user_data: schemas.UserData,
+    catalog_type: str,
+    catalog: str,
+    skip: int = 0,
+    limit: int = 25,
 ) -> list[schemas.Meta]:
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     else:
         meta_class = MediaFusionSeriesMetaData
 
+    query_conditions = []
+
+    if user_data.streaming_provider and catalog.startswith(
+        user_data.streaming_provider.service
+    ):
+        downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data)
+        if not downloaded_info_hashes:
+            return []
+        query_conditions.append(In(meta_class.streams.id, downloaded_info_hashes))
+    else:
+        query_conditions.append(In(meta_class.streams.catalog, [catalog]))
+
     meta_list = (
         await meta_class.find(
-            In(meta_class.streams.catalog, [catalog]),
+            *query_conditions,
             fetch_links=True,
         )
         .sort(-meta_class.streams.created_at)
@@ -96,26 +120,85 @@ async def get_tv_data_by_id(
     return tv_data
 
 
-async def get_movie_streams(user_data, secret_str: str, video_id: str) -> list[Stream]:
-    movie_data = await get_movie_data_by_id(video_id, True)
-    if not movie_data:
-        return []
+async def get_movie_streams(
+    user_data, secret_str: str, redis: Redis, video_id: str
+) -> list[Stream]:
+    streams = (
+        await TorrentStreams.find({"meta_id": video_id})
+        .sort(-TorrentStreams.updated_at)
+        .to_list()
+    )
 
-    return parse_stream_data(movie_data.streams, user_data, secret_str)
+    if video_id.startswith("tt"):
+        if (
+            settings.is_scrap_from_torrentio
+            and "torrentio_streams" in user_data.selected_catalogs
+        ):
+            streams = await get_streams_from_torrentio(
+                redis, streams, video_id, "movie"
+            )
+        if (
+            settings.prowlarr_api_key
+            and "prowlarr_streams" in user_data.selected_catalogs
+        ):
+            movie_metadata = await get_movie_data_by_id(video_id, False)
+            if movie_metadata:
+                title, year = movie_metadata.title, movie_metadata.year
+            else:
+                title, year = get_imdb_data(video_id)
+            if title:
+                streams = await get_streams_from_prowlarr(
+                    redis, streams, video_id, "movie", title, year
+                )
+
+    return await parse_stream_data(streams, user_data, secret_str)
 
 
 async def get_series_streams(
-    user_data, secret_str: str, video_id: str, season: int, episode: int
+    user_data,
+    secret_str: str,
+    redis: Redis,
+    video_id: str,
+    season: int,
+    episode: int,
 ) -> list[Stream]:
-    series_data = await get_series_data_by_id(video_id, True)
-    if not series_data:
-        return []
+    streams = (
+        await TorrentStreams.find({"meta_id": video_id})
+        .find(
+            {"season.season_number": season, "season.episodes.episode_number": episode}
+        )
+        .sort(-TorrentStreams.updated_at)
+        .to_list()
+    )
 
-    matched_episode_streams = [
-        stream for stream in series_data.streams if stream.get_episode(season, episode)
-    ]
+    if video_id.startswith("tt"):
+        if (
+            settings.is_scrap_from_torrentio
+            and "torrentio_streams" in user_data.selected_catalogs
+        ):
+            streams = await get_streams_from_torrentio(
+                redis, streams, video_id, "series", season, episode
+            )
 
-    return parse_stream_data(
+        if (
+            settings.prowlarr_api_key
+            and "prowlarr_streams" in user_data.selected_catalogs
+        ):
+            series_metadata = await get_series_data_by_id(video_id, False)
+            if series_metadata:
+                title, year = series_metadata.title, series_metadata.year
+            else:
+                title, year = get_imdb_data(video_id)
+            if title:
+                streams = await get_streams_from_prowlarr(
+                    redis, streams, video_id, "series", title, year, season, episode
+                )
+
+    matched_episode_streams = filter(
+        lambda stream: stream.get_episode(season, episode), streams
+    )
+
+    return await parse_stream_data(
         matched_episode_streams, user_data, secret_str, season, episode
     )
 
@@ -125,7 +208,7 @@ async def get_tv_streams(video_id: str) -> list[Stream]:
     if not tv_data:
         return []
 
-    return parse_tv_stream_data(tv_data.streams)
+    return parse_tv_stream_data(tv_data)
 
 
 async def get_movie_meta(meta_id: str):
@@ -164,7 +247,7 @@ async def get_series_meta(meta_id: str):
 
     # Loop through streams to populate the videos list
     for stream in series_data.streams:
-        stream: Streams
+        stream: TorrentStreams
         if stream.season:  # Ensure the stream has season data
             for episode in stream.season.episodes:
                 stream_id = (
@@ -238,11 +321,6 @@ async def save_movie_metadata(metadata: dict):
         background = existing_movie.background
         meta_id = existing_movie.id
 
-    # Determine file index for the main movie file (largest file)
-    largest_file = max(
-        metadata["torrent_metadata"]["file_data"], key=lambda x: x["size"]
-    )
-
     if "language" in metadata:
         languages = (
             [metadata["language"]]
@@ -253,13 +331,13 @@ async def save_movie_metadata(metadata: dict):
         languages = [metadata["scrap_language"]]
 
     # Create the stream object
-    new_stream = Streams(
-        id=metadata["torrent_metadata"]["info_hash"],
-        torrent_name=metadata["torrent_metadata"]["torrent_name"],
-        announce_list=metadata["torrent_metadata"]["announce_list"],
-        size=metadata["torrent_metadata"]["total_size"],
-        filename=largest_file["filename"],
-        file_index=largest_file["index"],
+    new_stream = TorrentStreams(
+        id=metadata["info_hash"],
+        torrent_name=metadata["torrent_name"],
+        announce_list=metadata["announce_list"],
+        size=metadata["total_size"],
+        filename=metadata["largest_file"]["filename"],
+        file_index=metadata["largest_file"]["index"],
         languages=languages,
         resolution=metadata.get("resolution"),
         codec=metadata.get("codec"),
@@ -269,6 +347,7 @@ async def save_movie_metadata(metadata: dict):
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
+        meta_id=meta_id,
     )
 
     if existing_movie:
@@ -280,7 +359,11 @@ async def save_movie_metadata(metadata: dict):
         if not matching_stream:
             existing_movie.streams.append(new_stream)
         await existing_movie.save(link_rule=WriteRules.WRITE)
-        logging.info("Updated movie %s", existing_movie.title)
+        logging.info(
+            "Updated movie %s. total streams: %s",
+            existing_movie.title,
+            len(existing_movie.streams),
+        )
     else:
         # If the movie doesn't exist, create a new one
         movie_data = MediaFusionMovieMetaData(
@@ -291,7 +374,10 @@ async def save_movie_metadata(metadata: dict):
             background=background,
             streams=[new_stream],
         )
-        await movie_data.insert(link_rule=WriteRules.WRITE)
+        try:
+            await movie_data.insert(link_rule=WriteRules.WRITE)
+        except DuplicateKeyError:
+            logging.warning("Duplicate movie found: %s", movie_data.title)
         logging.info("Added movie %s", movie_data.title)
 
 
@@ -328,19 +414,13 @@ async def save_series_metadata(metadata: dict):
             logging.info("Added series %s", series.title)
 
     existing_stream = next(
-        (
-            s
-            for s in series.streams
-            if s.id == metadata["torrent_metadata"]["info_hash"]
-        ),
+        (s for s in series.streams if s.id == metadata["info_hash"]),
         None,
     )
     if existing_stream:
         # If the stream already exists, return
         logging.info("Stream already exists for series %s", series.title)
         return
-
-    season_number = metadata["season"]
 
     # Extract episodes
     episodes = [
@@ -350,7 +430,7 @@ async def save_series_metadata(metadata: dict):
             size=file["size"],
             file_index=file["index"],
         )
-        for file in metadata["torrent_metadata"]["file_data"]
+        for file in metadata["file_data"]
         if file["episode"]
     ]
 
@@ -365,11 +445,11 @@ async def save_series_metadata(metadata: dict):
         languages = [metadata["scrap_language"]]
 
     # Create the stream
-    stream = Streams(
-        id=metadata["torrent_metadata"]["info_hash"],
-        torrent_name=metadata["torrent_metadata"]["torrent_name"],
-        announce_list=metadata["torrent_metadata"]["announce_list"],
-        size=metadata["torrent_metadata"]["total_size"],
+    stream = TorrentStreams(
+        id=metadata["info_hash"],
+        torrent_name=metadata["torrent_name"],
+        announce_list=metadata["announce_list"],
+        size=metadata["total_size"],
         languages=languages,
         resolution=metadata.get("resolution"),
         codec=metadata.get("codec"),
@@ -379,7 +459,8 @@ async def save_series_metadata(metadata: dict):
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
-        season=Season(season_number=season_number, episodes=episodes),
+        season=Season(season_number=metadata["season"], episodes=episodes),
+        meta_id=series.id,
     )
 
     # Add the stream to the series
@@ -390,6 +471,22 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
+    if settings.enable_tamilmv_search_scrapper and catalog_type in ["movie", "series"]:
+        # check if the search query is already searched in for last 24 hours or not
+        last_search = await models.SearchHistory.find_one(
+            {
+                "query": search_query,
+                "last_searched": {"$gte": datetime.now() - timedelta(days=1)},
+            }
+        )
+        if not last_search:
+            await models.SearchHistory(query=search_query).save()
+            # if the query is not searched in last 24 hours, search in tamilmv
+            try:
+                await tamilmv.scrap_search_keyword(search_query)
+            except Exception as e:
+                logging.error(e)
+
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     elif catalog_type == "tv":
@@ -422,8 +519,8 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
     return {"metas": metas}
 
 
-async def get_stream_by_info_hash(info_hash: str) -> Streams | None:
-    stream = await Streams.get(info_hash)
+async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
+    stream = await TorrentStreams.get(info_hash)
     return stream
 
 
@@ -487,3 +584,11 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> tuple[str
         is_new = True
 
     return channel_id, is_new
+
+
+async def delete_search_history():
+    # Delete search history older than 3 days
+    await models.SearchHistory.delete_many(
+        {"last_searched": {"$lt": datetime.now() - timedelta(days=3)}}
+    )
+    logging.info("Deleted search history")

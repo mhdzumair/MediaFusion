@@ -1,18 +1,17 @@
-import hashlib
 from datetime import datetime
 from typing import Optional, Any
 
 import pymongo
-from beanie import Document, Link
-from pydantic import BaseModel, Field, computed_field
+from beanie import Document, Link, BackLink
+from pydantic import BaseModel, Field
 from pymongo import IndexModel, ASCENDING
 
 
 class Episode(BaseModel):
     episode_number: int
-    filename: str
-    size: int
-    file_index: int
+    filename: str | None = None
+    size: int | None = None
+    file_index: int | None = None
 
 
 class Season(BaseModel):
@@ -20,7 +19,7 @@ class Season(BaseModel):
     episodes: list[Episode]
 
 
-class Streams(Document):
+class TorrentStreams(Document):
     id: str
     torrent_name: str
     size: int
@@ -32,13 +31,15 @@ class Streams(Document):
     source: str
     catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
-    resolution: Optional[str]
-    codec: Optional[str]
-    quality: Optional[str]
-    audio: Optional[str]
-    encoder: Optional[str]
+    updated_at: Optional[datetime] = None
+    resolution: Optional[str] = None
+    codec: Optional[str] = None
+    quality: Optional[str] = None
+    audio: Optional[str] = None
+    encoder: Optional[str] = None
     seeders: Optional[int] = None
     cached: Optional[bool] = None
+    meta_id: Optional[str] = None
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
@@ -58,6 +59,7 @@ class TVStreams(Document):
     source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
+    meta_id: Optional[str] = None
 
 
 class MediaFusionMetaData(Document):
@@ -65,8 +67,9 @@ class MediaFusionMetaData(Document):
     title: str
     year: Optional[int] = None
     poster: str
+    is_poster_working: Optional[bool] = True
     background: Optional[str] = None
-    streams: list[Link[Streams]]
+    streams: list[Link[TorrentStreams]]
     type: str
 
     class Settings:
@@ -93,3 +96,8 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     genres: Optional[list[str]] = None
     is_approved: bool = False
     streams: list[Link[TVStreams]]
+
+
+class SearchHistory(Document):
+    query: str
+    last_searched: datetime = Field(default_factory=datetime.now)

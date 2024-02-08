@@ -1,85 +1,58 @@
-# Media Fusion Stremio Addon :clapper:
+# Media Fusion Stremio Addon 🎬
 
 ![Media Fusion Logo](resources/images/mediafusion_logo.png?raw=true)
 
-## :warning: Disclaimer :warning:
+## ⚠️ Disclaimer
 
-> The content of this script is created strictly for educational purposes. Use of the Add-on is at your own risk.
-> This Add-on, written in Python, serves as an API for [stremio](https://www.stremio.com/).
-> There is no affiliation with any scraping sites.
+> The content of this script is created strictly for educational purposes. Use of the Add-on is at your own risk. This Add-on, written in Python, serves as an API for [Stremio](https://www.stremio.com/). There is no affiliation with any scraping sites.
 
-## :sparkles: Features
+## ✨ Features
 
-- Provides catalogs for multiple languages: Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series.
+- **Rich Catalogs**: Offers extensive catalogs for multiple languages including Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies, series & live tv.
   
   ![Media Fusion Catalog](resources/images/ss1.png?raw=true)
 
-- Supports streams for playback with torrent, Real Debrid, and Seedr integration.
-  
+- **Enhanced Streaming with Various Providers**: Supports streams for playback, integrating various torrent and cloud storage services. Available providers include:
+  - **Direct Torrent** (Free)
+  - **PikPak** (Free Quota)
+  - **Seedr.cc** (Free Quota)
+  - **OffCloud** (Free Quota)
+  - **Torbox** (Free Quota)
+  - **Real-Debrid** (Premium)
+  - **Debrid-Link** (Premium)
+  - **Premiumize** (Premium)
+  - **AllDebrid** - Local Only - (Premium) *(Note: AllDebrid works only when running the addon locally)*
+
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)
 
-## :rocket: Installation
+- **Scrapper Support**:
+  - **Prowlarr Integration**: Enhances scraping capabilities through Prowlarr integration.
+  - **Torrentio Streams**: Supports scrapping from Torrentio streams (disabled by default).
+  - **Regional Content Scrapping**: Dedicated scrapping for TamilMV and TamilBlasters movies and series, along with TamilUltra and MHDTVPlay for Live TV channels.
 
-1. Install Stremio from [here](https://www.stremio.com/downloads).
-2. Navigate to [Media Fusion](https://882b9915d0fe-mediafusion.baby-beamup.club) and click on the 'Configure Add-on' button.
+- **Additonal Features**:
+  - **User Data Encryption**: User data is encrypted upon configuring the addon, ensuring privacy and security. Only the encrypted URL is stored on Stremio, and it is passed as an encrypted string for each request.
+  - **Watchlist Catalog Support**: Integrates streaming provider watchlist directly into the catalog (only show when the movie's metadata available in MediaFusion DB)
+  - **Stream Filters**: Users can filter streams based on file size and resolution type, allowing for a customized viewing experience.
 
-## :hammer_and_wrench: Development
+## 🚀 Installation
 
-### Prerequisites
+1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads).
+2. **Media Fusion**: Navigate to [Media Fusion](https://mediafusion.fun) and click on the 'Configure Add-on' button.
 
-- **Python**: This project uses Python version 3.11. Ensure you have it installed.
-- **MongoDB**: Set up a MongoDB server. You can use [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) to create a free MongoDB cluster.
-- **mkcert**: To set up local HTTPS, you'll need to use mkcert to generate SSL certificates. If not installed, get it from [here](https://github.com/FiloSottile/mkcert).
+## 🚀 Local Add-on Deployment
 
-### Setup
+For detailed instructions on local deployment, check the [Local Deployment Guide](deployment/README.md).
 
-1. **Pipenv**: Use [Pipenv](https://pipenv.pypa.io/en/latest/) for managing project dependencies. If you don't have it installed, you can install it with:
-   ```bash
-   pip install pipenv
-   ```
-2. **Clone**: Clone this repository.
-   ```bash
-   git clone https://github.com/mhdzumair/MediaFusion
-   ```
-3. **Install Dependencies**: Navigate to the MediaFusion directory and install dependencies with:
-   ```bash
-   pipenv install
-   ```
-4. **Environment Variables**: Create a `.env` file in the root directory with the following variables:
-    ```bash
-    MONGO_URI=<Your_MongoDB_URI>
-    SECRET_KEY=<Your_Random_32_Character_Secret>
-    HOST_URL=https://127.0.0.1:8443
-    ```
-5. **Local HTTPS Setup**:
+## ✨ Contributors
 
-   - Navigate to the MediaFusion directory.
-   - Generate local SSL certificates using mkcert:
+A special thank you to all our contributors!
 
-   ```bash
-   mkcert -install
-   mkcert 127.0.0.1
-   ```
+<a href="https://github.com/mhdzumair/MediaFusion/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=mhdzumair/MediaFusion" />
+</a>
 
-   This will generate two files: localhost.pem and localhost-key.pem.
-
-6. **Run Servers**:
-
-   - To serve application over HTTPS on port 8443:
-
-   ```bash
-   pipenv run uvicorn api.main:app --host 127.0.0.1 --port 8443 --ssl-keyfile 127.0.0.1-key.pem --ssl-certfile 127.0.0.1.pem
-   ```
-
-   - Since Stremio doesn't support localhost HTTPS servers to install add-on, also run an HTTP server on port 8000:
-
-   ```bash
-   pipenv run uvicorn api.main:app --host 127.0.0.1 --port 8000
-   ```
-
-7. **For scraping instructions**: refer to the [scrapping README](/scrappers/README.md).
-
-## :books: References
+## 📚 References
 
 - [Stremio Generic Add-on Guide](https://stremio.github.io/stremio-addon-guide/basics)
 - [Stremio Add-on SDK API docs](https://github.com/Stremio/stremio-addon-sdk/tree/master/docs/api)
@@ -90,3 +63,6 @@
 - [beanie](https://roman-right.github.io/beanie/)
 - [parse-torrent-title](https://github.com/platelminto/parse-torrent-title)
 - [torrentio-scraper Stremio Add-on](https://github.com/TheBeastLT/torrentio-scraper)
+- [kubernetes](https://kubernetes.io/)
+- [docker](https://www.docker.com/)
+- [dramatiq](https://dramatiq.io/)

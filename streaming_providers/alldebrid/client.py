@@ -39,6 +39,16 @@ class AllDebrid(DebridClient):
         )
 
         if response_data.get("status") != "success":
+            error_code = response_data.get("error", {}).get("code")
+            if error_code == "AUTH_BAD_APIKEY":
+                raise ProviderException(
+                    f"Invalid AllDebrid API key", "invalid_token.mp4"
+                )
+            elif error_code == "NO_SERVER":
+                raise ProviderException(
+                    f"Failed to add magnet link to AllDebrid {response_data}",
+                    "transfer_error.mp4",
+                )
             raise ProviderException(
                 f"Failed to add magnet link to AllDebrid {response_data}",
                 "transfer_error.mp4",

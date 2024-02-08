@@ -1,13 +1,13 @@
+import re
 import time
 from datetime import datetime
 
 from seedrcc import Seedr
 from thefuzz import fuzz
 
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
-from utils.parser import clean_name
 
 
 def get_info_hash_folder_id(seedr, info_hash: str):
@@ -44,9 +44,7 @@ def add_magnet_and_get_torrent(seedr, magnet_link: str, info_hash: str) -> None:
     info_hash_folder_id = get_info_hash_folder_id(seedr, info_hash)
     transfer = seedr.addTorrent(magnet_link, folderId=info_hash_folder_id)
 
-    if "error" in transfer and transfer["error"] == "invalid_token":
-        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
-    elif transfer["result"] is True:
+    if transfer["result"] is True:
         return
     elif transfer["result"] in (
         "not_enough_space_added_to_wishlist",
@@ -94,22 +92,57 @@ def get_file_details_from_folder(seedr, folder_id: int, filename: str):
     # If the file is not found with exact match, try to find it by fuzzy ratio
     for file in folder_content["files"]:
         file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    return sorted(
-        folder_content["files"], key=lambda x: x["fuzzy_ratio"], reverse=True
-    )[0]
+    selected_file = max(folder_content["files"], key=lambda x: x["fuzzy_ratio"])
+
+    # If the fuzzy ratio is less than 50, then select the largest file
+    if selected_file["fuzzy_ratio"] < 50:
+        selected_file = max(folder_content["files"], key=lambda x: x["size"])
+
+    if selected_file["play_video"] is False:
+        raise ProviderException(
+            "No matching file available for this torrent", "no_matching_file.mp4"
+        )
+    return selected_file
+
+
+def seedr_clean_name(name: str, replace: str = "") -> str:
+    # Only allow alphanumeric characters, spaces, and `.,;:_~-()`
+    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()]", replace, name)
+    return cleaned_name
+
+
+def get_seedr_client(user_data: UserData) -> Seedr:
+    """Returns a Seedr client with the user's token."""
+    try:
+        seedr = Seedr(token=user_data.streaming_provider.token)
+    except Exception:
+        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+    response = seedr.testToken()
+    if "error" in response:
+        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+    return seedr
+
+
+def rename_seedr_files(seedr, folder_id):
+    """rename filenames to fix stremio android client bug."""
+    folder_content = seedr.listContents(folder_id)
+    for file in folder_content["files"]:
+        # rename file to remove any special characters
+        if file["name"] != seedr_clean_name(file["name"]):
+            seedr.renameFile(file["folder_file_id"], seedr_clean_name(file["name"]))
 
 
 async def get_direct_link_from_seedr(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: Streams,
+    stream: TorrentStreams,
     filename: str,
     max_retries=5,
     retry_interval=5,
 ) -> str:
     """Gets a direct download link from Seedr using a magnet link and token."""
-    seedr = Seedr(token=user_data.streaming_provider.token)
+    seedr = get_seedr_client(user_data)
 
     # Check for existing torrent or folder
     torrent = check_torrent_status(seedr, info_hash)
@@ -125,10 +158,13 @@ async def get_direct_link_from_seedr(
         folder = check_folder_status(seedr, info_hash)
     folder_id = folder["id"]
 
+    # rename filenames to fix stremio android client bug.
+    rename_seedr_files(seedr, folder_id)
+
     selected_file = get_file_details_from_folder(
         seedr,
         folder_id,
-        clean_name(filename, ""),
+        seedr_clean_name(filename or stream.torrent_name),
     )
     video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
 
@@ -162,3 +198,34 @@ def free_up_space(seedr, required_space):
             seedr.deleteTorrent(sub_folder_torrent["id"])
         seedr.deleteFolder(folder["id"])
         available_space += folder["size"]
+
+
+def update_seedr_cache_status(streams: list[TorrentStreams], user_data: UserData):
+    """Updates the cache status of the streams based on the user's Seedr account."""
+    try:
+        seedr = get_seedr_client(user_data)
+    except ProviderException:
+        return
+
+    folder_content = {
+        folder["name"]: folder["id"] for folder in seedr.listContents()["folders"]
+    }
+
+    for stream in streams:
+        if stream.id in folder_content:
+            # check if folder is not empty
+            sub_folder_content = seedr.listContents(folder_content[stream.id])
+            if sub_folder_content["folders"]:
+                stream.cached = True
+                continue
+        stream.cached = False
+
+
+def fetch_downloaded_info_hashes_from_seedr(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all the torrents downloaded in the user's Seedr account."""
+    try:
+        seedr = get_seedr_client(user_data)
+    except ProviderException:
+        return []
+
+    return [folder["name"] for folder in seedr.listContents()["folders"]]

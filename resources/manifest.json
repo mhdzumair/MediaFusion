@@ -1,10 +1,10 @@
 {
   "id": "mhdzumair.addons.mediafusion",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
-  "description": "Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies, series & live TV with the Media Fusion add-on. Source: https://github.com/mhdzumair/MediaFusion",
-  "logo": "https://882b9915d0fe-mediafusion.baby-beamup.club/static/images/mediafusion_logo.png",
+  "description": "Universal Stremio Add-on for Movies, Series & Live TV. Source: https://github.com/mhdzumair/MediaFusion",
+  "logo": "https://mediafusion.fun/static/images/mediafusion_logo.png",
   "behaviorHints": {
 	"configurable": true,
 	"configurationRequired": false
@@ -78,7 +78,7 @@
 	{
 	  "id": "tamil_tcrip",
 	  "type": "movie",
-	  "name": "Tamil TCRip/DVDScr/HDCAM Movies",
+	  "name": "Tamil TCRip Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -122,7 +122,7 @@
 	{
 	  "id": "malayalam_tcrip",
 	  "type": "movie",
-	  "name": "Malayalam TCRip/DVDScr/HDCAM Movies",
+	  "name": "Malayalam TCRip Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -177,7 +177,7 @@
 	{
 	  "id": "telugu_tcrip",
 	  "type": "movie",
-	  "name": "Telugu TCRip/DVDScr/HDCAM Movies",
+	  "name": "Telugu TCRip Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -232,7 +232,7 @@
 	{
 	  "id": "hindi_tcrip",
 	  "type": "movie",
-	  "name": "Hindi TCRip/DVDScr/HDCAM Movies",
+	  "name": "Hindi TCRip Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -287,7 +287,7 @@
 	{
 	  "id": "kannada_tcrip",
 	  "type": "movie",
-	  "name": "Kannada TCRip/DVDScr/HDCAM Movies",
+	  "name": "Kannada TCRip Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -353,7 +353,7 @@
 	{
 	  "id": "english_tcrip",
 	  "type": "movie",
-	  "name": "English TCRip/DVDScr/HDCAM Movies",
+	  "name": "English TCRip Movies",
 	  "extra": [
 		{
 		  "name": "skip",
@@ -385,21 +385,45 @@
 		  "name": "genre",
 		  "isRequired": false,
 		  "options": [
-			"Tamil",
-			"Malayalam",
+			"Arabic",
+			"Ayna Ott",
+			"Bangla",
+			"Bhojpuri",
+			"Canada",
+			"Chad",
 			"English",
-			"Sports",
-			"Tamil Entertainment",
+			"Gujarati",
+			"Hindi",
 			"India",
+			"Kannada",
+			"Malayalam",
+			"Marathi",
+			"Music",
+			"News",
+			"Nexgtv",
+			"Punjabi",
+			"Qatar",
+			"Religious",
+			"Saudi Arabia",
+			"Sony",
+			"Spain",
+			"Sports",
 			"Sri Lanka",
+			"Tamil",
+			"Tamil Comedy",
+			"Tamil Entertainment",
 			"Tamil Infotainment",
+			"Tamil Kids",
 			"Tamil Movies",
 			"Tamil Music",
 			"Tamil News",
-			"Tamil Kids",
-			"Hindi",
-			"Arabic",
-			"Religious"
+			"Telugu",
+			"result",
+			"UK",
+			"United Kingdom",
+			"United States",
+			"Voot",
+			"Z5"
 		  ]
 		}
 	  ]

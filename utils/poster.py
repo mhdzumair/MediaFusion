@@ -1,8 +1,8 @@
 from io import BytesIO
 
+import requests
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from imdb import Cinemagoer
-import requests
 
 from db.models import MediaFusionMetaData
 
@@ -31,8 +31,11 @@ async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
     image = image.resize((300, 450))
     imdb_rating = None
     if mediafusion_data.id.startswith("tt"):
-        result = ia.get_movie(mediafusion_data.id[2:], info="main")
-        imdb_rating = result.get("rating")
+        try:
+            result = ia.get_movie(mediafusion_data.id[2:], info="main")
+            imdb_rating = result.get("rating")
+        except Exception:
+            pass
 
     image = add_elements_to_poster(image, imdb_rating)
     image = image.convert("RGB")

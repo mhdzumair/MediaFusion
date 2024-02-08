@@ -1,4 +1,4 @@
-from db.models import Streams
+from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.client import OffCloud
@@ -38,7 +38,7 @@ def get_direct_link_from_offcloud(
     return oc_client.create_download_link(request_id, torrent_info, filename)
 
 
-def update_oc_cache_status(streams: list[Streams], user_data: UserData):
+def update_oc_cache_status(streams: list[TorrentStreams], user_data: UserData):
     """Updates the cache status of streams based on OffCloud's instant availability."""
 
     try:
@@ -53,3 +53,17 @@ def update_oc_cache_status(streams: list[Streams], user_data: UserData):
 
     except ProviderException:
         pass
+
+
+def fetch_downloaded_info_hashes_from_oc(user_data: UserData) -> list[str]:
+    """Fetches the info_hashes of all torrents downloaded in the OffCloud account."""
+    try:
+        oc_client = OffCloud(token=user_data.streaming_provider.token)
+        available_torrents = oc_client.get_user_torrent_list()
+        magnet_links = [torrent["originalLink"] for torrent in available_torrents]
+        return [
+            magnet_link.split("btih:")[1].split("&")[0] for magnet_link in magnet_links
+        ]
+
+    except ProviderException:
+        return []
