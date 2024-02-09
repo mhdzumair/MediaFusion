@@ -220,6 +220,7 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
         "Torlock",
         "YourBittorrent",
         "The Pirate Bay",
+        "RuTracker.RU",
     ]:
         # For these indexers, the guid is a direct torrent file download link
         download_url = meta_data.get("guid")
