@@ -142,7 +142,11 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - >
-            curl -o /config/config.xml https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/xml/prowlarr-config.xml;
+            until curl -o /config/config.xml https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/xml/prowlarr-config.xml; do
+              echo "Failed to download config file. Retrying...";
+              sleep 3;
+            done;
+            echo "Config file downloaded successfully.";
             sed -i 's/$PROWLARR_API_KEY/'"$PROWLARR_API_KEY"'/g' /config/config.xml;
             chmod 664 /config/config.xml;
             echo "Prowlarr config setup complete.";
@@ -202,7 +206,10 @@ spec:
               sleep 5;
             done;
             echo "Prowlarr is ready, setting up indexers...";
-            curl -LO https://github.com/mhdzumair/MediaFusion/raw/main/resources/json/prowlarr-indexers.json;
+            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json; do
+              echo "Failed to download indexers file. Retrying...";
+              sleep 3;
+            done;
             jq -c '.[]' prowlarr-indexers.json | while read indexer; do
               echo "Adding indexer named: $(echo $indexer | jq -r '.name')";
               curl -H "Content-Type: application/json" -H "X-API-KEY: $PROWLARR_API_KEY" -X POST http://localhost:9696/api/v1/indexer -d "$indexer";
