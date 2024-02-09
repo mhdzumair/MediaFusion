@@ -59,6 +59,11 @@ spec:
             value: "https://mediafusion.fun"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
             value: "3"
+          - name: REDIS_URL
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: REDIS_URL
         livenessProbe:
           httpGet:
             path: /health
@@ -110,6 +115,11 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
+          - name: REDIS_URL
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: REDIS_URL
         resources:
           requests:
             memory: "300Mi"
@@ -206,7 +216,7 @@ spec:
               sleep 5;
             done;
             echo "Prowlarr is ready, setting up indexers...";
-            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json; do
+            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/develop/resources/json/prowlarr-indexers.json; do
               echo "Failed to download indexers file. Retrying...";
               sleep 3;
             done;
@@ -236,7 +246,7 @@ kind: Deployment
 metadata:
   name: redis-deployment
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: redis
