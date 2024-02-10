@@ -519,25 +519,6 @@ async def get_poster(
         raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 
-@app.post("/tv-metadata", status_code=status.HTTP_201_CREATED, tags=["tv"])
-async def add_tv_metadata(metadata: schemas.TVMetaData):
-    try:
-        metadata.streams = validation_helper.validate_tv_metadata(metadata)
-    except validation_helper.ValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    tv_channel_id, is_new = await crud.save_tv_channel_metadata(metadata)
-
-    if is_new:
-        return {
-            "status": f"Metadata with ID {tv_channel_id} has been created and is pending approval. Thanks for your contribution."
-        }
-
-    return {
-        "status": f"Tv Channel with ID {tv_channel_id} Streams has been updated. Thanks for your contribution."
-    }
-
-
 app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
 app.include_router(realdebrid_router, prefix="/realdebrid", tags=["realdebrid"])
 app.include_router(debridlink_router, prefix="/debridlink", tags=["debridlink"])
