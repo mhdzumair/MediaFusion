@@ -160,7 +160,7 @@ async def update_torrent_series_streams_metadata(info_hashes: list[str]):
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:
-        if not stream_metadata:
+        if not (stream_metadata and "season" in stream_metadata):
             continue
 
         torrent_stream = await TorrentStreams.get(stream_metadata["info_hash"])
