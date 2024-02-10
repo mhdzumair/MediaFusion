@@ -95,7 +95,7 @@ Edit the `deployment/local-deployment.yaml` to set the required environment vari
 ```yaml
           - name: HOST_URL
             value: "https://mediafusion.local"
-          - name: ENABLE_TAMILMV_SEARCH_SCRAPPER
+          - name: ENABLE_TAMILMV_SEARCH_SCRAPER
             value: "false"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
             value: "3"

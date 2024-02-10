@@ -14,16 +14,16 @@ from playwright_stealth import stealth_async
 
 from db import database
 from db.config import settings
-from scrappers.helpers import (
+from scrapers.helpers import (
     get_page_content,
-    get_scrapper_session,
+    get_scraper_session,
     download_and_save_torrent,
-    get_scrapper_config,
+    get_scraper_config,
 )
 
-HOMEPAGE = get_scrapper_config("tamilmv", "homepage")
-TAMIL_MV_CATALOGS = get_scrapper_config("tamilmv", "catalogs")
-SUPPORTED_SEARCH_FORUMS = get_scrapper_config("tamilmv", "supported_search_forums")
+HOMEPAGE = get_scraper_config("tamilmv", "homepage")
+TAMIL_MV_CATALOGS = get_scraper_config("tamilmv", "catalogs")
+SUPPORTED_SEARCH_FORUMS = get_scraper_config("tamilmv", "supported_search_forums")
 
 
 async def process_movie(
@@ -107,7 +107,7 @@ async def process_movie(
 
 
 async def scrap_page(url, language, media_type):
-    scraper = get_scrapper_session()
+    scraper = get_scraper_session()
     response = scraper.get(url)
     if response.status_code == 403:
         logging.error(
@@ -130,8 +130,8 @@ async def scrap_page_with_playwright(url, language, media_type):
         # Launch a new browser session
         browser = await p.firefox.launch(
             headless=False,
-            proxy={"server": settings.scrapper_proxy_url}
-            if settings.scrapper_proxy_url
+            proxy={"server": settings.scraper_proxy_url}
+            if settings.scraper_proxy_url
             else None,
         )
         page = await browser.new_page()
@@ -163,7 +163,7 @@ async def get_search_results(scraper, keyword, page_number=1):
 
 
 async def scrap_search_keyword(keyword):
-    scraper = get_scrapper_session()
+    scraper = get_scraper_session()
     soup = await get_search_results(scraper, keyword)
     results_element = soup.find("div", {"data-role": "resultsArea"})
 

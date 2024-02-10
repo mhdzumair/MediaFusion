@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 from api.middleware import SecureLoggingMiddleware
 from db import database, crud, schemas
 from db.config import settings
-from scrappers import tamil_blasters, tamilmv
+from scrapers import tamil_blasters, tamilmv
 from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.debridlink.utils import get_direct_link_from_debridlink

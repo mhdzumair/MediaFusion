@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
 from db.schemas import UserData
-from scrappers.helpers import (
+from scrapers.helpers import (
     UA_HEADER,
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
@@ -54,7 +54,7 @@ async def get_streams_from_torrentio(
 async def fetch_stream_data(url: str) -> dict:
     """Fetch stream data asynchronously."""
     async with httpx.AsyncClient(
-        headers=UA_HEADER, proxy=settings.scrapper_proxy_url
+        headers=UA_HEADER, proxy=settings.scraper_proxy_url
     ) as client:
         response = await client.get(url, timeout=10)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses

@@ -11,8 +11,8 @@ from torf import Magnet, MagnetError
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
-from scrappers import therarbg, torrent_downloads
-from scrappers.helpers import (
+from scrapers import therarbg, torrent_downloads
+from scrapers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
     UA_HEADER,

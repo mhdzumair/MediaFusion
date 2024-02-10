@@ -14,15 +14,15 @@ from playwright_stealth import stealth_async
 
 from db import database
 from db.config import settings
-from scrappers.helpers import (
+from scrapers.helpers import (
     get_page_content,
-    get_scrapper_session,
+    get_scraper_session,
     download_and_save_torrent,
-    get_scrapper_config,
+    get_scraper_config,
 )
 
-HOMEPAGE = get_scrapper_config("tamil_blasters", "homepage")
-TAMIL_BLASTER_CATALOGS = get_scrapper_config("tamil_blasters", "catalogs")
+HOMEPAGE = get_scraper_config("tamil_blasters", "homepage")
+TAMIL_BLASTER_CATALOGS = get_scraper_config("tamil_blasters", "catalogs")
 
 
 async def get_search_results(page, keyword, page_number=1):
@@ -124,7 +124,7 @@ async def process_movie(
 
 
 async def scrap_page(url, language, media_type):
-    scraper = get_scrapper_session()
+    scraper = get_scraper_session()
     response = scraper.get(url)
     if response.status_code == 403:
         logging.error(
@@ -147,8 +147,8 @@ async def scrap_page_with_playwright(url, language, media_type):
         # Launch a new browser session
         browser = await p.firefox.launch(
             headless=False,
-            proxy={"server": settings.scrapper_proxy_url}
-            if settings.scrapper_proxy_url
+            proxy={"server": settings.scraper_proxy_url}
+            if settings.scraper_proxy_url
             else None,
         )
         page = await browser.new_page()
@@ -182,8 +182,8 @@ async def scrap_search_keyword(keyword):
         # Launch a new browser session
         browser = await p.firefox.launch(
             headless=False,
-            proxy={"server": settings.scrapper_proxy_url}
-            if settings.scrapper_proxy_url
+            proxy={"server": settings.scraper_proxy_url}
+            if settings.scraper_proxy_url
             else None,
         )
         page = await browser.new_page()

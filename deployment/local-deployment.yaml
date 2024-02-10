@@ -55,7 +55,7 @@ spec:
                 key: PROWLARR_API_KEY
           - name: HOST_URL
             value: "https://mediafusion.local"
-          - name: ENABLE_TAMILMV_SEARCH_SCRAPPER
+          - name: ENABLE_TAMILMV_SEARCH_SCRAPER
             value: "false"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
             value: "3"
@@ -425,6 +425,7 @@ spec:
           - name: tamil-blasters-scraper
             image: mhdzumair/mediafusion:beta
             imagePullPolicy: Always
+            command: ["pipenv", "run", "python3", "-m", "scrapers.tamil_blasters", "--all"]
             resources:
               requests:
                 memory: "128Mi"
@@ -457,6 +458,7 @@ spec:
           - name: tamilmv-scraper
             image: mhdzumair/mediafusion:beta
             imagePullPolicy: Always
+            command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
             resources:
               requests:
                 memory: "128Mi"

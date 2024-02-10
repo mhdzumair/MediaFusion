@@ -9,12 +9,12 @@ import aiohttp
 import requests
 from playwright.async_api import async_playwright
 
-from scrappers.helpers import get_scrapper_config
+from scrapers.helpers import get_scraper_config
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s", level=logging.INFO
 )
-BASE_URL = get_scrapper_config("mhdtvplay", "homepage")
+BASE_URL = get_scraper_config("mhdtvplay", "homepage")
 MEDIAFUSION_URL = "http://127.0.0.1:8000"
 
 
@@ -231,7 +231,7 @@ async def scrape_all_categories():
         # remove duplicates and BASE_URL
         category_urls = list(set(category_urls))
         category_urls.remove(BASE_URL)
-        category_urls.remove("https://mhdtv.org/")
+        # category_urls.remove("https://mhdtv.org/")
 
         # Scrape channels from each category
         all_channels_data = []
@@ -265,7 +265,7 @@ def main(is_scraping: bool = True):
         asyncio.run(scrape_all_categories())
         return
 
-    with open("scrappers/temp.json") as file:
+    with open("scrapers/temp.json") as file:
         channels = json.load(file)["channels"]
 
     for channel in channels:

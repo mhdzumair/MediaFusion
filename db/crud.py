@@ -20,9 +20,9 @@ from db.models import (
     MediaFusionTVMetaData,
 )
 from db.schemas import Stream, MetaIdProjection
-from scrappers import tamilmv
-from scrappers.prowlarr import get_streams_from_prowlarr
-from scrappers.torrentio import get_streams_from_torrentio
+from scrapers import tamilmv
+from scrapers.prowlarr import get_streams_from_prowlarr
+from scrapers.torrentio import get_streams_from_torrentio
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
@@ -471,7 +471,7 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
-    if settings.enable_tamilmv_search_scrapper and catalog_type in ["movie", "series"]:
+    if settings.enable_tamilmv_search_scraper and catalog_type in ["movie", "series"]:
         # check if the search query is already searched in for last 24 hours or not
         last_search = await models.SearchHistory.find_one(
             {
