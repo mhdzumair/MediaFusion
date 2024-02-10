@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: mediafusion-deployment
 spec:
-  replicas: 6
+  replicas: 11
   selector:
     matchLabels:
       app: mediafusion
@@ -19,7 +19,8 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.7.0
+        image: mhdzumair/mediafusion:beta
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
         resources:
@@ -86,7 +87,7 @@ kind: Deployment
 metadata:
   name: dramatiq-worker-deployment
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: dramatiq-worker
@@ -97,7 +98,8 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.7.0
+        image: mhdzumair/mediafusion:beta
+        imagePullPolicy: Always
         command: ["pipenv", "run", "dramatiq", "api.task"]
         env:
           - name: MONGO_URI
@@ -361,7 +363,7 @@ spec:
     kind: Deployment
     name: mediafusion-deployment
   minReplicas: 5
-  maxReplicas: 15
+  maxReplicas: 20
   targetCPUUtilizationPercentage: 50
 
 ---
@@ -378,8 +380,8 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.7.0
-            command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
+            image: mhdzumair/mediafusion:beta
+            imagePullPolicy: Always
             resources:
               requests:
                 memory: "128Mi"
@@ -413,8 +415,8 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.7.0
-            command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
+            image: mhdzumair/mediafusion:beta
+            imagePullPolicy: Always
             resources:
               requests:
                 memory: "128Mi"
