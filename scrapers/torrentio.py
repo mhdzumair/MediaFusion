@@ -15,7 +15,7 @@ from scrapers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
 )
-from utils.parser import convert_size_to_bytes
+from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
 from utils.validation_helper import is_video_file
 
 
@@ -123,6 +123,10 @@ async def store_and_parse_movie_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
+        if is_contain_18_plus_keywords(stream["title"]):
+            logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
+            continue
+
         parsed_data = parse_stream_title(stream)
         if not parsed_data["seeders"]:
             continue
@@ -176,6 +180,10 @@ async def store_and_parse_series_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
+        if is_contain_18_plus_keywords(stream["title"]):
+            logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
+            continue
+
         parsed_data = parse_stream_title(stream)
         if not parsed_data["seeders"]:
             continue

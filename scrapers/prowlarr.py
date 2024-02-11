@@ -18,6 +18,7 @@ from scrapers.helpers import (
     UA_HEADER,
 )
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
+from utils.parser import is_contain_18_plus_keywords
 from utils.torrent import extract_torrent_metadata
 
 
@@ -216,6 +217,12 @@ async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]
 
 async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
     """Parse prowlarr data."""
+    if is_contain_18_plus_keywords(meta_data.get("title")):
+        logging.warning(
+            f"Skipping {meta_data.get('title')} due to adult content keywords."
+        )
+        return {}, False
+
     if meta_data.get("indexer") in [
         "Torlock",
         "YourBittorrent",

@@ -42,6 +42,10 @@ from streaming_providers.torbox.utils import (
 )
 
 ia = Cinemagoer()
+ADULT_CONTENT_KEYWORDS = re.compile(
+    settings.adult_content_regex_keywords,
+    re.IGNORECASE,
+)
 
 
 async def filter_and_sort_streams(
@@ -325,3 +329,10 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
 
     manifest["resources"] = resources
     return manifest
+
+
+def is_contain_18_plus_keywords(title: str) -> bool:
+    """
+    Check if the title contains 18+ keywords to filter out adult content.
+    """
+    return ADULT_CONTENT_KEYWORDS.search(title) is not None
