@@ -123,14 +123,10 @@ async def background_movie_title_search(video_id: str, title: str, year: str):
         "categories": [2000],  # Movies
         "type": "search",
     }
-
-    try:
-        title_search = await fetch_stream_data(url, params_title)
-        if title_search:
-            await parse_and_store_movie_stream_data(video_id, title, year, title_search)
-            logging.info(f"Background title search completed for {title} ({year})")
-    except Exception as e:
-        logging.error(f"Background title search failed for {title} ({year}): {e}")
+    title_search = await fetch_stream_data(url, params_title)
+    if title_search:
+        await parse_and_store_movie_stream_data(video_id, title, year, title_search)
+        logging.info(f"Background title search completed for {title} ({year})")
 
 
 async def scrap_series_streams_from_prowlarr(
@@ -182,18 +178,11 @@ async def background_series_title_search(
     if season is not None and episode is not None:
         params_title.update({"season": season, "episode": episode})
 
-    try:
-        title_search = await fetch_stream_data(url, params_title)
-        if title_search:
-            await parse_and_store_series_stream_data(
-                video_id, title, season, title_search
-            )
-            logging.info(
-                f"Background title search completed for {title} S{season}E{episode}"
-            )
-    except Exception as e:
-        logging.error(
-            f"Background title search failed for {title} S{season}E{episode}: {e}"
+    title_search = await fetch_stream_data(url, params_title)
+    if title_search:
+        await parse_and_store_series_stream_data(video_id, title, season, title_search)
+        logging.info(
+            f"Background title search completed for {title} S{season}E{episode}"
         )
 
 
@@ -543,17 +532,6 @@ async def parse_and_store_movie_stream_data(
     return streams
 
 
-# TODO: Remove this after current tasks are completed
-@dramatiq.actor(time_limit=15 * 60 * 1000)
-async def parse_and_store_movie_stream_data_actor(
-    video_id: str,
-    title: str,
-    year: str,
-    stream_data: list,
-):
-    await parse_and_store_movie_stream_data(video_id, title, year, stream_data)
-
-
 async def parse_and_store_series_stream_data(
     video_id: str,
     title: str,
@@ -588,14 +566,3 @@ async def parse_and_store_series_stream_data(
         update_torrent_series_streams_metadata.send(info_hashes)
 
     return streams
-
-
-# TODO: Remove this after current tasks are completed
-@dramatiq.actor(time_limit=15 * 60 * 1000)
-async def parse_and_store_series_stream_data_actor(
-    video_id: str,
-    title: str,
-    season: int,
-    stream_data: list,
-):
-    await parse_and_store_series_stream_data(video_id, title, season, stream_data)
