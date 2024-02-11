@@ -1,5 +1,5 @@
-import asyncio
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 import PTN
@@ -39,10 +39,12 @@ async def get_streams_from_prowlarr(
 
     if catalog_type == "movie":
         streams.extend(await scrap_movies_streams_from_prowlarr(video_id, title, year))
+        background_movie_title_search.send(video_id, title, year)
     elif catalog_type == "series":
         streams.extend(
             await scrap_series_streams_from_prowlarr(video_id, title, season, episode)
         )
+        background_series_title_search.send(video_id, title, season, episode)
     # Cache the data for 24 hours
     await redis.set(
         cache_key,
@@ -53,144 +55,146 @@ async def get_streams_from_prowlarr(
     return streams
 
 
-async def fetch_stream_data(url: str, params: dict) -> dict:
-    """Fetch stream data asynchronously."""
+@asynccontextmanager
+async def get_prowlarr_client():
     headers = {
         "accept": "application/json",
         "X-Api-Key": settings.prowlarr_api_key,
     }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=10, params=params, headers=headers)
+    async with httpx.AsyncClient(headers=headers, timeout=10) as client:
+        yield client
+
+
+async def fetch_stream_data(url: str, params: dict) -> dict | list[dict]:
+    """Fetch stream data asynchronously."""
+    async with get_prowlarr_client() as client:
+        response = await client.get(url, params=params)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
         return response.json()
 
 
+async def is_prowlarr_healthy() -> bool:
+    health_url = f"{settings.prowlarr_url}/api/v1/health"
+    try:
+        async with get_prowlarr_client() as client:
+            response = await client.get(health_url)
+            response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
+            return True
+    except Exception as e:
+        logging.error(f"Prowlarr health check failed: {e}")
+        return False
+
+
 async def scrap_movies_streams_from_prowlarr(
-    video_id: str,
-    title: str,
-    year: str,
+    video_id: str, title: str, year: str
 ) -> list[TorrentStreams]:
     """
-    Get movie streams by IMDb ID and title from prowlarr, processing only the first 10 immediately
-    and handling the rest in the background.
+    Perform a movie stream search by IMDb ID from Prowlarr, processing immediately.
     """
     url = f"{settings.prowlarr_url}/api/v1/search"
-    stream_data = []
-
-    # Params for IMDb ID search
     params_imdb = {
         "query": f"{{ImdbId:{video_id}}}",
         "categories": [2000],  # Movies
         "type": "movie",
     }
 
-    # Params for title search
+    try:
+        imdb_search = await fetch_stream_data(url, params_imdb)
+    except Exception as e:
+        logging.warning(
+            f"Failed to fetch API data from Prowlarr for {title} ({year}): {e}"
+        )
+        return []
+
+    logging.info(f"Found {len(imdb_search)} streams for {title} ({year}) with IMDb ID")
+    return await parse_and_store_movie_stream_data(video_id, title, year, imdb_search)
+
+
+@dramatiq.actor(
+    time_limit=60 * 60 * 1000,  # 60 minutes
+    min_backoff=2 * 60 * 1000,  # 2 minutes
+    max_backoff=60 * 60 * 1000,  # 60 minutes
+    retry_when=is_prowlarr_healthy,
+)
+async def background_movie_title_search(video_id: str, title: str, year: str):
+    url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
         "query": title,
         "categories": [2000],  # Movies
         "type": "search",
     }
 
-    # Fetch data for both searches simultaneously
-    imdb_search, title_search = await asyncio.gather(
-        fetch_stream_data(url, params_imdb),
-        fetch_stream_data(url, params_title),
-        return_exceptions=True,
-    )
-    if not isinstance(imdb_search, Exception):
-        stream_data.extend(imdb_search)
-    if not isinstance(title_search, Exception):
-        stream_data.extend(title_search)
-
-    if not stream_data:
-        logging.warning(f"Failed to fetch API data from prowlarr for {title} ({year})")
-        return []  # Return an empty list in case of HTTP errors or timeouts
-
-    logging.info(f"Found {len(stream_data)} streams for {title} ({year})")
-    # Slice the results to process only the first 10 immediately
-    immediate_processing_data = stream_data[: settings.prowlarr_immediate_max_process]
-    remaining_data = stream_data[settings.prowlarr_immediate_max_process :]
-
-    # Process the first 10 torrents immediately
-    immediate_results = await parse_and_store_movie_stream_data(
-        video_id, title, year, immediate_processing_data
-    )
-
-    # Schedule the processing of any remaining torrents as a batches of background task if any exist
-    if remaining_data:
-        for i in range(0, len(remaining_data), 5):
-            parse_and_store_movie_stream_data_actor.send(
-                video_id, title, year, remaining_data[i : i + 5]
-            )
-
-    return immediate_results
+    try:
+        title_search = await fetch_stream_data(url, params_title)
+        if title_search:
+            await parse_and_store_movie_stream_data(video_id, title, year, title_search)
+            logging.info(f"Background title search completed for {title} ({year})")
+    except Exception as e:
+        logging.error(f"Background title search failed for {title} ({year}): {e}")
 
 
 async def scrap_series_streams_from_prowlarr(
-    video_id: str,
-    title: str,
-    season: int = None,
-    episode: int = None,
+    video_id: str, title: str, season: int = None, episode: int = None
 ) -> list[TorrentStreams]:
     """
-    Get movie streams by IMDb ID and title from prowlarr, processing only the first 10 immediately
-    and handling the rest in the background.
+    Perform a series stream search by IMDb ID, season, and episode from Prowlarr, processing immediately.
     """
     url = f"{settings.prowlarr_url}/api/v1/search"
-    stream_data = []
-
-    # Params for IMDb ID, season, and episode search
     params_imdb = {
         "query": f"{{ImdbId:{video_id}}}{{Season:{season}}}{{Episode:{episode}}}",
         "categories": [5000],  # TV
         "type": "tvsearch",
     }
 
-    # Params for title search
+    try:
+        imdb_search = await fetch_stream_data(url, params_imdb)
+    except Exception as e:
+        logging.warning(
+            f"Failed to fetch API data from Prowlarr for {title} ({season}) ({episode}): {e}"
+        )
+        return []
+
+    logging.info(
+        f"Found {len(imdb_search)} streams for {title} ({season}) ({episode}) with IMDb ID"
+    )
+    return await parse_and_store_series_stream_data(
+        video_id, title, season, imdb_search
+    )
+
+
+@dramatiq.actor(
+    time_limit=60 * 60 * 1000,  # 60 minutes
+    min_backoff=2 * 60 * 1000,  # 2 minutes
+    max_backoff=60 * 60 * 1000,  # 60 minutes
+    retry_when=is_prowlarr_healthy,
+)
+async def background_series_title_search(
+    video_id: str, title: str, season: int, episode: int
+):
+    url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
         "query": title,
         "categories": [5000],  # TV
         "type": "search",
     }
 
-    # Fetch data for both searches simultaneously
-    imdb_search, title_search = await asyncio.gather(
-        fetch_stream_data(url, params_imdb),
-        fetch_stream_data(url, params_title),
-        return_exceptions=True,
-    )
-    if not isinstance(imdb_search, Exception):
-        stream_data.extend(imdb_search)
-    if not isinstance(title_search, Exception):
-        stream_data.extend(title_search)
+    # Adjust parameters if needed for season and episode specificity
+    if season is not None and episode is not None:
+        params_title.update({"season": season, "episode": episode})
 
-    if not stream_data:
-        logging.warning(
-            f"Failed to fetch API data from prowlarr for {title} ({season}) ({episode})"
-        )
-        return []  # Return an empty list in case of HTTP errors or timeouts
-
-    logging.info(f"Found {len(stream_data)} streams for {title} ({season}) ({episode})")
-    # Slice the results to process only the first 10 immediately
-    immediate_processing_data = stream_data[: settings.prowlarr_immediate_max_process]
-    remaining_data = stream_data[settings.prowlarr_immediate_max_process :]
-
-    # Process the first 10 torrents immediately
-    immediate_results = await parse_and_store_series_stream_data(
-        video_id, title, season, immediate_processing_data
-    )
-
-    # Schedule the processing of any remaining torrents as a batches of background task if any exist
-    if remaining_data:
-        for i in range(0, len(remaining_data), 5):
-            parse_and_store_series_stream_data_actor.send(
-                video_id,
-                title,
-                season,
-                remaining_data[i : i + 5],
+    try:
+        title_search = await fetch_stream_data(url, params_title)
+        if title_search:
+            await parse_and_store_series_stream_data(
+                video_id, title, season, title_search
             )
-
-    return immediate_results
+            logging.info(
+                f"Background title search completed for {title} S{season}E{episode}"
+            )
+    except Exception as e:
+        logging.error(
+            f"Background title search failed for {title} S{season}E{episode}: {e}"
+        )
 
 
 async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]:
@@ -539,6 +543,7 @@ async def parse_and_store_movie_stream_data(
     return streams
 
 
+# TODO: Remove this after current tasks are completed
 @dramatiq.actor(time_limit=15 * 60 * 1000)
 async def parse_and_store_movie_stream_data_actor(
     video_id: str,
@@ -585,6 +590,7 @@ async def parse_and_store_series_stream_data(
     return streams
 
 
+# TODO: Remove this after current tasks are completed
 @dramatiq.actor(time_limit=15 * 60 * 1000)
 async def parse_and_store_series_stream_data_actor(
     video_id: str,
