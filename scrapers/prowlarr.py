@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -85,6 +86,18 @@ async def is_prowlarr_healthy() -> bool:
         return False
 
 
+async def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
+    should_retry = retries_so_far < 5 and isinstance(exception, httpx.HTTPError)
+    if not should_retry:
+        logging.error(f"Failed to fetch data from Prowlarr: {exception}")
+        return False
+
+    while True:
+        if await is_prowlarr_healthy():
+            return True
+        await asyncio.sleep(5)
+
+
 async def scrap_movies_streams_from_prowlarr(
     video_id: str, title: str, year: str
 ) -> list[TorrentStreams]:
@@ -114,7 +127,7 @@ async def scrap_movies_streams_from_prowlarr(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
     max_backoff=60 * 60 * 1000,  # 60 minutes
-    retry_when=is_prowlarr_healthy,
+    retry_when=should_retry_prowlarr_scrap,
 )
 async def background_movie_title_search(video_id: str, title: str, year: str):
     url = f"{settings.prowlarr_url}/api/v1/search"
@@ -162,7 +175,7 @@ async def scrap_series_streams_from_prowlarr(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
     max_backoff=60 * 60 * 1000,  # 60 minutes
-    retry_when=is_prowlarr_healthy,
+    retry_when=should_retry_prowlarr_scrap,
 )
 async def background_series_title_search(
     video_id: str, title: str, season: int, episode: int
