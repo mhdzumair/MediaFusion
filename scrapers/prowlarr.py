@@ -120,7 +120,9 @@ async def scrap_movies_streams_from_prowlarr(
         return []
 
     logging.info(f"Found {len(imdb_search)} streams for {title} ({year}) with IMDb ID")
-    return await parse_and_store_movie_stream_data(video_id, title, year, imdb_search)
+    return await parse_and_store_movie_stream_data(
+        video_id, title, year, imdb_search[: settings.prowlarr_immediate_max_process]
+    )
 
 
 @dramatiq.actor(
@@ -167,7 +169,7 @@ async def scrap_series_streams_from_prowlarr(
         f"Found {len(imdb_search)} streams for {title} ({season}) ({episode}) with IMDb ID"
     )
     return await parse_and_store_series_stream_data(
-        video_id, title, season, imdb_search
+        video_id, title, season, imdb_search[: settings.prowlarr_immediate_max_process]
     )
 
 
