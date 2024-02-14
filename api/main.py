@@ -12,16 +12,14 @@ from fastapi import (
     Response,
     Depends,
     HTTPException,
-    status,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from api.middleware import SecureLoggingMiddleware
+from api import middleware
 from db import database, crud, schemas
 from db.config import settings
-from scrapers import tamil_blasters, tamilmv
 from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
@@ -35,7 +33,7 @@ from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.torbox.utils import get_direct_link_from_torbox
-from utils import crypto, torrent, poster, validation_helper, const
+from utils import crypto, torrent, poster, const, rate_limiter
 from utils.parser import generate_manifest
 
 logging.basicConfig(
@@ -52,6 +50,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.state.redis = redis.Redis(
+    connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
+)
+app.add_middleware(middleware.RateLimitMiddleware, redis_client=app.state.redis)
+app.add_middleware(middleware.SecureLoggingMiddleware)
+app.add_middleware(middleware.UserDataMiddleware)
+
 TEMPLATES = Jinja2Templates(directory="resources")
 headers = {
     "Access-Control-Allow-Origin": "*",
@@ -65,18 +70,14 @@ no_cache_headers = {
 }
 
 
-@app.middleware("http")
-async def add_custom_logging(request: Request, call_next):
-    return await SecureLoggingMiddleware()(request, call_next)
+def get_user_data(request: Request) -> schemas.UserData:
+    return request.user
 
 
 @app.on_event("startup")
 async def init_server():
     await database.init()
     await torrent.init_best_trackers()
-    app.state.redis = redis.Redis(
-        connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-    )
 
 
 @app.on_event("startup")
@@ -127,7 +128,8 @@ async def get_home(request: Request):
 
 
 @app.get("/health", tags=["health"])
-async def health():
+@rate_limiter.exclude
+async def health(request: Request):
     return {"status": "healthy"}
 
 
@@ -150,7 +152,7 @@ async def function(file_path: str):
 async def configure(
     response: Response,
     request: Request,
-    user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
@@ -173,7 +175,7 @@ async def configure(
 @app.get("/manifest.json", tags=["manifest"])
 @app.get("/{secret_str}/manifest.json", tags=["manifest"])
 async def get_manifest(
-    response: Response, user_data: schemas.UserData = Depends(crypto.decrypt_user_data)
+    response: Response, user_data: schemas.UserData = Depends(get_user_data)
 ):
     response.headers.update({**headers, **no_cache_headers})
 
@@ -224,6 +226,7 @@ async def get_manifest(
     response_model_by_alias=False,
     tags=["catalog"],
 )
+@rate_limiter.rate_limit(150, 300, "catalog")
 async def get_catalog(
     response: Response,
     request: Request,
@@ -231,7 +234,7 @@ async def get_catalog(
     catalog_id: str,
     skip: int = 0,
     genre: str = None,
-    user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(headers)
     if genre and "&" in genre:
@@ -366,6 +369,7 @@ async def get_meta(
     response_model_exclude_none=True,
     tags=["stream"],
 )
+@rate_limiter.rate_limit(10, 60 * 60, "stream")
 async def get_streams(
     catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
@@ -374,7 +378,7 @@ async def get_streams(
     secret_str: str = None,
     season: int = None,
     episode: int = None,
-    user_data: schemas.UserData = Depends(crypto.decrypt_user_data),
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(headers)
 
@@ -387,7 +391,6 @@ async def get_streams(
             user_data, secret_str, request.app.state.redis, video_id, season, episode
         )
     else:
-        response.headers.update(no_cache_headers)
         fetched_streams = await crud.get_tv_streams(video_id)
 
     return {"streams": fetched_streams}
@@ -400,17 +403,19 @@ async def encrypt_user_data(user_data: schemas.UserData):
 
 
 @app.get("/{secret_str}/streaming_provider", tags=["streaming_provider"])
+@rate_limiter.exclude
 async def streaming_provider_endpoint(
     secret_str: str,
     info_hash: str,
     response: Response,
+    request: Request,
     season: int = None,
     episode: int = None,
 ):
     response.headers.update(headers)
     response.headers.update(no_cache_headers)
 
-    user_data = crypto.decrypt_user_data(secret_str)
+    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
     if not user_data.streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
 
@@ -474,6 +479,7 @@ async def streaming_provider_endpoint(
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
+@rate_limiter.exclude
 async def get_poster(
     catalog_type: Literal["movie", "series", "tv"],
     mediafusion_id: str,

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     adult_content_regex_keywords: str = (
         r"\b(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus|18\s*\+)\b"
     )
+    enable_rate_limit: bool = True
 
     class Config:
         env_file = ".env"
