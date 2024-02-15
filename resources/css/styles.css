@@ -229,8 +229,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
 .form-range::-webkit-slider-runnable-track {
     width: 100%;
     height: 10px;
-    /* background: linear-gradient(to right, #4a47a3 0%, #4a47a3 50%, #ddd 50%); */
-    background: linear-gradient(to right, #4a47a3 0%, #4a47a3 calc(var(--value) * 100% - 10px), #ddd calc(var(--value) * 100% - 10px), #ddd 100%);
+    background: linear-gradient(to right, #4a47a3 calc(var(--value) * 100%), #ddd 100%, #ddd 100%);
     border-radius: 5px;
 }
 
