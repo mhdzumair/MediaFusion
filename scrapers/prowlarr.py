@@ -57,18 +57,20 @@ async def get_streams_from_prowlarr(
 
 
 @asynccontextmanager
-async def get_prowlarr_client():
+async def get_prowlarr_client(timeout: int = 10):
     headers = {
         "accept": "application/json",
         "X-Api-Key": settings.prowlarr_api_key,
     }
-    async with httpx.AsyncClient(headers=headers, timeout=10) as client:
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
         yield client
 
 
-async def fetch_stream_data(url: str, params: dict) -> dict | list[dict]:
+async def fetch_stream_data(
+    url: str, params: dict, timeout: int = 10
+) -> dict | list[dict]:
     """Fetch stream data asynchronously."""
-    async with get_prowlarr_client() as client:
+    async with get_prowlarr_client(timeout) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
         return response.json()
@@ -87,15 +89,11 @@ async def is_prowlarr_healthy() -> bool:
 
 
 async def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
-    should_retry = retries_so_far < 5 and isinstance(exception, httpx.HTTPError)
+    should_retry = retries_so_far < 10 and isinstance(exception, httpx.HTTPError)
     if not should_retry:
         logging.error(f"Failed to fetch data from Prowlarr: {exception}")
         return False
-
-    while True:
-        if await is_prowlarr_healthy():
-            return True
-        await asyncio.sleep(5)
+    return True
 
 
 async def scrap_movies_streams_from_prowlarr(
@@ -138,7 +136,7 @@ async def background_movie_title_search(video_id: str, title: str, year: str):
         "categories": [2000],  # Movies
         "type": "search",
     }
-    title_search = await fetch_stream_data(url, params_title)
+    title_search = await fetch_stream_data(url, params_title, timeout=100)
     if title_search:
         await parse_and_store_movie_stream_data(video_id, title, year, title_search)
         logging.info(f"Background title search completed for {title} ({year})")
@@ -193,7 +191,7 @@ async def background_series_title_search(
     if season is not None and episode is not None:
         params_title.update({"season": season, "episode": episode})
 
-    title_search = await fetch_stream_data(url, params_title)
+    title_search = await fetch_stream_data(url, params_title, timeout=60)
     if title_search:
         await parse_and_store_series_stream_data(video_id, title, season, title_search)
         logging.info(
