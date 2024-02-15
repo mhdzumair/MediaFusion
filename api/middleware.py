@@ -10,7 +10,7 @@ from starlette.routing import Match
 
 from db.config import settings
 from db.schemas import UserData
-from utils import crypto
+from utils import crypto, const
 
 
 def get_client_ip(request: Request) -> str | None:
@@ -107,10 +107,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return Response(
                 content="Rate limit exceeded",
                 status_code=429,
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Headers": "*",
-                },
+                headers=const.NO_CACHE_HEADERS,
             )
 
         return await call_next(request)

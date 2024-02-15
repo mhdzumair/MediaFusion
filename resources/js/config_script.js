@@ -206,13 +206,13 @@ oAuthBtn.addEventListener('click', async function () {
     document.getElementById('provider_token').disabled = true;
 
     if (provider === 'seedr') {
-        await initiateOAuthFlow('/seedr/get-device-code', '/seedr/authorize');
+        await initiateOAuthFlow('/streaming_provider/seedr/get-device-code', '/streaming_provider/seedr/authorize');
     } else if (provider === 'realdebrid') {
-        await initiateOAuthFlow('/realdebrid/get-device-code', '/realdebrid/authorize');
+        await initiateOAuthFlow('/streaming_provider/realdebrid/get-device-code', '/streaming_provider/realdebrid/authorize');
     } else if (provider === 'debridlink') {
-        await initiateOAuthFlow('/debridlink/get-device-code', '/debridlink/authorize')
+        await initiateOAuthFlow('/streaming_provider/debridlink/get-device-code', '/streaming_provider/debridlink/authorize')
     } else if (provider === 'premiumize') {
-        return window.location.href = "/premiumize/authorize";
+        return window.location.href = "/streaming_provider/premiumize/authorize";
     }
 });
 

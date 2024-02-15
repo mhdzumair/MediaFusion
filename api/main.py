@@ -14,25 +14,13 @@ from fastapi import (
     HTTPException,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from api import middleware
 from db import database, crud, schemas
 from db.config import settings
-from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
-from streaming_providers.debridlink.api import router as debridlink_router
-from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
-from streaming_providers.exceptions import ProviderException
-from streaming_providers.offcloud.utils import get_direct_link_from_offcloud
-from streaming_providers.pikpak.utils import get_direct_link_from_pikpak
-from streaming_providers.premiumize.api import router as premiumize_router
-from streaming_providers.premiumize.utils import get_direct_link_from_premiumize
-from streaming_providers.realdebrid.api import router as realdebrid_router
-from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
-from streaming_providers.seedr.api import router as seedr_router
-from streaming_providers.seedr.utils import get_direct_link_from_seedr
-from streaming_providers.torbox.utils import get_direct_link_from_torbox
+from streaming_providers.routes import router as streaming_provider_router
 from utils import crypto, torrent, poster, const, rate_limiter
 from utils.parser import generate_manifest
 
@@ -58,16 +46,6 @@ app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
 TEMPLATES = Jinja2Templates(directory="resources")
-headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "*",
-    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=604800, public",
-}
-no_cache_headers = {
-    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-    "Pragma": "no-cache",
-    "Expires": "0",
-}
 
 
 def get_user_data(request: Request) -> schemas.UserData:
@@ -143,7 +121,7 @@ async def get_favicon():
 @app.get("/static/{file_path:path}")
 async def function(file_path: str):
     response = FileResponse(f"resources/{file_path}")
-    response.headers.update(headers)
+    response.headers.update(const.DEFAULT_HEADERS)
     return response
 
 
@@ -154,8 +132,7 @@ async def configure(
     request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    response.headers.update(headers)
-    response.headers.update(no_cache_headers)
+    response.headers.update(const.NO_CACHE_HEADERS)
 
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
@@ -177,7 +154,7 @@ async def configure(
 async def get_manifest(
     response: Response, user_data: schemas.UserData = Depends(get_user_data)
 ):
-    response.headers.update({**headers, **no_cache_headers})
+    response.headers.update(const.NO_CACHE_HEADERS)
 
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
@@ -236,7 +213,7 @@ async def get_catalog(
     genre: str = None,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    response.headers.update(headers)
+    response.headers.update(const.DEFAULT_HEADERS)
     if genre and "&" in genre:
         genre, skip = genre.split("&")
         skip = skip.split("=")[1] if "=" in skip else "0"
@@ -246,7 +223,7 @@ async def get_catalog(
     if user_data.streaming_provider and catalog_id.startswith(
         user_data.streaming_provider.service
     ):
-        response.headers.update(no_cache_headers)
+        response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
 
     # Try retrieving the cached data
@@ -295,7 +272,7 @@ async def search_meta(
     ],
     search_query: str,
 ):
-    response.headers.update(headers)
+    response.headers.update(const.DEFAULT_HEADERS)
     logging.debug("search for catalog_id: %s", catalog_id)
 
     return await crud.process_search_query(search_query, catalog_type)
@@ -321,7 +298,7 @@ async def get_meta(
     response: Response,
     request: Request,
 ):
-    response.headers.update(headers)
+    response.headers.update(const.DEFAULT_HEADERS)
 
     cache_key = f"{catalog_type}_{meta_id}_meta"
     # Try retrieving the cached data
@@ -380,7 +357,7 @@ async def get_streams(
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    response.headers.update(headers)
+    response.headers.update(const.DEFAULT_HEADERS)
 
     if catalog_type == "movie":
         fetched_streams = await crud.get_movie_streams(
@@ -400,82 +377,6 @@ async def get_streams(
 async def encrypt_user_data(user_data: schemas.UserData):
     encrypted_str = crypto.encrypt_user_data(user_data)
     return {"encrypted_str": encrypted_str}
-
-
-@app.get("/{secret_str}/streaming_provider", tags=["streaming_provider"])
-@rate_limiter.exclude
-async def streaming_provider_endpoint(
-    secret_str: str,
-    info_hash: str,
-    response: Response,
-    request: Request,
-    season: int = None,
-    episode: int = None,
-):
-    response.headers.update(headers)
-    response.headers.update(no_cache_headers)
-
-    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
-    if not user_data.streaming_provider:
-        raise HTTPException(status_code=400, detail="No streaming provider set.")
-
-    stream = await crud.get_stream_by_info_hash(info_hash)
-    if not stream:
-        raise HTTPException(status_code=400, detail="Stream not found.")
-
-    magnet_link = await torrent.convert_info_hash_to_magnet(
-        info_hash, stream.announce_list
-    )
-
-    episode_data = stream.get_episode(season, episode)
-    filename = episode_data.filename if episode_data else stream.filename
-
-    try:
-        if user_data.streaming_provider.service == "seedr":
-            video_url = await get_direct_link_from_seedr(
-                info_hash, magnet_link, user_data, stream, filename, 1, 0
-            )
-        elif user_data.streaming_provider.service == "realdebrid":
-            video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data, filename, stream.file_index, 1, 0
-            )
-        elif user_data.streaming_provider.service == "alldebrid":
-            video_url = get_direct_link_from_alldebrid(
-                info_hash, magnet_link, user_data, filename, 1, 0
-            )
-        elif user_data.streaming_provider.service == "offcloud":
-            video_url = get_direct_link_from_offcloud(
-                info_hash, magnet_link, user_data, filename, 1, 0
-            )
-        elif user_data.streaming_provider.service == "pikpak":
-            video_url = await get_direct_link_from_pikpak(
-                info_hash, magnet_link, user_data, stream, filename, 1, 0
-            )
-        elif user_data.streaming_provider.service == "torbox":
-            video_url = get_direct_link_from_torbox(
-                info_hash, magnet_link, user_data, filename, 1, 0
-            )
-        elif user_data.streaming_provider.service == "premiumize":
-            video_url = get_direct_link_from_premiumize(
-                info_hash, magnet_link, user_data, stream.torrent_name, filename, 1, 0
-            )
-        else:
-            video_url = get_direct_link_from_debridlink(
-                info_hash, magnet_link, user_data, filename, stream.file_index, 1, 0
-            )
-    except ProviderException as error:
-        logging.error(
-            "Exception occurred for %s: %s",
-            info_hash,
-            error.message,
-            exc_info=True if error.video_file_name == "api_error.mp4" else False,
-        )
-        video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
-    except Exception as e:
-        logging.error("Exception occurred for %s: %s", info_hash, e, exc_info=True)
-        video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
-
-    return RedirectResponse(url=video_url, headers=response.headers)
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
@@ -516,7 +417,7 @@ async def get_poster(
         image_byte_io.seek(0)
 
         return StreamingResponse(
-            image_byte_io, media_type="image/jpeg", headers=headers
+            image_byte_io, media_type="image/jpeg", headers=const.DEFAULT_HEADERS
         )
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}")
@@ -525,7 +426,6 @@ async def get_poster(
         raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 
-app.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
-app.include_router(realdebrid_router, prefix="/realdebrid", tags=["realdebrid"])
-app.include_router(debridlink_router, prefix="/debridlink", tags=["debridlink"])
-app.include_router(premiumize_router, prefix="/premiumize", tags=["premiumize"])
+app.include_router(
+    streaming_provider_router, prefix="/streaming_provider", tags=["streaming_provider"]
+)

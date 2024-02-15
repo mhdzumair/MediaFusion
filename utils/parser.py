@@ -152,7 +152,7 @@ async def parse_stream_data(
         }
 
         if user_data.streaming_provider:
-            base_proxy_url = f"{settings.host_url}/{secret_str}/streaming_provider?info_hash={stream_data.id}"
+            base_proxy_url = f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={stream_data.id}"
             if episode_data:
                 base_proxy_url += f"&season={season}&episode={episode}"
             stream_details["url"] = base_proxy_url
