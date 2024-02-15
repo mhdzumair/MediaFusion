@@ -2,6 +2,7 @@
 const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
 const servicesRequiringCredentials = ['pikpak',];
+const rangeInput = document.querySelector('.form-range');
 const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
@@ -308,3 +309,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+rangeInput.addEventListener('input', function() {
+    this.style.setProperty('--value', (this.value - this.min) / (this.max - this.min));
+});
