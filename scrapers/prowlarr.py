@@ -243,6 +243,7 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
         "YourBittorrent",
         "The Pirate Bay",
         "RuTracker.RU",
+        "BitSearch",
     ]:
         # For these indexers, the guid is a direct torrent file download link
         download_url = meta_data.get("guid")
@@ -253,8 +254,6 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
             meta_data.update(
                 await torrent_downloads.get_torrent_info(meta_data.get("infoUrl"))
             )
-        if meta_data.get("indexer") == "BitSearch":
-            meta_data["downloadUrl"] = meta_data["magnetUrl"]
 
         download_url = meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
 
