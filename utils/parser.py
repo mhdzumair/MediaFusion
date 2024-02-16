@@ -287,15 +287,23 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
 
 
 def generate_manifest(manifest: dict, user_data: UserData) -> dict:
-    resources = manifest["resources"]
+    resources = manifest.get("resources", [])
+
+    # Ensure catalogs are enabled
     if user_data.enable_catalogs:
-        manifest["catalogs"] = [
-            cat
-            for cat in manifest["catalogs"]
-            if cat["id"] in user_data.selected_catalogs
-        ]
+        # Reorder catalogs based on the user's selection order
+        ordered_catalogs = []
+        for catalog_id in user_data.selected_catalogs:
+            for catalog in manifest.get("catalogs", []):
+                if catalog["id"] == catalog_id:
+                    ordered_catalogs.append(catalog)
+                    break
+
+        manifest["catalogs"] = ordered_catalogs
     else:
+        # If catalogs are not enabled, clear them from the manifest
         manifest["catalogs"] = []
+        # Define a default stream resource if catalogs are disabled
         resources = [
             {
                 "name": "stream",
@@ -304,11 +312,13 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
             }
         ]
 
+    # Adjust manifest details based on the selected streaming provider
     if user_data.streaming_provider:
         provider_name = user_data.streaming_provider.service.title()
         manifest["name"] += f" {provider_name}"
         manifest["id"] += f".{provider_name.lower()}"
 
+        # Include watchlist catalogs if enabled
         if user_data.streaming_provider.enable_watchlist_catalogs:
             watchlist_catalogs = [
                 {
@@ -324,9 +334,11 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
                     "extra": [{"name": "skip", "isRequired": False}],
                 },
             ]
+            # Prepend watchlist catalogs to the sorted user-selected catalogs
             manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
             resources = manifest["resources"]
 
+    # Ensure the resource list is updated accordingly
     manifest["resources"] = resources
     return manifest
 

@@ -307,3 +307,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
 });
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize Sortable on the catalog container
+    new Sortable(document.getElementById('catalogs'), {
+        handle: '.draggable-catalog', // Use the grip handle for drag operations
+        animation: 150, // Animation speed for the sort operation
+        ghostClass: 'sortable-ghost', // Class for the ghost element
+        dragClass: 'sortable-drag', // Class applied to the element being dragged
+    });
+});

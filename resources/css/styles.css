@@ -251,6 +251,31 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     margin-top: 1rem;
 }
 
+.draggable-catalog {
+    cursor: grab; /* Indicates the item can be dragged */
+    padding: 10px; /* Optional: Adjust padding for better visual */
+    border-radius: 5px; /* Optional: Rounded corners for aesthetics */
+    transition: box-shadow 0.2s ease; /* Smooth transition for shadow */
+}
+
+.draggable-catalog:hover {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Shadow effect on hover */
+}
+
+/* Style for the element being dragged */
+.sortable-drag {
+    background-color: rgba(74, 71, 163, 0.2);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* More pronounced shadow for the dragging item */
+}
+
+/* Style for the placeholder of the original position */
+.sortable-ghost {
+    opacity: 0.4; /* Slightly see-through */
+    background-color: #4a47a3; /* Different background to distinguish */
+}
+
+
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .config-container {
