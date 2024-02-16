@@ -100,3 +100,5 @@ NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+TORRENT_SORTING_PRIORITY = ["cached", "size", "seeders", "created_at"]

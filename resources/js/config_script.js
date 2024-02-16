@@ -222,6 +222,7 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
     const provider = document.getElementById('provider_service').value;
     let isValid = true;
+    const maxStreamsPerResolution = document.getElementById('maxStreamsPerResolution').value;
 
     const validateInput = (elementId, condition) => {
         const element = document.getElementById(elementId);
@@ -242,6 +243,9 @@ document.getElementById('configForm').addEventListener('submit', async function 
         validateInput('username', document.getElementById('username').value);
         validateInput('password', document.getElementById('password').value);
     }
+
+    // Validation for Max Streams Per Resolution
+    validateInput('maxStreamsPerResolution', !isNaN(maxStreamsPerResolution) && maxStreamsPerResolution > 0);
 
     if (isValid) {
         let streamingProviderData = {};
@@ -268,6 +272,12 @@ document.getElementById('configForm').addEventListener('submit', async function 
         // Check if the max size is set to the slider's max value, which we treat as 'infinity'
         const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
 
+        // Capturing data from the Stream Sorting Priority
+        const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
+
+        // Capturing the selected Torrent Display Option
+        const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
+
 
         const userData = {
             streaming_provider: streamingProviderData,
@@ -275,6 +285,9 @@ document.getElementById('configForm').addEventListener('submit', async function 
             selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
             enable_catalogs: document.getElementById('enable_catalogs').checked,
             max_size: maxSizeBytes,
+            max_streams_per_resolution: maxStreamsPerResolution,
+            torrent_sorting_priority: selectedSortingOptions,
+            show_full_torrent_name: torrentDisplayOption === 'fullName',
         };
 
         try {
@@ -316,5 +329,11 @@ document.addEventListener('DOMContentLoaded', function () {
         animation: 150, // Animation speed for the sort operation
         ghostClass: 'sortable-ghost', // Class for the ghost element
         dragClass: 'sortable-drag', // Class applied to the element being dragged
+    });
+    new Sortable(document.getElementById('streamSortOrder'), {
+        handle: '.sortable-list',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
     });
 });

@@ -138,13 +138,22 @@ async def configure(
     if user_data.streaming_provider:
         user_data.streaming_provider.password = None
 
+    # Prepare catalogs based on user preferences or default order
+    sorted_catalogs = sorted(
+        zip(const.CATALOG_ID_DATA, const.CATALOG_NAME_DATA),
+        key=lambda x: user_data.selected_catalogs.index(x[0])
+        if x[0] in user_data.selected_catalogs
+        else len(user_data.selected_catalogs),
+    )
+
     return TEMPLATES.TemplateResponse(
         "html/configure.html",
         {
             "request": request,
             "user_data": user_data.model_dump(),
-            "catalogs": zip(const.CATALOG_ID_DATA, const.CATALOG_NAME_DATA),
+            "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
+            "sorting_options": const.TORRENT_SORTING_PRIORITY,
         },
     )
 

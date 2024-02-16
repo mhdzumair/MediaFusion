@@ -107,8 +107,8 @@
                     <hr class="section-divider">
 
                     <div class="mb-3">
-                        <h6>Select Catalogs: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                   title="Select the types of content you wish to see in your Stremio's catalog. Uncheck to hide specific categories."></span></h6>
+                        <h6>Select & Arrange Catalogs: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                             title="Select and arrange the catalogs that you want to display in Stremio."></span></h6>
                         <div id="catalogs" class="row">
                             {% for catalog in catalogs %}
                             <div class="col-12 col-md-6 col-lg-4 draggable-catalog" data-id="{{ catalog[0] }}">
@@ -153,7 +153,9 @@
 
                 <!-- Streaming Filter Configuration -->
                 <div class="section-container">
-                    <h4 class="section-header">Streaming Filters</h4>
+                    <h4 class="section-header">Streaming Preferences <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                           title="Customize how streams are sorted, limit results, and choose torrent display options to tailor your streaming experience in Stremio."></span>
+                    </h4>
                     <hr class="section-divider">
 
                     <!-- Select Streaming Resolutions -->
@@ -179,8 +181,8 @@
 
                     <!-- File Size Range Filter -->
                     <div class="mb-3">
-                        <h6>Select File Size Filter: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                           title="Select the file size range for the streams. Slide to the end for no limit."></span></h6>
+                        <h6>Set File Size Filter: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                        title="Select the file size range for the streams. Slide to the end for no limit."></span></h6>
                         <!-- Slider for the file size -->
                         <input type="range" class="form-range" id="max_size_slider" name="size_slider" min="0" max="21000000000"
                                value="{{ user_data.max_size if user_data.max_size < 21000000000 else 21000000000 }}" step="1000000">
@@ -188,6 +190,56 @@
                         <span id="max_size_output">Unlimited</span>
                     </div>
 
+
+                    <!-- Stream Sorting Priority -->
+                    <div class="mb-3">
+                        <h6>Select & Arrange Sorting Priority: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                     title="Select and arrange the sorting options that you want to display in Stremio."></span></h6>
+
+                        <div id="streamSortOrder" class="row">
+                            {% for sorting_option in sorting_options %}
+                            <div class="col-12 col-md-6 col-lg-4 sortable-list" data-id="{{ sorting_option }}">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="selected_sorting_options"
+                                           value="{{ sorting_option }}"
+                                           id="sorting_{{ sorting_option }}"
+                                           {% if sorting_option in user_data.torrent_sorting_priority %}checked{% endif %}>
+                                    <label class="form-check-label" for="sorting_{{ sorting_option }}">
+                                        {{ sorting_option.replace('_', ' ').title() }}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                    </div>
+
+                    <!-- Maximum Streams Result per Resolution Configuration -->
+                    <div class="mb-3">
+                        <label for="maxStreamsPerResolution">Max Streams Per Resolution: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                               title="Enter the maximum number of streams per resolution to display in Stremio."></span></label>
+                        <input type="number" class="form-control" id="maxStreamsPerResolution" name="maxStreamsPerResolution" min="1" placeholder="Enter maximum streams per resolution"
+                               value="{{ user_data.max_streams_per_resolution }}">
+                    </div>
+
+                    <!-- Torrent Information Display Configuration -->
+                    <div class="mb-3">
+                        <h6>Torrent Stream Display option: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                          title="Choose how you want to display the torrent information in Stremio."></span></h6>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="torrentDisplayOption" id="showParsedTorrentData" value="parsedData" {% if not user_data.show_full_torrent_name
+                                   %}checked{% endif %}>
+                            <label class="form-check-label" for="showParsedTorrentData">
+                                Show Parsed Data (Quality, Resolution, Codec, Audio.)
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="torrentDisplayOption" id="showTorrentName" value="fullName" {% if user_data.show_full_torrent_name %}checked{% endif %}>
+                            <label class="form-check-label" for="showTorrentName">
+                                Show Torrent Full Name
+                            </label>
+                        </div>
+                    </div>
 
                 </div>
 
