@@ -39,12 +39,16 @@ async def get_streams_from_prowlarr(
         return streams
 
     if catalog_type == "movie":
-        streams.extend(await scrap_movies_streams_from_prowlarr(video_id, title, year))
+        new_streams = await fetch_stream_data_with_timeout(
+            scrap_movies_streams_from_prowlarr, video_id, title, year
+        )
+        streams.extend(new_streams)
         background_movie_title_search.send(video_id, title, year)
     elif catalog_type == "series":
-        streams.extend(
-            await scrap_series_streams_from_prowlarr(video_id, title, season, episode)
+        new_streams = await fetch_stream_data_with_timeout(
+            scrap_series_streams_from_prowlarr, video_id, title, season, episode
         )
+        streams.extend(new_streams)
         background_series_title_search.send(video_id, title, season, episode)
     # Cache the data for 24 hours
     await redis.set(
@@ -54,6 +58,23 @@ async def get_streams_from_prowlarr(
     )
 
     return streams
+
+
+async def fetch_stream_data_with_timeout(func, *args):
+    """
+    Attempts to fetch stream data within a specified timeout.
+    If the operation exceeds the timeout, it logs a warning and ignores the operation.
+    """
+    try:
+        # Attempt the operation with a prowlarr immediate max process time.
+        return await asyncio.wait_for(func(*args), timeout=settings.prowlarr_immediate_max_process_time)
+    except asyncio.TimeoutError:
+        # Log a warning if the operation takes too long but don't reschedule.
+        logging.warning(f"Timeout exceeded for operation: {func.__name__} {args}. Skipping.")
+    except Exception as e:
+        # Log any other errors that occur.
+        logging.error(f"Error during operation: {e}")
+    return []
 
 
 @asynccontextmanager
@@ -74,18 +95,6 @@ async def fetch_stream_data(
         response = await client.get(url, params=params)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
         return response.json()
-
-
-async def is_prowlarr_healthy() -> bool:
-    health_url = f"{settings.prowlarr_url}/api/v1/health"
-    try:
-        async with get_prowlarr_client() as client:
-            response = await client.get(health_url)
-            response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
-            return True
-    except Exception as e:
-        logging.error(f"Prowlarr health check failed: {e}")
-        return False
 
 
 async def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
@@ -524,7 +533,7 @@ async def parse_and_store_movie_stream_data(
     parsed_results = await batch_process_with_circuit_breaker(
         parse_and_store_stream,
         stream_data,
-        5,
+        10,
         3,
         circuit_breaker,
         video_id,
