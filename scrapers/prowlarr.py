@@ -67,10 +67,14 @@ async def fetch_stream_data_with_timeout(func, *args):
     """
     try:
         # Attempt the operation with a prowlarr immediate max process time.
-        return await asyncio.wait_for(func(*args), timeout=settings.prowlarr_immediate_max_process_time)
+        return await asyncio.wait_for(
+            func(*args), timeout=settings.prowlarr_immediate_max_process_time
+        )
     except asyncio.TimeoutError:
         # Log a warning if the operation takes too long but don't reschedule.
-        logging.warning(f"Timeout exceeded for operation: {func.__name__} {args}. Skipping.")
+        logging.warning(
+            f"Timeout exceeded for operation: {func.__name__} {args}. Skipping."
+        )
     except Exception as e:
         # Log any other errors that occur.
         logging.error(f"Error during operation: {e}")
