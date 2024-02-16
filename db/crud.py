@@ -19,7 +19,7 @@ from db.models import (
     Episode,
     MediaFusionTVMetaData,
 )
-from db.schemas import Stream, MetaIdProjection
+from db.schemas import Stream, MetaIdProjection, TorrentStreamsList
 from scrapers import tamilmv
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
@@ -120,14 +120,56 @@ async def get_tv_data_by_id(
     return tv_data
 
 
+async def get_cached_torrent_streams(
+    redis: Redis,
+    video_id: str,
+    season: Optional[int] = None,
+    episode: Optional[int] = None,
+) -> list[TorrentStreams]:
+    # Create a unique key for Redis
+    cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
+
+    # Try to get the data from the Redis cache
+    cached_data = await redis.get(cache_key)
+
+    if cached_data is not None:
+        # If the data is in the cache, deserialize it and return it
+        streams = TorrentStreamsList.model_validate_json(cached_data).streams
+    else:
+        # If the data is not in the cache, query it from the database
+        if season is not None and episode is not None:
+            streams = (
+                await TorrentStreams.find({"meta_id": video_id})
+                .find(
+                    {
+                        "season.season_number": season,
+                        "season.episodes.episode_number": episode,
+                    }
+                )
+                .sort(-TorrentStreams.updated_at)
+                .to_list()
+            )
+        else:
+            streams = (
+                await TorrentStreams.find({"meta_id": video_id})
+                .sort(-TorrentStreams.updated_at)
+                .to_list()
+            )
+
+        torrent_streams = TorrentStreamsList(streams=streams)
+
+        # Serialize the data and store it in the Redis cache for 6 hours
+        await redis.set(
+            cache_key, torrent_streams.model_dump_json(exclude_none=True), ex=21600
+        )
+
+    return streams
+
+
 async def get_movie_streams(
     user_data, secret_str: str, redis: Redis, video_id: str
 ) -> list[Stream]:
-    streams = (
-        await TorrentStreams.find({"meta_id": video_id})
-        .sort(-TorrentStreams.updated_at)
-        .to_list()
-    )
+    streams = await get_cached_torrent_streams(redis, video_id)
 
     if video_id.startswith("tt"):
         if (
@@ -162,14 +204,7 @@ async def get_series_streams(
     season: int,
     episode: int,
 ) -> list[Stream]:
-    streams = (
-        await TorrentStreams.find({"meta_id": video_id})
-        .find(
-            {"season.season_number": season, "season.episodes.episode_number": episode}
-        )
-        .sort(-TorrentStreams.updated_at)
-        .to_list()
-    )
+    streams = await get_cached_torrent_streams(redis, video_id, season, episode)
 
     if video_id.startswith("tt"):
         if (

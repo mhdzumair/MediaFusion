@@ -304,7 +304,10 @@ async def get_meta(
     # Try retrieving the cached data
     cached_data = await request.app.state.redis.get(cache_key)
     if cached_data:
-        return json.loads(cached_data)
+        meta_data = json.loads(cached_data)
+        if not meta_data:
+            raise HTTPException(status_code=404, detail="Meta ID not found.")
+        return meta_data
 
     if catalog_type == "movie":
         data = await crud.get_movie_meta(meta_id)
@@ -313,11 +316,12 @@ async def get_meta(
     else:
         data = await crud.get_tv_meta(meta_id)
 
+    # Cache the data with a TTL of 6 hours
+    # If the data is not found, cached the empty data to avoid db query.
+    await request.app.state.redis.set(cache_key, json.dumps(data), ex=21600)
+
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
-
-    # Cache the data with a TTL of 6 hours
-    await request.app.state.redis.set(cache_key, json.dumps(data), ex=21600)
 
     return data
 

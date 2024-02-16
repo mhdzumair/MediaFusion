@@ -3,6 +3,7 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator, field_validator
 
+from db.models import TorrentStreams
 from utils import const
 
 
@@ -156,3 +157,7 @@ class TVMetaData(BaseModel):
     logo: Optional[str] = None
     genres: list[str] = []
     streams: list[TVStreams]
+
+
+class TorrentStreamsList(BaseModel):
+    streams: list[TorrentStreams]
