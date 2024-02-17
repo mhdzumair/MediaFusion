@@ -25,10 +25,10 @@
 
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)
 
-- **Scrapper Support**:
+- **scraper Support**:
   - **Prowlarr Integration**: Enhances scraping capabilities through Prowlarr integration.
-  - **Torrentio Streams**: Supports scrapping from Torrentio streams (disabled by default).
-  - **Regional Content Scrapping**: Dedicated scrapping for TamilMV and TamilBlasters movies and series, along with TamilUltra and MHDTVPlay for Live TV channels.
+  - **Torrentio Streams**: Supports scraping from Torrentio streams (disabled by default).
+  - **Regional Content scraping**: Dedicated scraping for TamilMV and TamilBlasters movies and series, along with TamilUltra and MHDTVPlay for Live TV channels.
 
 - **Additonal Features**:
   - **User Data Encryption**: User data is encrypted upon configuring the addon, ensuring privacy and security. Only the encrypted URL is stored on Stremio, and it is passed as an encrypted string for each request.

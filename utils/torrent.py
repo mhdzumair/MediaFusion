@@ -17,6 +17,8 @@ from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
 from torf import Magnet
 
+from utils.parser import is_contain_18_plus_keywords
+
 # remove logging from demagnetize
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
@@ -71,6 +73,12 @@ def extract_torrent_metadata(content: bytes) -> dict:
             tracker[0].decode() for tracker in torrent_data.get(b"announce-list", [])
         ]
         torrent_name = info.get(b"name", b"").decode() or file_data[0]["filename"]
+        if is_contain_18_plus_keywords(torrent_name):
+            logging.warning(
+                f"Torrent name contains 18+ keywords: {torrent_name}. Skipping"
+            )
+            return {}
+
         largest_file = max(file_data, key=lambda x: x["size"])
 
         return {

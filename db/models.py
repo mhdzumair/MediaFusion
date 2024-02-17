@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, Any
 
 import pymongo
-from beanie import Document, Link, BackLink
+from beanie import Document, Link
 from pydantic import BaseModel, Field
 from pymongo import IndexModel, ASCENDING
 

@@ -97,6 +97,28 @@ function updateSizeOutput() {
 
 // ---- Helper Functions ----
 
+
+function showNotification(message, type = 'info') {
+    toastr.options = {
+        closeButton: true,
+        newestOnTop: true,
+        progressBar: true,
+        positionClass: "toast-top-center",
+        preventDuplicates: true,
+        onclick: null,
+        showDuration: "300",
+        hideDuration: "1000",
+        timeOut: "5000",
+        extendedTimeOut: "1000",
+        showEasing: "swing",
+        hideEasing: "linear",
+        showMethod: "fadeIn",
+        hideMethod: "fadeOut",
+    };
+
+    toastr[type](message);
+}
+
 function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
 }
@@ -179,6 +201,91 @@ function updateProviderFields(isChangeEvent = false) {
     adjustOAuthSectionDisplay();
 }
 
+// Function to get installation URL
+async function getInstallationUrl(userData) {
+    try {
+        const response = await fetch('/encrypt-user-data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
+        });
+        const data = await response.json();
+        if (!data.encrypted_str) {
+            showNotification('An error occurred while encrypting user data', 'error');
+            return null;
+        }
+        return "stremio://" + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+    } catch (error) {
+        showNotification('An error occurred while encrypting user data', 'error');
+        console.error('Error encrypting user data:', error);
+        return null;
+    }
+}
+
+function getUserData() {
+    let isValid = true;
+    const provider = document.getElementById('provider_service').value;
+    let streamingProviderData = {};
+
+    const validateInput = (elementId, condition) => {
+        const element = document.getElementById(elementId);
+        if (condition) {
+            element.classList.remove('is-invalid');
+        } else {
+            element.classList.add('is-invalid');
+            if (isValid) {
+                element.focus(); // Set focus on the first invalid input
+            }
+            isValid = false;
+        }
+    };
+
+    if (provider) {
+        if (servicesRequiringCredentials.includes(provider)) {
+            validateInput('username', document.getElementById('username').value);
+            validateInput('password', document.getElementById('password').value);
+            streamingProviderData.username = document.getElementById('username').value;
+            streamingProviderData.password = document.getElementById('password').value;
+        } else {
+            validateInput('provider_token', document.getElementById('provider_token').value);
+            streamingProviderData.token = document.getElementById('provider_token').value;
+        }
+        streamingProviderData.service = provider;
+        streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
+    } else {
+        streamingProviderData = null;
+    }
+
+    const maxSizeSlider = document.getElementById('max_size_slider');
+    const maxSizeValue = maxSizeSlider.value;
+    const maxSize = maxSizeSlider.max;
+    const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
+
+    const maxStreamsPerResolution = document.getElementById('maxStreamsPerResolution').value;
+    validateInput('maxStreamsPerResolution', maxStreamsPerResolution && !isNaN(maxStreamsPerResolution) && maxStreamsPerResolution > 0);
+
+    if (!isValid) {
+        return null; // Return null if validation fails
+    }
+
+    const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
+    const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
+
+    // Return user data if all validations pass
+    return {
+        streaming_provider: streamingProviderData,
+        selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
+        selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
+        enable_catalogs: document.getElementById('enable_catalogs').checked,
+        max_size: maxSizeBytes,
+        max_streams_per_resolution: maxStreamsPerResolution,
+        torrent_sorting_priority: selectedSortingOptions,
+        show_full_torrent_name: torrentDisplayOption === 'fullName',
+    };
+}
+
 // ---- Event Listeners ----
 
 document.getElementById('provider_token').addEventListener('input', function () {
@@ -206,90 +313,62 @@ oAuthBtn.addEventListener('click', async function () {
     document.getElementById('provider_token').disabled = true;
 
     if (provider === 'seedr') {
-        await initiateOAuthFlow('/seedr/get-device-code', '/seedr/authorize');
+        await initiateOAuthFlow('/streaming_provider/seedr/get-device-code', '/streaming_provider/seedr/authorize');
     } else if (provider === 'realdebrid') {
-        await initiateOAuthFlow('/realdebrid/get-device-code', '/realdebrid/authorize');
+        await initiateOAuthFlow('/streaming_provider/realdebrid/get-device-code', '/streaming_provider/realdebrid/authorize');
     } else if (provider === 'debridlink') {
-        await initiateOAuthFlow('/debridlink/get-device-code', '/debridlink/authorize')
+        await initiateOAuthFlow('/streaming_provider/debridlink/get-device-code', '/streaming_provider/debridlink/authorize')
     } else if (provider === 'premiumize') {
-        return window.location.href = "/premiumize/authorize";
+        return window.location.href = "/streaming_provider/premiumize/authorize";
     }
 });
 
 
 document.getElementById('configForm').addEventListener('submit', async function (event) {
     event.preventDefault();
+    const userData = getUserData();
 
-    const provider = document.getElementById('provider_service').value;
-    let isValid = true;
+    if (!userData) {
+        showNotification('Validation failed. Please check your input.', 'error');
+        return;
+    }
+    const installationUrl = await getInstallationUrl(userData);
+    if (installationUrl) {
+        window.location.href = installationUrl;
+    }
+});
 
-    const validateInput = (elementId, condition) => {
-        const element = document.getElementById(elementId);
-        if (condition) {
-            element.classList.remove('is-invalid');
-        } else {
-            element.classList.add('is-invalid');
-            isValid = false;
-        }
-    };
+document.getElementById('shareBtn').addEventListener('click', async function (event) {
+    event.preventDefault();
 
-    // Conditional validation based on provider
-    if (provider && !servicesRequiringCredentials.includes(provider)) {
-        // Validate token for providers that use token-based authentication
-        validateInput('provider_token', document.getElementById('provider_token').value);
-    } else if (servicesRequiringCredentials.includes(provider)) {
-        // Validate username and password for providers requiring credentials
-        validateInput('username', document.getElementById('username').value);
-        validateInput('password', document.getElementById('password').value);
+    const userData = getUserData();
+
+    if (!userData) {
+        showNotification('Validation failed. Please check your input.', 'error');
+        return;
     }
 
-    if (isValid) {
-        let streamingProviderData = {};
-        if (provider) {
-            if (servicesRequiringCredentials.includes(provider)) {
-                // Include username and password
-                streamingProviderData.username = document.getElementById('username').value;
-                streamingProviderData.password = document.getElementById('password').value;
-            } else {
-                // Include token
-                streamingProviderData.token = document.getElementById('provider_token').value;
-            }
-            streamingProviderData.service = provider;
-            streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
-        } else {
-            streamingProviderData = null;
-        }
-
-        // Get the max size value from the slider
-        const maxSizeSlider = document.getElementById('max_size_slider');
-        const maxSizeValue = maxSizeSlider.value;
-        const maxSize = maxSizeSlider.max;
-
-        // Check if the max size is set to the slider's max value, which we treat as 'infinity'
-        const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
-
-
-        const userData = {
-            streaming_provider: streamingProviderData,
-            selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
-            selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
-            enable_catalogs: document.getElementById('enable_catalogs').checked,
-            max_size: maxSizeBytes,
-        };
-
-        try {
-            const response = await fetch('/encrypt-user-data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(userData)
+    // If userData is valid, get the installation URL
+    const installationUrl = await getInstallationUrl(userData);
+    if (installationUrl) {
+        // Check if the Web Share API is available
+        if (navigator.share) {
+            navigator.share({
+                title: 'MediaFusion Addon Installation',
+                url: installationUrl,
+            }).then(() => {
+                showNotification('Installation URL shared successfully. Do not share this URL with unknown person', 'success');
+            }).catch((error) => {
+                showNotification('An error occurred while sharing the installation URL', 'error');
             });
-
-            const data = await response.json();
-            window.location.href = "stremio://" + window.location.host + "/" + data.encrypted_str + "/manifest.json";
-        } catch (error) {
-            console.error('Error encrypting user data:', error);
+        } else {
+            // Copy the installation URL to the clipboard
+            navigator.clipboard.writeText(installationUrl).then(() => {
+                showNotification('Installation URL copied to clipboard. Do not share this URL with unknown person', 'success');
+                // You can display a message to the user indicating that the URL has been copied.
+            }).catch((error) => {
+                showNotification('An error occurred while copying the installation URL to the clipboard', 'error');
+            });
         }
     }
 });
@@ -308,3 +387,19 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize Sortable on the catalog container
+    new Sortable(document.getElementById('catalogs'), {
+        handle: '.draggable-catalog', // Use the grip handle for drag operations
+        animation: 150, // Animation speed for the sort operation
+        ghostClass: 'sortable-ghost', // Class for the ghost element
+        dragClass: 'sortable-drag', // Class applied to the element being dragged
+    });
+    new Sortable(document.getElementById('streamSortOrder'), {
+        handle: '.sortable-list',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+    });
+});

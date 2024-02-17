@@ -17,15 +17,15 @@ UA_HEADER = {
 }
 PROXIES = (
     {
-        "http": settings.scrapper_proxy_url,
-        "https": settings.scrapper_proxy_url,
+        "http": settings.scraper_proxy_url,
+        "https": settings.scraper_proxy_url,
     }
-    if settings.scrapper_proxy_url
+    if settings.scraper_proxy_url
     else None
 )
 
 
-def get_scrapper_session():
+def get_scraper_session():
     session = requests.session()
     session.headers = UA_HEADER
     adapter = HTTPAdapter(
@@ -120,8 +120,8 @@ async def download_and_save_torrent(
     return result
 
 
-def get_scrapper_config(site_name: str, get_key: str) -> dict:
-    with open("resources/json/scrapper_config.json") as file:
+def get_scraper_config(site_name: str, get_key: str) -> dict:
+    with open("resources/json/scraper_config.json") as file:
         config = json.load(file)
 
     return config.get(site_name, {}).get(get_key, {})
@@ -160,7 +160,7 @@ async def update_torrent_series_streams_metadata(info_hashes: list[str]):
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:
-        if not stream_metadata:
+        if not (stream_metadata and "season" in stream_metadata):
             continue
 
         torrent_stream = await TorrentStreams.get(stream_metadata["info_hash"])

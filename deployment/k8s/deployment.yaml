@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.7.0
+        image: mhdzumair/mediafusion:v3.7.1
         ports:
         - containerPort: 80
         resources:
@@ -59,6 +59,11 @@ spec:
             value: "https://mediafusion.fun"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
             value: "3"
+          - name: REDIS_URL
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: REDIS_URL
         livenessProbe:
           httpGet:
             path: /health
@@ -81,7 +86,7 @@ kind: Deployment
 metadata:
   name: dramatiq-worker-deployment
 spec:
-  replicas: 1
+  replicas: 5
   selector:
     matchLabels:
       app: dramatiq-worker
@@ -92,8 +97,8 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.7.0
-        command: ["pipenv", "run", "dramatiq", "api.task"]
+        image: mhdzumair/mediafusion:v3.7.1
+        command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
             valueFrom:
@@ -110,12 +115,17 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
+          - name: REDIS_URL
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: REDIS_URL
         resources:
           requests:
-            memory: "300Mi"
+            memory: "500Mi"
             cpu: "200m"
           limits:
-            memory: "800Mi"
+            memory: "1Gi"
             cpu: "200m"
 
 ---
@@ -142,7 +152,11 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - >
-            curl -o /config/config.xml https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/xml/prowlarr-config.xml;
+            until curl -o /config/config.xml https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/xml/prowlarr-config.xml; do
+              echo "Failed to download config file. Retrying...";
+              sleep 3;
+            done;
+            echo "Config file downloaded successfully.";
             sed -i 's/$PROWLARR_API_KEY/'"$PROWLARR_API_KEY"'/g' /config/config.xml;
             chmod 664 /config/config.xml;
             echo "Prowlarr config setup complete.";
@@ -202,7 +216,10 @@ spec:
               sleep 5;
             done;
             echo "Prowlarr is ready, setting up indexers...";
-            curl -LO https://github.com/mhdzumair/MediaFusion/raw/main/resources/json/prowlarr-indexers.json;
+            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json; do
+              echo "Failed to download indexers file. Retrying...";
+              sleep 3;
+            done;
             jq -c '.[]' prowlarr-indexers.json | while read indexer; do
               echo "Adding indexer named: $(echo $indexer | jq -r '.name')";
               curl -H "Content-Type: application/json" -H "X-API-KEY: $PROWLARR_API_KEY" -X POST http://localhost:9696/api/v1/indexer -d "$indexer";
@@ -229,7 +246,7 @@ kind: Deployment
 metadata:
   name: redis-deployment
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: redis
@@ -344,7 +361,7 @@ spec:
     kind: Deployment
     name: mediafusion-deployment
   minReplicas: 5
-  maxReplicas: 15
+  maxReplicas: 20
   targetCPUUtilizationPercentage: 50
 
 ---
@@ -361,8 +378,8 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.7.0
-            command: ["pipenv", "run", "python3", "-m", "scrappers.tamil_blasters", "--all"]
+            image: mhdzumair/mediafusion:v3.7.1
+            command: ["pipenv", "run", "python3", "-m", "scrapers.tamil_blasters", "--all"]
             resources:
               requests:
                 memory: "128Mi"
@@ -396,8 +413,8 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.7.0
-            command: ["pipenv", "run", "python3", "-m", "scrappers.tamilmv", "--all"]
+            image: mhdzumair/mediafusion:v3.7.1
+            command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
             resources:
               requests:
                 memory: "128Mi"

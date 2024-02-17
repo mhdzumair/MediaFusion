@@ -10,12 +10,12 @@ from redis.asyncio import Redis
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
 from db.schemas import UserData
-from scrappers.helpers import (
+from scrapers.helpers import (
     UA_HEADER,
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
 )
-from utils.parser import convert_size_to_bytes
+from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
 from utils.validation_helper import is_video_file
 
 
@@ -54,7 +54,7 @@ async def get_streams_from_torrentio(
 async def fetch_stream_data(url: str) -> dict:
     """Fetch stream data asynchronously."""
     async with httpx.AsyncClient(
-        headers=UA_HEADER, proxy=settings.scrapper_proxy_url
+        headers=UA_HEADER, proxy=settings.scraper_proxy_url
     ) as client:
         response = await client.get(url, timeout=10)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
@@ -123,6 +123,10 @@ async def store_and_parse_movie_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
+        if is_contain_18_plus_keywords(stream["title"]):
+            logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
+            continue
+
         parsed_data = parse_stream_title(stream)
         if not parsed_data["seeders"]:
             continue
@@ -176,6 +180,10 @@ async def store_and_parse_series_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
+        if is_contain_18_plus_keywords(stream["title"]):
+            logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
+            continue
+
         parsed_data = parse_stream_title(stream)
         if not parsed_data["seeders"]:
             continue

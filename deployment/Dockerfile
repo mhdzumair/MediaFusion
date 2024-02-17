@@ -1,8 +1,5 @@
 FROM python:3.11-slim-bullseye
 
-ARG GIT_REV="dev"
-ENV GIT_REV=$GIT_REV
-
 WORKDIR /mediafusion
 
 # Install dependencies
@@ -15,8 +12,11 @@ COPY ../Pipfile Pipfile.lock ./
 
 RUN pipenv install --deploy --ignore-pipfile
 
+ARG GIT_REV="dev"
+ENV GIT_REV=$GIT_REV
+
 # Copy the source code
-COPY .. .
+COPY . .
 
 # Expose the port
 EXPOSE 80

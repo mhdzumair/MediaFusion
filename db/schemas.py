@@ -3,6 +3,7 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator, field_validator
 
+from db.models import TorrentStreams
 from utils import const
 
 
@@ -94,6 +95,9 @@ class UserData(BaseModel):
     selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True
     max_size: int | str | float = math.inf
+    max_streams_per_resolution: int = 3
+    show_full_torrent_name: bool = False
+    torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
 
     @model_validator(mode="after")
     def validate_selected_resolutions(self) -> "UserData":
@@ -116,6 +120,13 @@ class UserData(BaseModel):
         if v.isdigit():
             return int(v)
         raise ValueError("Invalid max_size")
+
+    @field_validator("torrent_sorting_priority", mode="after")
+    def validate_torrent_sorting_priority(cls, v):
+        for priority in v:
+            if priority not in const.TORRENT_SORTING_PRIORITY:
+                raise ValueError("Invalid priority")
+        return v
 
     class Config:
         extra = "ignore"
@@ -156,3 +167,7 @@ class TVMetaData(BaseModel):
     logo: Optional[str] = None
     genres: list[str] = []
     streams: list[TVStreams]
+
+
+class TorrentStreamsList(BaseModel):
+    streams: list[TorrentStreams]

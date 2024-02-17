@@ -42,49 +42,87 @@ from streaming_providers.torbox.utils import (
 )
 
 ia = Cinemagoer()
+ADULT_CONTENT_KEYWORDS = re.compile(
+    settings.adult_content_regex_keywords,
+    re.IGNORECASE,
+)
+# Define provider-specific cache update functions
+CACHE_UPDATE_FUNCTIONS = {
+    "alldebrid": update_ad_cache_status,
+    "debridlink": update_dl_cache_status,
+    "offcloud": update_oc_cache_status,
+    "pikpak": update_pikpak_cache_status,
+    "realdebrid": update_rd_cache_status,
+    "seedr": update_seedr_cache_status,
+    "torbox": update_torbox_cache_status,
+    "premiumize": update_pm_cache_status,
+}
+
+# Define provider-specific downloaded info hashes fetch functions
+FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS = {
+    "alldebrid": fetch_downloaded_info_hashes_from_ad,
+    "debridlink": fetch_downloaded_info_hashes_from_dl,
+    "offcloud": fetch_downloaded_info_hashes_from_oc,
+    "pikpak": fetch_downloaded_info_hashes_from_pikpak,
+    "realdebrid": fetch_downloaded_info_hashes_from_rd,
+    "seedr": fetch_downloaded_info_hashes_from_seedr,
+    "torbox": fetch_downloaded_info_hashes_from_torbox,
+    "premiumize": fetch_downloaded_info_hashes_from_premiumize,
+}
 
 
 async def filter_and_sort_streams(
     streams: list[TorrentStreams], user_data: UserData
 ) -> list[TorrentStreams]:
-    # Filter streams by selected catalogs and resolutions
+    # Convert to sets for faster lookups
+    selected_catalogs_set = set(user_data.selected_catalogs)
+    selected_resolutions_set = set(user_data.selected_resolutions)
+
+    # Step 1: Filter streams by selected catalogs, resolutions, and size
     filtered_streams = [
         stream
         for stream in streams
-        if any(catalog in stream.catalog for catalog in user_data.selected_catalogs)
-        and stream.resolution in user_data.selected_resolutions
+        if any(catalog_id in selected_catalogs_set for catalog_id in stream.catalog)
+        and stream.resolution in selected_resolutions_set
         and stream.size <= user_data.max_size
     ]
 
     if not filtered_streams:
         return []
 
-    # Define provider-specific cache update functions
-    cache_update_functions = {
-        "alldebrid": update_ad_cache_status,
-        "debridlink": update_dl_cache_status,
-        "offcloud": update_oc_cache_status,
-        "pikpak": update_pikpak_cache_status,
-        "realdebrid": update_rd_cache_status,
-        "seedr": update_seedr_cache_status,
-        "torbox": update_torbox_cache_status,
-        "premiumize": update_pm_cache_status,
-    }
-
-    # Update cache status based on provider
-    if user_data.streaming_provider:
-        if cache_update_function := cache_update_functions.get(
-            user_data.streaming_provider.service
-        ):
-            if asyncio.iscoroutinefunction(cache_update_function):
-                await cache_update_function(streams, user_data)
-            else:
-                await asyncio.to_thread(cache_update_function, streams, user_data)
-
-    # Sort streams by cache status, creation date, and size
-    return sorted(
-        filtered_streams, key=lambda x: (x.cached, x.size, x.created_at), reverse=True
+    # Step 2: Update cache status based on provider
+    cache_update_function = CACHE_UPDATE_FUNCTIONS.get(
+        user_data.streaming_provider.service
+        if user_data.streaming_provider
+        else "torrent"
     )
+    if cache_update_function:
+        if asyncio.iscoroutinefunction(cache_update_function):
+            await cache_update_function(filtered_streams, user_data)
+        else:
+            await asyncio.to_thread(cache_update_function, filtered_streams, user_data)
+
+    # Step 3: Dynamically sort streams based on user preferences
+    def dynamic_sort_key(stream):
+        return tuple(
+            (getattr(stream, sort_key) if getattr(stream, sort_key) is not None else 0)
+            for sort_key in user_data.torrent_sorting_priority
+        )
+
+    dynamically_sorted_streams = sorted(
+        filtered_streams, key=dynamic_sort_key, reverse=True
+    )
+
+    # Step 4: Limit streams per resolution based on user preference, after dynamic sorting
+    limited_streams = []
+    streams_count_per_resolution = {}
+    for stream in dynamically_sorted_streams:
+        count = streams_count_per_resolution.get(stream.resolution, 0)
+        if count < user_data.max_streams_per_resolution:
+            limited_streams.append(stream)
+            streams_count_per_resolution[stream.resolution] = count + 1
+
+    return limited_streams
 
 
 async def parse_stream_data(
@@ -98,7 +136,26 @@ async def parse_stream_data(
 
     streams = await filter_and_sort_streams(streams, user_data)
 
+    # Pre-determined values
+    show_full_torrent_name = user_data.show_full_torrent_name
+    has_streaming_provider = user_data.streaming_provider is not None
+    streaming_provider_name = (
+        user_data.streaming_provider.service.title()
+        if has_streaming_provider
+        else "Torrent"
+    )
+    base_proxy_url_template = (
+        f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
+        if has_streaming_provider
+        else None
+    )
+
     for stream_data in streams:
+        torrent_name = (
+            stream_data.torrent_name.replace(".torrent", "").replace(".", " ")
+            if show_full_torrent_name
+            else None
+        )
         quality_detail = " - ".join(
             filter(
                 None,
@@ -112,20 +169,17 @@ async def parse_stream_data(
         )
 
         episode_data = stream_data.get_episode(season, episode)
-
-        if user_data.streaming_provider:
-            streaming_provider = user_data.streaming_provider.service.title()
-            if stream_data.cached:
-                streaming_provider += " ⚡️"
-            else:
-                streaming_provider += " ⏳"
-        else:
-            streaming_provider = "Torrent ⏳"
-
-        seeders = f"👤 {stream_data.seeders}" if stream_data.seeders else None
+        streaming_provider = (
+            f"{streaming_provider_name} ⚡️"
+            if stream_data.cached
+            else f"{streaming_provider_name} ⏳"
+        )
+        seeders = (
+            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
+        )
 
         description_parts = [
-            quality_detail,
+            torrent_name or quality_detail,
             convert_bytes_to_readable(
                 episode_data.size or stream_data.size
                 if episode_data
@@ -147,13 +201,13 @@ async def parse_stream_data(
             "behaviorHints": {"bingeGroup": f"MediaFusion-{quality_detail}"},
         }
 
-        if user_data.streaming_provider:
-            base_proxy_url = f"{settings.host_url}/{secret_str}/streaming_provider?info_hash={stream_data.id}"
+        if has_streaming_provider:
+            base_proxy_url = base_proxy_url_template.format(stream_data.id)
             if episode_data:
                 base_proxy_url += f"&season={season}&episode={episode}"
             stream_details["url"] = base_proxy_url
-            stream_details.pop("infoHash")
-            stream_details.pop("fileIdx")
+            stream_details.pop("infoHash", None)
+            stream_details.pop("fileIdx", None)
             stream_details["behaviorHints"]["notWebReady"] = True
 
         stream_list.append(Stream(**stream_details))
@@ -166,7 +220,7 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     Convert a size in bytes into a more human-readable format.
     """
     if not size_bytes:
-        return "0B"
+        return ""
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
@@ -254,18 +308,7 @@ def parse_tv_stream_data(tv_data: MediaFusionTVMetaData) -> list[Stream]:
 
 
 async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
-    fetch_downloaded_info_hashes_functions = {
-        "alldebrid": fetch_downloaded_info_hashes_from_ad,
-        "debridlink": fetch_downloaded_info_hashes_from_dl,
-        "offcloud": fetch_downloaded_info_hashes_from_oc,
-        "pikpak": fetch_downloaded_info_hashes_from_pikpak,
-        "realdebrid": fetch_downloaded_info_hashes_from_rd,
-        "seedr": fetch_downloaded_info_hashes_from_seedr,
-        "torbox": fetch_downloaded_info_hashes_from_torbox,
-        "premiumize": fetch_downloaded_info_hashes_from_premiumize,
-    }
-
-    if fetch_downloaded_info_hashes_function := fetch_downloaded_info_hashes_functions.get(
+    if fetch_downloaded_info_hashes_function := FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS.get(
         user_data.streaming_provider.service
     ):
         if asyncio.iscoroutinefunction(fetch_downloaded_info_hashes_function):
@@ -283,15 +326,23 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
 
 
 def generate_manifest(manifest: dict, user_data: UserData) -> dict:
-    resources = manifest["resources"]
+    resources = manifest.get("resources", [])
+
+    # Ensure catalogs are enabled
     if user_data.enable_catalogs:
-        manifest["catalogs"] = [
-            cat
-            for cat in manifest["catalogs"]
-            if cat["id"] in user_data.selected_catalogs
-        ]
+        # Reorder catalogs based on the user's selection order
+        ordered_catalogs = []
+        for catalog_id in user_data.selected_catalogs:
+            for catalog in manifest.get("catalogs", []):
+                if catalog["id"] == catalog_id:
+                    ordered_catalogs.append(catalog)
+                    break
+
+        manifest["catalogs"] = ordered_catalogs
     else:
+        # If catalogs are not enabled, clear them from the manifest
         manifest["catalogs"] = []
+        # Define a default stream resource if catalogs are disabled
         resources = [
             {
                 "name": "stream",
@@ -300,11 +351,13 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
             }
         ]
 
+    # Adjust manifest details based on the selected streaming provider
     if user_data.streaming_provider:
         provider_name = user_data.streaming_provider.service.title()
         manifest["name"] += f" {provider_name}"
         manifest["id"] += f".{provider_name.lower()}"
 
+        # Include watchlist catalogs if enabled
         if user_data.streaming_provider.enable_watchlist_catalogs:
             watchlist_catalogs = [
                 {
@@ -320,8 +373,17 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
                     "extra": [{"name": "skip", "isRequired": False}],
                 },
             ]
+            # Prepend watchlist catalogs to the sorted user-selected catalogs
             manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
             resources = manifest["resources"]
 
+    # Ensure the resource list is updated accordingly
     manifest["resources"] = resources
     return manifest
+
+
+def is_contain_18_plus_keywords(title: str) -> bool:
+    """
+    Check if the title contains 18+ keywords to filter out adult content.
+    """
+    return ADULT_CONTENT_KEYWORDS.search(title) is not None
