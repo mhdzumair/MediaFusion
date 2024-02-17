@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: mediafusion-deployment
 spec:
-  replicas: 11
+  replicas: 6
   selector:
     matchLabels:
       app: mediafusion
@@ -19,8 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:beta
-        imagePullPolicy: Always
+        image: mhdzumair/mediafusion:v3.7.1
         ports:
         - containerPort: 80
         resources:
@@ -87,7 +86,7 @@ kind: Deployment
 metadata:
   name: dramatiq-worker-deployment
 spec:
-  replicas: 3
+  replicas: 5
   selector:
     matchLabels:
       app: dramatiq-worker
@@ -98,9 +97,8 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:beta
-        imagePullPolicy: Always
-        command: ["pipenv", "run", "dramatiq", "api.task"]
+        image: mhdzumair/mediafusion:v3.7.1
+        command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
             valueFrom:
@@ -124,10 +122,10 @@ spec:
                 key: REDIS_URL
         resources:
           requests:
-            memory: "300Mi"
+            memory: "500Mi"
             cpu: "200m"
           limits:
-            memory: "800Mi"
+            memory: "1Gi"
             cpu: "200m"
 
 ---
@@ -218,7 +216,7 @@ spec:
               sleep 5;
             done;
             echo "Prowlarr is ready, setting up indexers...";
-            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/develop/resources/json/prowlarr-indexers.json; do
+            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json; do
               echo "Failed to download indexers file. Retrying...";
               sleep 3;
             done;
@@ -380,8 +378,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:beta
-            imagePullPolicy: Always
+            image: mhdzumair/mediafusion:v3.7.1
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -416,8 +413,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:beta
-            imagePullPolicy: Always
+            image: mhdzumair/mediafusion:v3.7.1
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
             resources:
               requests:

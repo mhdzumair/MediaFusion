@@ -1,134 +1,44 @@
+# MediaFusion Deployment Guide 🚀
 
-# MediaFusion Local Deployment Guide 🚀
+Welcome to the deployment guide for MediaFusion! This document will help you navigate through the different deployment methods available for MediaFusion. Depending on your preference or environment constraints, you can choose between Kubernetes-based deployment or Docker Compose.
 
-This guide provides instructions for deploying MediaFusion locally using Minikube, tailored for Windows, Linux, and macOS platforms. Follow these steps to set up MediaFusion on your local machine.
+## Deployment Options 🛠️
 
-## Clone the Repository
+MediaFusion supports multiple deployment strategies to cater to different infrastructure needs and preferences. You can deploy MediaFusion using:
 
-```bash
-git clone https://github.com/mhdzumair/MediaFusion
-cd MediaFusion
+- [Kubernetes](./k8s/README.md) (recommended for scalable and production environments)
+- [Docker Compose](./docker-compose/README.md) (suitable for simple or local development environments)
 
-# Switch to the development branch
-git checkout develop
-```
+Each method has its own set of instructions and configurations. Please follow the links above to access the detailed guide for each deployment strategy.
 
-## Prerequisites
+## Kubernetes Deployment 🌐
 
-Before you begin, ensure the following tools are installed on your system:
+For those using Kubernetes, we provide a detailed guide for deploying MediaFusion with Minikube, which is ideal for local development and testing. The Kubernetes deployment guide includes instructions on setting up secrets, generating SSL certificates, and configuring services.
 
-- **Minikube**: For local Kubernetes development. Install instructions are available in the [Minikube documentation](https://minikube.sigs.k8s.io/docs/start/).
+👉 [Kubernetes Deployment Guide](./k8s/README.md)
 
-- **kubectl**: The Kubernetes command-line tool. Installation guidelines can be found in the [Kubernetes documentation](https://kubernetes.io/docs/tasks/tools/install-kubectl/).
+## Docker Compose Deployment 🐳
 
-- **Python 3.11**: Required for mkcert & development. Follow the [Python documentation](https://www.python.org/downloads/) for installation instructions.
+If you're looking for a quick and straightforward deployment, Docker Compose might be the right choice for you. Our Docker Compose guide outlines the steps for setting up MediaFusion on your local machine without the complexity of Kubernetes.
 
-## Setting Up Secrets 🗝️
+👉 [Docker Compose Deployment Guide](./docker-compose/README.md)
 
-MediaFusion requires certain secrets for operation. Use the following commands to create them:
+## Prerequisites 📋
 
-```bash
-# Generate a random 32-character string for the SECRET_KEY
-SECRET_KEY=$(openssl rand -hex 16)
+Before proceeding with any deployment method, make sure you have the required tools installed on your system:
 
-# Generate a random API key for Prowlarr
-PROWLARR_API_KEY=$(openssl rand -hex 16)
+- Docker and Docker Compose for container management and orchestration.
+- Kubernetes CLI (kubectl) if you are deploying with Kubernetes.
+- Python 3.11 or higher, which is necessary for certain setup scripts and tools.
 
-# If using Premiumize, fill in your OAuth client ID and secret. Otherwise, leave these empty.
-PREMIUMIZE_OAUTH_CLIENT_ID=""
-PREMIUMIZE_OAUTH_CLIENT_SECRET=""
+## Configuration 📝
 
-kubectl create secret generic mediafusion-secrets \
-    --from-literal=SECRET_KEY=$SECRET_KEY \
-    --from-literal=PROWLARR_API_KEY=$PROWLARR_API_KEY \
-    --from-literal=PREMIUMIZE_OAUTH_CLIENT_ID=$PREMIUMIZE_OAUTH_CLIENT_ID \
-    --from-literal=PREMIUMIZE_OAUTH_CLIENT_SECRET=$PREMIUMIZE_OAUTH_CLIENT_SECRET
-```
+Both deployment methods require you to configure environment variables that are crucial for the operation of MediaFusion. These variables include API keys, database URIs, and other sensitive information which should be kept secure.
 
-### Updating Secrets
+## Support and Contributions 💡
 
-To update existing secrets, use the following command:
+Should you encounter any issues during deployment or have suggestions for improvement, please feel free to open an issue or pull request in our GitHub repository.
 
-```bash
-kubectl create secret generic mediafusion-secrets \
-    --from-literal=SECRET_KEY=$SECRET_KEY \
-    --from-literal=PROWLARR_API_KEY=$PROWLARR_API_KEY \
-    --from-literal=PREMIUMIZE_OAUTH_CLIENT_ID=$PREMIUMIZE_OAUTH_CLIENT_ID \
-    --from-literal=PREMIUMIZE_OAUTH_CLIENT_SECRET=$PREMIUMIZE_OAUTH_CLIENT_SECRET \
-    --dry-run=client -o yaml | kubectl apply -f -
-```
+We welcome contributions and feedback to make MediaFusion better for everyone!
 
-## Install Required Addons
-
-### Ingress 🌐
-
-```bash
-minikube addons enable ingress
-```
-
-### Metrics Server 📊
-
-Required for Horizontal Pod Autoscaler (HPA) functionality:
-
-```bash
-minikube addons enable metrics-server
-```
-
-## Create SSL Certificate for Ingress 🔒
-
-Generate and store a self-signed certificate:
-
-```bash
-pip install mkcert
-mkcert -install
-mkcert "mediafusion.local"
-
-kubectl create secret tls mediafusion-tls \
-    --cert=mediafusion.local.pem \
-    --key=mediafusion.local-key.pem
-```
-
-## Configuring MediaFusion
-
-Edit the `deployment/local-deployment.yaml` to set the required environment variables:
-
-```yaml
-          - name: HOST_URL
-            value: "https://mediafusion.local"
-          - name: ENABLE_TAMILMV_SEARCH_SCRAPER
-            value: "false"
-          - name: PROWLARR_IMMEDIATE_MAX_PROCESS
-            value: "3"
-          - name: PROWLARR_SEARCH_INTERVAL_HOUR
-            value: "24"
-          - name: IS_SCRAP_FROM_TORRENTIO
-            value: "false"
-```
-
-## Deployment 🚢
-
-Deploy MediaFusion to your local Kubernetes cluster:
-
-```bash
-kubectl apply -f deployment/local-deployment.yaml
-```
-
-## Accessing MediaFusion 🌍
-
-Add an entry to your system's hosts file to resolve `mediafusion.local` to the Minikube IP:
-
-### Windows
-
-Open PowerShell as Administrator:
-
-```powershell
-Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "$(minikube ip) mediafusion.local"
-```
-
-### Linux/macOS
-
-```bash
-echo "$(minikube ip) mediafusion.local" | sudo tee -a /etc/hosts
-```
-
-Now, you can access MediaFusion at [https://mediafusion.local](https://mediafusion.local) 🎉
+Happy Deploying! 🎉

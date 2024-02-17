@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  mediafusion:
+    image: mhdzumair/mediafusion:beta
+    ports:
+      - "80:80"
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./mediafusion.local.pem:/etc/ssl/certs/mediafusion.local.pem
+      - ./mediafusion.local-key.pem:/etc/ssl/private/mediafusion.local-key.pem
+    ports:
+      - "443:443"
+    depends_on:
+      - mediafusion
+
+  mongodb:
+    image: mongo
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  dramatiq-worker:
+    image: mhdzumair/mediafusion:beta
+    command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+
+  prowlarr:
+    image: ghcr.io/hotio/prowlarr:latest
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      UMASK: "002"
+    ports:
+      - "9696:9696"
+    volumes:
+      - prowlar-config:/config
+
+  scraper:
+    image: mhdzumair/mediafusion:beta
+    command: ["pipenv", "run", "python", "-m", "api.scheduler"]
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+
+volumes:
+  mongo-data:
+  prowlar-config:
