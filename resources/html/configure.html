@@ -250,7 +250,9 @@
                 <!-- Submit and Share Buttons -->
                 <div class="button-container">
                     <button type="submit" class="btn btn-primary btn-block custom-btn">Install Addon</button>
-                    <button type="button" id="shareBtn" class="btn btn-secondary btn-block custom-btn">Share Installation URL</button>
+                    <!-- Conditional display of buttons based on Web Share API support -->
+                    <button type="button" id="shareBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Share Installation URL</button>
+                    <button type="button" id="copyBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Copy Installation URL</button>
                 </div>
 
             </form>

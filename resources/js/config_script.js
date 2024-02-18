@@ -202,7 +202,14 @@ function updateProviderFields(isChangeEvent = false) {
 }
 
 // Function to get installation URL
-async function getInstallationUrl(userData) {
+async function getInstallationUrl() {
+    const userData = getUserData();
+
+    if (!userData) {
+        showNotification('Validation failed. Please check your input.', 'error');
+        return null;
+    }
+
     try {
         const response = await fetch('/encrypt-user-data', {
             method: 'POST',
@@ -326,13 +333,8 @@ oAuthBtn.addEventListener('click', async function () {
 
 document.getElementById('configForm').addEventListener('submit', async function (event) {
     event.preventDefault();
-    const userData = getUserData();
 
-    if (!userData) {
-        showNotification('Validation failed. Please check your input.', 'error');
-        return;
-    }
-    const installationUrl = await getInstallationUrl(userData);
+    const installationUrl = await getInstallationUrl();
     if (installationUrl) {
         window.location.href = installationUrl;
     }
@@ -340,38 +342,37 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
 document.getElementById('shareBtn').addEventListener('click', async function (event) {
     event.preventDefault();
-
-    const userData = getUserData();
-
-    if (!userData) {
-        showNotification('Validation failed. Please check your input.', 'error');
-        return;
-    }
-
-    // If userData is valid, get the installation URL
-    const installationUrl = await getInstallationUrl(userData);
+    const installationUrl = await getInstallationUrl();
     if (installationUrl) {
-        // Check if the Web Share API is available
-        if (navigator.share) {
-            navigator.share({
+        try {
+            await navigator.share({
                 title: 'MediaFusion Addon Installation',
                 url: installationUrl,
-            }).then(() => {
-                showNotification('Installation URL shared successfully. Do not share this URL with unknown person', 'success');
-            }).catch((error) => {
-                showNotification('An error occurred while sharing the installation URL', 'error');
             });
-        } else {
-            // Copy the installation URL to the clipboard
-            navigator.clipboard.writeText(installationUrl).then(() => {
-                showNotification('Installation URL copied to clipboard. Do not share this URL with unknown person', 'success');
-                // You can display a message to the user indicating that the URL has been copied.
-            }).catch((error) => {
-                showNotification('An error occurred while copying the installation URL to the clipboard', 'error');
-            });
+            showNotification('Installation URL shared successfully. Do not share this URL with unknown persons.', 'success');
+        } catch (error) {
+            showNotification('Sharing was cancelled or not supported.', 'error');
         }
     }
 });
+
+document.getElementById('copyBtn').addEventListener('click', async function (event) {
+    event.preventDefault();
+
+    // Get the installation URL asynchronously
+    const installationUrl = await getInstallationUrl();
+    if (installationUrl) {
+        try {
+            await navigator.clipboard.writeText(installationUrl);
+            showNotification('Installation URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
+        } catch (error) {
+            console.error('Failed to copy:', error);
+            showNotification('Failed to copy the installation URL to the clipboard.', 'error');
+        }
+    }
+});
+
+
 
 // ---- Initial Setup ----
 
@@ -385,6 +386,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
+
+    if (navigator.share) {
+        document.getElementById('shareBtn').style.display = 'block';
+    } else if (navigator.clipboard) {
+        document.getElementById('copyBtn').style.display = 'block';
+    }
 });
 
 
