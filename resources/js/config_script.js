@@ -391,15 +391,24 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Sortable on the catalog container
     new Sortable(document.getElementById('catalogs'), {
-        handle: '.draggable-catalog', // Use the grip handle for drag operations
-        animation: 150, // Animation speed for the sort operation
-        ghostClass: 'sortable-ghost', // Class for the ghost element
-        dragClass: 'sortable-drag', // Class applied to the element being dragged
+        handle: '.draggable-catalog',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
     });
     new Sortable(document.getElementById('streamSortOrder'), {
         handle: '.sortable-list',
         animation: 150,
         ghostClass: 'sortable-ghost',
         dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
     });
+
 });
