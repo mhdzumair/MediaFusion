@@ -12,7 +12,7 @@ class Premiumize(DebridClient):
     BASE_URL = "https://www.premiumize.me/api"
     OAUTH_TOKEN_URL = "https://www.premiumize.me/token"
     OAUTH_URL = "https://www.premiumize.me/authorize"
-    REDIRECT_URI = f"{settings.host_url}/premiumize/oauth2_redirect"
+    REDIRECT_URI = f"{settings.host_url}/streaming_provider/premiumize/oauth2_redirect"
 
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
