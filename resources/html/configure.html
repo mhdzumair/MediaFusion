@@ -247,6 +247,15 @@
 
                 </div>
 
+                <!-- Fallback URL Display - Initially hidden -->
+                <div id="fallbackUrlContainer" class="fallback-url-container" style="display: none;">
+                    <label for="fallbackUrl">Installation URL <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                 title="This is the URL that you can use to install the addon in Stremio."></span></label>
+                    <textarea id="fallbackUrl" class="form-control" readonly></textarea>
+                    <p>Please manually copy the URL above and paste it in the Stremio search bar. Do not share this URL with unknown persons.</p>
+                </div>
+
+
                 <!-- Submit and Share Buttons -->
                 <div class="button-container">
                     <button type="submit" class="btn btn-primary btn-block custom-btn">Install Addon</button>

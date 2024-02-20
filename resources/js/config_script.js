@@ -293,6 +293,15 @@ function getUserData() {
     };
 }
 
+// Function to display the installation URL in a textarea for manual copying
+function displayFallbackUrl(url) {
+    const container = document.getElementById('fallbackUrlContainer');
+    const textarea = document.getElementById('fallbackUrl');
+    textarea.value = url;
+    container.style.display = 'block'; // Make the container visible
+    textarea.focus();
+}
+
 // ---- Event Listeners ----
 
 document.getElementById('provider_token').addEventListener('input', function () {
@@ -351,7 +360,8 @@ document.getElementById('shareBtn').addEventListener('click', async function (ev
             });
             showNotification('Installation URL shared successfully. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
-            showNotification('Sharing was cancelled or not supported.', 'error');
+            displayFallbackUrl(installationUrl);
+            showNotification('Unable to use Share API. URL is ready to be copied manually.', 'warning');
         }
     }
 });
@@ -366,12 +376,11 @@ document.getElementById('copyBtn').addEventListener('click', async function (eve
             await navigator.clipboard.writeText(installationUrl);
             showNotification('Installation URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
-            console.error('Failed to copy:', error);
-            showNotification('Failed to copy the installation URL to the clipboard.', 'error');
+            displayFallbackUrl(installationUrl);
+            showNotification('Unable to access clipboard. URL is ready to be copied manually.', 'warning');
         }
     }
 });
-
 
 
 // ---- Initial Setup ----
@@ -389,7 +398,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (navigator.share) {
         document.getElementById('shareBtn').style.display = 'block';
-    } else if (navigator.clipboard) {
+    } else {
         document.getElementById('copyBtn').style.display = 'block';
     }
 });
