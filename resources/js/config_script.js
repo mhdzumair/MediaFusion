@@ -361,7 +361,7 @@ document.getElementById('shareBtn').addEventListener('click', async function (ev
             showNotification('Installation URL shared successfully. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
             displayFallbackUrl(installationUrl);
-            showNotification('Unable to use Share API. URL is ready to be copied manually.', 'warning');
+            showNotification('Unable to use Share API. URL is ready to be copied manually.', 'info');
         }
     }
 });
@@ -377,7 +377,7 @@ document.getElementById('copyBtn').addEventListener('click', async function (eve
             showNotification('Installation URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
             displayFallbackUrl(installationUrl);
-            showNotification('Unable to access clipboard. URL is ready to be copied manually.', 'warning');
+            showNotification('Unable to access clipboard. URL is ready to be copied manually.', 'info');
         }
     }
 });
