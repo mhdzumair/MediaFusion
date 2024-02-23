@@ -40,6 +40,7 @@ from streaming_providers.torbox.utils import (
     update_torbox_cache_status,
     fetch_downloaded_info_hashes_from_torbox,
 )
+from utils import const
 
 ia = Cinemagoer()
 ADULT_CONTENT_KEYWORDS = re.compile(
@@ -104,8 +105,17 @@ async def filter_and_sort_streams(
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream):
+        # Compute sort key values only once per stream
+        sort_key_values = {
+            sort_key: getattr(stream, sort_key, 0)
+            for sort_key in user_data.torrent_sorting_priority
+        }
+
+        # Create the sort tuple, using resolution ranking for resolution sorting
         return tuple(
-            (getattr(stream, sort_key) if getattr(stream, sort_key) is not None else 0)
+            const.RESOLUTION_RANKING[stream.resolution]
+            if sort_key == "resolution"
+            else sort_key_values[sort_key]
             for sort_key in user_data.torrent_sorting_priority
         )
 

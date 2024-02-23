@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymongo import IndexModel, ASCENDING
 
 
@@ -38,8 +38,13 @@ class TorrentStreams(Document):
     audio: Optional[str] = None
     encoder: Optional[str] = None
     seeders: Optional[int] = None
-    cached: Optional[bool] = None
+    cached: Optional[bool] = Field(default=False, exclude=True)
     meta_id: Optional[str] = None
+
+    @field_validator("cached")
+    @classmethod
+    def set_default_cached(cls, _):
+        return False
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """

@@ -84,6 +84,8 @@ RESOLUTIONS = [
     None,
 ]
 
+RESOLUTION_RANKING = {res: rank for rank, res in enumerate(reversed(RESOLUTIONS))}
+
 
 DEBRID_SERVER_TIMEOUT = 15
 
@@ -101,4 +103,4 @@ NO_CACHE_HEADERS = {
     "Expires": "0",
 }
 
-TORRENT_SORTING_PRIORITY = ["cached", "size", "seeders", "created_at"]
+TORRENT_SORTING_PRIORITY = ["cached", "resolution", "size", "seeders", "created_at"]
