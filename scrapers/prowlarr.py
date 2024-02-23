@@ -239,11 +239,11 @@ async def get_torrent_data_from_prowlarr(
     raise ValueError(f"Failed to fetch torrent data from {download_url}")
 
 
-async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
+async def prowlarr_data_parser(meta_data: dict, video_id: str) -> tuple[dict, bool]:
     """Parse prowlarr data."""
     if is_contain_18_plus_keywords(meta_data.get("title")):
         logging.warning(
-            f"Skipping {meta_data.get('title')} due to adult content keywords."
+            f"Skipping '{meta_data.get('title')}' due to adult content keyword in {video_id}"
         )
         return {}, False
 
@@ -485,7 +485,7 @@ async def parse_and_store_stream(
     catalog_type: str,
     season: int = None,
 ) -> tuple[TorrentStreams | None, bool]:
-    parsed_data, _ = await prowlarr_data_parser(stream_data)
+    parsed_data, _ = await prowlarr_data_parser(stream_data, video_id)
     info_hash = parsed_data.get("info_hash", "").lower()
     torrent_stream, torrent_needed_update = None, False
 
