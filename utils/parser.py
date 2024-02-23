@@ -107,7 +107,11 @@ async def filter_and_sort_streams(
     def dynamic_sort_key(stream):
         # Compute sort key values only once per stream
         sort_key_values = {
-            sort_key: getattr(stream, sort_key, 0)
+            sort_key: (
+                getattr(stream, sort_key)
+                if getattr(stream, sort_key) is not None
+                else 0
+            )
             for sort_key in user_data.torrent_sorting_priority
         }
 

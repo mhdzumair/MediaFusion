@@ -41,11 +41,6 @@ class TorrentStreams(Document):
     cached: Optional[bool] = Field(default=False, exclude=True)
     meta_id: Optional[str] = None
 
-    @field_validator("cached")
-    @classmethod
-    def set_default_cached(cls, _):
-        return False
-
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
         Returns the Episode object for the given season and episode number.
