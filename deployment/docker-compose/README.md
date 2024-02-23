@@ -110,3 +110,32 @@ echo "127.0.0.1 mediafusion.local" | sudo tee -a /etc/hosts
 ```
 
 Now, access MediaFusion at [https://mediafusion.local](https://mediafusion.local) 🎉
+
+
+## Updating MediaFusion 🔄
+
+To update MediaFusion, pull the latest changes from the repository and restart the containers:
+
+```bash
+git pull
+docker-compose -f docker-compose.yml down
+docker-compose -f docker-compose.yml pull
+docker-compose -f docker-compose.yml up -d
+```
+
+## Stopping MediaFusion 🛑
+
+To stop MediaFusion, run the following command:
+
+```bash
+docker-compose -f docker-compose.yml down
+```
+
+## Troubleshooting 🛠️
+
+- If you encounter any issues during the deployment, check the logs for the respective service using `docker-compose -f docker-compose.yml logs <service-name>`.
+- If you encounter any issues with the web interface, ensure that the SSL certificate is installed correctly.
+
+## Feedback 📢
+
+If you have any feedback, please feel free to open an issue or submit a pull request. 🙏
