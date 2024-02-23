@@ -137,6 +137,9 @@ async def store_and_parse_movie_stream_data(
             await torrent_stream.save()
         else:
             # Create new stream
+            source = (
+                stream["name"].split()[0].title() if stream["name"] else "Torrentio"
+            )
             torrent_stream = TorrentStreams(
                 id=stream["infoHash"],
                 torrent_name=parsed_data["torrent_name"],
@@ -150,7 +153,7 @@ async def store_and_parse_movie_stream_data(
                 quality=parsed_data["metadata"].get("quality"),
                 audio=parsed_data["metadata"].get("audio"),
                 encoder=parsed_data["metadata"].get("encoder"),
-                source="Torrentio",
+                source=source,
                 catalog=["torrentio_streams"],
                 updated_at=datetime.now(),
                 seeders=parsed_data["seeders"],
