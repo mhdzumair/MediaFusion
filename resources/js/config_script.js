@@ -202,8 +202,12 @@ function updateProviderFields(isChangeEvent = false) {
 }
 
 // Function to get installation URL
-async function getInstallationUrl() {
+async function getInstallationUrl(isRedirect = false) {
     const userData = getUserData();
+    let urlPrefix = window.location.protocol + "//";
+    if (isRedirect) {
+        urlPrefix = "stremio://";
+    }
 
     if (!userData) {
         showNotification('Validation failed. Please check your input.', 'error');
@@ -223,7 +227,7 @@ async function getInstallationUrl() {
             showNotification('An error occurred while encrypting user data', 'error');
             return null;
         }
-        return "stremio://" + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+        return urlPrefix + window.location.host + "/" + data.encrypted_str + "/manifest.json";
     } catch (error) {
         showNotification('An error occurred while encrypting user data', 'error');
         console.error('Error encrypting user data:', error);
@@ -343,7 +347,7 @@ oAuthBtn.addEventListener('click', async function () {
 document.getElementById('configForm').addEventListener('submit', async function (event) {
     event.preventDefault();
 
-    const installationUrl = await getInstallationUrl();
+    const installationUrl = await getInstallationUrl(true);
     if (installationUrl) {
         window.location.href = installationUrl;
     }
