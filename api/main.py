@@ -21,7 +21,7 @@ from api import middleware
 from db import database, crud, schemas
 from db.config import settings
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, rate_limiter
+from utils import crypto, torrent, poster, const, wrappers
 from utils.parser import generate_manifest
 
 logging.basicConfig(
@@ -106,7 +106,7 @@ async def get_home(request: Request):
 
 
 @app.get("/health", tags=["health"])
-@rate_limiter.exclude
+@wrappers.exclude
 async def health(request: Request):
     return {"status": "healthy"}
 
@@ -154,12 +154,14 @@ async def configure(
             "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
             "sorting_options": const.TORRENT_SORTING_PRIORITY,
+            "authentication_required": settings.api_password is not None,
         },
     )
 
 
 @app.get("/manifest.json", tags=["manifest"])
 @app.get("/{secret_str}/manifest.json", tags=["manifest"])
+@wrappers.auth_required
 async def get_manifest(
     response: Response, user_data: schemas.UserData = Depends(get_user_data)
 ):
@@ -212,7 +214,8 @@ async def get_manifest(
     response_model_by_alias=False,
     tags=["catalog"],
 )
-@rate_limiter.rate_limit(150, 300, "catalog")
+@wrappers.auth_required
+@wrappers.rate_limit(150, 300, "catalog")
 async def get_catalog(
     response: Response,
     request: Request,
@@ -271,6 +274,7 @@ async def get_catalog(
     response_model_exclude_none=True,
     response_model_by_alias=False,
 )
+@wrappers.auth_required
 async def search_meta(
     response: Response,
     catalog_type: Literal["movie", "series", "tv"],
@@ -301,6 +305,7 @@ async def search_meta(
     response_model_exclude_none=True,
     response_model_by_alias=False,
 )
+@wrappers.auth_required
 async def get_meta(
     catalog_type: Literal["movie", "series", "tv"],
     meta_id: str,
@@ -359,7 +364,8 @@ async def get_meta(
     response_model_exclude_none=True,
     tags=["stream"],
 )
-@rate_limiter.rate_limit(10, 60 * 60, "stream")
+@wrappers.auth_required
+@wrappers.rate_limit(10, 60 * 60, "stream")
 async def get_streams(
     catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
@@ -387,13 +393,14 @@ async def get_streams(
 
 
 @app.post("/encrypt-user-data", tags=["user_data"])
+@wrappers.rate_limit(30, 60 * 5, "user_data")
 async def encrypt_user_data(user_data: schemas.UserData):
     encrypted_str = crypto.encrypt_user_data(user_data)
     return {"encrypted_str": encrypted_str}
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
-@rate_limiter.exclude
+@wrappers.exclude
 async def get_poster(
     catalog_type: Literal["movie", "series", "tv"],
     mediafusion_id: str,

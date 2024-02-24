@@ -23,13 +23,14 @@ from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.torbox.utils import get_direct_link_from_torbox
-from utils import crypto, torrent, rate_limiter, const
+from utils import crypto, torrent, wrappers, const
 
 router = APIRouter()
 
 
 @router.get("/{secret_str}/stream", tags=["streaming_provider"])
-@rate_limiter.exclude
+@wrappers.exclude
+@wrappers.auth_required
 async def streaming_provider_endpoint(
     secret_str: str,
     info_hash: str,

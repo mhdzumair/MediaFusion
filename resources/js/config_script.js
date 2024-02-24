@@ -253,6 +253,7 @@ function getUserData() {
         }
     };
 
+    // Validate and collect streaming provider data
     if (provider) {
         if (servicesRequiringCredentials.includes(provider)) {
             validateInput('username', document.getElementById('username').value);
@@ -269,22 +270,29 @@ function getUserData() {
         streamingProviderData = null;
     }
 
+    // Collect and validate other user data
     const maxSizeSlider = document.getElementById('max_size_slider');
     const maxSizeValue = maxSizeSlider.value;
     const maxSize = maxSizeSlider.max;
     const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
-
     const maxStreamsPerResolution = document.getElementById('maxStreamsPerResolution').value;
     validateInput('maxStreamsPerResolution', maxStreamsPerResolution && !isNaN(maxStreamsPerResolution) && maxStreamsPerResolution > 0);
+
+    let apiPassword = null;
+    // Check for API Password if authentication is required
+    if (document.getElementById('api_password')) {
+        validateInput('api_password', document.getElementById('api_password').value);
+        apiPassword = document.getElementById('api_password').value;
+    }
 
     if (!isValid) {
         return null; // Return null if validation fails
     }
 
+    // Collect and return the rest of the user data
     const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
-    // Return user data if all validations pass
     return {
         streaming_provider: streamingProviderData,
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
@@ -294,6 +302,7 @@ function getUserData() {
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
         show_full_torrent_name: torrentDisplayOption === 'fullName',
+        api_password: apiPassword,
     };
 }
 
@@ -306,6 +315,20 @@ function displayFallbackUrl(url) {
     textarea.focus();
 }
 
+function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
+    document.getElementById(toggleButtonId).addEventListener('click', function (_) {
+        const passwordInput = document.getElementById(passwordInputId);
+        const passwordIcon = document.getElementById(toggleIconId);
+        if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+            passwordIcon.className = "bi bi-eye-slash";
+        } else {
+            passwordInput.type = "password";
+            passwordIcon.className = "bi bi-eye";
+        }
+    });
+}
+
 // ---- Event Listeners ----
 
 document.getElementById('provider_token').addEventListener('input', function () {
@@ -314,18 +337,6 @@ document.getElementById('provider_token').addEventListener('input', function () 
 
 // Event listener for the slider
 document.getElementById('max_size_slider').addEventListener('input', updateSizeOutput);
-
-document.getElementById('togglePassword').addEventListener('click', function (e) {
-    const passwordInput = document.getElementById('password');
-    const passwordIcon = document.getElementById('togglePasswordIcon');
-    if (passwordInput.type === "password") {
-        passwordInput.type = "text";
-        passwordIcon.className = "bi bi-eye-slash";
-    } else {
-        passwordInput.type = "password";
-        passwordIcon.className = "bi bi-eye";
-    }
-});
 
 oAuthBtn.addEventListener('click', async function () {
     const provider = document.getElementById('provider_service').value;
@@ -399,6 +410,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
+
+    setupPasswordToggle('password', 'togglePassword', 'togglePasswordIcon');
+    setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
 
     if (navigator.share) {
         document.getElementById('shareBtn').style.display = 'block';

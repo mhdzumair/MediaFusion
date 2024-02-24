@@ -247,10 +247,34 @@
 
                 </div>
 
+                {% if authentication_required %}
+                <!-- API Password Configuration -->
+                <div class="section-container">
+                    <h4 class="section-header">API Security Configuration</h4>
+                    <hr class="section-divider">
+
+                    <!-- API Password Input -->
+                    <div class="mb-3">
+                        <label for="api_password">API Password: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                      title="Enter the API password you configured in the environment variables."></span></label>
+                        <div class="input-group">
+                            <input class="form-control" type="password" id="api_password" name="api_password" placeholder="Enter API Password">
+                            <button class="btn btn-outline-secondary" type="button" id="toggleApiPassword">
+                                <span id="toggleApiPasswordIcon" class="bi bi-eye"></span>
+                            </button>
+                            <div class="invalid-feedback">
+                                API Password is required.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+
                 <!-- Fallback URL Display - Initially hidden -->
                 <div id="fallbackUrlContainer" class="fallback-url-container" style="display: none;">
                     <label for="fallbackUrl">Installation URL <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                 title="This is the URL that you can use to install the addon in Stremio."></span></label>
+                                                                    title="This is the URL that you can use to install the addon in Stremio."></span></label>
                     <textarea id="fallbackUrl" class="form-control" readonly></textarea>
                     <p>Please manually copy the URL above and paste it in the Stremio search bar. Do not share this URL with unknown persons.</p>
                 </div>

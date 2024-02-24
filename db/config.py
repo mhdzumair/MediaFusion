@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     prowlarr_immediate_max_process_time: int = 15
     adult_content_regex_keywords: str = r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"
     enable_rate_limit: bool = True
+    api_password: str | None = None
 
     class Config:
         env_file = ".env"

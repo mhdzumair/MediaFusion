@@ -98,6 +98,7 @@ class UserData(BaseModel):
     max_streams_per_resolution: int = 3
     show_full_torrent_name: bool = False
     torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
+    api_password: str | None = None
 
     @model_validator(mode="after")
     def validate_selected_resolutions(self) -> "UserData":

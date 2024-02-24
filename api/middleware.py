@@ -61,10 +61,21 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
 
 class UserDataMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable):
-        await find_route_handler(request.app, request)
+        endpoint = await find_route_handler(request.app, request)
         secret_str = request.path_params.get("secret_str")
         # Decrypt and parse the UserData from secret_str
         user_data = crypto.decrypt_user_data(secret_str)
+
+        # validate api password if set
+        if settings.api_password:
+            is_auth_required = getattr(endpoint, "auth_required", False)
+            if is_auth_required and user_data.api_password != settings.api_password:
+                return Response(
+                    content="Unauthorized",
+                    status_code=401,
+                    headers=const.NO_CACHE_HEADERS,
+                )
+
         # Attach UserData to request state for access in endpoints
         request.scope["user"] = user_data
 
