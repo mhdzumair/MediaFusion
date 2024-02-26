@@ -62,8 +62,10 @@ class FormulaTgxSpider(scrapy.Spider):
 
             tgx_unique_id = urls[0].split("/")[-2]
             torrent_page_link = response.urljoin(urls[0])
-            torrent_link = urls[1]
-            magnet_link = urls[2]
+            torrent_link = torrent.css(
+                'a[href*="watercache.nanobytes.org"]::attr(href)'
+            ).get()
+            magnet_link = torrent.css('a[href^="magnet:?"]::attr(href)').get()
             info_hash, announce_list = parse_magnet(magnet_link)
             if not info_hash:
                 self.logger.warning(
@@ -127,26 +129,15 @@ class FormulaTgxSpider(scrapy.Spider):
         )
 
         quality_match = re.search(r"Quality:\s*(\S+)", torrent_description)
-        video_match = re.search(
-            r"Video:\s*([^,]+),\s*([0-9]+x[0-9]+[A-Za-z]+),\s*([0-9]+\s*fps),\s*([0-9]+\s*kb/s)",
-            torrent_description,
-        )
-        audio_match = re.search(
-            r"Audio:\s*([^,]+),\s*([0-9]+\s*KHz),\s*([0-9]+\s*kb/s)\s*(English)?",
-            torrent_description,
-        )
+        codec_match = re.search(r"Video:\s*([A-Za-z0-9]+)", torrent_description)
+        audio_match = re.search(r"Audio:\s*([A-Za-z0-9. ]+)", torrent_description)
 
         if quality_match:
             torrent_data["quality"] = quality_match.group(1)
-        if video_match:
-            torrent_data[
-                "codec"
-            ] = f"{video_match.group(1)} {video_match.group(3)} {video_match.group(4)}"
-            torrent_data["resolution"] = video_match.group(2).lower().split("x")[1]
+        if codec_match:
+            torrent_data["codec"] = codec_match.group(1)
         if audio_match:
-            torrent_data[
-                "audio"
-            ] = f"{audio_match.group(1)} {audio_match.group(2)} {audio_match.group(3)}"
+            torrent_data["audio"] = audio_match.group(1)
 
         contains_index = torrent_description.find("Contains:")
         episodes = []
@@ -181,6 +172,17 @@ class FormulaTgxSpider(scrapy.Spider):
         ).get()
         if total_size:
             torrent_data["total_size"] = convert_size_to_bytes(total_size)
+        else:
+            # if the total size is not found, then tgx has shown captcha validation.
+            # so we need to slow down and retry the request
+            self.logger.warning(
+                f"Total size not found for {torrent_data['torrent_name']}. Retrying"
+            )
+            yield response.follow(
+                response.url,
+                self.parse_torrent_details_egortech,
+                meta={"torrent_data": torrent_data},
+            )
 
         # Extracting date created
         date_created = response.xpath(
@@ -193,17 +195,20 @@ class FormulaTgxSpider(scrapy.Spider):
             )
 
         # Extracting language
-        language = (
-            response.xpath("//div[b='Language:']/following-sibling::div/text()")
-            .get(default="Unknown")
-            .strip()
-        )
-        torrent_data["languages"] = [language]
+        language = response.xpath(
+            "//div[b='Language:']/following-sibling::div/text()"
+        ).get()
+        if language:
+            torrent_data["languages"] = [language.strip()]
 
         # cleanup "." from torrent name for and add unique_id for title to be unique for indexing
         torrent_data[
             "title"
         ] = f"{torrent_data['torrent_name'].replace('.', '')} {torrent_data['unique_id']}"
+
+        resolution_match = re.search(r"(\d{3,4}P)", torrent_data["torrent_name"])
+        if resolution_match:
+            torrent_data["resolution"] = resolution_match.group(1).lower()
 
         # Extract year from the torrent name
         year_match = re.search(r"\b(19|20)\d{2}\b", torrent_data["torrent_name"])
