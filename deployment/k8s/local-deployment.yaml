@@ -447,7 +447,7 @@ kind: CronJob
 metadata:
   name: tamilmv-scraper
 spec:
-  schedule: "30 */6 * * *"  # At minute 30 past every 6th hour
+  schedule: "30 */3 * * *"  # At minute 30 past every 3rd hour
   jobTemplate:
     spec:
       template:
@@ -457,6 +457,39 @@ spec:
             image: mhdzumair/mediafusion:beta
             imagePullPolicy: Always
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "200m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017/mediafusion"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: formula-tgx-spider
+spec:
+  schedule: "0 */12 * * *"  # At minute 0 past every 12th hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: formula-tgx-spider
+            image: mhdzumair/mediafusion:beta
+            imagePullPolicy: Always
+            command: ["pipenv", "run", "scrapy", "crawl", "formula-tgx"]
             resources:
               requests:
                 memory: "128Mi"
