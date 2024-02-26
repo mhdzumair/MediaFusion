@@ -302,7 +302,9 @@ async def get_series_meta(meta_id: str):
                 metadata["meta"]["videos"].append(
                     {
                         "id": stream_id,
-                        "title": f"S{stream.season.season_number} EP{episode.episode_number}",
+                        "title": f"S{stream.season.season_number} EP{episode.episode_number}"
+                        if not episode.title
+                        else episode.title,
                         "season": stream.season.season_number,
                         "episode": episode.episode_number,
                         "released": stream.created_at.strftime(

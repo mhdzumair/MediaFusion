@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from pymongo import IndexModel, ASCENDING
 
 
@@ -12,6 +12,7 @@ class Episode(BaseModel):
     filename: str | None = None
     size: int | None = None
     file_index: int | None = None
+    title: str | None = None
 
 
 class Season(BaseModel):

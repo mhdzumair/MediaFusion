@@ -194,11 +194,9 @@ async def parse_stream_data(
 
         description_parts = [
             torrent_name or quality_detail,
-            convert_bytes_to_readable(
-                episode_data.size or stream_data.size
-                if episode_data
-                else stream_data.size
-            ),
+            f"{convert_bytes_to_readable(episode_data.size)} - {convert_bytes_to_readable(stream_data.size)}"
+            if episode_data and episode_data.size
+            else convert_bytes_to_readable(stream_data.size),
             seeders,
             " + ".join(stream_data.languages),
             stream_data.source,
