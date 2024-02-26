@@ -137,6 +137,7 @@ async def configure(
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
         user_data.streaming_provider.password = None
+    user_data.api_password = None
 
     # Prepare catalogs based on user preferences or default order
     sorted_catalogs = sorted(
