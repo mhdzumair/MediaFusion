@@ -165,11 +165,16 @@ async def parse_stream_data(
     )
 
     for stream_data in streams:
-        torrent_name = (
-            stream_data.torrent_name.replace(".torrent", "").replace(".", " ")
-            if show_full_torrent_name
-            else None
-        )
+        episode_data = stream_data.get_episode(season, episode)
+        torrent_name = None
+        if show_full_torrent_name:
+            torrent_name = (
+                f"{stream_data.torrent_name}/{episode_data.title}"
+                if episode_data
+                else stream_data.torrent_name
+            )
+            torrent_name = torrent_name.replace(".torrent", "").replace(".", " ")
+
         quality_detail = " - ".join(
             filter(
                 None,
@@ -181,8 +186,6 @@ async def parse_stream_data(
                 ],
             )
         )
-
-        episode_data = stream_data.get_episode(season, episode)
         streaming_provider = (
             f"{streaming_provider_name} ⚡️"
             if stream_data.cached

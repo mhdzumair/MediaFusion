@@ -25,7 +25,7 @@ class Meta(BaseModel):
     id: str = Field(alias="_id")
     name: str = Field(alias="title")
     type: str = Field(default="movie")
-    poster: str
+    poster: str | None = None
     background: str | None = None
     videos: list[Video] | None = None
     country: str | None = None
@@ -161,7 +161,7 @@ class TVStreams(BaseModel):
 
 class TVMetaData(BaseModel):
     title: str
-    poster: str
+    poster: str | None = None
     background: Optional[str] = None
     country: str
     tv_language: str

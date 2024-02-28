@@ -23,7 +23,8 @@ class FormulaTgxSpider(scrapy.Spider):
     custom_settings = {
         "ITEM_PIPELINES": {
             "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
-            "mediafusion_scrapy.pipelines.FormulaStorePipeline": 200,
+            "mediafusion_scrapy.pipelines.FormulaParserPipeline": 200,
+            "mediafusion_scrapy.pipelines.FormulaStorePipeline": 300,
         }
     }
 
@@ -88,6 +89,7 @@ class FormulaTgxSpider(scrapy.Spider):
                 "torrent_page_link": torrent_page_link,
                 "unique_id": tgx_unique_id,
                 "source": f"TorrentGalaxy ({uploader_profile_name})",
+                "uploader": uploader_profile_name,
                 "announce_list": announce_list,
                 "catalog": ["formula_racing"],
             }
@@ -114,6 +116,7 @@ class FormulaTgxSpider(scrapy.Spider):
             file_size = row.xpath('td[@class="table_col2"]/text()').get()
             if file_name and file_size:
                 file_details.append({"file_name": file_name, "file_size": file_size})
+        torrent_data["file_details"] = file_details
 
         cover_image_url = response.xpath(
             "//center/img[contains(@class, 'img-responsive') and contains(@data-src, '.png')]/@data-src"
@@ -121,51 +124,13 @@ class FormulaTgxSpider(scrapy.Spider):
         torrent_data["poster"] = cover_image_url
         torrent_data["background"] = cover_image_url
 
-        # Processing the description for video, audio, and other details
+        # Getting the description for parsing video, audio, and other details
         torrent_description = "".join(
             response.xpath(
                 "//font/following-sibling::*[1]/following-sibling::text() | //font/following-sibling::*[1]/following-sibling::*//text()"
             ).extract()
         )
-
-        quality_match = re.search(r"Quality:\s*(\S+)", torrent_description)
-        codec_match = re.search(r"Video:\s*([A-Za-z0-9]+)", torrent_description)
-        audio_match = re.search(r"Audio:\s*([A-Za-z0-9. ]+)", torrent_description)
-
-        if quality_match:
-            torrent_data["quality"] = quality_match.group(1)
-        if codec_match:
-            torrent_data["codec"] = codec_match.group(1)
-        if audio_match:
-            torrent_data["audio"] = audio_match.group(1)
-
-        contains_index = torrent_description.find("Contains:")
-        episodes = []
-
-        if contains_index != -1:
-            contents_section = torrent_description[
-                contains_index + len("Contains:") :
-            ].strip()
-
-            items = [
-                item.strip()
-                for item in re.split(r"\r?\n", contents_section)
-                if item.strip()
-            ]
-
-            for index, item in enumerate(items):
-                file_detail = file_details[index]
-                episodes.append(
-                    Episode(
-                        episode_number=index + 1,
-                        filename=file_detail.get("file_name"),
-                        size=convert_size_to_bytes(file_detail.get("file_size")),
-                        file_index=index,
-                        title=item,
-                    )
-                )
-
-        torrent_data["episodes"] = episodes
+        torrent_data["description"] = torrent_description
 
         total_size = response.xpath(
             "//div[b='Total Size:']/following-sibling::div/text()"
@@ -200,19 +165,5 @@ class FormulaTgxSpider(scrapy.Spider):
         ).get()
         if language:
             torrent_data["languages"] = [language.strip()]
-
-        # cleanup "." from torrent name for and add unique_id for title to be unique for indexing
-        torrent_data[
-            "title"
-        ] = f"{torrent_data['torrent_name'].replace('.', '')} {torrent_data['unique_id']}"
-
-        resolution_match = re.search(r"(\d{3,4}P)", torrent_data["torrent_name"])
-        if resolution_match:
-            torrent_data["resolution"] = resolution_match.group(1).lower()
-
-        # Extract year from the torrent name
-        year_match = re.search(r"\b(19|20)\d{2}\b", torrent_data["torrent_name"])
-        if year_match:
-            torrent_data["year"] = int(year_match.group())
 
         yield torrent_data

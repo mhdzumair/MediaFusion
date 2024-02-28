@@ -13,6 +13,7 @@ class Episode(BaseModel):
     size: int | None = None
     file_index: int | None = None
     title: str | None = None
+    released: datetime | None = None
 
 
 class Season(BaseModel):
@@ -67,7 +68,7 @@ class MediaFusionMetaData(Document):
     id: str
     title: str
     year: Optional[int] = None
-    poster: str
+    poster: Optional[str] = None
     is_poster_working: Optional[bool] = True
     background: Optional[str] = None
     streams: list[Link[TorrentStreams]]

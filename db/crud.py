@@ -275,7 +275,7 @@ async def get_series_meta(meta_id: str):
             "type": "series",
             "title": series_data.title,
             "poster": f"{settings.host_url}/poster/series/{meta_id}.jpg",
-            "background": series_data.poster,
+            "background": series_data.background or series_data.poster,
             "videos": [],
         }
     }
@@ -299,6 +299,8 @@ async def get_series_meta(meta_id: str):
                 ):
                     continue
 
+                released_date = episode.released or stream.created_at
+
                 metadata["meta"]["videos"].append(
                     {
                         "id": stream_id,
@@ -307,9 +309,7 @@ async def get_series_meta(meta_id: str):
                         else episode.title,
                         "season": stream.season.season_number,
                         "episode": episode.episode_number,
-                        "released": stream.created_at.strftime(
-                            "%Y-%m-%dT%H:%M:%S.000Z"
-                        ),
+                        "released": released_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                     }
                 )
 
