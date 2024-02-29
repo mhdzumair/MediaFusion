@@ -147,17 +147,16 @@ async def parse_stream_data(
     episode: int = None,
 ) -> list[Stream]:
     stream_list = []
-
     streams = await filter_and_sort_streams(streams, user_data)
 
-    # Pre-determined values
+    # Compute values that do not change per iteration outside the loop
     show_full_torrent_name = user_data.show_full_torrent_name
-    has_streaming_provider = user_data.streaming_provider is not None
     streaming_provider_name = (
         user_data.streaming_provider.service.title()
-        if has_streaming_provider
+        if user_data.streaming_provider
         else "Torrent"
     )
+    has_streaming_provider = user_data.streaming_provider is not None
     base_proxy_url_template = (
         f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
         if has_streaming_provider
@@ -166,64 +165,69 @@ async def parse_stream_data(
 
     for stream_data in streams:
         episode_data = stream_data.get_episode(season, episode)
-        torrent_name = None
+
         if show_full_torrent_name:
             torrent_name = (
                 f"{stream_data.torrent_name}/{episode_data.title}"
                 if episode_data
                 else stream_data.torrent_name
             )
-            torrent_name = torrent_name.replace(".torrent", "").replace(".", " ")
+            torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(".", " ")
+        else:
+            torrent_name = None
 
-        quality_detail = " - ".join(
-            filter(
-                None,
-                [
-                    stream_data.quality,
-                    stream_data.codec,
-                    stream_data.audio,
-                ],
-            )
-        )
-        resolution = " " + stream_data.resolution if stream_data.resolution else ""
-        streaming_provider = (
-            f"{streaming_provider_name} ⚡️"
-            if stream_data.cached
-            else f"{streaming_provider_name} ⏳"
-        )
-        seeders = (
-            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
-        )
-
-        description_parts = [
-            torrent_name or quality_detail,
-            f"{convert_bytes_to_readable(episode_data.size)} - {convert_bytes_to_readable(stream_data.size)}"
-            if episode_data and episode_data.size
-            else convert_bytes_to_readable(stream_data.size),
-            seeders,
-            " + ".join(stream_data.languages),
-            stream_data.source,
+        quality_detail_parts = [
+            ("📺 " + stream_data.quality) if stream_data.quality else None,
+            ("🎞️ " + stream_data.codec) if stream_data.codec else None,
+            ("🎵 " + stream_data.audio) if stream_data.audio else None,
         ]
-        description = ", ".join(filter(lambda x: bool(x), description_parts))
+        quality_detail = " - ".join(filter(None, quality_detail_parts))
+
+        resolution = f" {stream_data.resolution}" if stream_data.resolution else ""
+        streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
+
+        seeders_info = (
+            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else "👤 N/A"
+        )
+        if episode_data and episode_data.size:
+            size_info = f"{convert_bytes_to_readable(episode_data.size)} / {convert_bytes_to_readable(stream_data.size)}"
+        else:
+            size_info = convert_bytes_to_readable(stream_data.size)
+
+        languages = "🌐 " + " + ".join(stream_data.languages)
+        source_info = f"🔗 {stream_data.source}"
+
+        primary_info = torrent_name if show_full_torrent_name else quality_detail
+        description_parts = [
+            primary_info,
+            size_info,
+            seeders_info,
+            languages,
+            source_info,
+        ]
+        description = ", ".join(filter(None, description_parts))
 
         stream_details = {
-            "name": f"MediaFusion {streaming_provider}{resolution}",
+            "name": f"MediaFusion {streaming_provider_name}{resolution} {streaming_provider_status}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index
             if episode_data
             else stream_data.file_index,
-            "behaviorHints": {"bingeGroup": f"MediaFusion-{quality_detail}"},
+            "behaviorHints": {
+                "bingeGroup": f"MediaFusion-{quality_detail}-{resolution}",
+            },
         }
 
         if has_streaming_provider:
-            base_proxy_url = base_proxy_url_template.format(stream_data.id)
-            if episode_data:
-                base_proxy_url += f"&season={season}&episode={episode}"
-            stream_details["url"] = base_proxy_url
+            base_proxy_url = base_proxy_url_template.format(stream_data.id) + (
+                f"&season={season}&episode={episode}" if episode_data else ""
+            )
+            stream_details.update(
+                {"url": base_proxy_url, "behaviorHints": {"notWebReady": True}}
+            )
             stream_details.pop("infoHash", None)
             stream_details.pop("fileIdx", None)
-            stream_details["behaviorHints"]["notWebReady"] = True
 
         stream_list.append(Stream(**stream_details))
 
