@@ -183,18 +183,20 @@ async def parse_stream_data(
         ]
         quality_detail = " - ".join(filter(None, quality_detail_parts))
 
-        resolution = f" {stream_data.resolution}" if stream_data.resolution else ""
+        resolution = stream_data.resolution.upper() if stream_data.resolution else "N/A"
         streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
 
         seeders_info = (
-            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else "👤 N/A"
+            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
         )
         if episode_data and episode_data.size:
             size_info = f"{convert_bytes_to_readable(episode_data.size)} / {convert_bytes_to_readable(stream_data.size)}"
         else:
             size_info = convert_bytes_to_readable(stream_data.size)
 
-        languages = "🌐 " + " + ".join(stream_data.languages)
+        languages = (
+            "🌐 " + " + ".join(stream_data.languages) if stream_data.languages else None
+        )
         source_info = f"🔗 {stream_data.source}"
 
         primary_info = torrent_name if show_full_torrent_name else quality_detail
@@ -208,7 +210,7 @@ async def parse_stream_data(
         description = ", ".join(filter(None, description_parts))
 
         stream_details = {
-            "name": f"MediaFusion {streaming_provider_name}{resolution} {streaming_provider_status}",
+            "name": f"MediaFusion {streaming_provider_name} {resolution} {streaming_provider_status}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index
