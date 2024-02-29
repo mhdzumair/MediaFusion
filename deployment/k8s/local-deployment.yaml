@@ -480,7 +480,7 @@ kind: CronJob
 metadata:
   name: formula-tgx-spider
 spec:
-  schedule: "0 */12 * * *"  # At minute 0 past every 12th hour
+  schedule: "0 * * * *"  # At minute 0 every hour
   jobTemplate:
     spec:
       template:
@@ -489,7 +489,7 @@ spec:
           - name: formula-tgx-spider
             image: mhdzumair/mediafusion:beta
             imagePullPolicy: Always
-            command: ["pipenv", "run", "scrapy", "crawl", "formula-tgx"]
+            command: ["pipenv", "run", "scrapy", "crawl", "formula_tgx"]
             resources:
               requests:
                 memory: "128Mi"
