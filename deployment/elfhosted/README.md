@@ -2,7 +2,7 @@
 
 [ElfHosted](https://elfhosted.com) is a geeky PaaS, which provides "one-click" hosting of popular apps, as an alternative to selfhosting.
 
-In addition to hosting https://mediafusion.elfhosted.com (*one of potentially many community instances, not affilianted*), ElfHosted provide "private" instances of MediaFusion, which can be customized for your own use.
+In addition to hosting https://mediafusion.elfhosted.com (*one of potentially many community instances, not affiliated*), ElfHosted provide "private" instances of MediaFusion, which can be customized for your own use.
 
 > [!NOTE]
 > While ElfHosted may host a community instance of MediaFusion, it also hosts community instances of **other** [Stremio add-ons](https://elfhosted.com/stremio-addons/) for the benefit of the wider community, and so should not be construed to be affiliated with the MediaFusion project in any way.
