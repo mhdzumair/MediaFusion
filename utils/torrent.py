@@ -15,7 +15,7 @@ from anyio import (
 )
 from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
-from torf import Magnet
+from torf import Magnet, MagnetError
 
 from utils.parser import is_contain_18_plus_keywords
 
@@ -183,3 +183,14 @@ async def init_best_trackers():
             logging.info(f"Loaded {len(trackers)} trackers. Total: {len(TRACKERS)}")
         else:
             logging.error(f"Failed to load trackers: {response.status_code}")
+
+
+def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
+    """
+    Parse magnet link and return info hash and trackers
+    """
+    try:
+        magnet = Magnet.from_string(magnet_link)
+    except MagnetError:
+        return "", []
+    return magnet.infohash, magnet.tr

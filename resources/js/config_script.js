@@ -97,6 +97,28 @@ function updateSizeOutput() {
 
 // ---- Helper Functions ----
 
+
+function showNotification(message, type = 'info') {
+    toastr.options = {
+        closeButton: true,
+        newestOnTop: true,
+        progressBar: true,
+        positionClass: "toast-top-center",
+        preventDuplicates: true,
+        onclick: null,
+        showDuration: "300",
+        hideDuration: "1000",
+        timeOut: "5000",
+        extendedTimeOut: "1000",
+        showEasing: "swing",
+        hideEasing: "linear",
+        showMethod: "fadeIn",
+        hideMethod: "fadeOut",
+    };
+
+    toastr[type](message);
+}
+
 function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
 }
@@ -179,6 +201,134 @@ function updateProviderFields(isChangeEvent = false) {
     adjustOAuthSectionDisplay();
 }
 
+// Function to get installation URL
+async function getInstallationUrl(isRedirect = false) {
+    const userData = getUserData();
+    let urlPrefix = window.location.protocol + "//";
+    if (isRedirect) {
+        urlPrefix = "stremio://";
+    }
+
+    if (!userData) {
+        showNotification('Validation failed. Please check your input.', 'error');
+        return null;
+    }
+
+    try {
+        const response = await fetch('/encrypt-user-data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
+        });
+        const data = await response.json();
+        if (!data.encrypted_str) {
+            showNotification('An error occurred while encrypting user data', 'error');
+            return null;
+        }
+        return urlPrefix + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+    } catch (error) {
+        showNotification('An error occurred while encrypting user data', 'error');
+        console.error('Error encrypting user data:', error);
+        return null;
+    }
+}
+
+function getUserData() {
+    let isValid = true;
+    const provider = document.getElementById('provider_service').value;
+    let streamingProviderData = {};
+
+    const validateInput = (elementId, condition) => {
+        const element = document.getElementById(elementId);
+        if (condition) {
+            element.classList.remove('is-invalid');
+        } else {
+            element.classList.add('is-invalid');
+            if (isValid) {
+                element.focus(); // Set focus on the first invalid input
+            }
+            isValid = false;
+        }
+    };
+
+    // Validate and collect streaming provider data
+    if (provider) {
+        if (servicesRequiringCredentials.includes(provider)) {
+            validateInput('username', document.getElementById('username').value);
+            validateInput('password', document.getElementById('password').value);
+            streamingProviderData.username = document.getElementById('username').value;
+            streamingProviderData.password = document.getElementById('password').value;
+        } else {
+            validateInput('provider_token', document.getElementById('provider_token').value);
+            streamingProviderData.token = document.getElementById('provider_token').value;
+        }
+        streamingProviderData.service = provider;
+        streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
+    } else {
+        streamingProviderData = null;
+    }
+
+    // Collect and validate other user data
+    const maxSizeSlider = document.getElementById('max_size_slider');
+    const maxSizeValue = maxSizeSlider.value;
+    const maxSize = maxSizeSlider.max;
+    const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
+    const maxStreamsPerResolution = document.getElementById('maxStreamsPerResolution').value;
+    validateInput('maxStreamsPerResolution', maxStreamsPerResolution && !isNaN(maxStreamsPerResolution) && maxStreamsPerResolution > 0);
+
+    let apiPassword = null;
+    // Check for API Password if authentication is required
+    if (document.getElementById('api_password')) {
+        validateInput('api_password', document.getElementById('api_password').value);
+        apiPassword = document.getElementById('api_password').value;
+    }
+
+    if (!isValid) {
+        return null; // Return null if validation fails
+    }
+
+    // Collect and return the rest of the user data
+    const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
+    const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
+
+    return {
+        streaming_provider: streamingProviderData,
+        selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
+        selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
+        enable_catalogs: document.getElementById('enable_catalogs').checked,
+        max_size: maxSizeBytes,
+        max_streams_per_resolution: maxStreamsPerResolution,
+        torrent_sorting_priority: selectedSortingOptions,
+        show_full_torrent_name: torrentDisplayOption === 'fullName',
+        api_password: apiPassword,
+    };
+}
+
+// Function to display the installation URL in a textarea for manual copying
+function displayFallbackUrl(url) {
+    const container = document.getElementById('fallbackUrlContainer');
+    const textarea = document.getElementById('fallbackUrl');
+    textarea.value = url;
+    container.style.display = 'block'; // Make the container visible
+    textarea.focus();
+}
+
+function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
+    document.getElementById(toggleButtonId).addEventListener('click', function (_) {
+        const passwordInput = document.getElementById(passwordInputId);
+        const passwordIcon = document.getElementById(toggleIconId);
+        if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+            passwordIcon.className = "bi bi-eye-slash";
+        } else {
+            passwordInput.type = "password";
+            passwordIcon.className = "bi bi-eye";
+        }
+    });
+}
+
 // ---- Event Listeners ----
 
 document.getElementById('provider_token').addEventListener('input', function () {
@@ -188,31 +338,19 @@ document.getElementById('provider_token').addEventListener('input', function () 
 // Event listener for the slider
 document.getElementById('max_size_slider').addEventListener('input', updateSizeOutput);
 
-document.getElementById('togglePassword').addEventListener('click', function (e) {
-    const passwordInput = document.getElementById('password');
-    const passwordIcon = document.getElementById('togglePasswordIcon');
-    if (passwordInput.type === "password") {
-        passwordInput.type = "text";
-        passwordIcon.className = "bi bi-eye-slash";
-    } else {
-        passwordInput.type = "password";
-        passwordIcon.className = "bi bi-eye";
-    }
-});
-
 oAuthBtn.addEventListener('click', async function () {
     const provider = document.getElementById('provider_service').value;
     oAuthBtn.disabled = true;
     document.getElementById('provider_token').disabled = true;
 
     if (provider === 'seedr') {
-        await initiateOAuthFlow('/seedr/get-device-code', '/seedr/authorize');
+        await initiateOAuthFlow('/streaming_provider/seedr/get-device-code', '/streaming_provider/seedr/authorize');
     } else if (provider === 'realdebrid') {
-        await initiateOAuthFlow('/realdebrid/get-device-code', '/realdebrid/authorize');
+        await initiateOAuthFlow('/streaming_provider/realdebrid/get-device-code', '/streaming_provider/realdebrid/authorize');
     } else if (provider === 'debridlink') {
-        await initiateOAuthFlow('/debridlink/get-device-code', '/debridlink/authorize')
+        await initiateOAuthFlow('/streaming_provider/debridlink/get-device-code', '/streaming_provider/debridlink/authorize')
     } else if (provider === 'premiumize') {
-        return window.location.href = "/premiumize/authorize";
+        return window.location.href = "/streaming_provider/premiumize/authorize";
     }
 });
 
@@ -220,79 +358,45 @@ oAuthBtn.addEventListener('click', async function () {
 document.getElementById('configForm').addEventListener('submit', async function (event) {
     event.preventDefault();
 
-    const provider = document.getElementById('provider_service').value;
-    let isValid = true;
-
-    const validateInput = (elementId, condition) => {
-        const element = document.getElementById(elementId);
-        if (condition) {
-            element.classList.remove('is-invalid');
-        } else {
-            element.classList.add('is-invalid');
-            isValid = false;
-        }
-    };
-
-    // Conditional validation based on provider
-    if (provider && !servicesRequiringCredentials.includes(provider)) {
-        // Validate token for providers that use token-based authentication
-        validateInput('provider_token', document.getElementById('provider_token').value);
-    } else if (servicesRequiringCredentials.includes(provider)) {
-        // Validate username and password for providers requiring credentials
-        validateInput('username', document.getElementById('username').value);
-        validateInput('password', document.getElementById('password').value);
+    const installationUrl = await getInstallationUrl(true);
+    if (installationUrl) {
+        window.location.href = installationUrl;
     }
+});
 
-    if (isValid) {
-        let streamingProviderData = {};
-        if (provider) {
-            if (servicesRequiringCredentials.includes(provider)) {
-                // Include username and password
-                streamingProviderData.username = document.getElementById('username').value;
-                streamingProviderData.password = document.getElementById('password').value;
-            } else {
-                // Include token
-                streamingProviderData.token = document.getElementById('provider_token').value;
-            }
-            streamingProviderData.service = provider;
-            streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
-        } else {
-            streamingProviderData = null;
-        }
-
-        // Get the max size value from the slider
-        const maxSizeSlider = document.getElementById('max_size_slider');
-        const maxSizeValue = maxSizeSlider.value;
-        const maxSize = maxSizeSlider.max;
-
-        // Check if the max size is set to the slider's max value, which we treat as 'infinity'
-        const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
-
-
-        const userData = {
-            streaming_provider: streamingProviderData,
-            selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
-            selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
-            enable_catalogs: document.getElementById('enable_catalogs').checked,
-            max_size: maxSizeBytes,
-        };
-
+document.getElementById('shareBtn').addEventListener('click', async function (event) {
+    event.preventDefault();
+    const installationUrl = await getInstallationUrl();
+    if (installationUrl) {
         try {
-            const response = await fetch('/encrypt-user-data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(userData)
+            await navigator.share({
+                title: 'MediaFusion Addon Installation',
+                url: installationUrl,
             });
-
-            const data = await response.json();
-            window.location.href = "stremio://" + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+            showNotification('Installation URL shared successfully. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
-            console.error('Error encrypting user data:', error);
+            displayFallbackUrl(installationUrl);
+            showNotification('Unable to use Share API. URL is ready to be copied manually.', 'info');
         }
     }
 });
+
+document.getElementById('copyBtn').addEventListener('click', async function (event) {
+    event.preventDefault();
+
+    // Get the installation URL asynchronously
+    const installationUrl = await getInstallationUrl();
+    if (installationUrl) {
+        try {
+            await navigator.clipboard.writeText(installationUrl);
+            showNotification('Installation URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
+        } catch (error) {
+            displayFallbackUrl(installationUrl);
+            showNotification('Unable to access clipboard. URL is ready to be copied manually.', 'info');
+        }
+    }
+});
+
 
 // ---- Initial Setup ----
 
@@ -306,4 +410,39 @@ document.addEventListener('DOMContentLoaded', function () {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
+
+    setupPasswordToggle('password', 'togglePassword', 'togglePasswordIcon');
+    setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
+
+    if (navigator.share) {
+        document.getElementById('shareBtn').style.display = 'block';
+    } else {
+        document.getElementById('copyBtn').style.display = 'block';
+    }
+});
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize Sortable on the catalog container
+    new Sortable(document.getElementById('catalogs'), {
+        handle: '.draggable-catalog',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
+    });
+    new Sortable(document.getElementById('streamSortOrder'), {
+        handle: '.sortable-list',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
+    });
+
 });

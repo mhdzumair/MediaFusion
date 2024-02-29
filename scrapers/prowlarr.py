@@ -39,12 +39,16 @@ async def get_streams_from_prowlarr(
         return streams
 
     if catalog_type == "movie":
-        streams.extend(await scrap_movies_streams_from_prowlarr(video_id, title, year))
+        new_streams = await fetch_stream_data_with_timeout(
+            scrap_movies_streams_from_prowlarr, video_id, title, year
+        )
+        streams.extend(new_streams)
         background_movie_title_search.send(video_id, title, year)
     elif catalog_type == "series":
-        streams.extend(
-            await scrap_series_streams_from_prowlarr(video_id, title, season, episode)
+        new_streams = await fetch_stream_data_with_timeout(
+            scrap_series_streams_from_prowlarr, video_id, title, season, episode
         )
+        streams.extend(new_streams)
         background_series_title_search.send(video_id, title, season, episode)
     # Cache the data for 24 hours
     await redis.set(
@@ -56,46 +60,53 @@ async def get_streams_from_prowlarr(
     return streams
 
 
+async def fetch_stream_data_with_timeout(func, *args):
+    """
+    Attempts to fetch stream data within a specified timeout.
+    If the operation exceeds the timeout, it logs a warning and ignores the operation.
+    """
+    try:
+        # Attempt the operation with a prowlarr immediate max process time.
+        return await asyncio.wait_for(
+            func(*args), timeout=settings.prowlarr_immediate_max_process_time
+        )
+    except asyncio.TimeoutError:
+        # Log a warning if the operation takes too long but don't reschedule.
+        logging.warning(
+            f"Timeout exceeded for operation: {func.__name__} {args}. Skipping."
+        )
+    except Exception as e:
+        # Log any other errors that occur.
+        logging.error(f"Error during operation: {e}")
+    return []
+
+
 @asynccontextmanager
-async def get_prowlarr_client():
+async def get_prowlarr_client(timeout: int = 10):
     headers = {
         "accept": "application/json",
         "X-Api-Key": settings.prowlarr_api_key,
     }
-    async with httpx.AsyncClient(headers=headers, timeout=10) as client:
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
         yield client
 
 
-async def fetch_stream_data(url: str, params: dict) -> dict | list[dict]:
+async def fetch_stream_data(
+    url: str, params: dict, timeout: int = 10
+) -> dict | list[dict]:
     """Fetch stream data asynchronously."""
-    async with get_prowlarr_client() as client:
+    async with get_prowlarr_client(timeout) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
         return response.json()
 
 
-async def is_prowlarr_healthy() -> bool:
-    health_url = f"{settings.prowlarr_url}/api/v1/health"
-    try:
-        async with get_prowlarr_client() as client:
-            response = await client.get(health_url)
-            response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
-            return True
-    except Exception as e:
-        logging.error(f"Prowlarr health check failed: {e}")
-        return False
-
-
 async def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
-    should_retry = retries_so_far < 5 and isinstance(exception, httpx.HTTPError)
+    should_retry = retries_so_far < 10 and isinstance(exception, httpx.HTTPError)
     if not should_retry:
         logging.error(f"Failed to fetch data from Prowlarr: {exception}")
         return False
-
-    while True:
-        if await is_prowlarr_healthy():
-            return True
-        await asyncio.sleep(5)
+    return True
 
 
 async def scrap_movies_streams_from_prowlarr(
@@ -138,7 +149,7 @@ async def background_movie_title_search(video_id: str, title: str, year: str):
         "categories": [2000],  # Movies
         "type": "search",
     }
-    title_search = await fetch_stream_data(url, params_title)
+    title_search = await fetch_stream_data(url, params_title, timeout=100)
     if title_search:
         await parse_and_store_movie_stream_data(video_id, title, year, title_search)
         logging.info(f"Background title search completed for {title} ({year})")
@@ -193,7 +204,7 @@ async def background_series_title_search(
     if season is not None and episode is not None:
         params_title.update({"season": season, "episode": episode})
 
-    title_search = await fetch_stream_data(url, params_title)
+    title_search = await fetch_stream_data(url, params_title, timeout=60)
     if title_search:
         await parse_and_store_series_stream_data(video_id, title, season, title_search)
         logging.info(
@@ -201,7 +212,9 @@ async def background_series_title_search(
         )
 
 
-async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]:
+async def get_torrent_data_from_prowlarr(
+    download_url: str, indexer: str
+) -> tuple[dict, bool]:
     """Get torrent data from prowlarr."""
     if not download_url:
         raise ValueError("No download URL provided")
@@ -216,18 +229,21 @@ async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]
 
     if response.status_code == 301:
         redirect_url = response.headers.get("Location")
-        return await get_torrent_data_from_prowlarr(redirect_url)
+        return await get_torrent_data_from_prowlarr(redirect_url, indexer)
     elif response.status_code == 200:
         return extract_torrent_metadata(response.content), True
+    logging.error(
+        f"Failed to fetch torrent data from {indexer}: {response.status_code} : {download_url}"
+    )
     response.raise_for_status()
     raise ValueError(f"Failed to fetch torrent data from {download_url}")
 
 
-async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
+async def prowlarr_data_parser(meta_data: dict, video_id: str) -> tuple[dict, bool]:
     """Parse prowlarr data."""
     if is_contain_18_plus_keywords(meta_data.get("title")):
         logging.warning(
-            f"Skipping {meta_data.get('title')} due to adult content keywords."
+            f"Skipping '{meta_data.get('title')}' due to adult content keyword in {video_id}"
         )
         return {}, False
 
@@ -236,6 +252,7 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
         "YourBittorrent",
         "The Pirate Bay",
         "RuTracker.RU",
+        "BitSearch",
     ]:
         # For these indexers, the guid is a direct torrent file download link
         download_url = meta_data.get("guid")
@@ -246,14 +263,12 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
             meta_data.update(
                 await torrent_downloads.get_torrent_info(meta_data.get("infoUrl"))
             )
-        if meta_data.get("indexer") == "BitSearch":
-            meta_data["downloadUrl"] = meta_data["magnetUrl"]
 
         download_url = meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
 
     try:
         torrent_data, is_torrent_downloaded = await get_torrent_data_from_prowlarr(
-            download_url
+            download_url, meta_data.get("indexer")
         )
     except Exception as e:
         if meta_data.get("magnetUrl", "").startswith("magnet:"):
@@ -470,7 +485,7 @@ async def parse_and_store_stream(
     catalog_type: str,
     season: int = None,
 ) -> tuple[TorrentStreams | None, bool]:
-    parsed_data, _ = await prowlarr_data_parser(stream_data)
+    parsed_data, _ = await prowlarr_data_parser(stream_data, video_id)
     info_hash = parsed_data.get("info_hash", "").lower()
     torrent_stream, torrent_needed_update = None, False
 
@@ -526,7 +541,7 @@ async def parse_and_store_movie_stream_data(
     parsed_results = await batch_process_with_circuit_breaker(
         parse_and_store_stream,
         stream_data,
-        5,
+        10,
         3,
         circuit_breaker,
         video_id,

@@ -14,7 +14,7 @@
 <body>
 <div class="container">
     <div class="row justify-content-center">
-        <div class="col-lg-6 col-md-8 col-sm-10 config-container">
+        <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
             <img class="logo" src="{{logo}}">
             <h3 class="text-center mb-5"><b>{{name}}</b> - {{version}}</h3>
             <p>Offers extensive catalogs for multiple languages including Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies, series & live tv.</p>
@@ -56,9 +56,11 @@
                 {% endfor %}
             </ul>
 
-            <a id="installLink" class="install-link btn btn-block mx-auto mt-4" href="/configure">
-                Configure Add-on
-            </a>
+            <div class="button-container">
+                <a id="installLink" class="install-link btn btn-block mx-auto" href="/configure">
+                    Configure Add-on
+                </a>
+            </div>
         </div>
     </div>
 </div>

@@ -33,6 +33,7 @@ CATALOG_ID_DATA = [
     "mediafusion_search_tv",
     "torrentio_streams",
     "prowlarr_streams",
+    "formula_racing",
 ]
 
 CATALOG_NAME_DATA = [
@@ -70,6 +71,7 @@ CATALOG_NAME_DATA = [
     "MediaFusion Search TV",
     "Torrentio Streams",
     "Prowlarr Streams",
+    "Formula Racing",
 ]
 
 RESOLUTIONS = [
@@ -84,5 +86,23 @@ RESOLUTIONS = [
     None,
 ]
 
+RESOLUTION_RANKING = {res: rank for rank, res in enumerate(reversed(RESOLUTIONS))}
+
 
 DEBRID_SERVER_TIMEOUT = 15
+
+
+DEFAULT_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=604800, public",
+}
+NO_CACHE_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+TORRENT_SORTING_PRIORITY = ["cached", "resolution", "size", "seeders", "created_at"]

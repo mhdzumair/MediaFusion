@@ -9,7 +9,6 @@ from redis.asyncio import Redis
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
-from db.schemas import UserData
 from scrapers.helpers import (
     UA_HEADER,
     update_torrent_series_streams_metadata,
@@ -128,8 +127,6 @@ async def store_and_parse_movie_stream_data(
             continue
 
         parsed_data = parse_stream_title(stream)
-        if not parsed_data["seeders"]:
-            continue
 
         torrent_stream = await TorrentStreams.get(stream["infoHash"])
 
@@ -140,6 +137,9 @@ async def store_and_parse_movie_stream_data(
             await torrent_stream.save()
         else:
             # Create new stream
+            source = (
+                stream["name"].split()[0].title() if stream["name"] else "Torrentio"
+            )
             torrent_stream = TorrentStreams(
                 id=stream["infoHash"],
                 torrent_name=parsed_data["torrent_name"],
@@ -153,7 +153,7 @@ async def store_and_parse_movie_stream_data(
                 quality=parsed_data["metadata"].get("quality"),
                 audio=parsed_data["metadata"].get("audio"),
                 encoder=parsed_data["metadata"].get("encoder"),
-                source="Torrentio",
+                source=source,
                 catalog=["torrentio_streams"],
                 updated_at=datetime.now(),
                 seeders=parsed_data["seeders"],

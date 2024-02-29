@@ -30,3 +30,12 @@ def exclude(func):
 
     wrapper.exclude = True
     return wrapper
+
+
+def auth_required(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+
+    wrapper.auth_required = True
+    return wrapper

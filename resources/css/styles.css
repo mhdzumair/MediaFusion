@@ -49,16 +49,30 @@ body, html {
     color: white;
     background: #4a47a3;
     padding: 0.8rem 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     text-align: center;
     font-size: 1rem;
     font-weight: 300;
     cursor: pointer;
     opacity: 0.9;
-    transition: opacity 0.3s, background-color 0.3s;
+    transition: all 0.3s ease;
 }
 
 .btn:hover, button:hover {
     opacity: 1;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn:active, button:active {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); /* Smaller shadow for active state */
+}
+
+/* Button Grouping */
+.button-container {
+    display: flex;
+    justify-content: center;
+    gap: 1rem; /* Space between buttons */
+    margin-top: 1rem;
 }
 
 input[type="text"], input[type="password"], select.form-control {
@@ -113,7 +127,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     align-items: center;
     border: 2px solid transparent;
     margin-bottom: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.2rem;
     border-radius: 5px;
     cursor: pointer;
     transition: transform 0.3s, background-color 0.3s, border-color 0.3s;
@@ -142,6 +156,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     display: flex;
     align-items: center;
     gap: 1rem;
+    min-height: 36px; /* Minimum touch target size */
 }
 
 .form-check-label::before {
@@ -180,7 +195,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     -moz-appearance: none;
     appearance: none;
     border-radius: 0.25rem;
-    transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+    transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
 }
 
 /* Styling for the range slider */
@@ -252,19 +267,91 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     margin-top: 1rem;
 }
 
+.draggable-catalog {
+    cursor: grab; /* Indicates the item can be dragged */
+    padding: 10px; /* Optional: Adjust padding for better visual */
+    border-radius: 5px; /* Optional: Rounded corners for aesthetics */
+    transition: box-shadow 0.2s ease; /* Smooth transition for shadow */
+}
+
+.draggable-catalog:hover {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Shadow effect on hover */
+}
+
+/* Style for the element being dragged */
+.sortable-drag {
+    background-color: rgba(74, 71, 163, 0.2);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* More pronounced shadow for the dragging item */
+}
+
+/* Style for the placeholder of the original position */
+.sortable-ghost {
+    opacity: 0.4; /* Slightly see-through */
+    background-color: #4a47a3; /* Different background to distinguish */
+}
+
+/* Fallback URL Container Styles */
+.fallback-url-container {
+    background: rgba(0, 0, 0, 0.37);
+    color: #E0E0E0; /* Lighter text for readability */
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 20px;
+}
+
+.fallback-url-container p {
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    color: #fff;
+}
+
+.fallback-url-container label {
+    display: block;
+    margin-bottom: 10px;
+    color: #E0E0E0;
+    font-weight: bold;
+}
+
+.fallback-url-container textarea {
+    background-color: #fff;
+    color: #000;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 0.9rem;
+    height: auto; /* Adjust based on content */
+    resize: none; /* Disable resizing */
+    margin-bottom: 10px;
+}
+
+
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .config-container {
-        padding: 15px;
+        padding: 10px;
     }
 
     .section-container {
         margin-bottom: 15px;
-        padding: 15px;
+        padding: 10px;
     }
 
     h4 {
         font-size: 1.2rem;
+    }
+
+    .button-container {
+        flex-direction: column; /* Stack buttons on smaller screens */
+    }
+
+    .fallback-url-container {
+        padding: 10px;
+    }
+
+    .fallback-url-container textarea,
+    .fallback-url-container button {
+        font-size: 0.8rem;
     }
 }
 

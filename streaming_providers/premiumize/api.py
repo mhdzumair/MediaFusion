@@ -3,14 +3,9 @@ from fastapi.responses import RedirectResponse
 
 from db import schemas
 from streaming_providers.premiumize.client import Premiumize
-from utils import crypto
+from utils import crypto, const
 
 router = APIRouter()
-headers = {
-    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-    "Pragma": "no-cache",
-    "Expires": "0",
-}
 
 
 @router.get("/authorize")
@@ -19,7 +14,9 @@ async def authorize():
         return {"error": "Premiumize OAuth not configured"}
 
     premiumize_client = Premiumize()
-    return RedirectResponse(premiumize_client.get_authorization_url(), headers=headers)
+    return RedirectResponse(
+        premiumize_client.get_authorization_url(), headers=const.NO_CACHE_HEADERS
+    )
 
 
 @router.get("/oauth2_redirect")
@@ -31,4 +28,6 @@ async def oauth2_redirect(code: str):
         streaming_provider=schemas.StreamingProvider(service="premiumize", token=token)
     )
     encrypted_str = crypto.encrypt_user_data(user_data)
-    return RedirectResponse(f"/{encrypted_str}/configure", headers=headers)
+    return RedirectResponse(
+        f"/{encrypted_str}/configure", headers=const.NO_CACHE_HEADERS
+    )

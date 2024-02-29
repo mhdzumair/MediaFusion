@@ -10,7 +10,7 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 1
+      maxUnavailable: 0
       maxSurge: 1
   template:
     metadata:
@@ -19,8 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:beta
-        imagePullPolicy: Always
+        image: mhdzumair/mediafusion:v3.7.1
         ports:
         - containerPort: 80
         resources:
@@ -123,9 +122,8 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:beta
-        imagePullPolicy: Always
-        command: ["pipenv", "run", "dramatiq", "api.task"]
+        image: mhdzumair/mediafusion:v3.7.1
+        command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
             value: "mongodb://mongodb-service:27017/mediafusion"
@@ -141,10 +139,10 @@ spec:
                 key: PROWLARR_API_KEY
         resources:
           requests:
-            memory: "300Mi"
+            memory: "500Mi"
             cpu: "200m"
           limits:
-            memory: "800Mi"
+            memory: "1Gi"
             cpu: "200m"
 
 ---
@@ -235,7 +233,7 @@ spec:
               sleep 5;
             done;
             echo "Prowlarr is ready, setting up indexers...";
-            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/develop/resources/json/prowlarr-indexers.json; do
+            until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json; do
               echo "Failed to download indexers file. Retrying...";
               sleep 3;
             done;
@@ -449,7 +447,7 @@ kind: CronJob
 metadata:
   name: tamilmv-scraper
 spec:
-  schedule: "30 */6 * * *"  # At minute 30 past every 6th hour
+  schedule: "30 */3 * * *"  # At minute 30 past every 3rd hour
   jobTemplate:
     spec:
       template:
@@ -459,6 +457,39 @@ spec:
             image: mhdzumair/mediafusion:beta
             imagePullPolicy: Always
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "200m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017/mediafusion"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: formula-tgx-spider
+spec:
+  schedule: "0 */12 * * *"  # At minute 0 past every 12th hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: formula-tgx-spider
+            image: mhdzumair/mediafusion:beta
+            imagePullPolicy: Always
+            command: ["pipenv", "run", "scrapy", "crawl", "formula-tgx"]
             resources:
               requests:
                 memory: "128Mi"

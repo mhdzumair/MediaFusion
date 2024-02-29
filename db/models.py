@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, Any
 
 import pymongo
-from beanie import Document, Link, BackLink
+from beanie import Document, Link
 from pydantic import BaseModel, Field
 from pymongo import IndexModel, ASCENDING
 
@@ -12,6 +12,8 @@ class Episode(BaseModel):
     filename: str | None = None
     size: int | None = None
     file_index: int | None = None
+    title: str | None = None
+    released: datetime | None = None
 
 
 class Season(BaseModel):
@@ -38,7 +40,7 @@ class TorrentStreams(Document):
     audio: Optional[str] = None
     encoder: Optional[str] = None
     seeders: Optional[int] = None
-    cached: Optional[bool] = None
+    cached: Optional[bool] = Field(default=False, exclude=True)
     meta_id: Optional[str] = None
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
@@ -66,7 +68,7 @@ class MediaFusionMetaData(Document):
     id: str
     title: str
     year: Optional[int] = None
-    poster: str
+    poster: Optional[str] = None
     is_poster_working: Optional[bool] = True
     background: Optional[str] = None
     streams: list[Link[TorrentStreams]]

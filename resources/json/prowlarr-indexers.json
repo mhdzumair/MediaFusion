@@ -251,7 +251,7 @@
 		"order": 0,
 		"name": "prefer_magnet_links",
 		"label": "Prefer Magnet Links",
-		"value": false,
+		"value": true,
 		"type": "checkbox",
 		"advanced": false,
 		"isFloat": false

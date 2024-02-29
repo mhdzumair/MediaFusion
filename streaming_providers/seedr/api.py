@@ -3,20 +3,16 @@ from fastapi.responses import JSONResponse
 from seedrcc import Login
 
 from db.schemas import AuthorizeData
+from utils import const
 
 router = APIRouter()
-headers = {
-    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-    "Pragma": "no-cache",
-    "Expires": "0",
-}
 
 
 @router.get("/get-device-code")
 async def get_device_code():
     seedr = Login()
     device_code = seedr.getDeviceCode()
-    return JSONResponse(content=device_code, headers=headers)
+    return JSONResponse(content=device_code, headers=const.NO_CACHE_HEADERS)
 
 
 @router.post("/authorize")
@@ -25,6 +21,8 @@ async def authorize(data: AuthorizeData):
     response = seedr.authorize(data.device_code)
 
     if "access_token" in response:
-        return JSONResponse(content={"token": seedr.token}, headers=headers)
+        return JSONResponse(
+            content={"token": seedr.token}, headers=const.NO_CACHE_HEADERS
+        )
     else:
-        return JSONResponse(content=response, headers=headers)
+        return JSONResponse(content=response, headers=const.NO_CACHE_HEADERS)
