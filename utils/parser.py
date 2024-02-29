@@ -180,12 +180,12 @@ async def parse_stream_data(
                 None,
                 [
                     stream_data.quality,
-                    stream_data.resolution,
                     stream_data.codec,
                     stream_data.audio,
                 ],
             )
         )
+        resolution = " " + stream_data.resolution if stream_data.resolution else ""
         streaming_provider = (
             f"{streaming_provider_name} ⚡️"
             if stream_data.cached
@@ -207,7 +207,7 @@ async def parse_stream_data(
         description = ", ".join(filter(lambda x: bool(x), description_parts))
 
         stream_details = {
-            "name": f"MediaFusion {streaming_provider}",
+            "name": f"MediaFusion {streaming_provider}{resolution}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index
