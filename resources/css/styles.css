@@ -20,7 +20,6 @@ body, html {
     max-height: 95vh;
     overflow-y: auto;
     transition: padding 0.3s ease;
-    width: auto;
 }
 
 .section-container {
