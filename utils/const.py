@@ -33,6 +33,7 @@ CATALOG_ID_DATA = [
     "mediafusion_search_tv",
     "torrentio_streams",
     "prowlarr_streams",
+    "formula_racing",
 ]
 
 CATALOG_NAME_DATA = [
@@ -70,6 +71,7 @@ CATALOG_NAME_DATA = [
     "MediaFusion Search TV",
     "Torrentio Streams",
     "Prowlarr Streams",
+    "Formula Racing",
 ]
 
 RESOLUTIONS = [

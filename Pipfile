@@ -35,6 +35,7 @@ demagnetize = "*"
 redis = {extras = ["hiredis"], version = "*"}
 dramatiq = {extras = ["redis", "watch"], version = "*"}
 gunicorn = "*"
+scrapy = "*"
 
 [dev-packages]
 pysocks = "*"
