@@ -91,16 +91,6 @@ async def get_home(request: Request):
             "name": manifest.get("name"),
             "version": f"{manifest.get('version')}-{settings.git_rev[:7]}",
             "description": manifest.get("description"),
-            "gives": [
-                "Tamil Movies & Series",
-                "Malayalam Movies & Series",
-                "Telugu Movies & Series",
-                "Hindi Movies & Series",
-                "Kannada Movies & Series",
-                "English Movies & Series",
-                "Dubbed Movies & Series",
-            ],
-            "logo": "static/images/mediafusion_logo.png",
         },
     )
 
