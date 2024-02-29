@@ -127,7 +127,9 @@ class FormulaTgxSpider(scrapy.Spider):
         # Getting the description for parsing video, audio, and other details
         torrent_description = "".join(
             response.xpath(
-                "//font/following-sibling::*[1]/following-sibling::text() | //font/following-sibling::*[1]/following-sibling::*//text()"
+                "//font/following-sibling::*[1]/following-sibling::text() | "
+                "//font/following-sibling::*[1]/following-sibling::*//text() | "
+                "//center/font/following::br/following-sibling::text()"
             ).extract()
         )
         torrent_data["description"] = torrent_description

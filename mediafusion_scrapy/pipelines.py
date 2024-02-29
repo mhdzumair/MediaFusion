@@ -7,7 +7,6 @@ from beanie import WriteRules
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
 
-from db import database
 from db.models import TorrentStreams, Season, MediaFusionSeriesMetaData, Episode
 from utils.parser import convert_size_to_bytes
 
@@ -30,7 +29,7 @@ class FormulaParserPipeline:
         self.egortech_name_parser_patterns = [
             re.compile(
                 # Captures "Formula 1/2/3", year, optional round or extra, optional event, broadcaster, and resolution. "Multi" is optional.
-                r"(?P<Series>Formula [123])"  # Series name (Formula 1, Formula 2, or Formula 3)
+                r"(?P<Series>Formula\s*[123])"  # Series name (Formula 1, Formula 2, or Formula 3)
                 r"\. (?P<Year>\d{4})"  # Year
                 r"\. (?:R(?P<Round>\d+)|(?P<Extra>[^.]+))?"  # Optional round or extra info
                 r"\.* (?:(?P<Event>[^.]*?)\.)?"  # Optional event info
@@ -40,13 +39,29 @@ class FormulaParserPipeline:
             ),
             re.compile(
                 # Similar to the first pattern but expects spaces around dots and captures the "Extra" field differently.
-                r"(?P<Series>Formula [123])"  # Series name
+                r"(?P<Series>Formula\s*[123])"  # Series name with optional spac
                 r"\.\s*(?P<Year>\d{4})"  # Year with flexible spacing around the period
                 r"\.\s*R(?P<Round>\d+)"  # Round number with flexible spacing
                 r"\.\s*(?P<Event>[^.]*)"  # Event name with flexible spacing
                 r"\.\s*(?P<Extra>[^.]*?)"  # Optional extra info with flexible spacing
                 r"\.\s*(?P<Broadcaster>[^.]+)"  # Broadcaster with flexible spacing
                 r"\.\s*(?P<Resolution>\d+P)"  # Resolution with flexible spacing
+            ),
+            re.compile(
+                r"(?P<Series>Formula\s*[123])"  # Series name with optional space
+                r"\.\s*(?P<Year>\d{4})"  # Year with flexible spacing
+                r"\.\s*R(?P<Round>\d+)"  # Round number with flexible spacing
+                r"\.\s*(?P<Event>[^\s]+)"  # Event name without space before broadcaster
+                r"\s*(?P<Broadcaster>SkyF1HD|Sky Sports Main Event UHD|Sky Sports F1 UHD|Sky Sports Arena|V Sport Ultra HD|SkyF1)"  # Broadcaster without preceding dot
+                r"\.\s*(?P<Resolution>\d+P)"  # Resolution with flexible spacing
+            ),
+            re.compile(
+                r"(?P<Series>Formula\d+)\."  # Series name (e.g., Formula2)
+                r"(?P<Year>\d{4})\."  # Year (e.g., 2022)
+                r"Round\.(?P<Round>\d{2})\."  # Round number with 'Round.' prefix (e.g., 07)
+                r"(?P<Event>[^.]+(?:\.[^.]+)*)\."  # Event, allowing for multiple dot-separated values (e.g., British.Weekend)
+                r"(?P<Broadcaster>[A-Za-z0-9]+)\."  # Broadcaster, alphanumeric (e.g., SkyF1)
+                r"(?P<Resolution>\d+P)",  # Resolution, digits followed by 'P' (e.g., 1080P)
             ),
         ]
 
@@ -80,6 +95,10 @@ class FormulaParserPipeline:
             match = pattern.match(title)
             if match:
                 data = match.groupdict()
+                formula_round = f"R{data['Round']}" if data.get("Round") else None
+                formula_event = (
+                    data.get("Event").replace(".", " ") if data.get("Event") else None
+                )
                 torrent_data.update(
                     {
                         "title": " ".join(  # Join the series, year, round, event, and extra fields
@@ -88,8 +107,8 @@ class FormulaParserPipeline:
                                 [
                                     data.get("Series"),
                                     data.get("Year"),
-                                    data.get("Round"),
-                                    data.get("Event"),
+                                    formula_round,
+                                    formula_event,
                                     data.get("Extra"),
                                 ],
                             )
@@ -128,8 +147,7 @@ class FormulaParserPipeline:
                 if item.strip()
             ]
 
-            for index, item in enumerate(items):
-                file_detail = file_details[index]
+            for index, (item, file_detail) in enumerate(zip(items, file_details)):
                 data = self.episode_name_parser_egortech(item)
                 episodes.append(
                     Episode(
@@ -142,22 +160,21 @@ class FormulaParserPipeline:
                     )
                 )
         else:
-            pass
             # logic to parse episode details directly from file details when description does not contain "Contains:"
-            # for index, file_detail in enumerate(file_details):
-            #     file_name = file_detail.get("file_name")
-            #     file_size = file_detail.get("file_size")
-            #     data = self.episode_name_parser_egortech(file_name)
-            #     episodes.append(
-            #         Episode(
-            #             episode_number=index + 1,
-            #             filename=file_name,
-            #             size=convert_size_to_bytes(file_size),
-            #             file_index=index,
-            #             title=data["title"],
-            #             released=data["date"],
-            #         )
-            #     )
+            for index, file_detail in enumerate(file_details):
+                file_name = file_detail.get("file_name")
+                file_size = file_detail.get("file_size")
+                data = self.episode_name_parser_egortech(file_name)
+                episodes.append(
+                    Episode(
+                        episode_number=index + 1,
+                        filename=file_name,
+                        size=convert_size_to_bytes(file_size),
+                        file_index=index,
+                        title=data["title"],
+                        released=data["date"],
+                    )
+                )
 
         torrent_data["episodes"] = episodes
 
