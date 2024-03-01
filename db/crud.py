@@ -158,9 +158,9 @@ async def get_cached_torrent_streams(
 
         torrent_streams = TorrentStreamsList(streams=streams)
 
-        # Serialize the data and store it in the Redis cache for 6 hours
+        # Serialize the data and store it in the Redis cache for 30 minutes
         await redis.set(
-            cache_key, torrent_streams.model_dump_json(exclude_none=True), ex=21600
+            cache_key, torrent_streams.model_dump_json(exclude_none=True), ex=1800
         )
 
     return streams

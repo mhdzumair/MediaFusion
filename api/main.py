@@ -243,9 +243,9 @@ async def get_catalog(
         )
 
     if cache_key:
-        # Cache the data with a TTL of 6 hours
+        # Cache the data with a TTL of 30 minutes
         await request.app.state.redis.set(
-            cache_key, metas.model_dump_json(exclude_none=True, by_alias=True), ex=21600
+            cache_key, metas.model_dump_json(exclude_none=True, by_alias=True), ex=1800
         )
 
     return metas
@@ -321,9 +321,9 @@ async def get_meta(
     else:
         data = await crud.get_tv_meta(meta_id)
 
-    # Cache the data with a TTL of 6 hours
+    # Cache the data with a TTL of 30 minutes
     # If the data is not found, cached the empty data to avoid db query.
-    await request.app.state.redis.set(cache_key, json.dumps(data), ex=21600)
+    await request.app.state.redis.set(cache_key, json.dumps(data), ex=1800)
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
@@ -356,7 +356,7 @@ async def get_meta(
     tags=["stream"],
 )
 @wrappers.auth_required
-@wrappers.rate_limit(10, 60 * 60, "stream")
+@wrappers.rate_limit(20, 60 * 60, "stream")
 async def get_streams(
     catalog_type: Literal["movie", "series", "tv"],
     video_id: str,
