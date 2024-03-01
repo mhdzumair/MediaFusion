@@ -414,7 +414,7 @@ kind: CronJob
 metadata:
   name: tamil-blasters-scraper
 spec:
-  schedule: "0 */6 * * *"  # At minute 0 past every 6th hour
+  schedule: "0 */3 * * *"  # At minute 0 past every 3rd hour
   jobTemplate:
     spec:
       template:
