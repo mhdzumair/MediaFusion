@@ -181,7 +181,7 @@ async def parse_stream_data(
             ("🎞️ " + stream_data.codec) if stream_data.codec else None,
             ("🎵 " + stream_data.audio) if stream_data.audio else None,
         ]
-        quality_detail = " - ".join(filter(None, quality_detail_parts))
+        quality_detail = " ".join(filter(None, quality_detail_parts))
 
         resolution = stream_data.resolution.upper() if stream_data.resolution else "N/A"
         streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
@@ -200,10 +200,11 @@ async def parse_stream_data(
         source_info = f"🔗 {stream_data.source}"
 
         primary_info = torrent_name if show_full_torrent_name else quality_detail
+        secondary_info = " ".join(filter(None, [size_info, seeders_info]))
+
         description_parts = [
             primary_info,
-            size_info,
-            seeders_info,
+            secondary_info,
             languages,
             source_info,
         ]
