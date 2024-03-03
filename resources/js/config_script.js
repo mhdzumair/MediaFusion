@@ -177,9 +177,15 @@ function updateProviderFields(isChangeEvent = false) {
         if (servicesRequiringCredentials.includes(provider)) {
             setElementDisplay('credentials', 'block');
             setElementDisplay('token_input', 'none');
+            setElementDisplay('qbittorrent_config', 'none');
+        } else if (provider === 'qbittorrent') {
+            setElementDisplay('qbittorrent_config', 'block');
+            setElementDisplay('credentials', 'none');
+            setElementDisplay('token_input', 'none');
         } else {
             setElementDisplay('credentials', 'none');
             setElementDisplay('token_input', 'block');
+            setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('watchlist_section', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
@@ -187,6 +193,7 @@ function updateProviderFields(isChangeEvent = false) {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
         setElementDisplay('watchlist_section', 'none');
+        setElementDisplay('qbittorrent_config', 'none');
     }
 
     // Reset the fields only if this is triggered by an onchange event
@@ -202,7 +209,18 @@ function updateProviderFields(isChangeEvent = false) {
 }
 
 // Function to get installation URL
-async function getInstallationUrl(userData) {
+async function getInstallationUrl(isRedirect = false) {
+    const userData = getUserData();
+    let urlPrefix = window.location.protocol + "//";
+    if (isRedirect) {
+        urlPrefix = "stremio://";
+    }
+
+    if (!userData) {
+        showNotification('Validation failed. Please check your input.', 'error');
+        return null;
+    }
+
     try {
         const response = await fetch('/encrypt-user-data', {
             method: 'POST',
@@ -216,7 +234,7 @@ async function getInstallationUrl(userData) {
             showNotification('An error occurred while encrypting user data', 'error');
             return null;
         }
-        return "stremio://" + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+        return urlPrefix + window.location.host + "/" + data.encrypted_str + "/manifest.json";
     } catch (error) {
         showNotification('An error occurred while encrypting user data', 'error');
         console.error('Error encrypting user data:', error);
@@ -242,12 +260,30 @@ function getUserData() {
         }
     };
 
+    // Validate and collect streaming provider data
     if (provider) {
         if (servicesRequiringCredentials.includes(provider)) {
             validateInput('username', document.getElementById('username').value);
             validateInput('password', document.getElementById('password').value);
             streamingProviderData.username = document.getElementById('username').value;
             streamingProviderData.password = document.getElementById('password').value;
+        } else if (provider === 'qbittorrent') {
+            streamingProviderData.qbittorrent_config = {
+                qbittorrent_url: document.getElementById('qbittorrent_url').value,
+                qbittorrent_username: document.getElementById('qbittorrent_username').value,
+                qbittorrent_password: document.getElementById('qbittorrent_password').value,
+                seeding_time_limit: parseInt(document.getElementById('seeding_time_limit').value, 10),
+                seeding_ratio_limit: parseFloat(document.getElementById('seeding_ratio_limit').value),
+                play_video_after: parseInt(document.getElementById('play_video_after_download').value, 10),
+                webdav_url: document.getElementById('webdav_url').value,
+                webdav_username: document.getElementById('webdav_username').value,
+                webdav_password: document.getElementById('webdav_password').value,
+            };
+            // Validate qBittorrent-specific inputs
+            validateInput('qbittorrent_url', streamingProviderData.qbittorrent_config.qbittorrent_url);
+            validateInput('seeding_time_limit', !isNaN(streamingProviderData.qbittorrent_config.seeding_time_limit));
+            validateInput('seeding_ratio_limit', !isNaN(streamingProviderData.qbittorrent_config.seeding_ratio_limit));
+            validateInput('play_video_after_download', !isNaN(streamingProviderData.qbittorrent_config.play_video_after));
         } else {
             validateInput('provider_token', document.getElementById('provider_token').value);
             streamingProviderData.token = document.getElementById('provider_token').value;
@@ -258,22 +294,29 @@ function getUserData() {
         streamingProviderData = null;
     }
 
+    // Collect and validate other user data
     const maxSizeSlider = document.getElementById('max_size_slider');
     const maxSizeValue = maxSizeSlider.value;
     const maxSize = maxSizeSlider.max;
     const maxSizeBytes = maxSizeValue === maxSize ? 'inf' : maxSizeValue;
-
     const maxStreamsPerResolution = document.getElementById('maxStreamsPerResolution').value;
     validateInput('maxStreamsPerResolution', maxStreamsPerResolution && !isNaN(maxStreamsPerResolution) && maxStreamsPerResolution > 0);
+
+    let apiPassword = null;
+    // Check for API Password if authentication is required
+    if (document.getElementById('api_password')) {
+        validateInput('api_password', document.getElementById('api_password').value);
+        apiPassword = document.getElementById('api_password').value;
+    }
 
     if (!isValid) {
         return null; // Return null if validation fails
     }
 
+    // Collect and return the rest of the user data
     const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
-    // Return user data if all validations pass
     return {
         streaming_provider: streamingProviderData,
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
@@ -283,7 +326,31 @@ function getUserData() {
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
         show_full_torrent_name: torrentDisplayOption === 'fullName',
+        api_password: apiPassword,
     };
+}
+
+// Function to display the installation URL in a textarea for manual copying
+function displayFallbackUrl(url) {
+    const container = document.getElementById('fallbackUrlContainer');
+    const textarea = document.getElementById('fallbackUrl');
+    textarea.value = url;
+    container.style.display = 'block'; // Make the container visible
+    textarea.focus();
+}
+
+function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
+    document.getElementById(toggleButtonId).addEventListener('click', function (_) {
+        const passwordInput = document.getElementById(passwordInputId);
+        const passwordIcon = document.getElementById(toggleIconId);
+        if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+            passwordIcon.className = "bi bi-eye-slash";
+        } else {
+            passwordInput.type = "password";
+            passwordIcon.className = "bi bi-eye";
+        }
+    });
 }
 
 // ---- Event Listeners ----
@@ -294,18 +361,6 @@ document.getElementById('provider_token').addEventListener('input', function () 
 
 // Event listener for the slider
 document.getElementById('max_size_slider').addEventListener('input', updateSizeOutput);
-
-document.getElementById('togglePassword').addEventListener('click', function (e) {
-    const passwordInput = document.getElementById('password');
-    const passwordIcon = document.getElementById('togglePasswordIcon');
-    if (passwordInput.type === "password") {
-        passwordInput.type = "text";
-        passwordIcon.className = "bi bi-eye-slash";
-    } else {
-        passwordInput.type = "password";
-        passwordIcon.className = "bi bi-eye";
-    }
-});
 
 oAuthBtn.addEventListener('click', async function () {
     const provider = document.getElementById('provider_service').value;
@@ -326,13 +381,8 @@ oAuthBtn.addEventListener('click', async function () {
 
 document.getElementById('configForm').addEventListener('submit', async function (event) {
     event.preventDefault();
-    const userData = getUserData();
 
-    if (!userData) {
-        showNotification('Validation failed. Please check your input.', 'error');
-        return;
-    }
-    const installationUrl = await getInstallationUrl(userData);
+    const installationUrl = await getInstallationUrl(true);
     if (installationUrl) {
         window.location.href = installationUrl;
     }
@@ -340,38 +390,37 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
 document.getElementById('shareBtn').addEventListener('click', async function (event) {
     event.preventDefault();
-
-    const userData = getUserData();
-
-    if (!userData) {
-        showNotification('Validation failed. Please check your input.', 'error');
-        return;
-    }
-
-    // If userData is valid, get the installation URL
-    const installationUrl = await getInstallationUrl(userData);
+    const installationUrl = await getInstallationUrl();
     if (installationUrl) {
-        // Check if the Web Share API is available
-        if (navigator.share) {
-            navigator.share({
+        try {
+            await navigator.share({
                 title: 'MediaFusion Addon Installation',
                 url: installationUrl,
-            }).then(() => {
-                showNotification('Installation URL shared successfully. Do not share this URL with unknown person', 'success');
-            }).catch((error) => {
-                showNotification('An error occurred while sharing the installation URL', 'error');
             });
-        } else {
-            // Copy the installation URL to the clipboard
-            navigator.clipboard.writeText(installationUrl).then(() => {
-                showNotification('Installation URL copied to clipboard. Do not share this URL with unknown person', 'success');
-                // You can display a message to the user indicating that the URL has been copied.
-            }).catch((error) => {
-                showNotification('An error occurred while copying the installation URL to the clipboard', 'error');
-            });
+            showNotification('Installation URL shared successfully. Do not share this URL with unknown persons.', 'success');
+        } catch (error) {
+            displayFallbackUrl(installationUrl);
+            showNotification('Unable to use Share API. URL is ready to be copied manually.', 'info');
         }
     }
 });
+
+document.getElementById('copyBtn').addEventListener('click', async function (event) {
+    event.preventDefault();
+
+    // Get the installation URL asynchronously
+    const installationUrl = await getInstallationUrl();
+    if (installationUrl) {
+        try {
+            await navigator.clipboard.writeText(installationUrl);
+            showNotification('Installation URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
+        } catch (error) {
+            displayFallbackUrl(installationUrl);
+            showNotification('Unable to access clipboard. URL is ready to be copied manually.', 'info');
+        }
+    }
+});
+
 
 // ---- Initial Setup ----
 
@@ -385,21 +434,41 @@ document.addEventListener('DOMContentLoaded', function () {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
+
+    setupPasswordToggle('password', 'togglePassword', 'togglePasswordIcon');
+    setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
+    setupPasswordToggle('qbittorrent_password', 'toggleQbittorrentPassword', 'toggleQbittorrentPasswordIcon');
+    setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
+
+    if (navigator.share) {
+        document.getElementById('shareBtn').style.display = 'block';
+    } else {
+        document.getElementById('copyBtn').style.display = 'block';
+    }
 });
 
 
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Sortable on the catalog container
     new Sortable(document.getElementById('catalogs'), {
-        handle: '.draggable-catalog', // Use the grip handle for drag operations
-        animation: 150, // Animation speed for the sort operation
-        ghostClass: 'sortable-ghost', // Class for the ghost element
-        dragClass: 'sortable-drag', // Class applied to the element being dragged
+        handle: '.draggable-catalog',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
     });
     new Sortable(document.getElementById('streamSortOrder'), {
         handle: '.sortable-list',
         animation: 150,
         ghostClass: 'sortable-ghost',
         dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
     });
+
 });

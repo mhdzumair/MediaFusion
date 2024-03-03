@@ -8,41 +8,69 @@
     <title>{{name}} - Stremio Addon</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
-    <link rel="shortcut icon" href="{{logo}}" type="image/x-icon">
+    <link rel="shortcut icon" href="/static/images/mediafusion_logo.png" type="image/x-icon">
 </head>
 
 <body>
-<div class="container">
-    <div class="row justify-content-center">
-        <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
-            <img class="logo" src="{{logo}}">
-            <h3 class="text-center mb-5"><b>{{name}}</b> - {{version}}</h3>
-            <h5 class="description">
-                Watch Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies & series with the MediaFusion add-on.
-                Created by Mohamed Zumair.
-                <a href="https://github.com/mhdzumair/MediaFusion" target="_blank">Source Code on GitHub</a>.
-            </h5>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
+                <img class="logo" src="/static/images/mediafusion_logo.png">
+                <h3 class="text-center mb-5"><b>{{name}}</b> - {{version}}</h3>
 
-            <h4 class="mt-4">This add-on has:</h4>
-            <ul>
-                {% for give in gives %}
-                <li>{{give}}</li>
-                {% endfor %}
-            </ul>
+                <h4 class="mt-4">🔎 Advanced Scraping Capabilities</h4>
+                <p>Tap into a world of content with our enhanced scraping features:</p>
+                <ul>
+                    <li>🏎️ Formula Racing: Exclusive scraping from TorrentGalaxy for all your racing needs.</li>
+                    <li>🎥 TamilMV: Specialized scraping for regional contents.</li>
+                    <li>🌟 TamilBlasters: Dedicated access to an extensive library of regional content.</li>
+                    <li>📺 TamilUltra & MHDTVPlay: Get the best of Live TV channels right at your fingertips.</li>
+                    <li>🔄 Prowlarr Integration: Supercharge your scraping streams with Prowlarr's powerful integration.</li>
+                    <li>🌊 Torrentio Streams: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.</li>
+                </ul>
 
-            <div class="button-container">
-                <a id="installLink" class="install-link btn btn-block mx-auto" href="/configure">
-                    Configure Add-on
-                </a>
+                <h4 class="mt-4">🎬 Streaming Provider Integration</h4>
+                <p>Seamless playback from a diverse array of torrent and cloud storage services:</p>
+                <ul>
+                    <li>📥 Direct Torrent (Free)</li>
+                    <li>🌩️ PikPak (Free Quota)</li>
+                    <li>🌱 Seedr.cc (Free Quota)</li>
+                    <li>☁️ OffCloud (Free Quota)</li>
+                    <li>📦 Torbox (Free Quota)</li>
+                    <li>💎 Real-Debrid (Premium)</li>
+                    <li>🔗 Debrid-Link (Premium)</li>
+                    <li>✨ Premiumize (Premium)</li>
+                    <li>🏠 AllDebrid - Local Only - (Premium) (Note: AllDebrid works only when running the addon
+                        locally)</li>
+                </ul>
+
+                <h4 class="mt-4">🛠️ Enhanced Additional Features</h4>
+                <p>Our addon comes packed with features designed to elevate your streaming experience:</p>
+                <ul>
+                    <li>🔒 API Security: Fortify your self-hosted API with a password to prevent unauthorized access.
+                    </li>
+                    <li>🔐 User Data Encryption: Encrypt user data for heightened privacy and security, storing only
+                        encrypted URLs on Stremio.</li>
+                    <li>📋 Watchlist Catalog Support: Sync your streaming provider's watchlist directly into the
+                        MediaFusion catalog for a personalized touch.</li>
+                    <li>⚙️ Stream Filters: Customize your viewing experience with filters that sort streams by file
+                        size, resolution, seeders and much more.</li>
+                </ul>
+
+                <div class="button-container">
+                    <a id="installLink" class="install-link btn btn-block mx-auto" href="/configure">
+                        ⚙️ Configure Add-on
+                    </a>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- JS for Bootstrap -->
-<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
+
+    <!-- JS for Bootstrap -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
 </body>
 
 </html>

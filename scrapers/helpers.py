@@ -12,6 +12,9 @@ from db.config import settings
 from db.models import TorrentStreams, Episode, Season
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
 
+# set httpx logging level
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 UA_HEADER = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
 }

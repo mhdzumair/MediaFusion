@@ -10,13 +10,8 @@ async def get_torrent_info(url: str) -> dict:
         response = await client.get(url)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, "html.parser")
-            # find the torrent link with regex of '.torrent' in the <a> href and child <img> having alt="Download torrent".
-            torrent_links = soup.find_all("a", href=re.compile(".torrent"))
-            for link in torrent_links:
-                if link.find("img", alt="Download torrent"):
-                    torrent_info["downloadUrl"] = link.get("href").replace(
-                        "http://", "https://"
-                    )
+            # itorrents.org have rate limit, so we are using a magnet link instead of torrent file
+            torrent_info["downloadUrl"] = None
 
             magnet_links = soup.find_all("a", href=re.compile("magnet:?"))
             for link in magnet_links:

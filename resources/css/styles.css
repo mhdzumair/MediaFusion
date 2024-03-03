@@ -194,7 +194,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     -moz-appearance: none;
     appearance: none;
     border-radius: 0.25rem;
-    transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+    transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
 }
 
 /* Styling for the range slider */
@@ -289,6 +289,40 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     background-color: #4a47a3; /* Different background to distinguish */
 }
 
+/* Fallback URL Container Styles */
+.fallback-url-container {
+    background: rgba(0, 0, 0, 0.37);
+    color: #E0E0E0; /* Lighter text for readability */
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 20px;
+}
+
+.fallback-url-container p {
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    color: #fff;
+}
+
+.fallback-url-container label {
+    display: block;
+    margin-bottom: 10px;
+    color: #E0E0E0;
+    font-weight: bold;
+}
+
+.fallback-url-container textarea {
+    background-color: #fff;
+    color: #000;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 0.9rem;
+    height: auto; /* Adjust based on content */
+    resize: none; /* Disable resizing */
+    margin-bottom: 10px;
+}
+
 
 
 /* Responsive Design */
@@ -308,6 +342,15 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
 
     .button-container {
         flex-direction: column; /* Stack buttons on smaller screens */
+    }
+
+    .fallback-url-container {
+        padding: 10px;
+    }
+
+    .fallback-url-container textarea,
+    .fallback-url-container button {
+        font-size: 0.8rem;
     }
 }
 

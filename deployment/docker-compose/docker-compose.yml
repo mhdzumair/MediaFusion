@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   mediafusion:
-    image: mhdzumair/mediafusion:v3.7.1
+    image: mhdzumair/mediafusion:v3.7.2
     ports:
       - "80:80"
     env_file:
@@ -41,7 +41,7 @@ services:
       - "6379:6379"
 
   dramatiq-worker:
-    image: mhdzumair/mediafusion:v3.7.1
+    image: mhdzumair/mediafusion:v3.7.2
     command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
     env_file:
       - .env
@@ -60,7 +60,7 @@ services:
       - prowlar-config:/config
 
   scraper:
-    image: mhdzumair/mediafusion:v3.7.1
+    image: mhdzumair/mediafusion:v3.7.2
     command: ["pipenv", "run", "python", "-m", "api.scheduler"]
     env_file:
       - .env

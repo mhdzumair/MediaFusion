@@ -39,6 +39,7 @@
                         <option value="debridlink" {% if user_data.streaming_provider.service=='debridlink' %}selected{% endif %}>Debrid-Link (Premium)</option>
                         <option value="premiumize" {% if user_data.streaming_provider.service=='premiumize' %}selected{% endif %}>Premiumize (Premium)</option>
                         <option value="alldebrid" {% if user_data.streaming_provider.service=='alldebrid' %}selected{% endif %}>AllDebrid - Local Only - (Premium)</option>
+                        <option value="qbittorrent" {% if user_data.streaming_provider.service=='qbittorrent' %}selected{% endif %}>qBittorrent - WebDav (Free/Premium)</option>
                     </select>
 
                     <!-- Affiliate Signup Links -->
@@ -97,6 +98,74 @@
                                value="{{ user_data.streaming_provider.token if user_data.streaming_provider.token else '' }}">
                         <div class="invalid-feedback">
                             Token is required.
+                        </div>
+                    </div>
+
+                    <!-- qBittorrent Configuration -->
+                    <div id="qbittorrent_config" class="mt-3" style="display:none">
+                        <h5 class="mt-3">qBittorrent Configuration</h5>
+                        <div class="mb-3">
+                            <label for="qbittorrent_url">qBittorrent URL:</label>
+                            <input class="form-control" type="text" id="qbittorrent_url" name="qbittorrent_url" placeholder="Enter qBittorrent URL"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.qbittorrent_url if user_data.streaming_provider and user_data.streaming_provider.qbittorrent_config else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="qbittorrent_username">qBittorrent Username: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                          title="Enter the qBittorrent username for the qBittorrent server. if Authentication not required, leave it blank."></span></label>
+                            <input class="form-control" type="text" id="qbittorrent_username" name="qbittorrent_username" placeholder="Enter Username"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.qbittorrent_username if user_data.streaming_provider.qbittorrent_config else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="qbittorrent_password">qBittorrent Password: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                          title="Enter the qBittorrent password for the qBittorrent server. if Authentication not required, leave it blank."></span></label>
+                            <div class="input-group">
+                                <input class="form-control" type="password" id="qbittorrent_password" name="qbittorrent_password" placeholder="Enter qBittorrent Password">
+                                <button class="btn btn-outline-secondary" type="button" id="toggleQbittorrentPassword">
+                                    <span id="toggleQbittorrentPasswordIcon" class="bi bi-eye"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="seeding_time_limit">Seeding Time Limit (minutes): <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                                title="Set the seeding time limit for torrents in minutes."></span></label>
+                            <input class="form-control" type="number" id="seeding_time_limit" name="seeding_time_limit" placeholder="Enter Seeding Time Limit"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.seeding_time_limit if user_data.streaming_provider.qbittorrent_config else 1440 }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="seeding_ratio_limit">Seeding Ratio Limit: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                        title="Set the seeding ratio limit for torrents."></span></label>
+                            <input class="form-control" type="text" id="seeding_ratio_limit" name="seeding_ratio_limit" placeholder="Enter Seeding Ratio Limit"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.seeding_ratio_limit if user_data.streaming_provider.qbittorrent_config else 1.0 }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="play_video_after_download">Play Video After Download: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                                  title="Enter the percentage of the video to be downloaded before playing."></span></label>
+                            <input class="form-control" type="number" id="play_video_after_download" name="play_video_after_download" placeholder="Enter Play Video After Download"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.play_video_after_download if user_data.streaming_provider.qbittorrent_config else 100 }}">
+
+                        <!-- WebDAV Configuration -->
+                        <h5 class="mt-3">WebDAV Configuration</h5>
+                        <div class="mb-3">
+                            <label for="webdav_url">WebDAV URL: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                      title="Enter the WebDAV URL for the qBittorrent WebDAV server with the format: http{s}://host/path."></span></label>
+                            <input class="form-control" type="text" id="webdav_url" name="webdav_url" placeholder="Enter WebDAV URL"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.webdav_url if user_data.streaming_provider.qbittorrent_config else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="webdav_username">WebDAV Username: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                title="Enter the WebDAV username for the WebDAV server. if Authentication not required, leave it blank."></span></label>
+                            <input class="form-control" type="text" id="webdav_username" name="webdav_username" placeholder="Enter WebDAV Username"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.webdav_username if user_data.streaming_provider.qbittorrent_config else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="webdav_password">WebDAV Password: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                title="Enter the WebDAV password for the WebDAV server. if Authentication not required, leave it blank."></span></label>
+                            <div class="input-group">
+                                <input class="form-control" type="password" id="webdav_password" name="webdav_password" placeholder="Enter WebDAV Password">
+                                <button class="btn btn-outline-secondary" type="button" id="toggleWebdavPassword">
+                                    <span id="toggleWebdavPasswordIcon" class="bi bi-eye"></span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -247,10 +316,45 @@
 
                 </div>
 
+                {% if authentication_required %}
+                <!-- API Password Configuration -->
+                <div class="section-container">
+                    <h4 class="section-header">API Security Configuration</h4>
+                    <hr class="section-divider">
+
+                    <!-- API Password Input -->
+                    <div class="mb-3">
+                        <label for="api_password">API Password: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                      title="Enter the API password you configured in the environment variables."></span></label>
+                        <div class="input-group">
+                            <input class="form-control" type="password" id="api_password" name="api_password" placeholder="Enter API Password">
+                            <button class="btn btn-outline-secondary" type="button" id="toggleApiPassword">
+                                <span id="toggleApiPasswordIcon" class="bi bi-eye"></span>
+                            </button>
+                            <div class="invalid-feedback">
+                                API Password is required.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+
+                <!-- Fallback URL Display - Initially hidden -->
+                <div id="fallbackUrlContainer" class="fallback-url-container" style="display: none;">
+                    <label for="fallbackUrl">Installation URL <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="This is the URL that you can use to install the addon in Stremio."></span></label>
+                    <textarea id="fallbackUrl" class="form-control" readonly></textarea>
+                    <p>Please manually copy the URL above and paste it in the Stremio search bar. Do not share this URL with unknown persons.</p>
+                </div>
+
+
                 <!-- Submit and Share Buttons -->
                 <div class="button-container">
                     <button type="submit" class="btn btn-primary btn-block custom-btn">Install Addon</button>
-                    <button type="button" id="shareBtn" class="btn btn-secondary btn-block custom-btn">Share Installation URL</button>
+                    <!-- Conditional display of buttons based on Web Share API support -->
+                    <button type="button" id="shareBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Share Installation URL</button>
+                    <button type="button" id="copyBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Copy Installation URL</button>
                 </div>
 
             </form>

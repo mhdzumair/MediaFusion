@@ -8,7 +8,6 @@ from utils import torrent
 
 
 async def async_setup():
-    # Your async initialization code here
     await torrent.init_best_trackers()
     await database.init()
 

@@ -25,7 +25,7 @@ class Meta(BaseModel):
     id: str = Field(alias="_id")
     name: str = Field(alias="title")
     type: str = Field(default="movie")
-    poster: str
+    poster: str | None = None
     background: str | None = None
     videos: list[Video] | None = None
     country: str | None = None
@@ -62,6 +62,18 @@ class Streams(BaseModel):
     streams: Optional[list[Stream]] = []
 
 
+class QBittorrentConfig(BaseModel):
+    qbittorrent_url: str
+    qbittorrent_username: str
+    qbittorrent_password: str
+    seeding_time_limit: int = 1440  # 24 hours
+    seeding_ratio_limit: float = 1.0
+    play_video_after: int = Field(default=100, le=100, ge=0)
+    webdav_url: str
+    webdav_username: str
+    webdav_password: str
+
+
 class StreamingProvider(BaseModel):
     service: Literal[
         "realdebrid",
@@ -72,17 +84,29 @@ class StreamingProvider(BaseModel):
         "pikpak",
         "torbox",
         "premiumize",
+        "qbittorrent",
     ]
     token: str | None = None
     username: str | None = None
     password: str | None = None
     enable_watchlist_catalogs: bool = True
+    qbittorrent_config: QBittorrentConfig | None = None
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
-        # validating the token or username and password
-        if not self.token and not self.username and not self.password:
-            raise ValueError("Either token or username and password must be present")
+        # validating the token or (username and password) or qbittorrent_config
+        if self.service is None:
+            return self
+        if self.service == "pikpak":
+            if not self.username or not self.password:
+                raise ValueError("Username and password are required")
+        elif self.service == "qbittorrent":
+            if not self.qbittorrent_config:
+                raise ValueError("qbittorrent_config is required")
+        else:
+            if not self.token or not (self.username and self.password):
+                raise ValueError("Token or username and password are required")
+
         return self
 
     class Config:
@@ -98,6 +122,7 @@ class UserData(BaseModel):
     max_streams_per_resolution: int = 3
     show_full_torrent_name: bool = False
     torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
+    api_password: str | None = None
 
     @model_validator(mode="after")
     def validate_selected_resolutions(self) -> "UserData":
@@ -160,7 +185,7 @@ class TVStreams(BaseModel):
 
 class TVMetaData(BaseModel):
     title: str
-    poster: str
+    poster: str | None = None
     background: Optional[str] = None
     country: str
     tv_language: str

@@ -212,7 +212,9 @@ async def background_series_title_search(
         )
 
 
-async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]:
+async def get_torrent_data_from_prowlarr(
+    download_url: str, indexer: str
+) -> tuple[dict, bool]:
     """Get torrent data from prowlarr."""
     if not download_url:
         raise ValueError("No download URL provided")
@@ -227,18 +229,21 @@ async def get_torrent_data_from_prowlarr(download_url: str) -> tuple[dict, bool]
 
     if response.status_code == 301:
         redirect_url = response.headers.get("Location")
-        return await get_torrent_data_from_prowlarr(redirect_url)
+        return await get_torrent_data_from_prowlarr(redirect_url, indexer)
     elif response.status_code == 200:
         return extract_torrent_metadata(response.content), True
+    logging.error(
+        f"Failed to fetch torrent data from {indexer}: {response.status_code} : {download_url}"
+    )
     response.raise_for_status()
     raise ValueError(f"Failed to fetch torrent data from {download_url}")
 
 
-async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
+async def prowlarr_data_parser(meta_data: dict, video_id: str) -> tuple[dict, bool]:
     """Parse prowlarr data."""
     if is_contain_18_plus_keywords(meta_data.get("title")):
         logging.warning(
-            f"Skipping {meta_data.get('title')} due to adult content keywords."
+            f"Skipping '{meta_data.get('title')}' due to adult content keyword in {video_id}"
         )
         return {}, False
 
@@ -263,7 +268,7 @@ async def prowlarr_data_parser(meta_data: dict) -> tuple[dict, bool]:
 
     try:
         torrent_data, is_torrent_downloaded = await get_torrent_data_from_prowlarr(
-            download_url
+            download_url, meta_data.get("indexer")
         )
     except Exception as e:
         if meta_data.get("magnetUrl", "").startswith("magnet:"):
@@ -480,7 +485,7 @@ async def parse_and_store_stream(
     catalog_type: str,
     season: int = None,
 ) -> tuple[TorrentStreams | None, bool]:
-    parsed_data, _ = await prowlarr_data_parser(stream_data)
+    parsed_data, _ = await prowlarr_data_parser(stream_data, video_id)
     info_hash = parsed_data.get("info_hash", "").lower()
     torrent_stream, torrent_needed_update = None, False
 

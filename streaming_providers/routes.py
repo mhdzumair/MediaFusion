@@ -23,13 +23,15 @@ from streaming_providers.realdebrid.utils import get_direct_link_from_realdebrid
 from streaming_providers.seedr.api import router as seedr_router
 from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.torbox.utils import get_direct_link_from_torbox
-from utils import crypto, torrent, rate_limiter, const
+from streaming_providers.qbittorrent.utils import get_direct_link_from_qbittorrent
+from utils import crypto, torrent, wrappers, const
 
 router = APIRouter()
 
 
 @router.get("/{secret_str}/stream", tags=["streaming_provider"])
-@rate_limiter.exclude
+@wrappers.exclude
+@wrappers.auth_required
 async def streaming_provider_endpoint(
     secret_str: str,
     info_hash: str,
@@ -83,6 +85,10 @@ async def streaming_provider_endpoint(
         elif user_data.streaming_provider.service == "premiumize":
             video_url = get_direct_link_from_premiumize(
                 info_hash, magnet_link, user_data, stream.torrent_name, filename, 1, 0
+            )
+        elif user_data.streaming_provider.service == "qbittorrent":
+            video_url = await get_direct_link_from_qbittorrent(
+                info_hash, magnet_link, user_data, stream, filename, 1, 0
             )
         else:
             video_url = get_direct_link_from_debridlink(

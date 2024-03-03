@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.7.1
+        image: mhdzumair/mediafusion:v3.7.2
         ports:
         - containerPort: 80
         resources:
@@ -122,7 +122,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.7.1
+        image: mhdzumair/mediafusion:v3.7.2
         command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
@@ -414,15 +414,14 @@ kind: CronJob
 metadata:
   name: tamil-blasters-scraper
 spec:
-  schedule: "0 */6 * * *"  # At minute 0 past every 6th hour
+  schedule: "0 */3 * * *"  # At minute 0 past every 3rd hour
   jobTemplate:
     spec:
       template:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:beta
-            imagePullPolicy: Always
+            image: mhdzumair/mediafusion:v3.7.2
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -447,16 +446,47 @@ kind: CronJob
 metadata:
   name: tamilmv-scraper
 spec:
-  schedule: "30 */6 * * *"  # At minute 30 past every 6th hour
+  schedule: "30 */3 * * *"  # At minute 30 past every 3rd hour
   jobTemplate:
     spec:
       template:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:beta
-            imagePullPolicy: Always
+            image: mhdzumair/mediafusion:v3.7.2
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "200m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+            env:
+              - name: MONGO_URI
+                value: "mongodb://mongodb-service:27017/mediafusion"
+              - name: SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: mediafusion-secrets
+                    key: SECRET_KEY
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: formula-tgx-spider
+spec:
+  schedule: "0 * * * *"  # At minute 0 every hour
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: formula-tgx-spider
+            image: mhdzumair/mediafusion:v3.7.2
+            command: ["pipenv", "run", "scrapy", "crawl", "formula_tgx"]
             resources:
               requests:
                 memory: "128Mi"

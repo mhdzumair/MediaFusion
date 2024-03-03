@@ -28,6 +28,10 @@ from streaming_providers.premiumize.utils import (
     update_pm_cache_status,
     fetch_downloaded_info_hashes_from_premiumize,
 )
+from streaming_providers.qbittorrent.utils import (
+    update_qbittorrent_cache_status,
+    fetch_info_hashes_from_webdav,
+)
 from streaming_providers.realdebrid.utils import (
     update_rd_cache_status,
     fetch_downloaded_info_hashes_from_rd,
@@ -40,6 +44,7 @@ from streaming_providers.torbox.utils import (
     update_torbox_cache_status,
     fetch_downloaded_info_hashes_from_torbox,
 )
+from utils import const
 
 ia = Cinemagoer()
 ADULT_CONTENT_KEYWORDS = re.compile(
@@ -56,6 +61,7 @@ CACHE_UPDATE_FUNCTIONS = {
     "seedr": update_seedr_cache_status,
     "torbox": update_torbox_cache_status,
     "premiumize": update_pm_cache_status,
+    "qbittorrent": update_qbittorrent_cache_status,
 }
 
 # Define provider-specific downloaded info hashes fetch functions
@@ -68,6 +74,7 @@ FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS = {
     "seedr": fetch_downloaded_info_hashes_from_seedr,
     "torbox": fetch_downloaded_info_hashes_from_torbox,
     "premiumize": fetch_downloaded_info_hashes_from_premiumize,
+    "qbittorrent": fetch_info_hashes_from_webdav,
 }
 
 
@@ -104,8 +111,21 @@ async def filter_and_sort_streams(
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream):
+        # Compute sort key values only once per stream
+        sort_key_values = {
+            sort_key: (
+                getattr(stream, sort_key)
+                if getattr(stream, sort_key) is not None
+                else 0
+            )
+            for sort_key in user_data.torrent_sorting_priority
+        }
+
+        # Create the sort tuple, using resolution ranking for resolution sorting
         return tuple(
-            (getattr(stream, sort_key) if getattr(stream, sort_key) is not None else 0)
+            const.RESOLUTION_RANKING[stream.resolution]
+            if sort_key == "resolution"
+            else sort_key_values[sort_key]
             for sort_key in user_data.torrent_sorting_priority
         )
 
@@ -133,17 +153,16 @@ async def parse_stream_data(
     episode: int = None,
 ) -> list[Stream]:
     stream_list = []
-
     streams = await filter_and_sort_streams(streams, user_data)
 
-    # Pre-determined values
+    # Compute values that do not change per iteration outside the loop
     show_full_torrent_name = user_data.show_full_torrent_name
-    has_streaming_provider = user_data.streaming_provider is not None
     streaming_provider_name = (
         user_data.streaming_provider.service.title()
-        if has_streaming_provider
+        if user_data.streaming_provider
         else "Torrent"
     )
+    has_streaming_provider = user_data.streaming_provider is not None
     base_proxy_url_template = (
         f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
         if has_streaming_provider
@@ -151,64 +170,73 @@ async def parse_stream_data(
     )
 
     for stream_data in streams:
-        torrent_name = (
-            stream_data.torrent_name.replace(".torrent", "").replace(".", " ")
-            if show_full_torrent_name
-            else None
-        )
-        quality_detail = " - ".join(
-            filter(
-                None,
-                [
-                    stream_data.quality,
-                    stream_data.resolution,
-                    stream_data.codec,
-                    stream_data.audio,
-                ],
-            )
-        )
-
         episode_data = stream_data.get_episode(season, episode)
-        streaming_provider = (
-            f"{streaming_provider_name} ⚡️"
-            if stream_data.cached
-            else f"{streaming_provider_name} ⏳"
-        )
-        seeders = (
+
+        if show_full_torrent_name:
+            torrent_name = (
+                f"{stream_data.torrent_name}/{episode_data.title}"
+                if episode_data
+                else stream_data.torrent_name
+            )
+            torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(".", " ")
+        else:
+            torrent_name = None
+
+        quality_detail_parts = [
+            ("📺 " + stream_data.quality) if stream_data.quality else None,
+            ("🎞️ " + stream_data.codec) if stream_data.codec else None,
+            ("🎵 " + stream_data.audio) if stream_data.audio else None,
+        ]
+        quality_detail = " ".join(filter(None, quality_detail_parts))
+
+        resolution = stream_data.resolution.upper() if stream_data.resolution else "N/A"
+        streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
+
+        seeders_info = (
             f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
         )
+        if episode_data and episode_data.size:
+            size_info = f"{convert_bytes_to_readable(episode_data.size)} / {convert_bytes_to_readable(stream_data.size)}"
+        else:
+            size_info = convert_bytes_to_readable(stream_data.size)
+
+        languages = (
+            "🌐 " + " + ".join(stream_data.languages) if stream_data.languages else None
+        )
+        source_info = f"🔗 {stream_data.source}"
+
+        primary_info = torrent_name if show_full_torrent_name else quality_detail
+        secondary_info = " ".join(filter(None, [size_info, seeders_info]))
 
         description_parts = [
-            torrent_name or quality_detail,
-            convert_bytes_to_readable(
-                episode_data.size or stream_data.size
-                if episode_data
-                else stream_data.size
-            ),
-            seeders,
-            " + ".join(stream_data.languages),
-            stream_data.source,
+            primary_info,
+            secondary_info,
+            languages,
+            source_info,
         ]
-        description = ", ".join(filter(lambda x: bool(x), description_parts))
+        description = "\n".join(filter(None, description_parts))
 
         stream_details = {
-            "name": f"MediaFusion {streaming_provider}",
+            "name": f"MediaFusion {streaming_provider_name} {resolution} {streaming_provider_status}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index
             if episode_data
             else stream_data.file_index,
-            "behaviorHints": {"bingeGroup": f"MediaFusion-{quality_detail}"},
+            "behaviorHints": {
+                "bingeGroup": f"MediaFusion-{quality_detail}-{resolution}",
+            },
         }
 
         if has_streaming_provider:
-            base_proxy_url = base_proxy_url_template.format(stream_data.id)
-            if episode_data:
-                base_proxy_url += f"&season={season}&episode={episode}"
-            stream_details["url"] = base_proxy_url
+            base_proxy_url = base_proxy_url_template.format(stream_data.id) + (
+                f"&season={season}&episode={episode}" if episode_data else ""
+            )
+            stream_details.update(
+                {"url": base_proxy_url, "behaviorHints": {"notWebReady": True}}
+            )
             stream_details.pop("infoHash", None)
             stream_details.pop("fileIdx", None)
-            stream_details["behaviorHints"]["notWebReady"] = True
 
         stream_list.append(Stream(**stream_details))
 
