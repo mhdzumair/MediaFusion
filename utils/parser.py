@@ -208,7 +208,7 @@ async def parse_stream_data(
             languages,
             source_info,
         ]
-        description = ", ".join(filter(None, description_parts))
+        description = "\n".join(filter(None, description_parts))
 
         stream_details = {
             "name": f"MediaFusion {streaming_provider_name} {resolution} {streaming_provider_status}",
