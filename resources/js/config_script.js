@@ -177,9 +177,15 @@ function updateProviderFields(isChangeEvent = false) {
         if (servicesRequiringCredentials.includes(provider)) {
             setElementDisplay('credentials', 'block');
             setElementDisplay('token_input', 'none');
+            setElementDisplay('qbittorrent_config', 'none');
+        } else if (provider === 'qbittorrent') {
+            setElementDisplay('qbittorrent_config', 'block');
+            setElementDisplay('credentials', 'none');
+            setElementDisplay('token_input', 'none');
         } else {
             setElementDisplay('credentials', 'none');
             setElementDisplay('token_input', 'block');
+            setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('watchlist_section', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
@@ -187,6 +193,7 @@ function updateProviderFields(isChangeEvent = false) {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
         setElementDisplay('watchlist_section', 'none');
+        setElementDisplay('qbittorrent_config', 'none');
     }
 
     // Reset the fields only if this is triggered by an onchange event
@@ -260,6 +267,23 @@ function getUserData() {
             validateInput('password', document.getElementById('password').value);
             streamingProviderData.username = document.getElementById('username').value;
             streamingProviderData.password = document.getElementById('password').value;
+        } else if (provider === 'qbittorrent') {
+            streamingProviderData.qbittorrent_config = {
+                qbittorrent_url: document.getElementById('qbittorrent_url').value,
+                qbittorrent_username: document.getElementById('qbittorrent_username').value,
+                qbittorrent_password: document.getElementById('qbittorrent_password').value,
+                seeding_time_limit: parseInt(document.getElementById('seeding_time_limit').value, 10),
+                seeding_ratio_limit: parseFloat(document.getElementById('seeding_ratio_limit').value),
+                play_video_after: parseInt(document.getElementById('play_video_after_download').value, 10),
+                webdav_url: document.getElementById('webdav_url').value,
+                webdav_username: document.getElementById('webdav_username').value,
+                webdav_password: document.getElementById('webdav_password').value,
+            };
+            // Validate qBittorrent-specific inputs
+            validateInput('qbittorrent_url', streamingProviderData.qbittorrent_config.qbittorrent_url);
+            validateInput('seeding_time_limit', !isNaN(streamingProviderData.qbittorrent_config.seeding_time_limit));
+            validateInput('seeding_ratio_limit', !isNaN(streamingProviderData.qbittorrent_config.seeding_ratio_limit));
+            validateInput('play_video_after_download', !isNaN(streamingProviderData.qbittorrent_config.play_video_after));
         } else {
             validateInput('provider_token', document.getElementById('provider_token').value);
             streamingProviderData.token = document.getElementById('provider_token').value;
@@ -413,6 +437,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     setupPasswordToggle('password', 'togglePassword', 'togglePasswordIcon');
     setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
+    setupPasswordToggle('qbittorrent_password', 'toggleQbittorrentPassword', 'toggleQbittorrentPasswordIcon');
+    setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
 
     if (navigator.share) {
         document.getElementById('shareBtn').style.display = 'block';

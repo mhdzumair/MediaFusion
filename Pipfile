@@ -36,6 +36,8 @@ redis = {extras = ["hiredis"], version = "*"}
 dramatiq = {extras = ["redis", "watch"], version = "*"}
 gunicorn = "*"
 scrapy = "*"
+aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
+aiowebdav = "*"
 
 [dev-packages]
 pysocks = "*"

@@ -28,6 +28,10 @@ from streaming_providers.premiumize.utils import (
     update_pm_cache_status,
     fetch_downloaded_info_hashes_from_premiumize,
 )
+from streaming_providers.qbittorrent.utils import (
+    update_qbittorrent_cache_status,
+    fetch_info_hashes_from_webdav,
+)
 from streaming_providers.realdebrid.utils import (
     update_rd_cache_status,
     fetch_downloaded_info_hashes_from_rd,
@@ -57,6 +61,7 @@ CACHE_UPDATE_FUNCTIONS = {
     "seedr": update_seedr_cache_status,
     "torbox": update_torbox_cache_status,
     "premiumize": update_pm_cache_status,
+    "qbittorrent": update_qbittorrent_cache_status,
 }
 
 # Define provider-specific downloaded info hashes fetch functions
@@ -69,6 +74,7 @@ FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS = {
     "seedr": fetch_downloaded_info_hashes_from_seedr,
     "torbox": fetch_downloaded_info_hashes_from_torbox,
     "premiumize": fetch_downloaded_info_hashes_from_premiumize,
+    "qbittorrent": fetch_info_hashes_from_webdav,
 }
 
 
