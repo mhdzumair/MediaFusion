@@ -106,3 +106,9 @@ NO_CACHE_HEADERS = {
 }
 
 TORRENT_SORTING_PRIORITY = ["cached", "resolution", "size", "seeders", "created_at"]
+
+STREAMING_SERVICE_REQUIREMENTS = {
+    "pikpak": ["username", "password"],
+    "qbittorrent": ["qbittorrent_config"],
+    "default": ["token"],
+}

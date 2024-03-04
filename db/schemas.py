@@ -95,17 +95,14 @@ class StreamingProvider(BaseModel):
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
         # validating the token or (username and password) or qbittorrent_config
-        if self.service is None:
-            return self
-        if self.service == "pikpak":
-            if not self.username or not self.password:
-                raise ValueError("Username and password are required")
-        elif self.service == "qbittorrent":
-            if not self.qbittorrent_config:
-                raise ValueError("qbittorrent_config is required")
-        else:
-            if not self.token or not (self.username and self.password):
-                raise ValueError("Token or username and password are required")
+        required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
+            self.service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
+        )
+
+        # check if the required fields are present
+        for field in required_fields:
+            if getattr(self, field, None) is None:
+                raise ValueError(f"{field} is required")
 
         return self
 
