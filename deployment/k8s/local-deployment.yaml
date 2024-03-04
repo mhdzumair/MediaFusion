@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.7.2
+        image: mhdzumair/mediafusion:v3.7.3
         ports:
         - containerPort: 80
         resources:
@@ -122,7 +122,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.7.2
+        image: mhdzumair/mediafusion:v3.7.3
         command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
@@ -421,7 +421,7 @@ spec:
         spec:
           containers:
           - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.7.2
+            image: mhdzumair/mediafusion:v3.7.3
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamil_blasters", "--all"]
             resources:
               requests:
@@ -453,7 +453,7 @@ spec:
         spec:
           containers:
           - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.7.2
+            image: mhdzumair/mediafusion:v3.7.3
             command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
             resources:
               requests:
@@ -485,7 +485,7 @@ spec:
         spec:
           containers:
           - name: formula-tgx-spider
-            image: mhdzumair/mediafusion:v3.7.2
+            image: mhdzumair/mediafusion:v3.7.3
             command: ["pipenv", "run", "scrapy", "crawl", "formula_tgx"]
             resources:
               requests:
