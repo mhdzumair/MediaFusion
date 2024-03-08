@@ -72,6 +72,7 @@ class QBittorrentConfig(BaseModel):
     webdav_url: str
     webdav_username: str
     webdav_password: str
+    webdav_downloads_path: str = "/"  # Default to a root path if not specified
 
 
 class StreamingProvider(BaseModel):

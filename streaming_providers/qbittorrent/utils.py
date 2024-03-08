@@ -109,7 +109,12 @@ async def find_file_in_folder_tree(
         user_data.streaming_provider.qbittorrent_config.webdav_url
     ).path
 
-    files = await get_files_from_folder(webdav, base_url_path, info_hash)
+    downloads_root_path = path.join(
+        user_data.streaming_provider.qbittorrent_config.webdav_downloads_path,
+        info_hash,
+    )
+
+    files = await get_files_from_folder(webdav, base_url_path, downloads_root_path)
     if not files:
         return None
 
@@ -314,7 +319,9 @@ async def fetch_info_hashes_from_webdav(
     """Fetches the info_hashes from directories in the WebDAV server that are named after the torrent's info hashes."""
     try:
         async with initialize_webdav(user_data) as webdav:
-            directories = await webdav.list()
+            directories = await webdav.list(
+                user_data.streaming_provider.qbittorrent_config.webdav_downloads_path
+            )
     except ProviderException:
         return []
 

@@ -139,9 +139,10 @@
                         </div>
                         <div class="mb-3">
                             <label for="play_video_after_download">Play Video After Download: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                                                  title="Enter the percentage of the video to be downloaded before playing."></span></label>
+                                                                                                    title="Enter the percentage of the video to be downloaded before playing."></span></label>
                             <input class="form-control" type="number" id="play_video_after_download" name="play_video_after_download" placeholder="Enter Play Video After Download"
                                    value="{{ user_data.streaming_provider.qbittorrent_config.play_video_after_download if user_data.streaming_provider.qbittorrent_config else 100 }}">
+                        </div>
 
                         <!-- WebDAV Configuration -->
                         <h5 class="mt-3">WebDAV Configuration</h5>
@@ -166,6 +167,12 @@
                                     <span id="toggleWebdavPasswordIcon" class="bi bi-eye"></span>
                                 </button>
                             </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="webdav_downloads_path">WebDAV Downloads Path: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                                            title="Enter the path from the root of the WebDAV server to the folder where qBittorrent saves downloads. This path is used to locate and stream downloads. If your qBittorrent downloads are saved directly in the root directory of the WebDAV server, leave this as '/'."></span></label>
+                            <input class="form-control" type="text" id="webdav_downloads_path" name="webdav_downloads_path" placeholder="Enter WebDAV Downloads Path"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.webdav_downloads_path if user_data.streaming_provider.qbittorrent_config else '/' }}">
                         </div>
                     </div>
 
