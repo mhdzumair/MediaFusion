@@ -19,8 +19,10 @@ async def init():
     retries = 5
     for i in range(retries):
         try:
-            # Create Motor client
-            client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongo_uri)
+            # Create a Motor client with maxPoolSize
+            client = motor.motor_asyncio.AsyncIOMotorClient(
+                settings.mongo_uri, maxPoolSize=settings.db_max_connections
+            )
             # Init beanie with the Product document class
             await init_beanie(
                 database=client.get_default_database(),  # Note that the database needs to be passed as part of the URI
