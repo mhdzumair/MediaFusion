@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from os import path
 from urllib.parse import urljoin, urlparse, quote
@@ -133,7 +134,9 @@ async def find_file_in_folder_tree(
     return selected_file
 
 
+@asynccontextmanager
 async def initialize_qbittorrent(user_data: UserData):
+    qbittorrent = None
     try:
         qbittorrent = await create_client(
             user_data.streaming_provider.qbittorrent_config.qbittorrent_url
@@ -141,6 +144,7 @@ async def initialize_qbittorrent(user_data: UserData):
             username=user_data.streaming_provider.qbittorrent_config.qbittorrent_username,
             password=user_data.streaming_provider.qbittorrent_config.qbittorrent_password,
         )
+        yield qbittorrent
     except LoginError:
         raise ProviderException(
             "Invalid qBittorrent credentials", "invalid_credentials.mp4"
@@ -149,28 +153,34 @@ async def initialize_qbittorrent(user_data: UserData):
         raise ProviderException(
             "Failed to connect to qBittorrent", "qbittorrent_error.mp4"
         )
-    return qbittorrent
+    finally:
+        if qbittorrent:
+            await qbittorrent.close()
 
 
+@asynccontextmanager
 async def initialize_webdav(user_data: UserData):
-    webdav_options = {
-        "webdav_hostname": user_data.streaming_provider.qbittorrent_config.webdav_url,
-        "webdav_login": user_data.streaming_provider.qbittorrent_config.webdav_username,
-        "webdav_password": user_data.streaming_provider.qbittorrent_config.webdav_password,
-    }
-
-    webdav = WebDavClient(webdav_options)
-
+    webdav = None
     try:
+        webdav_options = {
+            "webdav_hostname": user_data.streaming_provider.qbittorrent_config.webdav_url,
+            "webdav_login": user_data.streaming_provider.qbittorrent_config.webdav_username,
+            "webdav_password": user_data.streaming_provider.qbittorrent_config.webdav_password,
+        }
+        webdav = WebDavClient(webdav_options)
+        # Perform an initial check to validate the WebDAV credentials/connection
         if not await webdav.check():
             raise ProviderException(
                 "Invalid WebDAV credentials", "invalid_credentials.mp4"
             )
+        yield webdav
     except NoConnection:
         raise ProviderException(
             "Failed to connect to the WebDAV server", "webdav_error.mp4"
         )
-    return webdav
+    finally:
+        if webdav:
+            await webdav.close()
 
 
 async def handle_torrent_status(
@@ -254,11 +264,10 @@ async def get_direct_link_from_qbittorrent(
     retry_interval=5,
 ) -> str:
     """Get the direct link from the qBittorrent server."""
-    qbittorrent = webdav = None
     play_video_after = user_data.streaming_provider.qbittorrent_config.play_video_after
-    try:
-        qbittorrent = await initialize_qbittorrent(user_data)
-        webdav = await initialize_webdav(user_data)
+    async with initialize_qbittorrent(user_data) as qbittorrent, initialize_webdav(
+        user_data
+    ) as webdav:
         await handle_torrent_status(
             qbittorrent,
             info_hash,
@@ -280,30 +289,21 @@ async def get_direct_link_from_qbittorrent(
         )
 
         return generate_webdav_url(user_data, selected_file)
-    finally:
-        if qbittorrent:
-            await qbittorrent.close()
-        if webdav:
-            await webdav.close()
 
 
 async def update_qbittorrent_cache_status(
     streams: list[TorrentStreams], user_data: UserData
 ):
     """Updates the cache status of streams based on qBittorrent's instant availability."""
-    qbittorrent = None
     try:
-        qbittorrent = await initialize_qbittorrent(user_data)
-        torrents_info = await qbittorrent.torrents.info(
-            hashes=[stream.id for stream in streams]
-        )
-        torrents_dict = {torrent.hash: torrent.progress for torrent in torrents_info}
+        async with initialize_qbittorrent(user_data) as qbittorrent:
+            torrents_info = await qbittorrent.torrents.info(
+                hashes=[stream.id for stream in streams]
+            )
     except ProviderException:
         return
-    finally:
-        if qbittorrent:
-            await qbittorrent.close()
 
+    torrents_dict = {torrent.hash: torrent.progress for torrent in torrents_info}
     for stream in streams:
         stream.cached = torrents_dict.get(stream.id, 0) == 1
 
@@ -312,21 +312,17 @@ async def fetch_info_hashes_from_webdav(
     user_data: UserData,
 ) -> list[str]:
     """Fetches the info_hashes from directories in the WebDAV server that are named after the torrent's info hashes."""
-    webdav = None
     try:
-        webdav = await initialize_webdav(user_data)
-        directories = await webdav.list()
-
-        # Filter out directory names that match the length of an info hash (40 chars) plus the trailing slash
-        info_hashes = [
-            dirname.removesuffix("/")
-            for dirname in directories
-            if len(dirname) == 41 and dirname.endswith("/")
-        ]
-
-        return info_hashes
+        async with initialize_webdav(user_data) as webdav:
+            directories = await webdav.list()
     except ProviderException:
         return []
-    finally:
-        if webdav:
-            await webdav.close()
+
+    # Filter out directory names that match the length of an info hash (40 chars) plus the trailing slash
+    info_hashes = [
+        dirname.removesuffix("/")
+        for dirname in directories
+        if len(dirname) == 41 and dirname.endswith("/")
+    ]
+
+    return info_hashes
