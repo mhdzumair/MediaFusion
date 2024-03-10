@@ -62,6 +62,7 @@ class TVStreams(Document):
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     meta_id: Optional[str] = None
+    country: str | None = None
 
 
 class MediaFusionMetaData(Document):
@@ -96,7 +97,6 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     tv_language: str
     logo: Optional[str] = None
     genres: Optional[list[str]] = None
-    is_approved: bool = False
     streams: list[Link[TVStreams]]
 
 

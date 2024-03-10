@@ -38,6 +38,7 @@ gunicorn = "*"
 scrapy = "*"
 aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
 aiowebdav = "*"
+scrapy-playwright = "*"
 
 [dev-packages]
 pysocks = "*"

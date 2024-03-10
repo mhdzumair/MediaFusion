@@ -10,14 +10,13 @@ from urllib3.util.retry import Retry
 
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
+from utils.const import UA_HEADER
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
 
 # set httpx logging level
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-UA_HEADER = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
-}
+
 PROXIES = (
     {
         "http": settings.scraper_proxy_url,
@@ -190,3 +189,9 @@ async def update_torrent_series_streams_metadata(info_hashes: list[str]):
 
             await torrent_stream.save()
             logging.info(f"Updated {torrent_stream.id} metadata")
+
+
+def get_country_name(country_code):
+    with open("resources/json/countries.json") as file:
+        countries = json.load(file)
+    return countries.get(country_code.upper(), "India")

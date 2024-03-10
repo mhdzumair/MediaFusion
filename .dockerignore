@@ -40,3 +40,4 @@ deployment
 prowlarr-config/
 config/
 mediafusion.local*
+.scrapy

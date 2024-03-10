@@ -172,6 +172,7 @@ class TVStreams(BaseModel):
     url: str | None = None
     ytId: str | None = None
     source: str
+    country: str | None = None
     behaviorHints: TVStreamsBehaviorHints | None = None
 
     @model_validator(mode="after")
@@ -185,8 +186,8 @@ class TVMetaData(BaseModel):
     title: str
     poster: str | None = None
     background: Optional[str] = None
-    country: str
-    tv_language: str
+    country: str | None = None
+    tv_language: str | None = None
     logo: Optional[str] = None
     genres: list[str] = []
     streams: list[TVStreams]

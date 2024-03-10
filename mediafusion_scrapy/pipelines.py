@@ -7,7 +7,14 @@ from beanie import WriteRules
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
 
-from db.models import TorrentStreams, Season, MediaFusionSeriesMetaData, Episode
+from db import crud
+from db.models import (
+    TorrentStreams,
+    Season,
+    MediaFusionSeriesMetaData,
+    Episode,
+)
+from db.schemas import TVMetaData
 from utils.parser import convert_size_to_bytes
 
 
@@ -257,3 +264,13 @@ class FormulaStorePipeline:
         logging.info("Updated series %s", series.title)
 
         return item
+
+
+class TVStorePipeline:
+    async def process_item(self, item, spider):
+        if "title" not in item:
+            logging.warning(f"title not found in item: {item}")
+            raise DropItem(f"title not found in item: {item}")
+
+        tv_metadata = TVMetaData.model_validate(item)
+        await crud.save_tv_channel_metadata(tv_metadata)
