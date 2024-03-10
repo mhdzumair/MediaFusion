@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import uuid4
 
 from beanie import WriteRules
-from beanie.operators import In
+from beanie.operators import In, Set
 from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 
@@ -18,6 +18,7 @@ from db.models import (
     Season,
     Episode,
     MediaFusionTVMetaData,
+    TVStreams,
 )
 from db.schemas import Stream, MetaIdProjection, TorrentStreamsList
 from scrapers import tamilmv
@@ -77,9 +78,7 @@ async def get_meta_list(
 async def get_tv_meta_list(
     genre: Optional[str] = None, skip: int = 0, limit: int = 25
 ) -> list[schemas.Meta]:
-    query = MediaFusionTVMetaData.find(
-        MediaFusionTVMetaData.is_approved == True, fetch_links=True
-    )
+    query = MediaFusionTVMetaData.find(fetch_links=True)
     if genre:
         query = query.find(In(MediaFusionTVMetaData.genres, [genre]))
 
@@ -561,66 +560,80 @@ async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
     return stream
 
 
-async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> tuple[str, bool]:
-    # Try to get the existing TV channel
+async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
     channel_id = "mf" + hashlib.sha256(tv_metadata.title.encode()).hexdigest()[:10]
-    logging.info(f"Processing TV channel id {channel_id}")
-    existing_channel = await models.MediaFusionTVMetaData.get(channel_id)
 
-    # Map the TVStreams schema to the TVStreams model
-    streams_models = []
+    # Prepare the genres list
+    genres = list(
+        set(tv_metadata.genres + [tv_metadata.country, tv_metadata.tv_language])
+    )
+
+    # Ensure the channel document is upserted
+    try:
+        await MediaFusionTVMetaData.find_one(
+            MediaFusionTVMetaData.id == channel_id
+        ).upsert(
+            Set({}),  # Update operation is a no-op for now
+            on_insert=MediaFusionTVMetaData(
+                id=channel_id,
+                title=tv_metadata.title,
+                poster=tv_metadata.poster,
+                background=tv_metadata.background,
+                country=tv_metadata.country,
+                tv_language=tv_metadata.tv_language,
+                logo=tv_metadata.logo,
+                genres=genres,
+                type="tv",
+                streams=[],
+            ),
+        )
+    except DuplicateKeyError:
+        pass
+
+    # Stream processing
+    stream_ids = []
     for stream in tv_metadata.streams:
-        streams_models.append(
-            models.TVStreams(
-                url=stream.url,
-                name=stream.name,
-                behaviorHints=stream.behaviorHints.model_dump(exclude_none=True),
-                ytId=stream.ytId,
-                source=stream.source,
-            )
+        # Define stream document with meta_id
+        stream_doc = TVStreams(
+            url=stream.url,
+            name=stream.name,
+            behaviorHints=stream.behaviorHints.model_dump(exclude_none=True),
+            ytId=stream.ytId,
+            source=stream.source,
+            country=stream.country,
+            meta_id=channel_id,
         )
 
-    if existing_channel:
-        # Check for existing streams and update if necessary
-        await existing_channel.fetch_all_links()
-        for new_stream in streams_models:
-            matching_stream = next(
-                (
-                    s
-                    for s in existing_channel.streams
-                    if (s.url and s.url == new_stream.url)
-                    or (s.ytId and s.ytId == new_stream.ytId)
-                ),
-                None,
-            )
-            if not matching_stream:
-                existing_channel.streams.append(new_stream)
-        await existing_channel.save(link_rule=WriteRules.WRITE)
-        logging.info(f"Updated TV channel {existing_channel.title}")
-        is_new = False
-    else:
-        tv_metadata.genres.extend([tv_metadata.country, tv_metadata.tv_language])
-        genres = list(set(tv_metadata.genres))
-
-        # If the channel doesn't exist, create a new one
-        tv_channel_data = models.MediaFusionTVMetaData(
-            id=channel_id,
-            title=tv_metadata.title,
-            poster=tv_metadata.poster,
-            background=tv_metadata.background,
-            streams=streams_models,
-            type="tv",
-            country=tv_metadata.country,
-            tv_language=tv_metadata.tv_language,
-            logo=tv_metadata.logo,
-            genres=genres,
-            is_approved=False,
+        # Check if the stream exists (by URL or ytId) and upsert accordingly
+        existing_stream = await TVStreams.find_one(
+            TVStreams.url == stream.url,
+            TVStreams.ytId == stream.ytId,
         )
-        await tv_channel_data.insert(link_rule=WriteRules.WRITE)
-        logging.info(f"Added TV channel {tv_channel_data.title}")
-        is_new = True
+        if existing_stream:
+            stream_ids.append(existing_stream.id)
+        else:
+            inserted_stream = await stream_doc.insert()
+            stream_ids.append(inserted_stream.id)
 
-    return channel_id, is_new
+    # Update the TV channel with new stream links, if there are any new streams
+    if stream_ids:
+        await MediaFusionTVMetaData.find_one(
+            MediaFusionTVMetaData.id == channel_id
+        ).update(
+            {
+                "$addToSet": {
+                    "streams": {
+                        "$each": [
+                            TVStreams.link_from_id(stream_id)
+                            for stream_id in stream_ids
+                        ]
+                    }
+                }
+            }
+        )
+
+    logging.info(f"Processed TV channel {tv_metadata.title}")
+    return channel_id
 
 
 async def delete_search_history():

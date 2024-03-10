@@ -32,6 +32,7 @@ SECRET_KEY=$(openssl rand -hex 16)
 PROWLARR_API_KEY=$(openssl rand -hex 16)
 
 # If using Premiumize, fill in your OAuth client ID and secret. Otherwise, leave these empty.
+# You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
 PREMIUMIZE_OAUTH_CLIENT_ID=""
 PREMIUMIZE_OAUTH_CLIENT_SECRET=""
 
@@ -87,6 +88,9 @@ kubectl create secret tls mediafusion-tls \
 
 ## Configuring MediaFusion 🛠️
 
+> [!TIP]
+> For more configuration options, refer to the [Configuration](/docs/configuration.md) documentation.
+
 Edit the `deployment/local-deployment.yaml` to set the required environment variables:
 
 ```yaml
@@ -102,6 +106,7 @@ Edit the `deployment/local-deployment.yaml` to set the required environment vari
             value: "false"
 ```
 
+> [!WARNING]
 > Note: If you have lower than armv8-2 architecture, you may not be able to run the mongodb container. In that case, you can use MongoDB Atlas Cluster. 
 
 

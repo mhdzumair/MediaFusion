@@ -1,30 +1,34 @@
 from io import BytesIO
 
-import requests
+import aiohttp
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from imdb import Cinemagoer
 
 from db.models import MediaFusionMetaData
+from utils import const
 
 ia = Cinemagoer()
 
 
 async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
-    response = requests.get(mediafusion_data.poster, timeout=10)
-    response.raise_for_status()
-
-    # Check if the response content type is an image
-    if not response.headers["Content-Type"].lower().startswith("image/"):
-        raise ValueError(
-            f"Unexpected content type: {response.headers['Content-Type']} for URL: {mediafusion_data.poster}"
-        )
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            mediafusion_data.poster, timeout=10, headers=const.UA_HEADER
+        ) as response:
+            response.raise_for_status()
+            # Check if the response content type is an image
+            if not response.headers["Content-Type"].lower().startswith("image/"):
+                raise ValueError(
+                    f"Unexpected content type: {response.headers['Content-Type']} for URL: {mediafusion_data.poster}"
+                )
+            content = await response.read()
 
     # Check if the response content is not empty
-    if not response.content:
+    if not content:
         raise ValueError(f"Empty content for URL: {mediafusion_data.poster}")
 
     try:
-        image = Image.open(BytesIO(response.content)).convert("RGBA")
+        image = Image.open(BytesIO(content)).convert("RGBA")
     except UnidentifiedImageError:
         raise ValueError(f"Cannot identify image from URL: {mediafusion_data.poster}")
 

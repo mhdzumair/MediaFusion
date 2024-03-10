@@ -72,6 +72,7 @@ class QBittorrentConfig(BaseModel):
     webdav_url: str
     webdav_username: str
     webdav_password: str
+    webdav_downloads_path: str = "/"  # Default to a root path if not specified
 
 
 class StreamingProvider(BaseModel):
@@ -112,13 +113,13 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
-    selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
+    selected_catalogs: list[str] = []
+    selected_resolutions: list[str | None] = []
     enable_catalogs: bool = True
     max_size: int | str | float = math.inf
     max_streams_per_resolution: int = 3
     show_full_torrent_name: bool = False
-    torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
+    torrent_sorting_priority: list[str] = []
     api_password: str | None = None
 
     @model_validator(mode="after")
@@ -171,6 +172,7 @@ class TVStreams(BaseModel):
     url: str | None = None
     ytId: str | None = None
     source: str
+    country: str | None = None
     behaviorHints: TVStreamsBehaviorHints | None = None
 
     @model_validator(mode="after")
@@ -184,8 +186,8 @@ class TVMetaData(BaseModel):
     title: str
     poster: str | None = None
     background: Optional[str] = None
-    country: str
-    tv_language: str
+    country: str | None = None
+    tv_language: str | None = None
     logo: Optional[str] = None
     genres: list[str] = []
     streams: list[TVStreams]

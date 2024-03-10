@@ -79,8 +79,12 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         # Attach UserData to request state for access in endpoints
         request.scope["user"] = user_data
 
-        response = await call_next(request)
-        return response
+        try:
+            return await call_next(request)
+        except RuntimeError as exc:
+            if str(exc) == "No response returned." and await request.is_disconnected():
+                return Response(status_code=204)
+            raise
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

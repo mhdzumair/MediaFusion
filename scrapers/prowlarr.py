@@ -16,8 +16,8 @@ from scrapers import therarbg, torrent_downloads
 from scrapers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
-    UA_HEADER,
 )
+from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
 from utils.torrent import extract_torrent_metadata

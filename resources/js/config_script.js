@@ -278,6 +278,7 @@ function getUserData() {
                 webdav_url: document.getElementById('webdav_url').value,
                 webdav_username: document.getElementById('webdav_username').value,
                 webdav_password: document.getElementById('webdav_password').value,
+                webdav_downloads_path: document.getElementById('webdav_downloads_path').value,
             };
             // Validate qBittorrent-specific inputs
             validateInput('qbittorrent_url', streamingProviderData.qbittorrent_config.qbittorrent_url);

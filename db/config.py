@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     mongo_uri: str
+    db_max_connections: int = 50
     redis_url: str = "redis://redis-service:6379"
     git_rev: str = "stable"
     secret_key: str
@@ -23,6 +24,11 @@ class Settings(BaseSettings):
     adult_content_regex_keywords: str = r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"
     enable_rate_limit: bool = True
     api_password: str | None = None
+    tamilmv_scheduler_crontab: str = "0 */3 * * *"
+    tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
+    formula_tgx_scheduler_crontab: str = "0 */12 * * *"
+    mhdtvworld_scheduler_crontab: str = "0 0 * * 5"
+    mhdtvsports_scheduler_crontab: str = "0 10 * * *"
 
     class Config:
         env_file = ".env"

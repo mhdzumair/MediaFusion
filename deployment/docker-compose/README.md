@@ -24,6 +24,9 @@ Ensure the following tools are installed:
 
 Rename `.env-sample` to `.env` and update the variables.
 
+> [!TIP]
+> For more configuration options, refer to the [Configuration](/docs/configuration.md) documentation.
+
 
 ```bash
 cp .env-sample .env
@@ -31,6 +34,7 @@ cp .env-sample .env
 echo SECRET_KEY=$(openssl rand -hex 16) >> .env
 
 # Update .env with your Premiumize credentials if available
+# You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
 echo PREMIUMIZE_OAUTH_CLIENT_ID=your_client_id >> .env
 echo PREMIUMIZE_OAUTH_CLIENT_SECRET=your_client_secret >> .env
 
@@ -82,6 +86,7 @@ Deploy MediaFusion using Docker Compose:
 docker-compose -f docker-compose.yml up -d
 ```
 
+> [!WARNING]
 > Note: If you have lower than armv8-2 architecture, you may not be able to run the mongodb container. In that case, you can use MongoDB Atlas Cluster. 
 
 ### Configuring MongoDB Atlas Cluster (Optional) (Not needed for local deployment) 🌐

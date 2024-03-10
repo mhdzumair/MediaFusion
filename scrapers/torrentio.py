@@ -10,10 +10,10 @@ from redis.asyncio import Redis
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
 from scrapers.helpers import (
-    UA_HEADER,
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
 )
+from utils.const import UA_HEADER
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
 from utils.validation_helper import is_video_file
 
