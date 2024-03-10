@@ -56,6 +56,14 @@ scheduler.add_job(
     kwargs={"spider_name": "mhdtvworld"},
 )
 
+# Setup mhdtvsports scraper
+scheduler.add_job(
+    run_formula_tgx_spider,
+    CronTrigger.from_crontab(settings.mhdtvsports_scheduler_crontab),
+    name="mhdtvsports",
+    kwargs={"spider_name": "mhdtvsports"},
+)
+
 # Start the scheduler
 scheduler.start()
 

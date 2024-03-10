@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     tamilmv_scheduler_crontab: str = "0 */3 * * *"
     tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
     formula_tgx_scheduler_crontab: str = "0 */12 * * *"
-    mhdtvworld_scheduler_crontab: str = "0 10 * * *"
+    mhdtvworld_scheduler_crontab: str = "0 0 * * 5"
+    mhdtvsports_scheduler_crontab: str = "0 10 * * *"
 
     class Config:
         env_file = ".env"
