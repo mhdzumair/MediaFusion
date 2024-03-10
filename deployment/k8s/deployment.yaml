@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:beta
+        image: mhdzumair/mediafusion:v3.7.4
         ports:
         - containerPort: 80
         resources:
@@ -85,7 +85,7 @@ kind: Deployment
 metadata:
   name: dramatiq-worker-deployment
 spec:
-  replicas: 5
+  replicas: 2
   selector:
     matchLabels:
       app: dramatiq-worker
@@ -96,7 +96,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:beta
+        image: mhdzumair/mediafusion:v3.7.4
         command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
@@ -146,7 +146,7 @@ spec:
     spec:
       containers:
       - name: scraper
-        image: mhdzumair/mediafusion:beta
+        image: mhdzumair/mediafusion:v3.7.4
         command: ["pipenv", "run", "python", "-m", "api.scheduler"]
         env:
           - name: MONGO_URI
