@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.7.3
+        image: mhdzumair/mediafusion:beta
         ports:
         - containerPort: 80
         resources:
@@ -61,6 +61,8 @@ spec:
             value: "3"
           - name: REDIS_URL
             value: "redis://redis-service:6379"
+          - name: db_max_connections
+            value: "30"
         livenessProbe:
           httpGet:
             path: /health
@@ -94,7 +96,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.7.3
+        image: mhdzumair/mediafusion:beta
         command: ["pipenv", "run", "dramatiq-gevent", "api.task"]
         env:
           - name: MONGO_URI
@@ -117,6 +119,58 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: REDIS_URL
+          - name: db_max_connections
+            value: "30"
+        resources:
+          requests:
+            memory: "500Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "200m"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scraper-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scraper
+  template:
+    metadata:
+      labels:
+        app: scraper
+    spec:
+      containers:
+      - name: scraper
+        image: mhdzumair/mediafusion:beta
+        command: ["pipenv", "run", "python", "-m", "api.scheduler"]
+        env:
+          - name: MONGO_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: MONGO_URI
+          - name: SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: SECRET_KEY
+          - name: PROWLARR_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: PROWLARR_API_KEY
+          - name: REDIS_URL
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: REDIS_URL
+          - name: db_max_connections
+            value: "30"
         resources:
           requests:
             memory: "500Mi"
@@ -360,109 +414,3 @@ spec:
   minReplicas: 5
   maxReplicas: 10
   targetCPUUtilizationPercentage: 50
-
----
-
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: tamil-blasters-scraper
-spec:
-  schedule: "0 */3 * * *"  # At minute 0 past every 3rd hour
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: tamil-blasters-scraper
-            image: mhdzumair/mediafusion:v3.7.3
-            command: ["pipenv", "run", "python3", "-m", "scrapers.tamil_blasters", "--all"]
-            resources:
-              requests:
-                memory: "128Mi"
-                cpu: "200m"
-              limits:
-                memory: "256Mi"
-                cpu: "200m"
-            env:
-              - name: MONGO_URI
-                valueFrom:
-                  secretKeyRef:
-                    name: mediafusion-secrets
-                    key: MONGO_URI
-              - name: SECRET_KEY
-                valueFrom:
-                  secretKeyRef:
-                    name: mediafusion-secrets
-                    key: SECRET_KEY
-          restartPolicy: OnFailure
-
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: tamilmv-scraper
-spec:
-  schedule: "30 */3 * * *"  # At minute 30 past every 3rd hour
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: tamilmv-scraper
-            image: mhdzumair/mediafusion:v3.7.3
-            command: ["pipenv", "run", "python3", "-m", "scrapers.tamilmv", "--all"]
-            resources:
-              requests:
-                memory: "128Mi"
-                cpu: "200m"
-              limits:
-                memory: "256Mi"
-                cpu: "200m"
-            env:
-              - name: MONGO_URI
-                valueFrom:
-                  secretKeyRef:
-                    name: mediafusion-secrets
-                    key: MONGO_URI
-              - name: SECRET_KEY
-                valueFrom:
-                  secretKeyRef:
-                    name: mediafusion-secrets
-                    key: SECRET_KEY
-          restartPolicy: OnFailure
-
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: formula-tgx-spider
-spec:
-  schedule: "0 * * * *"  # At minute 0 every hour
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: formula-tgx-spider
-            image: mhdzumair/mediafusion:v3.7.3
-            command: ["pipenv", "run", "scrapy", "crawl", "formula_tgx"]
-            resources:
-              requests:
-                memory: "128Mi"
-                cpu: "200m"
-              limits:
-                memory: "256Mi"
-                cpu: "200m"
-            env:
-              - name: MONGO_URI
-                valueFrom:
-                  secretKeyRef:
-                    name: mediafusion-secrets
-                    key: MONGO_URI
-              - name: SECRET_KEY
-                valueFrom:
-                  secretKeyRef:
-                    name: mediafusion-secrets
-                    key: SECRET_KEY
-          restartPolicy: OnFailure
