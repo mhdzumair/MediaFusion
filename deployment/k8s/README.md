@@ -18,7 +18,7 @@ Before you begin, ensure the following tools are installed on your system:
 
 - **kubectl**: The Kubernetes command-line tool. Installation guidelines can be found in the [Kubernetes documentation](https://kubernetes.io/docs/tasks/tools/install-kubectl/).
 
-- **Python 3.11**: Required for mkcert & development. Follow the [Python documentation](https://www.python.org/downloads/) for installation instructions.
+- **mkcert**: For generating self-signed SSL certificates. [Installation guide](https://github.com/FiloSottile/mkcert?tab=readme-ov-file#installation).
 
 ## Setting Up Secrets 🗝️
 
@@ -77,7 +77,6 @@ minikube addons enable metrics-server
 Generate and store a self-signed certificate:
 
 ```bash
-pip install mkcert
 mkcert -install
 mkcert "mediafusion.local"
 

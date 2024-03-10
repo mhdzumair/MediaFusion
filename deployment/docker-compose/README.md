@@ -18,7 +18,7 @@ Ensure the following tools are installed:
 
 - **Docker**: For containerization. [Installation guide](https://docs.docker.com/get-docker/).
 - **Docker Compose**: For multi-container Docker applications. [Installation guide](https://docs.docker.com/compose/install/).
-- **Python 3.11**: For mkcert & development. [Installation guide](https://www.python.org/downloads/).
+- **mkcert**: For generating self-signed SSL certificates. [Installation guide](https://github.com/FiloSottile/mkcert?tab=readme-ov-file#installation).
 
 ## Configuration 📝
 
@@ -47,7 +47,6 @@ nano .env
 Generate a self-signed SSL certificate for local HTTPS:
 
 ```bash
-pip install mkcert
 mkcert -install
 mkcert "mediafusion.local"
 ```
