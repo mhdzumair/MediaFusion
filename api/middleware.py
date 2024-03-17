@@ -102,7 +102,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not endpoint:
             return await call_next(request)
 
-        is_exclude = getattr(endpoint, "exclude", False)
+        is_exclude = getattr(endpoint, "exclude_rate_limit", False)
         if is_exclude:
             return await call_next(request)
 

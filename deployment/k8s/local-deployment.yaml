@@ -150,57 +150,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: scraper-deployment
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: scraper
-  template:
-    metadata:
-      labels:
-        app: scraper
-    spec:
-      containers:
-      - name: scraper
-        image: mhdzumair/mediafusion:beta
-        command: ["pipenv", "run", "python", "-m", "api.scheduler"]
-        env:
-          - name: MONGO_URI
-            valueFrom:
-              secretKeyRef:
-                name: mediafusion-secrets
-                key: MONGO_URI
-          - name: SECRET_KEY
-            valueFrom:
-              secretKeyRef:
-                name: mediafusion-secrets
-                key: SECRET_KEY
-          - name: PROWLARR_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: mediafusion-secrets
-                key: PROWLARR_API_KEY
-          - name: REDIS_URL
-            valueFrom:
-              secretKeyRef:
-                name: mediafusion-secrets
-                key: REDIS_URL
-          - name: db_max_connections
-            value: "30"
-        resources:
-          requests:
-            memory: "500Mi"
-            cpu: "200m"
-          limits:
-            memory: "1Gi"
-            cpu: "200m"
-
----
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
   name: prowlarr-deployment
 spec:
   replicas: 1

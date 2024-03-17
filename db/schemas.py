@@ -195,3 +195,11 @@ class TVMetaData(BaseModel):
 
 class TorrentStreamsList(BaseModel):
     streams: list[TorrentStreams]
+
+
+class ScraperTask(BaseModel):
+    scraper_type: str
+    pages: int = 1
+    start_page: int = 1
+    spider_name: str = None
+    api_password: str = None

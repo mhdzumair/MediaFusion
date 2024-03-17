@@ -18,8 +18,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from api import middleware
+from api.scheduler import setup_scheduler
 from db import database, crud, schemas
 from db.config import settings
+from mediafusion_scrapy.task import run_spider
+from scrapers.tamilmv import run_tamilmv_scraper
+from scrapers.tamil_blasters import run_tamil_blasters_scraper
 from streaming_providers.routes import router as streaming_provider_router
 from utils import crypto, torrent, poster, const, wrappers
 from utils.parser import generate_manifest
@@ -64,6 +68,8 @@ async def start_scheduler():
     scheduler.add_job(
         crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
     )
+    setup_scheduler(scheduler)
+    scheduler.start()
     app.state.scheduler = scheduler
 
 
@@ -96,7 +102,7 @@ async def get_home(request: Request):
 
 
 @app.get("/health", tags=["health"])
-@wrappers.exclude
+@wrappers.exclude_rate_limit
 async def health(request: Request):
     return {"status": "healthy"}
 
@@ -378,6 +384,7 @@ async def get_streams(
             user_data, secret_str, request.app.state.redis, video_id, season, episode
         )
     else:
+        response.headers.update(const.NO_CACHE_HEADERS)
         fetched_streams = await crud.get_tv_streams(video_id)
 
     return {"streams": fetched_streams}
@@ -391,7 +398,7 @@ async def encrypt_user_data(user_data: schemas.UserData):
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
-@wrappers.exclude
+@wrappers.exclude_rate_limit
 async def get_poster(
     catalog_type: Literal["movie", "series", "tv"],
     mediafusion_id: str,
@@ -435,6 +442,38 @@ async def get_poster(
         mediafusion_data.is_poster_working = False
         await mediafusion_data.save()
         raise HTTPException(status_code=404, detail="Failed to create poster.")
+
+
+@app.get("/scraper", tags=["scraper"])
+async def get_scraper(request: Request):
+    return TEMPLATES.TemplateResponse(
+        "html/scraper.html",
+        {
+            "request": request,
+            "authentication_required": settings.api_password is not None,
+        },
+    )
+
+
+@app.post("/scraper/run", tags=["scraper"])
+async def run_scraper_task(task: schemas.ScraperTask):
+    if settings.api_password and task.api_password != settings.api_password:
+        raise HTTPException(status_code=401, detail="Invalid API password.")
+
+    if task.scraper_type == "tamilmv":
+        run_tamilmv_scraper.send(task.pages, task.start_page)
+    elif task.scraper_type == "tamilblasters":
+        run_tamil_blasters_scraper.send(task.pages, task.start_page)
+    elif task.scraper_type == "scrapy":
+        if not task.spider_name:
+            raise HTTPException(
+                status_code=400, detail="Spider name is required for scrapy tasks."
+            )
+        run_spider.send(task.spider_name)
+    else:
+        raise HTTPException(status_code=400, detail="Invalid scraper type.")
+
+    return {"status": f"Scraping {task.scraper_type} task has been scheduled."}
 
 
 app.include_router(

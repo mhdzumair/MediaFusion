@@ -129,7 +129,7 @@ def get_scraper_config(site_name: str, get_key: str) -> dict:
     return config.get(site_name, {}).get(get_key, {})
 
 
-@dramatiq.actor(time_limit=30 * 60 * 1000)
+@dramatiq.actor(time_limit=30 * 60 * 1000, priority=10)
 async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
     """Update torrent streams metadata."""
     if not info_hashes:
@@ -153,7 +153,7 @@ async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
             logging.info(f"Updated {torrent_stream.id} metadata")
 
 
-@dramatiq.actor(time_limit=30 * 60 * 1000)
+@dramatiq.actor(time_limit=30 * 60 * 1000, priority=10)
 async def update_torrent_series_streams_metadata(info_hashes: list[str]):
     """Update torrent streams metadata."""
     if not info_hashes:

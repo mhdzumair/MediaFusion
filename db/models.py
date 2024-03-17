@@ -63,6 +63,7 @@ class TVStreams(Document):
     created_at: datetime = Field(default_factory=datetime.now)
     meta_id: Optional[str] = None
     country: str | None = None
+    is_working: Optional[bool] = True
 
 
 class MediaFusionMetaData(Document):

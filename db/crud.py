@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from beanie import WriteRules
 from beanie.operators import In, Set
+from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 
@@ -78,7 +79,9 @@ async def get_meta_list(
 async def get_tv_meta_list(
     genre: Optional[str] = None, skip: int = 0, limit: int = 25
 ) -> list[schemas.Meta]:
-    query = MediaFusionTVMetaData.find(fetch_links=True)
+    query = MediaFusionTVMetaData.find(
+        MediaFusionMovieMetaData.streams.is_working == True, fetch_links=True
+    )
     if genre:
         query = query.find(In(MediaFusionTVMetaData.genres, [genre]))
 
@@ -238,11 +241,21 @@ async def get_series_streams(
 
 
 async def get_tv_streams(video_id: str) -> list[Stream]:
-    tv_data = await get_tv_data_by_id(video_id, True)
-    if not tv_data:
+    tv_streams = await TVStreams.find(
+        {"meta_id": video_id, "is_working": True}
+    ).to_list()
+    if not tv_streams:
         return []
 
-    return parse_tv_stream_data(tv_data)
+    return await parse_tv_stream_data(tv_streams)
+
+
+async def get_tv_stream_by_id(stream_id: str) -> TVStreams | None:
+    try:
+        stream = await TVStreams.get(stream_id)
+    except ValidationError:
+        return None
+    return stream
 
 
 async def get_movie_meta(meta_id: str):

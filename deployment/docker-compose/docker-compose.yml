@@ -59,14 +59,6 @@ services:
     volumes:
       - prowlar-config:/config
 
-  scraper:
-    image: mhdzumair/mediafusion:v3.7.4
-    command: ["pipenv", "run", "python", "-m", "api.scheduler"]
-    env_file:
-      - .env
-    depends_on:
-      - mongodb
-
 volumes:
   mongo-data:
   prowlar-config:
