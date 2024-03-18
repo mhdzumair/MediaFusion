@@ -75,6 +75,9 @@ class MediaFusionMetaData(Document):
     background: Optional[str] = None
     streams: list[Link[TorrentStreams]]
     type: str
+    description: Optional[str] = None
+    runtime: Optional[str] = None
+    website: Optional[str] = None
 
     class Settings:
         is_root = True

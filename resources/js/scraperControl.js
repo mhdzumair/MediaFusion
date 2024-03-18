@@ -48,6 +48,7 @@ function updateFormFields() {
                     <option value="mhdtvworld">MHDTV World</option>
                     <option value="mhdtvsports">MHDTV Sports</option>
                     <option value="tamilultra">Tamil Ultra</option>
+                    <option value="sport_video">Sport Video</option>
                 </select>
             </div>
         `;

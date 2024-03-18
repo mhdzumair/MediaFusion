@@ -449,6 +449,83 @@
 		  "isRequired": false
 		}
 	  ]
+	},
+	{
+	  "id": "american_football",
+	  "type": "movie",
+	  "name": "American Football",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "basketball",
+	  "type": "movie",
+	  "name": "Basketball",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "baseball",
+	  "type": "movie",
+	  "name": "Baseball",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "football",
+	  "type": "movie",
+	  "name": "Football",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "hockey",
+	  "type": "movie",
+	  "name": "Hockey",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "rugby",
+	  "type": "movie",
+	  "name": "Rugby/AFL",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "other_sports",
+	  "type": "movie",
+	  "name": "Other Sports",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
 	}
   ]
 }

@@ -269,7 +269,7 @@ def convert_size_to_bytes(size_str: str) -> int:
 
 def get_catalogs(catalog: str, languages: list[str]) -> list[str]:
     base_catalogs = ["hdrip", "tcrip", "dubbed", "series"]
-    base_catalog = catalog.split("_")[1]
+    base_catalog = catalog.split("_")[-1]
 
     if base_catalog not in base_catalogs:
         return [catalog]

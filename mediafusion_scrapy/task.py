@@ -22,3 +22,7 @@ def run_spider(spider_name: str, *args, **kwargs):
     p = Process(target=run_spider_in_process, args=(spider_name, *args), kwargs=kwargs)
     p.start()
     p.join()
+
+
+if __name__ == "__main__":
+    run_spider_in_process("sport_video")

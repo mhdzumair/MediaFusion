@@ -31,7 +31,7 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         run_spider.send,
         CronTrigger.from_crontab(settings.formula_tgx_scheduler_crontab),
         name="formula_tgx",
-        kwargs={"spider_name": "formula_tgx"},
+        kwargs={"spider_name": "formula_tgx", "scrape_all": "false"},
     )
 
     # Setup mhdtvworld scraper
@@ -63,4 +63,12 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         validate_tv_streams_in_db.send,
         CronTrigger.from_crontab(settings.validate_tv_streams_in_db_crontab),
         name="validate_tv_streams_in_db",
+    )
+
+    # Schedule sport_video scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.sport_video_scheduler_crontab),
+        name="sport_video",
+        kwargs={"spider_name": "sport_video", "scrape_all": "false"},
     )

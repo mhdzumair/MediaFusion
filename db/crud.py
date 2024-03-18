@@ -271,6 +271,9 @@ async def get_movie_meta(meta_id: str):
             "title": movie_data.title,
             "poster": f"{settings.host_url}/poster/movie/{meta_id}.jpg",
             "background": movie_data.poster,
+            "description": movie_data.description,
+            "runtime": movie_data.runtime,
+            "website": movie_data.website,
         }
     }
 
@@ -344,7 +347,7 @@ async def get_tv_meta(meta_id: str):
     }
 
 
-async def save_movie_metadata(metadata: dict):
+async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
     # Try to get the existing movie
     existing_movie = await MediaFusionMovieMetaData.find_one(
         {"title": metadata["title"], "year": metadata.get("year")}, fetch_links=True
@@ -352,7 +355,10 @@ async def save_movie_metadata(metadata: dict):
 
     if not existing_movie:
         # If the movie doesn't exist in our DB, search for IMDb ID
-        imdb_data = search_imdb(metadata["title"], metadata.get("year"))
+        if is_imdb:
+            imdb_data = search_imdb(metadata["title"], metadata.get("year"))
+        else:
+            imdb_data = {}
         meta_id = imdb_data.get("imdb_id")
 
         if meta_id:
@@ -422,6 +428,9 @@ async def save_movie_metadata(metadata: dict):
             poster=poster,
             background=background,
             streams=[new_stream],
+            description=metadata.get("description"),
+            runtime=metadata.get("runtime"),
+            website=metadata.get("website"),
         )
         try:
             await movie_data.insert(link_rule=WriteRules.WRITE)

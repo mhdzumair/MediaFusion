@@ -32,6 +32,9 @@ class Meta(BaseModel):
     language: str | None = Field(None, alias="tv_language")
     logo: str | None = None
     genres: list[str] | None = None
+    description: str | None = None
+    runtime: str | None = None
+    website: str | None = None
 
 
 class MetaItem(BaseModel):
@@ -201,5 +204,7 @@ class ScraperTask(BaseModel):
     scraper_type: str
     pages: int = 1
     start_page: int = 1
-    spider_name: str = None
+    spider_name: str = Literal[
+        "formula_tgx", "mhdtvworld", "mhdtvsports", "tamilultra", "sport_video"
+    ]
     api_password: str = None

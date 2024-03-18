@@ -34,6 +34,13 @@ CATALOG_ID_DATA = [
     "torrentio_streams",
     "prowlarr_streams",
     "formula_racing",
+    "american_football",
+    "basketball",
+    "baseball",
+    "football",
+    "hockey",
+    "rugby",
+    "other_sports",
 ]
 
 CATALOG_NAME_DATA = [
@@ -72,6 +79,13 @@ CATALOG_NAME_DATA = [
     "Torrentio Streams",
     "Prowlarr Streams",
     "Formula Racing",
+    "American Football",
+    "Basketball",
+    "Baseball",
+    "Football",
+    "Hockey",
+    "Rugby/AFL",
+    "Other Sports",
 ]
 
 RESOLUTIONS = [
