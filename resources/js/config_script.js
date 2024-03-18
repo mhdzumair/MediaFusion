@@ -436,16 +436,19 @@ document.addEventListener('DOMContentLoaded', function () {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
 
-    setupPasswordToggle('password', 'togglePassword', 'togglePasswordIcon');
-    setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
-    setupPasswordToggle('qbittorrent_password', 'toggleQbittorrentPassword', 'toggleQbittorrentPasswordIcon');
-    setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
-
     if (navigator.share) {
         document.getElementById('shareBtn').style.display = 'block';
     } else {
         document.getElementById('copyBtn').style.display = 'block';
     }
+
+    setupPasswordToggle('password', 'togglePassword', 'togglePasswordIcon');
+    // Check for API Password if authentication is required
+    if (document.getElementById('api_password')) {
+        setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
+    }
+    setupPasswordToggle('qbittorrent_password', 'toggleQbittorrentPassword', 'toggleQbittorrentPasswordIcon');
+    setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
 });
 
 
