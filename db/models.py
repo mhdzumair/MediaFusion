@@ -63,6 +63,7 @@ class TVStreams(Document):
     created_at: datetime = Field(default_factory=datetime.now)
     meta_id: Optional[str] = None
     country: str | None = None
+    is_working: Optional[bool] = True
 
 
 class MediaFusionMetaData(Document):
@@ -74,6 +75,9 @@ class MediaFusionMetaData(Document):
     background: Optional[str] = None
     streams: list[Link[TorrentStreams]]
     type: str
+    description: Optional[str] = None
+    runtime: Optional[str] = None
+    website: Optional[str] = None
 
     class Settings:
         is_root = True

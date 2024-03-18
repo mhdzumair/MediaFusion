@@ -141,6 +141,7 @@ async def scrap_movies_streams_from_prowlarr(
     min_backoff=2 * 60 * 1000,  # 2 minutes
     max_backoff=60 * 60 * 1000,  # 60 minutes
     retry_when=should_retry_prowlarr_scrap,
+    priority=100,
 )
 async def background_movie_title_search(video_id: str, title: str, year: str):
     url = f"{settings.prowlarr_url}/api/v1/search"
@@ -189,6 +190,7 @@ async def scrap_series_streams_from_prowlarr(
     min_backoff=2 * 60 * 1000,  # 2 minutes
     max_backoff=60 * 60 * 1000,  # 60 minutes
     retry_when=should_retry_prowlarr_scrap,
+    priority=100,
 )
 async def background_series_title_search(
     video_id: str, title: str, season: int, episode: int

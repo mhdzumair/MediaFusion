@@ -12,28 +12,34 @@
   
   ![Media Fusion Catalog](resources/images/ss1.png?raw=true)
 
-- **Enhanced Streaming with Various Providers**: Supports streams for playback, integrating various torrent and cloud storage services. Available providers include:
-  - **Direct Torrent** (Free)
-  - **PikPak** (Free Quota)
-  - **Seedr.cc** (Free Quota)
-  - **OffCloud** (Free Quota)
-  - **Torbox** (Free Quota)
-  - **Real-Debrid** (Premium)
-  - **Debrid-Link** (Premium)
-  - **Premiumize** (Premium)
-  - **AllDebrid** - Local Only - (Premium) *(Note: AllDebrid works only when running the addon locally)*
+- **Enhanced Streaming with Various Providers**: Seamless playback from a diverse array of torrent and cloud storage services:
+  - 📥 **Direct Torrent** (Free)
+  - 🌩️ **PikPak** (Free Quota)
+  - 🌱 **Seedr.cc** (Free Quota)
+  - ☁️ **OffCloud** (Free Quota)
+  - 📦 **Torbox** (Free Quota)
+  - 💎 **Real-Debrid** (Premium)
+  - 🔗 **Debrid-Link** (Premium)
+  - ✨ **Premiumize** (Premium)
+  - 🏠 **AllDebrid** - Local Only / ElfHosted - (Premium) *(Note: AllDebrid works only when running the addon locally or use ElfHosted version)*
+  - 🔒 **qBittorrent** - WebDav (Free/Premium)
 
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)
 
-- **scraper Support**:
-  - **Prowlarr Integration**: Enhances scraping capabilities through Prowlarr integration.
-  - **Torrentio Streams**: Supports scraping from Torrentio streams (disabled by default).
-  - **Regional Content scraping**: Dedicated scraping for TamilMV and TamilBlasters movies and series, along with TamilUltra and MHDTVPlay for Live TV channels.
+- **Scraper Support**:
+  - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
+  - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua
+  - 🎥 **TamilMV**: Specialized scraping for regional contents.
+  - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
+  - 📺 **TamilUltra & MHDTVPlay**: Get the best of Live TV channels right at your fingertips.
+  - 🔄 **Prowlarr Integration**: Supercharge your scraping streams with Prowlarr's powerful integration.
+  - 🌊 **Torrentio/KnightCrawler Streams**: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.
 
-- **Additonal Features**:
-  - **User Data Encryption**: User data is encrypted upon configuring the addon, ensuring privacy and security. Only the encrypted URL is stored on Stremio, and it is passed as an encrypted string for each request.
-  - **Watchlist Catalog Support**: Integrates streaming provider watchlist directly into the catalog (only show when the movie's metadata available in MediaFusion DB)
-  - **Stream Filters**: Users can filter streams based on file size and resolution type, allowing for a customized viewing experience.
+- **Additional Features**:
+  - 🔒 **API Security**: Fortify your self-hosted API with a password to prevent unauthorized access.
+  - 🔐 **User Data Encryption**: Encrypt user data for heightened privacy and security, storing only encrypted URLs on Stremio.
+  - 📋 **Watchlist Catalog Support**: Sync your streaming provider's watchlist directly into the MediaFusion catalog for a personalized touch.
+  - ⚙️ **Stream Filters**: Customize your viewing experience with filters that sort streams by file size, resolution, seeders and much more.
 
 ## 🚀 Installation
 

@@ -1,73 +1,74 @@
-import asyncio
-import logging
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 
 from db.config import settings
 from scrapers import tamil_blasters, tamilmv
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+from mediafusion_scrapy.task import run_spider
+from utils.validation_helper import validate_tv_streams_in_db
 
 
-def run_formula_tgx_spider(spider_name: str):
+def setup_scheduler(scheduler: AsyncIOScheduler):
     """
-    Function to start the formula_tgx spider.
+    Set up the scheduler with the required jobs.
     """
-    process = CrawlerProcess(get_project_settings())
-    process.crawl(spider_name)
-    process.start()
 
+    # Setup tamil blasters scraper
+    scheduler.add_job(
+        tamil_blasters.run_tamil_blasters_scraper.send,
+        CronTrigger.from_crontab(settings.tamil_blasters_scheduler_crontab),
+        name="tamil_blasters",
+    )
 
-scheduler = AsyncIOScheduler()
+    # Setup tamilmv scraper
+    scheduler.add_job(
+        tamilmv.run_tamilmv_scraper.send,
+        CronTrigger.from_crontab(settings.tamilmv_scheduler_crontab),
+        name="tamilmv",
+    )
 
-# Setup tamil blasters scraper
-scheduler.add_job(
-    tamil_blasters.run_schedule_scrape,
-    CronTrigger.from_crontab(settings.tamil_blasters_scheduler_crontab),
-    name="tamil_blasters",
-)
+    # Setup formula_tgx scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.formula_tgx_scheduler_crontab),
+        name="formula_tgx",
+        kwargs={"spider_name": "formula_tgx", "scrape_all": "false"},
+    )
 
-# Setup tamilmv scraper
-scheduler.add_job(
-    tamilmv.run_schedule_scrape,
-    CronTrigger.from_crontab(settings.tamilmv_scheduler_crontab),
-    name="tamilmv",
-)
+    # Setup mhdtvworld scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.mhdtvworld_scheduler_crontab),
+        name="mhdtvworld",
+        kwargs={"spider_name": "mhdtvworld"},
+    )
 
-# Setup formula_tgx scraper
-scheduler.add_job(
-    run_formula_tgx_spider,
-    CronTrigger.from_crontab(settings.formula_tgx_scheduler_crontab),
-    name="formula_tgx",
-    kwargs={"spider_name": "formula_tgx"},
-)
+    # Setup mhdtvsports scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.mhdtvsports_scheduler_crontab),
+        name="mhdtvsports",
+        kwargs={"spider_name": "mhdtvsports"},
+    )
 
-# Setup mhdtvworld scraper
-scheduler.add_job(
-    run_formula_tgx_spider,
-    CronTrigger.from_crontab(settings.mhdtvworld_scheduler_crontab),
-    name="mhdtvworld",
-    kwargs={"spider_name": "mhdtvworld"},
-)
+    # Setup tamilultra scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.tamilultra_scheduler_crontab),
+        name="tamilultra",
+        kwargs={"spider_name": "tamilultra"},
+    )
 
-# Setup mhdtvsports scraper
-scheduler.add_job(
-    run_formula_tgx_spider,
-    CronTrigger.from_crontab(settings.mhdtvsports_scheduler_crontab),
-    name="mhdtvsports",
-    kwargs={"spider_name": "mhdtvsports"},
-)
+    # Schedule validate_tv_streams_in_db
+    scheduler.add_job(
+        validate_tv_streams_in_db.send,
+        CronTrigger.from_crontab(settings.validate_tv_streams_in_db_crontab),
+        name="validate_tv_streams_in_db",
+    )
 
-# Start the scheduler
-scheduler.start()
-
-try:
-    asyncio.get_event_loop().run_forever()
-except Exception as e:
-    logging.error(f"Error occurred: {e}")
+    # Schedule sport_video scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.sport_video_scheduler_crontab),
+        name="sport_video",
+        kwargs={"spider_name": "sport_video", "scrape_all": "false"},
+    )

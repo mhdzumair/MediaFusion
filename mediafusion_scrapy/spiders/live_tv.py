@@ -50,9 +50,6 @@ class LiveTVSpider(scrapy.Spider):
             )
 
     def parse_categories(self, response):
-        # Process the current page immediately
-        yield from self.parse_page(response)
-
         # Extract the total number of pages from the pagination text
         pagination_text = response.css("div.pagination span::text").get()
         total_pages = int(pagination_text.split(" ")[-1]) if pagination_text else 1
@@ -64,12 +61,15 @@ class LiveTVSpider(scrapy.Spider):
         else:
             base_url = base_url.rstrip("/")
 
-        # Since we've already processed the first page, start from the second page
-        page_urls = [f"{base_url}/page/{page}/" for page in range(2, total_pages + 1)]
+        # Generate URLs for all pages in reverse order, excluding the first page since it's already processed
+        page_urls = [f"{base_url}/page/{page}/" for page in range(total_pages, 1, -1)]
 
-        # Iterate over each subsequent page URL to scrape channels
+        # Iterate over each subsequent page URL in reverse order to scrape channels
         for page_url in page_urls:
             yield scrapy.Request(page_url, callback=self.parse_page)
+
+        # Process the first page last
+        yield from self.parse_page(response)
 
     def parse_page(self, response):
         channel_elements = response.css("article.item.movies")
@@ -217,13 +217,17 @@ class LiveTVSpider(scrapy.Spider):
                 },
             )
 
-    def get_behavior_hints(self, response):
-        """Generates behavior hints for requests."""
+    def extract_m3u8_urls(self, response):
+        """Extracts M3U8 URLs using direct and fallback regex patterns."""
+        m3u8_urls = self.direct_pattern.findall(response.text)
+        if not m3u8_urls:
+            m3u8_urls = self.fallback_pattern.findall(response.text)
+
         user_agent = response.request.headers.get("User-Agent").decode()
         parsed_url = urlparse(response.url)
         referer = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
-        return {
+        behavior_hints = {
             "notWebReady": True,
             "proxyHeaders": {
                 "request": {
@@ -233,21 +237,15 @@ class LiveTVSpider(scrapy.Spider):
             },
         }
 
-    def extract_m3u8_urls(self, response):
-        """Extracts M3U8 URLs using direct and fallback regex patterns."""
-        m3u8_urls = self.direct_pattern.findall(response.text)
-        if not m3u8_urls:
-            m3u8_urls = self.fallback_pattern.findall(response.text)
-        return m3u8_urls
+        return m3u8_urls, behavior_hints
 
     def request_and_extract_video_url(self, response):
         channel_data = response.meta.get("channel_data")
         stream_title = response.meta.get("stream_title")
         country_name = response.meta.get("country_name")
-        behavior_hints = self.get_behavior_hints(response)
 
         # Extract M3U8 URLs
-        m3u8_urls = self.extract_m3u8_urls(response)
+        m3u8_urls, behavior_hints = self.extract_m3u8_urls(response)
         if not m3u8_urls:
             self.logger.error(
                 "No M3U8 URLs found for channel url: %s, stream title: %s",
@@ -281,6 +279,9 @@ class LiveTVSpider(scrapy.Spider):
 
         if response.status == 200 and content_type in self.m3u8_valid_content_types:
             # Content type is valid, proceed with adding the stream
+            if response.meta.get("redirect_times", 0) > 0:
+                meta["behavior_hints"]["is_redirect"] = True
+
             stream_info = {
                 "name": f"{meta['stream_title']} - {meta['index']}"
                 if meta["index"]

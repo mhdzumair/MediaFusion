@@ -23,12 +23,12 @@ def rate_limit(limit: int, window: int, scope: str = None):
     return decorator
 
 
-def exclude(func):
+def exclude_rate_limit(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
         return await func(*args, **kwargs)
 
-    wrapper.exclude = True
+    wrapper.exclude_rate_limit = True
     return wrapper
 
 

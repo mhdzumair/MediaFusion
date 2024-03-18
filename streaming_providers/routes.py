@@ -30,7 +30,7 @@ router = APIRouter()
 
 
 @router.get("/{secret_str}/stream", tags=["streaming_provider"])
-@wrappers.exclude
+@wrappers.exclude_rate_limit
 @wrappers.auth_required
 async def streaming_provider_endpoint(
     secret_str: str,

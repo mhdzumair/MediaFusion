@@ -6,7 +6,9 @@ import logging
 import math
 import random
 import re
+from multiprocessing import Process
 
+import dramatiq
 from bs4 import BeautifulSoup
 from dateutil.parser import parse as dateparser
 from playwright.async_api import async_playwright
@@ -196,7 +198,6 @@ async def run_scraper(
     search_keyword: str = None,
     scrap_with_playwright: bool = None,
 ):
-    await database.init()
     if search_keyword:
         await scrap_search_keyword(search_keyword)
         return
@@ -228,15 +229,31 @@ async def run_schedule_scrape(
     start_page: int = 1,
     scrap_with_playwright: bool = None,
 ):
-    for language in TAMIL_MV_CATALOGS:
-        for video_type in TAMIL_MV_CATALOGS[language]:
-            await run_scraper(
-                language,
-                video_type,
-                pages=pages,
-                start_page=start_page,
-                scrap_with_playwright=scrap_with_playwright,
-            )
+    await database.init()
+    async with asyncio.TaskGroup() as tg:
+        for language in TAMIL_MV_CATALOGS:
+            for video_type in TAMIL_MV_CATALOGS[language]:
+                tg.create_task(
+                    run_scraper(
+                        language,
+                        video_type,
+                        pages=pages,
+                        start_page=start_page,
+                        scrap_with_playwright=scrap_with_playwright,
+                    )
+                )
+
+
+def run_schedule_scrape_sync(pages, start_page, scrap_with_playwright):
+    asyncio.run(run_schedule_scrape(pages, start_page, scrap_with_playwright))
+
+
+@dramatiq.actor(priority=5, time_limit=60 * 60 * 1000)
+def run_tamilmv_scraper(pages: int = 1, start_page: int = 1):
+    # Use a separate process to run the scraper
+    process = Process(target=run_schedule_scrape_sync, args=(pages, start_page, False))
+    process.start()
+    process.join()
 
 
 if __name__ == "__main__":

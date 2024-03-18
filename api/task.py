@@ -1,10 +1,14 @@
-# import background actors
 import asyncio
 
 from db import database
-from scrapers.helpers import update_torrent_movie_streams_metadata  # noqa: F401
-from scrapers.prowlarr import parse_and_store_movie_stream_data  # noqa: F401
+
+# import background actors
+from scrapers import helpers  # noqa: F401
+from scrapers import prowlarr  # noqa: F401
+from mediafusion_scrapy import task  # noqa: F401
 from utils import torrent
+from utils import validation_helper  # noqa: F401
+from scrapers import tamil_blasters, tamilmv  # noqa: F401
 
 
 async def async_setup():

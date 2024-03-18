@@ -1,13 +1,16 @@
 import logging
+import os
 import re
 from datetime import datetime
 from uuid import uuid4
 
+import redis.asyncio as redis_async
 from beanie import WriteRules
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
 
 from db import crud
+from db.config import settings
 from db.models import (
     TorrentStreams,
     Season,
@@ -15,6 +18,7 @@ from db.models import (
     Episode,
 )
 from db.schemas import TVMetaData
+from utils import torrent
 from utils.parser import convert_size_to_bytes
 
 
@@ -69,6 +73,14 @@ class FormulaParserPipeline:
                 r"(?P<Event>[^.]+(?:\.[^.]+)*)\."  # Event, allowing for multiple dot-separated values (e.g., British.Weekend)
                 r"(?P<Broadcaster>[A-Za-z0-9]+)\."  # Broadcaster, alphanumeric (e.g., SkyF1)
                 r"(?P<Resolution>\d+P)",  # Resolution, digits followed by 'P' (e.g., 1080P)
+            ),
+            re.compile(
+                r"(?P<Series>Formula\s*[12eE]+)"  # Series name, allowing 1, 2, E, with optional space
+                r"\.\s*(?P<Year>\d{4})"  # Year
+                r"\.\s*Round\s*(?P<Round>\d+)"  # Round, with 'Round' prefix
+                r"\.\s*(?P<Event>[^.]+(?:\.\s*[^.]+)*)"  # Event, possibly multi-word with dot and space
+                r"\.\s*(?P<Broadcaster>[^.]+(?:\s*[^.]+)*)"  # Broadcaster, possibly multi-word with space
+                r"\.\s*(?P<Resolution>\d+P)",  # Resolution
             ),
         ]
 
@@ -199,6 +211,12 @@ class FormulaParserPipeline:
 
 
 class FormulaStorePipeline:
+    def __init__(self):
+        self.redis = redis_async.Redis.from_url(settings.redis_url)
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.redis.aclose()
+
     async def process_item(self, item, spider):
         if "title" not in item:
             logging.warning(f"title not found in item: {item}")
@@ -262,6 +280,7 @@ class FormulaStorePipeline:
 
         await series.save(link_rule=WriteRules.WRITE)
         logging.info("Updated series %s", series.title)
+        await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
 
         return item
 
@@ -274,3 +293,113 @@ class TVStorePipeline:
 
         tv_metadata = TVMetaData.model_validate(item)
         await crud.save_tv_channel_metadata(tv_metadata)
+        return item
+
+
+class TorrentFileParserPipeline:
+    def process_item(self, item, spider):
+        adapter = ItemAdapter(item)
+        if "torrent_file_path" not in adapter:
+            raise DropItem(f"torrent_file_path not found in item: {item}")
+
+        with open(item["torrent_file_path"], "rb") as torrent_file:
+            torrent_metadata = torrent.extract_torrent_metadata(
+                torrent_file.read(), item.get("is_parse_ptn", True)
+            )
+        os.remove(item["torrent_file_path"])
+        if not torrent_metadata:
+            raise DropItem(f"Failed to extract torrent metadata: {item}")
+        item.update(torrent_metadata)
+        return item
+
+
+class SportVideoParserPipeline:
+    RESOLUTIONS = {
+        "3840x2160": "4K",
+        "2560x1440": "1440p",
+        "1920x1080": "1080p",
+        "1280x720": "720p",
+        "854x480": "480p",
+        "640x360": "360p",
+        "426x240": "240p",
+    }
+
+    def __init__(self):
+        self.title_regex = re.compile(r"^(.*?)\s(\d{2}\.\d{2}\.\d{4})$")
+
+    def process_item(self, item, spider):
+        adapter = ItemAdapter(item)
+        if "title" not in adapter:
+            raise DropItem(f"title not found in item: {item}")
+
+        match = self.title_regex.search(adapter["title"])
+        if not match:
+            spider.logger.warning(
+                f"Title format is incorrect, cannot extract date: {adapter['title']}"
+            )
+            raise DropItem(f"Cannot parse date from title: {adapter['title']}")
+
+        title, date_str = match.groups()
+        date_obj = datetime.strptime(date_str, "%d.%m.%Y")
+
+        # Try to match or infer resolution
+        raw_resolution = adapter.get("aspect_ratio", "").replace(" ", "")
+        resolution = self.infer_resolution(raw_resolution)
+
+        if "video_codec" in adapter:
+            codec = re.sub(r"\s+", "", adapter["video_codec"]).replace(",", " - ")
+            item["codec"] = codec
+
+        if "length" in adapter or "lenght" in adapter:
+            item["runtime"] = re.sub(
+                r"\s+", "", adapter.get("length", adapter.get("lenght", ""))
+            )
+
+        item.update(
+            {
+                "title": title.strip(),
+                "created_at": date_obj.strftime("%Y-%m-%d"),
+                "year": date_obj.year,
+                "languages": [re.sub(r"[ .]", "", item["language"])],
+                "is_imdb": False,
+                "resolution": resolution,
+            }
+        )
+        return item
+
+    def infer_resolution(self, aspect_ratio):
+        # Normalize the aspect_ratio string by replacing common variants of "x" with the standard one
+        normalized_aspect_ratio = aspect_ratio.replace("×", "x").replace("х", "x")
+
+        # Direct match in RESOLUTIONS dictionary
+        resolution = self.RESOLUTIONS.get(normalized_aspect_ratio)
+        if resolution:
+            return resolution
+
+        # Attempt to infer based on height
+        height = (
+            normalized_aspect_ratio.split("x")[-1]
+            if "x" in normalized_aspect_ratio
+            else None
+        )
+        if height:
+            for res, label in self.RESOLUTIONS.items():
+                if res.endswith(height):
+                    return label
+
+        # Fallback to checking against common labels
+        for label in ["4K", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p"]:
+            if label in normalized_aspect_ratio:
+                return label
+
+        # If no match found
+        return None
+
+
+class MovieStorePipeline:
+    async def process_item(self, item, spider):
+        if "title" not in item:
+            raise DropItem(f"title not found in item: {item}")
+
+        await crud.save_movie_metadata(item, item.get("is_imdb", True))
+        return item

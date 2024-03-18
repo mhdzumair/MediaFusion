@@ -38,7 +38,7 @@ TRACKERS = [
 ]
 
 
-def extract_torrent_metadata(content: bytes) -> dict:
+def extract_torrent_metadata(content: bytes, is_parse_ptn: bool = True) -> dict:
     try:
         torrent_data = bencodepy.decode(content)
         info = torrent_data[b"info"]
@@ -81,8 +81,7 @@ def extract_torrent_metadata(content: bytes) -> dict:
 
         largest_file = max(file_data, key=lambda x: x["size"])
 
-        return {
-            **PTN.parse(torrent_name),
+        metadata = {
             "info_hash": info_hash,
             "announce_list": announce_list,
             "total_size": total_size,
@@ -90,6 +89,9 @@ def extract_torrent_metadata(content: bytes) -> dict:
             "torrent_name": torrent_name,
             "largest_file": largest_file,
         }
+        if is_parse_ptn:
+            metadata.update(PTN.parse(torrent_name))
+        return metadata
     except Exception as e:
         logging.error(f"Error occurred: {e}")
         return {}

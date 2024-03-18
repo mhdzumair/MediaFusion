@@ -1,6 +1,6 @@
 {
   "id": "mhdzumair.addons.mediafusion",
-  "version": "3.7.4",
+  "version": "3.7.5",
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
   "description": "Universal Stremio Add-on for Movies, Series & Live TV. Source: https://github.com/mhdzumair/MediaFusion",
@@ -443,6 +443,83 @@
 	  "id": "formula_racing",
 	  "type": "series",
 	  "name": "Formula Racing",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "american_football",
+	  "type": "movie",
+	  "name": "American Football",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "basketball",
+	  "type": "movie",
+	  "name": "Basketball",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "baseball",
+	  "type": "movie",
+	  "name": "Baseball",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "football",
+	  "type": "movie",
+	  "name": "Football",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "hockey",
+	  "type": "movie",
+	  "name": "Hockey",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "rugby",
+	  "type": "movie",
+	  "name": "Rugby/AFL",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "other_sports",
+	  "type": "movie",
+	  "name": "Other Sports",
 	  "extra": [
 		{
 		  "name": "skip",

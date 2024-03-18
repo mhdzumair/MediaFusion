@@ -110,3 +110,15 @@ async def batch_process_with_circuit_breaker(
                 await asyncio.sleep(rate_limit_delay)  # Always respect the rate limit
 
     return results
+
+
+async def get_redirector_url(url: str, headers: dict) -> str | None:
+    """
+    Get the final URL after following all redirects.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.head(url, headers=headers, follow_redirects=True)
+            return str(response.url)
+    except httpx.HTTPError as e:
+        return

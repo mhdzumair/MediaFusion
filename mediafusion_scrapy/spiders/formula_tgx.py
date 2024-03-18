@@ -1,9 +1,11 @@
 import re
 from datetime import datetime
 
+import redis.asyncio as redis
 import scrapy
 
-from db.models import TorrentStreams, Episode
+from db.config import settings
+from db.models import TorrentStreams
 from utils.parser import convert_size_to_bytes
 from utils.torrent import parse_magnet
 
@@ -28,6 +30,17 @@ class FormulaTgxSpider(scrapy.Spider):
         }
     }
 
+    def __init__(self, scrape_all: str = "True", *args, **kwargs):
+        super(FormulaTgxSpider, self).__init__(*args, **kwargs)
+        self.scrape_all = scrape_all.lower() == "true"
+        self.redis = redis.Redis(
+            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
+        )
+        self.scraped_info_hash_key = "formula_tgx_scraped_info_hash"
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.redis.aclose()
+
     async def parse(self, response, **kwargs):
         uploader_profile_name = response.url.split("/")[4]
         self.logger.info(f"Scraping torrents from {uploader_profile_name}")
@@ -35,7 +48,7 @@ class FormulaTgxSpider(scrapy.Spider):
         parsing_function = getattr(self, parsing_function_name, None)
 
         # Extract the last page number only once at the beginning
-        if response.url in self.start_urls:
+        if self.scrape_all and response.url in self.start_urls:
             last_page_number = response.css(
                 "ul.pagination li.page-item:not(.disabled) a::attr(href)"
             ).re(r"/profile/.*/torrents/(\d+)")[-2]
@@ -92,13 +105,14 @@ class FormulaTgxSpider(scrapy.Spider):
                 "uploader": uploader_profile_name,
                 "announce_list": announce_list,
                 "catalog": ["formula_racing"],
+                "scraped_info_hash_key": self.scraped_info_hash_key,
             }
 
-            torrent_stream = await TorrentStreams.get(info_hash)
-            if torrent_stream:
-                self.logger.info(f"Torrent stream already exists: {torrent_name}")
-                torrent_stream.seeders = seeders
-                await torrent_stream.save()
+            if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
+                self.logger.info(f"Torrent already scraped: {torrent_name}")
+                await TorrentStreams.find_one({"_id": info_hash}).update(
+                    {"$set": {"seeders": seeders}},
+                )
             else:
                 yield response.follow(
                     torrent_page_link,

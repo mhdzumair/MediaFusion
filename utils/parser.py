@@ -6,7 +6,7 @@ import requests
 from imdb import Cinemagoer
 
 from db.config import settings
-from db.models import TorrentStreams, MediaFusionTVMetaData
+from db.models import TorrentStreams, TVStreams
 from db.schemas import Stream, UserData
 from streaming_providers.alldebrid.utils import (
     update_ad_cache_status,
@@ -45,6 +45,7 @@ from streaming_providers.torbox.utils import (
     fetch_downloaded_info_hashes_from_torbox,
 )
 from utils import const
+from utils.network import get_redirector_url
 
 ia = Cinemagoer()
 ADULT_CONTENT_KEYWORDS = re.compile(
@@ -268,7 +269,7 @@ def convert_size_to_bytes(size_str: str) -> int:
 
 def get_catalogs(catalog: str, languages: list[str]) -> list[str]:
     base_catalogs = ["hdrip", "tcrip", "dubbed", "series"]
-    base_catalog = catalog.split("_")[1]
+    base_catalog = catalog.split("_")[-1]
 
     if base_catalog not in base_catalogs:
         return [catalog]
@@ -311,24 +312,34 @@ def get_imdb_data(video_id: str) -> tuple[str, str]:
     return movie.get("title"), movie.get("year")
 
 
-def parse_tv_stream_data(tv_data: MediaFusionTVMetaData) -> list[Stream]:
+async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
     stream_list = []
-    for stream in tv_data.streams:
+    for stream in tv_streams:
         if stream.behaviorHints.get("is_redirect", False):
-            response = requests.get(
+            stream_link = await get_redirector_url(
                 stream.url,
-                headers=stream.behaviorHints["proxyHeaders"]["request"],
-                allow_redirects=False,
+                stream.behaviorHints.get("proxyHeaders", {}).get("request", {}),
             )
-            if response.status_code == 302:
-                stream.url = response.headers["Location"]
+            if stream_link is None:
+                continue
+            stream.url = stream_link
         stream_list.append(
             Stream(
                 name="MediaFusion",
-                description=f"{stream.name}, {tv_data.tv_language}, {stream.source}",
+                description=f"📺 {stream.name}\n🌐 {stream.country}\n🔗 {stream.source}",
                 url=stream.url,
                 ytId=stream.ytId,
                 behaviorHints=stream.behaviorHints,
+            )
+        )
+
+    if not stream_list:
+        stream_list.append(
+            Stream(
+                name="MediaFusion",
+                description="No streams live at the moment.",
+                url=f"{settings.host_url}/static/exceptions/source_not_live.mp4",
+                behaviorHints={"notWebReady": True},
             )
         )
 
