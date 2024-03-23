@@ -59,9 +59,8 @@ class SportVideoSpider(scrapy.Spider):
                     yield response.follow(
                         link, self.parse_page, meta={"category": category}
                     )
-        else:
-            # Only scrape the first page
-            yield from self.parse_page(response)
+        # Only scrape the first page
+        yield from self.parse_page(response)
 
     def parse_page(self, response):
         category = response.meta["category"]
