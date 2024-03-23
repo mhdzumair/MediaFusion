@@ -79,11 +79,17 @@ async def get_meta_list(
 async def get_tv_meta_list(
     genre: Optional[str] = None, skip: int = 0, limit: int = 25
 ) -> list[schemas.Meta]:
-    query = MediaFusionTVMetaData.find(
-        MediaFusionMovieMetaData.streams.is_working == True, fetch_links=True
-    )
     if genre:
-        query = query.find(In(MediaFusionTVMetaData.genres, [genre]))
+        query = MediaFusionTVMetaData.find(
+            In(MediaFusionTVMetaData.genres, [genre]),
+            MediaFusionMovieMetaData.streams.is_working == True,
+            fetch_links=True,
+        )
+    else:
+        query = MediaFusionTVMetaData.find(
+            MediaFusionMovieMetaData.streams.is_working == True,
+            fetch_links=True,
+        )
 
     tv_meta_list = (
         await query.skip(skip)
@@ -431,6 +437,7 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
             description=metadata.get("description"),
             runtime=metadata.get("runtime"),
             website=metadata.get("website"),
+            is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
         )
         try:
             await movie_data.insert(link_rule=WriteRules.WRITE)
