@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     adult_content_regex_keywords: str = r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"
     enable_rate_limit: bool = True
     api_password: str | None = None
+    is_public_instance: bool = False
     tamilmv_scheduler_crontab: str = "0 */3 * * *"
     tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
     formula_tgx_scheduler_crontab: str = "0 */12 * * *"

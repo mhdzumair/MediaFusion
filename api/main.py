@@ -154,7 +154,8 @@ async def configure(
             "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
             "sorting_options": const.TORRENT_SORTING_PRIORITY,
-            "authentication_required": settings.api_password is not None,
+            "authentication_required": settings.api_password is not None
+            and not settings.is_public_instance,
         },
     )
 

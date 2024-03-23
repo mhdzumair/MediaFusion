@@ -27,6 +27,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **premiumize_oauth_client_id** and **premiumize_oauth_client_secret**: OAuth credentials for Premiumize, if used.
 - **prowlarr_api_key**: The API key for Prowlarr, if used.
 - **api_password**: The password for accessing the API, if authentication is enabled.
+- **is_public_instance** (default: `False`): Set to `True` for community instances that do not require authentication to access the data but protecting the `/scraper` endpoint and uploading live tv data endpoints.
 
 #### Scraper and Scheduler Settings
 
