@@ -116,13 +116,13 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    selected_catalogs: list[str] = []
-    selected_resolutions: list[str | None] = []
+    selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
+    selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True
     max_size: int | str | float = math.inf
     max_streams_per_resolution: int = 3
     show_full_torrent_name: bool = False
-    torrent_sorting_priority: list[str] = []
+    torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
     api_password: str | None = None
 
     @model_validator(mode="after")
