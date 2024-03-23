@@ -100,6 +100,7 @@ class SportVideoSpider(scrapy.Spider):
                             "website": torrent_page_link,
                             "is_parse_ptn": False,
                             "source": "sport-video.org.ua",
+                            "is_add_title_to_poster": True,
                             "catalog": category,
                         }
                     },

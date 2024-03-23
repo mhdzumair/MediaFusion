@@ -72,6 +72,7 @@ class MediaFusionMetaData(Document):
     year: Optional[int] = None
     poster: Optional[str] = None
     is_poster_working: Optional[bool] = True
+    is_add_title_to_poster: Optional[bool] = False
     background: Optional[str] = None
     streams: list[Link[TorrentStreams]]
     type: str

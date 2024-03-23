@@ -1,8 +1,10 @@
+import asyncio
 import json
 import logging
 from io import BytesIO
 from typing import Literal
 
+import aiohttp
 import redis.asyncio as redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -437,11 +439,18 @@ async def get_poster(
         return StreamingResponse(
             image_byte_io, media_type="image/jpeg", headers=const.DEFAULT_HEADERS
         )
+    except asyncio.TimeoutError:
+        logging.error("Poster generation timeout.")
+        raise HTTPException(status_code=404, detail="Poster generation timeout.")
+    except aiohttp.ClientResponse as e:
+        logging.error(f"Failed to create poster: {e}, status: {e.status}")
+        if e.status != 404:
+            raise HTTPException(status_code=404, detail="Failed to create poster.")
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}")
-        mediafusion_data.is_poster_working = False
-        await mediafusion_data.save()
-        raise HTTPException(status_code=404, detail="Failed to create poster.")
+    mediafusion_data.is_poster_working = False
+    await mediafusion_data.save()
+    raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 
 @app.get("/scraper", tags=["scraper"])
