@@ -208,3 +208,7 @@ class ScraperTask(BaseModel):
         "formula_tgx", "mhdtvworld", "mhdtvsports", "tamilultra", "sport_video"
     ]
     api_password: str = None
+
+
+class TVMetaDataUpload(TVMetaData):
+    api_password: str | None = None
