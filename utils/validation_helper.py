@@ -32,9 +32,9 @@ async def validate_image_url(url: str) -> bool:
     return await is_valid_url(url) and await does_url_exist(url)
 
 
-async def validate_m3u8_url(url: str, behaviour_hint: dict) -> bool:
+async def validate_m3u8_url(url: str, behaviour_hint: dict) -> (bool, bool):
     if not await is_valid_url(url):
-        return False
+        return False, False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
     async with aiohttp.ClientSession() as session:
@@ -46,13 +46,16 @@ async def validate_m3u8_url(url: str, behaviour_hint: dict) -> bool:
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
                 content_type = response.headers.get("Content-Type", "").lower()
-                return (
+                is_valid = (
                     "application/vnd.apple.mpegurl" in content_type
                     or "application/x-mpegurl" in content_type
                 )
+                # Check if a redirect occurred. Compare final URL with the initial one.
+                is_redirect = str(response.url) != url
+                return is_valid, is_redirect
         except (ClientError, asyncio.TimeoutError) as err:
             logging.error(err)
-            return False
+            return False, False
 
 
 class ValidationError(Exception):
@@ -72,18 +75,21 @@ async def validate_yt_id(yt_id: str) -> bool:
 
 
 async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVStreams]:
-    image_validation_tasks = [validate_image_url(metadata.poster)]
+    image_validation_tasks = []
+    if metadata.poster:
+        image_validation_tasks.append(validate_image_url(metadata.poster))
     if metadata.logo:
         image_validation_tasks.append(validate_image_url(metadata.logo))
     if metadata.background:
         image_validation_tasks.append(validate_image_url(metadata.background))
 
     # Run all image URL validations concurrently
-    image_validation_results = await asyncio.gather(*image_validation_tasks)
-    if not all(image_validation_results):
-        raise ValidationError(
-            f"Invalid image URL provided. {metadata.poster} {metadata.logo} {metadata.background}"
-        )
+    if image_validation_tasks:
+        image_validation_results = await asyncio.gather(*image_validation_tasks)
+        if not all(image_validation_results):
+            raise ValidationError(
+                f"Invalid image URL provided. {metadata.poster} {metadata.logo} {metadata.background}"
+            )
 
     # Prepare validation tasks for streams
     stream_validation_tasks = []
@@ -101,11 +107,15 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
     stream_validation_results = await asyncio.gather(*stream_validation_tasks)
 
     # Filter out valid streams based on the validation results
-    valid_streams = [
-        metadata.streams[i]
-        for i, is_valid in enumerate(stream_validation_results)
-        if is_valid
-    ]
+    valid_streams = []
+    for i, (is_valid, is_redirect) in enumerate(stream_validation_results):
+        if is_valid:
+            stream = metadata.streams[i]
+            # Update is_redirect in behaviorHints if necessary
+            if is_redirect:
+                stream.behaviorHints.is_redirect = True
+            valid_streams.append(stream)
+
     if not valid_streams:
         raise ValidationError("Invalid stream URLs provided.")
 
@@ -161,7 +171,7 @@ async def validate_tv_streams_in_db():
     from db.models import TVStreams
 
     async def validate_and_update_tv_stream(stream):
-        is_valid = await validate_m3u8_url(stream.url, stream.behaviorHints)
+        is_valid, _ = await validate_m3u8_url(stream.url, stream.behaviorHints)
         stream.is_working = is_valid
         await stream.save()
         logging.info(f"Stream: {stream.name}, Status: {is_valid}")

@@ -18,17 +18,17 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from starlette import status
 
 from api import middleware
 from api.scheduler import setup_scheduler
 from db import database, crud, schemas
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
-from scrapers.tamilmv import run_tamilmv_scraper
 from scrapers.tamil_blasters import run_tamil_blasters_scraper
+from scrapers.tamilmv import run_tamilmv_scraper
+from scrapers.tv import add_tv_metadata
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, wrappers, validation_helper
+from utils import crypto, torrent, poster, const, wrappers
 from utils.parser import generate_manifest
 
 logging.basicConfig(
@@ -475,6 +475,12 @@ async def run_scraper_task(task: schemas.ScraperTask):
         run_tamilmv_scraper.send(task.pages, task.start_page)
     elif task.scraper_type == "tamilblasters":
         run_tamil_blasters_scraper.send(task.pages, task.start_page)
+    elif task.scraper_type == "add_tv_metadata":
+        if not task.tv_metadata:
+            raise HTTPException(
+                status_code=400, detail="TV metadata is required for this task."
+            )
+        add_tv_metadata.send(task.tv_metadata.model_dump(exclude_none=True))
     elif task.scraper_type == "scrapy":
         if not task.spider_name:
             raise HTTPException(
@@ -485,23 +491,6 @@ async def run_scraper_task(task: schemas.ScraperTask):
         raise HTTPException(status_code=400, detail="Invalid scraper type.")
 
     return {"status": f"Scraping {task.scraper_type} task has been scheduled."}
-
-
-@app.post("/tv-metadata", status_code=status.HTTP_201_CREATED, tags=["tv"])
-async def add_tv_metadata(metadata: schemas.TVMetaDataUpload):
-    if settings.api_password and metadata.api_password != settings.api_password:
-        raise HTTPException(status_code=401, detail="Invalid API password.")
-
-    try:
-        metadata.streams = validation_helper.validate_tv_metadata(metadata)
-    except validation_helper.ValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    tv_channel_id = await crud.save_tv_channel_metadata(metadata)
-
-    return {
-        "status": f"Tv Channel with ID {tv_channel_id} Streams has been added/updated. Thanks for your contribution."
-    }
 
 
 app.include_router(

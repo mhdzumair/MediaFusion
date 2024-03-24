@@ -30,11 +30,77 @@
                         <option value="tamilmv">TamilMV</option>
                         <option value="tamilblasters">TamilBlasters</option>
                         <option value="scrapy">Scrapy Spider</option>
+                        <option value="add_tv_metadata">Add TV Metadata</option>
                     </select>
                 </div>
 
                 <!-- Dynamic Scraper Parameters -->
-                <div id="scraperParameters"></div>
+                <div id="scraperParameters">
+                    <!-- TamilMV and TamilBlasters Parameters -->
+                    <div id="commonParameters" style="display: none;">
+                        <div class="mb-3">
+                            <label for="pages" class="form-label">Number of Pages</label>
+                            <input type="number" class="form-control" id="pages" name="pages" value="1">
+                        </div>
+                        <div class="mb-3">
+                            <label for="startPage" class="form-label">Start Page</label>
+                            <input type="number" class="form-control" id="startPage" name="start_page" value="1">
+                        </div>
+                    </div>
+                    <!-- Scrapy Parameters -->
+                    <div id="scrapyParameters" style="display: none;">
+                        <div class="mb-3">
+                            <label for="spiderName" class="form-label">Spider Name</label>
+                            <select class="form-select" id="spiderName" name="spider_name">
+                                <option value="formula_tgx">Formula TGX</option>
+                                <option value="mhdtvworld">MHDTV World</option>
+                                <option value="mhdtvsports">MHDTV Sports</option>
+                                <option value="tamilultra">Tamil Ultra</option>
+                                <option value="sport_video">Sport Video</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- TV Metadata Input -->
+                    <div id="tvMetadataInput" style="display: none;">
+                        <h4 class="section-header">TV Metadata Input</h4>
+                        <hr class="section-divider">
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <input type="text" class="form-control" id="title" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="poster" class="form-label">Poster URL (Optional)</label>
+                            <input type="url" class="form-control" id="poster" name="poster">
+                        </div>
+                        <div class="mb-3">
+                            <label for="logo" class="form-label">Logo URL (Optional)</label>
+                            <input type="url" class="form-control" id="logo" name="logo">
+                        </div>
+                        <div class="mb-3">
+                            <label for="background" class="form-label">Background URL (Optional)</label>
+                            <input type="url" class="form-control" id="background" name="background">
+                        </div>
+                        <div class="mb-3">
+                            <label for="country" class="form-label">Country (Optional)</label>
+                            <input type="text" class="form-control" id="country" name="country">
+                        </div>
+                        <div class="mb-3">
+                            <label for="language" class="form-label">Language (Optional)</label>
+                            <input type="text" class="form-control" id="language" name="language">
+                        </div>
+                        <div class="mb-3">
+                            <label for="genreInput" class="form-label">Genres (Optional)</label>
+                            <div id="genreInputs" class="mb-2"></div>
+                            <input type="text" class="form-control mb-2" id="genreInput" placeholder="Add genre">
+                            <button type="button" class="btn btn-secondary" onclick="addGenre()">Add Genre</button>
+                        </div>
+                        <div class="mb-3">
+                            <label for="streams" class="form-label">Streams</label>
+                            <div id="streamInputs"></div>
+                            <button type="button" class="btn btn-primary" onclick="addStreamInput()">Add Stream</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- API Password Configuration -->

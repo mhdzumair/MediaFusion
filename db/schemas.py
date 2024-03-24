@@ -202,13 +202,10 @@ class TorrentStreamsList(BaseModel):
 
 class ScraperTask(BaseModel):
     scraper_type: str
-    pages: int = 1
-    start_page: int = 1
-    spider_name: str = Literal[
+    pages: int | None = 1
+    start_page: int | None = 1
+    spider_name: str | None = Literal[
         "formula_tgx", "mhdtvworld", "mhdtvsports", "tamilultra", "sport_video"
     ]
     api_password: str = None
-
-
-class TVMetaDataUpload(TVMetaData):
-    api_password: str | None = None
+    tv_metadata: TVMetaData | None = None
