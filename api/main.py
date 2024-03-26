@@ -23,10 +23,7 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import database, crud, schemas
 from db.config import settings
-from mediafusion_scrapy.task import run_spider
-from scrapers.tamil_blasters import run_tamil_blasters_scraper
-from scrapers.tamilmv import run_tamilmv_scraper
-from scrapers.tv import add_tv_metadata
+from scrapers.routes import router as scrapers_router
 from streaming_providers.routes import router as streaming_provider_router
 from utils import crypto, torrent, poster, const, wrappers
 from utils.parser import generate_manifest
@@ -164,13 +161,15 @@ async def configure(
 @app.get("/{secret_str}/manifest.json", tags=["manifest"])
 @wrappers.auth_required
 async def get_manifest(
-    response: Response, user_data: schemas.UserData = Depends(get_user_data)
+    response: Response,
+    request: Request,
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
     with open("resources/manifest.json") as file:
         manifest = json.load(file)
-    return generate_manifest(manifest, user_data)
+    return await generate_manifest(manifest, user_data, request.app.state.redis)
 
 
 @app.get(
@@ -466,33 +465,8 @@ async def get_scraper(request: Request):
     )
 
 
-@app.post("/scraper/run", tags=["scraper"])
-async def run_scraper_task(task: schemas.ScraperTask):
-    if settings.api_password and task.api_password != settings.api_password:
-        raise HTTPException(status_code=401, detail="Invalid API password.")
-
-    if task.scraper_type == "tamilmv":
-        run_tamilmv_scraper.send(task.pages, task.start_page)
-    elif task.scraper_type == "tamilblasters":
-        run_tamil_blasters_scraper.send(task.pages, task.start_page)
-    elif task.scraper_type == "add_tv_metadata":
-        if not task.tv_metadata:
-            raise HTTPException(
-                status_code=400, detail="TV metadata is required for this task."
-            )
-        add_tv_metadata.send(task.tv_metadata.model_dump(exclude_none=True))
-    elif task.scraper_type == "scrapy":
-        if not task.spider_name:
-            raise HTTPException(
-                status_code=400, detail="Spider name is required for scrapy tasks."
-            )
-        run_spider.send(task.spider_name)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid scraper type.")
-
-    return {"status": f"Scraping {task.scraper_type} task has been scheduled."}
-
-
 app.include_router(
     streaming_provider_router, prefix="/streaming_provider", tags=["streaming_provider"]
 )
+
+app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])

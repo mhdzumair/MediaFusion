@@ -98,10 +98,10 @@ class MediaFusionSeriesMetaData(MediaFusionMetaData):
 
 class MediaFusionTVMetaData(MediaFusionMetaData):
     type: str = "tv"
-    country: str
-    tv_language: str
+    country: str | None = None
+    tv_language: str | None = None
     logo: Optional[str] = None
-    genres: Optional[list[str]] = None
+    genres: list[str] = Field(default_factory=list)
     streams: list[Link[TVStreams]]
 
 

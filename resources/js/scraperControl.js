@@ -100,13 +100,32 @@ function removeStreamInput(streamId) {
     document.getElementById(streamId).remove();
 }
 
+function setElementDisplay(elementId, displayStatus) {
+    document.getElementById(elementId).style.display = displayStatus;
+}
+
+document.querySelectorAll('input[name="m3uInputType"]').forEach(input => {
+    input.addEventListener('change', function () {
+        if (this.value === 'url') {
+            setElementDisplay('m3uPlaylistUrlInput', '');
+            setElementDisplay('m3uPlaylistFileInput', 'none');
+            document.getElementById('m3uPlaylistFile').value = ''; // Clear file input
+        } else {
+            setElementDisplay('m3uPlaylistUrlInput', 'none');
+            setElementDisplay('m3uPlaylistFileInput', '');
+            document.getElementById('m3uPlaylistUrl').value = ''; // Clear URL input
+        }
+    });
+});
+
 
 // Function to update form fields based on scraper selection
 function updateFormFields() {
     // Hide all sections initially
-    document.getElementById('commonParameters').style.display = 'none';
-    document.getElementById('scrapyParameters').style.display = 'none';
-    document.getElementById('tvMetadataInput').style.display = 'none';
+    setElementDisplay('commonParameters', 'none');
+    setElementDisplay('scrapyParameters', 'none');
+    setElementDisplay('tvMetadataInput', 'none');
+    setElementDisplay('m3uPlaylistInput', 'none');
 
     // Get the selected scraper type
     const scraperType = document.getElementById('scraperSelect').value;
@@ -116,19 +135,22 @@ function updateFormFields() {
         case 'tamilmv':
         case 'tamilblasters':
             // Show common parameters for TamilMV and TamilBlasters
-            document.getElementById('commonParameters').style.display = 'block';
+            setElementDisplay('commonParameters', 'block');
             break;
         case 'scrapy':
             // Show Scrapy-specific parameters
-            document.getElementById('scrapyParameters').style.display = 'block';
+            setElementDisplay('scrapyParameters', 'block');
             break;
         case 'add_tv_metadata':
             // Show TV Metadata input form
-            document.getElementById('tvMetadataInput').style.display = 'block';
+            setElementDisplay('tvMetadataInput', 'block');
             // Ensure a stream input is displayed initially
             if (document.getElementById('streamInputs').children.length === 0) {
                 addStreamInput();
             }
+            break;
+        case 'add_m3u_playlist':
+            setElementDisplay('m3uPlaylistInput', 'block');
             break;
         default:
             // Optionally handle any default cases if needed
@@ -194,33 +216,66 @@ function constructTvMetadata() {
 
 // Function to submit the form and display the response using Toastr
 async function submitScraperForm() {
-    const apiPassword = document.getElementById('api_password') ? document.getElementById('api_password').value : '';
+    const apiPassword = document.getElementById('api_password').value;
     const scraperType = document.getElementById('scraperSelect').value;
-    let payload = {
-        scraper_type: scraperType,
-        api_password: apiPassword,
-        pages: document.getElementById('pages') ? document.getElementById('pages').value : 1,
-        start_page: document.getElementById('startPage') ? document.getElementById('startPage').value : 1,
-        spider_name: document.getElementById('spiderName') ? document.getElementById('spiderName').value : ''
-    };
+    let payload = {};
+    let endpoint = "/scraper/run";
+    let headers = {};
+    let body = null;
 
-    if (scraperType === 'add_tv_metadata') {
+    // Append common fields
+    payload['scraper_type'] = scraperType;
+    payload['api_password'] = apiPassword;
+
+    // Handling different scraper types
+    if (scraperType === 'tamilmv' || scraperType === 'tamilblasters') {
+        payload['pages'] = document.getElementById('pages').value;
+        payload['start_page'] = document.getElementById('startPage').value;
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(payload);
+    } else if (scraperType === 'scrapy') {
+        payload['spider_name'] = document.getElementById('spiderName').value;
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(payload);
+    } else if (scraperType === 'add_tv_metadata') {
         try {
-            payload['tv_metadata'] = constructTvMetadata();
+            payload['tv_metadata'] = constructTvMetadata(); // Ensure this method returns the correct object
+            headers['Content-Type'] = 'application/json';
+            endpoint = "/scraper/add_tv_metadata";
+            body = JSON.stringify(payload);
         } catch (error) {
             console.error('Error constructing TV Metadata:', error);
             showNotification(error.message, 'error');
             return;
         }
+    } else if (scraperType === 'add_m3u_playlist') {
+        // Switching to form data for potential file upload
+        let formData = new FormData();
+        formData.append('scraper_type', scraperType);
+        formData.append('api_password', apiPassword);
+        formData.append('m3u_playlist_source', document.getElementById('m3uPlaylistSource').value);
+
+        const inputType = document.querySelector('input[name="m3uInputType"]:checked').value;
+        if (inputType === 'url') {
+            formData.append('m3u_playlist_url', document.getElementById('m3uPlaylistUrl').value);
+        } else { // File upload case
+            const file = document.getElementById('m3uPlaylistFile').files[0];
+            if (!file) {
+                showNotification('M3U Playlist file is required.', 'error');
+                return;
+            }
+            formData.append('m3u_playlist_file', file);
+        }
+        endpoint = "/scraper/m3u_upload";
+        body = formData; // FormData will set the correct Content-Type header
     }
 
+    // Making the request
     try {
-        const response = await fetch("/scraper/run", {
+        const response = await fetch(endpoint, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
+            headers: headers,
+            body: body
         });
 
         const data = await response.json();

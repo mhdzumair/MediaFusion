@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     mhdtvworld_scheduler_crontab: str = "0 0 * * 5"
     mhdtvsports_scheduler_crontab: str = "0 10 * * *"
     tamilultra_scheduler_crontab: str = "0 8 * * *"
-    validate_tv_streams_in_db_crontab: str = "0 */2 * * *"
+    validate_tv_streams_in_db_crontab: str = "0 */6 * * *"
     sport_video_scheduler_crontab: str = "20 * * * *"
 
     class Config:

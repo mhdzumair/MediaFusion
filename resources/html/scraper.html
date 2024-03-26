@@ -31,6 +31,7 @@
                         <option value="tamilblasters">TamilBlasters</option>
                         <option value="scrapy">Scrapy Spider</option>
                         <option value="add_tv_metadata">Add TV Metadata</option>
+                        <option value="add_m3u_playlist">Add M3U Playlist</option>
                     </select>
                 </div>
 
@@ -98,6 +99,26 @@
                             <label for="streams" class="form-label">Streams</label>
                             <div id="streamInputs"></div>
                             <button type="button" class="btn btn-primary" onclick="addStreamInput()">Add Stream</button>
+                        </div>
+                    </div>
+                    <div id="m3uPlaylistInput" style="display: none;">
+                        <div class="mb-3">
+                            <div>
+                                <label><input type="radio" name="m3uInputType" value="url" checked> M3U Playlist URL</label>
+                                <label><input type="radio" name="m3uInputType" value="file"> Upload M3U File</label>
+                            </div>
+                        </div>
+                        <div class="mb-3" id="m3uPlaylistUrlInput">
+                            <label for="m3uPlaylistUrl" class="form-label">M3U Playlist URL</label>
+                            <input type="url" class="form-control" id="m3uPlaylistUrl" name="m3uPlaylistUrl">
+                        </div>
+                        <div class="mb-3" id="m3uPlaylistFileInput" style="display: none;">
+                            <label for="m3uPlaylistFile" class="form-label">Upload M3U File</label>
+                            <input type="file" class="form-control" id="m3uPlaylistFile" name="m3uPlaylistFile" accept=".m3u">
+                        </div>
+                        <div class="mb-3">
+                            <label for="m3uPlaylistSource" class="form-label">Playlist Source Name</label>
+                            <input type="text" class="form-control" id="m3uPlaylistSource" name="m3uPlaylistSource">
                         </div>
                     </div>
                 </div>

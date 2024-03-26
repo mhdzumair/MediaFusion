@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -594,7 +595,10 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
 
     # Prepare the genres list
     genres = list(
-        set(tv_metadata.genres + [tv_metadata.country, tv_metadata.tv_language])
+        filter(
+            None,
+            set(tv_metadata.genres + [tv_metadata.country, tv_metadata.tv_language]),
+        )
     )
 
     # Ensure the channel document is upserted
@@ -626,7 +630,9 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
         stream_doc = TVStreams(
             url=stream.url,
             name=stream.name,
-            behaviorHints=stream.behaviorHints.model_dump(exclude_none=True),
+            behaviorHints=stream.behaviorHints.model_dump(exclude_none=True)
+            if stream.behaviorHints
+            else None,
             ytId=stream.ytId,
             source=stream.source,
             country=stream.country,
@@ -671,3 +677,22 @@ async def delete_search_history():
         {"last_searched": {"$lt": datetime.now() - timedelta(days=3)}}
     )
     logging.info("Deleted search history")
+
+
+async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
+    if catalog_type == "movie":
+        meta_class = MediaFusionMovieMetaData
+    elif catalog_type == "tv":
+        meta_class = MediaFusionTVMetaData
+    else:
+        meta_class = MediaFusionSeriesMetaData
+
+    genres = await redis.get(f"{catalog_type}_genres")
+    if genres:
+        return json.loads(genres)
+
+    genres = await meta_class.distinct("genres", {"genres": {"$ne": ""}})
+
+    # cache the genres for 30 minutes
+    await redis.set(f"{catalog_type}_genres", json.dumps(genres), ex=1800)
+    return genres

@@ -4,6 +4,7 @@ import re
 
 import requests
 from imdb import Cinemagoer
+from redis.asyncio import Redis
 
 from db.config import settings
 from db.models import TorrentStreams, TVStreams
@@ -315,7 +316,7 @@ def get_imdb_data(video_id: str) -> tuple[str, str]:
 async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
     stream_list = []
     for stream in tv_streams:
-        if stream.behaviorHints.get("is_redirect", False):
+        if stream.behaviorHints and stream.behaviorHints.get("is_redirect", False):
             stream_link = await get_redirector_url(
                 stream.url,
                 stream.behaviorHints.get("proxyHeaders", {}).get("request", {}),
@@ -323,10 +324,11 @@ async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
             if stream_link is None:
                 continue
             stream.url = stream_link
+        country_info = f"\n🌐 {stream.country}" if stream.country else ""
         stream_list.append(
             Stream(
                 name="MediaFusion",
-                description=f"📺 {stream.name}\n🌐 {stream.country}\n🔗 {stream.source}",
+                description=f"📺 {stream.name}{country_info}\n🔗 {stream.source}",
                 url=stream.url,
                 ytId=stream.ytId,
                 behaviorHints=stream.behaviorHints,
@@ -364,7 +366,9 @@ async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
     return []
 
 
-def generate_manifest(manifest: dict, user_data: UserData) -> dict:
+async def generate_manifest(manifest: dict, user_data: UserData, redis: Redis) -> dict:
+    from db.crud import get_genres
+
     resources = manifest.get("resources", [])
 
     # Ensure catalogs are enabled
@@ -374,6 +378,11 @@ def generate_manifest(manifest: dict, user_data: UserData) -> dict:
         for catalog_id in user_data.selected_catalogs:
             for catalog in manifest.get("catalogs", []):
                 if catalog["id"] == catalog_id:
+                    if catalog_id == "live_tv":
+                        # Add the available genres to the live TV catalog
+                        catalog["extra"][1]["options"] = await get_genres(
+                            catalog_type="tv", redis=redis
+                        )
                     ordered_catalogs.append(catalog)
                     break
 

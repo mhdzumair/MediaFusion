@@ -39,6 +39,8 @@ scrapy = "*"
 aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
 aiowebdav = "*"
 scrapy-playwright = "*"
+m3u-ipytv = "*"
+python-multipart = "*"
 
 [dev-packages]
 pysocks = "*"

@@ -97,7 +97,10 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
         if stream.url:
             stream_validation_tasks.append(
                 validate_m3u8_url(
-                    stream.url, stream.behaviorHints.model_dump(exclude_none=True)
+                    stream.url,
+                    stream.behaviorHints.model_dump(exclude_none=True)
+                    if stream.behaviorHints
+                    else {},
                 )
             )
         elif stream.ytId:
@@ -113,6 +116,8 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
             stream = metadata.streams[i]
             # Update is_redirect in behaviorHints if necessary
             if is_redirect:
+                if not stream.behaviorHints:
+                    stream.behaviorHints = schemas.TVStreamsBehaviorHints()
                 stream.behaviorHints.is_redirect = True
             valid_streams.append(stream)
 
@@ -171,7 +176,7 @@ async def validate_tv_streams_in_db():
     from db.models import TVStreams
 
     async def validate_and_update_tv_stream(stream):
-        is_valid, _ = await validate_m3u8_url(stream.url, stream.behaviorHints)
+        is_valid, _ = await validate_m3u8_url(stream.url, stream.behaviorHints or {})
         stream.is_working = is_valid
         await stream.save()
         logging.info(f"Stream: {stream.name}, Status: {is_valid}")
