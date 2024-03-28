@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
@@ -21,11 +20,13 @@ from db.models import (
     Episode,
     MediaFusionTVMetaData,
     TVStreams,
+    MediaFusionEventsMetaData,
 )
 from db.schemas import Stream, MetaIdProjection, TorrentStreamsList
 from scrapers import tamilmv
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
+from utils import crypto
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
@@ -591,7 +592,7 @@ async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
 
 
 async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
-    channel_id = "mf" + hashlib.sha256(tv_metadata.title.encode()).hexdigest()[:10]
+    channel_id = "mf" + crypto.get_text_hash(tv_metadata.title)
 
     # Prepare the genres list
     genres = list(
@@ -669,6 +670,129 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
 
     logging.info(f"Processed TV channel {tv_metadata.title}")
     return channel_id
+
+
+async def save_events_data(redis: Redis, metadata: dict) -> str:
+    # Generate a unique event key
+    meta_id = "mf" + crypto.get_text_hash(metadata["title"])
+    event_key = f"event:{meta_id}"
+
+    # Attempt to fetch existing event data
+    existing_event_json = await redis.get(event_key)
+
+    if existing_event_json:
+        # Deserialize the existing event data
+        existing_event_data = MediaFusionEventsMetaData.model_validate_json(
+            existing_event_json
+        )
+        # Use a dictionary keyed by 'url' to ensure uniqueness of streams
+        existing_streams = {
+            stream.url or stream.ytId or stream.externalUrl: stream
+            for stream in existing_event_data.streams
+        }
+    else:
+        existing_streams = {}
+
+    # Update or add streams based on the uniqueness of 'url'
+    for stream in metadata["streams"]:
+        # Create a TVStreams instance for each stream
+        stream_instance = TVStreams(**stream)
+        existing_streams[
+            stream_instance.url or stream_instance.ytId or stream_instance.externalUrl
+        ] = stream_instance.dict()
+
+    # Update the event metadata with the updated list of streams
+    streams = list(existing_streams.values())
+
+    # Create or update the event data
+    events_data = MediaFusionEventsMetaData(
+        id=meta_id,
+        streams=streams,
+        title=metadata["title"],
+        genres=metadata.get("genres", []),
+        is_24_hour_event=metadata.get("is_24_hour_event", False),
+        event_start=metadata.get("event_start"),
+        poster=metadata.get("poster"),
+        background=metadata.get("background"),
+        logo=metadata.get("logo"),
+        is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
+        website=metadata.get("website"),
+    )
+
+    # Serialize the event data for storage
+    events_json = events_data.model_dump_json(exclude_none=True, by_alias=True)
+
+    # Set or update the event data in Redis with an appropriate TTL
+    cache_ttl = 86400 if events_data.is_24_hour_event else 900
+    await redis.set(event_key, events_json, ex=cache_ttl)
+
+    logging.info(
+        f"{'Updating' if existing_event_json else 'Inserting'} event data for {events_data.title} with event key {event_key}"
+    )
+
+    # Add the event key to a set of all events
+    await redis.sadd("events:all", event_key)
+
+    # Index the event by genre
+    for genre in events_data.genres:
+        await redis.sadd(f"events:genre:{genre}", event_key)
+
+    return event_key
+
+
+async def get_events_meta_list(
+    redis, genre=None, skip=0, limit=10
+) -> list[schemas.Meta]:
+    if genre:
+        key_pattern = f"events:genre:{genre}"
+    else:
+        key_pattern = "events:all"
+
+    # Fetch event keys for pagination
+    events_keys = (await redis.sscan(key_pattern, count=skip + limit))[1]
+    events = []
+
+    # Iterate over event keys, fetching and decoding JSON data
+    for key in events_keys[skip : skip + limit]:
+        events_json = await redis.get(key)
+        if events_json:
+            meta_data = schemas.Meta.model_validate_json(events_json)
+            meta_data.poster = f"{settings.host_url}/poster/events/{meta_data.id}.jpg"
+            events.append(meta_data)
+        else:
+            # Cleanup: Remove expired or missing event key from the index
+            await redis.srem(key_pattern, key)
+
+    return events
+
+
+async def get_event_meta(redis, meta_id: str) -> dict:
+    events_key = f"event:{meta_id}"
+    events_json = await redis.get(events_key)
+    if not events_json:
+        return {}
+
+    event_data = MediaFusionTVMetaData.model_validate_json(events_json)
+    return {"meta": event_data.model_dump(by_alias=True)}
+
+
+async def get_event_data_by_id(redis, meta_id: str) -> MediaFusionEventsMetaData | None:
+    event_key = f"event:{meta_id}"
+    events_json = await redis.get(event_key)
+    if not events_json:
+        return None
+
+    return MediaFusionEventsMetaData.model_validate_json(events_json)
+
+
+async def get_event_streams(redis, meta_id: str) -> list[Stream]:
+    event_key = f"event:{meta_id}"
+    event_json = await redis.get(event_key)
+    if not event_json:
+        return []
+
+    event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
+    return await parse_tv_stream_data(event_data.streams)
 
 
 async def delete_search_history():

@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     tamilultra_scheduler_crontab: str = "0 8 * * *"
     validate_tv_streams_in_db_crontab: str = "0 */6 * * *"
     sport_video_scheduler_crontab: str = "20 * * * *"
+    streamed_scheduler_crontab: str = "*/15 * * * *"
+    meta_cache_ttl: int = 1800  # 30 minutes
+    tv_meta_cache_ttl: int = 1800  # 30 minutes
+    events_meta_cache_ttl: int = 600  # 10 minutes
 
     class Config:
         env_file = ".env"

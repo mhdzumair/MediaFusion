@@ -26,7 +26,7 @@ from db.config import settings
 from scrapers.routes import router as scrapers_router
 from streaming_providers.routes import router as streaming_provider_router
 from utils import crypto, torrent, poster, const, wrappers
-from utils.parser import generate_manifest
+from utils.parser import generate_manifest, get_json_data
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -88,8 +88,7 @@ async def shutdown_event():
 
 @app.get("/", tags=["home"])
 async def get_home(request: Request):
-    with open("resources/manifest.json") as file:
-        manifest = json.load(file)
+    manifest = get_json_data("resources/manifest.json")
     return TEMPLATES.TemplateResponse(
         "html/home.html",
         {
@@ -167,8 +166,7 @@ async def get_manifest(
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    with open("resources/manifest.json") as file:
-        manifest = json.load(file)
+    manifest = get_json_data("resources/manifest.json")
     return await generate_manifest(manifest, user_data, request.app.state.redis)
 
 
@@ -219,7 +217,7 @@ async def get_manifest(
 async def get_catalog(
     response: Response,
     request: Request,
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     catalog_id: str,
     skip: int = 0,
     genre: str = None,
@@ -246,15 +244,24 @@ async def get_catalog(
     metas = schemas.Metas()
     if catalog_type == "tv":
         metas.metas.extend(await crud.get_tv_meta_list(genre, skip))
+        cache_ttl = settings.tv_meta_cache_ttl
+    elif catalog_type == "events":
+        response.headers.update(const.NO_CACHE_HEADERS)
+        metas.metas.extend(
+            await crud.get_events_meta_list(request.app.state.redis, genre, skip)
+        )
+        cache_ttl = settings.events_meta_cache_ttl
     else:
         metas.metas.extend(
             await crud.get_meta_list(user_data, catalog_type, catalog_id, skip)
         )
+        cache_ttl = settings.meta_cache_ttl
 
-    if cache_key:
-        # Cache the data with a TTL of 30 minutes
+    if cache_key and cache_ttl:
         await request.app.state.redis.set(
-            cache_key, metas.model_dump_json(exclude_none=True, by_alias=True), ex=1800
+            cache_key,
+            metas.model_dump_json(exclude_none=True, by_alias=True),
+            ex=cache_ttl,
         )
 
     return metas
@@ -307,7 +314,7 @@ async def search_meta(
 )
 @wrappers.auth_required
 async def get_meta(
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     meta_id: str,
     response: Response,
     request: Request,
@@ -327,12 +334,14 @@ async def get_meta(
         data = await crud.get_movie_meta(meta_id)
     elif catalog_type == "series":
         data = await crud.get_series_meta(meta_id)
+    elif catalog_type == "events":
+        data = await crud.get_event_meta(request.app.state.redis, meta_id)
     else:
         data = await crud.get_tv_meta(meta_id)
 
     # Cache the data with a TTL of 30 minutes
     # If the data is not found, cached the empty data to avoid db query.
-    await request.app.state.redis.set(cache_key, json.dumps(data), ex=1800)
+    await request.app.state.redis.set(cache_key, json.dumps(data, default=str), ex=1800)
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
@@ -367,7 +376,7 @@ async def get_meta(
 @wrappers.auth_required
 @wrappers.rate_limit(20, 60 * 60, "stream")
 async def get_streams(
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     video_id: str,
     response: Response,
     request: Request,
@@ -386,6 +395,11 @@ async def get_streams(
         fetched_streams = await crud.get_series_streams(
             user_data, secret_str, request.app.state.redis, video_id, season, episode
         )
+    elif catalog_type == "events":
+        fetched_streams = await crud.get_event_streams(
+            request.app.state.redis, video_id
+        )
+        response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
         fetched_streams = await crud.get_tv_streams(video_id)
@@ -403,7 +417,7 @@ async def encrypt_user_data(user_data: schemas.UserData):
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
 @wrappers.exclude_rate_limit
 async def get_poster(
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     mediafusion_id: str,
     request: Request,
 ):
@@ -420,6 +434,10 @@ async def get_poster(
         mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
     elif catalog_type == "series":
         mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
+    elif catalog_type == "events":
+        mediafusion_data = await crud.get_event_data_by_id(
+            request.app.state.redis, mediafusion_id
+        )
     else:
         mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
 

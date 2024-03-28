@@ -1,3 +1,4 @@
+import hashlib
 import zlib
 
 from Crypto.Cipher import AES
@@ -36,3 +37,7 @@ def decrypt_user_data(secret_str: str | None = None) -> UserData:
     except Exception:
         user_data = UserData()
     return user_data
+
+
+def get_text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:10]

@@ -72,3 +72,11 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         name="sport_video",
         kwargs={"spider_name": "sport_video", "scrape_all": "false"},
     )
+
+    # Schedule streamed scraper
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.streamed_scheduler_crontab),
+        name="streamed",
+        kwargs={"spider_name": "streamed"},
+    )

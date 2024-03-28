@@ -403,3 +403,18 @@ class MovieStorePipeline:
 
         await crud.save_movie_metadata(item, item.get("is_imdb", True))
         return item
+
+
+class LiveEventStorePipeline:
+    def __init__(self):
+        self.redis = redis_async.Redis.from_url(settings.redis_url)
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.redis.aclose()
+
+    async def process_item(self, item, spider):
+        if "title" not in item:
+            raise DropItem(f"name not found in item: {item}")
+
+        await crud.save_events_data(self.redis, item)
+        return item

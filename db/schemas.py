@@ -58,6 +58,7 @@ class Stream(BaseModel):
     fileIdx: int | None = None
     url: str | None = None
     ytId: str | None = None
+    externalUrl: str | None = None
     behaviorHints: StreamBehaviorHints | None = None
 
 
@@ -116,7 +117,9 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    selected_catalogs: list[str] = Field(default=const.CATALOG_ID_DATA)
+    selected_catalogs: list[str] = Field(
+        default=["prowlarr_streams", "torrentio_streams"]
+    )
     selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True
     max_size: int | str | float = math.inf

@@ -58,6 +58,7 @@ class TVStreams(Document):
     name: str
     url: str | None = None
     ytId: str | None = None
+    externalUrl: str | None = None
     source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
@@ -103,6 +104,15 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     logo: Optional[str] = None
     genres: list[str] = Field(default_factory=list)
     streams: list[Link[TVStreams]]
+
+
+class MediaFusionEventsMetaData(MediaFusionMetaData):
+    type: str = "events"
+    event_start: Optional[datetime] = None
+    is_24_hour_event: bool = False
+    logo: Optional[str] = None
+    genres: list[str] = Field(default_factory=list)
+    streams: list[TVStreams]
 
 
 class SearchHistory(Document):
