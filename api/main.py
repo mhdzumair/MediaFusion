@@ -456,7 +456,7 @@ async def get_poster(
     except asyncio.TimeoutError:
         logging.error("Poster generation timeout.")
         raise HTTPException(status_code=404, detail="Poster generation timeout.")
-    except aiohttp.ClientResponse as e:
+    except aiohttp.ClientResponseError as e:
         logging.error(f"Failed to create poster: {e}, status: {e.status}")
         if e.status != 404:
             raise HTTPException(status_code=404, detail="Failed to create poster.")
