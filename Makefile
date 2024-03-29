@@ -21,6 +21,11 @@ PLATFORMS = linux/amd64,linux/arm64
 # Docker image with version as tag
 DOCKER_IMAGE = $(DOCKER_REPO)/$(IMAGE_NAME):$(VERSION)
 
+# Proxy settings
+HTTP_PROXY = http://172.17.0.1:1081
+HTTPS_PROXY = http://172.17.0.1:1081
+
+
 .PHONY: build tag push
 
 build:
@@ -29,7 +34,7 @@ build:
 build-multi:
 	@if ! docker buildx ls | grep -q $(BUILDER_NAME); then \
 		echo "Creating new builder $(BUILDER_NAME)"; \
-		docker buildx create --name $(BUILDER_NAME) --use; \
+		docker buildx create --name $(BUILDER_NAME) --use --driver-opt env.http_proxy=${HTTP_PROXY} --driver-opt env.https_proxy=${HTTPS_PROXY}; \
 	else \
 		echo "Using existing builder $(BUILDER_NAME)"; \
 		docker buildx use $(BUILDER_NAME); \
