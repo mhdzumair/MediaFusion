@@ -22,6 +22,7 @@ from scrapers.helpers import (
     download_and_save_torrent,
     get_scraper_config,
 )
+from utils.wrappers import worker_rate_limit
 
 HOMEPAGE = get_scraper_config("tamil_blasters", "homepage")
 TAMIL_BLASTER_CATALOGS = get_scraper_config("tamil_blasters", "catalogs")
@@ -265,6 +266,7 @@ def run_schedule_scrape_sync(pages, start_page, scrap_with_playwright):
 
 
 @dramatiq.actor(priority=5, time_limit=60 * 60 * 1000)
+@worker_rate_limit(limit=1)
 def run_tamil_blasters_scraper(pages: int = 1, start_page: int = 1):
     # Use a separate process to run the scraper
     process = Process(target=run_schedule_scrape_sync, args=(pages, start_page, False))
