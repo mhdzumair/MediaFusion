@@ -132,3 +132,9 @@ STREAMING_SERVICE_REQUIREMENTS = {
 UA_HEADER = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
 }
+
+
+M3U8_VALID_CONTENT_TYPES = [
+    "application/vnd.apple.mpegurl",
+    "application/x-mpegurl",
+]

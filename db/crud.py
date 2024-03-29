@@ -704,14 +704,15 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
     # Update the event metadata with the updated list of streams
     streams = list(existing_streams.values())
 
+    event_start_timestamp = metadata.get("event_start_timestamp", 0)
+
     # Create or update the event data
     events_data = MediaFusionEventsMetaData(
         id=meta_id,
         streams=streams,
         title=metadata["title"],
         genres=metadata.get("genres", []),
-        is_24_hour_event=metadata.get("is_24_hour_event", False),
-        event_start=metadata.get("event_start"),
+        event_start_timestamp=event_start_timestamp,
         poster=metadata.get("poster"),
         background=metadata.get("background"),
         logo=metadata.get("logo"),
@@ -723,7 +724,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
     events_json = events_data.model_dump_json(exclude_none=True, by_alias=True)
 
     # Set or update the event data in Redis with an appropriate TTL
-    cache_ttl = 86400 if events_data.is_24_hour_event else 900
+    cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 1200
     await redis.set(event_key, events_json, ex=cache_ttl)
 
     logging.info(
@@ -731,11 +732,11 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
     )
 
     # Add the event key to a set of all events
-    await redis.sadd("events:all", event_key)
+    await redis.zadd("events:all", {event_key: event_start_timestamp})
 
     # Index the event by genre
     for genre in events_data.genres:
-        await redis.sadd(f"events:genre:{genre}", event_key)
+        await redis.zadd(f"events:genre:{genre}", {event_key: event_start_timestamp})
 
     return event_key
 
@@ -748,12 +749,12 @@ async def get_events_meta_list(
     else:
         key_pattern = "events:all"
 
-    # Fetch event keys for pagination
-    events_keys = (await redis.sscan(key_pattern, count=skip + limit))[1]
+    # Fetch event keys sorted by timestamp in descending order
+    events_keys = await redis.zrevrange(key_pattern, skip, skip + limit - 1)
     events = []
 
     # Iterate over event keys, fetching and decoding JSON data
-    for key in events_keys[skip : skip + limit]:
+    for key in events_keys:
         events_json = await redis.get(key)
         if events_json:
             meta_data = schemas.Meta.model_validate_json(events_json)
@@ -761,7 +762,7 @@ async def get_events_meta_list(
             events.append(meta_data)
         else:
             # Cleanup: Remove expired or missing event key from the index
-            await redis.srem(key_pattern, key)
+            await redis.zrem(key_pattern, key)
 
     return events
 

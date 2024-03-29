@@ -1,11 +1,11 @@
 import random
 import re
-from datetime import datetime
 
 import redis
 import scrapy
 
 from db.config import settings
+from utils import const
 from utils.parser import get_json_data
 
 
@@ -30,10 +30,6 @@ class StreamedSpider(scrapy.Spider):
     }
 
     m3u8_base_url = "https://tvembed.cc/js"
-    m3u8_valid_content_types = [
-        "application/vnd.apple.mpegurl",
-        "application/x-mpegurl",
-    ]
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -97,13 +93,7 @@ class StreamedSpider(scrapy.Spider):
             if timestamp_match:
                 # Extract the timestamp and convert to UTC datetime
                 event_timestamp_ms = int(timestamp_match.group(1))
-                if event_timestamp_ms == 0:
-                    item["is_24_hour_event"] = True
-                else:
-                    event_datetime_utc = datetime.utcfromtimestamp(
-                        event_timestamp_ms / 1000
-                    )
-                    item["event_start"] = event_datetime_utc
+                item["event_start_timestamp"] = event_timestamp_ms / 1000
 
         # If no timer, proceed to scrape available stream links
         stream_links = response.xpath('//a[contains(@href, "/watch/")]')
@@ -136,7 +126,7 @@ class StreamedSpider(scrapy.Spider):
         item = meta["item"]
         content_type = response.headers.get("Content-Type", b"").decode().lower()
 
-        if response.status == 200 and content_type in self.m3u8_valid_content_types:
+        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
             # Stream is valid; add it to the item's streams list
             item["streams"].append(
                 {

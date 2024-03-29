@@ -108,8 +108,7 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
 
 class MediaFusionEventsMetaData(MediaFusionMetaData):
     type: str = "events"
-    event_start: Optional[datetime] = None
-    is_24_hour_event: bool = False
+    event_start_timestamp: Optional[int] = None
     logo: Optional[str] = None
     genres: list[str] = Field(default_factory=list)
     streams: list[TVStreams]

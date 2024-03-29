@@ -208,7 +208,12 @@ class ScraperTask(BaseModel):
     pages: int | None = 1
     start_page: int | None = 1
     spider_name: str | None = Literal[
-        "formula_tgx", "mhdtvworld", "mhdtvsports", "tamilultra", "sport_video"
+        "formula_tgx",
+        "mhdtvworld",
+        "mhdtvsports",
+        "tamilultra",
+        "sport_video",
+        "streamed",
     ]
     api_password: str = None
 

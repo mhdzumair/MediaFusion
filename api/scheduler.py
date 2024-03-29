@@ -1,6 +1,7 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from db import crud
 from db.config import settings
 from scrapers import tamil_blasters, tamilmv
 from mediafusion_scrapy.task import run_spider
@@ -79,4 +80,9 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         CronTrigger.from_crontab(settings.streamed_scheduler_crontab),
         name="streamed",
         kwargs={"spider_name": "streamed"},
+    )
+
+    # Schedule delete_search_history
+    scheduler.add_job(
+        crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
     )

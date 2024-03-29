@@ -35,8 +35,6 @@ class Settings(BaseSettings):
     sport_video_scheduler_crontab: str = "20 * * * *"
     streamed_scheduler_crontab: str = "*/15 * * * *"
     meta_cache_ttl: int = 1800  # 30 minutes
-    tv_meta_cache_ttl: int = 1800  # 30 minutes
-    events_meta_cache_ttl: int = 600  # 10 minutes
 
     class Config:
         env_file = ".env"

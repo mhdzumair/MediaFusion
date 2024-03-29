@@ -4,6 +4,7 @@ from urllib.parse import urljoin, urlparse
 import scrapy
 
 from scrapers.helpers import get_country_name
+from utils import const
 
 
 class LiveTVSpider(scrapy.Spider):
@@ -11,11 +12,6 @@ class LiveTVSpider(scrapy.Spider):
     fallback_pattern = re.compile(
         r"source: ['\"](.*?)['\"],\s*[\s\S]*?mimeType: ['\"]application/x-mpegURL['\"]"
     )
-
-    m3u8_valid_content_types = [
-        "application/vnd.apple.mpegurl",
-        "application/x-mpegurl",
-    ]
 
     # this site sometimes returns html instead of image
     exclude_validation_urls = [
@@ -277,7 +273,7 @@ class LiveTVSpider(scrapy.Spider):
         meta = response.meta
         content_type = response.headers.get("Content-Type", b"").decode().lower()
 
-        if response.status == 200 and content_type in self.m3u8_valid_content_types:
+        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
             # Content type is valid, proceed with adding the stream
             if response.meta.get("redirect_times", 0) > 0:
                 meta["behavior_hints"]["is_redirect"] = True

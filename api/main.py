@@ -7,7 +7,6 @@ from typing import Literal
 import aiohttp
 import redis.asyncio as redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from fastapi import (
     FastAPI,
     Request,
@@ -65,9 +64,6 @@ async def init_server():
 @app.on_event("startup")
 async def start_scheduler():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
-    )
     setup_scheduler(scheduler)
     scheduler.start()
     app.state.scheduler = scheduler
@@ -235,6 +231,9 @@ async def get_catalog(
     ):
         response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
+    elif catalog_type == "events":
+        response.headers.update(const.NO_CACHE_HEADERS)
+        cache_key = None
 
     # Try retrieving the cached data
     if cache_key:
@@ -244,24 +243,20 @@ async def get_catalog(
     metas = schemas.Metas()
     if catalog_type == "tv":
         metas.metas.extend(await crud.get_tv_meta_list(genre, skip))
-        cache_ttl = settings.tv_meta_cache_ttl
     elif catalog_type == "events":
-        response.headers.update(const.NO_CACHE_HEADERS)
         metas.metas.extend(
             await crud.get_events_meta_list(request.app.state.redis, genre, skip)
         )
-        cache_ttl = settings.events_meta_cache_ttl
     else:
         metas.metas.extend(
             await crud.get_meta_list(user_data, catalog_type, catalog_id, skip)
         )
-        cache_ttl = settings.meta_cache_ttl
 
-    if cache_key and cache_ttl:
+    if cache_key:
         await request.app.state.redis.set(
             cache_key,
             metas.model_dump_json(exclude_none=True, by_alias=True),
-            ex=cache_ttl,
+            ex=settings.meta_cache_ttl,
         )
 
     return metas
