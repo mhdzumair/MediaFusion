@@ -92,6 +92,10 @@ docker-compose -f docker-compose.yml up -d
 If you want to use MongoDB atlas Cluster instead of local MongoDB, follow the documentation [here](/deployment/mongo/README.md).
 
 - Replace the `MONGO_URI` in the `.env` file with the connection string you copied from the previous step.
+- Make sure to add the Database name in the connection string. Example Database name is `mediafusion`.
+```dotenv
+MONGO_URI=mongodb+srv://<username>:<password>@<cluster-url>/<database-name>?retryWrites=true&w=majority
+```
 - Remove the `mongodb` container and `depends_on` from the `docker-compose.yml` file.
 
 

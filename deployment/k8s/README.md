@@ -113,6 +113,11 @@ Edit the `deployment/local-deployment.yaml` to set the required environment vari
 If you want to use MongoDB atlas Cluster instead of local MongoDB, follow the documentation [here](/deployment/mongo/README.md).
 
 - Replace the `MONGO_URI` in the `deployment/local-deployment.yaml` file with the connection string you copied from the previous step.
+- Make sure to add the Database name in the connection string. Example Database name is `mediafusion`.
+```yaml
+          - name: MONGO_URI
+            value: "mongodb+srv://<username>:<password>@<cluster-url>/<database-name>?retryWrites=true&w=majority"
+```
 - Set `mongodb-deployment` replica to 0 in the `deployment/local-deployment.yaml` file.
 
 
