@@ -61,7 +61,8 @@ def worker_rate_limit(
         def wrapper(*args, **kwargs):
             # Construct the limiter key including function arguments if specified
             if use_args_in_key:
-                args_key = "_".join(str(arg) for arg in args)
+                args_key = "_".join([str(arg) for arg in args])
+                args_key += "_".join([f"{k}={v}" for k, v in kwargs.items()])
                 limiter_key = f"{func.__name__}_{args_key}_limiter"
             else:
                 limiter_key = f"{func.__name__}_limiter"
