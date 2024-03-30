@@ -798,10 +798,10 @@ async def get_event_streams(redis, meta_id: str) -> list[Stream]:
 
 async def delete_search_history():
     # Delete search history older than 3 days
-    await models.SearchHistory.delete_many(
+    result = await models.SearchHistory.find(
         {"last_searched": {"$lt": datetime.now() - timedelta(days=3)}}
-    )
-    logging.info("Deleted search history")
+    ).delete()
+    logging.info("Deleted %s search history", result.deleted_count)
 
 
 async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
