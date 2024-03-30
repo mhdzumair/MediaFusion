@@ -252,8 +252,6 @@ async def get_tv_streams(video_id: str) -> list[Stream]:
     tv_streams = await TVStreams.find(
         {"meta_id": video_id, "is_working": True}
     ).to_list()
-    if not tv_streams:
-        return []
 
     return await parse_tv_stream_data(tv_streams)
 
@@ -790,7 +788,7 @@ async def get_event_streams(redis, meta_id: str) -> list[Stream]:
     event_key = f"event:{meta_id}"
     event_json = await redis.get(event_key)
     if not event_json:
-        return []
+        return await parse_tv_stream_data([])
 
     event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
     return await parse_tv_stream_data(event_data.streams)

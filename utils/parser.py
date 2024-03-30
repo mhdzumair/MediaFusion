@@ -347,8 +347,8 @@ async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
         stream_list.append(
             Stream(
                 name="MediaFusion",
-                description="No streams live at the moment.",
-                url=f"{settings.host_url}/static/exceptions/source_not_live.mp4",
+                description="🚫 No streams are live at the moment.",
+                url=f"{settings.host_url}/static/exceptions/no_streams_live.mp4",
                 behaviorHints={"notWebReady": True},
             )
         )
