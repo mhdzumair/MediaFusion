@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     sport_video_scheduler_crontab: str = "20 * * * *"
     streamed_scheduler_crontab: str = "*/15 * * * *"
     meta_cache_ttl: int = 1800  # 30 minutes
+    validate_m3u8_urls_liveness: bool = True
 
     class Config:
         env_file = ".env"

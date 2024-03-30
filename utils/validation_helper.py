@@ -32,8 +32,10 @@ async def validate_image_url(url: str) -> bool:
     return await is_valid_url(url) and await does_url_exist(url)
 
 
-async def validate_m3u8_url(url: str, behaviour_hint: dict) -> (bool, bool):
-    if not await is_valid_url(url):
+async def validate_m3u8_url(
+    url: str, behaviour_hint: dict, validate_url: bool = False
+) -> (bool, bool):
+    if validate_url and not await is_valid_url(url):
         return False, False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
@@ -101,6 +103,7 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
                     stream.behaviorHints.model_dump(exclude_none=True)
                     if stream.behaviorHints
                     else {},
+                    validate_url=True,
                 )
             )
         elif stream.ytId:

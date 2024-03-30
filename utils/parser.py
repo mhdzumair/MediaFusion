@@ -48,6 +48,7 @@ from streaming_providers.torbox.utils import (
 )
 from utils import const
 from utils.network import get_redirector_url
+from utils.validation_helper import validate_m3u8_url
 
 ia = Cinemagoer()
 ADULT_CONTENT_KEYWORDS = re.compile(
@@ -325,7 +326,13 @@ async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
             if stream_link is None:
                 continue
             stream.url = stream_link
+        elif settings.validate_m3u8_urls_liveness:
+            is_working, _ = await validate_m3u8_url(stream.url, stream.behaviorHints)
+            if not is_working:
+                continue
+
         country_info = f"\n🌐 {stream.country}" if stream.country else ""
+
         stream_list.append(
             Stream(
                 name="MediaFusion",

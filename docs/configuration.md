@@ -22,6 +22,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **is_scrap_from_torrentio** (default: `False`): Enable or disable scraping from Torrentio.
 - **enable_rate_limit** (default: `True`): Enable or disable rate limiting.
 - **meta_cache_ttl** (default: `1800`): The time-to-live (TTL) for cached metadata, in seconds.
+- **validate_m3u8_urls_liveness** (default: `True`): Enable or disable the validation of M3U8 URLs for liveness. If enabled, the URLs are checked for liveness before returning them.
 
 #### Security and Authentication
 
