@@ -254,8 +254,11 @@ def run_schedule_scrape_sync(pages, start_page, scrap_with_playwright):
 def run_tamilmv_scraper(pages: int = 1, start_page: int = 1):
     # Use a separate process to run the scraper
     process = Process(target=run_schedule_scrape_sync, args=(pages, start_page, False))
-    process.start()
-    process.join()
+    try:
+        process.start()
+        process.join()
+    except Exception as e:
+        logging.error(f"Error running tamilmv scraper: {e}")
 
 
 if __name__ == "__main__":
