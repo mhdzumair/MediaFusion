@@ -21,6 +21,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **enable_tamilmv_search_scraper** (default: `False`): Toggle the TamilMV search scraper.
 - **is_scrap_from_torrentio** (default: `False`): Enable or disable scraping from Torrentio.
 - **enable_rate_limit** (default: `True`): Enable or disable rate limiting.
+- **meta_cache_ttl** (default: `1800`): The time-to-live (TTL) for cached metadata, in seconds.
 
 #### Security and Authentication
 
@@ -35,6 +36,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **prowlarr_search_interval_hour** (default: `24`): How often Prowlarr searches are initiated, in hours.
 - **prowlarr_immediate_max_process** (default: `10`) and **prowlarr_immediate_max_process_time** (default: 15): Settings related to the immediate processing of Prowlarr searches.
 - **torrentio_search_interval_days** (default: `3`): How often Torrentio searches are initiated, in days.
+- **prowlarr_live_title_search** (default: `False`): Enable or disable live title search in Prowlarr. If False, search movie/series by title in background worker So that you won't get the result at first.
 
 #### Content Filters
 
@@ -49,6 +51,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **formula_tgx_scheduler_crontab** (default: `"0 */12 * * *"`): Scheduler for Formula TGX.
 - **mhdtvworld_scheduler_crontab** (default: `"0 0 * * 5"`): Scheduler for MHDTVWorld.
 - **mhdtvsports_scheduler_crontab** (default: `"0 10 * * *"`): Scheduler for MHDTVSports.
+- **streamed_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for Streamed.su Sports Events.
 
 ### How to Configure
 
