@@ -4,7 +4,9 @@ from functools import wraps
 from dramatiq.rate_limits import ConcurrentRateLimiter, WindowRateLimiter
 from dramatiq.rate_limits.backends import RedisBackend
 
-backend = RedisBackend()
+from db.config import settings
+
+backend = RedisBackend(url=settings.redis_url)
 
 
 def rate_limit(limit: int, window: int, scope: str = None):
