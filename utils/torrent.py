@@ -173,18 +173,22 @@ async def init_best_trackers():
     # get the best trackers from https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt
     global TRACKERS
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt"
-        )
-        if response.status_code == 200:
-            trackers = [tracker for tracker in response.text.split("\n") if tracker]
-            TRACKERS.extend(trackers)
-            TRACKERS = list(set(TRACKERS))
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt",
+                timeout=30,
+            )
+            if response.status_code == 200:
+                trackers = [tracker for tracker in response.text.split("\n") if tracker]
+                TRACKERS.extend(trackers)
+                TRACKERS = list(set(TRACKERS))
 
-            logging.info(f"Loaded {len(trackers)} trackers. Total: {len(TRACKERS)}")
-        else:
-            logging.error(f"Failed to load trackers: {response.status_code}")
+                logging.info(f"Loaded {len(trackers)} trackers. Total: {len(TRACKERS)}")
+            else:
+                logging.error(f"Failed to load trackers: {response.status_code}")
+    except httpx.ConnectTimeout as e:
+        logging.error(f"Failed to load trackers: {e}")
 
 
 def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
