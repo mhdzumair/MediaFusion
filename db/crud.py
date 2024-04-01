@@ -248,12 +248,12 @@ async def get_series_streams(
     )
 
 
-async def get_tv_streams(video_id: str) -> list[Stream]:
+async def get_tv_streams(redis: Redis, video_id: str) -> list[Stream]:
     tv_streams = await TVStreams.find(
         {"meta_id": video_id, "is_working": True}
     ).to_list()
 
-    return await parse_tv_stream_data(tv_streams)
+    return await parse_tv_stream_data(tv_streams, redis)
 
 
 async def get_tv_stream_by_id(stream_id: str) -> TVStreams | None:
@@ -349,7 +349,11 @@ async def get_tv_meta(meta_id: str):
         return {}
 
     return {
-        "meta": {"_id": meta_id, **tv_data.model_dump()},
+        "meta": {
+            "_id": meta_id,
+            **tv_data.model_dump(),
+            "description": tv_data.description or tv_data.title,
+        }
     }
 
 
@@ -740,7 +744,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
 
 
 async def get_events_meta_list(
-    redis, genre=None, skip=0, limit=10
+    redis, genre=None, skip=0, limit=25
 ) -> list[schemas.Meta]:
     if genre:
         key_pattern = f"events:genre:{genre}"
@@ -772,7 +776,13 @@ async def get_event_meta(redis, meta_id: str) -> dict:
         return {}
 
     event_data = MediaFusionTVMetaData.model_validate_json(events_json)
-    return {"meta": event_data.model_dump(by_alias=True)}
+    return {
+        "meta": {
+            "_id": meta_id,
+            **event_data.model_dump(),
+            "description": event_data.description or event_data.title,
+        }
+    }
 
 
 async def get_event_data_by_id(redis, meta_id: str) -> MediaFusionEventsMetaData | None:
@@ -788,10 +798,10 @@ async def get_event_streams(redis, meta_id: str) -> list[Stream]:
     event_key = f"event:{meta_id}"
     event_json = await redis.get(event_key)
     if not event_json:
-        return await parse_tv_stream_data([])
+        return await parse_tv_stream_data([], redis)
 
     event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
-    return await parse_tv_stream_data(event_data.streams)
+    return await parse_tv_stream_data(event_data.streams, redis)
 
 
 async def delete_search_history():

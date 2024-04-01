@@ -1,10 +1,12 @@
 import asyncio
+import json
 import logging
 from urllib.parse import urlparse
 
 import aiohttp
 import dramatiq
 from aiohttp import ClientError
+from redis.asyncio import Redis
 
 from db import schemas
 from utils import const
@@ -48,16 +50,25 @@ async def validate_m3u8_url(
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
                 content_type = response.headers.get("Content-Type", "").lower()
-                is_valid = (
-                    "application/vnd.apple.mpegurl" in content_type
-                    or "application/x-mpegurl" in content_type
-                )
-                # Check if a redirect occurred. Compare final URL with the initial one.
+
+                is_valid = content_type in const.M3U8_VALID_CONTENT_TYPES
+                # Check if a redirect occurred. Compare the final URL with the initial one.
                 is_redirect = str(response.url) != url
                 return is_valid, is_redirect
         except (ClientError, asyncio.TimeoutError) as err:
             logging.error(err)
             return False, False
+
+
+async def validate_m3u8_url_with_cache(redis: Redis, url: str, behaviour_hint: dict):
+    cache_key = f"m3u8_url:{url}"
+    cache_data = await redis.get(cache_key)
+    if cache_data:
+        return json.loads(cache_data)
+
+    is_valid, is_redirect = await validate_m3u8_url(url, behaviour_hint)
+    await redis.set(cache_key, json.dumps((is_valid, is_redirect)), ex=180)
+    return is_valid, is_redirect
 
 
 class ValidationError(Exception):

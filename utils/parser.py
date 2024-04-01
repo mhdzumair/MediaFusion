@@ -48,7 +48,7 @@ from streaming_providers.torbox.utils import (
 )
 from utils import const
 from utils.network import get_redirector_url
-from utils.validation_helper import validate_m3u8_url
+from utils.validation_helper import validate_m3u8_url_with_cache
 
 ia = Cinemagoer()
 ADULT_CONTENT_KEYWORDS = re.compile(
@@ -315,7 +315,9 @@ def get_imdb_data(video_id: str) -> tuple[str, str]:
     return movie.get("title"), movie.get("year")
 
 
-async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
+async def parse_tv_stream_data(
+    tv_streams: list[TVStreams], redis: Redis
+) -> list[Stream]:
     stream_list = []
     for stream in tv_streams:
         if stream.behaviorHints and stream.behaviorHints.get("is_redirect", False):
@@ -327,7 +329,9 @@ async def parse_tv_stream_data(tv_streams: list[TVStreams]) -> list[Stream]:
                 continue
             stream.url = stream_link
         elif settings.validate_m3u8_urls_liveness:
-            is_working, _ = await validate_m3u8_url(stream.url, stream.behaviorHints)
+            is_working, _ = await validate_m3u8_url_with_cache(
+                redis, stream.url, stream.behaviorHints or {}
+            )
             if not is_working:
                 continue
 

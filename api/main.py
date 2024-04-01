@@ -397,7 +397,7 @@ async def get_streams(
         response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
-        fetched_streams = await crud.get_tv_streams(video_id)
+        fetched_streams = await crud.get_tv_streams(request.app.state.redis, video_id)
 
     return {"streams": fetched_streams}
 
