@@ -86,3 +86,10 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
     scheduler.add_job(
         crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
     )
+
+    scheduler.add_job(
+        run_spider.send,
+        CronTrigger.from_crontab(settings.mrgamingstreams_scheduler_crontab),
+        name="mrgamingstreams",
+        kwargs={"spider_name": "mrgamingstreams"},
+    )

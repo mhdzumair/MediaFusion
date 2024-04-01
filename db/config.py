@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     streamed_scheduler_crontab: str = "*/15 * * * *"
     meta_cache_ttl: int = 1800  # 30 minutes
     validate_m3u8_urls_liveness: bool = True
+    mrgamingstreams_scheduler_crontab: str = "*/15 * * * *"
 
     class Config:
         env_file = ".env"

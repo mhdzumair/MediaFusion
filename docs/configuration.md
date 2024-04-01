@@ -53,6 +53,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **mhdtvworld_scheduler_crontab** (default: `"0 0 * * 5"`): Scheduler for MHDTVWorld.
 - **mhdtvsports_scheduler_crontab** (default: `"0 10 * * *"`): Scheduler for MHDTVSports.
 - **streamed_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for Streamed.su Sports Events.
+- **mrgamingstreams_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for MrGamingStreams Sports Events.
 
 ### How to Configure
 

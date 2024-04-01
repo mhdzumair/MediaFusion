@@ -214,6 +214,7 @@ class ScraperTask(BaseModel):
         "tamilultra",
         "sport_video",
         "streamed",
+        "mrgamingstreams",
     ]
     api_password: str = None
 

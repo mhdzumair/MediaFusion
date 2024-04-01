@@ -31,7 +31,6 @@
 	  "https://www.pixelstalk.net/wp-content/uploads/2016/03/Download-free-baseball-wallpaper-HD.jpg"
 	],
 	"poster": [
-	  "https://static.vecteezy.com/system/resources/previews/000/511/101/non_2x/baseball-texture-sport-vector-background.jpg",
 	  "https://mcdn.wallpapersafari.com/374/21/33/UR7xC4.jpg"
 	],
 	"logo": [
@@ -184,6 +183,19 @@
 	],
 	"logo": [
 	  "http://images.gofreedownload.net/sport-105683.jpg"
+	]
+  },
+  "MLB": {
+	"background": [
+	  "https://wallpapercave.com/wp/wp1998982.jpg",
+	  "https://wallpapercave.com/wp/wp1998978.jpg"
+	],
+	"poster": [
+	  "https://i.pinimg.com/736x/c0/54/73/c0547342c769706d2ed606d2b6f7246b.jpg",
+	  "http://rickrifici.com/wp-content/uploads/2011/03/AFL.jpg"
+	],
+	"logo": [
+	  "https://botw-pd.s3.amazonaws.com/styles/logo-thumbnail/s3/0003/4002/brand.gif?itok=F2rATKp8"
 	]
   }
 }
