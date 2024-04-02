@@ -48,7 +48,7 @@ Adjust `/path/to/htpasswd` to the path where you'll store the `.htpasswd` file i
 docker logs qbittorrent-webdav
 ```
 
-**WebDAV:** Found at `http://localhost/webdav/`. If you created a `.htpasswd` file, use those credentials. If not, WebDAV is open.
+**WebDAV:** Found at `http://localhost:8080/webdav/`. If you created a `.htpasswd` file, use those credentials. If not, WebDAV is open.
 
 ## Integration with MediaFusion
 
