@@ -42,13 +42,13 @@ Adjust `/path/to/htpasswd` to the path where you'll store the `.htpasswd` file i
 
 ## Initial qBittorrent and WebDAV Setup
 
-**qBittorrent WebUI:** Access at `http://localhost:8080`. Find the initial password in the Docker logs:
+**qBittorrent WebUI:** Access at `http://localhost:8080/qbittorrent/`. Find the initial password in the Docker logs:
 
 ```bash
 docker logs qbittorrent-webdav
 ```
 
-**WebDAV:** Found at `http://localhost/webdav`. If you created a `.htpasswd` file, use those credentials. If not, WebDAV is open.
+**WebDAV:** Found at `http://localhost/webdav/`. If you created a `.htpasswd` file, use those credentials. If not, WebDAV is open.
 
 ## Integration with MediaFusion
 
