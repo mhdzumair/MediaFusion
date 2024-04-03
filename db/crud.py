@@ -41,6 +41,7 @@ async def get_meta_list(
     user_data: schemas.UserData,
     catalog_type: str,
     catalog: str,
+    is_watchlist_catalog: bool,
     skip: int = 0,
     limit: int = 25,
 ) -> list[schemas.Meta]:
@@ -51,9 +52,7 @@ async def get_meta_list(
 
     query_conditions = []
 
-    if user_data.streaming_provider and catalog.startswith(
-        user_data.streaming_provider.service
-    ):
+    if is_watchlist_catalog:
         downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data)
         if not downloaded_info_hashes:
             return []
@@ -179,6 +178,16 @@ async def get_cached_torrent_streams(
 async def get_movie_streams(
     user_data, secret_str: str, redis: Redis, video_id: str
 ) -> list[Stream]:
+    if video_id.startswith("dl"):
+        if not video_id.endswith(user_data.streaming_provider.service):
+            return []
+        return [
+            schemas.Stream(
+                name=f"MediaFusion {user_data.streaming_provider.service.title()} 🗑️💩",
+                description="🚨💀⚠️\nDelete all files in streaming provider",
+                url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
+            )
+        ]
     streams = await get_cached_torrent_streams(redis, video_id)
 
     if video_id.startswith("tt"):

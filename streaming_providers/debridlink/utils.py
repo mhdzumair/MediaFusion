@@ -95,3 +95,11 @@ def fetch_downloaded_info_hashes_from_dl(user_data: UserData) -> list[str]:
 
     except ProviderException:
         return []
+
+
+def delete_all_torrents_from_dl(user_data: UserData):
+    """Deletes all torrents from the DebridLink account."""
+    dl_client = DebridLink(token=user_data.streaming_provider.token)
+    torrents = dl_client.get_user_torrent_list()
+    for torrent in torrents["value"]:
+        dl_client.delete_torrent(torrent["id"])

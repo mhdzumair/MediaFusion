@@ -129,6 +129,13 @@ STREAMING_SERVICE_REQUIREMENTS = {
     "default": ["token"],
 }
 
+DELETE_ALL_WATCHLIST_META = {
+    "_id": "dl{}",
+    "title": "🗑️💩 Delete all files",
+    "type": "movie",
+    "description": "🚨💀⚠ Delete all files in streaming provider",
+}
+
 UA_HEADER = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
 }

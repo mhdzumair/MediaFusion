@@ -104,3 +104,11 @@ def fetch_downloaded_info_hashes_from_rd(user_data: UserData) -> list[str]:
 
     except ProviderException:
         return []
+
+
+def delete_all_watchlist_rd(user_data: UserData):
+    """Deletes all torrents from the RealDebrid watchlist."""
+    rd_client = RealDebrid(token=user_data.streaming_provider.token)
+    torrents = rd_client.get_user_torrent_list()
+    for torrent in torrents:
+        rd_client.delete_torrent(torrent["id"])

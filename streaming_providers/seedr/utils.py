@@ -229,3 +229,13 @@ def fetch_downloaded_info_hashes_from_seedr(user_data: UserData) -> list[str]:
         return []
 
     return [folder["name"] for folder in seedr.listContents()["folders"]]
+
+
+def delete_all_torrents_from_seedr(user_data: UserData):
+    """Deletes all torrents from the user's Seedr account."""
+    seedr = get_seedr_client(user_data)
+
+    for folder in seedr.listContents()["folders"]:
+        seedr.deleteFolder(folder["id"])
+    for torrent in seedr.listContents()["torrents"]:
+        seedr.deleteTorrent(torrent["id"])

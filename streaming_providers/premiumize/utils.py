@@ -125,3 +125,11 @@ def fetch_downloaded_info_hashes_from_premiumize(user_data: UserData) -> list[st
 
     except ProviderException:
         return []
+
+
+def delete_all_torrents_from_pm(user_data: UserData):
+    """Deletes all torrents from the Premiumize account."""
+    pm_client = Premiumize(token=user_data.streaming_provider.token)
+    folders = pm_client.get_folder_list()
+    for folder in folders["content"]:
+        pm_client.delete_folder(folder["id"])

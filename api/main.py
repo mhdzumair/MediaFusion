@@ -23,6 +23,7 @@ from api.scheduler import setup_scheduler
 from db import database, crud, schemas
 from db.config import settings
 from scrapers.routes import router as scrapers_router
+from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
 from utils import crypto, torrent, poster, const, wrappers
 from utils.parser import generate_manifest, get_json_data
@@ -49,6 +50,15 @@ app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
 TEMPLATES = Jinja2Templates(directory="resources")
+DELETE_ALL_META = schemas.Meta(
+    **const.DELETE_ALL_WATCHLIST_META,
+    poster=f"{settings.host_url}/static/images/delete_all_poster.jpg",
+    background=f"{settings.host_url}/static/images/delete_all_background.png",
+)
+
+DELETE_ALL_META_ITEM = {
+    "meta": DELETE_ALL_META.model_dump(by_alias=True, exclude_none=True)
+}
 
 
 def get_user_data(request: Request) -> schemas.UserData:
@@ -226,11 +236,13 @@ async def get_catalog(
         skip = int(skip) if skip and skip.isdigit() else 0
 
     cache_key = f"{catalog_type}_{catalog_id}_{skip}_{genre}_catalog"
+    is_watchlist_catalog = False
     if user_data.streaming_provider and catalog_id.startswith(
         user_data.streaming_provider.service
     ):
         response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
+        is_watchlist_catalog = True
     elif catalog_type == "events":
         response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
@@ -249,8 +261,23 @@ async def get_catalog(
         )
     else:
         metas.metas.extend(
-            await crud.get_meta_list(user_data, catalog_type, catalog_id, skip)
+            await crud.get_meta_list(
+                user_data, catalog_type, catalog_id, is_watchlist_catalog, skip
+            )
         )
+        if (
+            is_watchlist_catalog
+            and catalog_type == "movie"
+            and metas.metas
+            and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(
+                user_data.streaming_provider.service
+            )
+        ):
+            delete_all_meta = DELETE_ALL_META.model_copy()
+            delete_all_meta.id = delete_all_meta.id.format(
+                user_data.streaming_provider.service
+            )
+            metas.metas.insert(0, delete_all_meta)
 
     if cache_key:
         await request.app.state.redis.set(
@@ -326,7 +353,12 @@ async def get_meta(
         return meta_data
 
     if catalog_type == "movie":
-        data = await crud.get_movie_meta(meta_id)
+        if meta_id.startswith("dl"):
+            delete_all_meta_item = DELETE_ALL_META_ITEM.copy()
+            delete_all_meta_item["meta"]["_id"] = meta_id
+            data = delete_all_meta_item
+        else:
+            data = await crud.get_movie_meta(meta_id)
     elif catalog_type == "series":
         data = await crud.get_series_meta(meta_id)
     elif catalog_type == "events":
@@ -383,9 +415,21 @@ async def get_streams(
     response.headers.update(const.DEFAULT_HEADERS)
 
     if catalog_type == "movie":
-        fetched_streams = await crud.get_movie_streams(
-            user_data, secret_str, request.app.state.redis, video_id
-        )
+        if video_id.startswith("dl"):
+            if video_id == f"dl{user_data.streaming_provider.service}":
+                fetched_streams = [
+                    schemas.Stream(
+                        name=f"MediaFusion {user_data.streaming_provider.service.title()} 🗑️💩🚨",
+                        description=f"🚨💀⚠ Delete all files in {user_data.streaming_provider.service} watchlist.",
+                        url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all_watchlist",
+                    )
+                ]
+            else:
+                raise HTTPException(status_code=404, detail="Meta ID not found.")
+        else:
+            fetched_streams = await crud.get_movie_streams(
+                user_data, secret_str, request.app.state.redis, video_id
+            )
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
             user_data, secret_str, request.app.state.redis, video_id, season, episode

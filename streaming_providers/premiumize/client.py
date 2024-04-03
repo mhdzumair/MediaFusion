@@ -93,6 +93,11 @@ class Premiumize(DebridClient):
             params={"id": folder_id} if folder_id else None,
         )
 
+    def delete_folder(self, folder_id: str):
+        return self._make_request(
+            "POST", f"{self.BASE_URL}/folder/delete", data={"id": folder_id}
+        )
+
     def delete_torrent(self, torrent_id):
         return self._make_request(
             "POST", f"{self.BASE_URL}/transfer/delete", data={"id": torrent_id}

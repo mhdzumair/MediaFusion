@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import (
@@ -10,6 +11,7 @@ from fastapi.responses import RedirectResponse
 
 from db import crud
 from db.config import settings
+from streaming_providers import mapper
 from streaming_providers.alldebrid.utils import get_direct_link_from_alldebrid
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.debridlink.utils import get_direct_link_from_debridlink
@@ -105,6 +107,46 @@ async def streaming_provider_endpoint(
     except Exception as e:
         logging.error("Exception occurred for %s: %s", info_hash, e, exc_info=True)
         video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
+
+    return RedirectResponse(url=video_url, headers=response.headers)
+
+
+@router.get("/{secret_str}/delete_all_watchlist", tags=["streaming_provider"])
+@wrappers.exclude_rate_limit
+@wrappers.auth_required
+async def delete_all_watchlist(request: Request, response: Response, secret_str: str):
+    response.headers.update(const.NO_CACHE_HEADERS)
+
+    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
+
+    if not user_data.streaming_provider:
+        raise HTTPException(status_code=400, detail="No streaming provider set.")
+
+    if delete_all_watchlist_function := mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(
+        user_data.streaming_provider.service
+    ):
+        try:
+            if asyncio.iscoroutinefunction(delete_all_watchlist_function):
+                await delete_all_watchlist_function(user_data)
+            else:
+                delete_all_watchlist_function(user_data)
+            video_url = f"{settings.host_url}/static/exceptions/watchlist_deleted.mp4"
+        except ProviderException as error:
+            logging.error(
+                "Exception occurred while deleting watchlist: %s",
+                error.message,
+                exc_info=True,
+            )
+            video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
+        except Exception as e:
+            logging.error(
+                "Exception occurred while deleting watchlist: %s", e, exc_info=True
+            )
+            video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
+    else:
+        raise HTTPException(
+            status_code=400, detail="Provider does not support this action."
+        )
 
     return RedirectResponse(url=video_url, headers=response.headers)
 
