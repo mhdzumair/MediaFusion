@@ -21,7 +21,7 @@ spec:
       - name: mediafusion
         image: mhdzumair/mediafusion:v3.7.5
         ports:
-        - containerPort: 80
+        - containerPort: 8000
         resources:
           requests:
             memory: "500Mi"
@@ -65,7 +65,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: 8000
           initialDelaySeconds: 10
           periodSeconds: 60
           failureThreshold: 5
@@ -73,7 +73,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /health
-            port: 80
+            port: 8000
           initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 10
@@ -319,8 +319,8 @@ spec:
     app: mediafusion
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: 80
+      port: 8000
+      targetPort: 8000
   type: NodePort
 
 ---
@@ -430,4 +430,4 @@ spec:
           service:
             name: mediafusion-service
             port:
-              number: 80
+              number: 8000
