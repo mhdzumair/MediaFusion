@@ -25,7 +25,7 @@ from db.config import settings
 from scrapers.routes import router as scrapers_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, wrappers
+from utils import crypto, torrent, poster, const, wrappers, lock
 from utils.parser import generate_manifest, get_json_data
 
 logging.basicConfig(
@@ -73,18 +73,18 @@ async def init_server():
 
 @app.on_event("startup")
 async def start_scheduler():
-    scheduler = AsyncIOScheduler()
-    setup_scheduler(scheduler)
-    scheduler.start()
-    app.state.scheduler = scheduler
+    if await lock.acquire_lock():
+        scheduler = AsyncIOScheduler()
+        setup_scheduler(scheduler)
+        scheduler.start()
+        app.state.scheduler = scheduler
 
 
 @app.on_event("shutdown")
 async def stop_scheduler():
-    try:
+    if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown(wait=False)
-    except AttributeError:
-        pass
+        await lock.release_lock()
 
 
 @app.on_event("shutdown")

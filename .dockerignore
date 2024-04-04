@@ -41,3 +41,4 @@ prowlarr-config/
 config/
 mediafusion.local*
 .scrapy
+.lock
