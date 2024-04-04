@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse, quote
 from aiohttp import ClientConnectorError
 from aioqbt.api import AddFormBuilder, TorrentInfo, InfoFilter
 from aioqbt.client import create_client, APIClient
-from aioqbt.exc import LoginError, AddTorrentError
+from aioqbt.exc import LoginError, AddTorrentError, NotFoundError
 from aiowebdav.client import Client as WebDavClient
 from aiowebdav.exceptions import RemoteResourceNotFound, NoConnection
 from thefuzz import fuzz
@@ -154,7 +154,7 @@ async def initialize_qbittorrent(user_data: UserData):
         raise ProviderException(
             "Invalid qBittorrent credentials", "invalid_credentials.mp4"
         )
-    except ClientConnectorError:
+    except (ClientConnectorError, NotFoundError):
         raise ProviderException(
             "Failed to connect to qBittorrent", "qbittorrent_error.mp4"
         )
