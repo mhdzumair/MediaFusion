@@ -4,7 +4,7 @@ from aiofiles import os
 
 async def acquire_lock():
     try:
-        async with aiofiles.open(".lock", "x") as f:
+        async with aiofiles.open("/tmp/mediafusion.lock", "x") as f:
             return True
     except FileExistsError:
         return False
@@ -12,6 +12,6 @@ async def acquire_lock():
 
 async def release_lock():
     try:
-        await os.remove(".lock")
+        await os.remove("/tmp/mediafusion.lock")
     except FileNotFoundError:
         pass
