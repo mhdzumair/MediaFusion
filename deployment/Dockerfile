@@ -34,7 +34,10 @@ COPY --from=builder /etc/group /etc/passwd /etc/
 
 ENV PATH="/home/mediafusion/.local/bin:$PATH"
 
-COPY --chown=mediafusion:mediafusion . .
+COPY . .
+
+# set folder permissions
+RUN chown -R mediafusion:mediafusion /mediafusion
 
 USER mediafusion
 
