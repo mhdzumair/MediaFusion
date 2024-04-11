@@ -28,4 +28,4 @@ def run_spider(spider_name: str, *args, **kwargs):
 
 
 if __name__ == "__main__":
-    run_spider_in_process("sport_video")
+    run_spider_in_process("formula_tgx", scrape_all="True")
