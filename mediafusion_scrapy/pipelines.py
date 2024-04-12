@@ -180,7 +180,7 @@ class FormulaParserPipeline:
             )
         ]
 
-        self.default_poster = "https://senna.com/wp-content/uploads/2018/02/Poster1.jpg"
+        self.default_poster = "https://i.postimg.cc/DZP4x8kM/Poster1.jpg"
 
         self.smcgill1969_resolutions = {
             "4K": "4K",
@@ -240,6 +240,7 @@ class FormulaParserPipeline:
                                     formula_round,
                                     formula_event,
                                     data.get("Extra"),
+                                    "(egortech)",  # add the uploader to the title for uniqueness
                                 ],
                             )
                         ),
@@ -282,6 +283,7 @@ class FormulaParserPipeline:
                                     data.get("Year"),
                                     formula_round,
                                     event,
+                                    "(F1Carreras)",  # add the uploader to the title for uniqueness
                                 ],
                             )
                         ),
@@ -318,6 +320,7 @@ class FormulaParserPipeline:
                                     data.get("Year"),
                                     formula_round,
                                     event,
+                                    "(smcgill1969)",  # add the uploader to the title for uniqueness
                                 ],
                             )
                         ),
@@ -335,10 +338,6 @@ class FormulaParserPipeline:
     def parse_egortech_description(self, torrent_data: dict):
         torrent_description = torrent_data.get("description")
         file_details = torrent_data.get("file_details")
-
-        # set egortech poster as primary poster
-        torrent_data["override_poster"] = True
-        torrent_data["is_add_title_to_poster"] = False
 
         quality_match = re.search(r"Quality:\s*(\S+)", torrent_description)
         codec_match = re.search(r"Video:\s*([A-Za-z0-9]+)", torrent_description)
@@ -514,14 +513,7 @@ class FormulaStorePipeline:
             {"title": item["title"]}, fetch_links=True
         )
 
-        if series:
-            if item.get("override_poster") and item.get("poster"):
-                series.poster = item.get("poster")
-                series.is_poster_working = True
-                series.is_add_title_to_poster = item.get(
-                    "is_add_title_to_poster", False
-                )
-        else:
+        if not series:
             meta_id = f"mf{uuid4().fields[-1]}"
             poster = item.get("poster")
             background = item.get("background")
