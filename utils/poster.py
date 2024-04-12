@@ -1,10 +1,12 @@
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError, ImageStat
 from imdb import Cinemagoer
+from redis.asyncio import Redis
 
 from db.models import MediaFusionMetaData
 from utils import const
@@ -14,7 +16,13 @@ font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
 
-async def fetch_poster_image(url: str) -> bytes:
+async def fetch_poster_image(url: str, redis: Redis) -> bytes:
+    # Check if the image is cached in Redis
+    cached_image = await redis.get(url)
+    if cached_image:
+        logging.info(f"Using cached image for URL: {url}")
+        return cached_image
+
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=10, headers=const.UA_HEADER) as response:
             response.raise_for_status()
@@ -22,7 +30,12 @@ async def fetch_poster_image(url: str) -> bytes:
                 raise ValueError(
                     f"Unexpected content type: {response.headers['Content-Type']} for URL: {url}"
                 )
-            return await response.read()
+            content = await response.read()
+
+            # Cache the image in Redis for 1 hour
+            logging.info(f"Caching image for URL: {url}")
+            await redis.set(url, content, ex=3600)
+            return content
 
 
 # Synchronous function for CPU-bound task: image processing
@@ -51,8 +64,8 @@ def process_poster_image(
         raise ValueError(f"Cannot identify image from URL: {mediafusion_data.poster}")
 
 
-async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
-    content = await fetch_poster_image(mediafusion_data.poster)
+async def create_poster(mediafusion_data: MediaFusionMetaData, redis: Redis) -> BytesIO:
+    content = await fetch_poster_image(mediafusion_data.poster, redis)
 
     loop = asyncio.get_event_loop()
     byte_io = await asyncio.wait_for(
@@ -121,17 +134,24 @@ def load_font(font_path, font_size):
 def split_title(title, font, draw, max_width):
     lines = []
     words = title.split()
-    average_character_width = sum(
-        draw.textbbox((0, 0), char, font=font)[2] for char in set(title)
-    ) / len(set(title))
+    # Calculate character width using a cache or default method
+    char_widths = {
+        char: draw.textbbox((0, 0), char, font=font)[2] for char in set(title)
+    }
+    average_character_width = sum(char_widths.values()) / len(char_widths)
+
     while words:
         line = ""
         line_width = 0
-        while words and line_width + average_character_width <= max_width:
-            word_width = draw.textbbox((0, 0), words[0], font=font)[2]
-            if line_width + word_width <= max_width:
-                line += words.pop(0) + " "
-                line_width += word_width + average_character_width  # Add space width
+        while words:
+            word = words[0]
+            word_width = sum(
+                char_widths.get(char, average_character_width) for char in word
+            )
+            if line_width + word_width <= max_width or not line:
+                line += word + " "
+                line_width += word_width + average_character_width
+                words.pop(0)
             else:
                 break
         lines.append(line.strip())
@@ -139,21 +159,31 @@ def split_title(title, font, draw, max_width):
 
 
 # Function to adjust font size and split title
-def adjust_font_and_split(title, font_path, max_width, initial_font_size, draw):
-    font_size = initial_font_size
-    font = load_font(font_path, font_size)
-    lines = split_title(title, font, draw, max_width)
-    while True:
-        # Get the bounding box of the last line of text
-        bbox = draw.textbbox((0, 0), lines[-1], font=font)
-        text_width = bbox[2] - bbox[0]
-        if len(lines) > 2 or text_width >= max_width:
-            font_size -= 1  # Decrease font size by 1
-            font = load_font(font_path, font_size)
-            lines = split_title(title, font, draw, max_width)
+def adjust_font_and_split(
+    title, font_path, max_width, max_lines, initial_font_size, draw, min_font_size=10
+):
+    lower_bound = min_font_size
+    upper_bound = initial_font_size
+    best_fit_font = None
+    best_fit_lines = []
+
+    while lower_bound <= upper_bound:
+        mid_font_size = (lower_bound + upper_bound) // 2
+        font = load_font(font_path, mid_font_size)
+        lines = split_title(title, font, draw, max_width)
+
+        # Check if the current font size fits the criteria
+        all_lines_fit = all(
+            draw.textbbox((0, 0), line, font=font)[2] <= max_width for line in lines
+        )
+        if len(lines) <= max_lines and all_lines_fit:
+            best_fit_font = font
+            best_fit_lines = lines
+            lower_bound = mid_font_size + 1  # Try a larger font size
         else:
-            break
-    return lines, font
+            upper_bound = mid_font_size - 1  # Reduce font size and try again
+
+    return best_fit_lines, best_fit_font
 
 
 def get_average_color(image, bbox):
@@ -195,15 +225,26 @@ def draw_text_with_outline(draw, position, text, font, fill_color, outline_color
 def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
     draw = ImageDraw.Draw(image)
     max_width = image.width - 20  # max width for the text
+    max_lines = 3  # Maximum number of lines for the title
     font_path = "resources/fonts/IBMPlexSans-Bold.ttf"
     initial_font_size = 50  # Starting font size which will be adjusted dynamically
+    min_font_size = 20  # Minimum font size to avoid tiny text
 
     lines, font = adjust_font_and_split(
-        title_text, font_path, max_width, initial_font_size, draw
+        title_text,
+        font_path,
+        max_width,
+        max_lines,
+        initial_font_size,
+        draw,
+        min_font_size,
     )
 
-    # Calculate the total height of the text block using textbbox
-    text_block_height = sum(draw.textbbox((0, 0), line, font=font)[3] for line in lines)
+    # Calculate the total height of the text block using textbbox and consider spacing between lines
+    line_spacing = 10  # Additional space between lines
+    text_block_height = sum(
+        draw.textbbox((0, 0), line, font=font)[3] for line in lines
+    ) + (line_spacing * (len(lines) - 1))
 
     # Starting y position, centered vertically
     y = (image.height - text_block_height) // 2
@@ -218,6 +259,8 @@ def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
         line_height = bbox[3] - bbox[1]
         x = (image.width - line_width) // 2  # Center horizontally
         draw_text_with_outline(draw, (x, y), line, font, text_color, outline_color)
-        y += line_height  # Move y position for next line
+        y += (
+            line_height + line_spacing
+        )  # Move y position for next line, adding line spacing
 
     return image

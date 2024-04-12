@@ -487,7 +487,9 @@ async def get_poster(
         raise HTTPException(status_code=404, detail="Poster not found.")
 
     try:
-        image_byte_io = await poster.create_poster(mediafusion_data)
+        image_byte_io = await poster.create_poster(
+            mediafusion_data, request.app.state.redis
+        )
         # Convert BytesIO to bytes for Redis
         image_bytes = image_byte_io.getvalue()
         # Save the generated image to Redis. expire in 7 days
