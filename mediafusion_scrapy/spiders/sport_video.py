@@ -1,4 +1,3 @@
-import tempfile
 from urllib.parse import urlparse
 
 import redis
@@ -22,9 +21,10 @@ class SportVideoSpider(scrapy.Spider):
 
     custom_settings = {
         "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentFileParserPipeline": 100,
+            "mediafusion_scrapy.pipelines.TorrentDownloadAndParsePipeline": 100,
             "mediafusion_scrapy.pipelines.SportVideoParserPipeline": 200,
             "mediafusion_scrapy.pipelines.MovieStorePipeline": 300,
+            "mediafusion_scrapy.pipelines.RedisCacheURLPipeline": 400,
         },
     }
 
@@ -96,11 +96,13 @@ class SportVideoSpider(scrapy.Spider):
                             "title": title.strip(),
                             "poster": poster,
                             "background": poster,
-                            "website": torrent_page_link,
+                            "webpage_url": torrent_page_link,
                             "is_parse_ptn": False,
                             "source": "sport-video.org.ua",
                             "is_add_title_to_poster": True,
                             "catalog": category,
+                            "type": "movie",
+                            "scraped_url_key": self.scraped_urls_key,
                         }
                     },
                 )
@@ -146,35 +148,5 @@ class SportVideoSpider(scrapy.Spider):
             # If there's corresponding metadata, add it to the item
             if i < len(metadata_blocks):
                 item.update(metadata_blocks[i])
-                yield response.follow(
-                    link,
-                    self.parse_torrent_file,
-                    meta={"item": item},
-                )
-
-    def parse_torrent_file(self, response):
-        item = response.meta["item"]
-        if response.status != 200:
-            self.logger.error(
-                f"Failed to download torrent file: {response.url} with status {response.status}"
-            )
-            return
-
-        # validate the content-type of the response to be an application/x-bittorrent
-        if "application/x-bittorrent" not in response.headers.get(
-            "Content-Type"
-        ).decode("utf-8", "ignore"):
-            self.logger.warning(
-                f"Unexpected Content-Type for {response.url}: {response.headers.get('Content-Type')}"
-            )
-            return
-
-        # Use tempfile to create a temporary file for the torrent file data
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=".torrent", mode="wb"
-        ) as temp:
-            temp.write(response.body)
-            item["torrent_file_path"] = temp.name
-
-        self.redis.sadd(self.scraped_urls_key, item["website"])
-        yield item
+                item["torrent_link"] = response.urljoin(link)
+                yield item
