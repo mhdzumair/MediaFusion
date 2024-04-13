@@ -25,18 +25,33 @@ class Settings(BaseSettings):
     enable_rate_limit: bool = True
     api_password: str | None = None
     is_public_instance: bool = False
-    tamilmv_scheduler_crontab: str = "0 */3 * * *"
-    tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
-    formula_tgx_scheduler_crontab: str = "0 */12 * * *"
-    mhdtvworld_scheduler_crontab: str = "0 0 * * 5"
-    mhdtvsports_scheduler_crontab: str = "0 10 * * *"
-    tamilultra_scheduler_crontab: str = "0 8 * * *"
-    validate_tv_streams_in_db_crontab: str = "0 */6 * * *"
-    sport_video_scheduler_crontab: str = "20 * * * *"
-    streamed_scheduler_crontab: str = "*/15 * * * *"
     meta_cache_ttl: int = 1800  # 30 minutes
     validate_m3u8_urls_liveness: bool = True
+
+    # Scheduler settings
+    tamilmv_scheduler_crontab: str = "0 */3 * * *"
+    disable_tamilmv_scheduler: bool = False
+    tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
+    disable_tamil_blasters_scheduler: bool = False
+    formula_tgx_scheduler_crontab: str = "0 */12 * * *"
+    disable_formula_tgx_scheduler: bool = False
+    mhdtvworld_scheduler_crontab: str = "0 0 * * 5"
+    disable_mhdtvworld_scheduler: bool = False
+    mhdtvsports_scheduler_crontab: str = "0 10 * * *"
+    disable_mhdtvsports_scheduler: bool = False
+    tamilultra_scheduler_crontab: str = "0 8 * * *"
+    disable_tamilultra_scheduler: bool = False
+    validate_tv_streams_in_db_crontab: str = "0 */6 * * *"
+    disable_validate_tv_streams_in_db: bool = False
+    sport_video_scheduler_crontab: str = "20 * * * *"
+    disable_sport_video_scheduler: bool = False
+    streamed_scheduler_crontab: str = "*/15 * * * *"
+    disable_streamed_scheduler: bool = False
     mrgamingstreams_scheduler_crontab: str = "*/15 * * * *"
+    disable_mrgamingstreams_scheduler: bool = (
+        True  # Disabled it due to the site being down.
+    )
+    disable_all_scheduler: bool = False
 
     class Config:
         env_file = ".env"
