@@ -9,7 +9,6 @@ class Settings(BaseSettings):
     secret_key: str
     host_url: str = "https://mediafusion.fun"
     logging_level: str = "INFO"
-    enable_tamilmv_search_scraper: bool = False
     scraper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     is_scrap_from_torrentio: bool = False

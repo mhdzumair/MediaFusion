@@ -1,6 +1,5 @@
 import json
 import logging
-from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
 
@@ -10,7 +9,7 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 
-from db import schemas, models
+from db import schemas
 from db.config import settings
 from db.models import (
     MediaFusionMovieMetaData,
@@ -23,7 +22,6 @@ from db.models import (
     MediaFusionEventsMetaData,
 )
 from db.schemas import Stream, MetaIdProjection, TorrentStreamsList
-from scrapers import tamilmv
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
 from utils import crypto
@@ -549,22 +547,6 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
-    if settings.enable_tamilmv_search_scraper and catalog_type in ["movie", "series"]:
-        # check if the search query is already searched in for last 24 hours or not
-        last_search = await models.SearchHistory.find_one(
-            {
-                "query": search_query,
-                "last_searched": {"$gte": datetime.now() - timedelta(days=1)},
-            }
-        )
-        if not last_search:
-            await models.SearchHistory(query=search_query).save()
-            # if the query is not searched in last 24 hours, search in tamilmv
-            try:
-                await tamilmv.scrap_search_keyword(search_query)
-            except Exception as e:
-                logging.error(e)
-
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     elif catalog_type == "tv":
@@ -811,14 +793,6 @@ async def get_event_streams(redis, meta_id: str) -> list[Stream]:
 
     event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
     return await parse_tv_stream_data(event_data.streams, redis)
-
-
-async def delete_search_history():
-    # Delete search history older than 3 days
-    result = await models.SearchHistory.find(
-        {"last_searched": {"$lt": datetime.now() - timedelta(days=3)}}
-    ).delete()
-    logging.info("Deleted %s search history", result.deleted_count)
 
 
 async def get_genres(catalog_type: str, redis: Redis) -> list[str]:

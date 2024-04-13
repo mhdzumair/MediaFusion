@@ -112,8 +112,3 @@ class MediaFusionEventsMetaData(MediaFusionMetaData):
     logo: Optional[str] = None
     genres: list[str] = Field(default_factory=list)
     streams: list[TVStreams]
-
-
-class SearchHistory(Document):
-    query: str
-    last_searched: datetime = Field(default_factory=datetime.now)
