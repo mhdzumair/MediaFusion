@@ -48,8 +48,8 @@ async def get_streams_from_prowlarr(
                 scrape_movie_title_streams_from_prowlarr, video_id, title, year
             )
             streams.extend(new_streams)
-        else:
-            background_movie_title_search.send(video_id, title, year)
+        # run background task for title search to get more streams
+        background_movie_title_search.send(video_id, title, year)
     elif catalog_type == "series":
         new_streams = await fetch_stream_data_with_timeout(
             scrap_series_streams_from_prowlarr, video_id, title, season, episode
@@ -64,8 +64,7 @@ async def get_streams_from_prowlarr(
                 episode,
             )
             streams.extend(new_streams)
-        else:
-            background_series_title_search.send(video_id, title, season, episode)
+        background_series_title_search.send(video_id, title, season, episode)
     # Cache the data for 24 hours
     await redis.set(
         cache_key,
