@@ -204,10 +204,7 @@ class TorrentStreamsList(BaseModel):
 
 
 class ScraperTask(BaseModel):
-    scraper_type: str
-    pages: int | None = 1
-    start_page: int | None = 1
-    spider_name: str | None = Literal[
+    spider_name: Literal[
         "formula_tgx",
         "mhdtvworld",
         "mhdtvsports",
@@ -215,7 +212,38 @@ class ScraperTask(BaseModel):
         "sport_video",
         "streamed",
         "mrgamingstreams",
+        "tamilmv",
+        "tamil_blasters",
     ]
+    pages: int | None = 1
+    start_page: int | None = 1
+    search_keyword: str | None = None
+    scrape_all: bool = False
+    scrap_catalog_id: Literal[
+        "all",
+        "tamil_hdrip",
+        "tamil_tcrip",
+        "tamil_dubbed",
+        "tamil_series",
+        "malayalam_hdrip",
+        "malayalam_tcrip",
+        "malayalam_dubbed",
+        "malayalam_series",
+        "telugu_tcrip",
+        "telugu_hdrip",
+        "telugu_dubbed",
+        "telugu_series",
+        "hindi_tcrip",
+        "hindi_hdrip",
+        "hindi_dubbed",
+        "hindi_series",
+        "kannada_tcrip",
+        "kannada_hdrip",
+        "kannada_series",
+        "english_tcrip",
+        "english_hdrip",
+        "english_series",
+    ] = "all"
     api_password: str = None
 
 

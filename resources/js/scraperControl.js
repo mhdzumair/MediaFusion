@@ -118,11 +118,41 @@ document.querySelectorAll('input[name="m3uInputType"]').forEach(input => {
     });
 });
 
+function toggleSpiderSpecificFields() {
+    const spiderName = document.getElementById('spiderName').value;
+    const isTamil = spiderName === 'tamilmv' || spiderName === 'tamil_blasters';
+    const isOtherSpider = !isTamil;
+
+    // Display the specific options for TamilMV and TamilBlasters
+    setElementDisplay('tamilmvTamilblastersParams', isTamil ? 'block' : 'none');
+    setElementDisplay('scrapeAllOption', isOtherSpider ? 'block' : 'none');
+
+    // Initially set to page scraping
+    if (isTamil) {
+        document.querySelector('input[name="mode"][value="page_scraping"]').checked = true;
+        toggleModeSpecificFields();
+    }
+
+    // Reset fields when changing mode
+    document.getElementById('keyword').value = '';
+    document.getElementById('pages').value = '1';
+    document.getElementById('startPage').value = '1';
+    document.getElementById('scrape_all').checked = false;
+}
+
+function toggleModeSpecificFields() {
+    const selectedMode = document.querySelector('input[name="mode"]:checked').value;
+    const displayKeywordSearch = selectedMode === 'keyword_search';
+    const displayPageScraping = selectedMode === 'page_scraping';
+
+    // Display the appropriate input fields
+    setElementDisplay('keywordSearchInput', displayKeywordSearch ? 'block' : 'none');
+    setElementDisplay('pageScrapingInput', displayPageScraping ? 'block' : 'none');
+}
 
 // Function to update form fields based on scraper selection
 function updateFormFields() {
     // Hide all sections initially
-    setElementDisplay('commonParameters', 'none');
     setElementDisplay('scrapyParameters', 'none');
     setElementDisplay('tvMetadataInput', 'none');
     setElementDisplay('m3uPlaylistInput', 'none');
@@ -132,14 +162,10 @@ function updateFormFields() {
 
     // Show the relevant section based on the selected scraper type
     switch (scraperType) {
-        case 'tamilmv':
-        case 'tamilblasters':
-            // Show common parameters for TamilMV and TamilBlasters
-            setElementDisplay('commonParameters', 'block');
-            break;
         case 'scrapy':
             // Show Scrapy-specific parameters
             setElementDisplay('scrapyParameters', 'block');
+            toggleSpiderSpecificFields();
             break;
         case 'add_tv_metadata':
             // Show TV Metadata input form
@@ -228,16 +254,7 @@ async function submitScraperForm() {
     payload['api_password'] = apiPassword;
 
     // Handling different scraper types
-    if (scraperType === 'tamilmv' || scraperType === 'tamilblasters') {
-        payload['pages'] = document.getElementById('pages').value;
-        payload['start_page'] = document.getElementById('startPage').value;
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify(payload);
-    } else if (scraperType === 'scrapy') {
-        payload['spider_name'] = document.getElementById('spiderName').value;
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify(payload);
-    } else if (scraperType === 'add_tv_metadata') {
+    if (scraperType === 'add_tv_metadata') {
         try {
             payload['tv_metadata'] = constructTvMetadata(); // Ensure this method returns the correct object
             headers['Content-Type'] = 'application/json';
@@ -268,6 +285,20 @@ async function submitScraperForm() {
         }
         endpoint = "/scraper/m3u_upload";
         body = formData; // FormData will set the correct Content-Type header
+    } else {
+        headers['Content-Type'] = 'application/json';
+        // Collect all scrapyParameters input fields that are not disabled and visible
+        document.querySelectorAll('#scrapyParameters input, #scrapyParameters select').forEach(input => {
+            // Ensuring the input is visible and not disabled
+            if (!input.disabled && input.type !== 'radio' && input.type !== 'checkbox') {
+                payload[input.name] = input.value;
+            } else if (input.type === 'radio' && input.checked) {
+                payload[input.name] = input.value;
+            } else if (input.type === 'checkbox') {
+                payload[input.name] = input.checked;
+            }
+        });
+        body = JSON.stringify(payload);
     }
 
     // Making the request
@@ -282,7 +313,11 @@ async function submitScraperForm() {
         if (response.ok) {
             showNotification(data.status, 'success');
         } else {
-            showNotification(data.detail, 'error');
+            if (data.detail) {
+                showNotification(data.detail, 'error');
+            } else {
+                showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+            }
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -293,3 +328,4 @@ async function submitScraperForm() {
 
 // Initial update for form fields on page load
 document.addEventListener('DOMContentLoaded', updateFormFields);
+document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);

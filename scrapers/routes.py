@@ -1,10 +1,8 @@
-from fastapi import HTTPException, UploadFile, File, Form, APIRouter, Request
+from fastapi import HTTPException, UploadFile, File, Form, APIRouter
 
 from db import schemas
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
-from scrapers.tamil_blasters import run_tamil_blasters_scraper
-from scrapers.tamilmv import run_tamilmv_scraper
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 
 router = APIRouter()
@@ -19,20 +17,16 @@ def validate_api_password(api_password: str):
 @router.post("/run", tags=["scraper"])
 async def run_scraper_task(task: schemas.ScraperTask):
     validate_api_password(task.api_password)
-    if task.scraper_type == "tamilmv":
-        run_tamilmv_scraper.send(task.pages, task.start_page)
-    elif task.scraper_type == "tamilblasters":
-        run_tamil_blasters_scraper.send(task.pages, task.start_page)
-    elif task.scraper_type == "scrapy":
-        if not task.spider_name:
-            raise HTTPException(
-                status_code=400, detail="Spider name is required for scrapy tasks."
-            )
-        run_spider.send(task.spider_name)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid scraper type.")
+    run_spider.send(
+        task.spider_name,
+        pages=task.pages,
+        start_page=task.start_page,
+        search_keyword=task.search_keyword,
+        scrape_all=str(task.scrape_all),
+        scrap_catalog_id=task.scrap_catalog_id,
+    )
 
-    return {"status": f"Scraping {task.scraper_type} task has been scheduled."}
+    return {"status": f"Scraping {task.spider_name} task has been scheduled."}
 
 
 @router.post("/add_tv_metadata", tags=["scraper"])

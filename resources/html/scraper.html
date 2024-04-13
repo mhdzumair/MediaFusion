@@ -27,8 +27,6 @@
                 <div class="mb-3">
                     <label for="scraperSelect" class="form-label">Select Scraper</label>
                     <select class="form-select" id="scraperSelect" onchange="updateFormFields()">
-                        <option value="tamilmv">TamilMV</option>
-                        <option value="tamilblasters">TamilBlasters</option>
                         <option value="scrapy">Scrapy Spider</option>
                         <option value="add_tv_metadata">Add TV Metadata</option>
                         <option value="add_m3u_playlist">Add M3U Playlist</option>
@@ -37,17 +35,6 @@
 
                 <!-- Dynamic Scraper Parameters -->
                 <div id="scraperParameters">
-                    <!-- TamilMV and TamilBlasters Parameters -->
-                    <div id="commonParameters" style="display: none;">
-                        <div class="mb-3">
-                            <label for="pages" class="form-label">Number of Pages</label>
-                            <input type="number" class="form-control" id="pages" name="pages" value="1">
-                        </div>
-                        <div class="mb-3">
-                            <label for="startPage" class="form-label">Start Page</label>
-                            <input type="number" class="form-control" id="startPage" name="start_page" value="1">
-                        </div>
-                    </div>
                     <!-- Scrapy Parameters -->
                     <div id="scrapyParameters" style="display: none;">
                         <div class="mb-3">
@@ -60,7 +47,59 @@
                                 <option value="sport_video">Sport Video</option>
                                 <option value="streamed">Streamed Sport Events</option>
                                 <option value="mrgamingstreams">MrGamingStreams Sport Events</option>
+                                <option value="tamil_blasters">TamilBlasters</option>
+                                <option value="tamilmv">TamilMV</option>
                             </select>
+                        </div>
+                        <!-- Additional Parameters based on Spider Selection -->
+                        <div id="tamilmvTamilblastersParams" style="display: none;" class="mb-3 mt-4">
+                            <label><input type="radio" name="mode" value="page_scraping" onchange="toggleModeSpecificFields()"> Page Scraping</label>
+                            <label><input type="radio" name="mode" value="keyword_search" checked onchange="toggleModeSpecificFields()"> Keyword Search</label>
+
+                            <!-- Keyword Search Input -->
+                            <div id="keywordSearchInput" class="mb-3" style="display: none;">
+                                <label for="keyword" class="form-label">Search Keyword</label>
+                                <input type="text" class="form-control" id="keyword" name="search_keyword">
+                            </div>
+
+                            <!-- Page Scraping Input -->
+                            <div id="pageScrapingInput" class="mb-3" style="display: none;">
+                                <label for="pages" class="form-label">Number of Pages</label>
+                                <input type="number" class="form-control" id="pages" name="pages" value="1">
+                                <label for="startPage" class="form-label">Start Page</label>
+                                <input type="number" class="form-control" id="startPage" name="start_page" value="1">
+
+                                <!-- Scrap Catalog ID Dropdown -->
+                                <label for="scrapCatalogId" class="form-label">Scrap Catalog ID</label>
+                                <select class="form-select" id="scrapCatalogId" name="scrap_catalog_id">
+                                    <option value="all">All</option>
+                                    <option value="tamil_hdrip">Tamil HDRip</option>
+                                    <option value="tamil_tcrip">Tamil TCrip</option>
+                                    <option value="tamil_dubbed">Tamil Dubbed</option>
+                                    <option value="tamil_series">Tamil Series</option>
+                                    <option value="malayalam_hdrip">Malayalam HDRip</option>
+                                    <option value="malayalam_tcrip">Malayalam TCrip</option>
+                                    <option value="malayalam_dubbed">Malayalam Dubbed</option>
+                                    <option value="malayalam_series">Malayalam Series</option>
+                                    <option value="telugu_tcrip">Telugu TCrip</option>
+                                    <option value="telugu_hdrip">Telugu HDRip</option>
+                                    <option value="telugu_dubbed">Telugu Dubbed</option>
+                                    <option value="telugu_series">Telugu Series</option>
+                                    <option value="hindi_tcrip">Hindi TCrip</option>
+                                    <option value="hindi_hdrip">Hindi HDRip</option>
+                                    <option value="hindi_dubbed">Hindi Dubbed</option>
+                                    <option value="hindi_series">Hindi Series</option>
+                                    <option value="kannada_tcrip">Kannada TCrip</option>
+                                    <option value="kannada_hdrip">Kannada HDRip</option>
+                                    <option value="kannada_series">Kannada Series</option>
+                                    <option value="english_tcrip">English TCrip</option>
+                                    <option value="english_hdrip">English HDRip</option>
+                                    <option value="english_series">English Series</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="scrapeAllOption" class="mb-3" style="display: none;">
+                            <label><input type="checkbox" name="scrape_all" id="scrape_all"> Scrape All Pages</label>
                         </div>
                     </div>
                     <!-- TV Metadata Input -->
@@ -98,7 +137,7 @@
                             <button type="button" class="btn btn-secondary" onclick="addGenre()">Add Genre</button>
                         </div>
                         <div class="mb-3">
-                            <label for="streams" class="form-label">Streams</label>
+                            <label class="form-label">Streams</label>
                             <div id="streamInputs"></div>
                             <button type="button" class="btn btn-primary" onclick="addStreamInput()">Add Stream</button>
                         </div>
