@@ -26,8 +26,6 @@ pillow = "*"
 httpx = "*"
 uvloop = { version = "*", markers = "sys_platform != 'win32'" }
 thefuzz = "*"
-playwright = "==1.38.0"
-playwright-stealth = "*"
 pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
 parse-torrent-title = {git = "git+https://github.com/mhdzumair/parse-torrent-title"}
 diskcache = "*"
@@ -38,7 +36,6 @@ gunicorn = "*"
 scrapy = "*"
 aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
 aiowebdav = "*"
-scrapy-playwright = "*"
 m3u-ipytv = "*"
 python-multipart = "*"
 

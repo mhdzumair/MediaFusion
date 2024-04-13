@@ -430,12 +430,12 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
         )
         if not matching_stream:
             existing_movie.streams.append(new_stream)
-        await existing_movie.save(link_rule=WriteRules.WRITE)
-        logging.info(
-            "Updated movie %s. total streams: %s",
-            existing_movie.title,
-            len(existing_movie.streams),
-        )
+            logging.info(
+                "Updated movie %s. Total streams: %d",
+                existing_movie.title,
+                len(existing_movie.streams),
+            )
+            await existing_movie.save(link_rule=WriteRules.WRITE)
     else:
         # If the movie doesn't exist, create a new one
         movie_data = MediaFusionMovieMetaData(

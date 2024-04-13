@@ -1,15 +1,17 @@
 import asyncio
 import logging
-import os
 import re
 from datetime import datetime
 from uuid import uuid4
 
 import redis.asyncio as redis_async
+import scrapy
 from beanie import WriteRules
 from itemadapter import ItemAdapter
 from scrapy import signals
 from scrapy.exceptions import DropItem
+from scrapy.http.request import NO_CALLBACK
+from scrapy.utils.defer import maybe_deferred_to_future
 
 from db import crud
 from db.config import settings
@@ -468,9 +470,8 @@ class FormulaParserPipeline:
         torrent_data["episodes"] = episodes
 
 
-class FormulaStorePipeline:
+class QueueBasedPipeline:
     def __init__(self):
-        self.redis = redis_async.Redis.from_url(settings.redis_url)
         self.queue = asyncio.Queue()
         self.processing_task = None
 
@@ -479,8 +480,6 @@ class FormulaStorePipeline:
 
     async def close(self):
         await self.queue.join()
-        await self.redis.aclose()
-        logging.info("Closed pipeline")
         self.processing_task.cancel()
 
     @classmethod
@@ -505,6 +504,19 @@ class FormulaStorePipeline:
                 logging.error(f"Error processing item: {e}")
             finally:
                 self.queue.task_done()
+
+    async def parse_item(self, item, spider):
+        raise NotImplementedError
+
+
+class FormulaStorePipeline(QueueBasedPipeline):
+    def __init__(self):
+        super().__init__()
+        self.redis = redis_async.Redis.from_url(settings.redis_url)
+
+    async def close(self):
+        await super().close()
+        await self.redis.aclose()
 
     async def parse_item(self, item, spider):
         if "title" not in item:
@@ -603,8 +615,8 @@ class FormulaStorePipeline:
             )  # Ensure episodes are ordered by episode number
 
 
-class TVStorePipeline:
-    async def process_item(self, item, spider):
+class TVStorePipeline(QueueBasedPipeline):
+    async def parse_item(self, item, spider):
         if "title" not in item:
             logging.warning(f"title not found in item: {item}")
             raise DropItem(f"title not found in item: {item}")
@@ -614,19 +626,42 @@ class TVStorePipeline:
         return item
 
 
-class TorrentFileParserPipeline:
-    def process_item(self, item, spider):
+class TorrentDownloadAndParsePipeline:
+    async def process_item(self, item, spider):
         adapter = ItemAdapter(item)
-        if "torrent_file_path" not in adapter:
-            raise DropItem(f"torrent_file_path not found in item: {item}")
+        torrent_link = adapter.get("torrent_link")
 
-        with open(item["torrent_file_path"], "rb") as torrent_file:
-            torrent_metadata = torrent.extract_torrent_metadata(
-                torrent_file.read(), item.get("is_parse_ptn", True)
+        if not torrent_link:
+            raise DropItem(f"No torrent link found in item: {item}")
+
+        response = await maybe_deferred_to_future(
+            spider.crawler.engine.download(
+                scrapy.Request(torrent_link, callback=NO_CALLBACK)
             )
-        os.remove(item["torrent_file_path"])
+        )
+
+        if response.status != 200:
+            spider.logger.error(
+                f"Failed to download torrent file: {response.url} with status {response.status}"
+            )
+            return item
+
+        # Validate the content-type of the response
+        if "application/x-bittorrent" not in response.headers.get(
+            "Content-Type", b""
+        ).decode("utf-8", "ignore"):
+            spider.logger.warning(
+                f"Unexpected Content-Type for {response.url}: {response.headers.get('Content-Type')}"
+            )
+            return item
+
+        torrent_metadata = torrent.extract_torrent_metadata(
+            response.body, item.get("is_parse_ptn", True)
+        )
+
         if not torrent_metadata:
             raise DropItem(f"Failed to extract torrent metadata: {item}")
+
         item.update(torrent_metadata)
         return item
 
@@ -714,16 +749,47 @@ class SportVideoParserPipeline:
         return None
 
 
-class MovieStorePipeline:
-    async def process_item(self, item, spider):
+class MovieStorePipeline(QueueBasedPipeline):
+    async def parse_item(self, item, spider):
         if "title" not in item:
             raise DropItem(f"title not found in item: {item}")
+
+        if item.get("type") != "movie":
+            return item
 
         await crud.save_movie_metadata(item, item.get("is_imdb", True))
         return item
 
 
-class LiveEventStorePipeline:
+class SeriesStorePipeline(QueueBasedPipeline):
+    async def parse_item(self, item, spider):
+        if "title" not in item:
+            raise DropItem(f"title not found in item: {item}")
+
+        if item.get("type") != "series":
+            return item
+        await crud.save_series_metadata(item)
+        return item
+
+
+class LiveEventStorePipeline(QueueBasedPipeline):
+    def __init__(self):
+        super().__init__()
+        self.redis = redis_async.Redis.from_url(settings.redis_url)
+
+    async def close(self):
+        await super().close()
+        await self.redis.aclose()
+
+    async def parse_item(self, item, spider):
+        if "title" not in item:
+            raise DropItem(f"name not found in item: {item}")
+
+        await crud.save_events_data(self.redis, item)
+        return item
+
+
+class RedisCacheURLPipeline:
     def __init__(self):
         self.redis = redis_async.Redis.from_url(settings.redis_url)
 
@@ -737,8 +803,8 @@ class LiveEventStorePipeline:
         return p
 
     async def process_item(self, item, spider):
-        if "title" not in item:
-            raise DropItem(f"name not found in item: {item}")
+        if "webpage_url" not in item:
+            raise DropItem(f"webpage_url not found in item: {item}")
 
-        await crud.save_events_data(self.redis, item)
+        await self.redis.sadd(item["scraped_url_key"], item["webpage_url"])
         return item
