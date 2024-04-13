@@ -227,7 +227,9 @@ class FormulaParserPipeline:
                 series = f"Formula {data['Series']}"
                 formula_round = f"R{data['Round']}" if data.get("Round") else None
                 formula_event = (
-                    data.get("Event").replace(".", " ") if data.get("Event") else None
+                    data.get("Event").replace(".", " ").replace(" Grand Prix", "")
+                    if data.get("Event")
+                    else None
                 )
                 torrent_data.update(
                     {
