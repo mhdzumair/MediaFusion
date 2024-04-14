@@ -28,7 +28,8 @@
 
 - **Scraper Support**:
   - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
-  - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua
+  - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua for catchup videos.
+  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, mrgamingstreams and crictime.com
   - 🎥 **TamilMV**: Specialized scraping for regional contents.
   - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
   - 📺 **TamilUltra & MHDTVPlay**: Get the best of Live TV channels right at your fingertips.
@@ -40,6 +41,10 @@
   - 🔐 **User Data Encryption**: Encrypt user data for heightened privacy and security, storing only encrypted URLs on Stremio.
   - 📋 **Watchlist Catalog Support**: Sync your streaming provider's watchlist directly into the MediaFusion catalog for a personalized touch.
   - ⚙️ **Stream Filters**: Customize your viewing experience with filters that sort streams by file size, resolution, seeders and much more.
+  - 🖼️ **Poster with Title**: Display the poster with the title for a more visually appealing catalog on sport events.
+  - 📺 **M3U Playlist Import**: Import M3U playlists for a more personalized streaming experience.
+  - ✨ **Manual Scraper Triggering UI**: Manage your scraping sources with a manual trigger UI for a more hands-on approach.
+  - 🗑️ **Delete Watchlist**: Delete your watchlist from the stremio for quick control over your content.
 
 ## 🚀 Installation
 
