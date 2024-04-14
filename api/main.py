@@ -509,7 +509,8 @@ async def get_poster(
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}")
     mediafusion_data.is_poster_working = False
-    await mediafusion_data.save()
+    if catalog_type != "events":
+        await mediafusion_data.save()
     raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 
