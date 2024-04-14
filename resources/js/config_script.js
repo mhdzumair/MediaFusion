@@ -11,6 +11,7 @@ const providerSignupLinks = {
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
     torbox: 'https://torbox.app/login?ref=mediafusion',
     premiumize: 'https://www.premiumize.me',
+    qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
 };
 
 // ---- OAuth-related Functions ----
