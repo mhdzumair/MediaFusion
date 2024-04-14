@@ -1,3 +1,4 @@
+import math
 import re
 import time
 from datetime import datetime
@@ -192,10 +193,10 @@ def free_up_space(seedr, required_space):
             break
         # delete sub folder torrents and folders
         sub_folder_content = seedr.listContents(folder["id"])
-        for sub_folder in sub_folder_content["folders"]:
-            seedr.deleteFolder(sub_folder["id"])
         for sub_folder_torrent in sub_folder_content["torrents"]:
             seedr.deleteTorrent(sub_folder_torrent["id"])
+        for sub_folder in sub_folder_content["folders"]:
+            seedr.deleteFolder(sub_folder["id"])
         seedr.deleteFolder(folder["id"])
         available_space += folder["size"]
 
@@ -229,3 +230,10 @@ def fetch_downloaded_info_hashes_from_seedr(user_data: UserData) -> list[str]:
         return []
 
     return [folder["name"] for folder in seedr.listContents()["folders"]]
+
+
+def delete_all_torrents_from_seedr(user_data: UserData):
+    """Deletes all torrents from the user's Seedr account."""
+    seedr = get_seedr_client(user_data)
+
+    free_up_space(seedr, math.inf)

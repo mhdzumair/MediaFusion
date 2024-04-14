@@ -1,6 +1,6 @@
 {
   "tamil_blasters": {
-	"homepage": "https://www.1tamilblasters.zip",
+	"homepage": "https://www.1tamilblasters.pm",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
@@ -45,7 +45,7 @@
 	}
   },
   "tamilmv": {
-	"homepage": "https://www.1tamilmv.lol",
+	"homepage": "https://www.1tamilmv.yt",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": [
@@ -94,7 +94,6 @@
 		  "70-hd-rips-dvd-rips-br-rips",
 		  "72-hdtv-sdtv-hdtv-rips"
 		],
-		"dubbed": "75-watch-kannada-movies-online",
 		"series": "77-web-series-tv-shows"
 	  },
 	  "english": {
@@ -218,10 +217,6 @@
 	  "72-hdtv-sdtv-hdtv-rips": {
 		"language": "kannada",
 		"media_type": "hdrip"
-	  },
-	  "75-watch-kannada-movies-online": {
-		"language": "kannada",
-		"media_type": "dubbed"
 	  },
 	  "77-web-series-tv-shows": {
 		"language": "kannada",

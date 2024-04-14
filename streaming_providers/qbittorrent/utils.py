@@ -5,9 +5,9 @@ from os import path
 from urllib.parse import urljoin, urlparse, quote
 
 from aiohttp import ClientConnectorError
-from aioqbt.api import AddFormBuilder, TorrentInfo
+from aioqbt.api import AddFormBuilder, TorrentInfo, InfoFilter
 from aioqbt.client import create_client, APIClient
-from aioqbt.exc import LoginError, AddTorrentError
+from aioqbt.exc import LoginError, AddTorrentError, NotFoundError
 from aiowebdav.client import Client as WebDavClient
 from aiowebdav.exceptions import RemoteResourceNotFound, NoConnection
 from thefuzz import fuzz
@@ -154,7 +154,7 @@ async def initialize_qbittorrent(user_data: UserData):
         raise ProviderException(
             "Invalid qBittorrent credentials", "invalid_credentials.mp4"
         )
-    except ClientConnectorError:
+    except (ClientConnectorError, NotFoundError):
         raise ProviderException(
             "Failed to connect to qBittorrent", "qbittorrent_error.mp4"
         )
@@ -333,3 +333,12 @@ async def fetch_info_hashes_from_webdav(
     ]
 
     return info_hashes
+
+
+async def delete_all_torrents_from_qbittorrent(user_data: UserData):
+    """Deletes all torrents from the qBittorrent server."""
+    async with initialize_qbittorrent(user_data) as qbittorrent:
+        torrents = await qbittorrent.torrents.info(filter=InfoFilter.COMPLETED)
+        await qbittorrent.torrents.delete(
+            hashes=[torrent.hash for torrent in torrents], delete_files=True
+        )

@@ -1,10 +1,10 @@
 {
   "id": "mhdzumair.addons.mediafusion",
-  "version": "3.7.5",
+  "version": "3.8.0",
   "name": "Media Fusion",
   "contactEmail": "mhdzumair@gmail",
-  "description": "Universal Stremio Add-on for Movies, Series & Live TV. Source: https://github.com/mhdzumair/MediaFusion",
-  "logo": "https://mediafusion.fun/static/images/mediafusion_logo.png",
+  "description": "Universal Stremio Add-on for Movies, Series, Live TV & Sports Events. Source: https://github.com/mhdzumair/MediaFusion",
+  "logo": "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png",
   "behaviorHints": {
 	"configurable": true,
 	"configurationRequired": false
@@ -16,11 +16,13 @@
 	  "types": [
 		"movie",
 		"series",
-		"tv"
+		"tv",
+		"events"
 	  ],
 	  "idPrefixes": [
 		"tt",
-		"mf"
+		"mf",
+		"dl"
 	  ]
 	},
 	{
@@ -28,18 +30,21 @@
 	  "types": [
 		"movie",
 		"series",
-		"tv"
+		"tv",
+		"events"
 	  ],
 	  "idPrefixes": [
 		"tt",
-		"mf"
+		"mf",
+		"dl"
 	  ]
 	}
   ],
   "types": [
 	"movie",
 	"series",
-	"tv"
+	"tv",
+	"events"
   ],
   "catalogs": [
 	{
@@ -384,47 +389,7 @@
 		{
 		  "name": "genre",
 		  "isRequired": false,
-		  "options": [
-			"Arabic",
-			"Ayna Ott",
-			"Bangla",
-			"Bhojpuri",
-			"Canada",
-			"Chad",
-			"English",
-			"Gujarati",
-			"Hindi",
-			"India",
-			"Kannada",
-			"Malayalam",
-			"Marathi",
-			"Music",
-			"News",
-			"Nexgtv",
-			"Punjabi",
-			"Qatar",
-			"Religious",
-			"Saudi Arabia",
-			"Sony",
-			"Spain",
-			"Sports",
-			"Sri Lanka",
-			"Tamil",
-			"Tamil Comedy",
-			"Tamil Entertainment",
-			"Tamil Infotainment",
-			"Tamil Kids",
-			"Tamil Movies",
-			"Tamil Music",
-			"Tamil News",
-			"Telugu",
-			"result",
-			"UK",
-			"United Kingdom",
-			"United States",
-			"Voot",
-			"Z5"
-		  ]
+		  "options": []
 		}
 	  ]
 	},
@@ -524,6 +489,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "live_sport_events",
+	  "type": "events",
+	  "name": "Live Sport Events",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"American Football",
+			"Basketball",
+			"Baseball",
+			"Cricket",
+			"Football",
+			"Fighting",
+			"Hockey",
+			"Tennis",
+			"Rugby",
+			"Golf",
+			"Dart",
+			"Afl",
+			"Motor Sport",
+			"Other Sports"
+		  ]
 		}
 	  ]
 	}

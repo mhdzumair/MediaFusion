@@ -1,6 +1,5 @@
-import hashlib
+import json
 import logging
-from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
 
@@ -10,7 +9,7 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 
-from db import schemas, models
+from db import schemas
 from db.config import settings
 from db.models import (
     MediaFusionMovieMetaData,
@@ -20,18 +19,19 @@ from db.models import (
     Episode,
     MediaFusionTVMetaData,
     TVStreams,
+    MediaFusionEventsMetaData,
 )
 from db.schemas import Stream, MetaIdProjection, TorrentStreamsList
-from scrapers import tamilmv
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
+from utils import crypto
 from utils.parser import (
     parse_stream_data,
     get_catalogs,
     search_imdb,
     parse_tv_stream_data,
     fetch_downloaded_info_hashes,
-    get_imdb_data,
+    ia,
 )
 
 
@@ -39,6 +39,7 @@ async def get_meta_list(
     user_data: schemas.UserData,
     catalog_type: str,
     catalog: str,
+    is_watchlist_catalog: bool,
     skip: int = 0,
     limit: int = 25,
 ) -> list[schemas.Meta]:
@@ -49,9 +50,7 @@ async def get_meta_list(
 
     query_conditions = []
 
-    if user_data.streaming_provider and catalog.startswith(
-        user_data.streaming_provider.service
-    ):
+    if is_watchlist_catalog:
         downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data)
         if not downloaded_info_hashes:
             return []
@@ -79,11 +78,17 @@ async def get_meta_list(
 async def get_tv_meta_list(
     genre: Optional[str] = None, skip: int = 0, limit: int = 25
 ) -> list[schemas.Meta]:
-    query = MediaFusionTVMetaData.find(
-        MediaFusionMovieMetaData.streams.is_working == True, fetch_links=True
-    )
     if genre:
-        query = query.find(In(MediaFusionTVMetaData.genres, [genre]))
+        query = MediaFusionTVMetaData.find(
+            In(MediaFusionTVMetaData.genres, [genre]),
+            MediaFusionMovieMetaData.streams.is_working == True,
+            fetch_links=True,
+        )
+    else:
+        query = MediaFusionTVMetaData.find(
+            MediaFusionMovieMetaData.streams.is_working == True,
+            fetch_links=True,
+        )
 
     tv_meta_list = (
         await query.skip(skip)
@@ -103,6 +108,25 @@ async def get_movie_data_by_id(
     movie_id: str, fetch_links: bool = False
 ) -> Optional[MediaFusionMovieMetaData]:
     movie_data = await MediaFusionMovieMetaData.get(movie_id, fetch_links=fetch_links)
+    # store it in the db for feature reference.
+    if not movie_data and movie_id.startswith("tt"):
+        try:
+            movie = ia.get_movie(movie_id.removeprefix("tt"), info="main")
+        except Exception:
+            return None
+
+        movie_data = MediaFusionMovieMetaData(
+            id=movie_id,
+            title=movie.get("title"),
+            year=movie.get("year"),
+            poster=movie.get("full-size cover url"),
+            background=movie.get("full-size cover url"),
+            streams=[],
+            description=movie.get("plot outline"),
+        )
+        await movie_data.save()
+        logging.info("Added metadata for movie %s", movie_data.title)
+
     return movie_data
 
 
@@ -112,6 +136,25 @@ async def get_series_data_by_id(
     series_data = await MediaFusionSeriesMetaData.get(
         series_id, fetch_links=fetch_links
     )
+
+    if not series_data and series_id.startswith("tt"):
+        try:
+            series = ia.get_movie(series_id.removeprefix("tt"), info="main")
+        except Exception:
+            return None
+
+        series_data = MediaFusionSeriesMetaData(
+            id=series_id,
+            title=series.get("title"),
+            year=series.get("year"),
+            poster=series.get("full-size cover url"),
+            background=series.get("full-size cover url"),
+            streams=[],
+            description=series.get("plot outline"),
+        )
+        await series_data.save()
+        logging.info("Added metadata for series %s", series_data.title)
+
     return series_data
 
 
@@ -171,6 +214,16 @@ async def get_cached_torrent_streams(
 async def get_movie_streams(
     user_data, secret_str: str, redis: Redis, video_id: str
 ) -> list[Stream]:
+    if video_id.startswith("dl"):
+        if not video_id.endswith(user_data.streaming_provider.service):
+            return []
+        return [
+            schemas.Stream(
+                name=f"MediaFusion {user_data.streaming_provider.service.title()} 🗑️💩",
+                description="🚨💀⚠️\nDelete all files in streaming provider",
+                url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
+            )
+        ]
     streams = await get_cached_torrent_streams(redis, video_id)
 
     if video_id.startswith("tt"):
@@ -187,12 +240,13 @@ async def get_movie_streams(
         ):
             movie_metadata = await get_movie_data_by_id(video_id, False)
             if movie_metadata:
-                title, year = movie_metadata.title, movie_metadata.year
-            else:
-                title, year = get_imdb_data(video_id)
-            if title:
                 streams = await get_streams_from_prowlarr(
-                    redis, streams, video_id, "movie", title, year
+                    redis,
+                    streams,
+                    video_id,
+                    "movie",
+                    movie_metadata.title,
+                    movie_metadata.year,
                 )
 
     return await parse_stream_data(streams, user_data, secret_str)
@@ -223,12 +277,15 @@ async def get_series_streams(
         ):
             series_metadata = await get_series_data_by_id(video_id, False)
             if series_metadata:
-                title, year = series_metadata.title, series_metadata.year
-            else:
-                title, year = get_imdb_data(video_id)
-            if title:
                 streams = await get_streams_from_prowlarr(
-                    redis, streams, video_id, "series", title, year, season, episode
+                    redis,
+                    streams,
+                    video_id,
+                    "series",
+                    series_metadata.title,
+                    series_metadata.year,
+                    season,
+                    episode,
                 )
 
     matched_episode_streams = filter(
@@ -240,14 +297,12 @@ async def get_series_streams(
     )
 
 
-async def get_tv_streams(video_id: str) -> list[Stream]:
+async def get_tv_streams(redis: Redis, video_id: str) -> list[Stream]:
     tv_streams = await TVStreams.find(
         {"meta_id": video_id, "is_working": True}
     ).to_list()
-    if not tv_streams:
-        return []
 
-    return await parse_tv_stream_data(tv_streams)
+    return await parse_tv_stream_data(tv_streams, redis)
 
 
 async def get_tv_stream_by_id(stream_id: str) -> TVStreams | None:
@@ -343,7 +398,11 @@ async def get_tv_meta(meta_id: str):
         return {}
 
     return {
-        "meta": {"_id": meta_id, **tv_data.model_dump()},
+        "meta": {
+            "_id": meta_id,
+            **tv_data.model_dump(),
+            "description": tv_data.description or tv_data.title,
+        }
     }
 
 
@@ -413,12 +472,12 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
         )
         if not matching_stream:
             existing_movie.streams.append(new_stream)
-        await existing_movie.save(link_rule=WriteRules.WRITE)
-        logging.info(
-            "Updated movie %s. total streams: %s",
-            existing_movie.title,
-            len(existing_movie.streams),
-        )
+            logging.info(
+                "Updated movie %s. Total streams: %d",
+                existing_movie.title,
+                len(existing_movie.streams),
+            )
+            await existing_movie.save(link_rule=WriteRules.WRITE)
     else:
         # If the movie doesn't exist, create a new one
         movie_data = MediaFusionMovieMetaData(
@@ -431,6 +490,7 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
             description=metadata.get("description"),
             runtime=metadata.get("runtime"),
             website=metadata.get("website"),
+            is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
         )
         try:
             await movie_data.insert(link_rule=WriteRules.WRITE)
@@ -529,22 +589,6 @@ async def save_series_metadata(metadata: dict):
 
 
 async def process_search_query(search_query: str, catalog_type: str) -> dict:
-    if settings.enable_tamilmv_search_scraper and catalog_type in ["movie", "series"]:
-        # check if the search query is already searched in for last 24 hours or not
-        last_search = await models.SearchHistory.find_one(
-            {
-                "query": search_query,
-                "last_searched": {"$gte": datetime.now() - timedelta(days=1)},
-            }
-        )
-        if not last_search:
-            await models.SearchHistory(query=search_query).save()
-            # if the query is not searched in last 24 hours, search in tamilmv
-            try:
-                await tamilmv.scrap_search_keyword(search_query)
-            except Exception as e:
-                logging.error(e)
-
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     elif catalog_type == "tv":
@@ -583,11 +627,14 @@ async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
 
 
 async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
-    channel_id = "mf" + hashlib.sha256(tv_metadata.title.encode()).hexdigest()[:10]
+    channel_id = "mf" + crypto.get_text_hash(tv_metadata.title)
 
     # Prepare the genres list
     genres = list(
-        set(tv_metadata.genres + [tv_metadata.country, tv_metadata.tv_language])
+        filter(
+            None,
+            set(tv_metadata.genres + [tv_metadata.country, tv_metadata.tv_language]),
+        )
     )
 
     # Ensure the channel document is upserted
@@ -619,7 +666,9 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
         stream_doc = TVStreams(
             url=stream.url,
             name=stream.name,
-            behaviorHints=stream.behaviorHints.model_dump(exclude_none=True),
+            behaviorHints=stream.behaviorHints.model_dump(exclude_none=True)
+            if stream.behaviorHints
+            else None,
             ytId=stream.ytId,
             source=stream.source,
             country=stream.country,
@@ -658,9 +707,150 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
     return channel_id
 
 
-async def delete_search_history():
-    # Delete search history older than 3 days
-    await models.SearchHistory.delete_many(
-        {"last_searched": {"$lt": datetime.now() - timedelta(days=3)}}
+async def save_events_data(redis: Redis, metadata: dict) -> str:
+    # Generate a unique event key
+    meta_id = "mf" + crypto.get_text_hash(metadata["title"])
+    event_key = f"event:{meta_id}"
+
+    # Attempt to fetch existing event data
+    existing_event_json = await redis.get(event_key)
+
+    if existing_event_json:
+        # Deserialize the existing event data
+        existing_event_data = MediaFusionEventsMetaData.model_validate_json(
+            existing_event_json
+        )
+        # Use a dictionary keyed by 'url' to ensure uniqueness of streams
+        existing_streams = {
+            stream.url or stream.ytId or stream.externalUrl: stream
+            for stream in existing_event_data.streams
+        }
+    else:
+        existing_streams = {}
+
+    # Update or add streams based on the uniqueness of 'url'
+    for stream in metadata["streams"]:
+        # Create a TVStreams instance for each stream
+        stream_instance = TVStreams(**stream)
+        existing_streams[
+            stream_instance.url or stream_instance.ytId or stream_instance.externalUrl
+        ] = stream_instance.dict()
+
+    # Update the event metadata with the updated list of streams
+    streams = list(existing_streams.values())
+
+    event_start_timestamp = metadata.get("event_start_timestamp", 0)
+
+    # Create or update the event data
+    events_data = MediaFusionEventsMetaData(
+        id=meta_id,
+        streams=streams,
+        title=metadata["title"],
+        genres=metadata.get("genres", []),
+        event_start_timestamp=event_start_timestamp,
+        poster=metadata.get("poster"),
+        background=metadata.get("background"),
+        logo=metadata.get("logo"),
+        is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
+        website=metadata.get("website"),
     )
-    logging.info("Deleted search history")
+
+    # Serialize the event data for storage
+    events_json = events_data.model_dump_json(exclude_none=True, by_alias=True)
+
+    # Set or update the event data in Redis with an appropriate TTL
+    cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 1200
+    await redis.set(event_key, events_json, ex=cache_ttl)
+
+    logging.info(
+        f"{'Updating' if existing_event_json else 'Inserting'} event data for {events_data.title} with event key {event_key}"
+    )
+
+    # Add the event key to a set of all events
+    await redis.zadd("events:all", {event_key: event_start_timestamp})
+
+    # Index the event by genre
+    for genre in events_data.genres:
+        await redis.zadd(f"events:genre:{genre}", {event_key: event_start_timestamp})
+
+    return event_key
+
+
+async def get_events_meta_list(
+    redis, genre=None, skip=0, limit=25
+) -> list[schemas.Meta]:
+    if genre:
+        key_pattern = f"events:genre:{genre}"
+    else:
+        key_pattern = "events:all"
+
+    # Fetch event keys sorted by timestamp in descending order
+    events_keys = await redis.zrevrange(key_pattern, skip, skip + limit - 1)
+    events = []
+
+    # Iterate over event keys, fetching and decoding JSON data
+    for key in events_keys:
+        events_json = await redis.get(key)
+        if events_json:
+            meta_data = schemas.Meta.model_validate_json(events_json)
+            meta_data.poster = f"{settings.host_url}/poster/events/{meta_data.id}.jpg"
+            events.append(meta_data)
+        else:
+            # Cleanup: Remove expired or missing event key from the index
+            await redis.zrem(key_pattern, key)
+
+    return events
+
+
+async def get_event_meta(redis, meta_id: str) -> dict:
+    events_key = f"event:{meta_id}"
+    events_json = await redis.get(events_key)
+    if not events_json:
+        return {}
+
+    event_data = MediaFusionTVMetaData.model_validate_json(events_json)
+    return {
+        "meta": {
+            "_id": meta_id,
+            **event_data.model_dump(),
+            "description": event_data.description or event_data.title,
+        }
+    }
+
+
+async def get_event_data_by_id(redis, meta_id: str) -> MediaFusionEventsMetaData | None:
+    event_key = f"event:{meta_id}"
+    events_json = await redis.get(event_key)
+    if not events_json:
+        return None
+
+    return MediaFusionEventsMetaData.model_validate_json(events_json)
+
+
+async def get_event_streams(redis, meta_id: str) -> list[Stream]:
+    event_key = f"event:{meta_id}"
+    event_json = await redis.get(event_key)
+    if not event_json:
+        return await parse_tv_stream_data([], redis)
+
+    event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
+    return await parse_tv_stream_data(event_data.streams, redis)
+
+
+async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
+    if catalog_type == "movie":
+        meta_class = MediaFusionMovieMetaData
+    elif catalog_type == "tv":
+        meta_class = MediaFusionTVMetaData
+    else:
+        meta_class = MediaFusionSeriesMetaData
+
+    genres = await redis.get(f"{catalog_type}_genres")
+    if genres:
+        return json.loads(genres)
+
+    genres = await meta_class.distinct("genres", {"genres": {"$ne": ""}})
+
+    # cache the genres for 30 minutes
+    await redis.set(f"{catalog_type}_genres", json.dumps(genres), ex=1800)
+    return genres

@@ -29,7 +29,7 @@ async def get_streams_from_prowlarr(
     video_id: str,
     catalog_type: str,
     title: str,
-    year: str,
+    year: int,
     season: int = None,
     episode: int = None,
 ):
@@ -43,13 +43,29 @@ async def get_streams_from_prowlarr(
             scrap_movies_streams_from_prowlarr, video_id, title, year
         )
         streams.extend(new_streams)
+        if settings.prowlarr_live_title_search:
+            new_streams = await fetch_stream_data_with_timeout(
+                scrape_movie_title_streams_from_prowlarr, video_id, title, year
+            )
+            streams.extend(new_streams)
+        # run background task for title search to get more streams
         background_movie_title_search.send(video_id, title, year)
     elif catalog_type == "series":
         new_streams = await fetch_stream_data_with_timeout(
-            scrap_series_streams_from_prowlarr, video_id, title, season, episode
+            scrap_series_streams_from_prowlarr, video_id, title, year, season, episode
         )
         streams.extend(new_streams)
-        background_series_title_search.send(video_id, title, season, episode)
+        if settings.prowlarr_live_title_search:
+            new_streams = await fetch_stream_data_with_timeout(
+                scrape_series_title_streams_from_prowlarr,
+                video_id,
+                title,
+                year,
+                season,
+                episode,
+            )
+            streams.extend(new_streams)
+        background_series_title_search.send(video_id, title, year, season, episode)
     # Cache the data for 24 hours
     await redis.set(
         cache_key,
@@ -92,7 +108,7 @@ async def get_prowlarr_client(timeout: int = 10):
 
 
 async def fetch_stream_data(
-    url: str, params: dict, timeout: int = 10
+    url: str, params: dict, timeout: int = 120
 ) -> dict | list[dict]:
     """Fetch stream data asynchronously."""
     async with get_prowlarr_client(timeout) as client:
@@ -110,7 +126,7 @@ async def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
 
 
 async def scrap_movies_streams_from_prowlarr(
-    video_id: str, title: str, year: str
+    video_id: str, title: str, year: int
 ) -> list[TorrentStreams]:
     """
     Perform a movie stream search by IMDb ID from Prowlarr, processing immediately.
@@ -136,6 +152,38 @@ async def scrap_movies_streams_from_prowlarr(
     )
 
 
+async def scrape_movie_title_streams_from_prowlarr(
+    video_id: str, title: str, year: int, max_process: int = None
+) -> list[TorrentStreams]:
+    """
+    Perform a movie stream search by title and year from Prowlarr, processing immediately.
+    """
+    url = f"{settings.prowlarr_url}/api/v1/search"
+    params_title = {
+        "query": title,
+        "categories": [2000],  # Movies
+        "type": "search",
+    }
+
+    try:
+        title_search_result = await fetch_stream_data(url, params_title)
+    except Exception as e:
+        logging.warning(
+            f"Failed to fetch API data from Prowlarr for {title} ({year}): {e}"
+        )
+        return []
+
+    logging.info(
+        f"Found {len(title_search_result)} streams for {title} ({year}) by title"
+    )
+    stream_results = (
+        title_search_result[:max_process] if max_process else title_search_result
+    )
+    return await parse_and_store_movie_stream_data(
+        video_id, title, year, stream_results
+    )
+
+
 @dramatiq.actor(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
@@ -143,21 +191,18 @@ async def scrap_movies_streams_from_prowlarr(
     retry_when=should_retry_prowlarr_scrap,
     priority=100,
 )
-async def background_movie_title_search(video_id: str, title: str, year: str):
-    url = f"{settings.prowlarr_url}/api/v1/search"
-    params_title = {
-        "query": title,
-        "categories": [2000],  # Movies
-        "type": "search",
-    }
-    title_search = await fetch_stream_data(url, params_title, timeout=100)
-    if title_search:
-        await parse_and_store_movie_stream_data(video_id, title, year, title_search)
-        logging.info(f"Background title search completed for {title} ({year})")
+async def background_movie_title_search(video_id: str, title: str, year: int):
+    await scrape_movie_title_streams_from_prowlarr(video_id, title, year)
+    logging.info(f"Background title search completed for {title} ({year})")
 
 
 async def scrap_series_streams_from_prowlarr(
-    video_id: str, title: str, season: int = None, episode: int = None
+    video_id: str,
+    title: str,
+    year: int,
+    season: int = None,
+    episode: int = None,
+    max_process: int = None,
 ) -> list[TorrentStreams]:
     """
     Perform a series stream search by IMDb ID, season, and episode from Prowlarr, processing immediately.
@@ -170,7 +215,7 @@ async def scrap_series_streams_from_prowlarr(
     }
 
     try:
-        imdb_search = await fetch_stream_data(url, params_imdb)
+        imdb_search_result = await fetch_stream_data(url, params_imdb)
     except Exception as e:
         logging.warning(
             f"Failed to fetch API data from Prowlarr for {title} ({season}) ({episode}): {e}"
@@ -178,23 +223,23 @@ async def scrap_series_streams_from_prowlarr(
         return []
 
     logging.info(
-        f"Found {len(imdb_search)} streams for {title} ({season}) ({episode}) with IMDb ID"
+        f"Found {len(imdb_search_result)} streams for {title} ({season}) ({episode}) with IMDb ID"
     )
+    stream_results = (
+        imdb_search_result[:max_process] if max_process else imdb_search_result
+    )
+
     return await parse_and_store_series_stream_data(
-        video_id, title, season, imdb_search[: settings.prowlarr_immediate_max_process]
+        video_id, title, year, season, stream_results
     )
 
 
-@dramatiq.actor(
-    time_limit=60 * 60 * 1000,  # 60 minutes
-    min_backoff=2 * 60 * 1000,  # 2 minutes
-    max_backoff=60 * 60 * 1000,  # 60 minutes
-    retry_when=should_retry_prowlarr_scrap,
-    priority=100,
-)
-async def background_series_title_search(
-    video_id: str, title: str, season: int, episode: int
-):
+async def scrape_series_title_streams_from_prowlarr(
+    video_id: str, title: str, year: int, season: int, episode: int
+) -> list[TorrentStreams]:
+    """
+    Perform a series stream search by title, season, and episode from Prowlarr, processing immediately.
+    """
     url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
         "query": title,
@@ -206,12 +251,40 @@ async def background_series_title_search(
     if season is not None and episode is not None:
         params_title.update({"season": season, "episode": episode})
 
-    title_search = await fetch_stream_data(url, params_title, timeout=60)
-    if title_search:
-        await parse_and_store_series_stream_data(video_id, title, season, title_search)
-        logging.info(
-            f"Background title search completed for {title} S{season}E{episode}"
+    try:
+        title_search = await fetch_stream_data(url, params_title)
+    except Exception as e:
+        logging.warning(
+            f"Failed to fetch API data from Prowlarr for {title} ({season}) ({episode}): {e}"
         )
+        return []
+
+    logging.info(
+        f"Found {len(title_search)} streams for {title} ({season}) ({episode}) by title"
+    )
+    return await parse_and_store_series_stream_data(
+        video_id,
+        title,
+        year,
+        season,
+        title_search[: settings.prowlarr_immediate_max_process],
+    )
+
+
+@dramatiq.actor(
+    time_limit=60 * 60 * 1000,  # 60 minutes
+    min_backoff=2 * 60 * 1000,  # 2 minutes
+    max_backoff=60 * 60 * 1000,  # 60 minutes
+    retry_when=should_retry_prowlarr_scrap,
+    priority=100,
+)
+async def background_series_title_search(
+    video_id: str, title: str, year: int, season: int | None, episode: int | None
+):
+    await scrape_series_title_streams_from_prowlarr(
+        video_id, title, year, season, episode
+    )
+    logging.info(f"Background title search completed for {title} S{season}E{episode}")
 
 
 async def get_torrent_data_from_prowlarr(
@@ -483,7 +556,7 @@ async def parse_and_store_stream(
     stream_data: dict,
     video_id: str,
     title: str,
-    year: str,
+    year: int,
     catalog_type: str,
     season: int = None,
 ) -> tuple[TorrentStreams | None, bool]:
@@ -531,7 +604,7 @@ async def parse_and_store_stream(
 async def parse_and_store_movie_stream_data(
     video_id: str,
     title: str,
-    year: str,
+    year: int,
     stream_data: list,
 ) -> list[TorrentStreams]:
     if not stream_data:
@@ -567,6 +640,7 @@ async def parse_and_store_movie_stream_data(
 async def parse_and_store_series_stream_data(
     video_id: str,
     title: str,
+    year: int,
     season: int,
     stream_data: list,
 ) -> list[TorrentStreams]:
@@ -584,8 +658,9 @@ async def parse_and_store_series_stream_data(
         circuit_breaker,
         video_id,
         title,
-        "series",
-        season,
+        year=year,
+        catalog_type="series",
+        season=season,
     )
 
     streams = [stream for stream, _ in parsed_results if stream is not None]

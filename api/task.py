@@ -8,7 +8,7 @@ from scrapers import prowlarr  # noqa: F401
 from mediafusion_scrapy import task  # noqa: F401
 from utils import torrent
 from utils import validation_helper  # noqa: F401
-from scrapers import tamil_blasters, tamilmv  # noqa: F401
+from scrapers import tv  # noqa: F401
 
 
 async def async_setup():

@@ -11,6 +11,7 @@ from urllib3.util.retry import Retry
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
 from utils.const import UA_HEADER
+from utils.parser import get_json_data
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
 
 # set httpx logging level
@@ -123,8 +124,7 @@ async def download_and_save_torrent(
 
 
 def get_scraper_config(site_name: str, get_key: str) -> dict:
-    with open("resources/json/scraper_config.json") as file:
-        config = json.load(file)
+    config = get_json_data("resources/json/scraper_config.json")
 
     return config.get(site_name, {}).get(get_key, {})
 

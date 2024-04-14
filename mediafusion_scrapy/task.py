@@ -4,6 +4,8 @@ import dramatiq
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
+from utils.wrappers import worker_rate_limit
+
 
 def run_spider_in_process(spider_name, *args, **kwargs):
     """
@@ -15,6 +17,7 @@ def run_spider_in_process(spider_name, *args, **kwargs):
 
 
 @dramatiq.actor(priority=5, time_limit=60 * 60 * 1000)
+@worker_rate_limit(limit=1, use_args_in_key=True)
 def run_spider(spider_name: str, *args, **kwargs):
     """
     Wrapper function to run the spider in a separate process.
@@ -25,4 +28,4 @@ def run_spider(spider_name: str, *args, **kwargs):
 
 
 if __name__ == "__main__":
-    run_spider_in_process("sport_video")
+    run_spider_in_process("formula_tgx", scrape_all="True")

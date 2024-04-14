@@ -274,3 +274,17 @@ async def fetch_downloaded_info_hashes_from_pikpak(user_data: UserData) -> list[
     return [
         file["name"] for file in file_list_content["files"] if file["name"] != "My Pack"
     ]
+
+
+async def delete_all_torrents_from_pikpak(user_data: UserData):
+    """Deletes all torrents from the PikPak account."""
+    try:
+        pikpak = await initialize_pikpak(user_data)
+    except ProviderException:
+        return
+
+    file_list_content = await pikpak.file_list()
+    file_ids = [
+        file["id"] for file in file_list_content["files"] if file["name"] != "My Pack"
+    ]
+    await pikpak.delete_forever(file_ids)

@@ -58,6 +58,7 @@ class TVStreams(Document):
     name: str
     url: str | None = None
     ytId: str | None = None
+    externalUrl: str | None = None
     source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
@@ -72,6 +73,7 @@ class MediaFusionMetaData(Document):
     year: Optional[int] = None
     poster: Optional[str] = None
     is_poster_working: Optional[bool] = True
+    is_add_title_to_poster: Optional[bool] = False
     background: Optional[str] = None
     streams: list[Link[TorrentStreams]]
     type: str
@@ -97,13 +99,16 @@ class MediaFusionSeriesMetaData(MediaFusionMetaData):
 
 class MediaFusionTVMetaData(MediaFusionMetaData):
     type: str = "tv"
-    country: str
-    tv_language: str
+    country: str | None = None
+    tv_language: str | None = None
     logo: Optional[str] = None
-    genres: Optional[list[str]] = None
+    genres: list[str] = Field(default_factory=list)
     streams: list[Link[TVStreams]]
 
 
-class SearchHistory(Document):
-    query: str
-    last_searched: datetime = Field(default_factory=datetime.now)
+class MediaFusionEventsMetaData(MediaFusionMetaData):
+    type: str = "events"
+    event_start_timestamp: Optional[int] = None
+    logo: Optional[str] = None
+    genres: list[str] = Field(default_factory=list)
+    streams: list[TVStreams]

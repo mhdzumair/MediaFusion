@@ -11,7 +11,6 @@ from db.models import (
     TorrentStreams,
     TVStreams,
     MediaFusionTVMetaData,
-    SearchHistory,
 )
 
 
@@ -32,7 +31,6 @@ async def init():
                     TorrentStreams,
                     TVStreams,
                     MediaFusionTVMetaData,
-                    SearchHistory,
                 ],
                 multiprocessing_mode=True,
             )

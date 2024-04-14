@@ -1,3 +1,4 @@
+import random
 import re
 from datetime import datetime
 
@@ -12,15 +13,14 @@ from utils.torrent import parse_magnet
 
 class FormulaTgxSpider(scrapy.Spider):
     name = "formula_tgx"
-    allowed_domains = ["torrentgalaxy.to", "tgx.rs"]
-    start_urls = [
-        "https://torrentgalaxy.to/profile/egortech/torrents/0",
-        "https://tgx.rs/profile/egortech/torrents/0",
+    allowed_domains = ["torrentgalaxy.to", "tgx.rs", "torrentgalaxy.mx", "tgx.sb"]
+    formula_uploader_profiles = [
+        "egortech",
+        "F1Carreras",
+        "smcgill1969",
     ]
+
     formula1_keyword_patterns = re.compile(r"formula[ .+]*[1234e]+", re.IGNORECASE)
-    uploader_parsing_functions = {
-        "egortech": "parse_torrent_details_egortech",
-    }
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -41,14 +41,20 @@ class FormulaTgxSpider(scrapy.Spider):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.redis.aclose()
 
+    def start_requests(self):
+        for uploader_profile in self.formula_uploader_profiles:
+            yield scrapy.Request(
+                f"https://{random.choice(self.allowed_domains)}/profile/{uploader_profile}/torrents/0",
+                self.parse,
+                meta={"uploader_profile": uploader_profile},
+            )
+
     async def parse(self, response, **kwargs):
-        uploader_profile_name = response.url.split("/")[4]
+        uploader_profile_name = response.meta["uploader_profile"]
         self.logger.info(f"Scraping torrents from {uploader_profile_name}")
-        parsing_function_name = self.uploader_parsing_functions[uploader_profile_name]
-        parsing_function = getattr(self, parsing_function_name, None)
 
         # Extract the last page number only once at the beginning
-        if self.scrape_all and response.url in self.start_urls:
+        if self.scrape_all and response.url.endswith("0"):
             last_page_number = response.css(
                 "ul.pagination li.page-item:not(.disabled) a::attr(href)"
             ).re(r"/profile/.*/torrents/(\d+)")[-2]
@@ -61,7 +67,7 @@ class FormulaTgxSpider(scrapy.Spider):
                 next_page_url = (
                     f"{response.url.split('/torrents/')[0]}/torrents/{page_number}"
                 )
-                yield response.follow(next_page_url, self.parse)
+                yield response.follow(next_page_url, self.parse, meta=response.meta)
 
         # Extract torrents from the page
         for torrent in response.css("div.tgxtablerow.txlight"):
@@ -98,6 +104,8 @@ class FormulaTgxSpider(scrapy.Spider):
                 "torrent_name": torrent_name,
                 "torrent_link": torrent_link,
                 "magnet_link": magnet_link,
+                "background": "https://i.postimg.cc/S4wcrGRZ/f1background.png?dl=1",
+                "logo": "https://i.postimg.cc/Sqf4V8tj/f1logo.png?dl=1",
                 "seeders": seeders,
                 "torrent_page_link": torrent_page_link,
                 "unique_id": tgx_unique_id,
@@ -116,11 +124,11 @@ class FormulaTgxSpider(scrapy.Spider):
             else:
                 yield response.follow(
                     torrent_page_link,
-                    parsing_function,
+                    self.parse_torrent_details,
                     meta={"torrent_data": torrent_data},
                 )
 
-    def parse_torrent_details_egortech(self, response):
+    def parse_torrent_details(self, response):
         torrent_data = response.meta["torrent_data"]
 
         # Extracting file details and sizes
@@ -130,23 +138,35 @@ class FormulaTgxSpider(scrapy.Spider):
             file_size = row.xpath('td[@class="table_col2"]/text()').get()
             if file_name and file_size:
                 file_details.append({"file_name": file_name, "file_size": file_size})
+        if not file_details:
+            self.logger.warning(
+                f"File details not found for {torrent_data['torrent_name']}. Retrying"
+            )
+            yield response.follow(
+                response.url,
+                self.parse_torrent_details,
+                meta={"torrent_data": torrent_data},
+            )
+            return
         torrent_data["file_details"] = file_details
 
         cover_image_url = response.xpath(
-            "//center/img[contains(@class, 'img-responsive') and contains(@data-src, '.png')]/@data-src"
+            "//img[contains(@class, 'img-responsive') and contains(@data-src, '.png')]/@data-src"
         ).get()
         torrent_data["poster"] = cover_image_url
-        torrent_data["background"] = cover_image_url
 
         # Getting the description for parsing video, audio, and other details
         torrent_description = "".join(
             response.xpath(
                 "//font/following-sibling::*[1]/following-sibling::text() | "
                 "//font/following-sibling::*[1]/following-sibling::*//text() | "
-                "//center/font/following::br/following-sibling::text()"
+                "//center/font/following::br/following-sibling::text() | "
+                "//strong/following-sibling::text()[normalize-space()] | "
+                "//strong/following-sibling::br/following-sibling::text()[normalize-space()] | "
+                "//div[contains(@class, 'container-fluid')]//text()[normalize-space()]"
             ).extract()
         )
-        torrent_data["description"] = torrent_description
+        torrent_data["description"] = torrent_description.replace("\xa0", " ")
 
         total_size = response.xpath(
             "//div[b='Total Size:']/following-sibling::div/text()"
@@ -161,7 +181,7 @@ class FormulaTgxSpider(scrapy.Spider):
             )
             yield response.follow(
                 response.url,
-                self.parse_torrent_details_egortech,
+                self.parse_torrent_details,
                 meta={"torrent_data": torrent_data},
             )
 

@@ -1,11 +1,12 @@
+import asyncio
 import json
 import logging
 from io import BytesIO
 from typing import Literal
 
+import aiohttp
 import redis.asyncio as redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from fastapi import (
     FastAPI,
     Request,
@@ -21,12 +22,11 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import database, crud, schemas
 from db.config import settings
-from mediafusion_scrapy.task import run_spider
-from scrapers.tamilmv import run_tamilmv_scraper
-from scrapers.tamil_blasters import run_tamil_blasters_scraper
+from scrapers.routes import router as scrapers_router
+from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, wrappers
-from utils.parser import generate_manifest
+from utils import crypto, torrent, poster, const, wrappers, lock
+from utils.parser import generate_manifest, get_json_data
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -50,6 +50,15 @@ app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
 TEMPLATES = Jinja2Templates(directory="resources")
+DELETE_ALL_META = schemas.Meta(
+    **const.DELETE_ALL_WATCHLIST_META,
+    poster=f"{settings.host_url}/static/images/delete_all_poster.jpg",
+    background=f"{settings.host_url}/static/images/delete_all_background.png",
+)
+
+DELETE_ALL_META_ITEM = {
+    "meta": DELETE_ALL_META.model_dump(by_alias=True, exclude_none=True)
+}
 
 
 def get_user_data(request: Request) -> schemas.UserData:
@@ -64,21 +73,18 @@ async def init_server():
 
 @app.on_event("startup")
 async def start_scheduler():
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        crud.delete_search_history, CronTrigger(day="*/1"), name="delete_search_history"
-    )
-    setup_scheduler(scheduler)
-    scheduler.start()
-    app.state.scheduler = scheduler
+    if await lock.acquire_lock():
+        scheduler = AsyncIOScheduler()
+        setup_scheduler(scheduler)
+        scheduler.start()
+        app.state.scheduler = scheduler
 
 
 @app.on_event("shutdown")
 async def stop_scheduler():
-    try:
+    if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown(wait=False)
-    except AttributeError:
-        pass
+        await lock.release_lock()
 
 
 @app.on_event("shutdown")
@@ -88,8 +94,7 @@ async def shutdown_event():
 
 @app.get("/", tags=["home"])
 async def get_home(request: Request):
-    with open("resources/manifest.json") as file:
-        manifest = json.load(file)
+    manifest = get_json_data("resources/manifest.json")
     return TEMPLATES.TemplateResponse(
         "html/home.html",
         {
@@ -151,7 +156,8 @@ async def configure(
             "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
             "sorting_options": const.TORRENT_SORTING_PRIORITY,
-            "authentication_required": settings.api_password is not None,
+            "authentication_required": settings.api_password is not None
+            and not settings.is_public_instance,
         },
     )
 
@@ -160,13 +166,14 @@ async def configure(
 @app.get("/{secret_str}/manifest.json", tags=["manifest"])
 @wrappers.auth_required
 async def get_manifest(
-    response: Response, user_data: schemas.UserData = Depends(get_user_data)
+    response: Response,
+    request: Request,
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    with open("resources/manifest.json") as file:
-        manifest = json.load(file)
-    return generate_manifest(manifest, user_data)
+    manifest = get_json_data("resources/manifest.json")
+    return await generate_manifest(manifest, user_data, request.app.state.redis)
 
 
 @app.get(
@@ -216,7 +223,7 @@ async def get_manifest(
 async def get_catalog(
     response: Response,
     request: Request,
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     catalog_id: str,
     skip: int = 0,
     genre: str = None,
@@ -229,9 +236,14 @@ async def get_catalog(
         skip = int(skip) if skip and skip.isdigit() else 0
 
     cache_key = f"{catalog_type}_{catalog_id}_{skip}_{genre}_catalog"
+    is_watchlist_catalog = False
     if user_data.streaming_provider and catalog_id.startswith(
         user_data.streaming_provider.service
     ):
+        response.headers.update(const.NO_CACHE_HEADERS)
+        cache_key = None
+        is_watchlist_catalog = True
+    elif catalog_type == "events":
         response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
 
@@ -243,15 +255,35 @@ async def get_catalog(
     metas = schemas.Metas()
     if catalog_type == "tv":
         metas.metas.extend(await crud.get_tv_meta_list(genre, skip))
+    elif catalog_type == "events":
+        metas.metas.extend(
+            await crud.get_events_meta_list(request.app.state.redis, genre, skip)
+        )
     else:
         metas.metas.extend(
-            await crud.get_meta_list(user_data, catalog_type, catalog_id, skip)
+            await crud.get_meta_list(
+                user_data, catalog_type, catalog_id, is_watchlist_catalog, skip
+            )
         )
+        if (
+            is_watchlist_catalog
+            and catalog_type == "movie"
+            and metas.metas
+            and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(
+                user_data.streaming_provider.service
+            )
+        ):
+            delete_all_meta = DELETE_ALL_META.model_copy()
+            delete_all_meta.id = delete_all_meta.id.format(
+                user_data.streaming_provider.service
+            )
+            metas.metas.insert(0, delete_all_meta)
 
     if cache_key:
-        # Cache the data with a TTL of 30 minutes
         await request.app.state.redis.set(
-            cache_key, metas.model_dump_json(exclude_none=True, by_alias=True), ex=1800
+            cache_key,
+            metas.model_dump_json(exclude_none=True, by_alias=True),
+            ex=settings.meta_cache_ttl,
         )
 
     return metas
@@ -304,7 +336,7 @@ async def search_meta(
 )
 @wrappers.auth_required
 async def get_meta(
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     meta_id: str,
     response: Response,
     request: Request,
@@ -321,15 +353,22 @@ async def get_meta(
         return meta_data
 
     if catalog_type == "movie":
-        data = await crud.get_movie_meta(meta_id)
+        if meta_id.startswith("dl"):
+            delete_all_meta_item = DELETE_ALL_META_ITEM.copy()
+            delete_all_meta_item["meta"]["_id"] = meta_id
+            data = delete_all_meta_item
+        else:
+            data = await crud.get_movie_meta(meta_id)
     elif catalog_type == "series":
         data = await crud.get_series_meta(meta_id)
+    elif catalog_type == "events":
+        data = await crud.get_event_meta(request.app.state.redis, meta_id)
     else:
         data = await crud.get_tv_meta(meta_id)
 
     # Cache the data with a TTL of 30 minutes
     # If the data is not found, cached the empty data to avoid db query.
-    await request.app.state.redis.set(cache_key, json.dumps(data), ex=1800)
+    await request.app.state.redis.set(cache_key, json.dumps(data, default=str), ex=1800)
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
@@ -364,7 +403,7 @@ async def get_meta(
 @wrappers.auth_required
 @wrappers.rate_limit(20, 60 * 60, "stream")
 async def get_streams(
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     video_id: str,
     response: Response,
     request: Request,
@@ -376,16 +415,33 @@ async def get_streams(
     response.headers.update(const.DEFAULT_HEADERS)
 
     if catalog_type == "movie":
-        fetched_streams = await crud.get_movie_streams(
-            user_data, secret_str, request.app.state.redis, video_id
-        )
+        if video_id.startswith("dl"):
+            if video_id == f"dl{user_data.streaming_provider.service}":
+                fetched_streams = [
+                    schemas.Stream(
+                        name=f"MediaFusion {user_data.streaming_provider.service.title()} 🗑️💩🚨",
+                        description=f"🚨💀⚠ Delete all files in {user_data.streaming_provider.service} watchlist.",
+                        url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all_watchlist",
+                    )
+                ]
+            else:
+                raise HTTPException(status_code=404, detail="Meta ID not found.")
+        else:
+            fetched_streams = await crud.get_movie_streams(
+                user_data, secret_str, request.app.state.redis, video_id
+            )
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
             user_data, secret_str, request.app.state.redis, video_id, season, episode
         )
+    elif catalog_type == "events":
+        fetched_streams = await crud.get_event_streams(
+            request.app.state.redis, video_id
+        )
+        response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
-        fetched_streams = await crud.get_tv_streams(video_id)
+        fetched_streams = await crud.get_tv_streams(request.app.state.redis, video_id)
 
     return {"streams": fetched_streams}
 
@@ -400,7 +456,7 @@ async def encrypt_user_data(user_data: schemas.UserData):
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
 @wrappers.exclude_rate_limit
 async def get_poster(
-    catalog_type: Literal["movie", "series", "tv"],
+    catalog_type: Literal["movie", "series", "tv", "events"],
     mediafusion_id: str,
     request: Request,
 ):
@@ -417,6 +473,10 @@ async def get_poster(
         mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
     elif catalog_type == "series":
         mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
+    elif catalog_type == "events":
+        mediafusion_data = await crud.get_event_data_by_id(
+            request.app.state.redis, mediafusion_id
+        )
     else:
         mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
 
@@ -427,7 +487,9 @@ async def get_poster(
         raise HTTPException(status_code=404, detail="Poster not found.")
 
     try:
-        image_byte_io = await poster.create_poster(mediafusion_data)
+        image_byte_io = await poster.create_poster(
+            mediafusion_data, request.app.state.redis
+        )
         # Convert BytesIO to bytes for Redis
         image_bytes = image_byte_io.getvalue()
         # Save the generated image to Redis. expire in 7 days
@@ -437,11 +499,18 @@ async def get_poster(
         return StreamingResponse(
             image_byte_io, media_type="image/jpeg", headers=const.DEFAULT_HEADERS
         )
+    except asyncio.TimeoutError:
+        logging.error("Poster generation timeout.")
+        raise HTTPException(status_code=404, detail="Poster generation timeout.")
+    except aiohttp.ClientResponseError as e:
+        logging.error(f"Failed to create poster: {e}, status: {e.status}")
+        if e.status != 404:
+            raise HTTPException(status_code=404, detail="Failed to create poster.")
     except Exception as e:
         logging.error(f"Unexpected error while creating poster: {e}")
-        mediafusion_data.is_poster_working = False
-        await mediafusion_data.save()
-        raise HTTPException(status_code=404, detail="Failed to create poster.")
+    mediafusion_data.is_poster_working = False
+    await mediafusion_data.save()
+    raise HTTPException(status_code=404, detail="Failed to create poster.")
 
 
 @app.get("/scraper", tags=["scraper"])
@@ -455,27 +524,8 @@ async def get_scraper(request: Request):
     )
 
 
-@app.post("/scraper/run", tags=["scraper"])
-async def run_scraper_task(task: schemas.ScraperTask):
-    if settings.api_password and task.api_password != settings.api_password:
-        raise HTTPException(status_code=401, detail="Invalid API password.")
-
-    if task.scraper_type == "tamilmv":
-        run_tamilmv_scraper.send(task.pages, task.start_page)
-    elif task.scraper_type == "tamilblasters":
-        run_tamil_blasters_scraper.send(task.pages, task.start_page)
-    elif task.scraper_type == "scrapy":
-        if not task.spider_name:
-            raise HTTPException(
-                status_code=400, detail="Spider name is required for scrapy tasks."
-            )
-        run_spider.send(task.spider_name)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid scraper type.")
-
-    return {"status": f"Scraping {task.scraper_type} task has been scheduled."}
-
-
 app.include_router(
     streaming_provider_router, prefix="/streaming_provider", tags=["streaming_provider"]
 )
+
+app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])

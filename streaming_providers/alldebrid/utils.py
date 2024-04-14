@@ -86,3 +86,11 @@ def fetch_downloaded_info_hashes_from_ad(user_data: UserData) -> list[str]:
 
     except ProviderException:
         return []
+
+
+def delete_all_torrents_from_ad(user_data: UserData):
+    """Deletes all torrents from the AllDebrid account."""
+    ad_client = AllDebrid(token=user_data.streaming_provider.token)
+    torrents = ad_client.get_user_torrent_list()
+    for torrent in torrents["data"]["magnets"]:
+        ad_client.delete_torrent(torrent["id"])

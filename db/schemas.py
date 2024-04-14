@@ -58,6 +58,7 @@ class Stream(BaseModel):
     fileIdx: int | None = None
     url: str | None = None
     ytId: str | None = None
+    externalUrl: str | None = None
     behaviorHints: StreamBehaviorHints | None = None
 
 
@@ -116,13 +117,15 @@ class StreamingProvider(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
-    selected_catalogs: list[str] = []
-    selected_resolutions: list[str | None] = []
+    selected_catalogs: list[str] = Field(
+        default=["prowlarr_streams", "torrentio_streams"]
+    )
+    selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True
     max_size: int | str | float = math.inf
     max_streams_per_resolution: int = 3
     show_full_torrent_name: bool = False
-    torrent_sorting_priority: list[str] = []
+    torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
     api_password: str | None = None
 
     @model_validator(mode="after")
@@ -201,10 +204,50 @@ class TorrentStreamsList(BaseModel):
 
 
 class ScraperTask(BaseModel):
-    scraper_type: str
-    pages: int = 1
-    start_page: int = 1
-    spider_name: str = Literal[
-        "formula_tgx", "mhdtvworld", "mhdtvsports", "tamilultra", "sport_video"
+    spider_name: Literal[
+        "formula_tgx",
+        "mhdtvworld",
+        "mhdtvsports",
+        "tamilultra",
+        "sport_video",
+        "streamed",
+        "mrgamingstreams",
+        "tamilmv",
+        "tamil_blasters",
+        "crictime",
     ]
+    pages: int | None = 1
+    start_page: int | None = 1
+    search_keyword: str | None = None
+    scrape_all: bool = False
+    scrap_catalog_id: Literal[
+        "all",
+        "tamil_hdrip",
+        "tamil_tcrip",
+        "tamil_dubbed",
+        "tamil_series",
+        "malayalam_hdrip",
+        "malayalam_tcrip",
+        "malayalam_dubbed",
+        "malayalam_series",
+        "telugu_tcrip",
+        "telugu_hdrip",
+        "telugu_dubbed",
+        "telugu_series",
+        "hindi_tcrip",
+        "hindi_hdrip",
+        "hindi_dubbed",
+        "hindi_series",
+        "kannada_tcrip",
+        "kannada_hdrip",
+        "kannada_series",
+        "english_tcrip",
+        "english_hdrip",
+        "english_series",
+    ] = "all"
     api_password: str = None
+
+
+class TVMetaDataUpload(BaseModel):
+    api_password: str = None
+    tv_metadata: TVMetaData
