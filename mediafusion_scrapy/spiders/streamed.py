@@ -29,7 +29,7 @@ class StreamedSpider(scrapy.Spider):
         "Other Sports": "https://streamed.su/category/other",
     }
 
-    m3u8_base_url = "https://tvembed.cc/js"
+    m3u8_base_url = "https://ignores.top/js"
 
     custom_settings = {
         "ITEM_PIPELINES": {
