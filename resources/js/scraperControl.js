@@ -140,6 +140,20 @@ function toggleSpiderSpecificFields() {
     document.getElementById('scrape_all').checked = false;
 }
 
+function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
+    document.getElementById(toggleButtonId).addEventListener('click', function (_) {
+        const passwordInput = document.getElementById(passwordInputId);
+        const passwordIcon = document.getElementById(toggleIconId);
+        if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+            passwordIcon.className = "bi bi-eye-slash";
+        } else {
+            passwordInput.type = "password";
+            passwordIcon.className = "bi bi-eye";
+        }
+    });
+}
+
 function toggleModeSpecificFields() {
     const selectedMode = document.querySelector('input[name="mode"]:checked').value;
     const displayKeywordSearch = selectedMode === 'keyword_search';
@@ -152,6 +166,11 @@ function toggleModeSpecificFields() {
 
 // Function to update form fields based on scraper selection
 function updateFormFields() {
+    // Check for API Password if authentication is required
+    if (document.getElementById('api_password')) {
+        setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
+    }
+
     // Hide all sections initially
     setElementDisplay('scrapyParameters', 'none');
     setElementDisplay('tvMetadataInput', 'none');
