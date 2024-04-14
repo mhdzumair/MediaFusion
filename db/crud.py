@@ -108,13 +108,13 @@ async def get_movie_data_by_id(
     movie_id: str, fetch_links: bool = False
 ) -> Optional[MediaFusionMovieMetaData]:
     movie_data = await MediaFusionMovieMetaData.get(movie_id, fetch_links=fetch_links)
-    try:
-        movie = ia.get_movie(movie_id.removeprefix("tt"), info="main")
-    except Exception:
-        return None
-
     # store it in the db for feature reference.
-    if not movie_data:
+    if not movie_data and movie_id.startswith("tt"):
+        try:
+            movie = ia.get_movie(movie_id.removeprefix("tt"), info="main")
+        except Exception:
+            return None
+
         movie_data = MediaFusionMovieMetaData(
             id=movie_id,
             title=movie.get("title"),
@@ -136,12 +136,13 @@ async def get_series_data_by_id(
     series_data = await MediaFusionSeriesMetaData.get(
         series_id, fetch_links=fetch_links
     )
-    try:
-        series = ia.get_movie(series_id.removeprefix("tt"), info="main")
-    except Exception:
-        return None
 
-    if not series_data:
+    if not series_data and series_id.startswith("tt"):
+        try:
+            series = ia.get_movie(series_id.removeprefix("tt"), info="main")
+        except Exception:
+            return None
+
         series_data = MediaFusionSeriesMetaData(
             id=series_id,
             title=series.get("title"),
