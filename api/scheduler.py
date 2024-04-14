@@ -104,3 +104,12 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             name="mrgamingstreams",
             kwargs={"spider_name": "mrgamingstreams"},
         )
+
+    # Schedule crictime scraper
+    if not settings.disable_crictime_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.crictime_scheduler_crontab),
+            name="crictime",
+            kwargs={"spider_name": "crictime"},
+        )
