@@ -31,7 +31,7 @@ from utils.parser import (
     search_imdb,
     parse_tv_stream_data,
     fetch_downloaded_info_hashes,
-    get_imdb_data,
+    ia,
 )
 
 
@@ -108,6 +108,25 @@ async def get_movie_data_by_id(
     movie_id: str, fetch_links: bool = False
 ) -> Optional[MediaFusionMovieMetaData]:
     movie_data = await MediaFusionMovieMetaData.get(movie_id, fetch_links=fetch_links)
+    try:
+        movie = ia.get_movie(movie_id.removeprefix("tt"), info="main")
+    except Exception:
+        return None
+
+    # store it in the db for feature reference.
+    if not movie_data:
+        movie_data = MediaFusionMovieMetaData(
+            id=movie_id,
+            title=movie.get("title"),
+            year=movie.get("year"),
+            poster=movie.get("full-size cover url"),
+            background=movie.get("full-size cover url"),
+            streams=[],
+            description=movie.get("plot outline"),
+        )
+        await movie_data.save()
+        logging.info("Added metadata for movie %s", movie_data.title)
+
     return movie_data
 
 
@@ -117,6 +136,24 @@ async def get_series_data_by_id(
     series_data = await MediaFusionSeriesMetaData.get(
         series_id, fetch_links=fetch_links
     )
+    try:
+        series = ia.get_movie(series_id.removeprefix("tt"), info="main")
+    except Exception:
+        return None
+
+    if not series_data:
+        series_data = MediaFusionSeriesMetaData(
+            id=series_id,
+            title=series.get("title"),
+            year=series.get("year"),
+            poster=series.get("full-size cover url"),
+            background=series.get("full-size cover url"),
+            streams=[],
+            description=series.get("plot outline"),
+        )
+        await series_data.save()
+        logging.info("Added metadata for series %s", series_data.title)
+
     return series_data
 
 
@@ -202,12 +239,13 @@ async def get_movie_streams(
         ):
             movie_metadata = await get_movie_data_by_id(video_id, False)
             if movie_metadata:
-                title, year = movie_metadata.title, movie_metadata.year
-            else:
-                title, year = get_imdb_data(video_id)
-            if title:
                 streams = await get_streams_from_prowlarr(
-                    redis, streams, video_id, "movie", title, year
+                    redis,
+                    streams,
+                    video_id,
+                    "movie",
+                    movie_metadata.title,
+                    movie_metadata.year,
                 )
 
     return await parse_stream_data(streams, user_data, secret_str)
@@ -238,12 +276,15 @@ async def get_series_streams(
         ):
             series_metadata = await get_series_data_by_id(video_id, False)
             if series_metadata:
-                title, year = series_metadata.title, series_metadata.year
-            else:
-                title, year = get_imdb_data(video_id)
-            if title:
                 streams = await get_streams_from_prowlarr(
-                    redis, streams, video_id, "series", title, year, season, episode
+                    redis,
+                    streams,
+                    video_id,
+                    "series",
+                    series_metadata.title,
+                    series_metadata.year,
+                    season,
+                    episode,
                 )
 
     matched_episode_streams = filter(

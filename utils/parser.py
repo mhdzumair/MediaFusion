@@ -247,14 +247,6 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     return {}
 
 
-def get_imdb_data(video_id: str) -> tuple[str, str]:
-    try:
-        movie = ia.get_movie(video_id.removeprefix("tt"), info="main")
-    except Exception:
-        return "", ""
-    return movie.get("title"), movie.get("year")
-
-
 async def parse_tv_stream_data(
     tv_streams: list[TVStreams], redis: Redis
 ) -> list[Stream]:
