@@ -4,7 +4,7 @@ WORKDIR /mediafusion
 
 # Install build dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
+    apt-get install -y --no-install-recommends git curl && \
     pip install --upgrade pip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
