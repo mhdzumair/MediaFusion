@@ -4,7 +4,7 @@ from datetime import timedelta
 from os import path
 from urllib.parse import urljoin, urlparse, quote
 
-from aiohttp import ClientConnectorError
+from aiohttp import ClientConnectorError, ClientSession, CookieJar
 from aioqbt.api import AddFormBuilder, TorrentInfo, InfoFilter
 from aioqbt.client import create_client, APIClient
 from aioqbt.exc import LoginError, AddTorrentError, NotFoundError
@@ -140,27 +140,33 @@ async def find_file_in_folder_tree(
 
 
 @asynccontextmanager
-async def initialize_qbittorrent(user_data: UserData):
-    qbittorrent = None
-    try:
-        qbittorrent = await create_client(
-            user_data.streaming_provider.qbittorrent_config.qbittorrent_url
-            + "/api/v2/",
-            username=user_data.streaming_provider.qbittorrent_config.qbittorrent_username,
-            password=user_data.streaming_provider.qbittorrent_config.qbittorrent_password,
-        )
+async def initialize_qbittorrent(user_data: UserData) -> APIClient:
+    async with ClientSession(cookie_jar=CookieJar(unsafe=True)) as session:
+        try:
+            qbittorrent = await create_client(
+                user_data.streaming_provider.qbittorrent_config.qbittorrent_url.rstrip(
+                    "/"
+                )
+                + "/api/v2/",
+                username=user_data.streaming_provider.qbittorrent_config.qbittorrent_username,
+                password=user_data.streaming_provider.qbittorrent_config.qbittorrent_password,
+                http=session,
+            )
+        except LoginError:
+            raise ProviderException(
+                "Invalid qBittorrent credentials", "invalid_credentials.mp4"
+            )
+        except (ClientConnectorError, NotFoundError):
+            raise ProviderException(
+                "Failed to connect to qBittorrent", "qbittorrent_error.mp4"
+            )
+        except Exception as err:
+            raise ProviderException(
+                f"An error occurred while connecting to qBittorrent: {err}",
+                "qbittorrent_error.mp4",
+            )
+
         yield qbittorrent
-    except LoginError:
-        raise ProviderException(
-            "Invalid qBittorrent credentials", "invalid_credentials.mp4"
-        )
-    except (ClientConnectorError, NotFoundError):
-        raise ProviderException(
-            "Failed to connect to qBittorrent", "qbittorrent_error.mp4"
-        )
-    finally:
-        if qbittorrent:
-            await qbittorrent.close()
 
 
 @asynccontextmanager
@@ -305,7 +311,7 @@ async def update_qbittorrent_cache_status(
             torrents_info = await qbittorrent.torrents.info(
                 hashes=[stream.id for stream in streams]
             )
-    except ProviderException:
+    except (ProviderException, Exception):
         return
 
     torrents_dict = {torrent.hash: torrent.progress for torrent in torrents_info}
