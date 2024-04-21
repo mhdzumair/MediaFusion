@@ -27,6 +27,7 @@ from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.torbox.utils import get_direct_link_from_torbox
 from streaming_providers.qbittorrent.utils import get_direct_link_from_qbittorrent
 from utils import crypto, torrent, wrappers, const
+from utils.network import get_client_ip
 
 router = APIRouter()
 
@@ -58,6 +59,7 @@ async def streaming_provider_endpoint(
 
     episode_data = stream.get_episode(season, episode)
     filename = episode_data.filename if episode_data else stream.filename
+    user_ip = get_client_ip(request)
 
     try:
         if user_data.streaming_provider.service == "seedr":
@@ -66,7 +68,14 @@ async def streaming_provider_endpoint(
             )
         elif user_data.streaming_provider.service == "realdebrid":
             video_url = get_direct_link_from_realdebrid(
-                info_hash, magnet_link, user_data, filename, stream.file_index, 1, 0
+                info_hash,
+                magnet_link,
+                user_data,
+                filename,
+                stream.file_index,
+                1,
+                0,
+                user_ip=user_ip,
             )
         elif user_data.streaming_provider.service == "alldebrid":
             video_url = get_direct_link_from_alldebrid(

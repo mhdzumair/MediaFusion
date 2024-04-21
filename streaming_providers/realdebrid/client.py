@@ -10,6 +10,10 @@ class RealDebrid(DebridClient):
     OAUTH_URL = "https://api.real-debrid.com/oauth/v2"
     OPENSOURCE_CLIENT_ID = "X245A4XAIBGVM"
 
+    def __init__(self, token: str | None = None, user_ip: str | None = None):
+        self.user_ip = user_ip
+        super().__init__(token)
+
     def _handle_service_specific_errors(self, error):
         if (
             error.response.status_code == 403
@@ -18,6 +22,22 @@ class RealDebrid(DebridClient):
             raise ProviderException(
                 "Real-Debrid Permission denied for free account", "need_premium.mp4"
             )
+
+    def _make_request(
+        self,
+        method: str,
+        url: str,
+        data=None,
+        params=None,
+        is_return_none=False,
+        is_expected_to_fail=False,
+    ) -> dict:
+        if method == "POST" and self.user_ip and self.user_ip != "127.0.0.1":
+            data = data or {}
+            data["ip"] = self.user_ip
+        return super()._make_request(
+            method, url, data, params, is_return_none, is_expected_to_fail
+        )
 
     def initialize_headers(self):
         if self.token:

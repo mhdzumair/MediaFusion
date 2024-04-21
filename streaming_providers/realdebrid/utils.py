@@ -25,8 +25,9 @@ def get_direct_link_from_realdebrid(
     file_index: int,
     max_retries=5,
     retry_interval=5,
+    user_ip=None,
 ) -> str:
-    rd_client = RealDebrid(token=user_data.streaming_provider.token)
+    rd_client = RealDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
     torrent_info = rd_client.get_available_torrent(info_hash)
     if not torrent_info:
         torrent_id = rd_client.add_magent_link(magnet_link).get("id")
