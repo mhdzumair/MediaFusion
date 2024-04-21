@@ -306,6 +306,7 @@ async def get_catalog(
 @wrappers.auth_required
 async def search_meta(
     response: Response,
+    request: Request,
     catalog_type: Literal["movie", "series", "tv"],
     catalog_id: Literal[
         "mediafusion_search_movies",
@@ -317,7 +318,9 @@ async def search_meta(
     response.headers.update(const.DEFAULT_HEADERS)
     logging.debug("search for catalog_id: %s", catalog_id)
 
-    return await crud.process_search_query(search_query, catalog_type)
+    return await crud.process_search_query(
+        search_query, catalog_type, request.app.state.redis
+    )
 
 
 @app.get(
@@ -358,7 +361,7 @@ async def get_meta(
             delete_all_meta_item["meta"]["_id"] = meta_id
             data = delete_all_meta_item
         else:
-            data = await crud.get_movie_meta(meta_id)
+            data = await crud.get_movie_meta(meta_id, request.app.state.redis)
     elif catalog_type == "series":
         data = await crud.get_series_meta(meta_id)
     elif catalog_type == "events":
@@ -470,7 +473,9 @@ async def get_poster(
 
     # Query the MediaFusion data
     if catalog_type == "movie":
-        mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
+        mediafusion_data = await crud.get_movie_data_by_id(
+            mediafusion_id, request.app.state.redis
+        )
     elif catalog_type == "series":
         mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
     elif catalog_type == "events":
@@ -483,7 +488,7 @@ async def get_poster(
     if not mediafusion_data:
         raise HTTPException(status_code=404, detail="MediaFusion ID not found.")
 
-    if mediafusion_data.is_poster_working is False:
+    if mediafusion_data.is_poster_working is False or not mediafusion_data.poster:
         raise HTTPException(status_code=404, detail="Poster not found.")
 
     try:
@@ -507,7 +512,10 @@ async def get_poster(
         if e.status != 404:
             raise HTTPException(status_code=404, detail="Failed to create poster.")
     except Exception as e:
-        logging.error(f"Unexpected error while creating poster: {e}")
+        logging.error(
+            f"Unexpected error while creating poster: {mediafusion_data.poster} {e}",
+            exc_info=True,
+        )
     mediafusion_data.is_poster_working = False
     if catalog_type != "events":
         await mediafusion_data.save()
