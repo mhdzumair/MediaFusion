@@ -21,6 +21,7 @@ from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
 from utils.torrent import extract_torrent_metadata
+from utils.wrappers import worker_rate_limit
 
 
 async def get_streams_from_prowlarr(
@@ -39,25 +40,28 @@ async def get_streams_from_prowlarr(
         return streams
 
     if catalog_type == "movie":
-        new_streams = await fetch_stream_data_with_timeout(
-            scrap_movies_streams_from_prowlarr, video_id, title, year
-        )
-        streams.extend(new_streams)
-        if settings.prowlarr_live_title_search:
+        if (
+            settings.prowlarr_immediate_max_process_time > 0
+            and settings.prowlarr_immediate_max_process > 0
+        ):
             new_streams = await fetch_stream_data_with_timeout(
-                scrape_movie_title_streams_from_prowlarr, video_id, title, year
+                scrap_movies_streams_from_prowlarr, video_id, title, year
             )
             streams.extend(new_streams)
+            if settings.prowlarr_live_title_search:
+                new_streams = await fetch_stream_data_with_timeout(
+                    scrape_movie_title_streams_from_prowlarr, video_id, title, year
+                )
+                streams.extend(new_streams)
         # run background task for title search to get more streams
-        background_movie_title_search.send(video_id, title, year)
+        background_movie_title_search.send(video_id, title, str(year))
     elif catalog_type == "series":
-        new_streams = await fetch_stream_data_with_timeout(
-            scrap_series_streams_from_prowlarr, video_id, title, year, season, episode
-        )
-        streams.extend(new_streams)
-        if settings.prowlarr_live_title_search:
+        if (
+            settings.prowlarr_immediate_max_process_time > 0
+            and settings.prowlarr_immediate_max_process > 0
+        ):
             new_streams = await fetch_stream_data_with_timeout(
-                scrape_series_title_streams_from_prowlarr,
+                scrap_series_streams_from_prowlarr,
                 video_id,
                 title,
                 year,
@@ -65,7 +69,23 @@ async def get_streams_from_prowlarr(
                 episode,
             )
             streams.extend(new_streams)
-        background_series_title_search.send(video_id, title, year, season, episode)
+            if settings.prowlarr_live_title_search:
+                new_streams = await fetch_stream_data_with_timeout(
+                    scrape_series_title_streams_from_prowlarr,
+                    video_id,
+                    title,
+                    year,
+                    season,
+                    episode,
+                )
+                streams.extend(new_streams)
+        background_series_title_search.send(
+            video_id=video_id,
+            title=title,
+            year=str(year),
+            season=str(season),
+            episode=str(episode),
+        )
     # Cache the data for 24 hours
     await redis.set(
         cache_key,
@@ -117,7 +137,7 @@ async def fetch_stream_data(
         return response.json()
 
 
-async def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
+def should_retry_prowlarr_scrap(retries_so_far, exception) -> bool:
     should_retry = retries_so_far < 10 and isinstance(exception, httpx.HTTPError)
     if not should_retry:
         logging.error(f"Failed to fetch data from Prowlarr: {exception}")
@@ -191,8 +211,9 @@ async def scrape_movie_title_streams_from_prowlarr(
     retry_when=should_retry_prowlarr_scrap,
     priority=100,
 )
-async def background_movie_title_search(video_id: str, title: str, year: int):
-    await scrape_movie_title_streams_from_prowlarr(video_id, title, year)
+@worker_rate_limit(limit=1, use_args_in_key=True)
+async def background_movie_title_search(video_id: str, title: str, year: str):
+    await scrape_movie_title_streams_from_prowlarr(video_id, title, int(year))
     logging.info(f"Background title search completed for {title} ({year})")
 
 
@@ -278,11 +299,12 @@ async def scrape_series_title_streams_from_prowlarr(
     retry_when=should_retry_prowlarr_scrap,
     priority=100,
 )
+@worker_rate_limit(limit=1, use_args_in_key=True)
 async def background_series_title_search(
-    video_id: str, title: str, year: int, season: int | None, episode: int | None
+    video_id: str, title: str, year: str, season: str, episode: str
 ):
     await scrape_series_title_streams_from_prowlarr(
-        video_id, title, year, season, episode
+        video_id, title, int(year), int(season), int(episode)
     )
     logging.info(f"Background title search completed for {title} S{season}E{episode}")
 
