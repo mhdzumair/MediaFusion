@@ -109,13 +109,14 @@ class StreamedSpider(scrapy.Spider):
             m3u8_url = (
                 f"{self.m3u8_base_url}{stream_url.replace('/watch', '')}/playlist.m3u8"
             )
+            language = link.xpath(".//div[last()]/text()").get().strip()
 
             yield scrapy.Request(
                 url=m3u8_url,
                 callback=self.validate_m3u8_url,
                 meta={
                     "item": item,
-                    "stream_name": f"{stream_name} - {stream_quality}",
+                    "stream_name": f"{stream_name} - {stream_quality} - {language}",
                     "stream_url": m3u8_url,
                 },
                 dont_filter=True,
