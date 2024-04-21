@@ -181,6 +181,10 @@ async def parse_stream_data(
             )
             stream_details.pop("infoHash", None)
             stream_details.pop("fileIdx", None)
+        else:
+            sources = [f"tracker:{tracker}" for tracker in stream_data.announce_list]
+            sources.append(f"dht:{stream_data.id}")
+            stream_details["sources"] = sources
 
         stream_list.append(Stream(**stream_details))
 

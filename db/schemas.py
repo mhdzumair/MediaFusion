@@ -60,6 +60,7 @@ class Stream(BaseModel):
     ytId: str | None = None
     externalUrl: str | None = None
     behaviorHints: StreamBehaviorHints | None = None
+    sources: list[str] | None = None
 
 
 class Streams(BaseModel):
