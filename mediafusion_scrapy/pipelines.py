@@ -22,7 +22,7 @@ from db.models import (
     Episode,
 )
 from db.schemas import TVMetaData
-from utils import torrent
+from utils import torrent, const
 from utils.parser import convert_size_to_bytes
 
 
@@ -808,3 +808,53 @@ class RedisCacheURLPipeline:
 
         await self.redis.sadd(item["scraped_url_key"], item["webpage_url"])
         return item
+
+
+class LiveStreamResolverPipeline:
+    async def process_item(self, item, spider):
+        adapter = ItemAdapter(item)
+        stream_url = adapter.get("stream_url")
+        referer = adapter.get("referer")
+
+        if not stream_url:
+            raise DropItem(f"No stream URL found in item: {item}")
+
+        response = await maybe_deferred_to_future(
+            spider.crawler.engine.download(
+                scrapy.Request(
+                    stream_url, callback=NO_CALLBACK, headers={"Referer": referer}
+                )
+            )
+        )
+        content_type = response.headers.get("Content-Type", b"").decode().lower()
+
+        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
+            # Stream is valid; add it to the item's streams list
+            item["streams"].append(
+                {
+                    "name": adapter["stream_name"],
+                    "url": adapter["stream_url"],
+                    "source": adapter["stream_source"],
+                    "behaviorHints": {
+                        "notWebReady": True,
+                        "is_redirect": True
+                        if response.meta.get("redirect_times", 0) > 0
+                        else False,
+                        "proxyHeaders": {
+                            "request": {
+                                "User-Agent": response.request.headers.get(
+                                    "User-Agent"
+                                ).decode(),
+                                "Referer": response.request.headers.get(
+                                    "Referer"
+                                ).decode(),
+                            }
+                        },
+                    },
+                }
+            )
+            return item
+        else:
+            raise DropItem(
+                f"Invalid M3U8 URL: {stream_url} with Content-Type: {content_type} response: {response.status}"
+            )
