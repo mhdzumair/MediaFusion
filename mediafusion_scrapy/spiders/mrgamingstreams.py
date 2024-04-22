@@ -13,21 +13,21 @@ from utils.parser import get_json_data
 
 class MrGamingStreamsSpider(scrapy.Spider):
     name = "mrgamingstreams"
-    allowed_domains = ["mrgamingstreams.com"]
     categories = {
-        "Baseball": "https://mrgamingstreams.com/mlb",
-        "American Football": "https://mrgamingstreams.com/nfl",
-        "Basketball": "https://mrgamingstreams.com/nba",
-        "Hockey": "https://mrgamingstreams.com/nhl",
-        "Football": "https://mrgamingstreams.com/soccer",
-        "Fighting": "https://mrgamingstreams.com/fighting",
-        "Motor Sport": "https://mrgamingstreams.com/motorsports",
+        "Baseball": "https://mrgamingstreams.live/mlb.html",
+        "American Football": "https://mrgamingstreams.live/nfl.html",
+        "Basketball": "https://mrgamingstreams.live/nba.html",
+        "Hockey": "https://mrgamingstreams.live/nhl.html",
+        "Football": "https://mrgamingstreams.live/soccer.html",
+        "Fighting": "https://mrgamingstreams.live/boxing.html",
+        "Motor Sport": "https://mrgamingstreams.live/formula-1.html",
     }
 
     et_tz = pytz.timezone("America/New_York")  # Eastern Time zone
 
     custom_settings = {
         "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.LiveStreamResolverPipeline": 100,
             "mediafusion_scrapy.pipelines.LiveEventStorePipeline": 300,
         },
         "LOG_LEVEL": "DEBUG",
@@ -60,13 +60,26 @@ class MrGamingStreamsSpider(scrapy.Spider):
             time_str = row.xpath("./td[1]/text()").get().strip()
             event_name = row.xpath("./td[2]/text()").get().strip()
 
-            # Combine date with time and parse it into a datetime object
-            now = datetime.now(self.et_tz)
-            event_time = datetime.strptime(time_str, "%I:%M %p").replace(
-                year=now.year, month=now.month, day=now.day
-            )
-            event_time = self.et_tz.localize(event_time)
-            event_start_timestamp = event_time.timestamp()
+            event_start_timestamp = 0
+
+            if category == "Football":
+                league = time_str
+                event_name = f"{league} - {event_name}"
+            elif time_str == "--:--":
+                self.logger.info(f"Event time not available for: {event_name}")
+            else:
+                # Combine date with time and parse it into a datetime object
+                now = datetime.now(self.et_tz)
+                try:
+                    event_time = datetime.strptime(time_str, "%I:%M %p").replace(
+                        year=now.year, month=now.month, day=now.day
+                    )
+                    event_time = self.et_tz.localize(event_time)
+                    event_start_timestamp = event_time.timestamp()
+                except ValueError:
+                    self.logger.error(
+                        f"Failed to parse event time: {time_str} for event: {event_name}"
+                    )
 
             item = {
                 "genres": [category],
@@ -79,6 +92,7 @@ class MrGamingStreamsSpider(scrapy.Spider):
                 "event_start_timestamp": event_start_timestamp,
                 "title": event_name,
                 "url": response.urljoin(event_url),
+                "streams": [],
             }
 
             yield response.follow(
@@ -86,80 +100,39 @@ class MrGamingStreamsSpider(scrapy.Spider):
             )
 
     def parse_event(self, response):
-        item = response.meta["item"].copy()
-        item.update(
-            {
-                "event_url": response.url,
-                "streams": [],
-            }
-        )
+        iframe_src = response.xpath("//iframe/@src").get()
 
-        stream_buttons = response.xpath(
-            "//div[contains(@class, 'streambuttoncase')]/button"
-        )
-
-        if not stream_buttons:
-            self.logger.info("No streams available for this event yet.")
-            return
-
-        for button in stream_buttons:
-            stream_data = button.xpath("./@onclick").get()
-            if not stream_data:
-                continue
-
-            # Extract the M3U8 URL from the onclick attribute using a regular expression
-            m3u8_url_match = re.search(
-                r"showPlayer\('\w+', '(https?://[^']+)'\)", stream_data
-            )
-            if not m3u8_url_match:
-                continue
-
-            m3u8_url = m3u8_url_match.group(1)
-            stream_name = button.xpath("text()").get().strip()
-
+        if iframe_src and "youtube.com" not in iframe_src:
             yield scrapy.Request(
-                url=m3u8_url,
-                callback=self.validate_m3u8_url,
-                meta={
-                    "item": item,
-                    "stream_name": stream_name,
-                    "stream_url": m3u8_url,
-                },
+                url=response.urljoin(iframe_src),
+                callback=self.parse_iframe,
+                meta=response.meta,
                 dont_filter=True,
             )
-
-    def validate_m3u8_url(self, response):
-        meta = response.meta
-        item = meta["item"]
-        content_type = response.headers.get("Content-Type", b"").decode().lower()
-
-        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
-            # Stream is valid; add it to the item's streams list
-            item["streams"].append(
-                {
-                    "name": meta["stream_name"],
-                    "url": meta["stream_url"],
-                    "source": "MrGamingStreams",
-                    "behaviorHints": {
-                        "notWebReady": True,
-                        "is_redirect": True
-                        if response.meta.get("redirect_times", 0) > 0
-                        else False,
-                        "proxyHeaders": {
-                            "request": {
-                                "User-Agent": response.request.headers.get(
-                                    "User-Agent"
-                                ).decode(),
-                                "Referer": response.request.headers.get(
-                                    "Referer"
-                                ).decode(),
-                            }
-                        },
-                    },
-                }
-            )
-            return item
         else:
             self.logger.error(
-                f"Invalid M3U8 URL: {meta['stream_url']} with Content-Type: {content_type} response: {response.status}"
+                f"No iframe found for event: {response.meta['item']['title']} - {response.url}"
+            )
+
+    def parse_iframe(self, response):
+        script_text = response.xpath(
+            "//script[contains(text(), 'm3u8List') or contains(text(), 'Clappr.Player')]/text()"
+        ).get()
+
+        if script_text:
+            m3u8_urls = re.findall(r'"(https?://[^"]+)"', script_text)
+            for m3u8_url in m3u8_urls:
+                item = response.meta["item"].copy()
+                item.update(
+                    {
+                        "stream_name": f"{item['title']} - Live Stream",
+                        "stream_url": m3u8_url,
+                        "stream_source": "MrGamingStreams",
+                        "referer": response.url,
+                    }
+                )
+                yield item
+        else:
+            self.logger.error(
+                "No suitable script found in iframe to extract M3U8 URLs."
             )
