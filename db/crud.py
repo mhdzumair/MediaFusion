@@ -133,11 +133,12 @@ async def get_movie_data_by_id(
         logging.info("Added metadata for movie %s", movie_data.title)
 
     # Serialize the data and store it in the Redis cache for 1 day
-    await redis.set(
-        f"movie_data:{movie_id}",
-        movie_data.model_dump_json(exclude_none=True),
-        ex=86400,
-    )
+    if movie_data:
+        await redis.set(
+            f"movie_data:{movie_id}",
+            movie_data.model_dump_json(exclude_none=True),
+            ex=86400,
+        )
     return movie_data
 
 
