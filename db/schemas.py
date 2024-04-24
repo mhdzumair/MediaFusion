@@ -60,6 +60,7 @@ class Stream(BaseModel):
     ytId: str | None = None
     externalUrl: str | None = None
     behaviorHints: StreamBehaviorHints | None = None
+    sources: list[str] | None = None
 
 
 class Streams(BaseModel):
@@ -215,6 +216,7 @@ class ScraperTask(BaseModel):
         "tamilmv",
         "tamil_blasters",
         "crictime",
+        "streambtw",
     ]
     pages: int | None = 1
     start_page: int | None = 1

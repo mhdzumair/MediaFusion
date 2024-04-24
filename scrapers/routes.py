@@ -32,7 +32,7 @@ async def run_scraper_task(task: schemas.ScraperTask):
 @router.post("/add_tv_metadata", tags=["scraper"])
 async def add_tv_meta_data(data: schemas.TVMetaDataUpload):
     validate_api_password(data.api_password)
-    add_tv_metadata.send(data.tv_metadata.model_dump())
+    add_tv_metadata.send([data.tv_metadata.model_dump()])
     return {"status": "TV metadata task has been scheduled."}
 
 

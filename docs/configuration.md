@@ -23,6 +23,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **enable_rate_limit** (default: `True`): Enable or disable rate limiting.
 - **meta_cache_ttl** (default: `1800`): The time-to-live (TTL) for cached metadata, in seconds.
 - **validate_m3u8_urls_liveness** (default: `True`): Enable or disable the validation of M3U8 URLs for liveness. If enabled, the URLs are checked for liveness before returning them.
+- **worker_max_tasks_per_child** (default: `20`): The maximum number of tasks per dramatiq worker child process. This setting helps prevent memory leaks.
 
 #### Security and Authentication
 
@@ -67,6 +68,8 @@ This guide describes the environment variables available in MediaFusion for conf
 - **disable_sport_video_scheduler** (default: `False`): Disable Sport Video scheduler.
 - **crictime_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for Crictime.
 - **disable_crictime_scheduler** (default: `False`): Disable Crictime scheduler.
+- **streambtw_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for Streambtw.
+- **disable_streambtw_scheduler** (default: `False`): Disable Streambtw scheduler.
 
 ### How to Configure
 

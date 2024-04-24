@@ -57,7 +57,7 @@ Configure Prowlarr manually to retrieve the API token and set up indexers.
 
 1. Start Prowlarr container:
     ```bash
-    docker-compose -f docker-compose.yml up prowlarr
+    docker compose -f docker-compose.yml up prowlarr
     ```
 2. Retrieve the Prowlarr API token from the settings page at [http://127.0.0.1:9696/settings/general](http://127.0.0.1:9696/settings/general) and update the `.env` file.
 3. Configure indexers like TheRARBG, Torlock, etc., through Prowlarr's UI. or alternatively, you can use the following command to add indexers:
@@ -82,7 +82,7 @@ Configure Prowlarr manually to retrieve the API token and set up indexers.
 Deploy MediaFusion using Docker Compose:
 
 ```bash
-docker-compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 > [!WARNING]
@@ -126,9 +126,9 @@ To update MediaFusion, pull the latest changes from the repository and restart t
 
 ```bash
 git pull
-docker-compose -f docker-compose.yml down
-docker-compose -f docker-compose.yml pull
-docker-compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml down
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml up -d
 ```
 
 ## Stopping MediaFusion 🛑
@@ -136,7 +136,7 @@ docker-compose -f docker-compose.yml up -d
 To stop MediaFusion, run the following command:
 
 ```bash
-docker-compose -f docker-compose.yml down
+docker compose -f docker-compose.yml down
 ```
 
 ## Troubleshooting 🛠️

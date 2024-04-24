@@ -29,7 +29,7 @@
 - **Scraper Support**:
   - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
   - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua for catchup videos.
-  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, mrgamingstreams and crictime.com
+  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, streambtw.com and crictime.com
   - 🎥 **TamilMV**: Specialized scraping for regional contents.
   - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
   - 📺 **TamilUltra & MHDTVPlay**: Get the best of Live TV channels right at your fingertips.
@@ -49,7 +49,7 @@
 ## 🚀 Installation
 
 1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads).
-2. **Media Fusion**: Navigate to [Media Fusion](https://mediafusion.fun) and click on the 'Configure Add-on' button.
+2. **MediaFusion Community Instance (Non-Affiliated)**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button.
 
 ## 🚀 Local Add-on Deployment
 

@@ -105,9 +105,14 @@ async def get_tv_meta_list(
 
 
 async def get_movie_data_by_id(
-    movie_id: str, fetch_links: bool = False
+    movie_id: str, redis: Redis
 ) -> Optional[MediaFusionMovieMetaData]:
-    movie_data = await MediaFusionMovieMetaData.get(movie_id, fetch_links=fetch_links)
+    # Check if the movie data is already in the cache
+    cached_data = await redis.get(f"movie_data:{movie_id}")
+    if cached_data:
+        return MediaFusionMovieMetaData.model_validate_json(cached_data)
+
+    movie_data = await MediaFusionMovieMetaData.get(movie_id)
     # store it in the db for feature reference.
     if not movie_data and movie_id.startswith("tt"):
         try:
@@ -127,6 +132,13 @@ async def get_movie_data_by_id(
         await movie_data.save()
         logging.info("Added metadata for movie %s", movie_data.title)
 
+    # Serialize the data and store it in the Redis cache for 1 day
+    if movie_data:
+        await redis.set(
+            f"movie_data:{movie_id}",
+            movie_data.model_dump_json(exclude_none=True),
+            ex=86400,
+        )
     return movie_data
 
 
@@ -238,7 +250,7 @@ async def get_movie_streams(
             settings.prowlarr_api_key
             and "prowlarr_streams" in user_data.selected_catalogs
         ):
-            movie_metadata = await get_movie_data_by_id(video_id, False)
+            movie_metadata = await get_movie_data_by_id(video_id, redis)
             if movie_metadata:
                 streams = await get_streams_from_prowlarr(
                     redis,
@@ -313,8 +325,8 @@ async def get_tv_stream_by_id(stream_id: str) -> TVStreams | None:
     return stream
 
 
-async def get_movie_meta(meta_id: str):
-    movie_data = await get_movie_data_by_id(meta_id)
+async def get_movie_meta(meta_id: str, redis: Redis):
+    movie_data = await get_movie_data_by_id(meta_id, redis)
 
     if not movie_data:
         return {}
@@ -588,7 +600,9 @@ async def save_series_metadata(metadata: dict):
     logging.info("Updated series %s", series.title)
 
 
-async def process_search_query(search_query: str, catalog_type: str) -> dict:
+async def process_search_query(
+    search_query: str, catalog_type: str, redis: Redis
+) -> dict:
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     elif catalog_type == "tv":
@@ -607,7 +621,7 @@ async def process_search_query(search_query: str, catalog_type: str) -> dict:
     for item in search_results:
         # Use the appropriate function to get the meta data
         if catalog_type == "movie":
-            meta = await get_movie_meta(item.id)
+            meta = await get_movie_meta(item.id, redis)
         elif catalog_type == "tv":
             meta = await get_tv_meta(item.id)
         else:

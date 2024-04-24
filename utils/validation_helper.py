@@ -12,7 +12,7 @@ from db import schemas
 from utils import const
 
 
-async def is_valid_url(url: str) -> bool:
+def is_valid_url(url: str) -> bool:
     parsed_url = urlparse(url)
     return all([parsed_url.scheme, parsed_url.netloc])
 
@@ -31,13 +31,13 @@ async def does_url_exist(url: str) -> bool:
 
 
 async def validate_image_url(url: str) -> bool:
-    return await is_valid_url(url) and await does_url_exist(url)
+    return is_valid_url(url) and await does_url_exist(url)
 
 
 async def validate_m3u8_url(
     url: str, behaviour_hint: dict, validate_url: bool = False
 ) -> (bool, bool):
-    if validate_url and not await is_valid_url(url):
+    if validate_url and not is_valid_url(url):
         return False, False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
@@ -88,22 +88,6 @@ async def validate_yt_id(yt_id: str) -> bool:
 
 
 async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVStreams]:
-    image_validation_tasks = []
-    if metadata.poster:
-        image_validation_tasks.append(validate_image_url(metadata.poster))
-    if metadata.logo:
-        image_validation_tasks.append(validate_image_url(metadata.logo))
-    if metadata.background:
-        image_validation_tasks.append(validate_image_url(metadata.background))
-
-    # Run all image URL validations concurrently
-    if image_validation_tasks:
-        image_validation_results = await asyncio.gather(*image_validation_tasks)
-        if not all(image_validation_results):
-            raise ValidationError(
-                f"Invalid image URL provided. {metadata.poster} {metadata.logo} {metadata.background}"
-            )
-
     # Prepare validation tasks for streams
     stream_validation_tasks = []
     for stream in metadata.streams:

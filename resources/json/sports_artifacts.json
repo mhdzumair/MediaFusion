@@ -81,6 +81,19 @@
 	  "https://img.wethrift.com/wwe.jpg"
 	]
   },
+  "Boxing": {
+	"background": [
+	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallsdesk.com%2Fwp-content%2Fuploads%2F2016%2F11%2FPictures-of-Boxing-Gloves-.jpg&f=1&nofb=1&ipt=fe744b371e649f9840b329ee59e07b3fa49a981467738452c7ae28f61adf76c8&ipo=images"
+	],
+	"poster": [
+	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fmedia.istockphoto.com%2Fphotos%2Fred-boxing-glove-picture-id1006291908%3Fb%3D1%26k%3D20%26m%3D1006291908%26s%3D170667a%26w%3D0%26h%3DhAOi7KoDXwcqPtFIlnZqN6Prfooug60XGL2wuQ3Nmxo%3D&f=1&nofb=1&ipt=6af23c83f7b547c67026a573a03331b4791401a81efe62bb3fe6f60f5fb30bf5&ipo=images",
+	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ft4.ftcdn.net%2Fjpg%2F04%2F29%2F51%2F81%2F240_F_429518118_k4gpunbwSm2xBDLX71kzWhFPGLvi1Cab.jpg&f=1&nofb=1&ipt=ea7c7cd79a397674bc01ae1469acb8af2b50cfcd3a7cfd2481fdea45007f3a3e&ipo=images"
+	],
+	"logo": [
+	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpng.pngtree.com%2Fpng-vector%2F20221116%2Fourmid%2Fpngtree-boxing-logo-vector-icon-illustration-illustration-boxer-sport-vector-png-image_34660450.png&f=1&nofb=1&ipt=0d560ff6ad82ffc371c4be3dc4d7f20c76512f8a182993b28ab5af5d6173802b&ipo=images",
+	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Flogopond.com%2Flogos%2F1f8a86c11b5c49c8bb90a218b4a2e3cb.png&f=1&nofb=1&ipt=897047498c6d29a9301df8a78f737650ea5b6fd0f5076dfe3aa25cdde5032079&ipo=images"
+	]
+  },
   "Hockey": {
 	"background": [
 	  "https://wallpapercave.com/wp/oHZo5vc.jpg"

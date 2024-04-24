@@ -113,3 +113,12 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             name="crictime",
             kwargs={"spider_name": "crictime"},
         )
+
+    # Schedule streambtw scraper
+    if not settings.disable_streambtw_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.streambtw_scheduler_crontab),
+            name="streambtw",
+            kwargs={"spider_name": "streambtw"},
+        )

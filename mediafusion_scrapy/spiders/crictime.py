@@ -5,7 +5,6 @@ import redis
 import scrapy
 
 from db.config import settings
-from utils import const
 from utils.parser import get_json_data
 
 
@@ -16,6 +15,7 @@ class CricTimeSpider(scrapy.Spider):
 
     custom_settings = {
         "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.LiveStreamResolverPipeline": 100,
             "mediafusion_scrapy.pipelines.LiveEventStorePipeline": 300,
         },
     }
@@ -98,7 +98,6 @@ class CricTimeSpider(scrapy.Spider):
             )
 
     def parse_js(self, response):
-        item = response.meta["item"]
         ea = response.xpath("//script[contains(text(), 'ea =')]/text()").re_first(
             r"ea = \"(.+?)\";"
         )
@@ -107,6 +106,12 @@ class CricTimeSpider(scrapy.Spider):
         script_content = response.xpath(
             "//script[contains(text(), 'hlsUrl')]/text()"
         ).get()
+        if not script_content:
+            self.logger.error(
+                f"Failed to extract script content from URL: {response.url}"
+            )
+            return
+
         url_match = re.search(r'var hlsUrl = .+"(.+)";', script_content)
 
         if not url_match:
@@ -123,49 +128,13 @@ class CricTimeSpider(scrapy.Spider):
         modified_hash = hash_value[:49] + hash_value[50:]
         m3u8_url = f"https://{ea}{m3u8_suffix_url}{modified_hash}"
 
-        yield response.follow(
-            m3u8_url,
-            self.validate_m3u8_url,
-            meta={
-                "item": item,
+        item = response.meta["item"].copy()
+        item.update(
+            {
                 "stream_url": m3u8_url,
                 "stream_name": response.meta["stream_name"],
-            },
-            dont_filter=True,
+                "stream_source": "StreamBTW",
+                "referer": response.url,
+            }
         )
-
-    def validate_m3u8_url(self, response):
-        meta = response.meta
-        item = meta["item"].copy()
-        content_type = response.headers.get("Content-Type", b"").decode().lower()
-
-        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
-            # Stream is valid; add it to the item's streams list
-            item["streams"].append(
-                {
-                    "name": meta["stream_name"],
-                    "url": meta["stream_url"],
-                    "source": "CricTime",
-                    "behaviorHints": {
-                        "notWebReady": True,
-                        "is_redirect": True
-                        if response.meta.get("redirect_times", 0) > 0
-                        else False,
-                        "proxyHeaders": {
-                            "request": {
-                                "User-Agent": response.request.headers.get(
-                                    "User-Agent"
-                                ).decode(),
-                                "Referer": response.request.headers.get(
-                                    "Referer"
-                                ).decode(),
-                            }
-                        },
-                    },
-                }
-            )
-            return item
-        else:
-            self.logger.error(
-                f"Invalid M3U8 URL: {meta['stream_url']} with Content-Type: {content_type} response: {response.status}"
-            )
+        yield item

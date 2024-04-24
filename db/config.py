@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     disable_mrgamingstreams_scheduler: bool = True  # Disabled due to site being down.
     crictime_scheduler_crontab: str = "*/15 * * * *"
     disable_crictime_scheduler: bool = False
+    streambtw_scheduler_crontab: str = "*/15 * * * *"
+    disable_streambtw_scheduler: bool = False
 
     # Time-related settings
     torrentio_search_interval_days: int = 3
@@ -62,6 +64,7 @@ class Settings(BaseSettings):
     prowlarr_immediate_max_process: int = 10
     prowlarr_immediate_max_process_time: int = 15
     meta_cache_ttl: int = 1800  # 30 minutes in seconds
+    worker_max_tasks_per_child: int = 20
 
     # Optional security settings
     api_password: str | None = None

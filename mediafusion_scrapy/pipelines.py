@@ -22,7 +22,7 @@ from db.models import (
     Episode,
 )
 from db.schemas import TVMetaData
-from utils import torrent
+from utils import torrent, const
 from utils.parser import convert_size_to_bytes
 
 
@@ -678,22 +678,21 @@ class SportVideoParserPipeline:
     }
 
     def __init__(self):
-        self.title_regex = re.compile(r"^(.*?)\s(\d{2}\.\d{2}\.\d{4})$")
+        self.title_regex = re.compile(r"^.*?\s(\d{2}\.\d{2}\.\d{4})")
 
     def process_item(self, item, spider):
         adapter = ItemAdapter(item)
         if "title" not in adapter:
             raise DropItem(f"title not found in item: {item}")
 
-        match = self.title_regex.search(adapter["title"])
-        if not match:
-            spider.logger.warning(
-                f"Title format is incorrect, cannot extract date: {adapter['title']}"
-            )
-            raise DropItem(f"Cannot parse date from title: {adapter['title']}")
-
-        title, date_str = match.groups()
-        date_obj = datetime.strptime(date_str, "%d.%m.%Y")
+        match = self.title_regex.search(adapter["title"]) or self.title_regex.search(
+            adapter["torrent_name"]
+        )
+        if match:
+            date_str = match.group(1)
+            date_obj = datetime.strptime(date_str, "%d.%m.%Y")
+        else:
+            date_obj = datetime.now()
 
         # Try to match or infer resolution
         raw_resolution = adapter.get("aspect_ratio", "").replace(" ", "")
@@ -710,7 +709,6 @@ class SportVideoParserPipeline:
 
         item.update(
             {
-                "title": title.strip(),
                 "created_at": date_obj.strftime("%Y-%m-%d"),
                 "year": date_obj.year,
                 "languages": [re.sub(r"[ .]", "", item["language"])],
@@ -808,3 +806,53 @@ class RedisCacheURLPipeline:
 
         await self.redis.sadd(item["scraped_url_key"], item["webpage_url"])
         return item
+
+
+class LiveStreamResolverPipeline:
+    async def process_item(self, item, spider):
+        adapter = ItemAdapter(item)
+        stream_url = adapter.get("stream_url")
+        referer = adapter.get("referer")
+
+        if not stream_url:
+            raise DropItem(f"No stream URL found in item: {item}")
+
+        response = await maybe_deferred_to_future(
+            spider.crawler.engine.download(
+                scrapy.Request(
+                    stream_url, callback=NO_CALLBACK, headers={"Referer": referer}
+                )
+            )
+        )
+        content_type = response.headers.get("Content-Type", b"").decode().lower()
+
+        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
+            # Stream is valid; add it to the item's streams list
+            item["streams"].append(
+                {
+                    "name": adapter["stream_name"],
+                    "url": adapter["stream_url"],
+                    "source": adapter["stream_source"],
+                    "behaviorHints": {
+                        "notWebReady": True,
+                        "is_redirect": True
+                        if response.meta.get("redirect_times", 0) > 0
+                        else False,
+                        "proxyHeaders": {
+                            "request": {
+                                "User-Agent": response.request.headers.get(
+                                    "User-Agent"
+                                ).decode(),
+                                "Referer": response.request.headers.get(
+                                    "Referer"
+                                ).decode(),
+                            }
+                        },
+                    },
+                }
+            )
+            return item
+        else:
+            raise DropItem(
+                f"Invalid M3U8 URL: {stream_url} with Content-Type: {content_type} response: {response.status}"
+            )

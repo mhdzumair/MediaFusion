@@ -30,6 +30,7 @@ Launch qBittorrent-WebDAV using:
 ```bash
 docker run -d \
   --name=qbittorrent-webdav \
+  --restart unless-stopped \
   -p 8080:80 \
   -p 6881:6881/tcp \
   -p 6881:6881/udp \

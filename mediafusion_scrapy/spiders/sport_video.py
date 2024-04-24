@@ -68,9 +68,8 @@ class SportVideoSpider(scrapy.Spider):
         content_blocks = response.css('div[id^="wb_LayoutGrid"]')
         for content in content_blocks:
             # Extract only the first part of the title
-            title = content.css(
-                'div[id^="wb_Text"] strong::text'
-            ).get()  # Get only the first matching text
+            title_words = content.css('div[id^="wb_Text"] strong::text').getall()
+            title = "".join(title_words).replace("(NEW)", "").strip()
 
             # Extract poster URL
             poster = content.css('div[id^="wb_PhotoGallery"] img::attr(src)').get()
