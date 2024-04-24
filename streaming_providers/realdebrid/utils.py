@@ -1,13 +1,17 @@
 from typing import Any
 
+import PTN
+
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.realdebrid.client import RealDebrid
 
 
-def create_download_link(rd_client, torrent_info, filename, file_index):
-    file_index = select_file_index_from_torrent(torrent_info, filename, file_index)
+def create_download_link(rd_client, torrent_info, filename, file_index, episode):
+    file_index = select_file_index_from_torrent(
+        torrent_info, filename, file_index, episode
+    )
     try:
         response = rd_client.create_download_link(torrent_info["links"][file_index])
     except IndexError:
@@ -25,11 +29,22 @@ def get_direct_link_from_realdebrid(
     file_index: int,
     max_retries=5,
     retry_interval=5,
-    user_ip=None,
+    user_ip: str = None,
+    episode: int = None,
 ) -> str:
     rd_client = RealDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
     torrent_info = rd_client.get_available_torrent(info_hash)
     if not torrent_info:
+        response = rd_client.get_active_torrents()
+        if response["limit"] == response["nb"]:
+            raise ProviderException(
+                "Torrent limit reached. Please try again later.", "torrent_limit.mp4"
+            )
+        if info_hash in response["list"]:
+            raise ProviderException(
+                "Torrent is already being downloading", "torrent_not_downloaded.mp4"
+            )
+
         torrent_id = rd_client.add_magent_link(magnet_link).get("id")
         torrent_info = rd_client.get_torrent_info(torrent_id)
     else:
@@ -60,7 +75,7 @@ def get_direct_link_from_realdebrid(
         torrent_id, "downloaded", max_retries, retry_interval
     )
 
-    return create_download_link(rd_client, torrent_info, filename, file_index)
+    return create_download_link(rd_client, torrent_info, filename, file_index, episode)
 
 
 def update_rd_cache_status(streams: list[TorrentStreams], user_data: UserData):
@@ -79,7 +94,7 @@ def update_rd_cache_status(streams: list[TorrentStreams], user_data: UserData):
 
 
 def select_file_index_from_torrent(
-    torrent_info: dict[str, Any], filename: str, file_index: int
+    torrent_info: dict[str, Any], filename: str, file_index: int, episode: int
 ) -> int:
     """Select the file index from the torrent info."""
     if file_index is not None and file_index < len(torrent_info["links"]):
@@ -89,6 +104,12 @@ def select_file_index_from_torrent(
     if filename:
         for index, file in enumerate(selected_files):
             if file["path"] == "/" + filename:
+                return index
+
+    if episode:
+        # Select the file with the matching episode number
+        for index, file in enumerate(selected_files):
+            if PTN.parse(file["path"]).get("episode") == episode:
                 return index
 
     # If no file index is provided, select the largest file

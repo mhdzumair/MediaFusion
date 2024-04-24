@@ -111,8 +111,14 @@ class RealDebrid(DebridClient):
             "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
         )
 
+    def get_active_torrents(self):
+        return self._make_request("GET", f"{self.BASE_URL}/torrents/activeCount")
+
     def get_user_torrent_list(self):
         return self._make_request("GET", f"{self.BASE_URL}/torrents")
+
+    def get_user_downloads(self):
+        return self._make_request("GET", f"{self.BASE_URL}/downloads")
 
     def get_torrent_info(self, torrent_id):
         return self._make_request("GET", f"{self.BASE_URL}/torrents/info/{torrent_id}")
