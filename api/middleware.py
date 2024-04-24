@@ -1,7 +1,11 @@
 import hashlib
 import logging
+import os
+import signal
+from threading import Lock
 from typing import Callable, Optional
 
+import dramatiq
 from fastapi.requests import Request
 from fastapi.responses import Response
 from redis.asyncio import Redis
@@ -140,3 +144,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Log error but allow the request to proceed to avoid blocking legitimate requests
             logging.error(f"Rate limit error: {e}")
             return True
+
+
+class MaxTasksPerChild(dramatiq.Middleware):
+    def __init__(self, max_tasks=100):
+        self.counter_mu = Lock()
+        self.counter = max_tasks
+        self.signaled = False
+        self.logger = dramatiq.get_logger("api.middleware", MaxTasksPerChild)
+
+    def after_process_message(self, broker, message, *, result=None, exception=None):
+        with self.counter_mu:
+            self.counter -= 1
+            self.logger.info("Remaining tasks: %d.", self.counter)
+            if self.counter <= 0 and not self.signaled:
+                self.logger.warning("Counter reached zero. Signaling current process.")
+                os.kill(os.getppid(), getattr(signal, "SIGHUP", signal.SIGTERM))
+                self.signaled = True

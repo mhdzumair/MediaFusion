@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     prowlarr_immediate_max_process: int = 10
     prowlarr_immediate_max_process_time: int = 15
     meta_cache_ttl: int = 1800  # 30 minutes in seconds
+    worker_max_tasks_per_child: int = 20
 
     # Optional security settings
     api_password: str | None = None
