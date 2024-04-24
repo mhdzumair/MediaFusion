@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from functools import wraps
 
@@ -58,7 +59,7 @@ def worker_rate_limit(
 ):
     def decorator(func):
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs):
             # Construct the limiter key including function arguments if specified
             if use_args_in_key:
                 args_key = "_".join([str(arg) for arg in args])
@@ -82,7 +83,10 @@ def worker_rate_limit(
 
             with limiter.acquire(raise_on_failure=raise_on_failure) as acquired:
                 if acquired:
-                    return func(*args, **kwargs)
+                    if asyncio.iscoroutinefunction(func):
+                        return await func(*args, **kwargs)
+                    else:
+                        return func(*args, **kwargs)
                 else:
                     logging.warning(f"Rate limit exceeded for {limiter_key}")
 
