@@ -678,22 +678,21 @@ class SportVideoParserPipeline:
     }
 
     def __init__(self):
-        self.title_regex = re.compile(r"^(.*?)\s(\d{2}\.\d{2}\.\d{4})$")
+        self.title_regex = re.compile(r"^.*?\s(\d{2}\.\d{2}\.\d{4})")
 
     def process_item(self, item, spider):
         adapter = ItemAdapter(item)
         if "title" not in adapter:
             raise DropItem(f"title not found in item: {item}")
 
-        match = self.title_regex.search(adapter["title"])
-        if not match:
-            spider.logger.warning(
-                f"Title format is incorrect, cannot extract date: {adapter['title']}"
-            )
-            raise DropItem(f"Cannot parse date from title: {adapter['title']}")
-
-        title, date_str = match.groups()
-        date_obj = datetime.strptime(date_str, "%d.%m.%Y")
+        match = self.title_regex.search(adapter["title"]) or self.title_regex.search(
+            adapter["torrent_name"]
+        )
+        if match:
+            date_str = match.group(1)
+            date_obj = datetime.strptime(date_str, "%d.%m.%Y")
+        else:
+            date_obj = datetime.now()
 
         # Try to match or infer resolution
         raw_resolution = adapter.get("aspect_ratio", "").replace(" ", "")
@@ -710,7 +709,6 @@ class SportVideoParserPipeline:
 
         item.update(
             {
-                "title": title.strip(),
                 "created_at": date_obj.strftime("%Y-%m-%d"),
                 "year": date_obj.year,
                 "languages": [re.sub(r"[ .]", "", item["language"])],
