@@ -7,7 +7,6 @@ import redis
 import scrapy
 
 from db.config import settings
-from utils import const
 from utils.parser import get_json_data
 
 
