@@ -8,6 +8,7 @@ from fastapi import (
     APIRouter,
 )
 from fastapi.responses import RedirectResponse
+from redis.asyncio import Redis
 
 from db import crud
 from db.config import settings
@@ -27,9 +28,17 @@ from streaming_providers.seedr.utils import get_direct_link_from_seedr
 from streaming_providers.torbox.utils import get_direct_link_from_torbox
 from streaming_providers.qbittorrent.utils import get_direct_link_from_qbittorrent
 from utils import crypto, torrent, wrappers, const
+from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_client_ip
 
 router = APIRouter()
+
+
+async def get_cached_stream_url(redis: Redis, cached_stream_url_key):
+    if cached_stream_url := await redis.get(cached_stream_url_key):
+        cached_stream_url = cached_stream_url.decode("utf-8")
+        return cached_stream_url
+    return None
 
 
 @router.get("/{secret_str}/stream", tags=["streaming_provider"])
@@ -60,6 +69,29 @@ async def streaming_provider_endpoint(
     episode_data = stream.get_episode(season, episode)
     filename = episode_data.filename if episode_data else stream.filename
     user_ip = get_client_ip(request)
+    redirect_status_code = 302
+    cached_stream_url_key = "streaming_provider_" + crypto.get_text_hash(
+        f"{user_ip}_{secret_str}_{info_hash}_{filename}_{stream.file_index}",
+        full_hash=True,
+    )
+
+    if cached_stream_url := await get_cached_stream_url(
+        request.app.state.redis, cached_stream_url_key
+    ):
+        return RedirectResponse(
+            url=cached_stream_url,
+            headers=response.headers,
+            status_code=redirect_status_code,
+        )
+
+    # create a redis lock to prevent multiple requests from initiating a download task.
+    acquired, lock = await acquire_redis_lock(
+        request.app.state.redis,
+        f"{cached_stream_url_key}_locked",
+        timeout=60,
+    )
+    if not acquired:
+        raise HTTPException(status_code=429, detail="Too many requests.")
 
     try:
         if user_data.streaming_provider.service == "seedr":
@@ -76,6 +108,7 @@ async def streaming_provider_endpoint(
                 1,
                 0,
                 user_ip=user_ip,
+                episode=episode,
             )
         elif user_data.streaming_provider.service == "alldebrid":
             video_url = get_direct_link_from_alldebrid(
@@ -105,6 +138,13 @@ async def streaming_provider_endpoint(
             video_url = get_direct_link_from_debridlink(
                 info_hash, magnet_link, user_data, filename, stream.file_index, 1, 0
             )
+
+        # Cache the streaming URL for 1 hour & release the lock
+        await request.app.state.redis.set(
+            cached_stream_url_key, video_url.encode("utf-8"), ex=3600
+        )
+        await release_redis_lock(lock)
+
     except ProviderException as error:
         logging.error(
             "Exception occurred for %s: %s",
@@ -113,11 +153,15 @@ async def streaming_provider_endpoint(
             exc_info=True if error.video_file_name == "api_error.mp4" else False,
         )
         video_url = f"{settings.host_url}/static/exceptions/{error.video_file_name}"
+        redirect_status_code = 307
     except Exception as e:
         logging.error("Exception occurred for %s: %s", info_hash, e, exc_info=True)
         video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
+        redirect_status_code = 307
 
-    return RedirectResponse(url=video_url, headers=response.headers)
+    return RedirectResponse(
+        url=video_url, headers=response.headers, status_code=redirect_status_code
+    )
 
 
 @router.get("/{secret_str}/delete_all_watchlist", tags=["streaming_provider"])

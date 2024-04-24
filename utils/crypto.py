@@ -39,5 +39,6 @@ def decrypt_user_data(secret_str: str | None = None) -> UserData:
     return user_data
 
 
-def get_text_hash(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()[:10]
+def get_text_hash(text: str, full_hash: bool = False) -> str:
+    hash_str = hashlib.sha256(text.encode()).hexdigest()
+    return hash_str if full_hash else hash_str[:10]

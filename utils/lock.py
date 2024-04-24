@@ -2,6 +2,7 @@ import os
 
 import aiofiles
 import aiofiles.os
+from redis.asyncio import Redis
 
 
 async def is_server_running(pid: int):
@@ -32,3 +33,15 @@ async def release_lock():
         await aiofiles.os.remove("/tmp/mediafusion.lock")
     except FileNotFoundError:
         pass
+
+
+async def acquire_redis_lock(
+    redis: Redis, key: str, timeout: int = 60, block: bool = False
+):
+    lock = redis.lock(key, timeout=timeout)
+    acquired = await lock.acquire(blocking=block)
+    return acquired, lock
+
+
+async def release_redis_lock(lock):
+    await lock.release()
