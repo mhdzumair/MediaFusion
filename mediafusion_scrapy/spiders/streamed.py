@@ -5,7 +5,6 @@ import redis
 import scrapy
 
 from db.config import settings
-from utils import const
 from utils.parser import get_json_data
 
 
@@ -29,12 +28,15 @@ class StreamedSpider(scrapy.Spider):
         "Other Sports": "https://streamed.su/category/other",
     }
 
-    m3u8_base_url = "https://ignores.top/js"
+    m3u8_base_url = "https://{}ignores.top/js"
+    sub_domains = ["inst1.", "inst2.", "inst3.", ""]
 
     custom_settings = {
         "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.LiveStreamResolverPipeline": 100,
             "mediafusion_scrapy.pipelines.LiveEventStorePipeline": 300,
         },
+        "DUPEFILTER_DEBUG": True,
     }
 
     def __init__(self, *args, **kwargs):
@@ -69,23 +71,17 @@ class StreamedSpider(scrapy.Spider):
                 "is_add_title_to_poster": True,
                 "title": event_name,
                 "url": response.urljoin(event_url),
+                "streams": [],
             }
 
             yield response.follow(event_url, self.parse_event, meta={"item": item})
 
     def parse_event(self, response):
-        item = response.meta["item"].copy()
-        item.update(
-            {
-                "event_url": response.url,
-                "streams": [],
-            }
-        )
-
         script_text = response.xpath(
             '//script[contains(text(), "const data =")]/text()'
         ).get()
 
+        event_start_timestamp = 0
         if script_text:
             # Use a regular expression to find the timestamp
             timestamp_match = re.search(r"date:(\d+)", script_text)
@@ -93,67 +89,31 @@ class StreamedSpider(scrapy.Spider):
             if timestamp_match:
                 # Extract the timestamp and convert to UTC datetime
                 event_timestamp_ms = int(timestamp_match.group(1))
-                item["event_start_timestamp"] = event_timestamp_ms / 1000
+                event_start_timestamp = event_timestamp_ms / 1000
 
         # If no timer, proceed to scrape available stream links
         stream_links = response.xpath('//a[contains(@href, "/watch/")]')
         if not stream_links:
             # No streams available atm
-            self.logger.info("No streams available for this event yet.")
+            self.logger.info(f"No streams available for this event yet. {response.url}")
             return
 
         for link in stream_links:
             stream_name = link.xpath(".//h1/text()").get().strip()
             stream_url = link.xpath(".//@href").get()
             stream_quality = link.xpath(".//h2/text()").get().strip()
-            m3u8_url = (
-                f"{self.m3u8_base_url}{stream_url.replace('/watch', '')}/playlist.m3u8"
-            )
+            m3u8_url = f"{self.m3u8_base_url.format(random.choice(self.sub_domains))}{stream_url.replace('/watch', '')}/playlist.m3u8"
             language = link.xpath(".//div[last()]/text()").get().strip()
 
-            yield scrapy.Request(
-                url=m3u8_url,
-                callback=self.validate_m3u8_url,
-                meta={
-                    "item": item,
+            item = response.meta["item"].copy()
+            item.update(
+                {
                     "stream_name": f"{stream_name} - {stream_quality} - {language}",
                     "stream_url": m3u8_url,
-                },
-                dont_filter=True,
-            )
-
-    def validate_m3u8_url(self, response):
-        meta = response.meta
-        item = meta["item"]
-        content_type = response.headers.get("Content-Type", b"").decode().lower()
-
-        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
-            # Stream is valid; add it to the item's streams list
-            item["streams"].append(
-                {
-                    "name": meta["stream_name"],
-                    "url": meta["stream_url"],
-                    "source": "streamed.su",
-                    "behaviorHints": {
-                        "notWebReady": True,
-                        "is_redirect": True
-                        if response.meta.get("redirect_times", 0) > 0
-                        else False,
-                        "proxyHeaders": {
-                            "request": {
-                                "User-Agent": response.request.headers.get(
-                                    "User-Agent"
-                                ).decode(),
-                                "Referer": response.request.headers.get(
-                                    "Referer"
-                                ).decode(),
-                            }
-                        },
-                    },
+                    "stream_source": "streamed.su",
+                    "referer": response.url,
+                    "event_start_timestamp": event_start_timestamp,
                 }
             )
-            return item
-        else:
-            self.logger.error(
-                f"Invalid M3U8 URL: {meta['stream_url']} with Content-Type: {content_type} response: {response.status}"
-            )
+
+            yield item
