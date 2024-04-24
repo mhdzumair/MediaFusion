@@ -546,12 +546,21 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
         torrent_stream.catalog.extend(
             [c for c in prowlarr_catalog if c not in torrent_stream.catalog]
         )
-        available_episodes = [
-            ep.episode_number for ep in torrent_stream.season.episodes
-        ]
-        torrent_stream.season.episodes.extend(
-            [ep for ep in episode_data if ep.episode_number not in available_episodes]
-        )
+        if not torrent_stream.season:
+            torrent_stream.season = Season(
+                season_number=season_number, episodes=episode_data
+            )
+        else:
+            available_episodes = [
+                ep.episode_number for ep in torrent_stream.season.episodes
+            ]
+            torrent_stream.season.episodes.extend(
+                [
+                    ep
+                    for ep in episode_data
+                    if ep.episode_number not in available_episodes
+                ]
+            )
         logging.info(f"Updated series stream {info_hash} for {video_id}")
     else:
         # Create new stream, initially without episodes
