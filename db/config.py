@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     disable_mrgamingstreams_scheduler: bool = True  # Disabled due to site being down.
     crictime_scheduler_crontab: str = "*/15 * * * *"
     disable_crictime_scheduler: bool = False
+    streambtw_scheduler_crontab: str = "*/15 * * * *"
+    disable_streambtw_scheduler: bool = False
 
     # Time-related settings
     torrentio_search_interval_days: int = 3
