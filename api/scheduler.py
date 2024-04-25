@@ -12,10 +12,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
     """
     Set up the scheduler with the required jobs.
     """
-    if settings.disable_all_scheduler:
-        logging.info("All Schedulers are disabled. Not setting up any jobs.")
-        return
-
     # Setup tamil blasters scraper
     if not settings.disable_tamil_blasters_scheduler:
         scheduler.add_job(

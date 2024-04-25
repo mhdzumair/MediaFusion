@@ -25,7 +25,12 @@ from db.config import settings
 from scrapers.routes import router as scrapers_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, wrappers, lock
+from utils import crypto, torrent, poster, const, wrappers
+from utils.lock import (
+    acquire_scheduler_lock,
+    maintain_heartbeat,
+    release_scheduler_lock,
+)
 from utils.parser import generate_manifest, get_json_data
 
 logging.basicConfig(
@@ -73,18 +78,31 @@ async def init_server():
 
 @app.on_event("startup")
 async def start_scheduler():
-    if await lock.acquire_lock():
-        scheduler = AsyncIOScheduler()
-        setup_scheduler(scheduler)
-        scheduler.start()
-        app.state.scheduler = scheduler
+    if settings.disable_all_scheduler:
+        logging.info("All Schedulers are disabled. Not setting up any jobs.")
+        return
+
+    acquired, lock = await acquire_scheduler_lock(app.state.redis)
+    if acquired:
+        try:
+            scheduler = AsyncIOScheduler()
+            setup_scheduler(scheduler)
+            scheduler.start()
+            app.state.scheduler = scheduler
+            app.state.scheduler_lock = lock
+            asyncio.create_task(maintain_heartbeat(app.state.redis))
+        except Exception as e:
+            await release_scheduler_lock(app.state.redis, lock)
+            raise e
 
 
 @app.on_event("shutdown")
 async def stop_scheduler():
     if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown(wait=False)
-        await lock.release_lock()
+
+    if hasattr(app.state, "scheduler_lock") and app.state.scheduler_lock:
+        await release_scheduler_lock(app.state.redis, app.state.scheduler_lock)
 
 
 @app.on_event("shutdown")
