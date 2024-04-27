@@ -3,15 +3,17 @@ import logging
 import re
 
 import dramatiq
+import redis
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
 
 from db import schemas, crud
+from db.config import settings
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
 
 
-@dramatiq.actor(priority=5, time_limit=5 * 60 * 1000)
+@dramatiq.actor(priority=3, time_limit=5 * 60 * 1000)
 async def add_tv_metadata(batch):
     for metadata_json in batch:
         metadata = schemas.TVMetaData.model_validate(metadata_json)
@@ -33,12 +35,16 @@ async def add_tv_metadata(batch):
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
 
 
-@dramatiq.actor(priority=5, time_limit=15 * 60 * 1000)
+@dramatiq.actor(priority=2, time_limit=15 * 60 * 1000)
 def parse_m3u_playlist(
-    playlist_source: str, playlist_url: str = None, playlist_content: str = None
+    playlist_source: str, playlist_url: str = None, playlist_redis_key: str = None
 ):
     logging.info(f"Parsing M3U playlist: {playlist_url}")
-    if playlist_content:
+    if playlist_redis_key:
+        redis_client = redis.Redis(
+            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
+        )
+        playlist_content = redis_client.get(playlist_redis_key).decode("utf-8")
         iptv_playlist = playlist.loads(playlist_content)
     else:
         iptv_playlist = playlist.loadu(playlist_url)
