@@ -780,7 +780,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
     events_json = events_data.model_dump_json(exclude_none=True, by_alias=True)
 
     # Set or update the event data in Redis with an appropriate TTL
-    cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 1200
+    cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 3600
     await redis.set(event_key, events_json, ex=cache_ttl)
 
     logging.info(
