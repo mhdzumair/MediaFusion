@@ -57,7 +57,7 @@ async def upload_m3u_playlist(
     if m3u_playlist_file:
         content = await m3u_playlist_file.read()
         redis_key = f"m3u_playlist_{uuid4().hex[:10]}"
-        request.app.state.redis.set(redis_key, content)
+        await request.app.state.redis.set(redis_key, content)
         parse_m3u_playlist.send(m3u_playlist_source, playlist_redis_key=redis_key)
     elif m3u_playlist_url:
         # Process URL submission...
