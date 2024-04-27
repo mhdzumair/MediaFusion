@@ -1,38 +1,45 @@
-import os
+import asyncio
+import logging
+import time
 
-import aiofiles
-import aiofiles.os
 from redis.asyncio import Redis
+from redis.exceptions import LockNotOwnedError
+
+scheduler_lock_key = "mediafusion_scheduler_lock"
+heartbeat_key = "mediafusion_scheduler_heartbeat"
+heartbeat_timeout = 300  # 5 minutes
 
 
-async def is_server_running(pid: int):
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
+async def acquire_scheduler_lock(redis: Redis):
+    current_time = int(time.time())
+    # Check if the current scheduler is active
+    last_heartbeat = await redis.get(heartbeat_key)
+    if last_heartbeat and (current_time - int(last_heartbeat) <= heartbeat_timeout):
+        logging.info("Scheduler is still active, not acquiring lock")
+        return False, None  # Scheduler is still active, do not acquire lock
+
+    # Attempt to acquire the lock
+    acquired, lock = await acquire_redis_lock(
+        redis, scheduler_lock_key, timeout=heartbeat_timeout, block=False
+    )
+    if acquired:
+        logging.info("Acquired scheduler lock")
+        await redis.set(heartbeat_key, current_time)
+        return True, lock
+    logging.info("Failed to acquire scheduler lock")
+    return False, None
 
 
-async def acquire_lock():
-    lock_file_path = "/tmp/mediafusion.lock"
-    if os.path.exists(lock_file_path):
-        async with aiofiles.open(lock_file_path, "r") as f:
-            pid = await f.read()
-        if not await is_server_running(int(pid)):
-            await release_lock()
-    try:
-        async with aiofiles.open(lock_file_path, "x") as f:
-            await f.write(str(os.getpid()))  # Write the PID to the lock file
-        return True
-    except FileExistsError:
-        return False
+async def release_scheduler_lock(redis: Redis, lock):
+    logging.info("Releasing scheduler lock")
+    await release_redis_lock(lock)
+    await redis.delete(heartbeat_key)
 
 
-async def release_lock():
-    try:
-        await aiofiles.os.remove("/tmp/mediafusion.lock")
-    except FileNotFoundError:
-        pass
+async def maintain_heartbeat(redis: Redis):
+    while True:
+        await asyncio.sleep(heartbeat_timeout // 2)
+        await redis.set(heartbeat_key, int(time.time()))
 
 
 async def acquire_redis_lock(
@@ -44,4 +51,8 @@ async def acquire_redis_lock(
 
 
 async def release_redis_lock(lock):
-    await lock.release()
+    try:
+        await lock.release()
+    except LockNotOwnedError:
+        logging.error("Failed to release lock, lock not owned")
+        pass

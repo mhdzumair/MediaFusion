@@ -29,7 +29,15 @@ class StreamedSpider(scrapy.Spider):
     }
 
     m3u8_base_url = "https://{}ignores.top/js"
-    sub_domains = ["inst1.", "inst2.", "inst3.", ""]
+    sub_domains = {
+        "": "Main Server",
+        "inst1.": "Instance 1",
+        "inst2.": "Instance 2",
+        "inst3.": "Instance 3",
+        "inst4.": "Instance 4",
+        "inst5.": "Instance 5",
+    }
+    mediafusion_referer = "http://mediafusion.addon/"
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -37,6 +45,7 @@ class StreamedSpider(scrapy.Spider):
             "mediafusion_scrapy.pipelines.LiveEventStorePipeline": 300,
         },
         "DUPEFILTER_DEBUG": True,
+        "DEFAULT_REQUEST_HEADERS": {"Referer": mediafusion_referer},
     }
 
     def __init__(self, *args, **kwargs):
@@ -74,7 +83,12 @@ class StreamedSpider(scrapy.Spider):
                 "streams": [],
             }
 
-            yield response.follow(event_url, self.parse_event, meta={"item": item})
+            yield response.follow(
+                event_url,
+                self.parse_event,
+                meta={"item": item},
+                headers={"Referer": self.mediafusion_referer},
+            )
 
     def parse_event(self, response):
         script_text = response.xpath(
@@ -102,16 +116,17 @@ class StreamedSpider(scrapy.Spider):
             stream_name = link.xpath(".//h1/text()").get().strip()
             stream_url = link.xpath(".//@href").get()
             stream_quality = link.xpath(".//h2/text()").get().strip()
-            m3u8_url = f"{self.m3u8_base_url.format(random.choice(self.sub_domains))}{stream_url.replace('/watch', '')}/playlist.m3u8"
+            server = random.choice(list(self.sub_domains.keys()))
+            m3u8_url = f"{self.m3u8_base_url.format(server)}{stream_url.replace('/watch', '')}/playlist.m3u8"
             language = link.xpath(".//div[last()]/text()").get().strip()
 
             item = response.meta["item"].copy()
             item.update(
                 {
-                    "stream_name": f"{stream_name} - {stream_quality} - {language}",
+                    "stream_name": f"{stream_name} - 📡 {self.sub_domains[server]}\n📺 {stream_quality} - 🌐 {language}",
                     "stream_url": m3u8_url,
                     "stream_source": "streamed.su",
-                    "referer": response.url,
+                    "referer": self.mediafusion_referer,
                     "event_start_timestamp": event_start_timestamp,
                 }
             )

@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
 from typing import Optional
 from uuid import uuid4
 
 from beanie import WriteRules
+from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import In, Set
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
@@ -129,8 +131,13 @@ async def get_movie_data_by_id(
             streams=[],
             description=movie.get("plot outline"),
         )
-        await movie_data.save()
-        logging.info("Added metadata for movie %s", movie_data.title)
+        try:
+            await movie_data.save()
+            logging.info("Added metadata for movie %s", movie_data.title)
+        except RevisionIdWasChanged:
+            # Wait for a moment before refetching to mitigate rapid retry issues
+            await asyncio.sleep(1)
+            movie_data = await MediaFusionMovieMetaData.get(movie_id)
 
     # Serialize the data and store it in the Redis cache for 1 day
     if movie_data:
@@ -773,7 +780,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
     events_json = events_data.model_dump_json(exclude_none=True, by_alias=True)
 
     # Set or update the event data in Redis with an appropriate TTL
-    cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 1200
+    cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 3600
     await redis.set(event_key, events_json, ex=cache_ttl)
 
     logging.info(
