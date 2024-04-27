@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.8.1
+        image: mhdzumair/mediafusion:v3.8.2
         ports:
         - containerPort: 8000
         resources:
@@ -122,7 +122,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.8.1
+        image: mhdzumair/mediafusion:v3.8.2
         command: ["pipenv", "run", "dramatiq", "api.task", "-p", "1", "-t", "1"]
         env:
           - name: MONGO_URI
