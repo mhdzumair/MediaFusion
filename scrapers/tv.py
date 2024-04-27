@@ -13,7 +13,7 @@ from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
 
 
-@dramatiq.actor(priority=3, time_limit=5 * 60 * 1000)
+@dramatiq.actor(priority=3, time_limit=5 * 60 * 1000, max_retries=3)
 async def add_tv_metadata(batch):
     for metadata_json in batch:
         metadata = schemas.TVMetaData.model_validate(metadata_json)
@@ -28,7 +28,7 @@ async def add_tv_metadata(batch):
             metadata.streams = await validation_helper.validate_tv_metadata(metadata)
         except validation_helper.ValidationError as e:
             logging.error(f"Error validating TV metadata: {metadata.title}, {e}")
-            raise dramatiq.Retry("Error validating TV metadata.", delay=3000)
+            raise dramatiq.Retry("Error validating TV metadata.", delay=30000)
 
         channel_id = await crud.save_tv_channel_metadata(metadata)
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
@@ -45,6 +45,7 @@ def parse_m3u_playlist(
         )
         playlist_content = redis_client.get(playlist_redis_key).decode("utf-8")
         iptv_playlist = playlist.loads(playlist_content)
+        redis_client.delete(playlist_redis_key)
     else:
         iptv_playlist = playlist.loadu(playlist_url)
 
