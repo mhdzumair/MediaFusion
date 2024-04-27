@@ -1,8 +1,6 @@
-import asyncio
-import logging
+from datetime import timedelta
 from functools import wraps
 
-from dramatiq.rate_limits import ConcurrentRateLimiter, WindowRateLimiter
 from dramatiq.rate_limits.backends import RedisBackend
 
 from db.config import settings
@@ -50,46 +48,13 @@ def auth_required(func):
     return wrapper
 
 
-def worker_rate_limit(
-    limiter_type="concurrent",
-    limit=1,
-    window=None,
-    raise_on_failure=False,
-    use_args_in_key=False,
-):
+def minimum_run_interval(seconds: int):
+    """
+    Decorator to specify the minimum interval in seconds between task executions.
+    """
+
     def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # Construct the limiter key including function arguments if specified
-            if use_args_in_key:
-                args_key = "_".join([str(arg) for arg in args])
-                args_key += "_".join([f"{k}={v}" for k, v in kwargs.items()])
-                limiter_key = f"{func.__name__}_{args_key}_limiter"
-            else:
-                limiter_key = f"{func.__name__}_limiter"
-
-            if limiter_type == "concurrent":
-                limiter = ConcurrentRateLimiter(backend, limiter_key, limit=limit)
-            elif limiter_type == "window":
-                if window is None:
-                    raise ValueError(
-                        "Window parameter is required for window rate limiting"
-                    )
-                limiter = WindowRateLimiter(
-                    backend, limiter_key, limit=limit, window=window
-                )
-            else:
-                raise ValueError("Invalid limiter type specified")
-
-            with limiter.acquire(raise_on_failure=raise_on_failure) as acquired:
-                if acquired:
-                    if asyncio.iscoroutinefunction(func):
-                        return await func(*args, **kwargs)
-                    else:
-                        return func(*args, **kwargs)
-                else:
-                    logging.warning(f"Rate limit exceeded for {limiter_key}")
-
-        return wrapper
+        func._minimum_run_interval = timedelta(seconds=seconds)
+        return func
 
     return decorator

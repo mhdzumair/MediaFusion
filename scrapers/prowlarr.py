@@ -21,7 +21,7 @@ from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
 from utils.torrent import extract_torrent_metadata
-from utils.wrappers import worker_rate_limit
+from utils.wrappers import minimum_run_interval
 
 
 async def get_streams_from_prowlarr(
@@ -214,6 +214,7 @@ async def scrape_movie_title_streams_from_prowlarr(
     )
 
 
+@minimum_run_interval(settings.prowlarr_search_interval_hour * 60 * 60)
 @dramatiq.actor(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
@@ -221,7 +222,6 @@ async def scrape_movie_title_streams_from_prowlarr(
     retry_when=should_retry_prowlarr_scrap,
     priority=100,
 )
-@worker_rate_limit(limit=1, use_args_in_key=True)
 async def background_movie_title_search(video_id: str, title: str, year: str):
     await scrape_movie_title_streams_from_prowlarr(video_id, title, int(year))
     logging.info(f"Background title search completed for {title} ({year})")
@@ -305,6 +305,7 @@ async def scrape_series_title_streams_from_prowlarr(
     )
 
 
+@minimum_run_interval(settings.prowlarr_search_interval_hour * 60 * 60)
 @dramatiq.actor(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
@@ -312,7 +313,6 @@ async def scrape_series_title_streams_from_prowlarr(
     retry_when=should_retry_prowlarr_scrap,
     priority=100,
 )
-@worker_rate_limit(limit=1, use_args_in_key=True)
 async def background_series_title_search(
     video_id: str, title: str, year: str, season: str, episode: str
 ):

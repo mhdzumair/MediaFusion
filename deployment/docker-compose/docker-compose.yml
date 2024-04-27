@@ -42,7 +42,7 @@ services:
 
   dramatiq-worker:
     image: mhdzumair/mediafusion:v3.8.1
-    command: ["pipenv", "run", "dramatiq", "api.task", "-p", "2"]
+    command: ["pipenv", "run", "dramatiq", "api.task", "-p", "1", "-t", "1"]
     env_file:
       - .env
     depends_on:
