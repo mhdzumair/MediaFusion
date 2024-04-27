@@ -28,7 +28,7 @@ async def add_tv_metadata(batch):
             metadata.streams = await validation_helper.validate_tv_metadata(metadata)
         except validation_helper.ValidationError as e:
             logging.error(f"Error validating TV metadata: {metadata.title}, {e}")
-            raise dramatiq.Retry("Error validating TV metadata.", delay=30000)
+            return
 
         channel_id = await crud.save_tv_channel_metadata(metadata)
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
