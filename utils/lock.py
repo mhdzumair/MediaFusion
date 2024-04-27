@@ -3,7 +3,7 @@ import logging
 import time
 
 from redis.asyncio import Redis
-
+from redis.exceptions import LockNotOwnedError
 
 scheduler_lock_key = "mediafusion_scheduler_lock"
 heartbeat_key = "mediafusion_scheduler_heartbeat"
@@ -51,4 +51,8 @@ async def acquire_redis_lock(
 
 
 async def release_redis_lock(lock):
-    await lock.release()
+    try:
+        await lock.release()
+    except LockNotOwnedError:
+        logging.error("Failed to release lock, lock not owned")
+        pass

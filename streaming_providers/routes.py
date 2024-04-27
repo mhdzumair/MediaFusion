@@ -89,6 +89,7 @@ async def streaming_provider_endpoint(
         request.app.state.redis,
         f"{cached_stream_url_key}_locked",
         timeout=60,
+        block=True,
     )
     if not acquired:
         raise HTTPException(status_code=429, detail="Too many requests.")
