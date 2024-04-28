@@ -169,7 +169,7 @@ def is_video_file(filename: str) -> bool:
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
-async def validate_tv_streams_in_db():
+async def validate_tv_streams_in_db(*args, **kwargs):
     """Validate TV streams in the database."""
     from db.models import TVStreams
 

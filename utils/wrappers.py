@@ -48,13 +48,15 @@ def auth_required(func):
     return wrapper
 
 
-def minimum_run_interval(seconds: int):
+def minimum_run_interval(hours: int = 0, minutes: int = 0, seconds: int = 0):
     """
     Decorator to specify the minimum interval in seconds between task executions.
     """
 
     def decorator(func):
-        func._minimum_run_interval = timedelta(seconds=seconds)
+        interval = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+        if interval.total_seconds() >= 0:
+            func._minimum_run_interval = interval
         return func
 
     return decorator

@@ -201,7 +201,7 @@ class TaskManager(dramatiq.Middleware):
         second_next_time = cron_trigger.get_next_fire_time(next_time, next_time)
         return second_next_time - next_time
 
-    def before_process_message(self, broker, message):
+    def get_task_data(self, broker, message):
         task_name = message.actor_name
         args = message.args
         kwargs = message.kwargs.copy()
@@ -225,9 +225,14 @@ class TaskManager(dramatiq.Middleware):
         keys = "_".join([str(arg) for arg in args])
         keys += "_".join([f"{k}={v}" for k, v in kwargs.items()])
         task_key = f"background_tasks:{task_name}:{keys}"
-        logging.info(
-            f"Checking task {task_name} with args {args} and kwargs {kwargs} for minimum run interval with task key {task_key}"
-        )
+
+        return task_name, min_interval, set_cache_expiry, task_key
+
+    def before_process_message(self, broker, message):
+        task_data = self.get_task_data(broker, message)
+        if not task_data:
+            return
+        task_name, min_interval, set_cache_expiry, task_key = task_data
 
         # Subtract 10 seconds to account for processing time
         min_interval = min_interval - timedelta(seconds=10)
@@ -238,52 +243,32 @@ class TaskManager(dramatiq.Middleware):
             difference = datetime.now() - last_run
             if difference < min_interval:
                 logging.warning(
-                    f"Discarding task {task_name} due to minimum run interval. Last run: {difference} ago. Minimum interval: {min_interval}"
+                    f"Discarding task {task_name} with task_key {task_key} due to minimum run interval. Last run: {difference} ago. Minimum interval: {min_interval}"
                 )
                 raise SkipMessage()
 
+        # Set the cache expiry for the task
+        ex_time = int(min_interval.total_seconds()) if set_cache_expiry else None
         self.redis.set(
             task_key,
             datetime.now().timestamp(),
-            ex=int(min_interval.seconds) if set_cache_expiry else None,
+            ex=ex_time,
         )
-
-        logging.info(
-            f"Executing task {task_name} with args {args} and kwargs {kwargs}. Minimum interval: {min_interval}. with task key {task_key}"
-        )
+        logging.info(f"Executing task {task_name} with task key {task_key}")
 
     def after_process_message(self, broker, message, *, result=None, exception=None):
         if exception:
             return
 
-        task_name = message.actor_name
-        args = message.args
-        kwargs = message.kwargs.copy()
-        actor = broker.get_actor(task_name)
-        min_interval = getattr(actor, "_minimum_run_interval", None)
-        set_cache_expiry = False
-
-        if kwargs.get("crontab_expression"):
-            min_interval = self.calculate_interval_from_crontab(
-                kwargs.get("crontab_expression")
-            )
-            del kwargs["crontab_expression"]
-        elif min_interval:
-            set_cache_expiry = True
-        else:
-            logging.info(f"No need to store task cache for task {task_name}")
+        task_data = self.get_task_data(broker, message)
+        if not task_data:
             return
-
-        keys = "_".join([str(arg) for arg in args])
-        keys += "_".join([f"{k}={v}" for k, v in kwargs.items()])
-        task_key = f"background_tasks:{task_name}:{keys}"
+        task_name, min_interval, set_cache_expiry, task_key = task_data
 
         # Update the cache with the latest run time
         self.redis.set(
             task_key,
             datetime.now().timestamp(),
-            ex=int(min_interval.seconds) if set_cache_expiry else None,
+            ex=int(min_interval.total_seconds()) if set_cache_expiry else None,
         )
-        logging.info(
-            f"Task {task_name} {args} {kwargs} updated cache with latest run time. with task key {task_key}"
-        )
+        logging.info(f"Task key {task_key} updated cache with latest run time.")

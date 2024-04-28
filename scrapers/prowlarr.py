@@ -214,7 +214,7 @@ async def scrape_movie_title_streams_from_prowlarr(
     )
 
 
-@minimum_run_interval(settings.prowlarr_search_interval_hour * 60 * 60)
+@minimum_run_interval(hours=settings.prowlarr_search_interval_hour)
 @dramatiq.actor(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
@@ -305,7 +305,7 @@ async def scrape_series_title_streams_from_prowlarr(
     )
 
 
-@minimum_run_interval(settings.prowlarr_search_interval_hour * 60 * 60)
+@minimum_run_interval(hours=settings.prowlarr_search_interval_hour)
 @dramatiq.actor(
     time_limit=60 * 60 * 1000,  # 60 minutes
     min_backoff=2 * 60 * 1000,  # 2 minutes
