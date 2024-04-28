@@ -279,6 +279,8 @@ async def get_series_streams(
     season: int,
     episode: int,
 ) -> list[Stream]:
+    if season is None or episode is None:
+        season = episode = 1
     streams = await get_cached_torrent_streams(redis, video_id, season, episode)
 
     if video_id.startswith("tt"):
