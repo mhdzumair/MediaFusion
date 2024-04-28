@@ -1,10 +1,8 @@
 import random
 import re
 
-import redis
 import scrapy
 
-from db.config import settings
 from utils.parser import get_json_data
 
 
@@ -34,8 +32,6 @@ class StreamedSpider(scrapy.Spider):
         "inst1.": "Instance 1",
         "inst2.": "Instance 2",
         "inst3.": "Instance 3",
-        "inst4.": "Instance 4",
-        "inst5.": "Instance 5",
     }
     mediafusion_referer = "http://mediafusion.addon/"
 
@@ -50,13 +46,7 @@ class StreamedSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super(StreamedSpider, self).__init__(*args, **kwargs)
-        self.redis = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
         self.sports_artifacts = get_json_data("resources/json/sports_artifacts.json")
-
-    def __del__(self):
-        self.redis.close()
 
     def start_requests(self):
         for category, url in self.categories.items():
@@ -71,6 +61,7 @@ class StreamedSpider(scrapy.Spider):
             event_url = event.xpath(".//@href").get()
 
             item = {
+                "stream_source": "Streamed (streamed.su)",
                 "genres": [category],
                 "poster": random.choice(self.sports_artifacts[category]["poster"]),
                 "background": random.choice(
@@ -125,7 +116,6 @@ class StreamedSpider(scrapy.Spider):
                 {
                     "stream_name": f"{stream_name} - 📡 {self.sub_domains[server]}\n📺 {stream_quality} - 🌐 {language}",
                     "stream_url": m3u8_url,
-                    "stream_source": "streamed.su",
                     "referer": self.mediafusion_referer,
                     "event_start_timestamp": event_start_timestamp,
                 }
