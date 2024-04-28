@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     disable_crictime_scheduler: bool = False
     streambtw_scheduler_crontab: str = "*/15 * * * *"
     disable_streambtw_scheduler: bool = False
+    dlhd_scheduler_crontab: str = "25 * * * *"
+    disable_dlhd_scheduler: bool = (
+        True  # Disabled due to stremio server doesn't support #EXT-X-KEY in m3u8
+    )
 
     # Time-related settings
     torrentio_search_interval_days: int = 3

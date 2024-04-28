@@ -152,3 +152,15 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.streambtw_scheduler_crontab,
             },
         )
+
+    # Schedule dlhd scraper
+    if not settings.disable_dlhd_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.dlhd_scheduler_crontab),
+            name="dlhd",
+            kwargs={
+                "spider_name": "dlhd",
+                "crontab_expression": settings.dlhd_scheduler_crontab,
+            },
+        )

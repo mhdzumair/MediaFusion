@@ -217,6 +217,7 @@ class ScraperTask(BaseModel):
         "tamil_blasters",
         "crictime",
         "streambtw",
+        "dlhd",
     ]
     pages: int | None = 1
     start_page: int | None = 1

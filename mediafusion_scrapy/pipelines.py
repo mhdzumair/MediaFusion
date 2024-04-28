@@ -820,7 +820,11 @@ class LiveStreamResolverPipeline:
         response = await maybe_deferred_to_future(
             spider.crawler.engine.download(
                 scrapy.Request(
-                    stream_url, callback=NO_CALLBACK, headers={"Referer": referer}
+                    stream_url,
+                    callback=NO_CALLBACK,
+                    headers={"Referer": referer},
+                    method="HEAD",
+                    dont_filter=True,
                 )
             )
         )
