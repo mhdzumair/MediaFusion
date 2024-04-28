@@ -58,8 +58,8 @@ async def get_streams_from_prowlarr(
                     max_process,
                 )
                 streams.extend(new_streams)
-        # run background task for title search to get more streams
-        background_movie_title_search.send(video_id, title, str(year))
+        if settings.prowlarr_background_title_search:
+            background_movie_title_search.send(video_id, title, str(year))
     elif catalog_type == "series":
         if (
             settings.prowlarr_immediate_max_process_time > 0
@@ -86,14 +86,14 @@ async def get_streams_from_prowlarr(
                     max_process,
                 )
                 streams.extend(new_streams)
-        background_series_title_search.send(
-            video_id=video_id,
-            title=title,
-            year=str(year),
-            season=str(season),
-            episode=str(episode),
-        )
-    # Cache the data for 24 hours
+        if settings.prowlarr_background_title_search:
+            background_series_title_search.send(
+                video_id=video_id,
+                title=title,
+                year=str(year),
+                season=str(season),
+                episode=str(episode),
+            )
     await redis.set(
         cache_key,
         "True",
@@ -109,17 +109,14 @@ async def fetch_stream_data_with_timeout(func, *args):
     If the operation exceeds the timeout, it logs a warning and ignores the operation.
     """
     try:
-        # Attempt the operation with a prowlarr immediate max process time.
         return await asyncio.wait_for(
             func(*args), timeout=settings.prowlarr_immediate_max_process_time
         )
     except asyncio.TimeoutError:
-        # Log a warning if the operation takes too long but don't reschedule.
         logging.warning(
             f"Timeout exceeded for operation: {func.__name__} {args}. Skipping."
         )
     except Exception as e:
-        # Log any other errors that occur.
         logging.error(f"Error during operation: {e}")
     return []
 

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     validate_m3u8_urls_liveness: bool = True
     adult_content_regex_keywords: str = r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"
     prowlarr_live_title_search: bool = False
+    prowlarr_background_title_search: bool = True
 
     # Scheduler settings
     disable_all_scheduler: bool = False
