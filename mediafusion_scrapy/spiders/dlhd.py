@@ -111,7 +111,7 @@ class DaddyLiveHDSpider(scrapy.Spider):
             m3u8_url = self.m3u8_base_url.format(channel["channel_id"])
             item_copy.update(
                 {
-                    "stream_name": channel['channel_name'],
+                    "stream_name": channel["channel_name"],
                     "referer": self.referer,
                     "channel_id": channel["channel_id"],
                 }
