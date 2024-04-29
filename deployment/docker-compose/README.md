@@ -28,6 +28,8 @@ Rename `.env-sample` to `.env` and update the variables.
 > For more configuration options, refer to the [Configuration](/docs/configuration.md) documentation.
 
 
+### Linux/macOS
+
 ```bash
 cp .env-sample .env
 # Generate and update SECRET_KEY in the .env file
@@ -42,6 +44,27 @@ echo PREMIUMIZE_OAUTH_CLIENT_SECRET=your_client_secret >> .env
 nano .env
 ```
 
+### Windows
+
+```powershell
+# Copy .env-sample to .env
+Copy-Item .env-sample .env
+
+# Generate and update SECRET_KEY in the .env file
+$secretKey = [System.Guid]::NewGuid().ToString()
+Add-Content -Path .env -Value "SECRET_KEY=$secretKey"
+
+# Update .env with your Premiumize credentials if available
+# You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
+$clientId = 'your_client_id'
+$clientSecret = 'your_client_secret'
+Add-Content -Path .env -Value "PREMIUMIZE_OAUTH_CLIENT_ID=$clientId"
+Add-Content -Path .env -Value "PREMIUMIZE_OAUTH_CLIENT_SECRET=$clientSecret"
+
+# Open the .env file to verify the values
+notepad.exe .env
+```
+
 ## Generate Self-Signed SSL Certificate 🔐
 
 Generate a self-signed SSL certificate for local HTTPS:
@@ -50,6 +73,8 @@ Generate a self-signed SSL certificate for local HTTPS:
 mkcert -install
 mkcert "mediafusion.local"
 ```
+> [!TIP]
+> If you are using WSL to setup MediaFusion, You also need to run `mkcert -install` in Windows PowerShell to install the root certificate.
 
 ## Prowlarr Configuration 🔄
 
