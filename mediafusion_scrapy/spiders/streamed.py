@@ -107,18 +107,17 @@ class StreamedSpider(scrapy.Spider):
             stream_name = link.xpath(".//h1/text()").get().strip()
             stream_url = link.xpath(".//@href").get()
             stream_quality = link.xpath(".//h2/text()").get().strip()
-            server = random.choice(list(self.sub_domains.keys()))
-            m3u8_url = f"{self.m3u8_base_url.format(server)}{stream_url.replace('/watch', '')}/playlist.m3u8"
             language = link.xpath(".//div[last()]/text()").get().strip()
 
-            item = response.meta["item"].copy()
-            item.update(
-                {
-                    "stream_name": f"{stream_name} - 📡 {self.sub_domains[server]}\n📺 {stream_quality} - 🌐 {language}",
-                    "stream_url": m3u8_url,
-                    "referer": self.mediafusion_referer,
-                    "event_start_timestamp": event_start_timestamp,
-                }
-            )
-
-            yield item
+            for sub_domain, sub_domain_name in self.sub_domains.items():
+                m3u8_url = f"{self.m3u8_base_url.format(sub_domain)}{stream_url.replace('/watch', '')}/playlist.m3u8"
+                item = response.meta["item"].copy()
+                item.update(
+                    {
+                        "stream_name": f"{stream_name} - 📡 {sub_domain_name}\n📺 {stream_quality} - 🌐 {language}",
+                        "stream_url": m3u8_url,
+                        "referer": self.mediafusion_referer,
+                        "event_start_timestamp": event_start_timestamp,
+                    }
+                )
+                yield item
