@@ -14,7 +14,7 @@ def run_spider_in_process(spider_name, *args, **kwargs):
     process.start()
 
 
-@dramatiq.actor(priority=5, time_limit=60 * 60 * 1000)
+@dramatiq.actor(priority=5, time_limit=60 * 60 * 1000, queue_name="scrapy")
 def run_spider(spider_name: str, *args, **kwargs):
     """
     Wrapper function to run the spider in a separate process.
