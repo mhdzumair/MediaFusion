@@ -40,18 +40,9 @@
                         <div class="mb-3">
                             <label for="spiderName" class="form-label">Spider Name</label>
                             <select class="form-select" id="spiderName" name="spider_name">
-                                <option value="formula_tgx">Formula TGX</option>
-                                <option value="mhdtvworld">MHDTV World</option>
-                                <option value="mhdtvsports">MHDTV Sports</option>
-                                <option value="tamilultra">Tamil Ultra</option>
-                                <option value="sport_video">Sport Video</option>
-                                <option value="streamed">Streamed Sport Events</option>
-                                <option value="mrgamingstreams">MrGamingStreams Sport Events</option>
-                                <option value="tamil_blasters">TamilBlasters</option>
-                                <option value="tamilmv">TamilMV</option>
-                                <option value="crictime">CricTime</option>
-                                <option value="streambtw">StreamBTW</option>
-                                <option value="dlhd">DaddyLiveHD</option>
+                                {% for spider_id, spider_name in scrapy_spiders %}
+                                <option value="{{spider_id}}">{{spider_name}}</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <!-- Additional Parameters based on Spider Selection -->

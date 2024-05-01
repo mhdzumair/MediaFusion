@@ -8,6 +8,7 @@ from dramatiq.middleware import (
     ShutdownNotifications,
     Callbacks,
     Pipelines,
+    Prometheus,
 )
 
 from api.middleware import MaxTasksPerChild, Retries, TaskManager
@@ -16,6 +17,7 @@ from db.config import settings
 # Setup the broker and the middleware
 redis_broker = RedisBroker(url=settings.redis_url)
 redis_broker.middleware = [
+    Prometheus(),
     AgeLimit(),
     TimeLimit(),
     ShutdownNotifications(),

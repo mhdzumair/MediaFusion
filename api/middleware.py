@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import signal
+import time
 from datetime import timedelta, datetime
 from threading import Lock
 from typing import Callable, Optional
@@ -222,9 +223,12 @@ class TaskManager(dramatiq.Middleware):
             )
             return
 
-        keys = "_".join([str(arg) for arg in args])
-        keys += "_".join([f"{k}={v}" for k, v in kwargs.items()])
-        task_key = f"background_tasks:{task_name}:{keys}"
+        if spider_name := kwargs.get("spider_name"):
+            task_key = f"background_tasks:run_spider:spider_name={spider_name}"
+        else:
+            keys = "_".join([str(arg) for arg in args])
+            keys += "_".join([f"{k}={v}" for k, v in kwargs.items()])
+            task_key = f"background_tasks:{task_name}:{keys}"
 
         return task_name, min_interval, set_cache_expiry, task_key
 
@@ -272,3 +276,12 @@ class TaskManager(dramatiq.Middleware):
             ex=int(min_interval.total_seconds()) if set_cache_expiry else None,
         )
         logging.info(f"Task key {task_key} updated cache with latest run time.")
+
+
+class TimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        response.headers["X-Process-Time"] = f"{process_time:.4f} seconds"
+        return response

@@ -22,6 +22,7 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import database, crud, schemas
 from db.config import settings
+from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
@@ -51,6 +52,7 @@ app.state.redis = redis.Redis(
     connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
 )
 app.add_middleware(middleware.RateLimitMiddleware, redis_client=app.state.redis)
+app.add_middleware(middleware.TimingMiddleware)
 app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
@@ -547,6 +549,7 @@ async def get_scraper(request: Request):
         {
             "request": request,
             "authentication_required": settings.api_password is not None,
+            "scrapy_spiders": const.SCRAPY_SPIDERS.items(),
         },
     )
 
@@ -556,3 +559,5 @@ app.include_router(
 )
 
 app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])
+
+app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])

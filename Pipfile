@@ -38,6 +38,7 @@ aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
 aiowebdav = "*"
 m3u-ipytv = "*"
 python-multipart = "*"
+prometheus-client = "*"
 
 [dev-packages]
 pysocks = "*"

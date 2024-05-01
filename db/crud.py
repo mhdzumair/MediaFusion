@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
@@ -877,3 +878,24 @@ async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
     # cache the genres for 30 minutes
     await redis.set(f"{catalog_type}_genres", json.dumps(genres), ex=1800)
     return genres
+
+
+async def fetch_last_run(redis: Redis, spider_id: str, spider_name: str):
+    task_key = f"background_tasks:run_spider:spider_name={spider_id}"
+    last_run_timestamp = await redis.get(task_key)
+
+    if last_run_timestamp:
+        last_run = datetime.fromtimestamp(float(last_run_timestamp))
+        delta = datetime.now() - last_run
+        delta_str = str(delta)
+        return spider_name, {
+            "last_run": last_run.isoformat(),
+            "time_since_last_run": delta_str,
+            "time_since_last_run_seconds": delta.total_seconds(),
+        }
+    else:
+        return spider_name, {
+            "last_run": "Never",
+            "time_since_last_run": "Never run",
+            "time_since_last_run_seconds": -1,
+        }

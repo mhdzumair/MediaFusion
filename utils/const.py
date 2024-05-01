@@ -148,3 +148,18 @@ M3U8_VALID_CONTENT_TYPES = [
     "video/mp2t",
     "application/octet-stream",
 ]
+
+SCRAPY_SPIDERS = {
+    "formula_tgx": "Formula TGX",
+    "mhdtvworld": "MHDTV World",
+    "mhdtvsports": "MHDTV Sports",
+    "tamilultra": "Tamil Ultra",
+    "sport_video": "Sport Video",
+    "streamed": "Streamed Sport Events",
+    "mrgamingstreams": "MrGamingStreams Sport Events",
+    "tamil_blasters": "TamilBlasters",
+    "tamilmv": "TamilMV",
+    "crictime": "CricTime",
+    "streambtw": "StreamBTW",
+    "dlhd": "DaddyLiveHD",
+}
