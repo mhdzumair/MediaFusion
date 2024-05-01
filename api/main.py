@@ -15,7 +15,7 @@ from fastapi import (
     HTTPException,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from api import middleware
@@ -119,7 +119,8 @@ async def get_home(request: Request):
         "html/home.html",
         {
             "request": request,
-            "name": manifest.get("name"),
+            "addon_name": settings.addon_name,
+            "logo_url": settings.logo_url,
             "version": f"{manifest.get('version')}-{settings.git_rev[:7]}",
             "description": manifest.get("description"),
         },
@@ -134,9 +135,7 @@ async def health(request: Request):
 
 @app.get("/favicon.ico")
 async def get_favicon():
-    return FileResponse(
-        "resources/images/mediafusion_logo.png", media_type="image/x-icon"
-    )
+    return RedirectResponse(url=settings.logo_url)
 
 
 @app.get("/static/{file_path:path}")
@@ -173,6 +172,8 @@ async def configure(
         {
             "request": request,
             "user_data": user_data.model_dump(),
+            "logo_url": settings.logo_url,
+            "addon_name": settings.addon_name,
             "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
             "sorting_options": const.TORRENT_SORTING_PRIORITY,
@@ -549,6 +550,8 @@ async def get_scraper(request: Request):
         {
             "request": request,
             "authentication_required": settings.api_password is not None,
+            "logo_url": settings.logo_url,
+            "addon_name": settings.addon_name,
             "scrapy_spiders": const.SCRAPY_SPIDERS.items(),
         },
     )

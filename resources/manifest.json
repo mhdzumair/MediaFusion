@@ -1,8 +1,8 @@
 {
-  "id": "mhdzumair.addons.mediafusion",
+  "id": "stremio.addons",
   "version": "3.8.4",
   "name": "Media Fusion",
-  "contactEmail": "mhdzumair@gmail",
+  "contactEmail": "mhdzumair@gmail.com",
   "description": "Universal Stremio Add-on for Movies, Series, Live TV & Sports Events. Source: https://github.com/mhdzumair/MediaFusion",
   "logo": "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png",
   "behaviorHints": {

@@ -161,14 +161,14 @@ async def parse_stream_data(
         description = "\n".join(filter(None, description_parts))
 
         stream_details = {
-            "name": f"MediaFusion {streaming_provider_name} {resolution} {streaming_provider_status}",
+            "name": f"{settings.addon_name} {streaming_provider_name} {resolution} {streaming_provider_status}",
             "description": description,
             "infoHash": stream_data.id,
             "fileIdx": episode_data.file_index
             if episode_data
             else stream_data.file_index,
             "behaviorHints": {
-                "bingeGroup": f"MediaFusion-{quality_detail}-{resolution}",
+                "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
             },
         }
 
@@ -275,7 +275,7 @@ async def parse_tv_stream_data(
 
         stream_list.append(
             Stream(
-                name="MediaFusion",
+                name=settings.addon_name,
                 description=f"📺 {stream.name}{country_info}\n🔗 {stream.source}",
                 url=stream.url,
                 ytId=stream.ytId,
@@ -286,7 +286,7 @@ async def parse_tv_stream_data(
     if not stream_list:
         stream_list.append(
             Stream(
-                name="MediaFusion",
+                name=settings.addon_name,
                 description="🚫 No streams are live at the moment.",
                 url=f"{settings.host_url}/static/exceptions/no_streams_live.mp4",
                 behaviorHints={"notWebReady": True},
@@ -318,6 +318,9 @@ async def generate_manifest(manifest: dict, user_data: UserData, redis: Redis) -
     from db.crud import get_genres
 
     resources = manifest.get("resources", [])
+    manifest["name"] = settings.addon_name
+    manifest["id"] += f".{settings.addon_name.lower().replace(' ', '')}"
+    manifest["logo"] = settings.logo_url
 
     # Ensure catalogs are enabled
     if user_data.enable_catalogs:

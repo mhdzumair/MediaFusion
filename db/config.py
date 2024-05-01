@@ -19,9 +19,11 @@ class Settings(BaseSettings):
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
 
-    # Logging and revision settings
+    # Common settings
     logging_level: str = "INFO"
     git_rev: str = "stable"
+    addon_name: str = "MediaFusion"
+    logo_url: str = "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
 
     # Feature toggles
     is_scrap_from_torrentio: bool = False
