@@ -6,10 +6,8 @@ from prometheus_client import Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from db.crud import fetch_last_run
 from db.models import (
-    MediaFusionMovieMetaData,
-    MediaFusionSeriesMetaData,
+    MediaFusionMetaData,
     TorrentStreams,
-    MediaFusionTVMetaData,
 )
 from utils import const
 
@@ -37,9 +35,9 @@ async def get_total_torrents():
 @metrics_router.get("/metadata", tags=["metrics"])
 async def get_total_metadata():
     results = await asyncio.gather(
-        MediaFusionMovieMetaData.count(),
-        MediaFusionSeriesMetaData.count(),
-        MediaFusionTVMetaData.count(),
+        MediaFusionMetaData.get_motor_collection().count_documents({"type": "movie"}),
+        MediaFusionMetaData.get_motor_collection().count_documents({"type": "series"}),
+        MediaFusionMetaData.get_motor_collection().count_documents({"type": "tv"}),
     )
     movies_count, series_count, tv_channels_count = results
 
