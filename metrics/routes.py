@@ -37,9 +37,9 @@ async def get_total_torrents():
 @metrics_router.get("/metadata", tags=["metrics"])
 async def get_total_metadata():
     results = await asyncio.gather(
-        MediaFusionMovieMetaData.get_motor_collection().count_documents({}),
-        MediaFusionSeriesMetaData.get_motor_collection().count_documents({}),
-        MediaFusionTVMetaData.get_motor_collection().count_documents({}),
+        MediaFusionMovieMetaData.count(),
+        MediaFusionSeriesMetaData.count(),
+        MediaFusionTVMetaData.count(),
     )
     movies_count, series_count, tv_channels_count = results
 
