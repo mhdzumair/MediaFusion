@@ -33,7 +33,7 @@ class StreamedSpider(scrapy.Spider):
         "inst2.": "Instance 2",
         "inst3.": "Instance 3",
     }
-    mediafusion_referer = "http://mediafusion.addon/"
+    mediafusion_referer = "https://mediafusion.addon/"
 
     custom_settings = {
         "ITEM_PIPELINES": {
