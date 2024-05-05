@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import PTN
 import dramatiq
 import httpx
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from thefuzz import fuzz
 from torf import Magnet, MagnetError
@@ -504,22 +505,30 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
 
     # Prepare episode data based on detailed file data or basic episode numbers
     episode_data = []
-    if "file_data" in parsed_data and parsed_data["file_data"]:
-        episode_data = [
-            Episode(
-                episode_number=file["episode"],
-                filename=file.get("filename"),
-                size=file.get("size"),
-                file_index=file.get("index"),
-            )
-            for file in parsed_data["file_data"]
-            if file.get("episode")
-        ]
-    elif parsed_data.get("episode"):
-        if isinstance(parsed_data["episode"], list):
-            episode_data = [Episode(episode_number=ep) for ep in parsed_data["episode"]]
-        else:
-            episode_data = [Episode(episode_number=parsed_data["episode"])]
+    try:
+        if parsed_data.get("file_data"):
+            episode_data = [
+                Episode(
+                    episode_number=file["episode"],
+                    filename=file.get("filename"),
+                    size=file.get("size"),
+                    file_index=file.get("index"),
+                )
+                for file in parsed_data["file_data"]
+                if file.get("episode")
+            ]
+        elif parsed_data.get("episode"):
+            if isinstance(parsed_data["episode"], list):
+                episode_data = [
+                    Episode(episode_number=ep) for ep in parsed_data["episode"]
+                ]
+            else:
+                episode_data = [Episode(episode_number=parsed_data["episode"])]
+    except ValidationError:
+        logging.error(
+            f"Error parsing episode data for {info_hash}: {parsed_data['file_data']}: episode_data: {parsed_data['episode']}",
+            exc_info=True,
+        )
 
     # Skip the torrent if no episode data is available
     if not episode_data:
@@ -660,6 +669,7 @@ async def parse_and_store_movie_stream_data(
         10,
         3,
         circuit_breaker,
+        [httpx.HTTPError],
         video_id,
         title,
         year,
@@ -697,6 +707,7 @@ async def parse_and_store_series_stream_data(
         5,
         3,
         circuit_breaker,
+        [httpx.HTTPError],
         video_id,
         title,
         year=year,
