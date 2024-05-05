@@ -812,7 +812,10 @@ class LiveStreamResolverPipeline:
     async def process_item(self, item, spider):
         adapter = ItemAdapter(item)
         stream_url = adapter.get("stream_url")
-        referer = adapter.get("referer")
+        stream_headers = adapter.get("stream_headers")
+        if not stream_url:
+            referer = adapter.get("referer")
+            stream_headers = {"Referer": referer} if referer else {}
 
         if not stream_url:
             raise DropItem(f"No stream URL found in item: {item}")
@@ -822,7 +825,7 @@ class LiveStreamResolverPipeline:
                 scrapy.Request(
                     stream_url,
                     callback=NO_CALLBACK,
-                    headers={"Referer": referer},
+                    headers=stream_headers,
                     method="HEAD",
                     dont_filter=True,
                 )
@@ -831,7 +834,14 @@ class LiveStreamResolverPipeline:
         content_type = response.headers.get("Content-Type", b"").decode().lower()
 
         if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
-            # Stream is valid; add it to the item's streams list
+            stream_headers.update(
+                {
+                    "User-Agent": response.request.headers.get("User-Agent").decode(),
+                    "Referer": response.request.headers.get("Referer").decode(),
+                }
+            )
+            is_redirect = response.meta.get("redirect_times", 0) > 0
+
             item["streams"].append(
                 {
                     "name": adapter["stream_name"],
@@ -839,18 +849,9 @@ class LiveStreamResolverPipeline:
                     "source": adapter["stream_source"],
                     "behaviorHints": {
                         "notWebReady": True,
-                        "is_redirect": True
-                        if response.meta.get("redirect_times", 0) > 0
-                        else False,
+                        "is_redirect": is_redirect,
                         "proxyHeaders": {
-                            "request": {
-                                "User-Agent": response.request.headers.get(
-                                    "User-Agent"
-                                ).decode(),
-                                "Referer": response.request.headers.get(
-                                    "Referer"
-                                ).decode(),
-                            }
+                            "request": stream_headers,
                         },
                     },
                 }

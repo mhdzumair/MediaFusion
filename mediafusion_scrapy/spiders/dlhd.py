@@ -1,11 +1,10 @@
 import random
+import re
 from datetime import datetime
 
 import pytz
-import redis
 import scrapy
 
-from db.config import settings
 from utils.parser import get_json_data
 
 
@@ -61,14 +60,8 @@ class DaddyLiveHDSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super(DaddyLiveHDSpider, self).__init__(*args, **kwargs)
-        self.redis = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
         self.sports_artifacts = get_json_data("resources/json/sports_artifacts.json")
         self.gmt = pytz.timezone("Etc/GMT")
-
-    def __del__(self):
-        self.redis.close()
 
     def parse(self, response, **kwargs):
         data = response.json()
@@ -76,7 +69,9 @@ class DaddyLiveHDSpider(scrapy.Spider):
             date_str = date_section.split(" - ")[
                 0
             ]  # Assuming the date is always first part
-            date = datetime.strptime(date_str, "%A %dth %B %Y").date()
+            # Remove the ordinal suffix from the date
+            date_str = re.sub(r"(st|nd|rd|th)", "", date_str)
+            date = datetime.strptime(date_str, "%A %d %B %Y").date()
             for sport, events in sports.items():
                 for event in events:
                     category = self.category_map.get(sport, "Other Sports")
@@ -112,7 +107,10 @@ class DaddyLiveHDSpider(scrapy.Spider):
             item_copy.update(
                 {
                     "stream_name": channel["channel_name"],
-                    "referer": self.referer,
+                    "stream_headers": {
+                        "Referer": self.referer,
+                        "Origin": self.referer.rstrip("/"),
+                    },
                     "channel_id": channel["channel_id"],
                 }
             )
