@@ -4,6 +4,7 @@ from apscheduler.triggers.cron import CronTrigger
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
 from utils.validation_helper import validate_tv_streams_in_db
+from scrapers.imdb_data import fetch_movie_ids_to_update
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -164,3 +165,12 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.dlhd_scheduler_crontab,
             },
         )
+
+    scheduler.add_job(
+        fetch_movie_ids_to_update.send,
+        CronTrigger.from_crontab(settings.update_imdb_data_crontab),
+        name="update_imdb_data",
+        kwargs={
+            "crontab_expression": settings.update_imdb_data_crontab,
+        },
+    )

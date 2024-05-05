@@ -66,6 +66,7 @@ async def batch_process_with_circuit_breaker(
     batch_size: int,
     rate_limit_delay: int,
     cb: CircuitBreaker,
+    retry_exceptions: list[type[Exception]] = (),
     *args,
     **kwargs,
 ):
@@ -85,7 +86,7 @@ async def batch_process_with_circuit_breaker(
                 successful_results, retry_batch = [], []
                 for item, result in zip(batch, batch_results):
                     if isinstance(
-                        result, (CircuitBreakerOpenException, httpx.HTTPError)
+                        result, (CircuitBreakerOpenException, *retry_exceptions)
                     ):
                         retry_batch.append(item)
                     elif isinstance(result, Exception):
