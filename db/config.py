@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     enable_rate_limit: bool = True
     is_public_instance: bool = False
     validate_m3u8_urls_liveness: bool = True
-    adult_content_regex_keywords: str = r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"
+    adult_content_regex_keywords: str = r"(^|\b|\s)(18\s*\+|adult|porn|sex|xxx|nude|boob|pussy|ass|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"
+    parent_guide_nudity_filter_types_regex: str = "Severe"
+    parent_guide_certificates_filter_regex: str = r"X|XXX|TV-MA|18\+|18SX"
     prowlarr_live_title_search: bool = False
     prowlarr_background_title_search: bool = True
 
@@ -64,6 +66,7 @@ class Settings(BaseSettings):
     disable_dlhd_scheduler: bool = (
         True  # Disabled due to stremio server doesn't support #EXT-X-KEY in m3u8
     )
+    update_imdb_data_crontab: str = "0 2 * * *"
 
     # Time-related settings
     torrentio_search_interval_days: int = 3

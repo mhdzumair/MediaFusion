@@ -327,7 +327,6 @@ async def get_catalog(
 @wrappers.auth_required
 async def search_meta(
     response: Response,
-    request: Request,
     catalog_type: Literal["movie", "series", "tv"],
     catalog_id: Literal[
         "mediafusion_search_movies",
@@ -335,13 +334,15 @@ async def search_meta(
         "mediafusion_search_tv",
     ],
     search_query: str,
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.DEFAULT_HEADERS)
     logging.debug("search for catalog_id: %s", catalog_id)
 
-    return await crud.process_search_query(
-        search_query, catalog_type, request.app.state.redis
-    )
+    if catalog_type == "tv":
+        return await crud.process_tv_search_query(search_query)
+
+    return await crud.process_search_query(search_query, catalog_type, user_data)
 
 
 @app.get(
@@ -532,6 +533,8 @@ async def get_poster(
         logging.error(f"Failed to create poster: {e}, status: {e.status}")
         if e.status != 404:
             raise HTTPException(status_code=404, detail="Failed to create poster.")
+    except aiohttp.ClientConnectorError as e:
+        logging.error(f"Failed to create poster: {e}")
     except Exception as e:
         logging.error(
             f"Unexpected error while creating poster: {mediafusion_data.poster} {e}",

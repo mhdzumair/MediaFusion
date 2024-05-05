@@ -9,7 +9,7 @@ from aiohttp import ClientError
 from redis.asyncio import Redis
 
 from db import schemas
-from utils import const
+from utils import const, runtime_const
 
 
 def is_valid_url(url: str) -> bool:
@@ -185,3 +185,33 @@ async def validate_tv_streams_in_db(*args, **kwargs):
         for stream in tv_streams
     ]
     await asyncio.gather(*tasks)
+
+
+def validate_parent_guide_nudity(metadata) -> bool:
+    """
+    Validate if the metadata has adult content based on the parent guide nudity status or if status is not available, based on certificates.
+    """
+    if metadata.parent_guide_nudity_status:
+        if runtime_const.PARENT_GUIDE_NUDITY_FILTER_TYPES_REGEX.match(
+            metadata.parent_guide_nudity_status,
+        ):
+            logging.info(
+                "Adult content detected by nudity status as %s found in title '%s', meta id %s",
+                metadata.parent_guide_nudity_status,
+                metadata.title,
+                metadata.id,
+            )
+            return False
+    elif metadata.parent_guide_certificates and any(
+        runtime_const.PARENT_GUIDE_CERTIFICATES_FILTER_REGEX.match(certificate)
+        for certificate in metadata.parent_guide_certificates
+    ):
+        logging.info(
+            "Adult content detected by certificates as %s found in title '%s', meta id %s",
+            metadata.parent_guide_certificates,
+            metadata.title,
+            metadata.id,
+        )
+        return False
+
+    return True

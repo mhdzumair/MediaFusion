@@ -4,7 +4,7 @@ from typing import Optional, Any
 import pymongo
 from beanie import Document, Link
 from pydantic import BaseModel, Field
-from pymongo import IndexModel, ASCENDING
+from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
 class Episode(BaseModel):
@@ -23,6 +23,7 @@ class Season(BaseModel):
 
 class TorrentStreams(Document):
     id: str
+    meta_id: str
     torrent_name: str
     size: int
     season: Optional[Season] = None
@@ -41,7 +42,17 @@ class TorrentStreams(Document):
     encoder: Optional[str] = None
     seeders: Optional[int] = None
     cached: Optional[bool] = Field(default=False, exclude=True)
-    meta_id: Optional[str] = None
+
+    class Settings:
+        indexes = [
+            IndexModel(
+                [
+                    ("meta_id", ASCENDING),
+                    ("created_at", DESCENDING),
+                    ("catalog", ASCENDING),
+                ]
+            )
+        ]
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
@@ -80,6 +91,7 @@ class MediaFusionMetaData(Document):
     description: Optional[str] = None
     runtime: Optional[str] = None
     website: Optional[str] = None
+    genres: list[str] = Field(default_factory=list)
 
     class Settings:
         is_root = True
@@ -91,10 +103,16 @@ class MediaFusionMetaData(Document):
 
 class MediaFusionMovieMetaData(MediaFusionMetaData):
     type: str = "movie"
+    imdb_rating: Optional[float] = None
+    parent_guide_nudity_status: Optional[str] = "None"
+    parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
 
 
 class MediaFusionSeriesMetaData(MediaFusionMetaData):
     type: str = "series"
+    imdb_rating: Optional[float] = None
+    parent_guide_nudity_status: Optional[str] = "None"
+    parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
 
 
 class MediaFusionTVMetaData(MediaFusionMetaData):
@@ -102,7 +120,6 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     country: str | None = None
     tv_language: str | None = None
     logo: Optional[str] = None
-    genres: list[str] = Field(default_factory=list)
     streams: list[Link[TVStreams]]
 
 

@@ -13,13 +13,8 @@ from db.schemas import Stream, UserData
 from streaming_providers import mapper
 from utils import const
 from utils.network import get_redirector_url
+from utils.runtime_const import ADULT_CONTENT_KEYWORDS
 from utils.validation_helper import validate_m3u8_url_with_cache
-
-ia = Cinemagoer()
-ADULT_CONTENT_KEYWORDS = re.compile(
-    settings.adult_content_regex_keywords,
-    re.IGNORECASE,
-)
 
 
 async def filter_and_sort_streams(
@@ -223,32 +218,6 @@ def get_catalogs(catalog: str, languages: list[str]) -> list[str]:
 
     # Generate the catalog for each supported language
     return [f"{lang.lower()}_{base_catalog}" for lang in languages]
-
-
-def search_imdb(title: str, year: int, retry: int = 5) -> dict:
-    try:
-        result = ia.search_movie(f"{title} {year}")
-    except Exception:
-        return search_imdb(title, year, retry - 1) if retry > 0 else {}
-    for movie in result:
-        if movie.get("year") == year and movie.get("title").lower() in title.lower():
-            imdb_id = f"tt{movie.movieID}"
-            poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
-            if requests.get(poster).status_code == 200:
-                return {
-                    "imdb_id": imdb_id,
-                    "poster": poster.replace("small", "medium"),
-                    "background": f"https://live.metahub.space/background/medium/{imdb_id}/img",
-                    "title": movie.myTitle,
-                }
-            poster = movie.get("full-size cover url")
-            return {
-                "imdb_id": imdb_id,
-                "poster": poster,
-                "background": poster,
-                "title": movie.myTitle,
-            }
-    return {}
 
 
 async def parse_tv_stream_data(
