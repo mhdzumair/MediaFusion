@@ -250,9 +250,22 @@ def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
         draw.textbbox((0, 0), line, font=font)[3] for line in lines
     ) + (line_spacing * (len(lines) - 1))
 
-    # Starting y position, centered vertically
-    y = (image.height - text_block_height) // 2
-    sample_area = (0, y, image.width, y + text_block_height)
+    # Ensure y is not negative or too close to the top
+    y = max(0, (image.height - text_block_height) // 2)
+    # Ensure sample_area is fully within image bounds
+    top_y = max(0, y - text_block_height // 2)
+    bottom_y = min(image.height, y + text_block_height + text_block_height // 2)
+    sample_area = (0, top_y, image.width, bottom_y)
+
+    # Ensure sample_area is valid
+    if sample_area[3] <= sample_area[1]:
+        sample_area = (
+            0,
+            0,
+            image.width,
+            image.height,
+        )  # Default to full image if invalid
+
     average_color = get_average_color(image, sample_area)
     text_color, outline_color = text_color_based_on_background(average_color)
 
