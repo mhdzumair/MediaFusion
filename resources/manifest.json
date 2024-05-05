@@ -533,6 +533,28 @@
 		  ]
 		}
 	  ]
+	},
+	{
+	  "id": "prowlarr_movies",
+	  "type": "movie",
+	  "name": "Prowlarr Scraped Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "prowlarr_series",
+	  "type": "series",
+	  "name": "Prowlarr Scraped Series",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
 	}
   ]
 }
