@@ -9,6 +9,7 @@ from imdb import Cinemagoer
 from redis.asyncio import Redis
 
 from db.models import MediaFusionMetaData
+from scrapers.imdb_data import get_imdb_rating
 from utils import const
 
 ia = Cinemagoer()
@@ -45,7 +46,10 @@ def process_poster_image(
     try:
         image = Image.open(BytesIO(content)).convert("RGBA")
         image = image.resize((300, 450))
-        imdb_rating = None  # Assume you fetch this rating elsewhere if needed
+        imdb_rating = None
+        if mediafusion_data.id.startswith("tt"):
+            if (imdb_rating := mediafusion_data.imdb_rating) is None:
+                imdb_rating = get_imdb_rating(mediafusion_data.id)
 
         # The add_elements_to_poster function would be synchronous
         image = add_elements_to_poster(image, imdb_rating)
