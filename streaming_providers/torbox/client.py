@@ -85,5 +85,10 @@ class Torbox(DebridClient):
             "transfer_error.mp4",
         )
 
-    def delete_torrent(self, magnet_id):
-        raise NotImplementedError
+    def delete_torrent(self, torrent_id):
+        return self._make_request(
+            "POST",
+            "torrents/controltorrent",
+            params={"token": self.token, "torrent_id": torrent_id, "operation": "Delete"}
+        )
+

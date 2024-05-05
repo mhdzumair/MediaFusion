@@ -1,5 +1,10 @@
 from typing import Any
 
+import PTN
+
+from thefuzz import fuzz
+from urllib.request import urlopen
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 from utils.validation_helper import is_video_file
@@ -7,6 +12,7 @@ from utils.validation_helper import is_video_file
 
 class OffCloud(DebridClient):
     BASE_URL = "https://offcloud.com/api"
+    DELETE_URL = "https://offcloud.com"
 
     def initialize_headers(self):
         pass
@@ -25,10 +31,14 @@ class OffCloud(DebridClient):
         params=None,
         is_return_none=False,
         is_expected_to_fail=False,
+        delete=False,
     ) -> dict:
         params = params or {}
         params["key"] = self.token
-        url = self.BASE_URL + url
+        if delete:
+            url = self.DELETE_URL + url
+        else:
+            url = self.BASE_URL + url
         return super()._make_request(
             method, url, data, params, is_return_none, is_expected_to_fail
         )
@@ -70,20 +80,35 @@ class OffCloud(DebridClient):
     def explore_folder_links(self, request_id):
         return self._make_request("GET", f"/cloud/explore/{request_id}")
 
-    def create_download_link(self, request_id, torrent_info, filename):
+    def create_download_link(self, request_id, torrent_info, filename, episode):
         if torrent_info["isDirectory"] is False:
             return f"https://{torrent_info.get('server')}.offcloud.com/cloud/download/{request_id}/{torrent_info.get('fileName')}"
 
-        response = self.explore_folder_links(request_id)
-        for link in response:
-            if filename is None:
-                if is_video_file(link):
-                    return link
-            if filename is not None and filename in link:
-                return link
-        raise ProviderException(
-            "No matching file available for this torrent", "api_error.mp4"
-        )
+        links = self.explore_folder_links(request_id)
 
-    def delete_torrent(self, magnet_id):
-        raise NotImplementedError
+        exact_match = next((link for link in links if filename in link), None)
+        if exact_match:
+            return exact_match
+
+        # Fuzzy matching as a fallback
+        for link in links:
+            link["fuzzy_ratio"] = fuzz.ratio(filename, link)
+        selected_file = max(links, key=lambda x: x["fuzzy_ratio"])
+
+        # If the fuzzy ratio is less than 50, then select the largest file
+        if selected_file["fuzzy_ratio"] < 50:
+            selected_file = max(links, key=lambda x: int(urlopen(x).info()['Content-Length']))
+
+        if episode:
+            # Select the file with the matching episode number
+            for link in links:
+                if PTN.parse(link).get("episode") == episode:
+                    return link
+
+        if is_video_file(selected_file):
+            raise ProviderException(
+                "No matching file available for this torrent", "no_matching_file.mp4"
+            )
+
+    def delete_torrent(self, request_id):
+        return self._make_request("GET", f"/cloud/remove/{request_id}", delete=True)

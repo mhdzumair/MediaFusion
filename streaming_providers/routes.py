@@ -125,7 +125,7 @@ async def streaming_provider_endpoint(
             )
         elif user_data.streaming_provider.service == "torbox":
             video_url = get_direct_link_from_torbox(
-                info_hash, magnet_link, user_data, filename, 1, 0
+                info_hash, magnet_link, user_data, filename, 1, 0, episode=episode,
             )
         elif user_data.streaming_provider.service == "premiumize":
             video_url = get_direct_link_from_premiumize(

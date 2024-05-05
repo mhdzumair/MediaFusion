@@ -1,5 +1,9 @@
 from typing import Any
 
+import PTN
+
+from thefuzz import fuzz
+
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -13,6 +17,7 @@ def get_direct_link_from_torbox(
     filename: str,
     max_retries=5,
     retry_interval=5,
+    episode: int = None,
 ) -> str:
     torbox_client = Torbox(token=user_data.streaming_provider.token)
 
@@ -23,9 +28,9 @@ def get_direct_link_from_torbox(
             torrent_info["download_finished"] is True
             and torrent_info["download_present"] is True
         ):
-            file_id = select_file_id_from_torrent(torrent_info, filename)
+            file_id = select_file_id_from_torrent(torrent_info, filename, episode)
             response = torbox_client.create_download_link(
-                torrent_info.get("id"), file_id
+                torrent_info.get("id"), file_id,
             )
             return response["data"]
     else:
@@ -66,11 +71,31 @@ def fetch_downloaded_info_hashes_from_torbox(user_data: UserData) -> list[str]:
         return []
 
 
-def select_file_id_from_torrent(torrent_info: dict[str, Any], filename: str) -> int:
+def select_file_id_from_torrent(torrent_info: dict[str, Any], filename: str, episode: int) -> int:
     """Select the file id from the torrent info."""
-    for index, file in enumerate(torrent_info["files"]):
-        if filename in file["name"]:
-            return file["id"]
-    raise ProviderException(
-        "No matching file available for this torrent", "api_error.mp4"
-    )
+    files = torrent_info["files"]
+    exact_match = next((f for f in files if filename in f["name"]), None)
+    if exact_match:
+        return exact_match["id"]
+
+    # Fuzzy matching as a fallback
+    for file in files:
+        file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
+    selected_file = max(files, key=lambda x: x["fuzzy_ratio"])
+
+    # If the fuzzy ratio is less than 50, then select the largest file
+    if selected_file["fuzzy_ratio"] < 50:
+        selected_file = max(files, key=lambda x: x["size"])
+
+    if episode:
+        # Select the file with the matching episode number
+        for file in files:
+            if PTN.parse(file["name"]).get("episode") == episode:
+                return file["id"]
+
+    if "video" not in selected_file["mime_type"]:
+        raise ProviderException(
+            "No matching file available for this torrent", "no_matching_file.mp4"
+        )
+
+    return selected_file["id"]
