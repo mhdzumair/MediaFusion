@@ -11,6 +11,7 @@ def get_direct_link_from_offcloud(
     filename: str,
     max_retries=5,
     retry_interval=5,
+    episode: int = None,
 ) -> str:
     oc_client = OffCloud(token=user_data.streaming_provider.token)
 
@@ -20,7 +21,7 @@ def get_direct_link_from_offcloud(
         request_id = torrent_info.get("requestId")
         torrent_info = oc_client.get_torrent_info(request_id)
         if torrent_info["status"] == "downloaded":
-            return oc_client.create_download_link(request_id, torrent_info, filename)
+            return oc_client.create_download_link(request_id, torrent_info, filename, episode)
         if torrent_info["status"] == "error":
             raise ProviderException(
                 f"Error transferring magnet link to OffCloud. {torrent_info['errorMessage']}",
@@ -35,7 +36,7 @@ def get_direct_link_from_offcloud(
     torrent_info = oc_client.wait_for_status(
         request_id, "downloaded", max_retries, retry_interval
     )
-    return oc_client.create_download_link(request_id, torrent_info, filename)
+    return oc_client.create_download_link(request_id, torrent_info, filename, episode)
 
 
 def update_oc_cache_status(streams: list[TorrentStreams], user_data: UserData):
