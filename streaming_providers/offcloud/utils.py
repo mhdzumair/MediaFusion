@@ -29,7 +29,7 @@ def get_direct_link_from_offcloud(
             )
     else:
         # If torrent doesn't exist, add it
-        response_data = oc_client.add_magent_link(magnet_link)
+        response_data = oc_client.add_magnet_link(magnet_link)
         request_id = response_data["requestId"]
 
     # Wait for download completion and get the direct link
@@ -68,3 +68,11 @@ def fetch_downloaded_info_hashes_from_oc(user_data: UserData) -> list[str]:
 
     except ProviderException:
         return []
+
+
+def delete_all_torrents_from_oc(user_data: UserData):
+    """Deletes all torrents from the Offcloud account."""
+    oc_client = OffCloud(token=user_data.streaming_provider.token)
+    torrents = oc_client.get_user_torrent_list()
+    for torrent in torrents:
+        oc_client.delete_torrent(torrent.get("requestId"))

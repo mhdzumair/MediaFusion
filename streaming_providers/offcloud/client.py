@@ -43,7 +43,7 @@ class OffCloud(DebridClient):
             method, url, data, params, is_return_none, is_expected_to_fail
         )
 
-    def add_magent_link(self, magnet_link):
+    def add_magnet_link(self, magnet_link):
         response_data = self._make_request("POST", "/cloud", data={"url": magnet_link})
 
         if "requestId" not in response_data:
@@ -74,7 +74,7 @@ class OffCloud(DebridClient):
     def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = self.get_user_torrent_list()
         for torrent in available_torrents:
-            if info_hash in torrent["originalLink"]:
+            if info_hash.casefold() in torrent["originalLink"].casefold():
                 return torrent
 
     def explore_folder_links(self, request_id):
