@@ -13,6 +13,9 @@ from utils import const
 
 metrics_router = APIRouter()
 total_torrents_gauge = Gauge("total_torrents", "Total number of torrents")
+torrent_sources_gauge = Gauge(
+    "torrent_sources", "Total number of torrents by source", labelnames=["source"]
+)
 metadata_count_gauge = Gauge(
     "metadata_count",
     "Total number of metadata in the database",
@@ -27,9 +30,23 @@ spider_last_run_gauge = Gauge(
 
 
 @metrics_router.get("/torrents", tags=["metrics"])
-async def get_total_torrents():
+async def get_torrents_data():
     count = await TorrentStreams.get_motor_collection().count_documents({})
-    return {"total_torrents": count}
+    torrent_sources = (
+        await TorrentStreams.get_motor_collection()
+        .aggregate(
+            [
+                {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+            ]
+        )
+        .to_list(length=None)
+    )
+    torrent_sources = [
+        {"source": source["_id"], "count": source["count"]}
+        for source in torrent_sources
+    ]
+    return {"total_torrents": count, "torrent_sources": torrent_sources}
 
 
 @metrics_router.get("/metadata", tags=["metrics"])
@@ -85,8 +102,10 @@ async def get_scheduler_last_run(
 
 async def update_metrics(request: Request):
     # Update torrent count
-    total_torrents = await get_total_torrents()
-    total_torrents_gauge.set(total_torrents["total_torrents"])
+    torrents = await get_torrents_data()
+    total_torrents_gauge.set(torrents["total_torrents"])
+    for source in torrents["torrent_sources"]:
+        torrent_sources_gauge.labels(source=source["source"]).set(source["count"])
 
     # Update metadata counts
     results = await get_total_metadata()
