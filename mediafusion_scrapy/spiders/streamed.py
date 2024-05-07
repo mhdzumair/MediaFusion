@@ -3,7 +3,7 @@ import re
 
 import scrapy
 
-from utils.parser import get_json_data
+from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class StreamedSpider(scrapy.Spider):
@@ -46,7 +46,6 @@ class StreamedSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super(StreamedSpider, self).__init__(*args, **kwargs)
-        self.sports_artifacts = get_json_data("resources/json/sports_artifacts.json")
 
     def start_requests(self):
         for category, url in self.categories.items():
@@ -63,11 +62,9 @@ class StreamedSpider(scrapy.Spider):
             item = {
                 "stream_source": "Streamed (streamed.su)",
                 "genres": [category],
-                "poster": random.choice(self.sports_artifacts[category]["poster"]),
-                "background": random.choice(
-                    self.sports_artifacts[category]["background"]
-                ),
-                "logo": random.choice(self.sports_artifacts[category]["logo"]),
+                "poster": random.choice(SPORTS_ARTIFACTS[category]["poster"]),
+                "background": random.choice(SPORTS_ARTIFACTS[category]["background"]),
+                "logo": random.choice(SPORTS_ARTIFACTS[category]["logo"]),
                 "is_add_title_to_poster": True,
                 "title": event_name,
                 "url": response.urljoin(event_url),

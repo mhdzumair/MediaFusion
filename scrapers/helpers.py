@@ -11,7 +11,7 @@ from urllib3.util.retry import Retry
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
 from utils.const import UA_HEADER
-from utils.parser import get_json_data
+from utils import get_json_data
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
 
 # set httpx logging level

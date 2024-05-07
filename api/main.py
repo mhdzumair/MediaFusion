@@ -26,13 +26,13 @@ from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, wrappers
+from utils import crypto, torrent, poster, const, wrappers, get_json_data
 from utils.lock import (
     acquire_scheduler_lock,
     maintain_heartbeat,
     release_scheduler_lock,
 )
-from utils.parser import generate_manifest, get_json_data
+from utils.parser import generate_manifest
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",

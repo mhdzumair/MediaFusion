@@ -5,7 +5,7 @@ import redis
 import scrapy
 
 from db.config import settings
-from utils.parser import get_json_data
+from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class StreamBTWSpider(scrapy.Spider):
@@ -34,7 +34,6 @@ class StreamBTWSpider(scrapy.Spider):
         self.redis = redis.Redis(
             connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
         )
-        self.sports_artifacts = get_json_data("resources/json/sports_artifacts.json")
 
     def __del__(self):
         self.redis.close()
@@ -58,9 +57,9 @@ class StreamBTWSpider(scrapy.Spider):
                 item = {
                     "genres": [category],
                     "description": description,
-                    "poster": random.choice(self.sports_artifacts[category]["poster"]),
+                    "poster": random.choice(SPORTS_ARTIFACTS[category]["poster"]),
                     "background": random.choice(
-                        self.sports_artifacts[category]["background"]
+                        SPORTS_ARTIFACTS[category]["background"]
                     ),
                     "logo": logo,
                     "is_add_title_to_poster": True,

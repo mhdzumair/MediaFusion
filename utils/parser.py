@@ -1,10 +1,7 @@
 import asyncio
-import json
 import math
 import re
 
-import requests
-from imdb import Cinemagoer
 from redis.asyncio import Redis
 
 from db.config import settings
@@ -355,8 +352,3 @@ def is_contain_18_plus_keywords(title: str) -> bool:
     Check if the title contains 18+ keywords to filter out adult content.
     """
     return ADULT_CONTENT_KEYWORDS.search(title) is not None
-
-
-def get_json_data(file_name: str) -> dict:
-    with open(file_name) as file:
-        return json.load(file)

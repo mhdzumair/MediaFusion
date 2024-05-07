@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 import scrapy
 
-from utils.parser import get_json_data
+from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class DaddyLiveHDSpider(scrapy.Spider):
@@ -60,7 +60,6 @@ class DaddyLiveHDSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super(DaddyLiveHDSpider, self).__init__(*args, **kwargs)
-        self.sports_artifacts = get_json_data("resources/json/sports_artifacts.json")
         self.gmt = pytz.timezone("Etc/GMT")
 
     def parse(self, response, **kwargs):
@@ -85,13 +84,11 @@ class DaddyLiveHDSpider(scrapy.Spider):
                     item = {
                         "stream_source": "DaddyLiveHD (1.dlhd.sx)",
                         "genres": [category],
-                        "poster": random.choice(
-                            self.sports_artifacts[category]["poster"]
-                        ),
+                        "poster": random.choice(SPORTS_ARTIFACTS[category]["poster"]),
                         "background": random.choice(
-                            self.sports_artifacts[category]["background"]
+                            SPORTS_ARTIFACTS[category]["background"]
                         ),
-                        "logo": random.choice(self.sports_artifacts[category]["logo"]),
+                        "logo": random.choice(SPORTS_ARTIFACTS[category]["logo"]),
                         "is_add_title_to_poster": True,
                         "title": event["event"],
                         "channels": event["channels"],

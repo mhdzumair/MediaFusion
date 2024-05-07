@@ -1,7 +1,7 @@
 import re
 
 from db.config import settings
-
+from utils import get_json_data
 
 ADULT_CONTENT_KEYWORDS = re.compile(
     settings.adult_content_regex_keywords,
@@ -15,3 +15,5 @@ PARENT_GUIDE_CERTIFICATES_FILTER_REGEX = re.compile(
     settings.parent_guide_certificates_filter_regex,
     re.IGNORECASE,
 )
+
+SPORTS_ARTIFACTS = get_json_data("resources/json/sports_artifacts.json")

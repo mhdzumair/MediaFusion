@@ -416,6 +416,17 @@
 	  ]
 	},
 	{
+	  "id": "motogp_racing",
+	  "type": "series",
+	  "name": "MotoGP Racing",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
 	  "id": "american_football",
 	  "type": "movie",
 	  "name": "American Football",
