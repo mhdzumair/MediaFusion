@@ -99,3 +99,13 @@ def select_file_id_from_torrent(torrent_info: dict[str, Any], filename: str, epi
         )
 
     return selected_file["id"]
+
+
+def delete_all_torrents_from_torbox(user_data: UserData):
+    """Deletes all torrents from the Torbox account."""
+    torbox_client = Torbox(token=user_data.streaming_provider.token)
+    torrents = torbox_client.get_user_torrent_list().get("data")
+    if not torrents:
+        return
+    for torrent in torrents:
+        torbox_client.delete_torrent(torrent.get("id"))

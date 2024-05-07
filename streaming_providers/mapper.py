@@ -11,6 +11,7 @@ from streaming_providers.debridlink.utils import (
 from streaming_providers.offcloud.utils import (
     update_oc_cache_status,
     fetch_downloaded_info_hashes_from_oc,
+    delete_all_torrents_from_oc,
 )
 from streaming_providers.pikpak.utils import (
     update_pikpak_cache_status,
@@ -40,6 +41,7 @@ from streaming_providers.seedr.utils import (
 from streaming_providers.torbox.utils import (
     update_torbox_cache_status,
     fetch_downloaded_info_hashes_from_torbox,
+    delete_all_torrents_from_torbox,
 )
 
 # Define provider-specific cache update functions
@@ -77,4 +79,6 @@ DELETE_ALL_WATCHLIST_FUNCTIONS = {
     "qbittorrent": delete_all_torrents_from_qbittorrent,
     "realdebrid": delete_all_watchlist_rd,
     "seedr": delete_all_torrents_from_seedr,
+    "offcloud": delete_all_torrents_from_oc,
+    "torbox": delete_all_torrents_from_torbox,
 }
