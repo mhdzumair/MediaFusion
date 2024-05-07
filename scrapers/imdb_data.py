@@ -117,7 +117,7 @@ async def process_imdb_data(movie_ids):
 
 
 @dramatiq.actor(
-    time_limit=60 * 1000, priority=10, max_retries=0
+    time_limit=60 * 1000, priority=10, max_retries=0, queue_name="scrapy"
 )  # Short time limit as this should be a fast operation
 async def fetch_movie_ids_to_update(*args, **kwargs):
     now = datetime.now()
