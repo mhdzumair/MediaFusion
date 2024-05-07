@@ -813,7 +813,7 @@ class LiveStreamResolverPipeline:
         adapter = ItemAdapter(item)
         stream_url = adapter.get("stream_url")
         stream_headers = adapter.get("stream_headers")
-        if not stream_url:
+        if not stream_headers:
             referer = adapter.get("referer")
             stream_headers = {"Referer": referer} if referer else {}
 
