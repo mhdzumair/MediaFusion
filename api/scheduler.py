@@ -174,3 +174,14 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             "crontab_expression": settings.update_imdb_data_crontab,
         },
     )
+
+    if not settings.disable_motogp_tgx_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.motogp_tgx_scheduler_crontab),
+            name="motogp_tgx",
+            kwargs={
+                "spider_name": "motogp_tgx",
+                "crontab_expression": settings.motogp_tgx_scheduler_crontab,
+            },
+        )

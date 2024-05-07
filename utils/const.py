@@ -164,4 +164,5 @@ SCRAPY_SPIDERS = {
     "crictime": "CricTime",
     "streambtw": "StreamBTW",
     "dlhd": "DaddyLiveHD",
+    "motogp_tgx": "MotoGP TGX",
 }

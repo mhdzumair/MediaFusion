@@ -67,6 +67,8 @@ class Settings(BaseSettings):
         True  # Disabled due to stremio server doesn't support #EXT-X-KEY in m3u8
     )
     update_imdb_data_crontab: str = "0 2 * * *"
+    motogp_tgx_scheduler_crontab: str = "0 5 * * *"
+    disable_motogp_tgx_scheduler: bool = False
 
     # Time-related settings
     torrentio_search_interval_days: int = 3
