@@ -1,3 +1,5 @@
+import json
+
 from typing import Any
 
 from streaming_providers.debrid_client import DebridClient
@@ -88,7 +90,7 @@ class Torbox(DebridClient):
     def delete_torrent(self, torrent_id):
         return self._make_request(
             "POST",
-            "torrents/controltorrent",
-            params={"token": self.token, "torrent_id": torrent_id, "operation": "Delete"}
+            "/torrents/controltorrent",
+            data=json.dumps({"torrent_id": torrent_id, "operation": "delete"})
         )
 
