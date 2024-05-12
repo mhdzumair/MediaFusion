@@ -275,9 +275,6 @@ class LiveTVSpider(scrapy.Spider):
 
         if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
             # Content type is valid, proceed with adding the stream
-            if response.meta.get("redirect_times", 0) > 0:
-                meta["behavior_hints"]["is_redirect"] = True
-
             stream_info = {
                 "name": f"{meta['stream_title']} - {meta['index']}"
                 if meta["index"]

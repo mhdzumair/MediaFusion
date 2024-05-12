@@ -36,9 +36,9 @@ async def validate_image_url(url: str) -> bool:
 
 async def validate_m3u8_url(
     url: str, behaviour_hint: dict, validate_url: bool = False
-) -> (bool, bool):
+) -> bool:
     if validate_url and not is_valid_url(url):
-        return False, False
+        return False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
     async with aiohttp.ClientSession() as session:
@@ -52,12 +52,10 @@ async def validate_m3u8_url(
                 content_type = response.headers.get("Content-Type", "").lower()
 
                 is_valid = content_type in const.M3U8_VALID_CONTENT_TYPES
-                # Check if a redirect occurred. Compare the final URL with the initial one.
-                is_redirect = str(response.url) != url
-                return is_valid, is_redirect
+                return is_valid
         except (ClientError, asyncio.TimeoutError) as err:
             logging.error(err)
-            return False, False
+            return False
 
 
 async def validate_m3u8_url_with_cache(redis: Redis, url: str, behaviour_hint: dict):
@@ -66,9 +64,9 @@ async def validate_m3u8_url_with_cache(redis: Redis, url: str, behaviour_hint: d
     if cache_data:
         return json.loads(cache_data)
 
-    is_valid, is_redirect = await validate_m3u8_url(url, behaviour_hint)
-    await redis.set(cache_key, json.dumps((is_valid, is_redirect)), ex=180)
-    return is_valid, is_redirect
+    is_valid = await validate_m3u8_url(url, behaviour_hint)
+    await redis.set(cache_key, json.dumps(is_valid), ex=180)
+    return is_valid
 
 
 class ValidationError(Exception):
@@ -109,14 +107,9 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
 
     # Filter out valid streams based on the validation results
     valid_streams = []
-    for i, (is_valid, is_redirect) in enumerate(stream_validation_results):
+    for i, is_valid in enumerate(stream_validation_results):
         if is_valid:
             stream = metadata.streams[i]
-            # Update is_redirect in behaviorHints if necessary
-            if is_redirect:
-                if not stream.behaviorHints:
-                    stream.behaviorHints = schemas.TVStreamsBehaviorHints()
-                stream.behaviorHints.is_redirect = True
             valid_streams.append(stream)
 
     if not valid_streams:

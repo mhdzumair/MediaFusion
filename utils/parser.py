@@ -11,6 +11,7 @@ from streaming_providers import mapper
 from utils import const
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS
+from utils.validation_helper import validate_m3u8_url_with_cache
 
 
 async def filter_and_sort_streams(
@@ -221,16 +222,8 @@ async def parse_tv_stream_data(
 ) -> list[Stream]:
     stream_list = []
     for stream in tv_streams:
-        if stream.behaviorHints and stream.behaviorHints.get("is_redirect", False):
-            stream_link = await get_redirector_url(
-                stream.url,
-                stream.behaviorHints.get("proxyHeaders", {}).get("request", {}),
-            )
-            if stream_link is None:
-                continue
-            stream.url = stream_link
-        elif settings.validate_m3u8_urls_liveness:
-            is_working, _ = await validate_m3u8_url_with_cache(
+        if settings.validate_m3u8_urls_liveness:
+            is_working = await validate_m3u8_url_with_cache(
                 redis, stream.url, stream.behaviorHints or {}
             )
             if not is_working:
