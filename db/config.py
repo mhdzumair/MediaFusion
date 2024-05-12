@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis-service:6379"
 
     # API and service URLs
-    host_url: str = "https://mediafusion.fun"
+    host_url: str
+    poster_host_url: str
     scraper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     prowlarr_url: str = "http://prowlarr-service:9696"

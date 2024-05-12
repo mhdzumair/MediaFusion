@@ -54,6 +54,8 @@ spec:
                 key: PROWLARR_API_KEY
           - name: HOST_URL
             value: "https://mediafusion.local"
+          - name: POSTER_HOST_URL
+            value: "https://mediafusion.local"
           - name: ENABLE_TAMILMV_SEARCH_SCRAPER
             value: "false"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
