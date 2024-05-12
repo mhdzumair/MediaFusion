@@ -13,6 +13,8 @@ from db.models import (
     MediaFusionTVMetaData,
 )
 
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+
 
 async def init():
     retries = 5
