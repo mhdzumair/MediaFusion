@@ -11,11 +11,10 @@ from streaming_providers import mapper
 from utils import const
 from utils.network import get_redirector_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS
-from utils.validation_helper import validate_m3u8_url_with_cache
 
 
 async def filter_and_sort_streams(
-    streams: list[TorrentStreams], user_data: UserData
+    streams: list[TorrentStreams], user_data: UserData, user_ip: str | None = None
 ) -> list[TorrentStreams]:
     # Convert to sets for faster lookups
     selected_catalogs_set = set(user_data.selected_catalogs)
@@ -34,16 +33,16 @@ async def filter_and_sort_streams(
         return []
 
     # Step 2: Update cache status based on provider
-    cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(
-        user_data.streaming_provider.service
-        if user_data.streaming_provider
-        else "torrent"
-    )
-    if cache_update_function:
-        if asyncio.iscoroutinefunction(cache_update_function):
-            await cache_update_function(filtered_streams, user_data)
-        else:
-            await asyncio.to_thread(cache_update_function, filtered_streams, user_data)
+    if user_data.streaming_provider:
+        cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(
+            user_data.streaming_provider.service
+        )
+        kwargs = dict(streams=filtered_streams, user_data=user_data, user_ip=user_ip)
+        if cache_update_function:
+            if asyncio.iscoroutinefunction(cache_update_function):
+                await cache_update_function(**kwargs)
+            else:
+                await asyncio.to_thread(cache_update_function, **kwargs)
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream):
@@ -87,9 +86,10 @@ async def parse_stream_data(
     secret_str: str,
     season: int = None,
     episode: int = None,
+    user_ip: str | None = None,
 ) -> list[Stream]:
     stream_list = []
-    streams = await filter_and_sort_streams(streams, user_data)
+    streams = await filter_and_sort_streams(streams, user_data, user_ip)
 
     # Compute values that do not change per iteration outside the loop
     show_full_torrent_name = user_data.show_full_torrent_name
@@ -262,17 +262,20 @@ async def parse_tv_stream_data(
     return stream_list
 
 
-async def fetch_downloaded_info_hashes(user_data: UserData) -> list[str]:
+async def fetch_downloaded_info_hashes(
+    user_data: UserData, user_ip: str | None
+) -> list[str]:
+    kwargs = dict(user_data=user_data, user_ip=user_ip)
     if fetch_downloaded_info_hashes_function := mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS.get(
         user_data.streaming_provider.service
     ):
         if asyncio.iscoroutinefunction(fetch_downloaded_info_hashes_function):
             downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
-                user_data
+                **kwargs
             )
         else:
             downloaded_info_hashes = await asyncio.to_thread(
-                fetch_downloaded_info_hashes_function, user_data
+                fetch_downloaded_info_hashes_function, **kwargs
             )
 
         return downloaded_info_hashes

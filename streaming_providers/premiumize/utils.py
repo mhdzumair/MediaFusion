@@ -22,7 +22,7 @@ def create_or_get_folder_id(pm_client: Premiumize, info_hash: str):
     return folder_data.get("id")
 
 
-def get_direct_link_from_premiumize(
+def get_video_url_from_premiumize(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -30,6 +30,7 @@ def get_direct_link_from_premiumize(
     filename: str,
     max_retries=5,
     retry_interval=5,
+    **kwargs,
 ) -> str:
     pm_client = Premiumize(token=user_data.streaming_provider.token)
 
@@ -95,7 +96,9 @@ def get_stream_link(
     return selected_file["link"]
 
 
-def update_pm_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_pm_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
+):
     """Updates the cache status of streams based on Premiumize's instant availability."""
 
     try:
@@ -112,7 +115,9 @@ def update_pm_cache_status(streams: list[TorrentStreams], user_data: UserData):
         pass
 
 
-def fetch_downloaded_info_hashes_from_premiumize(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_premiumize(
+    user_data: UserData, **kwargs
+) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the Premiumize account."""
     try:
         pm_client = Premiumize(token=user_data.streaming_provider.token)
@@ -127,7 +132,7 @@ def fetch_downloaded_info_hashes_from_premiumize(user_data: UserData) -> list[st
         return []
 
 
-def delete_all_torrents_from_pm(user_data: UserData):
+def delete_all_torrents_from_pm(user_data: UserData, **kwargs):
     """Deletes all torrents from the Premiumize account."""
     pm_client = Premiumize(token=user_data.streaming_provider.token)
     folders = pm_client.get_folder_list()

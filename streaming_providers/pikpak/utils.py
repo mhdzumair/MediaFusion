@@ -217,7 +217,7 @@ async def free_up_space(pikpak: PikPakApi, required_space):
         available_space += int(file["size"])
 
 
-async def get_direct_link_from_pikpak(
+async def get_video_url_from_pikpak(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -225,6 +225,7 @@ async def get_direct_link_from_pikpak(
     filename: str,
     max_retries=5,
     retry_interval=5,
+    **kwargs,
 ) -> str:
     pikpak = await initialize_pikpak(user_data)
     await handle_torrent_status(
@@ -248,7 +249,7 @@ async def get_direct_link_from_pikpak(
 
 
 async def update_pikpak_cache_status(
-    streams: list[TorrentStreams], user_data: UserData
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on PikPak's instant availability."""
     try:
@@ -263,7 +264,9 @@ async def update_pikpak_cache_status(
         )
 
 
-async def fetch_downloaded_info_hashes_from_pikpak(user_data: UserData) -> list[str]:
+async def fetch_downloaded_info_hashes_from_pikpak(
+    user_data: UserData, **kwargs
+) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the PikPak account."""
     try:
         pikpak = await initialize_pikpak(user_data)
@@ -276,7 +279,7 @@ async def fetch_downloaded_info_hashes_from_pikpak(user_data: UserData) -> list[
     ]
 
 
-async def delete_all_torrents_from_pikpak(user_data: UserData):
+async def delete_all_torrents_from_pikpak(user_data: UserData, **kwargs):
     """Deletes all torrents from the PikPak account."""
     try:
         pikpak = await initialize_pikpak(user_data)

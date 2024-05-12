@@ -32,6 +32,7 @@ from utils.lock import (
     maintain_heartbeat,
     release_scheduler_lock,
 )
+from utils.network import get_user_public_ip
 from utils.parser import generate_manifest
 
 logging.basicConfig(
@@ -281,9 +282,15 @@ async def get_catalog(
             await crud.get_events_meta_list(request.app.state.redis, genre, skip)
         )
     else:
+        user_ip = get_user_public_ip(request)
         metas.metas.extend(
             await crud.get_meta_list(
-                user_data, catalog_type, catalog_id, is_watchlist_catalog, skip
+                user_data,
+                catalog_type,
+                catalog_id,
+                is_watchlist_catalog,
+                skip,
+                user_ip=user_ip,
             )
         )
         if (
@@ -438,6 +445,7 @@ async def get_streams(
     user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.DEFAULT_HEADERS)
+    user_ip = get_user_public_ip(request)
 
     if catalog_type == "movie":
         if video_id.startswith("dl"):
@@ -453,11 +461,17 @@ async def get_streams(
                 raise HTTPException(status_code=404, detail="Meta ID not found.")
         else:
             fetched_streams = await crud.get_movie_streams(
-                user_data, secret_str, request.app.state.redis, video_id
+                user_data, secret_str, request.app.state.redis, video_id, user_ip
             )
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
-            user_data, secret_str, request.app.state.redis, video_id, season, episode
+            user_data,
+            secret_str,
+            request.app.state.redis,
+            video_id,
+            season,
+            episode,
+            user_ip,
         )
     elif catalog_type == "events":
         fetched_streams = await crud.get_event_streams(

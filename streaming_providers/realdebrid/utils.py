@@ -21,7 +21,7 @@ def create_download_link(rd_client, torrent_info, filename, file_index, episode)
     return response.get("download")
 
 
-def get_direct_link_from_realdebrid(
+def get_video_url_from_realdebrid(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -31,6 +31,7 @@ def get_direct_link_from_realdebrid(
     retry_interval=5,
     user_ip: str = None,
     episode: int = None,
+    **kwargs,
 ) -> str:
     rd_client = RealDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
     torrent_info = rd_client.get_available_torrent(info_hash)
@@ -78,7 +79,9 @@ def get_direct_link_from_realdebrid(
     return create_download_link(rd_client, torrent_info, filename, file_index, episode)
 
 
-def update_rd_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_rd_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
+):
     """Updates the cache status of streams based on RealDebrid's instant availability."""
 
     try:
@@ -117,7 +120,7 @@ def select_file_index_from_torrent(
     return selected_files.index(largest_file)
 
 
-def fetch_downloaded_info_hashes_from_rd(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_rd(user_data: UserData, **kwargs) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the RealDebrid account."""
     try:
         rd_client = RealDebrid(token=user_data.streaming_provider.token)
@@ -128,7 +131,7 @@ def fetch_downloaded_info_hashes_from_rd(user_data: UserData) -> list[str]:
         return []
 
 
-def delete_all_watchlist_rd(user_data: UserData):
+def delete_all_watchlist_rd(user_data: UserData, **kwargs):
     """Deletes all torrents from the RealDebrid watchlist."""
     rd_client = RealDebrid(token=user_data.streaming_provider.token)
     torrents = rd_client.get_user_torrent_list()

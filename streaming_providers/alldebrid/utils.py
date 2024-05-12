@@ -6,15 +6,17 @@ from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
 
 
-def get_direct_link_from_alldebrid(
+def get_video_url_from_alldebrid(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
     filename: str,
+    user_ip: str,
     max_retries=5,
     retry_interval=5,
+    **kwargs,
 ) -> str:
-    ad_client = AllDebrid(token=user_data.streaming_provider.token)
+    ad_client = AllDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
 
     # Check if the torrent already exists
     torrent_info = ad_client.get_available_torrent(info_hash)
@@ -46,11 +48,13 @@ def get_direct_link_from_alldebrid(
     return response["data"]["link"]
 
 
-def update_ad_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_ad_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, user_ip: str, **kwargs
+):
     """Updates the cache status of streams based on AllDebrid's instant availability."""
 
     try:
-        ad_client = AllDebrid(token=user_data.streaming_provider.token)
+        ad_client = AllDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
         instant_availability_data = ad_client.get_torrent_instant_availability(
             [stream.id for stream in streams]
         )
@@ -75,10 +79,12 @@ def select_file_index_from_torrent(torrent_info: dict[str, Any], filename: str) 
     )
 
 
-def fetch_downloaded_info_hashes_from_ad(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_ad(
+    user_data: UserData, user_ip: str, **kwargs
+) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the AllDebrid account."""
     try:
-        ad_client = AllDebrid(token=user_data.streaming_provider.token)
+        ad_client = AllDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
         available_torrents = ad_client.get_user_torrent_list()
         if not available_torrents.get("data"):
             return []
@@ -88,9 +94,9 @@ def fetch_downloaded_info_hashes_from_ad(user_data: UserData) -> list[str]:
         return []
 
 
-def delete_all_torrents_from_ad(user_data: UserData):
+def delete_all_torrents_from_ad(user_data: UserData, user_ip: str, **kwargs):
     """Deletes all torrents from the AllDebrid account."""
-    ad_client = AllDebrid(token=user_data.streaming_provider.token)
+    ad_client = AllDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
     torrents = ad_client.get_user_torrent_list()
     for torrent in torrents["data"]["magnets"]:
         ad_client.delete_torrent(torrent["id"])

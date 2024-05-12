@@ -133,7 +133,7 @@ def rename_seedr_files(seedr, folder_id):
             seedr.renameFile(file["folder_file_id"], seedr_clean_name(file["name"]))
 
 
-async def get_direct_link_from_seedr(
+async def get_video_url_from_seedr(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -141,6 +141,7 @@ async def get_direct_link_from_seedr(
     filename: str,
     max_retries=5,
     retry_interval=5,
+    **kwargs,
 ) -> str:
     """Gets a direct download link from Seedr using a magnet link and token."""
     seedr = get_seedr_client(user_data)
@@ -201,7 +202,9 @@ def free_up_space(seedr, required_space):
         available_space += folder["size"]
 
 
-def update_seedr_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_seedr_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
+):
     """Updates the cache status of the streams based on the user's Seedr account."""
     try:
         seedr = get_seedr_client(user_data)
@@ -222,7 +225,7 @@ def update_seedr_cache_status(streams: list[TorrentStreams], user_data: UserData
         stream.cached = False
 
 
-def fetch_downloaded_info_hashes_from_seedr(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_seedr(user_data: UserData, **kwargs) -> list[str]:
     """Fetches the info_hashes of all the torrents downloaded in the user's Seedr account."""
     try:
         seedr = get_seedr_client(user_data)
@@ -232,7 +235,7 @@ def fetch_downloaded_info_hashes_from_seedr(user_data: UserData) -> list[str]:
     return [folder["name"] for folder in seedr.listContents()["folders"]]
 
 
-def delete_all_torrents_from_seedr(user_data: UserData):
+def delete_all_torrents_from_seedr(user_data: UserData, **kwargs):
     """Deletes all torrents from the user's Seedr account."""
     seedr = get_seedr_client(user_data)
 

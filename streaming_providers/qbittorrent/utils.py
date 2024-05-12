@@ -265,7 +265,7 @@ def generate_webdav_url(user_data: UserData, selected_file: dict) -> str:
     )
 
 
-async def get_direct_link_from_qbittorrent(
+async def get_video_url_from_qbittorrent(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -273,6 +273,7 @@ async def get_direct_link_from_qbittorrent(
     filename: str,
     max_retries=5,
     retry_interval=5,
+    **kwargs,
 ) -> str:
     """Get the direct link from the qBittorrent server."""
     play_video_after = user_data.streaming_provider.qbittorrent_config.play_video_after
@@ -303,7 +304,7 @@ async def get_direct_link_from_qbittorrent(
 
 
 async def update_qbittorrent_cache_status(
-    streams: list[TorrentStreams], user_data: UserData
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on qBittorrent's instant availability."""
     try:
@@ -319,9 +320,7 @@ async def update_qbittorrent_cache_status(
         stream.cached = torrents_dict.get(stream.id, 0) == 1
 
 
-async def fetch_info_hashes_from_webdav(
-    user_data: UserData,
-) -> list[str]:
+async def fetch_info_hashes_from_webdav(user_data: UserData, **kwargs) -> list[str]:
     """Fetches the info_hashes from directories in the WebDAV server that are named after the torrent's info hashes."""
     try:
         async with initialize_webdav(user_data) as webdav:
@@ -341,7 +340,7 @@ async def fetch_info_hashes_from_webdav(
     return info_hashes
 
 
-async def delete_all_torrents_from_qbittorrent(user_data: UserData):
+async def delete_all_torrents_from_qbittorrent(user_data: UserData, **kwargs):
     """Deletes all torrents from the qBittorrent server."""
     async with initialize_qbittorrent(user_data) as qbittorrent:
         torrents = await qbittorrent.torrents.info(filter=InfoFilter.COMPLETED)

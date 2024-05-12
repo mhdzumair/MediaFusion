@@ -32,7 +32,7 @@ def select_file_index_from_torrent(
     return torrent_info["files"].index(largest_file)
 
 
-def get_direct_link_from_debridlink(
+def get_video_url_from_debridlink(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -40,6 +40,7 @@ def get_direct_link_from_debridlink(
     file_index: int,
     max_retries=5,
     retry_interval=5,
+    **kwargs,
 ) -> str:
     dl_client = DebridLink(token=user_data.streaming_provider.token)
 
@@ -69,7 +70,9 @@ def get_direct_link_from_debridlink(
     return get_download_link(torrent_info, filename, file_index)
 
 
-def update_dl_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_dl_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
+):
     """Updates the cache status of streams based on DebridLink's instant availability."""
 
     try:
@@ -84,7 +87,7 @@ def update_dl_cache_status(streams: list[TorrentStreams], user_data: UserData):
         pass
 
 
-def fetch_downloaded_info_hashes_from_dl(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_dl(user_data: UserData, **kwargs) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the DebridLink account."""
     try:
         dl_client = DebridLink(token=user_data.streaming_provider.token)
@@ -97,7 +100,7 @@ def fetch_downloaded_info_hashes_from_dl(user_data: UserData) -> list[str]:
         return []
 
 
-def delete_all_torrents_from_dl(user_data: UserData):
+def delete_all_torrents_from_dl(user_data: UserData, **kwargs):
     """Deletes all torrents from the DebridLink account."""
     dl_client = DebridLink(token=user_data.streaming_provider.token)
     torrents = dl_client.get_user_torrent_list()

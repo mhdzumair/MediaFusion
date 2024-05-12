@@ -8,6 +8,10 @@ class AllDebrid(DebridClient):
     BASE_URL = "https://api.alldebrid.com/v4"
     AGENT = "mediafusion"
 
+    def __init__(self, token: str, user_ip: str | None = None):
+        self.user_ip = user_ip
+        super().__init__(token)
+
     def initialize_headers(self):
         self.headers = {"Authorization": f"Bearer {self.token}"}
 
@@ -28,6 +32,8 @@ class AllDebrid(DebridClient):
     ) -> dict:
         params = params or {}
         params["agent"] = self.AGENT
+        if self.user_ip:
+            params["ip"] = self.user_ip
         url = self.BASE_URL + url
         return super()._make_request(
             method, url, data, params, is_return_none, is_expected_to_fail

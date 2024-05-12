@@ -5,6 +5,8 @@ from typing import Callable
 import httpx
 from fastapi.requests import Request
 
+from utils.runtime_const import PRIVATE_CIDR
+
 
 class CircuitBreakerOpenException(Exception):
     """Custom exception to indicate the circuit breaker is open."""
@@ -141,3 +143,13 @@ def get_client_ip(request: Request) -> str | None:
     if x_real_ip:
         return x_real_ip
     return request.client.host if request.client else "127.0.0.1"
+
+
+def get_user_public_ip(request: Request):
+    # Get the user's public IP address
+    user_ip = get_client_ip(request)
+    # check if the user's IP address is a private IP address
+    if PRIVATE_CIDR.match(user_ip):
+        # Use host public IP address.
+        return None
+    return user_ip
