@@ -15,8 +15,11 @@ This guide describes the environment variables available in MediaFusion for conf
 
 #### Application Settings
 
+- **addon_name** (default: `"MediaFusion"`): The name of the MediaFusion addon. You can customize this value identify the addon.
+- **logo_url** (default: GitHub RAW Addon URL): The URL of the MediaFusion logo.
 - **secret_key** (required): A secret key for securely signing the session.
-- **host_url** (default: `"https://mediafusion.fun"`): The URL where MediaFusion is hosted.
+- **host_url** (required): The URL where MediaFusion is hosted.
+- **poster_host_url** (required): The URL where MediaFusion is hosted. Use the same value as `host_url`. This setting intends to serve the poster images from the cached location.
 - **logging_level** (default: `"INFO"`): The logging level of the application.
 - **enable_tamilmv_search_scraper** (default: `False`): Toggle the TamilMV search scraper.
 - **is_scrap_from_torrentio** (default: `False`): Enable or disable scraping from Torrentio.
@@ -39,10 +42,13 @@ This guide describes the environment variables available in MediaFusion for conf
 - **prowlarr_immediate_max_process** (default: `10`) and **prowlarr_immediate_max_process_time** (default: 15): Settings related to the immediate processing of Prowlarr searches.
 - **torrentio_search_interval_days** (default: `3`): How often Torrentio searches are initiated, in days.
 - **prowlarr_live_title_search** (default: `False`): Enable or disable live title search in Prowlarr. If False, search movie/series by title in background worker So that you won't get the result at first.
+- **prowlarr_background_title_search**: Enable or disable background title search in Prowlarr.
 
 #### Content Filters
 
 - **adult_content_regex_keywords** (default: `r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"`): The regular expression for adult content keywords.
+- **parent_guide_nudity_filter_types_regex** (default:`"Severe"`) : The regular expression for filtering nudity content types in the parent guide of IMDB data.
+- **parent_guide_certificates_filter_regex** (default:`r"X|XXX|TV-MA|18\+|18SX"`) : The regular expression for filtering certificates in the parent guide of IMDB data.
 
 #### Scheduler Crontabs
 > [!TIP]
@@ -70,6 +76,11 @@ This guide describes the environment variables available in MediaFusion for conf
 - **disable_crictime_scheduler** (default: `False`): Disable Crictime scheduler.
 - **streambtw_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for Streambtw.
 - **disable_streambtw_scheduler** (default: `False`): Disable Streambtw scheduler.
+- **dlhd_scheduler_crontab** (default: `"25 * * * *"`): Scheduler for DLHD.
+- **disable_dlhd_scheduler**: Disable DLHD scheduler.
+- **update_imdb_data_crontab** (default: `"0 2 * * *"`): Scheduler for updating IMDb data.
+- **motogp_tgx_scheduler_crontab** (default: `"0 5 * * *"`): Scheduler for MotoGP TGX.
+- **disable_motogp_tgx_scheduler**: Disable MotoGP TGX scheduler.
 
 ### How to Configure
 
