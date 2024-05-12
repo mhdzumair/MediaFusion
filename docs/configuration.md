@@ -19,7 +19,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **logo_url** (default: GitHub RAW Addon URL): The URL of the MediaFusion logo.
 - **secret_key** (required): A secret key for securely signing the session.
 - **host_url** (required): The URL where MediaFusion is hosted.
-- **poster_host_url** (required): The URL where MediaFusion is hosted. Use the same value as `host_url`. This setting intends to serve the poster images from the cached location.
+- **poster_host_url** (default: Use the Host URL value): The URL where MediaFusion is hosted. Use the same value as `host_url`. This setting intends to serve the poster images from the cached location.
 - **logging_level** (default: `"INFO"`): The logging level of the application.
 - **enable_tamilmv_search_scraper** (default: `False`): Toggle the TamilMV search scraper.
 - **is_scrap_from_torrentio** (default: `False`): Enable or disable scraping from Torrentio.

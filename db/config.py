@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,7 +10,7 @@ class Settings(BaseSettings):
 
     # API and service URLs
     host_url: str
-    poster_host_url: str
+    poster_host_url: str | None = None
     scraper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     prowlarr_url: str = "http://prowlarr-service:9696"
@@ -81,6 +82,12 @@ class Settings(BaseSettings):
 
     # Optional security settings
     api_password: str | None = None
+
+    @model_validator(mode="after")
+    def default_poster_host_url(self) -> "Settings":
+        if not self.poster_host_url:
+            self.poster_host_url = self.host_url
+        return self
 
     class Config:
         env_file = ".env"
