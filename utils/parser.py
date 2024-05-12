@@ -9,7 +9,7 @@ from db.models import TorrentStreams, TVStreams
 from db.schemas import Stream, UserData
 from streaming_providers import mapper
 from utils import const
-from utils.network import get_redirector_url
+from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS
 
 
@@ -93,11 +93,10 @@ async def parse_stream_data(
 
     # Compute values that do not change per iteration outside the loop
     show_full_torrent_name = user_data.show_full_torrent_name
-    streaming_provider_name = (
-        user_data.streaming_provider.service.title()
-        if user_data.streaming_provider
-        else "Torrent"
+    streaming_provider_name = STREAMING_PROVIDERS_SHORT_NAMES.get(
+        user_data.streaming_provider.service, "P2P"
     )
+
     has_streaming_provider = user_data.streaming_provider is not None
     base_proxy_url_template = (
         f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
