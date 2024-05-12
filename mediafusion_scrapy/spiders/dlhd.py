@@ -1,9 +1,10 @@
+import logging
 import random
-import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 import scrapy
+from dateutil import parser as date_parser
 
 from utils.runtime_const import SPORTS_ARTIFACTS
 
@@ -13,37 +14,41 @@ class DaddyLiveHDSpider(scrapy.Spider):
     site_url = "https://1.dlhd.sx"
     start_urls = [f"{site_url}/schedule/schedule-generated.json"]
 
+    # The number of hours to consider the event as starting within next hours from now.
+    start_within_next_hours = 1
+    started_within_hours_ago = 6
+
     category_map = {
         "Tv Shows": "Other Sports",
         "Soccer": "Football",
         "Cricket": "Cricket",
         "Tennis": "Tennis",
         "Motorsport": "Motor Sport",
-        "Boxing": "Other Sports",
-        "MMA": "Other Sports",
+        "Boxing": "Boxing",
+        "MMA": "MMA",
         "Golf": "Golf",
         "Snooker": "Other Sports",
         "Am. Football": "American Football",
-        "Athletics": "Other Sports",
-        "Aussie rules": "Other Sports",
+        "Athletics": "Athletics",
+        "Aussie rules": "Aussie Rules",
         "Baseball": "Baseball",
         "Basketball": "Basketball",
-        "Bowling": "Other Sports",
-        "Cycling": "Other Sports",
+        "Bowling": "Bowling",
+        "Cycling": "Cycling",
         "Darts": "Dart",
-        "Floorball": "Other Sports",
-        "Futsal": "Other Sports",
-        "Gymnastics": "Other Sports",
-        "Handball": "Other Sports",
-        "Horse Racing": "Other Sports",
+        "Floorball": "Floorball",
+        "Futsal": "Futsal",
+        "Gymnastics": "Gymnastics",
+        "Handball": "Handball",
+        "Horse Racing": "Horse Racing",
         "Ice Hockey": "Hockey",
-        "Lacrosse": "Other Sports",
-        "Netball": "Other Sports",
+        "Lacrosse": "Lacrosse",
+        "Netball": "Netball",
         "Rugby League": "Rugby",
         "Rugby Union": "Rugby",
-        "Squash": "Other Sports",
-        "Volleyball": "Other Sports",
-        "GAA": "Other Sports",
+        "Squash": "Squash",
+        "Volleyball": "Volleyball",
+        "GAA": "GAA",
         "Clubber": "Other Sports",
     }
 
@@ -64,22 +69,34 @@ class DaddyLiveHDSpider(scrapy.Spider):
 
     def parse(self, response, **kwargs):
         data = response.json()
+        current_time = datetime.now(tz=self.gmt)
         for date_section, sports in data.items():
-            date_str = date_section.split(" - ")[
-                0
-            ]  # Assuming the date is always first part
-            # Remove the ordinal suffix from the date
-            date_str = re.sub(r"(st|nd|rd|th)", "", date_str)
-            date = datetime.strptime(date_str, "%A %d %B %Y").date()
+            date_str = date_section.split(" - ")[0]
+            event_date = date_parser.parse(date_str).date()
             for sport, events in sports.items():
                 for event in events:
-                    category = self.category_map.get(sport, "Other Sports")
                     time = datetime.strptime(event["time"], "%H:%M").time()
-                    datetime_obj = datetime.combine(date, time)
+                    datetime_obj = datetime.combine(event_date, time)
                     # Make the datetime object timezone aware (UK GMT)
                     aware_datetime = self.gmt.localize(datetime_obj)
+
+                    # Check if event starts within the specified time range
+                    time_difference = aware_datetime - current_time
+                    if not (
+                        timedelta(hours=-self.started_within_hours_ago)
+                        <= time_difference
+                        <= timedelta(hours=self.start_within_next_hours)
+                    ):
+                        logging.warning(
+                            "Skipping event %s as it doesn't start within the specified time range. %s",
+                            event["event"],
+                            time_difference,
+                        )
+                        continue
+
                     # Convert to UNIX timestamp
                     event_start_timestamp = int(aware_datetime.timestamp())
+                    category = self.category_map.get(sport, "Other Sports")
 
                     item = {
                         "stream_source": "DaddyLiveHD (1.dlhd.sx)",
