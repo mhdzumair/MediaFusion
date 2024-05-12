@@ -60,8 +60,8 @@ app.add_middleware(middleware.UserDataMiddleware)
 TEMPLATES = Jinja2Templates(directory="resources")
 DELETE_ALL_META = schemas.Meta(
     **const.DELETE_ALL_WATCHLIST_META,
-    poster=f"{settings.host_url}/static/images/delete_all_poster.jpg",
-    background=f"{settings.host_url}/static/images/delete_all_background.png",
+    poster=f"{settings.poster_host_url}/static/images/delete_all_poster.jpg",
+    background=f"{settings.poster_host_url}/static/images/delete_all_background.png",
 )
 
 DELETE_ALL_META_ITEM = {

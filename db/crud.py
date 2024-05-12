@@ -56,7 +56,7 @@ async def get_meta_list(
     else:
         query_filters = {"catalog": {"$in": [catalog]}}
 
-    poster_path = f"{settings.host_url}/poster/{catalog_type}/"
+    poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
     meta_class = MediaFusionMetaData
 
     # Define the pipeline for aggregation
@@ -139,7 +139,7 @@ async def get_tv_meta_list(
     )
 
     for meta in tv_meta_list:
-        meta.poster = f"{settings.host_url}/poster/tv/{meta.id}.jpg"
+        meta.poster = f"{settings.poster_host_url}/poster/tv/{meta.id}.jpg"
 
     return tv_meta_list
 
@@ -391,7 +391,7 @@ async def get_movie_meta(meta_id: str, redis: Redis):
             "_id": meta_id,
             "type": "movie",
             "title": movie_data.title,
-            "poster": f"{settings.host_url}/poster/movie/{meta_id}.jpg",
+            "poster": f"{settings.poster_host_url}/poster/movie/{meta_id}.jpg",
             "background": movie_data.poster,
             "description": movie_data.description,
             "runtime": movie_data.runtime,
@@ -411,7 +411,7 @@ async def get_series_meta(meta_id: str):
             "_id": meta_id,
             "type": "series",
             "title": series_data.title,
-            "poster": f"{settings.host_url}/poster/series/{meta_id}.jpg",
+            "poster": f"{settings.poster_host_url}/poster/series/{meta_id}.jpg",
             "background": series_data.background or series_data.poster,
             "videos": [],
         }
@@ -704,7 +704,7 @@ async def process_search_query(
             "$set": {
                 "poster": {
                     "$concat": [
-                        f"{settings.host_url}/poster/{catalog_type}/",
+                        f"{settings.poster_host_url}/poster/{catalog_type}/",
                         "$_id",
                         ".jpg",
                     ]
@@ -753,7 +753,7 @@ async def process_tv_search_query(search_query: str) -> dict:
             "$set": {
                 "poster": {
                     "$concat": [
-                        f"{settings.host_url}/poster/tv/",
+                        f"{settings.poster_host_url}/poster/tv/",
                         "$_id",
                         ".jpg",
                     ]
@@ -942,7 +942,9 @@ async def get_events_meta_list(
         events_json = await redis.get(key)
         if events_json:
             meta_data = schemas.Meta.model_validate_json(events_json)
-            meta_data.poster = f"{settings.host_url}/poster/events/{meta_data.id}.jpg"
+            meta_data.poster = (
+                f"{settings.poster_host_url}/poster/events/{meta_data.id}.jpg"
+            )
             events.append(meta_data)
         else:
             # Cleanup: Remove expired or missing event key from the index
