@@ -32,6 +32,7 @@ async def get_cached_stream_url(redis: Redis, cached_stream_url_key):
     return None
 
 
+@router.head("/{secret_str}/stream", tags=["streaming_provider"])
 @router.get("/{secret_str}/stream", tags=["streaming_provider"])
 @wrappers.exclude_rate_limit
 @wrappers.auth_required
