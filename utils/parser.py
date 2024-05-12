@@ -94,8 +94,10 @@ async def parse_stream_data(
 
     # Compute values that do not change per iteration outside the loop
     show_full_torrent_name = user_data.show_full_torrent_name
-    streaming_provider_name = STREAMING_PROVIDERS_SHORT_NAMES.get(
-        user_data.streaming_provider.service, "P2P"
+    streaming_provider_name = (
+        STREAMING_PROVIDERS_SHORT_NAMES.get(user_data.streaming_provider.service)
+        if user_data.streaming_provider
+        else "P2P"
     )
 
     has_streaming_provider = user_data.streaming_provider is not None
