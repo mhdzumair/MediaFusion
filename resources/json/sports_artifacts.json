@@ -1,228 +1,398 @@
 {
-  "American Football": {
-	"background": [
-	  "https://wallpapercave.com/wp/wp2389352.jpg",
-	  "https://www.pixelstalk.net/wp-content/uploads/2016/10/Backgrounds-American-Football.jpg"
-	],
-	"poster": [
-	  "https://images.alphacoders.com/592/592115.jpg",
-	  "https://media.istockphoto.com/illustrations/american-football-background-illustration-id167593141?k=6&m=167593141&s=170667a&w=0&h=NbFgCG0OyUANqZVL3V052rZBlFL9oBaxBcJvW_tq87s="
-	],
-	"logo": [
-	  "https://static.vecteezy.com/system/resources/previews/000/550/769/non_2x/american-football-vector-icon.jpg"
-	]
-  },
-  "Basketball": {
-	"background": [
-	  "https://images.designtrends.com/wp-content/uploads/2015/12/21135619/Basketball-Background.jpg",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//wallpapercave.com/wp/acIknTe.jpg&f=1&nofb=1"
-	],
-	"poster": [
-	  "https://www.pixelstalk.net/wp-content/uploads/2016/05/Free-Desktop-basketball-wallpapers-court.jpg",
-	  "https://www.pixelstalk.net/wp-content/uploads/2016/10/Basketball-Court-HD-Wallpaper.jpg"
-	],
-	"logo": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//cliparts.co/cliparts/Aib/Kr4/AibKr4gGT.png&f=1&nofb=1"
-	]
-  },
-  "Baseball": {
-	"background": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//www.pixelstalk.net/wp-content/uploads/2016/03/Nice-baseball-fields-wallpaper-background.jpg&f=1&nofb=1",
-	  "https://www.pixelstalk.net/wp-content/uploads/2016/03/Download-free-baseball-wallpaper-HD.jpg"
-	],
-	"poster": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ftse1.mm.bing.net%2Fth%3Fid%3DOIP.kyIjO9kzk_XnipGETx4wrgHaEo%26pid%3DApi&f=1&ipt=7809e9e23b1eae0af3972cd252c9df5256fa627ecf859cdaaeaa7303f39bfffd&ipo=images"
-	],
-	"logo": [
-	  "https://static.vecteezy.com/system/resources/thumbnails/000/550/643/small_2x/baseball_019.jpg"
-	]
-  },
-  "Cricket": {
-	"background": [
-	  "https://wallpaperaccess.com/full/1088596.jpg",
-	  "https://wallpaperaccess.com/full/3818753.jpg"
-	],
-	"poster": [
-	  "https://wallpapercave.com/wp/wp9536049.jpg",
-	  "https://www.setaswall.com/wp-content/uploads/2018/07/Cricket-Wallpaper-23-1182x888.jpg",
-	  "https://p4.wallpaperbetter.com/wallpaper/599/783/829/hyderabad-cricketstadium-sport-wallpaper-preview.jpg"
-	],
-	"logo": [
-	  "https://img.freepik.com/premium-vector/cricket-player-logo-design-vector-icon-symbol-template-illustration_647432-116.jpg"
-	]
-  },
-  "Football": {
-	"background": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//wallpapercave.com/wp/Mx8QOkb.jpg&f=1&nofb=1",
-	  "https://wallpapercave.com/wp/wp2694966.jpg",
-	  "https://wallpapercave.com/wp/wp8255684.jpg",
-	  "https://wallpapercave.com/wp/wp2167295.jpg"
-	],
-	"poster": [
-	  "https://cdn3.vectorstock.com/i/1000x1000/76/27/realistic-football-soccer-stadium-background-vector-20507627.jpg",
-	  "https://hdqwalls.com/wallpapers/football-goal.jpg",
-	  "https://i.pinimg.com/originals/8c/f0/93/8cf093d06bb060ff91770fcec13d2e32.jpg"
-	],
-	"logo": [
-	  "https://png.pngtree.com/png-clipart/20190516/original/pngtree-football-vector-png-image_3561524.jpg"
-	]
-  },
-  "Fighting": {
-	"background": [
-	  "https://www.kolpaper.com/wp-content/uploads/2021/01/WrestleMania-Wallpaper-4.jpg",
-	  "https://wallpapercave.com/wp/wp7480043.jpg"
-	],
-	"poster": [
-	  "https://i.pinimg.com/originals/34/bb/f7/34bbf762319412d2c8a0759fa7417adc.png",
-	  "https://rajah.com/sites/default/files/styles/page_image/public/2023-09/wwelogo.jpeg?itok=-8FcfTEJ"
-	],
-	"logo": [
-	  "https://png.pngtree.com/png-vector/20210222/ourlarge/pngtree-element-logo-of-vs-fight-png-image_2932642.jpg",
-	  "https://img.wethrift.com/wwe.jpg"
-	]
-  },
-  "Boxing": {
-	"background": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallsdesk.com%2Fwp-content%2Fuploads%2F2016%2F11%2FPictures-of-Boxing-Gloves-.jpg&f=1&nofb=1&ipt=fe744b371e649f9840b329ee59e07b3fa49a981467738452c7ae28f61adf76c8&ipo=images"
-	],
-	"poster": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fmedia.istockphoto.com%2Fphotos%2Fred-boxing-glove-picture-id1006291908%3Fb%3D1%26k%3D20%26m%3D1006291908%26s%3D170667a%26w%3D0%26h%3DhAOi7KoDXwcqPtFIlnZqN6Prfooug60XGL2wuQ3Nmxo%3D&f=1&nofb=1&ipt=6af23c83f7b547c67026a573a03331b4791401a81efe62bb3fe6f60f5fb30bf5&ipo=images",
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ft4.ftcdn.net%2Fjpg%2F04%2F29%2F51%2F81%2F240_F_429518118_k4gpunbwSm2xBDLX71kzWhFPGLvi1Cab.jpg&f=1&nofb=1&ipt=ea7c7cd79a397674bc01ae1469acb8af2b50cfcd3a7cfd2481fdea45007f3a3e&ipo=images"
-	],
-	"logo": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpng.pngtree.com%2Fpng-vector%2F20221116%2Fourmid%2Fpngtree-boxing-logo-vector-icon-illustration-illustration-boxer-sport-vector-png-image_34660450.png&f=1&nofb=1&ipt=0d560ff6ad82ffc371c4be3dc4d7f20c76512f8a182993b28ab5af5d6173802b&ipo=images",
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Flogopond.com%2Flogos%2F1f8a86c11b5c49c8bb90a218b4a2e3cb.png&f=1&nofb=1&ipt=897047498c6d29a9301df8a78f737650ea5b6fd0f5076dfe3aa25cdde5032079&ipo=images"
-	]
-  },
-  "Hockey": {
-	"background": [
-	  "https://wallpapercave.com/wp/oHZo5vc.jpg"
-	],
-	"poster": [
-	  "https://getwallpapers.com/wallpaper/full/2/3/7/1398548-large-cool-hockey-backgrounds-1920x1200.jpg"
-	],
-	"logo": [
-	  "https://seeklogo.com/images/V/vancouver-2010-ice-hockey-logo-37E210CC48-seeklogo.com.png?v=637838255930000000"
-	]
-  },
-  "Tennis": {
-	"background": [
-	  "https://wallpapercave.com/wp/wp3088699.jpg",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//yesofcorsa.com/wp-content/uploads/2015/08/3307_tennis.jpg&f=1&nofb=1",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//3.bp.blogspot.com/-galOVHt3kp0/UZvDZpqBBiI/AAAAAAAALD0/c0zQxrH0LxY/s1600/Tennis%2BWallpapers%2B4.jpg&f=1&nofb=1"
-	],
-	"poster": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//3.bp.blogspot.com/-galOVHt3kp0/UZvDZpqBBiI/AAAAAAAALD0/c0zQxrH0LxY/s1600/Tennis%2BWallpapers%2B4.jpg&f=1&nofb=1",
-	  "https://images.vexels.com/media/users/3/76768/raw/b6882e62c248e8d5ff5f1fd9259d9f73-tennis-racket-background.jpg"
-	],
-	"logo": [
-	  "https://media.istockphoto.com/vectors/tennis-logo-design-or-icon-with-two-crossed-rackets-and-tennis-ball-vector-id1206838436?k=6&m=1206838436&s=170667a&w=0&h=32PzYhc7r1r1T88DLQ0KS5_XvhQ81UO3_fdPOxk1FCQ="
-	]
-  },
-  "Rugby": {
-	"background": [
-	  "https://wallpaperaccess.com/full/1104013.jpg",
-	  "https://wallpapercave.com/wp/wp5755888.jpg"
-	],
-	"poster": [
-	  "https://s.itl.cat/pngfile/s/308-3080634_rugby-wallpaper-14-rugby-ball-on-ground.jpg",
-	  "https://wallpapers.com/images/hd/gilbert-rugby-ball-y8uwezefe04p4rj9.jpg"
-	],
-	"logo": [
-	  "https://static.vecteezy.com/system/resources/previews/008/222/197/original/rugby-ball-logo-free-vector.jpg"
-	]
-  },
-  "Golf": {
-	"background": [
-	  "https://wallpaperaccess.com/full/1543778.jpg",
-	  "https://free4kwallpapers.com/uploads/originals/2018/02/06/stunning-golf-course-wallpaper.jpg",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//www.pixelstalk.net/wp-content/uploads/2016/04/Free-golf-backgrounds-photos-pics.jpg&f=1&nofb=1"
-	],
-	"poster": [
-	  "https://images.all-free-download.com/images/graphiclarge/golf_picture_9_168173.jpg",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//cdn.wallpapersafari.com/97/40/W4gJLI.jpg&f=1&nofb=1",
-	  "https://www.pixelstalk.net/wp-content/uploads/2016/04/Golf-wallpapers-HD-Photos.jpg"
-	],
-	"logo": [
-	  "https://static.vecteezy.com/system/resources/previews/020/311/440/original/golf-logo-design-template-golf-ball-on-tee-logo-design-icon-vector.jpg"
-	]
-  },
-  "Dart": {
-	"background": [
-	  "https://wallpapercave.com/wp/wp2483293.jpg",
-	  "https://www.baltana.com/files/wallpapers-21/Darts-Arrow-HD-Background-Wallpaper-52811.jpg"
-	],
-	"poster": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//4.bp.blogspot.com/-HbSvu5nU_KQ/URFbg6VXfFI/AAAAAAAASg0/92zXW__vnqA/s1600/Darts%2BWallpapers%2B01.jpg&f=1&nofb=1",
-	  "https://wallpapershome.com/images/wallpapers/darts-1920x1080-4k-5k-wallpaper-hd-wheel-target-fire-water-561.jpg"
-	],
-	"logo": [
-	  "https://static.vecteezy.com/system/resources/thumbnails/020/361/186/small_2x/darts-icon-dart-illustration-sign-accuracy-symbol-sharpshooting-logo-vector.jpg"
-	]
-  },
-  "Afl": {
-	"background": [
-	  "https://wallpapercave.com/wp/wp1998978.jpg",
-	  "https://wallpapercave.com/wp/wp1998982.jpg"
-	],
-	"poster": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//rickrifici.com/wp-content/uploads/2011/03/AFL.jpg&f=1&nofb=1",
-	  "https://i.pinimg.com/736x/c0/54/73/c0547342c769706d2ed606d2b6f7246b.jpg"
-	],
-	"logo": [
-	  "https://botw-pd.s3.amazonaws.com/styles/logo-thumbnail/s3/0003/4002/brand.gif?itok=F2rATKp8"
-	]
-  },
-  "Motor Sport": {
-	"background": [
-	  "https://wallpapercave.com/wp/wp9469126.jpg",
-	  "https://wallpapercave.com/wp/wp7657681.jpg"
-	],
-	"poster": [
-	  "https://www.kolpaper.com/wp-content/uploads/2019/12/Car-racing-wallpaper-1-scaled.jpg",
-	  "https://i.pinimg.com/originals/d0/9c/4c/d09c4cfd1b93cc66dc13c8b461fd2145.jpg",
-	  "https://i.pinimg.com/originals/d0/9c/4c/d09c4cfd1b93cc66dc13c8b461fd2145.jpg"
-	],
-	"logo": [
-	  "https://static.vecteezy.com/system/resources/thumbnails/000/130/098/small/turbocharger-racing-logo-template.jpg"
-	]
-  },
-  "MotoGP": {
-	"background": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallpaperbat.com%2Fimg%2F569936-marc-marquez-wallpaper-in-2020-yamaha-motogp-racing-motogp-race.jpg&f=1&nofb=1&ipt=a0e19f2afd8aa9cc2aaeecf47502ed36fa0d2c6565eaf01d437505dcc0e8923f&ipo=images",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fgetwallpapers.com%2Fwallpaper%2Ffull%2F9%2F1%2F1%2F479678.jpg&f=1&nofb=1&ipt=074cb784018cb9d5ebf40c6a97511dcdf9b18e87b2a27e3fe43296ec12437f9c&ipo=images"
-	],
-	"poster": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.pinimg.com%2Foriginals%2F62%2F0e%2F24%2F620e24ceb7964d0168606932e4a976cf.jpg&f=1&nofb=1&ipt=1965087b235796e0dbf101d6329c1f7f14b5dfc5acfb48c075739108c6eddba9&ipo=images",
-	  "https://images.wallpapersden.com/image/wxl-motogp-19-game_66061.jpg"
-	],
-	"logo": [
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2F1.bp.blogspot.com%2F-aLMSit3Q6XY%2FUQJO5Eiac4I%2FAAAAAAAAFcE%2Fueo2j7cdk-c%2Fs320%2FLogo%2BMotogp.jpg&f=1&nofb=1&ipt=8e81f529ea52045afffc5c64a7bbd8cde17f35a4c5f8eca685a0488f9605bfcf&ipo=images",
-	  "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fbesthqwallpapers.com%2FUploads%2F25-12-2017%2F34975%2Fthumb-motogp-4k-logo-grunge-black-background.jpg&f=1&nofb=1&ipt=e934a488b5c925ba56ad11f3b2cb728e85b4e34ac217441c0bf6c4cb4a07db9d&ipo=images"
-	]
-  },
-  "Other Sports": {
-	"background": [
-	  "https://wallpapercave.com/wp/Cd7iyFl.jpg"
-	],
-	"poster": [
-	  "https://png.pngtree.com/thumb_back/fh260/background/20210312/pngtree-green-gradient-sports-background-image_582399.jpg"
-	],
-	"logo": [
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//images.gofreedownload.net/sport-105683.jpg&f=1&nofb=1"
-	]
-  },
-  "MLB": {
-	"background": [
-	  "https://wallpapercave.com/wp/wp1998982.jpg",
-	  "https://wallpapercave.com/wp/wp1998978.jpg"
-	],
-	"poster": [
-	  "https://i.pinimg.com/736x/c0/54/73/c0547342c769706d2ed606d2b6f7246b.jpg",
-	  "https://external-content.duckduckgo.com/iu/?u=http%3A//rickrifici.com/wp-content/uploads/2011/03/AFL.jpg&f=1&nofb=1"
-	],
-	"logo": [
-	  "https://botw-pd.s3.amazonaws.com/styles/logo-thumbnail/s3/0003/4002/brand.gif?itok=F2rATKp8"
-	]
-  }
+	"Afl": {
+		"background": [
+			"https://wallpapercave.com/wp/wp1998978.jpg",
+			"https://wallpapercave.com/wp/wp1998982.jpg"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//rickrifici.com/wp-content/uploads/2011/03/AFL.jpg&f=1&nofb=1",
+			"https://i.pinimg.com/736x/c0/54/73/c0547342c769706d2ed606d2b6f7246b.jpg"
+		],
+		"logo": [
+			"https://botw-pd.s3.amazonaws.com/styles/logo-thumbnail/s3/0003/4002/brand.gif?itok=F2rATKp8"
+		]
+	},
+	"American Football": {
+		"background": [
+			"https://wallpapercave.com/wp/wp2389352.jpg",
+			"https://www.pixelstalk.net/wp-content/uploads/2016/10/Backgrounds-American-Football.jpg"
+		],
+		"poster": [
+			"https://images.alphacoders.com/592/592115.jpg",
+			"https://media.istockphoto.com/illustrations/american-football-background-illustration-id167593141?k=6&m=167593141&s=170667a&w=0&h=NbFgCG0OyUANqZVL3V052rZBlFL9oBaxBcJvW_tq87s="
+		],
+		"logo": [
+			"https://static.vecteezy.com/system/resources/previews/000/550/769/non_2x/american-football-vector-icon.jpg"
+		]
+	},
+	"Athletics": {
+		"background": [
+			"https://i.pinimg.com/564x/8a/54/78/8a5478003bd46abc218daeda47aadb32.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/564x/d5/a8/d1/d5a8d1beb0b6a2079c163512a9ae3406.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/bc/f3/16/bcf3163ed56233e919baafd299823321.jpg"
+		]
+	},
+	"Aussie Rules": {
+		"background": [
+			"https://s3.amazonaws.com/rical-images/niclas-westerholm-800x480.jpg"
+		],
+		"poster": [
+			"https://media.wbur.org/wp/2014/09/Geelong-v-North-Mlebourne-1000x693.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/fe/e4/be/fee4be954c22861aaba956a07de49ea0.jpg"
+		]
+	},
+	"Baseball": {
+		"background": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//www.pixelstalk.net/wp-content/uploads/2016/03/Nice-baseball-fields-wallpaper-background.jpg&f=1&nofb=1",
+			"https://www.pixelstalk.net/wp-content/uploads/2016/03/Download-free-baseball-wallpaper-HD.jpg"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ftse1.mm.bing.net%2Fth%3Fid%3DOIP.kyIjO9kzk_XnipGETx4wrgHaEo%26pid%3DApi&f=1&ipt=7809e9e23b1eae0af3972cd252c9df5256fa627ecf859cdaaeaa7303f39bfffd&ipo=images"
+		],
+		"logo": [
+			"https://static.vecteezy.com/system/resources/thumbnails/000/550/643/small_2x/baseball_019.jpg"
+		]
+	},
+	"Basketball": {
+		"background": [
+			"https://images.designtrends.com/wp-content/uploads/2015/12/21135619/Basketball-Background.jpg",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//wallpapercave.com/wp/acIknTe.jpg&f=1&nofb=1"
+		],
+		"poster": [
+			"https://www.pixelstalk.net/wp-content/uploads/2016/05/Free-Desktop-basketball-wallpapers-court.jpg",
+			"https://www.pixelstalk.net/wp-content/uploads/2016/10/Basketball-Court-HD-Wallpaper.jpg"
+		],
+		"logo": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//cliparts.co/cliparts/Aib/Kr4/AibKr4gGT.png&f=1&nofb=1"
+		]
+	},
+	"Bowling": {
+		"background": [
+			"https://i.pinimg.com/736x/fa/2d/21/fa2d21f56d7c44e03760a3db74a306e6.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/564x/21/52/3b/21523b4d0fe74144924bbd802eebd9be.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/88/c2/7a/88c27a982617ac8dbe272e3e385370b8.jpg"
+		]
+	},
+	"Boxing": {
+		"background": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallsdesk.com%2Fwp-content%2Fuploads%2F2016%2F11%2FPictures-of-Boxing-Gloves-.jpg&f=1&nofb=1&ipt=fe744b371e649f9840b329ee59e07b3fa49a981467738452c7ae28f61adf76c8&ipo=images",
+			"https://media.bleacherreport.com/w_800,h_533,c_fill/br-img-slides/003/671/391/2af40c670ee8b823e7c849d2a87a490f_crop_exact.jpg"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fmedia.istockphoto.com%2Fphotos%2Fred-boxing-glove-picture-id1006291908%3Fb%3D1%26k%3D20%26m%3D1006291908%26s%3D170667a%26w%3D0%26h%3DhAOi7KoDXwcqPtFIlnZqN6Prfooug60XGL2wuQ3Nmxo%3D&f=1&nofb=1&ipt=6af23c83f7b547c67026a573a03331b4791401a81efe62bb3fe6f60f5fb30bf5&ipo=images",
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ft4.ftcdn.net%2Fjpg%2F04%2F29%2F51%2F81%2F240_F_429518118_k4gpunbwSm2xBDLX71kzWhFPGLvi1Cab.jpg&f=1&nofb=1&ipt=ea7c7cd79a397674bc01ae1469acb8af2b50cfcd3a7cfd2481fdea45007f3a3e&ipo=images",
+			"https://cdn.britannica.com/58/13158-050-B6471F51/Stag-Sharkey-oil-canvas-George-Bellows-Ohio-1909.jpg"
+		],
+		"logo": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpng.pngtree.com%2Fpng-vector%2F20221116%2Fourmid%2Fpngtree-boxing-logo-vector-icon-illustration-illustration-boxer-sport-vector-png-image_34660450.png&f=1&nofb=1&ipt=0d560ff6ad82ffc371c4be3dc4d7f20c76512f8a182993b28ab5af5d6173802b&ipo=images",
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Flogopond.com%2Flogos%2F1f8a86c11b5c49c8bb90a218b4a2e3cb.png&f=1&nofb=1&ipt=897047498c6d29a9301df8a78f737650ea5b6fd0f5076dfe3aa25cdde5032079&ipo=images",
+			"https://anthonyjoshua.com/cdn/shop/articles/AJ_Fight_Insta_1.png?v=1662478898&width=1080"
+		]
+	},
+	"Cricket": {
+		"background": [
+			"https://wallpaperaccess.com/full/1088596.jpg",
+			"https://wallpaperaccess.com/full/3818753.jpg"
+		],
+		"poster": [
+			"https://wallpapercave.com/wp/wp9536049.jpg",
+			"https://www.setaswall.com/wp-content/uploads/2018/07/Cricket-Wallpaper-23-1182x888.jpg",
+			"https://p4.wallpaperbetter.com/wallpaper/599/783/829/hyderabad-cricketstadium-sport-wallpaper-preview.jpg"
+		],
+		"logo": [
+			"https://img.freepik.com/premium-vector/cricket-player-logo-design-vector-icon-symbol-template-illustration_647432-116.jpg"
+		]
+	},
+	"Cycling": {
+		"background": [
+			"https://i.pinimg.com/736x/b9/ee/68/b9ee683845c3f1d6737c79cf7e5ab192.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/564x/3e/bc/4b/3ebc4b29b63e1f2183b8028344898de1.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/75/5b/a4/755ba471a11dba9d888e1e4ab94c51e8.jpg"
+		]
+	},
+	"Dart": {
+		"background": [
+			"https://wallpapercave.com/wp/wp2483293.jpg",
+			"https://www.baltana.com/files/wallpapers-21/Darts-Arrow-HD-Background-Wallpaper-52811.jpg"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//4.bp.blogspot.com/-HbSvu5nU_KQ/URFbg6VXfFI/AAAAAAAASg0/92zXW__vnqA/s1600/Darts%2BWallpapers%2B01.jpg&f=1&nofb=1",
+			"https://wallpapershome.com/images/wallpapers/darts-1920x1080-4k-5k-wallpaper-hd-wheel-target-fire-water-561.jpg"
+		],
+		"logo": [
+			"https://static.vecteezy.com/system/resources/thumbnails/020/361/186/small_2x/darts-icon-dart-illustration-sign-accuracy-symbol-sharpshooting-logo-vector.jpg"
+		]
+	},
+	"Fighting": {
+		"background": [
+			"https://www.kolpaper.com/wp-content/uploads/2021/01/WrestleMania-Wallpaper-4.jpg",
+			"https://wallpapercave.com/wp/wp7480043.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/originals/34/bb/f7/34bbf762319412d2c8a0759fa7417adc.png",
+			"https://rajah.com/sites/default/files/styles/page_image/public/2023-09/wwelogo.jpeg?itok=-8FcfTEJ"
+		],
+		"logo": [
+			"https://png.pngtree.com/png-vector/20210222/ourlarge/pngtree-element-logo-of-vs-fight-png-image_2932642.jpg",
+			"https://img.wethrift.com/wwe.jpg"
+		]
+	},
+	"Floorball": {
+		"background": [
+			"https://i.pinimg.com/564x/2e/ec/61/2eec61af4a598497c89b2d25b3fbfeb8.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/564x/42/8f/e8/428fe8e7880e4443c06b73f3eb513fb7.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/21/31/f4/2131f452523cf93c3fccf9c7f425bfa3.jpg"
+		]
+	},
+	"Football": {
+		"background": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//wallpapercave.com/wp/Mx8QOkb.jpg&f=1&nofb=1",
+			"https://wallpapercave.com/wp/wp2694966.jpg",
+			"https://wallpapercave.com/wp/wp8255684.jpg",
+			"https://wallpapercave.com/wp/wp2167295.jpg"
+		],
+		"poster": [
+			"https://cdn3.vectorstock.com/i/1000x1000/76/27/realistic-football-soccer-stadium-background-vector-20507627.jpg",
+			"https://hdqwalls.com/wallpapers/football-goal.jpg",
+			"https://i.pinimg.com/originals/8c/f0/93/8cf093d06bb060ff91770fcec13d2e32.jpg"
+		],
+		"logo": [
+			"https://png.pngtree.com/png-clipart/20190516/original/pngtree-football-vector-png-image_3561524.jpg"
+		]
+	},
+	"Futsal": {
+		"background": [
+			"https://i.pinimg.com/564x/c2/32/64/c232645e877ccb06bf5e7c19670b63ed.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/9f/b7/02/9fb702368c11d3042a8427d7846da283.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/94/c3/b5/94c3b59def2e824c2169a3c82df82fb6.jpg"
+		]
+	},
+	"GAA": {
+		"background": [
+			"https://www.gaa.ie/api/images/image/private/t_ratio16_9-size50/ahldsknycg9xznakzftb"
+		],
+		"poster": [
+			"https://focus.independent.ie/thumbor/YS9Bl7NZ63xXExyDWp6YovEpRNM=/310x0:3154x1897/1280x853/prod-mh-ireland/01a6eb05-7836-47dc-b260-b506ded42030/a1922a3d-e3f9-489e-a84e-419607dba72a/Sports2567655.jpg"
+		],
+		"logo": [
+			"https://www.gaa.ie/api/images/image/private/t_ratio16_9-size50/prd/q1o5adhrckxjhtlc47hk"
+		]
+	},
+	"Golf": {
+		"background": [
+			"https://wallpaperaccess.com/full/1543778.jpg",
+			"https://free4kwallpapers.com/uploads/originals/2018/02/06/stunning-golf-course-wallpaper.jpg",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//www.pixelstalk.net/wp-content/uploads/2016/04/Free-golf-backgrounds-photos-pics.jpg&f=1&nofb=1"
+		],
+		"poster": [
+			"https://images.all-free-download.com/images/graphiclarge/golf_picture_9_168173.jpg",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//cdn.wallpapersafari.com/97/40/W4gJLI.jpg&f=1&nofb=1",
+			"https://www.pixelstalk.net/wp-content/uploads/2016/04/Golf-wallpapers-HD-Photos.jpg"
+		],
+		"logo": [
+			"https://static.vecteezy.com/system/resources/previews/020/311/440/original/golf-logo-design-template-golf-ball-on-tee-logo-design-icon-vector.jpg"
+		]
+	},
+	"Gymnastics": {
+		"background": [
+			"https://i.pinimg.com/564x/2e/c4/a2/2ec4a2a5652cd8bd49cdb8047eadca31.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/564x/c6/b3/41/c6b3418f1f7b3a3886145f62bdc68e8b.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/5a/3c/4a/5a3c4a942f3912258c5c3d1b3a1027c6.jpg"
+		]
+	},
+	"Handball": {
+		"background": [
+			"https://i.pinimg.com/564x/be/03/89/be0389613c926d713bd84833e889a05b.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/da/91/56/da91565174a39af08e006b1d7e7ca865.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/f4/b0/ee/f4b0ee90d7768c6cd0a7b3c72d6e7346.jpg"
+		]
+	},
+	"Hockey": {
+		"background": [
+			"https://wallpapercave.com/wp/oHZo5vc.jpg"
+		],
+		"poster": [
+			"https://getwallpapers.com/wallpaper/full/2/3/7/1398548-large-cool-hockey-backgrounds-1920x1200.jpg"
+		],
+		"logo": [
+			"https://seeklogo.com/images/V/vancouver-2010-ice-hockey-logo-37E210CC48-seeklogo.com.png?v=637838255930000000"
+		]
+	},
+	"Horse Racing": {
+		"background": [
+			"https://i.pinimg.com/564x/3a/07/f3/3a07f3e0550cd2d9870dd43f63855ac6.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/564x/69/82/48/698248f263661a365ab9225e475e5c34.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/85/8a/28/858a283655c7c50aa2c53835a65fe350.jpg"
+		]
+	},
+	"Lacrosse": {
+		"background": [
+			"https://www.kutztown.edu/Images/Photo%20Gallery/KU-Keystone%20Field%2003-090319.JPG"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/64/62/46/6462462bb18fd641de70d0a18c3ea7aa.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/00/66/0f/00660fcb5e64220ea655f574cb0825ea.jpg"
+		]
+	},
+	"MLB": {
+		"background": [
+			"https://wallpapercave.com/wp/wp1998982.jpg",
+			"https://wallpapercave.com/wp/wp1998978.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/c0/54/73/c0547342c769706d2ed606d2b6f7246b.jpg",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//rickrifici.com/wp-content/uploads/2011/03/AFL.jpg&f=1&nofb=1"
+		],
+		"logo": [
+			"https://botw-pd.s3.amazonaws.com/styles/logo-thumbnail/s3/0003/4002/brand.gif?itok=F2rATKp8"
+		]
+	},
+	"MMA": {
+		"background": [
+			"https://cdn.britannica.com/13/190013-050-53F5C201/MMA-fighters-octagon-cage-Key-Arena-Seattle-2012.jpgg"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallpaperaccess.com%2Ffull%2F262395.jpg&f=1&nofb=1&ipt=a6c43026724a51fa9ec74e9686368ee358d2a869521c8c94e9e600e7764907b8&ipo=images",
+			"https://getwallpapers.com/wallpaper/full/2/3/7/1398548-large-cool-hockey-backgrounds-1920x1200.jpg",
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.vecteezy.com%2Fsystem%2Fresources%2Fpreviews%2F007%2F395%2F436%2Foriginal%2Fmma-arena-stage-background-free-vector.jpg&f=1&nofb=1&ipt=c5c8ff32c7d48d70e9245af3ea2c8febc37dfdda2731e730c260d298ef886dbe&ipo=images"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/46/c6/31/46c631efcea58974ddfb1c4b4550f566.jpg"
+		]
+	},
+	"MotoGP": {
+		"background": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallpaperbat.com%2Fimg%2F569936-marc-marquez-wallpaper-in-2020-yamaha-motogp-racing-motogp-race.jpg&f=1&nofb=1&ipt=a0e19f2afd8aa9cc2aaeecf47502ed36fa0d2c6565eaf01d437505dcc0e8923f&ipo=images",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fgetwallpapers.com%2Fwallpaper%2Ffull%2F9%2F1%2F1%2F479678.jpg&f=1&nofb=1&ipt=074cb784018cb9d5ebf40c6a97511dcdf9b18e87b2a27e3fe43296ec12437f9c&ipo=images"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.pinimg.com%2Foriginals%2F62%2F0e%2F24%2F620e24ceb7964d0168606932e4a976cf.jpg&f=1&nofb=1&ipt=1965087b235796e0dbf101d6329c1f7f14b5dfc5acfb48c075739108c6eddba9&ipo=images",
+			"https://images.wallpapersden.com/image/wxl-motogp-19-game_66061.jpg"
+		],
+		"logo": [
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2F1.bp.blogspot.com%2F-aLMSit3Q6XY%2FUQJO5Eiac4I%2FAAAAAAAAFcE%2Fueo2j7cdk-c%2Fs320%2FLogo%2BMotogp.jpg&f=1&nofb=1&ipt=8e81f529ea52045afffc5c64a7bbd8cde17f35a4c5f8eca685a0488f9605bfcf&ipo=images",
+			"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fbesthqwallpapers.com%2FUploads%2F25-12-2017%2F34975%2Fthumb-motogp-4k-logo-grunge-black-background.jpg&f=1&nofb=1&ipt=e934a488b5c925ba56ad11f3b2cb728e85b4e34ac217441c0bf6c4cb4a07db9d&ipo=images"
+		]
+	},
+	"Motor Sport": {
+		"background": [
+			"https://wallpapercave.com/wp/wp9469126.jpg",
+			"https://wallpapercave.com/wp/wp7657681.jpg"
+		],
+		"poster": [
+			"https://www.kolpaper.com/wp-content/uploads/2019/12/Car-racing-wallpaper-1-scaled.jpg",
+			"https://i.pinimg.com/originals/d0/9c/4c/d09c4cfd1b93cc66dc13c8b461fd2145.jpg",
+			"https://i.pinimg.com/originals/d0/9c/4c/d09c4cfd1b93cc66dc13c8b461fd2145.jpg"
+		],
+		"logo": [
+			"https://static.vecteezy.com/system/resources/thumbnails/000/130/098/small/turbocharger-racing-logo-template.jpg"
+		]
+	},
+	"Netball": {
+		"background": [
+			"https://i.pinimg.com/564x/79/7f/95/797f95498bd6b78afa37f74aa920e467.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/e5/c1/6e/e5c16ed52ad220eadb227eba9b480f33.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/48/ba/b4/48bab44d36f240512760688e83cf8b52.jpg"
+		]
+	},
+	"Other Sports": {
+		"background": [
+			"https://wallpapercave.com/wp/Cd7iyFl.jpg"
+		],
+		"poster": [
+			"https://png.pngtree.com/thumb_back/fh260/background/20210312/pngtree-green-gradient-sports-background-image_582399.jpg"
+		],
+		"logo": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//images.gofreedownload.net/sport-105683.jpg&f=1&nofb=1"
+		]
+	},
+	"Rugby": {
+		"background": [
+			"https://wallpaperaccess.com/full/1104013.jpg",
+			"https://wallpapercave.com/wp/wp5755888.jpg"
+		],
+		"poster": [
+			"https://s.itl.cat/pngfile/s/308-3080634_rugby-wallpaper-14-rugby-ball-on-ground.jpg",
+			"https://wallpapers.com/images/hd/gilbert-rugby-ball-y8uwezefe04p4rj9.jpg"
+		],
+		"logo": [
+			"https://static.vecteezy.com/system/resources/previews/008/222/197/original/rugby-ball-logo-free-vector.jpg"
+		]
+	},
+	"Squash": {
+		"background": [
+			"https://i.pinimg.com/736x/f6/16/5e/f6165ea091eb8d31e63ad110c98d415e.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/72/73/f1/7273f112fd2fc9cf1c7237d1ca7d3ea7.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/736x/34/95/7a/34957a82d32d7e6d0a9e41b7ba70c520.jpg"
+		]
+	},
+	"Tennis": {
+		"background": [
+			"https://wallpapercave.com/wp/wp3088699.jpg",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//yesofcorsa.com/wp-content/uploads/2015/08/3307_tennis.jpg&f=1&nofb=1",
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//3.bp.blogspot.com/-galOVHt3kp0/UZvDZpqBBiI/AAAAAAAALD0/c0zQxrH0LxY/s1600/Tennis%2BWallpapers%2B4.jpg&f=1&nofb=1"
+		],
+		"poster": [
+			"https://external-content.duckduckgo.com/iu/?u=http%3A//3.bp.blogspot.com/-galOVHt3kp0/UZvDZpqBBiI/AAAAAAAALD0/c0zQxrH0LxY/s1600/Tennis%2BWallpapers%2B4.jpg&f=1&nofb=1",
+			"https://images.vexels.com/media/users/3/76768/raw/b6882e62c248e8d5ff5f1fd9259d9f73-tennis-racket-background.jpg"
+		],
+		"logo": [
+			"https://media.istockphoto.com/vectors/tennis-logo-design-or-icon-with-two-crossed-rackets-and-tennis-ball-vector-id1206838436?k=6&m=1206838436&s=170667a&w=0&h=32PzYhc7r1r1T88DLQ0KS5_XvhQ81UO3_fdPOxk1FCQ="
+		]
+	},
+	"Volleyball": {
+		"background": [
+			"https://i.pinimg.com/564x/0b/e0/cc/0be0cce4ae979463aba3f99c0032bd5f.jpg"
+		],
+		"poster": [
+			"https://i.pinimg.com/736x/95/7d/f9/957df9df14a83b09ac3fd6873eb127b6.jpg"
+		],
+		"logo": [
+			"https://i.pinimg.com/564x/34/bc/d4/34bcd426802d4ddebff16f887ac6ed42.jpg"
+		]
+	}
 }

@@ -170,17 +170,13 @@ class MetaIdProjection(BaseModel):
     id: str = Field(alias="_id")
 
 
-class TVStreamsBehaviorHints(StreamBehaviorHints):
-    is_redirect: bool = False
-
-
 class TVStreams(BaseModel):
     name: str
     url: str | None = None
     ytId: str | None = None
     source: str
     country: str | None = None
-    behaviorHints: TVStreamsBehaviorHints | None = None
+    behaviorHints: StreamBehaviorHints | None = None
 
     @model_validator(mode="after")
     def validate_url_or_yt_id(self) -> "TVStreams":

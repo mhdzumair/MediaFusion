@@ -17,3 +17,7 @@ PARENT_GUIDE_CERTIFICATES_FILTER_REGEX = re.compile(
 )
 
 SPORTS_ARTIFACTS = get_json_data("resources/json/sports_artifacts.json")
+
+PRIVATE_CIDR = re.compile(
+    r"^(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)",
+)

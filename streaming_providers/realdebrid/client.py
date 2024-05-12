@@ -32,7 +32,7 @@ class RealDebrid(DebridClient):
         is_return_none=False,
         is_expected_to_fail=False,
     ) -> dict:
-        if method == "POST" and self.user_ip and self.user_ip != "127.0.0.1":
+        if method == "POST" and self.user_ip:
             data = data or {}
             data["ip"] = self.user_ip
         return super()._make_request(

@@ -966,7 +966,6 @@ class LiveStreamResolverPipeline:
                     "Referer": response.request.headers.get("Referer").decode(),
                 }
             )
-            is_redirect = response.meta.get("redirect_times", 0) > 0
 
             item["streams"].append(
                 {
@@ -975,7 +974,6 @@ class LiveStreamResolverPipeline:
                     "source": adapter["stream_source"],
                     "behaviorHints": {
                         "notWebReady": True,
-                        "is_redirect": is_redirect,
                         "proxyHeaders": {
                             "request": stream_headers,
                         },

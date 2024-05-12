@@ -45,10 +45,11 @@ async def get_meta_list(
     is_watchlist_catalog: bool,
     skip: int = 0,
     limit: int = 25,
+    user_ip: str | None = None,
 ) -> list[schemas.Meta]:
     # Define query filters for TorrentStreams based on catalog
     if is_watchlist_catalog:
-        downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data)
+        downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data, user_ip)
         if not downloaded_info_hashes:
             return []
         query_filters = {"_id": {"$in": downloaded_info_hashes}}
@@ -279,7 +280,7 @@ async def get_cached_torrent_streams(
 
 
 async def get_movie_streams(
-    user_data, secret_str: str, redis: Redis, video_id: str
+    user_data, secret_str: str, redis: Redis, video_id: str, user_ip: str | None = None
 ) -> list[Stream]:
     if video_id.startswith("dl"):
         if not video_id.endswith(user_data.streaming_provider.service):
@@ -318,7 +319,7 @@ async def get_movie_streams(
                 movie_metadata.year,
             )
 
-    return await parse_stream_data(streams, user_data, secret_str)
+    return await parse_stream_data(streams, user_data, secret_str, user_ip=user_ip)
 
 
 async def get_series_streams(
@@ -328,6 +329,7 @@ async def get_series_streams(
     video_id: str,
     season: int,
     episode: int,
+    user_ip: str | None = None,
 ) -> list[Stream]:
     if season is None or episode is None:
         season = episode = 1
@@ -366,7 +368,7 @@ async def get_series_streams(
     )
 
     return await parse_stream_data(
-        matched_episode_streams, user_data, secret_str, season, episode
+        matched_episode_streams, user_data, secret_str, season, episode, user_ip=user_ip
     )
 
 

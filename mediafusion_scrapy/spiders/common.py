@@ -1,3 +1,4 @@
+import logging
 import re
 
 import redis
@@ -41,7 +42,7 @@ class CommonTamilSpider(scrapy.Spider):
             )
             return
         self.scrap_catalog_id = scrap_catalog_id
-        print(f"Scraping catalog ID: {self.scrap_catalog_id}")
+        logging.info(f"Scraping catalog ID: {self.scrap_catalog_id}")
         self.redis = redis.Redis(
             connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
         )
@@ -166,7 +167,9 @@ class CommonTamilSpider(scrapy.Spider):
 
     def parse_movie_page(self, response):
         item = response.meta["item"].copy()
-        poster = response.css("div[data-commenttype='forums'] img::attr(src)").get()
+        poster = response.css(
+            "div[data-commenttype='forums'] img::attr(data-src), div[data-commenttype='forums'] img::attr(src)"
+        ).get()
         created_at = response.css("time::attr(datetime)").get()
         torrent_links = response.css("a[data-fileext='torrent']::attr(href)").getall()
 

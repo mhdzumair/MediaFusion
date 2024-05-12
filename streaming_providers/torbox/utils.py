@@ -10,14 +10,13 @@ from streaming_providers.exceptions import ProviderException
 from streaming_providers.torbox.client import Torbox
 
 
-def get_direct_link_from_torbox(
+def get_video_url_from_torbox(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
     filename: str,
-    max_retries=5,
-    retry_interval=5,
     episode: int = None,
+    **kwargs,
 ) -> str:
     torbox_client = Torbox(token=user_data.streaming_provider.token)
 
@@ -30,7 +29,8 @@ def get_direct_link_from_torbox(
         ):
             file_id = select_file_id_from_torrent(torrent_info, filename, episode)
             response = torbox_client.create_download_link(
-                torrent_info.get("id"), file_id,
+                torrent_info.get("id"),
+                file_id,
             )
             return response["data"]
     else:
@@ -38,11 +38,12 @@ def get_direct_link_from_torbox(
         response = torbox_client.add_magnet_link(magnet_link)
         # Response detail has "Found Cached Torrent. Using Cached Torrent." if it's a cached torrent,
         # create download link from it directly in the same call.
-        if 'Found Cached' in response.get("detail"):
+        if "Found Cached" in response.get("detail"):
             torrent_info = torbox_client.get_available_torrent(info_hash)
             file_id = select_file_id_from_torrent(torrent_info, filename, episode)
             response = torbox_client.create_download_link(
-                torrent_info.get("id"), file_id,
+                torrent_info.get("id"),
+                file_id,
             )
 
         return response["data"]
@@ -54,7 +55,9 @@ def get_direct_link_from_torbox(
     )
 
 
-def update_torbox_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_torbox_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
+):
     """Updates the cache status of streams based on Torbox's instant availability."""
 
     try:
@@ -68,7 +71,9 @@ def update_torbox_cache_status(streams: list[TorrentStreams], user_data: UserDat
         pass
 
 
-def fetch_downloaded_info_hashes_from_torbox(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_torbox(
+    user_data: UserData, **kwargs
+) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the Torbox account."""
     try:
         torbox_client = Torbox(token=user_data.streaming_provider.token)
@@ -81,7 +86,9 @@ def fetch_downloaded_info_hashes_from_torbox(user_data: UserData) -> list[str]:
         return []
 
 
-def select_file_id_from_torrent(torrent_info: dict[str, Any], filename: str, episode: int) -> int:
+def select_file_id_from_torrent(
+    torrent_info: dict[str, Any], filename: str, episode: int
+) -> int:
     """Select the file id from the torrent info."""
     files = torrent_info["files"]
     exact_match = next((f for f in files if filename in f["name"]), None)
@@ -111,7 +118,7 @@ def select_file_id_from_torrent(torrent_info: dict[str, Any], filename: str, epi
     return selected_file["id"]
 
 
-def delete_all_torrents_from_torbox(user_data: UserData):
+def delete_all_torrents_from_torbox(user_data: UserData, **kwargs):
     """Deletes all torrents from the Torbox account."""
     torbox_client = Torbox(token=user_data.streaming_provider.token)
     torrents = torbox_client.get_user_torrent_list().get("data")

@@ -166,3 +166,16 @@ SCRAPY_SPIDERS = {
     "dlhd": "DaddyLiveHD",
     "motogp_tgx": "MotoGP TGX",
 }
+
+
+STREAMING_PROVIDERS_SHORT_NAMES = {
+    "alldebrid": "AD",
+    "debridlink": "DL",
+    "offcloud": "OC",
+    "pikpak": "PKP",
+    "premiumize": "PM",
+    "qbittorrent": "QB-WD",
+    "realdebrid": "RD",
+    "seedr": "SDR",
+    "torbox": "TRB",
+}

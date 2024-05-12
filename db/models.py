@@ -91,7 +91,7 @@ class MediaFusionMetaData(Document):
     description: Optional[str] = None
     runtime: Optional[str] = None
     website: Optional[str] = None
-    genres: list[str] = Field(default_factory=list)
+    genres: Optional[list[str]] = Field(default_factory=list)
 
     class Settings:
         is_root = True
@@ -127,5 +127,4 @@ class MediaFusionEventsMetaData(MediaFusionMetaData):
     type: str = "events"
     event_start_timestamp: Optional[int] = None
     logo: Optional[str] = None
-    genres: list[str] = Field(default_factory=list)
     streams: list[TVStreams]

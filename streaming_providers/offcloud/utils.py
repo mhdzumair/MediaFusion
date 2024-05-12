@@ -4,7 +4,7 @@ from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.client import OffCloud
 
 
-def get_direct_link_from_offcloud(
+def get_video_url_from_offcloud(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
@@ -12,6 +12,7 @@ def get_direct_link_from_offcloud(
     max_retries=5,
     retry_interval=5,
     episode: int = None,
+    **kwargs,
 ) -> str:
     oc_client = OffCloud(token=user_data.streaming_provider.token)
 
@@ -21,7 +22,9 @@ def get_direct_link_from_offcloud(
         request_id = torrent_info.get("requestId")
         torrent_info = oc_client.get_torrent_info(request_id)
         if torrent_info["status"] == "downloaded":
-            return oc_client.create_download_link(request_id, torrent_info, filename, episode)
+            return oc_client.create_download_link(
+                request_id, torrent_info, filename, episode
+            )
         if torrent_info["status"] == "error":
             raise ProviderException(
                 f"Error transferring magnet link to OffCloud. {torrent_info['errorMessage']}",
@@ -39,7 +42,9 @@ def get_direct_link_from_offcloud(
     return oc_client.create_download_link(request_id, torrent_info, filename, episode)
 
 
-def update_oc_cache_status(streams: list[TorrentStreams], user_data: UserData):
+def update_oc_cache_status(
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
+):
     """Updates the cache status of streams based on OffCloud's instant availability."""
 
     try:
@@ -56,7 +61,7 @@ def update_oc_cache_status(streams: list[TorrentStreams], user_data: UserData):
         pass
 
 
-def fetch_downloaded_info_hashes_from_oc(user_data: UserData) -> list[str]:
+def fetch_downloaded_info_hashes_from_oc(user_data: UserData, **kwargs) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the OffCloud account."""
     try:
         oc_client = OffCloud(token=user_data.streaming_provider.token)
@@ -70,7 +75,7 @@ def fetch_downloaded_info_hashes_from_oc(user_data: UserData) -> list[str]:
         return []
 
 
-def delete_all_torrents_from_oc(user_data: UserData):
+def delete_all_torrents_from_oc(user_data: UserData, **kwargs):
     """Deletes all torrents from the Offcloud account."""
     oc_client = OffCloud(token=user_data.streaming_provider.token)
     torrents = oc_client.get_user_torrent_list()
