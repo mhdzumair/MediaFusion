@@ -35,6 +35,21 @@ class Meta(BaseModel):
     description: str | None = None
     runtime: str | None = None
     website: str | None = None
+    imdbRating: str | float | None = Field(None, alias="imdb_rating")
+    releaseInfo: str | int | None = Field(None, alias="year")
+
+    @model_validator(mode="after")
+    def parse_meta(self) -> "Meta":
+        if self.releaseInfo:
+            self.releaseInfo = (
+                f"{self.releaseInfo}-"
+                if self.type == "series"
+                else str(self.releaseInfo)
+            )
+        if self.imdbRating:
+            self.imdbRating = str(self.imdbRating)
+
+        return self
 
 
 class MetaItem(BaseModel):
