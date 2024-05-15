@@ -175,6 +175,7 @@ function updateFormFields() {
     setElementDisplay('scrapyParameters', 'none');
     setElementDisplay('tvMetadataInput', 'none');
     setElementDisplay('m3uPlaylistInput', 'none');
+    setElementDisplay("imdbDataParameters", "none");
 
     // Get the selected scraper type
     const scraperType = document.getElementById('scraperSelect').value;
@@ -196,6 +197,9 @@ function updateFormFields() {
             break;
         case 'add_m3u_playlist':
             setElementDisplay('m3uPlaylistInput', 'block');
+            break;
+        case 'update_imdb_data':
+            setElementDisplay("imdbDataParameters", "block");
             break;
         default:
             // Optionally handle any default cases if needed
@@ -259,7 +263,6 @@ function constructTvMetadata() {
 }
 
 
-// Function to submit the form and display the response using Toastr
 async function submitScraperForm() {
     const apiPassword = document.getElementById('api_password').value;
     const scraperType = document.getElementById('scraperSelect').value;
@@ -267,10 +270,17 @@ async function submitScraperForm() {
     let endpoint = "/scraper/run";
     let headers = {};
     let body = null;
+    let method = 'POST';
 
     // Append common fields
     payload['scraper_type'] = scraperType;
     payload['api_password'] = apiPassword;
+
+        // Disable button and show loading spinner
+    const submitBtn = document.getElementById('submitBtn');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    submitBtn.disabled = true;
+    loadingSpinner.style.display = 'inline-block';
 
     // Handling different scraper types
     if (scraperType === 'add_tv_metadata') {
@@ -304,6 +314,16 @@ async function submitScraperForm() {
         }
         endpoint = "/scraper/m3u_upload";
         body = formData; // FormData will set the correct Content-Type header
+    } else if (scraperType === 'update_imdb_data') {
+        // Collecting all input fields for IMDb Data
+        const imdbId = document.getElementById('imdbId').value;
+        if (!imdbId.startsWith('tt')) {
+            showNotification('Invalid IMDb ID. Must start with "tt".', 'error');
+            return;
+        }
+        headers['Content-Type'] = 'application/json';
+        endpoint = `/scraper/imdb_data?meta_id=${imdbId}`;
+        method = 'GET';
     } else {
         headers['Content-Type'] = 'application/json';
         // Collect all scrapyParameters input fields that are not disabled and visible
@@ -323,7 +343,7 @@ async function submitScraperForm() {
     // Making the request
     try {
         const response = await fetch(endpoint, {
-            method: 'POST',
+            method: method,
             headers: headers,
             body: body
         });
@@ -341,6 +361,9 @@ async function submitScraperForm() {
     } catch (error) {
         console.error('Error submitting scraper form:', error);
         showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+    } finally {
+        submitBtn.disabled = false;
+        loadingSpinner.style.display = 'none';
     }
 }
 

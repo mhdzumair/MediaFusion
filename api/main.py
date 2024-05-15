@@ -15,8 +15,8 @@ from fastapi import (
     HTTPException,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from api import middleware
 from api.scheduler import setup_scheduler
@@ -34,6 +34,7 @@ from utils.lock import (
 )
 from utils.network import get_user_public_ip
 from utils.parser import generate_manifest
+from utils.runtime_const import TEMPLATES, DELETE_ALL_META, DELETE_ALL_META_ITEM
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -49,6 +50,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# set CORS headers
+@app.middleware("http")
+async def add_cors_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.update(const.CORS_HEADERS)
+    if "cache-control" not in response.headers:
+        response.headers.update(const.CACHE_HEADERS)
+    return response
+
+
 app.state.redis = redis.Redis(
     connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
 )
@@ -57,16 +70,7 @@ app.add_middleware(middleware.TimingMiddleware)
 app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
-TEMPLATES = Jinja2Templates(directory="resources")
-DELETE_ALL_META = schemas.Meta(
-    **const.DELETE_ALL_WATCHLIST_META,
-    poster=f"{settings.poster_host_url}/static/images/delete_all_poster.jpg",
-    background=f"{settings.poster_host_url}/static/images/delete_all_background.png",
-)
-
-DELETE_ALL_META_ITEM = {
-    "meta": DELETE_ALL_META.model_dump(by_alias=True, exclude_none=True)
-}
+app.mount("/static", StaticFiles(directory="resources"), name="static")
 
 
 def get_user_data(request: Request) -> schemas.UserData:
@@ -93,7 +97,7 @@ async def start_scheduler():
             scheduler.start()
             app.state.scheduler = scheduler
             app.state.scheduler_lock = lock
-            asyncio.create_task(maintain_heartbeat(app.state.redis))
+            await asyncio.create_task(maintain_heartbeat(app.state.redis))
         except Exception as e:
             await release_scheduler_lock(app.state.redis, lock)
             raise e
@@ -137,13 +141,6 @@ async def health(request: Request):
 @app.get("/favicon.ico")
 async def get_favicon():
     return RedirectResponse(url=settings.logo_url)
-
-
-@app.get("/static/{file_path:path}")
-async def function(file_path: str):
-    response = FileResponse(f"resources/{file_path}")
-    response.headers.update(const.DEFAULT_HEADERS)
-    return response
 
 
 @app.get("/configure", tags=["configure"])
@@ -251,7 +248,6 @@ async def get_catalog(
     genre: str = None,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    response.headers.update(const.DEFAULT_HEADERS)
     if genre and "&" in genre:
         genre, skip = genre.split("&")
         skip = skip.split("=")[1] if "=" in skip else "0"
@@ -343,7 +339,6 @@ async def search_meta(
     search_query: str,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    response.headers.update(const.DEFAULT_HEADERS)
     logging.debug("search for catalog_id: %s", catalog_id)
 
     if catalog_type == "tv":
@@ -373,8 +368,6 @@ async def get_meta(
     response: Response,
     request: Request,
 ):
-    response.headers.update(const.DEFAULT_HEADERS)
-
     cache_key = f"{catalog_type}_{meta_id}_meta"
     # Try retrieving the cached data
     cached_data = await request.app.state.redis.get(cache_key)
@@ -444,15 +437,25 @@ async def get_streams(
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    response.headers.update(const.DEFAULT_HEADERS)
     user_ip = get_user_public_ip(request)
+    user_feeds = []
+    if video_id.startswith("tt"):
+        meta_id = video_id.split(":")[0]
+        user_feeds = [
+            schemas.Stream(
+                name=settings.addon_name,
+                description=f"🔄 Update IMDb metadata for {meta_id}\n"
+                f"This will fetch the latest IMDb data for this {catalog_type},\n Once after you make contribution to IMDb.",
+                url=f"{settings.host_url}/scraper/imdb_data?meta_id={meta_id}&redirect_video=true",
+            )
+        ]
 
     if catalog_type == "movie":
         if video_id.startswith("dl"):
             if video_id == f"dl{user_data.streaming_provider.service}":
                 fetched_streams = [
                     schemas.Stream(
-                        name=f"MediaFusion {user_data.streaming_provider.service.title()} 🗑️💩🚨",
+                        name=f"{settings.addon_name} {user_data.streaming_provider.service.title()} 🗑️💩🚨",
                         description=f"🚨💀⚠ Delete all files in {user_data.streaming_provider.service} watchlist.",
                         url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all_watchlist",
                     )
@@ -463,6 +466,7 @@ async def get_streams(
             fetched_streams = await crud.get_movie_streams(
                 user_data, secret_str, request.app.state.redis, video_id, user_ip
             )
+            fetched_streams.extend(user_feeds)
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
             user_data,
@@ -473,6 +477,7 @@ async def get_streams(
             episode,
             user_ip,
         )
+        fetched_streams.extend(user_feeds)
     elif catalog_type == "events":
         fetched_streams = await crud.get_event_streams(
             request.app.state.redis, video_id
@@ -537,9 +542,7 @@ async def get_poster(
         await request.app.state.redis.set(cache_key, image_bytes, ex=604800)
         image_byte_io.seek(0)
 
-        return StreamingResponse(
-            image_byte_io, media_type="image/jpeg", headers=const.DEFAULT_HEADERS
-        )
+        return StreamingResponse(image_byte_io, media_type="image/jpeg")
     except asyncio.TimeoutError:
         logging.error("Poster generation timeout.")
         raise HTTPException(status_code=404, detail="Poster generation timeout.")
@@ -558,20 +561,6 @@ async def get_poster(
     if catalog_type != "events":
         await mediafusion_data.save()
     raise HTTPException(status_code=404, detail="Failed to create poster.")
-
-
-@app.get("/scraper", tags=["scraper"])
-async def get_scraper(request: Request):
-    return TEMPLATES.TemplateResponse(
-        "html/scraper.html",
-        {
-            "request": request,
-            "authentication_required": settings.api_password is not None,
-            "logo_url": settings.logo_url,
-            "addon_name": settings.addon_name,
-            "scrapy_spiders": const.SCRAPY_SPIDERS.items(),
-        },
-    )
 
 
 app.include_router(

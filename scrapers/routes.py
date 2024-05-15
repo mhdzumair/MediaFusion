@@ -2,11 +2,14 @@ from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, File, Form, APIRouter
 from fastapi.requests import Request
-
+from fastapi.responses import RedirectResponse, Response
 from db import schemas
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
+from scrapers import imdb_data
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
+from utils import const
+from utils.runtime_const import TEMPLATES
 
 router = APIRouter()
 
@@ -15,6 +18,20 @@ def validate_api_password(api_password: str):
     if settings.api_password and api_password != settings.api_password:
         raise HTTPException(status_code=401, detail="Invalid API password.")
     return True
+
+
+@router.get("/", tags=["scraper"])
+async def get_scraper(request: Request):
+    return TEMPLATES.TemplateResponse(
+        "html/scraper.html",
+        {
+            "request": request,
+            "authentication_required": settings.api_password is not None,
+            "logo_url": settings.logo_url,
+            "addon_name": settings.addon_name,
+            "scrapy_spiders": const.SCRAPY_SPIDERS.items(),
+        },
+    )
 
 
 @router.post("/run", tags=["scraper"])
@@ -68,3 +85,23 @@ async def upload_m3u_playlist(
         )
 
     return {"status": "M3U playlist upload task has been scheduled."}
+
+
+@router.get("/imdb_data", tags=["scraper"])
+async def update_imdb_data(
+    response: Response, meta_id: str, redirect_video: bool = False
+):
+    response.headers.update(const.NO_CACHE_HEADERS)
+    if not meta_id.startswith("tt"):
+        raise HTTPException(
+            status_code=400, detail="Invalid IMDb ID. Must start with 'tt'."
+        )
+
+    await imdb_data.process_imdb_data([meta_id])
+
+    if redirect_video:
+        return RedirectResponse(
+            url=f"{settings.host_url}/static/exceptions/update_imdb_data.mp4"
+        )
+
+    return {"status": f"Successfully updated IMDb data for {meta_id}."}
