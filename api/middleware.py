@@ -28,8 +28,8 @@ async def find_route_handler(app, request: Request) -> Optional[Callable]:
         match, scope = route.matches(request.scope)
         if match == Match.FULL:
             request.scope["path_params"] = scope["path_params"]
-            request.scope["endpoint"] = route.endpoint
-            return route.endpoint
+            request.scope["endpoint"] = getattr(route, "endpoint", None)
+            return getattr(route, "endpoint", None)
     return None
 
 
@@ -88,7 +88,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable):
         # Skip rate limiting for exempt paths
         if not settings.enable_rate_limit:
-            return await call_next(request)
+            try:
+                return await call_next(request)
+            except RuntimeError:
+                return Response(status_code=204)
 
         # Retrieve the endpoint function from the request
         endpoint = request.scope.get("endpoint")

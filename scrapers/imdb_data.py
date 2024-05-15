@@ -74,7 +74,6 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     return {}
 
 
-@dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
 async def process_imdb_data(movie_ids):
     now = datetime.now()
 
@@ -116,6 +115,11 @@ async def process_imdb_data(movie_ids):
             logging.info(f"Updated metadata for movie {movie_id}")
 
 
+@dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
+async def process_imdb_data_background(movie_ids):
+    await process_imdb_data(movie_ids)
+
+
 @dramatiq.actor(
     time_limit=60 * 1000, priority=10, max_retries=0, queue_name="scrapy"
 )  # Short time limit as this should be a fast operation
@@ -145,4 +149,4 @@ async def fetch_movie_ids_to_update(*args, **kwargs):
     chunk_size = 25
     for i in range(0, len(movie_ids), chunk_size):
         chunk_ids = movie_ids[i : i + chunk_size]
-        process_imdb_data.send(chunk_ids)
+        process_imdb_data_background.send(chunk_ids)

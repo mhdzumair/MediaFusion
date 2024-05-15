@@ -23,6 +23,6 @@ def create_text_video(
 
 if __name__ == "__main__":
     create_text_video(
-        "../resources/exceptions/transfer_error.mp4",
-        "Error transferring magnet link.\nProbably be No seeders available for this torrent.",
+        "../resources/exceptions/update_imdb_data.mp4",
+        "We updated the metadata from IMDb.\nThanks for your contribution!",
     )

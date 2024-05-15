@@ -6,10 +6,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Configuration - Stremio Addon</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/css/toastr.min.css" rel="stylesheet"/>
+    <link href="/static/css/toastr.min.css" rel="stylesheet"/>
 
 </head>
 
@@ -17,7 +17,7 @@
 <div class="container">
     <div class="row">
         <div class="col-10 col-md-11 col-lg-11 config-container">
-            <img class="logo" src="{{logo_url}}" alt="Logo">
+            <a href="/"><img class="logo" src="{{logo_url}}"></a>
             <h3 class="text-center mb-4">{{addon_name}} Addon Configuration</h3>
 
             <!-- Configuration Form -->
@@ -370,11 +370,11 @@
 </div>
 
 <!-- JS for Bootstrap and form validation -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script>
+<script src="/static/js/jquery-3.6.0.min.js"></script>
+<script src="/static/js/popper.min.js"></script>
+<script src="/static/js/bootstrap.min.js"></script>
+<script src="/static/js/Sortable.min.js"></script>
+<script src="/static/js/toastr.min.js"></script>
 <script src="/static/js/config_script.js"></script>
 </body>
 

@@ -6,10 +6,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Scraper Controls - {{addon_name}} Stremio Addon</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/css/toastr.min.css" rel="stylesheet"/>
+    <link href="/static/css/toastr.min.css" rel="stylesheet"/>
     <link rel="shortcut icon" href="{{logo_url}}" type="image/x-icon">
 </head>
 
@@ -17,7 +17,7 @@
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
-            <img class="logo" src="{{logo_url}}">
+            <a href="/"><img class="logo" src="{{logo_url}}"></a>
             <h3 class="text-center mb-5"><b>Scraper Controls</b> - Manage Scraping Tasks</h3>
 
             <!-- Scraper Selection -->
@@ -30,6 +30,7 @@
                         <option value="scrapy">Scrapy Spider</option>
                         <option value="add_tv_metadata">Add TV Metadata</option>
                         <option value="add_m3u_playlist">Add M3U Playlist</option>
+                        <option value="update_imdb_data">Update IMDb Data</option>
                     </select>
                 </div>
 
@@ -156,6 +157,13 @@
                             <input type="text" class="form-control" id="m3uPlaylistSource" name="m3uPlaylistSource">
                         </div>
                     </div>
+                    <!-- IMDb Data Update Parameters -->
+                    <div id="imdbDataParameters" style="display: none;">
+                        <div class="mb-3">
+                            <label for="imdbId" class="form-label">IMDb ID</label>
+                            <input type="text" class="form-control" id="imdbId" name="imdb_id" placeholder="Enter IMDb ID (e.g., tt1234567)">
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -177,17 +185,20 @@
             {% endif %}
 
             <div class="button-container mt-5">
-                <button type="button" class="btn btn-primary" onclick="submitScraperForm()">Run Scraper</button>
+                <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitScraperForm()">Run Scraper</button>
+                <div id="loadingSpinner" class="spinner-border text-primary" role="status" style="display: none;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- JS for Bootstrap -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script>
+<script src="/static/js/jquery-3.6.0.min.js"></script>
+<script src="/static/js/popper.min.js"></script>
+<script src="/static/js/bootstrap.min.js"></script>
+<script src="/static/js/toastr.min.js"></script>
 <script src="/static/js/scraperControl.js"></script>
 </body>
 
