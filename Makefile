@@ -41,6 +41,9 @@ build-multi:
 	fi
 	docker buildx inspect --bootstrap
 	docker buildx build --platform $(PLATFORMS) --build-arg GIT_REV=$(GIT_REV) -t $(DOCKER_IMAGE) -f deployment/Dockerfile . --push
+	if [ "$(VERSION)" != "beta" ]; then \
+		docker buildx build --platform $(PLATFORMS) --build-arg GIT_REV=$(GIT_REV) -t $(DOCKER_REPO)/$(IMAGE_NAME):latest -f deployment/Dockerfile . --push; \
+	fi
 push:
 	docker push $(DOCKER_IMAGE)
 
