@@ -432,7 +432,7 @@ async def prowlarr_data_parser(meta_data: dict, video_id: str) -> tuple[dict, bo
     return torrent_data, is_torrent_downloaded
 
 
-async def handle_movie_stream_store(info_hash, parsed_data, video_id):
+async def handle_movie_stream_store(info_hash, parsed_data, video_id, catalogs):
     """
     Handles the store logic for a single torrent stream.
     Checks if the stream exists and updates or creates it accordingly.
@@ -441,19 +441,16 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
     try:
         # Check if the torrent stream already exists
         torrent_stream = await TorrentStreams.get(info_hash)
-        prowlarr_catalogs = [
-            "prowlarr_streams",
-            "prowlarr_movies",
-            f"{parsed_data.get('source', '').lower()}_movies",
-        ]
+        catalogs.append(f"{parsed_data.get('source', '').lower()}_movies")
 
         if torrent_stream:
             # Update existing stream
             torrent_stream.source = parsed_data.get("source")
-            torrent_stream.seeders = parsed_data["seeders"]
+            if parsed_data.get("seeders") is not None:
+                torrent_stream.seeders = parsed_data["seeders"]
             torrent_stream.updated_at = datetime.now()
             torrent_stream.catalog.extend(
-                [c for c in prowlarr_catalogs if c not in torrent_stream.catalog]
+                [c for c in catalogs if c not in torrent_stream.catalog]
             )
             logging.info(f"Updated movies stream {info_hash} for {video_id}")
         else:
@@ -472,7 +469,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
                 audio=parsed_data.get("audio"),
                 encoder=parsed_data.get("encoder"),
                 source=parsed_data.get("source"),
-                catalog=prowlarr_catalogs,
+                catalog=catalogs,
                 updated_at=datetime.now(),
                 seeders=parsed_data.get("seeders"),
                 created_at=parsed_data.get("created_at"),
@@ -493,7 +490,9 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         return None, False
 
 
-async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
+async def handle_series_stream_store(
+    info_hash, parsed_data, video_id, season, catalogs
+):
     """
     Handles the storage logic for a single series torrent stream, including updating
     or creating records for all episodes contained within the torrent. Skips torrents
@@ -538,19 +537,16 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
 
     # Fetch or create the torrent stream object
     torrent_stream = await TorrentStreams.get(info_hash)
-    prowlarr_catalog = [
-        "prowlarr_streams",
-        "prowlarr_series",
-        f"{parsed_data.get('source', '').lower()}_series",
-    ]
+    catalogs.append(f"{parsed_data.get('source', '').lower()}_series")
 
     if torrent_stream:
         # Update existing stream
         torrent_stream.source = parsed_data.get("source")
-        torrent_stream.seeders = parsed_data["seeders"]
+        if parsed_data.get("seeders") is not None:
+            torrent_stream.seeders = parsed_data["seeders"]
         torrent_stream.updated_at = datetime.now()
         torrent_stream.catalog.extend(
-            [c for c in prowlarr_catalog if c not in torrent_stream.catalog]
+            [c for c in catalogs if c not in torrent_stream.catalog]
         )
         if not torrent_stream.season:
             torrent_stream.season = Season(
@@ -575,7 +571,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
             torrent_name=parsed_data.get("torrent_name"),
             announce_list=parsed_data.get("announce_list"),
             size=parsed_data.get("total_size"),
-            filename=None,  # To be updated if detailed file data is available
+            filename=None,
             languages=parsed_data.get("languages", []),
             resolution=parsed_data.get("resolution"),
             codec=parsed_data.get("codec"),
@@ -583,7 +579,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
             audio=parsed_data.get("audio"),
             encoder=parsed_data.get("encoder"),
             source=parsed_data.get("source"),
-            catalog=prowlarr_catalog,
+            catalog=catalogs,
             updated_at=datetime.now(),
             seeders=parsed_data.get("seeders"),
             created_at=parsed_data.get("created_at"),
@@ -623,6 +619,9 @@ async def parse_and_store_stream(
     title_similarity_ratio = fuzz.ratio(
         parsed_data.get("title", "").lower(), title.lower()
     )
+    prowlarr_catalogs = [
+        "prowlarr_streams",
+    ]
 
     if catalog_type == "movie":
         if (
@@ -634,8 +633,9 @@ async def parse_and_store_stream(
             )
             return torrent_stream, torrent_needed_update
 
+        prowlarr_catalogs.append("prowlarr_movies")
         torrent_stream, torrent_needed_update = await handle_movie_stream_store(
-            info_hash, parsed_data, video_id
+            info_hash, parsed_data, video_id, prowlarr_catalogs
         )
     elif catalog_type == "series":
         if title_similarity_ratio < 80 and parsed_data.get("imdb_id") != video_id:
@@ -644,8 +644,9 @@ async def parse_and_store_stream(
             )
             return torrent_stream, torrent_needed_update
 
+        prowlarr_catalogs.append("prowlarr_series")
         torrent_stream, torrent_needed_update = await handle_series_stream_store(
-            info_hash, parsed_data, video_id, season
+            info_hash, parsed_data, video_id, season, prowlarr_catalogs
         )
 
     return torrent_stream, torrent_needed_update

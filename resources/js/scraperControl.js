@@ -88,11 +88,7 @@ function addStreamInput() {
 // Function to toggle the disabled state of one input based on the value of another
 function toggleField(targetId, sourceValue) {
     const targetField = document.getElementById(targetId);
-    if (sourceValue) {
-        targetField.disabled = true;
-    } else {
-        targetField.disabled = false;
-    }
+    targetField.disabled = !!sourceValue;
 }
 
 
@@ -103,6 +99,12 @@ function removeStreamInput(streamId) {
 function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
 }
+
+function resetButton(submitBtn, loadingSpinner) {
+    submitBtn.disabled = false;
+    loadingSpinner.style.display = 'none';
+}
+
 
 document.querySelectorAll('input[name="m3uInputType"]').forEach(input => {
     input.addEventListener('change', function () {
@@ -164,28 +166,50 @@ function toggleModeSpecificFields() {
     setElementDisplay('pageScrapingInput', displayPageScraping ? 'block' : 'none');
 }
 
+function updateMetaType() {
+    const metaType = document.getElementById('metaType').value;
+    if (metaType === 'movie') {
+        setElementDisplay('catalogsSeries', 'none');
+        setElementDisplay('catalogsMovie', 'block');
+        setElementDisplay('seriesParameters', 'none');
+    } else {
+        setElementDisplay('catalogsMovie', 'none');
+        setElementDisplay('catalogsSeries', 'block');
+        setElementDisplay('seriesParameters', 'block');
+    }
+}
+
+function toggleInput(disableId, input) {
+    document.getElementById(disableId).disabled = !!input.value;
+}
+
+
 // Function to update form fields based on scraper selection
 function updateFormFields() {
-    // Check for API Password if authentication is required
-    if (document.getElementById('api_password')) {
-        setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
-    }
-
     // Hide all sections initially
     setElementDisplay('scrapyParameters', 'none');
     setElementDisplay('tvMetadataInput', 'none');
     setElementDisplay('m3uPlaylistInput', 'none');
     setElementDisplay("imdbDataParameters", "none");
+    setElementDisplay("torrentUploadParameters", "none");
+    setElementDisplay("apiPasswordContainer", "none");
 
     // Get the selected scraper type
     const scraperType = document.getElementById('scraperSelect').value;
+    let authRequired = document.getElementById('apiPasswordEnabled').value === "true";
 
     // Show the relevant section based on the selected scraper type
     switch (scraperType) {
+        case 'add_torrent':
+            setElementDisplay("torrentUploadParameters", "block");
+            authRequired = false;
+            updateMetaType();
+            break;
         case 'scrapy':
             // Show Scrapy-specific parameters
             setElementDisplay('scrapyParameters', 'block');
             toggleSpiderSpecificFields();
+            authRequired = false;
             break;
         case 'add_tv_metadata':
             // Show TV Metadata input form
@@ -205,6 +229,13 @@ function updateFormFields() {
             // Optionally handle any default cases if needed
             break;
     }
+
+    // Setup password toggle if the API password field is displayed
+    if (authRequired) {
+        setElementDisplay("apiPasswordContainer", "block");
+        setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
+    }
+
 }
 
 function constructTvMetadata() {
@@ -263,107 +294,256 @@ function constructTvMetadata() {
 }
 
 
-async function submitScraperForm() {
-    const apiPassword = document.getElementById('api_password').value;
-    const scraperType = document.getElementById('scraperSelect').value;
-    let payload = {};
-    let endpoint = "/scraper/run";
-    let headers = {};
-    let body = null;
-    let method = 'POST';
-
-    // Append common fields
-    payload['scraper_type'] = scraperType;
-    payload['api_password'] = apiPassword;
-
-        // Disable button and show loading spinner
-    const submitBtn = document.getElementById('submitBtn');
-    const loadingSpinner = document.getElementById('loadingSpinner');
-    submitBtn.disabled = true;
-    loadingSpinner.style.display = 'inline-block';
-
-    // Handling different scraper types
-    if (scraperType === 'add_tv_metadata') {
-        try {
-            payload['tv_metadata'] = constructTvMetadata(); // Ensure this method returns the correct object
-            headers['Content-Type'] = 'application/json';
-            endpoint = "/scraper/add_tv_metadata";
-            body = JSON.stringify(payload);
-        } catch (error) {
-            console.error('Error constructing TV Metadata:', error);
-            showNotification(error.message, 'error');
-            return;
-        }
-    } else if (scraperType === 'add_m3u_playlist') {
-        // Switching to form data for potential file upload
-        let formData = new FormData();
-        formData.append('scraper_type', scraperType);
-        formData.append('api_password', apiPassword);
-        formData.append('m3u_playlist_source', document.getElementById('m3uPlaylistSource').value);
-
-        const inputType = document.querySelector('input[name="m3uInputType"]:checked').value;
-        if (inputType === 'url') {
-            formData.append('m3u_playlist_url', document.getElementById('m3uPlaylistUrl').value);
-        } else { // File upload case
-            const file = document.getElementById('m3uPlaylistFile').files[0];
-            if (!file) {
-                showNotification('M3U Playlist file is required.', 'error');
-                return;
-            }
-            formData.append('m3u_playlist_file', file);
-        }
-        endpoint = "/scraper/m3u_upload";
-        body = formData; // FormData will set the correct Content-Type header
-    } else if (scraperType === 'update_imdb_data') {
-        // Collecting all input fields for IMDb Data
-        const imdbId = document.getElementById('imdbId').value;
-        if (!imdbId.startsWith('tt')) {
-            showNotification('Invalid IMDb ID. Must start with "tt".', 'error');
-            return;
-        }
-        headers['Content-Type'] = 'application/json';
-        endpoint = `/scraper/imdb_data?meta_id=${imdbId}`;
-        method = 'GET';
+async function handleAddTorrent(submitBtn, loadingSpinner) {
+    let formData = new FormData();
+    const imdbId = document.getElementById('torrentImdbId').value;
+    const metaType = document.getElementById('metaType').value;
+    const imdbIdNumeric = parseInt(imdbId.slice(2), 10);
+    if (!imdbId.startsWith('tt') || imdbId.length < 3 || imdbId.length > 10 || isNaN(imdbIdNumeric)) {
+        showNotification('Invalid IMDb ID', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+    formData.append('meta_id', imdbId);
+    formData.append('meta_type', metaType);
+    const source = document.getElementById('source').value;
+    if (!source) {
+        showNotification('Source is required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+    formData.append('source', source);
+    let catalogs;
+    if (metaType === 'movie') {
+        catalogs = Array.from(document.querySelectorAll('#catalogsMovie input[name="catalogs"]:checked')).map(el => el.value);
     } else {
-        headers['Content-Type'] = 'application/json';
-        // Collect all scrapyParameters input fields that are not disabled and visible
-        document.querySelectorAll('#scrapyParameters input, #scrapyParameters select').forEach(input => {
-            // Ensuring the input is visible and not disabled
-            if (!input.disabled && input.type !== 'radio' && input.type !== 'checkbox') {
-                payload[input.name] = input.value;
-            } else if (input.type === 'radio' && input.checked) {
-                payload[input.name] = input.value;
-            } else if (input.type === 'checkbox') {
-                payload[input.name] = input.checked;
-            }
-        });
-        body = JSON.stringify(payload);
+        catalogs = Array.from(document.querySelectorAll('#catalogsSeries input[name="catalogs"]:checked')).map(el => el.value);
+    }
+    if (catalogs.length === 0) {
+        showNotification('At least one catalog is required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+    formData.append('catalogs', catalogs.join(','));
+    const createdAt = document.getElementById('createdAt').value;
+    if (!createdAt) {
+        showNotification('Created At is required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+    formData.append('created_at', createdAt);
+
+    if (metaType === 'series') {
+        const season = document.getElementById('season').value;
+        let episodes = document.getElementById('episodes').value;
+        if (!season || !episodes) {
+            showNotification('Season and Episodes are required for TV Series.', 'error');
+            resetButton(submitBtn, loadingSpinner);
+            return;
+        }
+        if (episodes.includes('-')) {
+            const [start, end] = episodes.split('-');
+            episodes = Array.from({length: end - start + 1}, (_, i) => parseInt(start) + i).join(',');
+        } else {
+            episodes = episodes.split(',').map(e => e.trim());
+        }
+
+        formData.append('season', season);
+        formData.append('episodes', episodes);
     }
 
-    // Making the request
+    const magnetLink = document.getElementById('magnetLink').value;
+    const torrentFile = document.getElementById('torrentFile').files[0];
+    if (!magnetLink && !torrentFile) {
+        showNotification('Either Magnet Link or Torrent File is required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+
+    if (magnetLink) {
+        formData.append('magnet_link', magnetLink);
+    } else {
+        formData.append('torrent_file', torrentFile);
+    }
+
     try {
-        const response = await fetch(endpoint, {
-            method: method,
-            headers: headers,
-            body: body
+        const response = await fetch('/scraper/torrent', {
+            method: 'POST',
+            body: formData
         });
 
         const data = await response.json();
         if (response.ok) {
             showNotification(data.status, 'success');
         } else {
-            if (data.detail) {
-                showNotification(data.detail, 'error');
-            } else {
-                showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
-            }
+            showNotification(data.detail || 'Error submitting scraper form.', 'error');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
         showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
     } finally {
-        submitBtn.disabled = false;
-        loadingSpinner.style.display = 'none';
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
+async function handleAddTvMetadata(payload, submitBtn, loadingSpinner) {
+    try {
+        payload['tv_metadata'] = constructTvMetadata();
+        const response = await fetch('/scraper/add_tv_metadata', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            showNotification(data.status, 'success');
+        } else {
+            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+        }
+    } catch (error) {
+        console.error('Error constructing TV Metadata:', error);
+        showNotification(error.message, 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
+async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
+    let formData = new FormData();
+    formData.append('scraper_type', 'add_m3u_playlist');
+    formData.append('api_password', apiPassword);
+    formData.append('m3u_playlist_source', document.getElementById('m3uPlaylistSource').value);
+
+    const inputType = document.querySelector('input[name="m3uInputType"]:checked').value;
+    if (inputType === 'url') {
+        const m3uUrl = document.getElementById('m3uPlaylistUrl').value.trim();
+        if (!m3uUrl) {
+            showNotification('M3U Playlist URL is required.', 'error');
+            resetButton(submitBtn, loadingSpinner);
+            return;
+        }
+        formData.append('m3u_playlist_url', m3uUrl);
+    } else {
+        const file = document.getElementById('m3uPlaylistFile').files[0];
+        if (!file) {
+            showNotification('M3U Playlist file is required.', 'error');
+            resetButton(submitBtn, loadingSpinner);
+            return;
+        }
+        formData.append('m3u_playlist_file', file);
+    }
+
+    try {
+        const response = await fetch('/scraper/m3u_upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            showNotification(data.status, 'success');
+        } else {
+            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+        }
+    } catch (error) {
+        console.error('Error submitting scraper form:', error);
+        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
+async function handleUpdateImdbData(submitBtn, loadingSpinner) {
+    const imdbId = document.getElementById('imdbId').value;
+    const imdbIdNumeric = parseInt(imdbId.slice(2), 10);
+    if (!imdbId.startsWith('tt') || imdbId.length < 3 || imdbId.length > 10 || isNaN(imdbIdNumeric)) {
+        showNotification('Invalid IMDb ID', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+
+    try {
+        const response = await fetch(`/scraper/imdb_data?meta_id=${imdbId}`, {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            showNotification(data.status, 'success');
+        } else {
+            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+        }
+    } catch (error) {
+        console.error('Error submitting scraper form:', error);
+        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
+async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
+    document.querySelectorAll('#scrapyParameters input, #scrapyParameters select').forEach(input => {
+        if (!input.disabled && input.type !== 'radio' && input.type !== 'checkbox') {
+            payload[input.name] = input.value;
+        } else if (input.type === 'radio' && input.checked) {
+            payload[input.name] = input.value;
+        } else if (input.type === 'checkbox') {
+            payload[input.name] = input.checked;
+        }
+    });
+
+    try {
+        const response = await fetch('/scraper/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            showNotification(data.status, 'success');
+        } else {
+            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+        }
+    } catch (error) {
+        console.error('Error submitting scraper form:', error);
+        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
+// Main function
+async function submitScraperForm() {
+    const apiPassword = document.getElementById('api_password').value;
+    const scraperType = document.getElementById('scraperSelect').value;
+    const submitBtn = document.getElementById('submitBtn');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    let payload = {scraper_type: scraperType, api_password: apiPassword};
+
+    // Disable button and show loading spinner
+    submitBtn.disabled = true;
+    loadingSpinner.style.display = 'inline-block';
+
+    // Call the appropriate handler based on scraper type
+    switch (scraperType) {
+        case 'add_torrent':
+            await handleAddTorrent(submitBtn, loadingSpinner);
+            break;
+        case 'add_tv_metadata':
+            await handleAddTvMetadata(payload, submitBtn, loadingSpinner);
+            break;
+        case 'add_m3u_playlist':
+            await handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner);
+            break;
+        case 'update_imdb_data':
+            await handleUpdateImdbData(submitBtn, loadingSpinner);
+            break;
+        default:
+            await handleScrapyParameters(payload, submitBtn, loadingSpinner);
+            break;
     }
 }
 

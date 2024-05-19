@@ -775,6 +775,11 @@ async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
     return stream
 
 
+async def is_torrent_stream_exists(info_hash: str) -> bool:
+    stream = await TorrentStreams.find_one({"_id": info_hash}).count()
+    return stream > 0
+
+
 async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
     channel_id = "mf" + crypto.get_text_hash(tv_metadata.title)
 
