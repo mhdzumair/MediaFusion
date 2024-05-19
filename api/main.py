@@ -165,6 +165,12 @@ async def configure(
         else len(user_data.selected_catalogs),
     )
 
+    sorted_sorting_options = user_data.torrent_sorting_priority + [
+        option
+        for option in const.TORRENT_SORTING_PRIORITY
+        if option not in user_data.torrent_sorting_priority
+    ]
+
     return TEMPLATES.TemplateResponse(
         "html/configure.html",
         {
@@ -174,7 +180,7 @@ async def configure(
             "addon_name": settings.addon_name,
             "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
-            "sorting_options": const.TORRENT_SORTING_PRIORITY,
+            "sorting_options": sorted_sorting_options,
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
         },
