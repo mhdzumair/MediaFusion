@@ -14,14 +14,14 @@
 
 - **Enhanced Streaming with Various Providers**: Seamless playback from a diverse array of torrent and cloud storage services:
   - 📥 **Direct Torrent** (Free)
-  - 🌩️ **PikPak** (Free Quota)
-  - 🌱 **Seedr.cc** (Free Quota)
-  - ☁️ **OffCloud** (Free Quota)
-  - 📦 **Torbox** (Free Quota)
+  - 🌩️ **PikPak** (Free Quota / Premium)
+  - 🌱 **Seedr.cc** (Free Quota / Premium)
+  - ☁️ **OffCloud** (Free Quota / Premium)
+  - 📦 **Torbox** (Free Quota / Premium)
   - 💎 **Real-Debrid** (Premium)
   - 🔗 **Debrid-Link** (Premium)
   - ✨ **Premiumize** (Premium)
-  - 🏠 **AllDebrid** - Local Only / ElfHosted - (Premium) *(Note: AllDebrid works only when running the addon locally or use ElfHosted version)*
+  - 🏠 **AllDebrid** (Premium)
   - 🔒 **qBittorrent** - WebDav (Free/Premium)
 
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)

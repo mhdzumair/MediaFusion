@@ -39,26 +39,35 @@ class AllDebrid(DebridClient):
             method, url, data, params, is_return_none, is_expected_to_fail
         )
 
+    @staticmethod
+    def _validate_error_response(response_data):
+        if response_data.get("status") != "success":
+            error_code = response_data.get("error", {}).get("code")
+            match error_code:
+                case "AUTH_BAD_APIKEY":
+                    raise ProviderException(
+                        f"Invalid AllDebrid API key", "invalid_token.mp4"
+                    )
+                case "NO_SERVER":
+                    raise ProviderException(
+                        f"Failed to add magnet link to AllDebrid {response_data}",
+                        "transfer_error.mp4",
+                    )
+                case "AUTH_BLOCKED":
+                    raise ProviderException(
+                        f"API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"
+                    )
+                case _:
+                    raise ProviderException(
+                        f"Failed to add magnet link to AllDebrid {response_data}",
+                        "transfer_error.mp4",
+                    )
+
     def add_magnet_link(self, magnet_link):
         response_data = self._make_request(
             "POST", f"/magnet/upload", data={"magnets[]": magnet_link}
         )
-
-        if response_data.get("status") != "success":
-            error_code = response_data.get("error", {}).get("code")
-            if error_code == "AUTH_BAD_APIKEY":
-                raise ProviderException(
-                    f"Invalid AllDebrid API key", "invalid_token.mp4"
-                )
-            elif error_code == "NO_SERVER":
-                raise ProviderException(
-                    f"Failed to add magnet link to AllDebrid {response_data}",
-                    "transfer_error.mp4",
-                )
-            raise ProviderException(
-                f"Failed to add magnet link to AllDebrid {response_data}",
-                "transfer_error.mp4",
-            )
+        self._validate_error_response(response_data)
         return response_data
 
     def get_user_torrent_list(self):
@@ -76,6 +85,7 @@ class AllDebrid(DebridClient):
 
     def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = self.get_user_torrent_list()
+        self._validate_error_response(available_torrents)
         if not available_torrents.get("data"):
             return None
         for torrent in available_torrents["data"]["magnets"]:

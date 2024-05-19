@@ -1,16 +1,21 @@
-from typing import Any
-
-import PTN
-
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.realdebrid.client import RealDebrid
+from streaming_providers.parser import select_file_index_from_torrent
 
 
 def create_download_link(rd_client, torrent_info, filename, file_index, episode):
     file_index = select_file_index_from_torrent(
-        torrent_info, filename, file_index, episode
+        torrent_info,
+        filename,
+        file_index,
+        episode,
+        "files",
+        "path",
+        "bytes",
+        "selected",
+        True,
     )
     try:
         response = rd_client.create_download_link(torrent_info["links"][file_index])
@@ -94,30 +99,6 @@ def update_rd_cache_status(
 
     except ProviderException:
         pass
-
-
-def select_file_index_from_torrent(
-    torrent_info: dict[str, Any], filename: str, file_index: int, episode: int
-) -> int:
-    """Select the file index from the torrent info."""
-    if file_index is not None and file_index < len(torrent_info["links"]):
-        return file_index
-
-    selected_files = [file for file in torrent_info["files"] if file["selected"] == 1]
-    if filename:
-        for index, file in enumerate(selected_files):
-            if file["path"] == "/" + filename:
-                return index
-
-    if episode:
-        # Select the file with the matching episode number
-        for index, file in enumerate(selected_files):
-            if PTN.parse(file["path"]).get("episode") == episode:
-                return index
-
-    # If no file index is provided, select the largest file
-    largest_file = max(selected_files, key=lambda file: file["bytes"])
-    return selected_files.index(largest_file)
 
 
 def fetch_downloaded_info_hashes_from_rd(user_data: UserData, **kwargs) -> list[str]:
