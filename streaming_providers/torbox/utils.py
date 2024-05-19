@@ -45,8 +45,7 @@ def get_video_url_from_torbox(
                 torrent_info.get("id"),
                 file_id,
             )
-
-        return response["data"]
+            return response["data"]
 
     # Do not wait for download completion, just let the user retry again.
     raise ProviderException(

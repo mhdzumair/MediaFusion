@@ -53,7 +53,7 @@ class Torbox(DebridClient):
 
     def get_torrent_info(self, magnet_id):
         response = self.get_user_torrent_list()
-        torrent_list = response.get("data", {})
+        torrent_list = response.get("data", [])
         for torrent in torrent_list:
             if torrent.get("magnet", "") == magnet_id:
                 return torrent
@@ -67,7 +67,7 @@ class Torbox(DebridClient):
 
     def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         response = self.get_user_torrent_list()
-        torrent_list = response.get("data", {})
+        torrent_list = response.get("data", [])
         for torrent in torrent_list:
             if torrent.get("hash", "") == info_hash:
                 return torrent
