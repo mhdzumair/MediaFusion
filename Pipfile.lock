@@ -1396,7 +1396,7 @@
         "pikpakapi": {
             "git": "git+https://github.com/mhdzumair/PikPakAPI.git",
             "markers": "python_full_version >= '3.8.3' and python_full_version < '4.0.0'",
-            "ref": "89a0f703db38eb8907d08eeee381eb610e8688a0"
+            "ref": "aba12ee95f0456eaa2afc32b39d02cb7b34e88b4"
         },
         "pillow": {
             "hashes": [

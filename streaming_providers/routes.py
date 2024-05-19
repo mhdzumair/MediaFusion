@@ -106,13 +106,13 @@ async def streaming_provider_endpoint(
         if asyncio.iscoroutinefunction(get_video_url):
             video_url = await get_video_url(**kwargs)
         else:
-            video_url = await asyncio.to_thread(get_video_url, **kwargs)
+            video_url = get_video_url(**kwargs)
+            # video_url = await asyncio.to_thread(get_video_url, **kwargs)
 
         # Cache the streaming URL for 1 hour & release the lock
         await request.app.state.redis.set(
             cached_stream_url_key, video_url.encode("utf-8"), ex=3600
         )
-        await release_redis_lock(lock)
 
     except ProviderException as error:
         logging.error(
@@ -127,6 +127,8 @@ async def streaming_provider_endpoint(
         logging.error("Exception occurred for %s: %s", info_hash, e, exc_info=True)
         video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
         redirect_status_code = 307
+
+    await release_redis_lock(lock)
 
     return RedirectResponse(
         url=video_url, headers=response.headers, status_code=redirect_status_code

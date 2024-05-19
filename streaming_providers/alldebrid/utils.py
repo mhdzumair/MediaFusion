@@ -1,9 +1,44 @@
-from typing import Any
-
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.parser import select_file_index_from_torrent
+
+
+def get_torrent_info(ad_client, info_hash):
+    torrent_info = ad_client.get_available_torrent(info_hash)
+    if torrent_info and torrent_info["status"] == "Ready":
+        return torrent_info
+    elif torrent_info and torrent_info["statusCode"] == 7:
+        ad_client.delete_torrent(torrent_info.get("id"))
+        raise ProviderException(
+            "Not enough seeders available for parse magnet link",
+            "transfer_error.mp4",
+        )
+    return None
+
+
+def add_new_torrent(ad_client, magnet_link):
+    response_data = ad_client.add_magnet_link(magnet_link)
+    return response_data["data"]["magnets"][0]["id"]
+
+
+def wait_for_download_and_get_link(
+    ad_client, torrent_id, filename, file_index, episode, max_retries, retry_interval
+):
+    torrent_info = ad_client.wait_for_status(
+        torrent_id, "Ready", max_retries, retry_interval
+    )
+    file_index = select_file_index_from_torrent(
+        torrent_info,
+        filename,
+        file_index,
+        episode,
+        file_key="links",
+        name_key="filename",
+    )
+    response = ad_client.create_download_link(torrent_info["links"][file_index]["link"])
+    return response["data"]["link"]
 
 
 def get_video_url_from_alldebrid(
@@ -12,40 +47,29 @@ def get_video_url_from_alldebrid(
     user_data: UserData,
     filename: str,
     user_ip: str,
+    file_index: int,
+    episode: int = None,
     max_retries=5,
     retry_interval=5,
     **kwargs,
 ) -> str:
     ad_client = AllDebrid(token=user_data.streaming_provider.token, user_ip=user_ip)
 
-    # Check if the torrent already exists
-    torrent_info = ad_client.get_available_torrent(info_hash)
-    if torrent_info:
-        torrent_id = torrent_info.get("id")
-        if torrent_info["status"] == "Ready":
-            file_index = select_file_index_from_torrent(torrent_info, filename)
-            response = ad_client.create_download_link(
-                torrent_info["links"][file_index]["link"]
-            )
-            return response["data"]["link"]
-        elif torrent_info["statusCode"] == 7:
-            ad_client.delete_torrent(torrent_id)
-            raise ProviderException(
-                "Not enough seeders available for parse magnet link",
-                "transfer_error.mp4",
-            )
+    torrent_info = get_torrent_info(ad_client, info_hash)
+    if not torrent_info:
+        torrent_id = add_new_torrent(ad_client, magnet_link)
     else:
-        # If torrent doesn't exist, add it
-        response_data = ad_client.add_magnet_link(magnet_link)
-        torrent_id = response_data["data"]["magnets"][0]["id"]
+        torrent_id = torrent_info.get("id")
 
-    # Wait for download completion and get the direct link
-    torrent_info = ad_client.wait_for_status(
-        torrent_id, "Ready", max_retries, retry_interval
+    return wait_for_download_and_get_link(
+        ad_client,
+        torrent_id,
+        filename,
+        file_index,
+        episode,
+        max_retries,
+        retry_interval,
     )
-    file_index = select_file_index_from_torrent(torrent_info, filename)
-    response = ad_client.create_download_link(torrent_info["links"][file_index]["link"])
-    return response["data"]["link"]
 
 
 def update_ad_cache_status(
@@ -67,16 +91,6 @@ def update_ad_cache_status(
 
     except ProviderException:
         pass
-
-
-def select_file_index_from_torrent(torrent_info: dict[str, Any], filename: str) -> int:
-    """Select the file index from the torrent info."""
-    for index, file in enumerate(torrent_info["links"]):
-        if file["filename"] == filename:
-            return index
-    raise ProviderException(
-        "No matching file available for this torrent", "api_error.mp4"
-    )
 
 
 def fetch_downloaded_info_hashes_from_ad(

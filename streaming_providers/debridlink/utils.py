@@ -1,35 +1,21 @@
-from typing import Any
-
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.debridlink.client import DebridLink
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.parser import select_file_index_from_torrent
 
 
-def get_download_link(torrent_info: dict, filename: str, file_index: int) -> str:
-    file_index = select_file_index_from_torrent(torrent_info, filename, file_index)
+def get_download_link(
+    torrent_info: dict, filename: str, file_index: int, episode: int | None
+) -> str:
+    file_index = select_file_index_from_torrent(
+        torrent_info, filename, file_index, episode
+    )
     if torrent_info["files"][file_index]["downloadPercent"] != 100:
         raise ProviderException(
             "Torrent not downloaded yet.", "torrent_not_downloaded.mp4"
         )
     return torrent_info["files"][file_index]["downloadUrl"]
-
-
-def select_file_index_from_torrent(
-    torrent_info: dict[str, Any], filename: str, file_index: int
-) -> int:
-    """Select the file index from the torrent info."""
-    if file_index is not None and file_index < len(torrent_info["files"]):
-        return file_index
-
-    if filename:
-        for index, file in enumerate(torrent_info["files"]):
-            if file["name"] == filename:
-                return index
-
-    # If no file index is provided, select the largest file
-    largest_file = max(torrent_info["files"], key=lambda x: x["size"])
-    return torrent_info["files"].index(largest_file)
 
 
 def get_video_url_from_debridlink(
@@ -38,6 +24,7 @@ def get_video_url_from_debridlink(
     user_data: UserData,
     filename: str,
     file_index: int,
+    episode: int | None,
     max_retries=5,
     retry_interval=5,
     **kwargs,
@@ -67,7 +54,7 @@ def get_video_url_from_debridlink(
         torrent_id, 100, max_retries, retry_interval
     )
 
-    return get_download_link(torrent_info, filename, file_index)
+    return get_download_link(torrent_info, filename, file_index, episode)
 
 
 def update_dl_cache_status(

@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 
+import aiohttp
 import httpx
 from pikpakapi import PikPakApi, PikpakException
 from thefuzz import fuzz
@@ -8,6 +9,7 @@ from thefuzz import fuzz
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.parser import select_file_index_from_torrent
 
 
 async def get_info_hash_folder_id(pikpak: PikPakApi, info_hash: str):
@@ -52,7 +54,22 @@ async def add_magnet(
     pikpak: PikPakApi, magnet_link: str, info_hash_folder_id: str
 ) -> str:
     """Adds a magnet link to the PikPak account and returns the folder_id of the torrent."""
-    await pikpak.offline_download(magnet_link, parent_id=info_hash_folder_id)
+    try:
+        await pikpak.offline_download(magnet_link, parent_id=info_hash_folder_id)
+    except PikpakException as e:
+        match str(e):
+            case "You have reached the limits of free usage today":
+                raise ProviderException(
+                    "Daily download limit reached", "daily_download_limit.mp4"
+                )
+            case "Storage space is not enough":
+                raise ProviderException(
+                    "Not enough storage space available", "not_enough_space.mp4"
+                )
+            case _:
+                raise ProviderException(
+                    f"Failed to add magnet link to PikPak: {e}", "api_error.mp4"
+                )
     return info_hash_folder_id
 
 
@@ -88,31 +105,20 @@ async def get_files_from_folder(pikpak: PikPakApi, folder_id: str) -> list[dict]
 
 
 async def find_file_in_folder_tree(
-    pikpak: PikPakApi, folder_id: str, filename: str
+    pikpak: PikPakApi,
+    folder_id: str,
+    filename: str,
+    file_index: int,
+    episode: int | None,
 ) -> dict | None:
     files = await get_files_from_folder(pikpak, folder_id)
     if not files:
         return None
 
-    exact_match = next((f for f in files if f["name"] == filename), None)
-    if exact_match:
-        return exact_match
-
-    # Fuzzy matching as a fallback
-    for file in files:
-        file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    selected_file = max(files, key=lambda x: x["fuzzy_ratio"])
-
-    # If the fuzzy ratio is less than 50, then select the largest file
-    if selected_file["fuzzy_ratio"] < 50:
-        selected_file = max(files, key=lambda x: x["size"])
-
-    if "video" not in selected_file["mime_type"]:
-        raise ProviderException(
-            "No matching file available for this torrent", "no_matching_file.mp4"
-        )
-
-    return selected_file
+    file_index = select_file_index_from_torrent(
+        {"files": files}, filename, file_index, episode
+    )
+    return files[file_index]
 
 
 async def initialize_pikpak(user_data: UserData):
@@ -125,6 +131,11 @@ async def initialize_pikpak(user_data: UserData):
         await pikpak.login()
     except PikpakException:
         raise ProviderException("Invalid PikPak credentials", "invalid_credentials.mp4")
+    except aiohttp.ClientError:
+        raise ProviderException(
+            "Failed to connect to PikPak. Please try again later.",
+            "debrid_service_down_error.mp4",
+        )
     return pikpak
 
 
@@ -146,12 +157,25 @@ async def handle_torrent_status(
 
 
 async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
-    if torrent["message"] == "Save failed, retry please":
-        await pikpak.delete_tasks([torrent["id"]])
-    else:
-        raise ProviderException(
-            f"Error downloading torrent: {torrent['message']}", "transfer_error.mp4"
-        )
+    match torrent["message"]:
+        case "Save failed, retry please":
+            await pikpak.delete_tasks([torrent["id"]])
+        case "Storage space is not enough":
+            await pikpak.delete_tasks([torrent["id"]])
+            raise ProviderException(
+                "Not enough storage space available", "not_enough_space.mp4"
+            )
+        case "You have reached the limits of free usage today":
+            try:
+                await pikpak.offline_task_retry(torrent["id"])
+            except PikpakException:
+                raise ProviderException(
+                    "Daily download limit reached", "daily_download_limit.mp4"
+                )
+        case _:
+            raise ProviderException(
+                f"Error downloading torrent: {torrent['message']}", "transfer_error.mp4"
+            )
 
 
 async def get_or_create_folder(pikpak: PikPakApi, info_hash: str) -> str:
@@ -166,17 +190,22 @@ async def retrieve_or_download_file(
     magnet_link: str,
     info_hash: str,
     stream: TorrentStreams,
+    episode: int | None,
     max_retries: int,
     retry_interval: int,
 ):
-    selected_file = await find_file_in_folder_tree(pikpak, folder_id, filename)
+    selected_file = await find_file_in_folder_tree(
+        pikpak, folder_id, filename, stream.file_index, episode
+    )
     if not selected_file:
         await free_up_space(pikpak, stream.size)
         await add_magnet(pikpak, magnet_link, folder_id)
         await wait_for_torrent_to_complete(
             pikpak, info_hash, stream.torrent_name, max_retries, retry_interval
         )
-        selected_file = await find_file_in_folder_tree(pikpak, folder_id, filename)
+        selected_file = await find_file_in_folder_tree(
+            pikpak, folder_id, filename, stream.file_index, episode
+        )
         if selected_file is None:
             raise ProviderException(
                 "No matching file available for this torrent", "no_matching_file.mp4"
@@ -223,6 +252,7 @@ async def get_video_url_from_pikpak(
     user_data: UserData,
     stream: TorrentStreams,
     filename: str,
+    episode: int | None,
     max_retries=5,
     retry_interval=5,
     **kwargs,
@@ -240,6 +270,7 @@ async def get_video_url_from_pikpak(
         magnet_link,
         info_hash,
         stream,
+        episode,
         max_retries,
         retry_interval,
     )

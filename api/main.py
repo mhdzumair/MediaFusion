@@ -454,7 +454,7 @@ async def get_streams(
                 f"This will fetch the latest IMDb data for this {catalog_type},\n Once after you make contribution to IMDb.",
                 url=f"{settings.host_url}/scraper/imdb_data?meta_id={video_id}&redirect_video=true",
             ),
-                schemas.Stream(
+            schemas.Stream(
                 name=settings.addon_name,
                 description=f"📤 Upload torrent for {video_id}",
                 externalUrl=upload_url,
