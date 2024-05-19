@@ -159,7 +159,7 @@ async def configure(
 
     # Prepare catalogs based on user preferences or default order
     sorted_catalogs = sorted(
-        zip(const.CATALOG_ID_DATA, const.CATALOG_NAME_DATA),
+        const.CATALOG_DATA.items(),
         key=lambda x: user_data.selected_catalogs.index(x[0])
         if x[0] in user_data.selected_catalogs
         else len(user_data.selected_catalogs),
@@ -439,15 +439,26 @@ async def get_streams(
 ):
     user_ip = get_user_public_ip(request)
     user_feeds = []
+    if season is None or episode is None:
+        season = episode = 1
     if video_id.startswith("tt"):
-        meta_id = video_id.split(":")[0]
+        upload_url = (
+            f"{settings.host_url}/scraper/?meta_id={video_id}&meta_type={catalog_type}"
+        )
+        if catalog_type == "series":
+            upload_url += f"&season={season}&episode={episode}"
         user_feeds = [
             schemas.Stream(
                 name=settings.addon_name,
-                description=f"🔄 Update IMDb metadata for {meta_id}\n"
+                description=f"🔄 Update IMDb metadata for {video_id}\n"
                 f"This will fetch the latest IMDb data for this {catalog_type},\n Once after you make contribution to IMDb.",
-                url=f"{settings.host_url}/scraper/imdb_data?meta_id={meta_id}&redirect_video=true",
-            )
+                url=f"{settings.host_url}/scraper/imdb_data?meta_id={video_id}&redirect_video=true",
+            ),
+                schemas.Stream(
+                name=settings.addon_name,
+                description=f"📤 Upload torrent for {video_id}",
+                externalUrl=upload_url,
+            ),
         ]
 
     if catalog_type == "movie":

@@ -81,6 +81,7 @@ class TVStreams(Document):
 class MediaFusionMetaData(Document):
     id: str
     title: str
+    aka_titles: Optional[list[str]] = Field(default_factory=list)
     year: Optional[int] = None
     poster: Optional[str] = None
     is_poster_working: Optional[bool] = True

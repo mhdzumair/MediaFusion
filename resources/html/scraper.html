@@ -5,19 +5,19 @@
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Scraper Controls - {{addon_name}} Stremio Addon</title>
+    <title>Scraper Controls - {{ addon_name }} Stremio Addon</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
     <link href="/static/css/toastr.min.css" rel="stylesheet"/>
-    <link rel="shortcut icon" href="{{logo_url}}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ logo_url }}" type="image/x-icon">
 </head>
 
 <body>
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
-            <a href="/"><img class="logo" src="{{logo_url}}"></a>
+            <a href="/"><img class="logo" src="{{ logo_url }}"></a>
             <h3 class="text-center mb-5"><b>Scraper Controls</b> - Manage Scraping Tasks</h3>
 
             <!-- Scraper Selection -->
@@ -27,7 +27,8 @@
                 <div class="mb-3">
                     <label for="scraperSelect" class="form-label">Select Scraper</label>
                     <select class="form-select" id="scraperSelect" onchange="updateFormFields()">
-                        <option value="scrapy">Scrapy Spider</option>
+                        <option value="add_torrent">Add Torrent Data</option>
+                        <option value="scrapy">Trigger Scrapy Spider</option>
                         <option value="add_tv_metadata">Add TV Metadata</option>
                         <option value="add_m3u_playlist">Add M3U Playlist</option>
                         <option value="update_imdb_data">Update IMDb Data</option>
@@ -36,13 +37,83 @@
 
                 <!-- Dynamic Scraper Parameters -->
                 <div id="scraperParameters">
+                    <!-- Torrent Upload Parameters -->
+                    <div id="torrentUploadParameters" style="display: none;">
+                        <div class="mb-3">
+                            <label for="torrentImdbId" class="form-label">IMDb ID</label>
+                            <input type="text" class="form-control" id="torrentImdbId" name="meta_id" placeholder="Enter IMDb ID (e.g., tt1234567)" value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="metaType" class="form-label">Meta Type</label>
+                            <select class="form-select" id="metaType" name="meta_type" onchange="updateMetaType()">
+                                <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
+                                <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="source" class="form-label">Source</label>
+                            <input type="text" class="form-control" id="source" name="source" placeholder="Enter Source Name Where Torrent was Found or Uploader Name">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Catalogs</label>
+                            <div class="row">
+                                <div id="catalogsMovie" style="display: none;">
+                                    <div class="row">
+                                        {% for catalog in supported_movie_catalog_ids %}
+                                            <div class="col-12 col-md-6 col-lg-4">
+                                                <div class="form-check mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="catalogMovie{{ loop.index }}" name="catalogs" value="{{ catalog }}">
+                                                    <label class="form-check-label" for="catalogMovie{{ loop.index }}">{{ catalog_data.get(catalog) }}</label>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <div id="catalogsSeries" style="display: none;">
+                                    <div class="row">
+                                        {% for catalog in supported_series_catalog_ids %}
+                                            <div class="col-12 col-md-6 col-lg-4">
+                                                <div class="form-check mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="catalogSeries{{ loop.index }}" name="catalogs" value="{{ catalog }}">
+                                                    <label class="form-check-label" for="catalogSeries{{ loop.index }}">{{ catalog_data.get(catalog) }}</label>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="createdAt" class="form-label">Created At</label>
+                            <input type="date" class="form-control" id="createdAt" name="created_at">
+                        </div>
+                        <div class="mb-3" id="seriesParameters" style="display: none;">
+                            <label for="season" class="form-label">Season</label>
+                            <input type="number" class="form-control" id="season" name="season" value="{% if prefill_data.season %}{{ prefill_data.season }}{% endif %}">
+                            <label for="episodes" class="form-label">Episodes</label>
+                            <input type="text" class="form-control" id="episodes" name="episodes" value="{% if prefill_data.episode %}{{ prefill_data.episode }}{% endif %}"
+                                   placeholder="Comma-separated list of episodes or Range of episodes or Single episode number (e.g., 1-5 | 1, 2, 3 | 1)">
+                        </div>
+                        <div class="mb-3">
+                            <label for="magnetLink" class="form-label">Magnet Link</label>
+                            <input type="url" class="form-control" id="magnetLink" name="magnet_link" oninput="toggleInput('torrentFile', this)">
+                        </div>
+                        <div class="mb-3">
+                            <label for="torrentFile" class="form-label">Torrent File</label>
+                            <div class="input-group">
+                                <input type="file" class="form-control" id="torrentFile" name="torrent_file" accept=".torrent" onchange="toggleInput('magnetLink', this)">
+                                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('torrentFile').value=''">Remove</button>
+                            </div>
+                        </div>
+
+                    </div>
                     <!-- Scrapy Parameters -->
                     <div id="scrapyParameters" style="display: none;">
                         <div class="mb-3">
                             <label for="spiderName" class="form-label">Spider Name</label>
                             <select class="form-select" id="spiderName" name="spider_name">
                                 {% for spider_id, spider_name in scrapy_spiders %}
-                                <option value="{{spider_id}}">{{spider_name}}</option>
+                                    <option value="{{ spider_id }}">{{ spider_name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -168,8 +239,8 @@
             </div>
 
             <!-- API Password Configuration -->
-            {% if authentication_required %}
-            <div class="section-container">
+            <input type="hidden" id="apiPasswordEnabled" value="{{ api_password_enabled }}">
+            <div id="apiPasswordContainer" class="section-container" style="display: none;">
                 <h4 class="section-header">API Security Configuration</h4>
                 <hr class="section-divider">
                 <div class="mb-3">
@@ -182,7 +253,6 @@
                     </div>
                 </div>
             </div>
-            {% endif %}
 
             <div class="button-container mt-5">
                 <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitScraperForm()">Run Scraper</button>

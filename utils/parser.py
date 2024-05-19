@@ -3,6 +3,7 @@ import math
 import re
 
 from redis.asyncio import Redis
+from thefuzz import fuzz
 
 from db.config import settings
 from db.models import TorrentStreams, TVStreams
@@ -349,3 +350,22 @@ def is_contain_18_plus_keywords(title: str) -> bool:
     Check if the title contains 18+ keywords to filter out adult content.
     """
     return ADULT_CONTENT_KEYWORDS.search(title) is not None
+
+
+def calculate_max_similarity_ratio(
+    torrent_title: str, title: str, aka_titles: list[str] | None = None
+) -> int:
+    # Check similarity with the main title
+    title_similarity_ratio = fuzz.ratio(torrent_title, title.lower())
+
+    # Check similarity with aka titles
+    aka_similarity_ratios = (
+        [fuzz.ratio(torrent_title, aka_title.lower()) for aka_title in aka_titles]
+        if aka_titles
+        else []
+    )
+
+    # Use the maximum similarity ratio
+    max_similarity_ratio = max([title_similarity_ratio] + aka_similarity_ratios)
+
+    return max_similarity_ratio

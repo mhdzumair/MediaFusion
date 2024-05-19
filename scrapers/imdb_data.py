@@ -62,14 +62,14 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
                     "imdb_id": imdb_id,
                     "poster": poster.replace("small", "medium"),
                     "background": f"https://live.metahub.space/background/medium/{imdb_id}/img",
-                    "title": movie.myTitle,
+                    "title": movie.get("title"),
                 }
             poster = movie.get("full-size cover url")
             return {
                 "imdb_id": imdb_id,
                 "poster": poster,
                 "background": poster,
-                "title": movie.myTitle,
+                "title": movie.get("title"),
             }
     return {}
 
@@ -106,6 +106,9 @@ async def process_imdb_data(movie_ids):
                 ),
                 "parent_guide_certificates": imdb_movie.get(
                     "parent_guide_certificates"
+                ),
+                "aka_titles": list(
+                    {title.split("(")[0].strip() for title in imdb_movie.get("aka")}
                 ),
                 "last_updated_at": now,
             }
