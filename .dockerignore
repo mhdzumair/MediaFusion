@@ -42,3 +42,4 @@ config/
 mediafusion.local*
 .scrapy
 .lock
+.git
