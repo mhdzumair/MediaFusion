@@ -45,6 +45,7 @@ CATALOG_DATA = {
     "telugu_series": "Telugu Series",
     "telugu_tcrip": "Telugu TCRip Movies",
     "torrentio_streams": "Torrentio Streams",
+    "contribution_streams": "Contribution Streams",
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
