@@ -28,7 +28,7 @@ router = APIRouter()
 
 def validate_api_password(api_password: str):
     if settings.api_password and api_password != settings.api_password:
-        raise HTTPException(status_code=401, detail="Invalid API password.")
+        raise HTTPException(status_code=200, detail="Invalid API password.")
     return True
 
 
@@ -95,7 +95,7 @@ async def upload_m3u_playlist(
     validate_api_password(api_password)
     if scraper_type != "add_m3u_playlist":
         raise HTTPException(
-            status_code=400, detail="Invalid scraper type for this endpoint."
+            status_code=200, detail="Invalid scraper type for this endpoint."
         )
 
     if m3u_playlist_file:
@@ -108,7 +108,7 @@ async def upload_m3u_playlist(
         parse_m3u_playlist.send(m3u_playlist_source, playlist_url=m3u_playlist_url)
     else:
         raise HTTPException(
-            status_code=400, detail="Either M3U playlist URL or file must be provided."
+            status_code=200, detail="Either M3U playlist URL or file must be provided."
         )
 
     return {"status": "M3U playlist upload task has been scheduled."}
@@ -121,7 +121,7 @@ async def update_imdb_data(
     response.headers.update(const.NO_CACHE_HEADERS)
     if not (meta_id.startswith("tt") and meta_id[2:].isdigit()):
         raise HTTPException(
-            status_code=400, detail="Invalid IMDb ID. Must start with 'tt'."
+            status_code=200, detail="Invalid IMDb ID. Must start with 'tt'."
         )
 
     await imdb_data.process_imdb_data([meta_id])
@@ -169,25 +169,25 @@ async def add_torrent(
         episodes = episodes.split(",")
 
     if error_msg:
-        raise HTTPException(status_code=400, detail=error_msg)
+        raise HTTPException(status_code=200, detail=error_msg)
 
     if magnet_link:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
-            raise HTTPException(status_code=400, detail="Failed to parse magnet link.")
+            raise HTTPException(status_code=200, detail="Failed to parse magnet link.")
         if await is_torrent_stream_exists(info_hash):
             return {"status": "Torrent already exists."}
         data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
         if not data:
             raise HTTPException(
-                status_code=400, detail="Failed to fetch torrent metadata."
+                status_code=200, detail="Failed to fetch torrent metadata."
             )
         torrent_data = data[0]
     elif torrent_file:
         torrent_data = torrent.extract_torrent_metadata(await torrent_file.read())
         if not torrent_data:
             raise HTTPException(
-                status_code=400, detail="Failed to extract torrent metadata."
+                status_code=200, detail="Failed to extract torrent metadata."
             )
         info_hash = torrent_data.get("info_hash")
         if await is_torrent_stream_exists(info_hash):
@@ -219,7 +219,7 @@ async def add_torrent(
         if error_msg:
             logging.warning(error_msg)
             raise HTTPException(
-                status_code=400,
+                status_code=200,
                 detail=error_msg,
             )
 
@@ -257,7 +257,7 @@ async def add_torrent(
             error_msg = f"User upload Failed due to: {error_msg}"
             logging.warning(error_msg)
             raise HTTPException(
-                status_code=400,
+                status_code=200,
                 detail=error_msg,
             )
 
@@ -268,7 +268,7 @@ async def add_torrent(
 
     if not torrent_stream:
         raise HTTPException(
-            status_code=400,
+            status_code=200,
             detail="Failed to store torrent data. Contact support.",
         )
     return {

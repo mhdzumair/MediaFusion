@@ -373,10 +373,10 @@ async function handleAddTorrent(submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -396,10 +396,10 @@ async function handleAddTvMetadata(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error constructing TV Metadata:', error);
@@ -441,10 +441,10 @@ async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -470,10 +470,10 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -502,10 +502,10 @@ async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
