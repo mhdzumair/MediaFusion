@@ -32,6 +32,12 @@ def validate_api_password(api_password: str):
     return True
 
 
+def raise_error(error_msg: str):
+    error_msg = f"User upload Failed due to: {error_msg}"
+    logging.warning(error_msg)
+    raise HTTPException(status_code=200, detail=error_msg)
+
+
 @router.get("/", tags=["scraper"])
 async def get_scraper(
     request: Request,
@@ -94,9 +100,7 @@ async def upload_m3u_playlist(
 ):
     validate_api_password(api_password)
     if scraper_type != "add_m3u_playlist":
-        raise HTTPException(
-            status_code=200, detail="Invalid scraper type for this endpoint."
-        )
+        raise_error("Invalid scraper type for this endpoint.")
 
     if m3u_playlist_file:
         content = await m3u_playlist_file.read()
@@ -107,9 +111,7 @@ async def upload_m3u_playlist(
         # Process URL submission...
         parse_m3u_playlist.send(m3u_playlist_source, playlist_url=m3u_playlist_url)
     else:
-        raise HTTPException(
-            status_code=200, detail="Either M3U playlist URL or file must be provided."
-        )
+        raise_error("Either M3U playlist URL or file must be provided.")
 
     return {"status": "M3U playlist upload task has been scheduled."}
 
@@ -120,9 +122,7 @@ async def update_imdb_data(
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
     if not (meta_id.startswith("tt") and meta_id[2:].isdigit()):
-        raise HTTPException(
-            status_code=200, detail="Invalid IMDb ID. Must start with 'tt'."
-        )
+        raise_error("Invalid IMDb ID. Must start with 'tt'.")
 
     await imdb_data.process_imdb_data([meta_id])
 
@@ -140,7 +140,7 @@ async def add_torrent(
     meta_id: str = Form(...),
     meta_type: Literal["movie", "series"] = Form(...),
     source: str = Form(...),
-    catalogs: list[str] = Form(...),
+    catalogs: str = Form(...),
     created_at: date = Form(...),
     season: int | None = Form(None),
     episodes: str | None = Form(None),
@@ -151,22 +151,23 @@ async def add_torrent(
     error_msg = None
     info_hash = None
     title = None
+    catalogs = catalogs.split(",")
 
     if not magnet_link and not torrent_file:
-        error_msg = "Either magnet link or torrent file must be provided."
+        raise_error("Either magnet link or torrent file must be provided.")
     if not meta_id.startswith("tt") or not meta_id[2:].isdigit():
-        error_msg = "Invalid IMDb ID. Must start with 'tt'."
+        raise_error("Invalid IMDb ID. Must start with 'tt'.")
     if meta_type == "movie":
         # check if any catalog is not in const.USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS
         if not set(catalogs).issubset(const.USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS):
-            error_msg = "Invalid catalogs selected."
+            raise_error("Invalid catalogs selected.")
     else:
         # check if any catalog is not in const.USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS
         if not set(catalogs).issubset(const.USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS):
-            error_msg = "Invalid catalog selected."
+            raise_error("Invalid catalogs selected.")
         if not season or not episodes:
-            error_msg = "Season and episode number must be provided."
-        episodes = episodes.split(",")
+            raise_error("Season and episode number must be provided.")
+        episodes = [int(ep) for ep in episodes.split(",")]
 
     if error_msg:
         raise HTTPException(status_code=200, detail=error_msg)
@@ -174,21 +175,17 @@ async def add_torrent(
     if magnet_link:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
-            raise HTTPException(status_code=200, detail="Failed to parse magnet link.")
+            raise_error("Failed to parse magnet link.")
         if await is_torrent_stream_exists(info_hash):
             return {"status": "Torrent already exists."}
         data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
         if not data:
-            raise HTTPException(
-                status_code=200, detail="Failed to fetch torrent metadata."
-            )
+            raise_error("Failed to fetch torrent metadata.")
         torrent_data = data[0]
     elif torrent_file:
         torrent_data = torrent.extract_torrent_metadata(await torrent_file.read())
         if not torrent_data:
-            raise HTTPException(
-                status_code=200, detail="Failed to extract torrent metadata."
-            )
+            raise_error("Failed to extract torrent metadata.")
         info_hash = torrent_data.get("info_hash")
         if await is_torrent_stream_exists(info_hash):
             return {"status": "Torrent already exists."}
@@ -209,18 +206,13 @@ async def add_torrent(
             torrent_data.get("title").lower(), movie_data.title, movie_data.aka_titles
         )
         if max_similarity_ratio < 85:
-            error_msg = f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
-
-        if torrent_data.get("year") != movie_data.year:
-            error_msg = (
-                f"Year mismatch: '{movie_data.year}' != '{torrent_data.get('year')}'"
+            raise_error(
+                f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
             )
 
-        if error_msg:
-            logging.warning(error_msg)
-            raise HTTPException(
-                status_code=200,
-                detail=error_msg,
+        if torrent_data.get("year") != movie_data.year:
+            raise_error(
+                f"Year mismatch: '{movie_data.year}' != '{torrent_data.get('year')}'"
             )
 
         catalogs.append("user_upload_movies")
@@ -236,30 +228,29 @@ async def add_torrent(
             torrent_data.get("title").lower(), series_data.title, series_data.aka_titles
         )
         if max_similarity_ratio < 85:
-            error_msg = f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
-
-        if torrent_data.get("season") != season:
-            error_msg = f"Season mismatch: '{torrent_data.get('season')}' != '{season}'"
+            raise_error(
+                f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
+            )
 
         if isinstance(torrent_data.get("episode"), list):
             if not set(torrent_data.get("episode")).issubset(set(episodes)):
-                error_msg = (
+                raise_error(
                     f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes}'"
                 )
         elif torrent_data.get("episode") != episodes[0]:
-            error_msg = (
+            raise_error(
                 f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes[0]}'"
             )
         else:
-            error_msg = "No episode found in torrent data"
+            raise_error("No episode found in torrent data")
 
-        if error_msg:
-            error_msg = f"User upload Failed due to: {error_msg}"
-            logging.warning(error_msg)
-            raise HTTPException(
-                status_code=200,
-                detail=error_msg,
-            )
+        if torrent_data.get("season") != season:
+            if torrent_data.get("season") is None and season == 1:
+                pass  # If torrent doesn't mention season and it's season 1, it's okay
+            else:
+                raise_error(
+                    f"Season mismatch: '{torrent_data.get('season')}' != '{season}'"
+                )
 
         catalogs.append("user_upload_series")
         torrent_stream, _ = await handle_series_stream_store(
@@ -267,10 +258,7 @@ async def add_torrent(
         )
 
     if not torrent_stream:
-        raise HTTPException(
-            status_code=200,
-            detail="Failed to store torrent data. Contact support.",
-        )
+        raise_error("Failed to store torrent data. Contact support.")
     return {
         "status": f"Successfully added torrent: {torrent_stream.id} for {title}. Thanks for your contribution."
     }
