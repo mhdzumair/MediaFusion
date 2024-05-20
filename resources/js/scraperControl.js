@@ -8,9 +8,9 @@ function showNotification(message, type = 'info') {
         positionClass: "toast-top-center",
         preventDuplicates: true,
         onclick: null,
-        showDuration: "300",
-        hideDuration: "1000",
-        timeOut: "5000",
+        showDuration: "1000",
+        hideDuration: "3000",
+        timeOut: "10000",
         extendedTimeOut: "1000",
         showEasing: "swing",
         hideEasing: "linear",
@@ -371,8 +371,9 @@ async function handleAddTorrent(submitBtn, loadingSpinner) {
             method: 'POST',
             body: formData
         });
-
+        console.log(response);
         const data = await response.json();
+        console.log(data);
         if (data.detail) {
             showNotification(data.detail, 'error');
         } else {
