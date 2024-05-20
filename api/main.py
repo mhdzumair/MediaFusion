@@ -447,7 +447,9 @@ async def get_streams(
     user_feeds = []
     if season is None or episode is None:
         season = episode = 1
-    if video_id.startswith("tt"):
+    if "contribution_streams" in user_data.selected_catalogs and video_id.startswith(
+        "tt"
+    ):
         upload_url = (
             f"{settings.host_url}/scraper/?meta_id={video_id}&meta_type={catalog_type}"
         )
