@@ -619,6 +619,10 @@ async def save_series_metadata(metadata: dict):
         if file["episode"]
     ]
 
+    if not episodes:
+        logging.warning("No episodes found for series %s", series.title)
+        return
+
     # Determine languages
     if "language" in metadata:
         languages = (
@@ -644,7 +648,7 @@ async def save_series_metadata(metadata: dict):
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
-        season=Season(season_number=metadata["season"], episodes=episodes),
+        season=Season(season_number=metadata.get("season", 1), episodes=episodes),
         meta_id=series.id,
     )
 

@@ -8,9 +8,9 @@ function showNotification(message, type = 'info') {
         positionClass: "toast-top-center",
         preventDuplicates: true,
         onclick: null,
-        showDuration: "300",
-        hideDuration: "1000",
-        timeOut: "5000",
+        showDuration: "1000",
+        hideDuration: "3000",
+        timeOut: "10000",
         extendedTimeOut: "1000",
         showEasing: "swing",
         hideEasing: "linear",
@@ -371,12 +371,13 @@ async function handleAddTorrent(submitBtn, loadingSpinner) {
             method: 'POST',
             body: formData
         });
-
+        console.log(response);
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        console.log(data);
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -396,10 +397,10 @@ async function handleAddTvMetadata(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error constructing TV Metadata:', error);
@@ -441,10 +442,10 @@ async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -470,10 +471,10 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -502,10 +503,10 @@ async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (response.ok) {
-            showNotification(data.status, 'success');
+        if (data.detail) {
+            showNotification(data.detail, 'error');
         } else {
-            showNotification(data.detail || 'Error submitting scraper form.', 'error');
+            showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
