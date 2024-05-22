@@ -11,6 +11,7 @@ from utils.runtime_const import SPORTS_ARTIFACTS
 class StreamBTWSpider(scrapy.Spider):
     name = "streambtw"
     start_urls = ["https://streambtw.com/"]
+    referer = "https://streambtw.com/"
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -86,7 +87,10 @@ class StreamBTWSpider(scrapy.Spider):
                         "stream_name": f"{item['title']} - Live Stream",
                         "stream_url": m3u8_url,
                         "stream_source": "StreamBTW",
-                        "referer": response.url,
+                        "stream_headers": {
+                            "Referer": self.referer,
+                            "Origin": self.referer.rstrip("/"),
+                        },
                     }
                 )
                 yield item
