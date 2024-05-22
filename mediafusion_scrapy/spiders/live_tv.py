@@ -8,7 +8,6 @@ from utils import const
 
 
 class LiveTVSpider(scrapy.Spider):
-    direct_pattern = re.compile(r"(?:source|url): ['\"](.*?\.m3u8.*?)['\"]")
     fallback_pattern = re.compile(
         r"source: ['\"](.*?)['\"],\s*[\s\S]*?mimeType: ['\"]application/x-mpegURL['\"]"
     )
@@ -215,7 +214,13 @@ class LiveTVSpider(scrapy.Spider):
 
     def extract_m3u8_urls(self, response):
         """Extracts M3U8 URLs using direct and fallback regex patterns."""
-        m3u8_urls = self.direct_pattern.findall(response.text)
+        parsed_url = urlparse(response.url)
+        channel_id = parsed_url.query.split("=")[-1]
+
+        m3u8_urls = re.findall(
+            rf"{re.escape(channel_id)}['\"]:\s*{{\s*url:\s*['\"](.*?\.m3u8.*?)['\"]",
+            response.text,
+        )
         if not m3u8_urls:
             m3u8_urls = self.fallback_pattern.findall(response.text)
 

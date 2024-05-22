@@ -3,4 +3,4 @@ from mediafusion_scrapy.spiders.live_tv import LiveTVSpider
 
 class MhdTVWorldSpider(LiveTVSpider):
     name = "mhdtvworld"
-    start_urls = ["https://mhdmax.com/"]
+    start_urls = ["https://mhdmaxtv.com/"]
