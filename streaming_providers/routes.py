@@ -100,6 +100,7 @@ async def streaming_provider_endpoint(
         max_retries=5,
         retry_interval=5,
         stream=stream,
+        torrent_name=stream.torrent_name,
     )
 
     try:
