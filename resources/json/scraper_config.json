@@ -242,5 +242,14 @@
   },
   "mhdtvplay": {
 	"homepage": "https://mhdtvplay.net"
+  },
+  "arab_torrents": {
+	"homepage": "https://www.arab-torrents.com",
+	"catalogs": {
+	  "arabic": {
+		"movies": ["41", "59", "88", "116", "114"],
+		"series": ["44", "57", "89", "71", "115", "113"]
+	  }
+	}
   }
 }
