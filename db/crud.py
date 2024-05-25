@@ -170,11 +170,13 @@ async def get_movie_data_by_id(
             imdb_rating=movie.get("rating"),
             parent_guide_nudity_status=movie.get("parent_guide_nudity_status"),
             parent_guide_certificates=movie.get("parent_guide_certificates"),
+            aka_titles=movie.get("aka_titles"),
+            stars=movie.get("stars"),
         )
         try:
-            await movie_data.save()
+            await movie_data.create()
             logging.info("Added metadata for movie %s", movie_data.title)
-        except RevisionIdWasChanged:
+        except (RevisionIdWasChanged, DuplicateKeyError):
             # Wait for a moment before re-fetching to mitigate rapid retry issues
             await asyncio.sleep(1)
             movie_data = await MediaFusionMovieMetaData.get(movie_id)
@@ -213,11 +215,13 @@ async def get_series_data_by_id(
             imdb_rating=series.get("rating"),
             parent_guide_nudity_status=series.get("parent_guide_nudity_status"),
             parent_guide_certificates=series.get("parent_guide_certificates"),
+            stars=series.get("stars"),
+            aka_titles=series.get("aka_titles"),
         )
         try:
             await series_data.create()
             logging.info("Added metadata for series %s", series_data.title)
-        except RevisionIdWasChanged:
+        except (RevisionIdWasChanged, DuplicateKeyError):
             # Wait for a moment before re-fetching to mitigate rapid retry issues
             await asyncio.sleep(1)
             series_data = await MediaFusionMovieMetaData.get(series_id)
@@ -498,6 +502,7 @@ def create_metadata_object(metadata, imdb_data, model):
         website=metadata.get("website"),
         is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
         stars=metadata.get("stars"),
+        aka_titles=imdb_data.get("aka_titles"),
     )
 
 

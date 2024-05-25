@@ -102,19 +102,20 @@ class MediaFusionMetaData(Document):
         ]
 
 
-class MediaFusionIMDBMetaData(MediaFusionMetaData):
+class MediaFusionMovieMetaData(MediaFusionMetaData):
+    type: str = "movie"
     imdb_rating: Optional[float] = None
     parent_guide_nudity_status: Optional[str] = "None"
     parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
     stars: Optional[list[str]] = Field(default_factory=list)
 
 
-class MediaFusionMovieMetaData(MediaFusionIMDBMetaData):
-    type: str = "movie"
-
-
-class MediaFusionSeriesMetaData(MediaFusionIMDBMetaData):
+class MediaFusionSeriesMetaData(MediaFusionMetaData):
     type: str = "series"
+    imdb_rating: Optional[float] = None
+    parent_guide_nudity_status: Optional[str] = "None"
+    parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
+    stars: Optional[list[str]] = Field(default_factory=list)
 
 
 class MediaFusionTVMetaData(MediaFusionMetaData):

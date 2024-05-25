@@ -35,6 +35,10 @@ async def get_imdb_movie_data(movie_id: str) -> Optional[Movie]:
                 )
             ),
         )
+        movie.set_item(
+            "aka_titles",
+            list({title.split("(")[0].strip() for title in movie.get("aka")}),
+        )
     except Exception:
         return None
     return movie
@@ -56,6 +60,10 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     for movie in result:
         if movie.get("year") == year and movie.get("title").lower() in title.lower():
             imdb_id = f"tt{movie.movieID}"
+            movie.set_item(
+                "aka_titles",
+                list({title.split("(")[0].strip() for title in movie.get("aka")}),
+            )
             poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
             if requests.get(poster).status_code == 200:
                 return {
@@ -107,9 +115,7 @@ async def process_imdb_data(movie_ids):
                 "parent_guide_certificates": imdb_movie.get(
                     "parent_guide_certificates"
                 ),
-                "aka_titles": list(
-                    {title.split("(")[0].strip() for title in imdb_movie.get("aka")}
-                ),
+                "aka_titles": imdb_movie.get("aka_titles"),
                 "last_updated_at": now,
             }
             await MediaFusionMetaData.get_motor_collection().update_one(
