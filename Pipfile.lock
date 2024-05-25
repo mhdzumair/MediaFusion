@@ -1128,11 +1128,11 @@
         },
         "m3u-ipytv": {
             "hashes": [
-                "sha256:2c511c0e2b0a6b03891b68818f7f8a8454937b578ec91f2ef8d2e4ba709e09cc"
+                "sha256:02f0cfc4ebf169d64c194d717c333ed3529dad6838fd4a414e0288e725ef92f9"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.6' and python_version < '4'",
-            "version": "==0.2.7"
+            "version": "==0.2.8"
         },
         "markdown-it-py": {
             "hashes": [
