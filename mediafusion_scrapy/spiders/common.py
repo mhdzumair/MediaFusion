@@ -149,7 +149,7 @@ class CommonTamilSpider(scrapy.Spider):
         item = response.meta["item"].copy()
 
         for movie in movies:
-            movie_page_link = movie.css("a::attr(href)").get()
+            movie_page_link = movie.css("a[data-ipshover-target]::attr(href)").get()
             if not movie_page_link:
                 continue
 
@@ -193,11 +193,11 @@ class CommonTamilSpider(scrapy.Spider):
         for torrent_link in torrent_links:
             item.update(
                 {
-                    "catalog": f"{item['language']}_{item['video_type']}",
+                    "catalog": f"{item['language'].lower()}_{item['video_type']}",
                     "type": "series" if item["video_type"] == "series" else "movie",
                     "poster": poster,
                     "created_at": created_at,
-                    "scrap_language": item["language"].title(),
+                    "language": item["language"].title(),
                     "torrent_link": torrent_link,
                     "scraped_url_key": self.scraped_urls_key,
                 }
