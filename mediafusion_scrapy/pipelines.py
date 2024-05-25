@@ -16,6 +16,7 @@ from scrapy.utils.defer import maybe_deferred_to_future
 
 from db import crud
 from db.config import settings
+from db.crud import is_torrent_stream_exists
 from db.models import (
     TorrentStreams,
     Season,
@@ -770,20 +771,48 @@ class TorrentDownloadAndParsePipeline:
             spider.logger.error(
                 f"Failed to download torrent file: {response.url} with status {response.status}"
             )
-            return item
+            raise DropItem(f"Failed to download torrent file: {response.url}")
 
         # Validate the content-type of the response
         if "application/x-bittorrent" not in response.headers.get(
             "Content-Type", b""
         ).decode("utf-8", "ignore"):
-            spider.logger.warning(
+            spider.logger.error(
                 f"Unexpected Content-Type for {response.url}: {response.headers.get('Content-Type')}"
             )
-            return item
+            raise DropItem(f"Unexpected Content-Type for {response.url}")
 
         torrent_metadata = torrent.extract_torrent_metadata(
             response.body, item.get("is_parse_ptn", True)
         )
+
+        if not torrent_metadata:
+            raise DropItem(f"Failed to extract torrent metadata: {item}")
+
+        item.update(torrent_metadata)
+        return item
+
+
+class MagnetDownloadAndParsePipeline:
+    async def process_item(self, item, spider):
+        adapter = ItemAdapter(item)
+        magnet_link = adapter.get("magnet_link")
+
+        if not magnet_link:
+            raise DropItem(f"No magnet link found in item: {item}")
+
+        info_hash, trackers = torrent.parse_magnet(magnet_link)
+        if not info_hash:
+            raise DropItem(f"Failed to parse info_hash from magnet link: {magnet_link}")
+        if await is_torrent_stream_exists(info_hash):
+            raise DropItem(f"Torrent stream already exists: {info_hash}")
+
+        torrent_metadata = await torrent.info_hashes_to_torrent_metadata(
+            [info_hash], trackers
+        )
+
+        if not torrent_metadata:
+            raise DropItem(f"Failed to extract torrent metadata: {item}")
 
         if not torrent_metadata:
             raise DropItem(f"Failed to extract torrent metadata: {item}")
