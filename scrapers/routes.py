@@ -215,9 +215,13 @@ async def add_torrent(
                 f"Year mismatch: '{movie_data.year}' != '{torrent_data.get('year')}'"
             )
 
-        catalogs.append("user_upload_movies")
+        catalogs.extend(
+            ["user_upload_movies", f"{torrent_data.get('source', '').lower()}_movies"]
+        )
+        torrent_data["catalog"] = catalogs
+
         torrent_stream, _ = await handle_movie_stream_store(
-            info_hash, torrent_data, meta_id, catalogs
+            info_hash, torrent_data, meta_id
         )
 
     else:
@@ -252,9 +256,13 @@ async def add_torrent(
                     f"Season mismatch: '{torrent_data.get('season')}' != '{season}'"
                 )
 
-        catalogs.append("user_upload_series")
+        catalogs.extend(
+            ["user_upload_series", f"{torrent_data.get('source', '').lower()}_series"]
+        )
+        torrent_data["catalog"] = catalogs
+
         torrent_stream, _ = await handle_series_stream_store(
-            info_hash, torrent_data, meta_id, season, catalogs
+            info_hash, torrent_data, meta_id, season
         )
 
     if not torrent_stream:

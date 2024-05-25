@@ -228,6 +228,8 @@ class TaskManager(dramatiq.Middleware):
 
         if spider_name := kwargs.get("spider_name"):
             task_key = f"background_tasks:run_spider:spider_name={spider_name}"
+        elif video_id := kwargs.get("video_id"):
+            task_key = f"background_tasks:{task_name}:video_id={video_id}"
         else:
             keys = "_".join([str(arg) for arg in args])
             keys += "_".join([f"{k}={v}" for k, v in kwargs.items()])

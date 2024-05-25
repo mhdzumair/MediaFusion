@@ -319,6 +319,7 @@ async def get_movie_streams(
                 video_id,
                 "movie",
                 movie_metadata.title,
+                movie_metadata.aka_titles,
                 movie_metadata.year,
             )
 
@@ -361,6 +362,7 @@ async def get_series_streams(
                 video_id,
                 "series",
                 series_metadata.title,
+                series_metadata.aka_titles,
                 series_metadata.year,
                 season,
                 episode,
