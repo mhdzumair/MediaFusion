@@ -68,14 +68,17 @@ async def batch_process_with_circuit_breaker(
     batch_size: int,
     rate_limit_delay: int,
     cb: CircuitBreaker,
+    max_retries: int = 5,
     retry_exceptions: list[type[Exception]] = (),
     *args,
     **kwargs,
 ):
     """
-    Process data in batches using the circuit breaker pattern.
+    Process data in batches using the circuit breaker pattern with a maximum number of retries.
     """
     results = []
+    total_retries = 0
+
     for i in range(0, len(data), batch_size):
         batch = data[i : i + batch_size]
         while batch:  # Continue until all items in the batch are processed
@@ -99,13 +102,20 @@ async def batch_process_with_circuit_breaker(
                         successful_results.append(result)
 
                 if retry_batch:
-                    logging.info(
-                        f"Retrying {len(retry_batch)} items due to circuit breaker."
-                    )
-                    batch = retry_batch  # Prepare to retry only the failed items
-                    await asyncio.sleep(
-                        cb.recovery_timeout
-                    )  # Wait for the breaker to potentially close
+                    if max_retries is not None and total_retries >= max_retries:
+                        logging.info(
+                            f"Reached maximum number of retries ({max_retries})."
+                        )
+                        batch = []  # Stop retrying
+                    else:
+                        total_retries += 1
+                        logging.info(
+                            f"Retrying {len(retry_batch)} items due to circuit breaker."
+                        )
+                        batch = retry_batch  # Prepare to retry only the failed items
+                        await asyncio.sleep(
+                            cb.recovery_timeout
+                        )  # Wait for the breaker to potentially close
                 else:
                     # Extend results with successful results
                     results.extend(successful_results)
