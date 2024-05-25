@@ -3,11 +3,13 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 
+from utils.const import UA_HEADER
+
 
 async def get_torrent_info(url: str) -> dict:
     torrent_info = {}
     async with httpx.AsyncClient() as client:
-        response = await client.get(url)
+        response = await client.get(url, headers=UA_HEADER)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, "html.parser")
             # itorrents.org have rate limit, so we are using a magnet link instead of torrent file
