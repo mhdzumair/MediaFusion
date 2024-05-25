@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from beanie import WriteRules
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import In, Set
 from pymongo.errors import DuplicateKeyError
@@ -216,7 +215,7 @@ async def get_series_data_by_id(
             parent_guide_certificates=series.get("parent_guide_certificates"),
         )
         try:
-            await series_data.save()
+            await series_data.create()
             logging.info("Added metadata for series %s", series_data.title)
         except RevisionIdWasChanged:
             # Wait for a moment before re-fetching to mitigate rapid retry issues
@@ -473,46 +472,42 @@ async def get_tv_meta(meta_id: str):
     }
 
 
-async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
-    # Try to get the existing movie
-    existing_movie = await MediaFusionMovieMetaData.find_one(
-        {"title": metadata["title"], "year": metadata.get("year")}, fetch_links=True
+async def get_existing_metadata(metadata, model):
+    filters = {"title": metadata["title"]}
+    if issubclass(model, MediaFusionMovieMetaData):
+        filters["year"] = metadata.get("year")
+
+    return await model.find_one(
+        filters,
+        projection_model=schemas.MetaIdProjection,
     )
 
-    if not existing_movie:
-        # If the movie doesn't exist in our DB, search for IMDb ID
-        if is_imdb:
-            imdb_data = search_imdb(metadata["title"], metadata.get("year"))
-        else:
-            imdb_data = {}
-        meta_id = imdb_data.get("imdb_id")
 
-        if meta_id:
-            # Check if the movie with the found IMDb ID already exists in our DB
-            existing_movie = await MediaFusionMovieMetaData.get(
-                meta_id, fetch_links=True
-            )
-        else:
-            meta_id = f"mf{uuid4().fields[-1]}"
-        # Update the poster from IMDb if available
-        poster = imdb_data.get("poster") or metadata["poster"]
-        background = imdb_data.get("background") or metadata["poster"]
-    else:
-        poster = existing_movie.poster
-        background = existing_movie.background
-        meta_id = existing_movie.id
+def create_metadata_object(metadata, imdb_data, model):
+    poster = imdb_data.get("poster") or metadata["poster"]
+    background = imdb_data.get("background") or metadata["poster"]
+    return model(
+        id=metadata["id"],
+        title=metadata["title"],
+        year=metadata["year"],
+        poster=poster,
+        background=background,
+        streams=[],
+        description=metadata.get("description"),
+        runtime=metadata.get("runtime"),
+        website=metadata.get("website"),
+        is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
+        stars=metadata.get("stars"),
+    )
 
-    if "language" in metadata:
-        languages = (
-            [metadata["language"]]
-            if isinstance(metadata["language"], str)
-            else metadata["language"]
-        )
-    else:
-        languages = [metadata["scrap_language"]]
 
-    # Create the stream object
-    new_stream = TorrentStreams(
+def create_stream_object(metadata):
+    languages = (
+        [metadata["language"]]
+        if isinstance(metadata["language"], str)
+        else metadata["language"]
+    )
+    return TorrentStreams(
         id=metadata["info_hash"],
         torrent_name=metadata["torrent_name"],
         announce_list=metadata["announce_list"],
@@ -528,135 +523,83 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
-        meta_id=meta_id,
+        meta_id=metadata["id"],
     )
 
-    if existing_movie:
-        # Check if the stream with the same info_hash already exists
-        matching_stream = next(
-            (stream for stream in existing_movie.streams if stream.id == new_stream.id),
-            None,
-        )
-        if not matching_stream:
-            existing_movie.streams.append(new_stream)
-            logging.info(
-                "Updated movie %s. Total streams: %d",
-                existing_movie.title,
-                len(existing_movie.streams),
-            )
-            await existing_movie.save(link_rule=WriteRules.WRITE)
-    else:
-        # If the movie doesn't exist, create a new one
-        movie_data = MediaFusionMovieMetaData(
-            id=meta_id,
-            title=metadata["title"],
-            year=metadata["year"],
-            poster=poster,
-            background=background,
-            streams=[new_stream],
-            description=metadata.get("description"),
-            runtime=metadata.get("runtime"),
-            website=metadata.get("website"),
-            is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
+
+async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
+    if await is_torrent_stream_exists(metadata["info_hash"]):
+        logging.info("Stream already exists for movie %s", metadata["title"])
+        return
+
+    existing_movie = await get_existing_metadata(metadata, MediaFusionMovieMetaData)
+    if not existing_movie:
+        imdb_data = {}
+        if is_imdb:
+            imdb_data = search_imdb(metadata["title"], metadata.get("year"))
+        metadata["id"] = imdb_data.get("imdb_id") or f"mf{uuid4().fields[-1]}"
+        movie_data = create_metadata_object(
+            metadata, imdb_data, MediaFusionMovieMetaData
         )
         try:
-            await movie_data.insert(link_rule=WriteRules.WRITE)
+            await movie_data.create()
         except DuplicateKeyError:
             logging.warning("Duplicate movie found: %s", movie_data.title)
-        logging.info("Added movie %s", movie_data.title)
 
-
-async def save_series_metadata(metadata: dict):
-    # Try to get the existing series
-    series = await MediaFusionSeriesMetaData.find_one(
-        {"title": metadata["title"]}, fetch_links=True
+    new_stream = create_stream_object(metadata)
+    await new_stream.create()
+    logging.info(
+        "Added stream for movie %s, info_hash: %s",
+        metadata["title"],
+        metadata["info_hash"],
     )
 
-    if not series:
-        # If the series doesn't exist in our DB, search for IMDb ID
-        imdb_data = search_imdb(metadata["title"], metadata["year"])
-        meta_id = imdb_data.get("imdb_id")
 
-        if meta_id:
-            # Check if the series with the found IMDb ID already exists in our DB
-            series = await MediaFusionSeriesMetaData.get(meta_id, fetch_links=True)
-
-        if not series:
-            meta_id = meta_id or f"mf{uuid4().fields[-1]}"
-            poster = imdb_data.get("poster") or metadata["poster"]
-            background = imdb_data.get("background") or metadata["poster"]
-
-            # Create an initial entry for the series
-            series = MediaFusionSeriesMetaData(
-                id=meta_id,
-                title=metadata["title"],
-                year=metadata["year"],
-                poster=poster,
-                background=background,
-                streams=[],
-            )
-            await series.insert()
-            logging.info("Added series %s", series.title)
-
-    existing_stream = next(
-        (s for s in series.streams if s.id == metadata["info_hash"]),
-        None,
-    )
-    if existing_stream:
-        # If the stream already exists, return
-        logging.info("Stream already exists for series %s", series.title)
+async def save_series_metadata(metadata: dict, is_imdb: bool = True):
+    if await is_torrent_stream_exists(metadata["info_hash"]):
+        logging.info("Stream already exists for series %s", metadata["title"])
         return
-
-    # Extract episodes
-    episodes = [
-        Episode(
-            episode_number=file["episode"],
-            filename=file["filename"],
-            size=file["size"],
-            file_index=file["index"],
+    series_data = await get_existing_metadata(metadata, MediaFusionSeriesMetaData)
+    if not series_data:
+        imdb_data = {}
+        if is_imdb:
+            imdb_data = search_imdb(metadata["title"], metadata.get("year"))
+        metadata["id"] = imdb_data.get("imdb_id") or f"mf{uuid4().fields[-1]}"
+        series_data = create_metadata_object(
+            metadata, imdb_data, MediaFusionSeriesMetaData
         )
-        for file in metadata["file_data"]
-        if file["episode"]
-    ]
+        try:
+            await series_data.create()
+        except DuplicateKeyError:
+            logging.warning("Duplicate series found: %s", series_data.title)
+
+    if metadata.get("episodes"):
+        episodes = metadata["episodes"]
+    else:
+        episodes = [
+            Episode(
+                episode_number=file["episode"],
+                filename=file["filename"],
+                size=file["size"],
+                file_index=file["index"],
+            )
+            for file in metadata["file_data"]
+            if file["episode"]
+        ]
 
     if not episodes:
-        logging.warning("No episodes found for series %s", series.title)
+        logging.warning("No episodes found for series %s", series_data.title)
         return
-
-    # Determine languages
-    if "language" in metadata:
-        languages = (
-            [metadata["language"]]
-            if isinstance(metadata["language"], str)
-            else metadata["language"]
-        )
-    else:
-        languages = [metadata["scrap_language"]]
-
-    # Create the stream
-    stream = TorrentStreams(
-        id=metadata["info_hash"],
-        torrent_name=metadata["torrent_name"],
-        announce_list=metadata["announce_list"],
-        size=metadata["total_size"],
-        languages=languages,
-        resolution=metadata.get("resolution"),
-        codec=metadata.get("codec"),
-        quality=metadata.get("quality"),
-        audio=metadata.get("audio"),
-        encoder=metadata.get("encoder"),
-        source=metadata["source"],
-        catalog=get_catalogs(metadata["catalog"], languages),
-        created_at=metadata["created_at"],
-        season=Season(season_number=metadata.get("season", 1), episodes=episodes),
-        meta_id=series.id,
+    new_stream = create_stream_object(metadata)
+    new_stream.season = Season(
+        season_number=metadata.get("season", 1), episodes=episodes
     )
-
-    # Add the stream to the series
-    series.streams.append(stream)
-
-    await series.save(link_rule=WriteRules.WRITE)
-    logging.info("Updated series %s", series.title)
+    await new_stream.create()
+    logging.info(
+        "Added stream for series %s, info_hash: %s",
+        metadata["title"],
+        metadata["info_hash"],
+    )
 
 
 async def process_search_query(
