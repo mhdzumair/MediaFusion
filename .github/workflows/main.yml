@@ -27,7 +27,7 @@ jobs:
 
       - name: Get short SHA
         id: short_sha
-        run: echo "::set-output name=sha::$(echo ${GITHUB_SHA::8})"
+        run: echo "GIT_REV=$(echo ${GITHUB_SHA::7})" >> $GITHUB_ENV
 
       - name: Build and push
         id: docker_build
@@ -37,7 +37,7 @@ jobs:
           file: ./deployment/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: GIT_REV=${{ steps.short_sha.outputs.sha }}
+          build-args: GIT_REV=${{ env.GIT_REV }}
           tags: |
             mhdzumair/mediafusion:v${{ github.ref_name }}
             mhdzumair/mediafusion:latest
