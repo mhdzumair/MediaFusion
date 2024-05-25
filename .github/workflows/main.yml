@@ -1,0 +1,46 @@
+name: MediaFusion CI/CD
+
+on:
+  release:
+    types: [ created ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Get short SHA
+        id: short_sha
+        run: echo "::set-output name=sha::$(echo ${GITHUB_SHA::8})"
+
+      - name: Build and push
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: GIT_REV=${{ steps.short_sha.outputs.sha }}
+          tags: |
+            mhdzumair/mediafusion:v${{ github.ref_name }}
+            mhdzumair/mediafusion:latest
+
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
