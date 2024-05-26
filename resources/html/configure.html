@@ -52,11 +52,11 @@
                     <div id="credentials" style="display:none">
                         <h6>Enter Credentials</h6>
                         <div class="mb-3">
-                            <label for="username">Username:</label>
-                            <input class="form-control" type="text" id="username" name="username" placeholder="Enter Username" aria-label="Username"
-                                   value="{{ user_data.streaming_provider.username if user_data.streaming_provider.username else '' }}">
+                            <label for="email">Email:</label>
+                            <input class="form-control" type="text" id="email" name="email" placeholder="Enter Email" aria-label="Email"
+                                   value="{{ user_data.streaming_provider.email if user_data.streaming_provider.email else '' }}">
                             <div class="invalid-feedback">
-                                Username is required.
+                                Email is required.
                             </div>
                         </div>
                         <div class="mb-3">

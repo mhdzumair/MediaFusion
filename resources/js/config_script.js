@@ -264,9 +264,9 @@ function getUserData() {
     // Validate and collect streaming provider data
     if (provider) {
         if (servicesRequiringCredentials.includes(provider)) {
-            validateInput('username', document.getElementById('username').value);
+            validateInput('email', document.getElementById('email').value);
             validateInput('password', document.getElementById('password').value);
-            streamingProviderData.username = document.getElementById('username').value;
+            streamingProviderData.email = document.getElementById('email').value;
             streamingProviderData.password = document.getElementById('password').value;
         } else if (provider === 'qbittorrent') {
             streamingProviderData.qbittorrent_config = {

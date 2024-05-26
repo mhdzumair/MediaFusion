@@ -108,14 +108,14 @@ class StreamingProvider(BaseModel):
         "qbittorrent",
     ]
     token: str | None = None
-    username: str | None = None
+    email: str | None = None
     password: str | None = None
     enable_watchlist_catalogs: bool = True
     qbittorrent_config: QBittorrentConfig | None = None
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
-        # validating the token or (username and password) or qbittorrent_config
+        # validating the token or (email and password) or qbittorrent_config
         required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
             self.service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
         )

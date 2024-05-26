@@ -123,7 +123,7 @@ async def find_file_in_folder_tree(
 
 async def initialize_pikpak(user_data: UserData):
     pikpak = PikPakApi(
-        username=user_data.streaming_provider.username,
+        username=user_data.streaming_provider.email,
         password=user_data.streaming_provider.password,
         httpx_client_args={"transport": httpx.AsyncHTTPTransport(retries=3)},
     )

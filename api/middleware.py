@@ -128,8 +128,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         raw_identifier = f"{ip}"
         if user_data.streaming_provider:
             provider_profile = (
-                user_data.streaming_provider.token
-                or user_data.streaming_provider.username
+                user_data.streaming_provider.token or user_data.streaming_provider.email
             )
             raw_identifier += f"-{provider_profile}"
         return hashlib.md5(raw_identifier.encode()).hexdigest()
