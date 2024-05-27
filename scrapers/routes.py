@@ -8,7 +8,6 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile, File, Form, APIRouter
 from fastapi.requests import Request
 from fastapi.responses import RedirectResponse, Response
-from thefuzz import fuzz
 
 from db import schemas
 from db.config import settings
