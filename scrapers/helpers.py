@@ -2,17 +2,14 @@ import json
 import logging
 from datetime import datetime
 
-import cloudscraper
 import dramatiq
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
 
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
-from utils.const import UA_HEADER
 from utils import get_json_data
-from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
+from utils.torrent import info_hashes_to_torrent_metadata
 
 # set httpx logging level
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -26,101 +23,6 @@ PROXIES = (
     if settings.scraper_proxy_url
     else None
 )
-
-
-def get_scraper_session():
-    session = requests.session()
-    session.headers = UA_HEADER
-    adapter = HTTPAdapter(
-        max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.5)
-    )
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    session.proxies = PROXIES
-    scraper = cloudscraper.create_scraper(
-        browser={"browser": "chrome", "platform": "windows", "mobile": False},
-        delay=10,
-        sess=session,
-    )
-    return scraper
-
-
-async def check_cloudflare_validation(page):
-    if await page.title() == "Just a moment...":
-        logging.info("Cloudflare validation required")
-        await page.wait_for_selector("a#elUserSignIn", timeout=9999999)
-
-
-async def get_page_content(page, url):
-    await page.goto(url)
-    await check_cloudflare_validation(page)
-    return await page.content()
-
-
-async def download_torrent(torrent_link, scraper=None, page=None):
-    if scraper:
-        response = scraper.get(torrent_link)
-        torrent_metadata = extract_torrent_metadata(response.content)
-    elif page:
-        async with page.expect_download() as download_info:
-            try:
-                await page.goto(torrent_link)
-            except:
-                pass
-        download = await download_info.value
-        torrent_path = await download.path()
-        with open(torrent_path, "rb") as torrent_file:
-            torrent_metadata = extract_torrent_metadata(torrent_file.read())
-
-    if not torrent_metadata:
-        logging.error(f"Info hash not found for {torrent_link}")
-        return None
-
-    return torrent_metadata
-
-
-async def save_torrent(torrent_metadata: dict, metadata: dict, media_type: str):
-    metadata.update(torrent_metadata)
-
-    if not metadata.get("year"):
-        logging.error("Year not found")
-        return False
-
-    from db import crud  # Avoid circular import
-
-    # Saving the metadata
-    if media_type == "series":
-        if not metadata.get("season"):
-            logging.error("Season not found")
-            return False
-        await crud.save_series_metadata(metadata)
-    else:
-        if metadata.get("season"):
-            await crud.save_series_metadata(metadata)
-        else:
-            await crud.save_movie_metadata(metadata)
-
-    return True
-
-
-async def download_and_save_torrent(
-    torrent_element,
-    metadata: dict,
-    media_type: str,
-    page_link: str,
-    scraper=None,
-    page=None,
-):
-    torrent_link = torrent_element.get("href")
-    logging.info(f"Downloading torrent: {torrent_link}")
-    torrent_metadata = await download_torrent(torrent_link, scraper, page)
-    if torrent_metadata is None:
-        return False
-
-    result = await save_torrent(torrent_metadata, metadata, media_type)
-    if not result:
-        logging.error(f"Failed to save torrent for {page_link}")
-    return result
 
 
 def get_scraper_config(site_name: str, get_key: str) -> dict:
@@ -195,3 +97,11 @@ def get_country_name(country_code):
     with open("resources/json/countries.json") as file:
         countries = json.load(file)
     return countries.get(country_code.upper(), "India")
+
+
+async def get_page_bs4(url: str):
+    async with AsyncSession(proxies=PROXIES) as session:
+        response = await session.get(url, impersonate="chrome", timeout=30)
+        if response.status_code != 200:
+            return None
+        return BeautifulSoup(response.text, "html.parser")

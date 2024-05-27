@@ -10,7 +10,6 @@ pydantic = "*"
 requests = "*"
 beautifulsoup4 = "*"
 cinemagoer = {editable = true, git = "https://github.com/cinemagoer/cinemagoer"}
-cloudscraper = "*"
 beanie = "*"
 motor = "*"
 pymongo = { extras = ["srv"], version = "*" }
@@ -39,6 +38,7 @@ aiowebdav = "*"
 m3u-ipytv = "*"
 python-multipart = "*"
 prometheus-client = "*"
+curl-cffi = "*"
 
 [dev-packages]
 pysocks = "*"

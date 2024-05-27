@@ -12,7 +12,7 @@ from torf import Magnet, MagnetError
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
-from scrapers import therarbg, torrent_downloads
+from scrapers import torrent_info
 from scrapers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
@@ -291,10 +291,6 @@ async def scrape_series_title_streams_from_prowlarr(
         "type": "search",
     }
 
-    # Adjust parameters if needed for season and episode specificity
-    if season is not None and episode is not None:
-        params_title.update({"season": season, "episode": episode})
-
     try:
         title_search = await fetch_stream_data(url, params_title)
     except Exception as e:
@@ -394,18 +390,19 @@ async def prowlarr_data_parser(
         "The Pirate Bay",
         "RuTracker.RU",
         "BitSearch",
+        "BitRu",
+        "iDope",
     ]:
-        # For these indexers, the guid is a direct torrent file download link
+        # For these indexers, the guid is a direct torrent file download link or magnet link
         download_url = meta_data.get("guid")
     else:
-        if meta_data.get("indexer") == "TheRARBG":
-            meta_data.update(await therarbg.get_torrent_info(meta_data.get("infoUrl")))
-        elif meta_data.get("indexer") == "Torrent Downloads":
-            meta_data.update(
-                await torrent_downloads.get_torrent_info(meta_data.get("infoUrl"))
+        meta_data.update(
+            await torrent_info.get_torrent_info(
+                meta_data.get("infoUrl"), meta_data.get("indexer")
             )
+        )
 
-        download_url = meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
+        download_url = meta_data.get("magnetUrl") or meta_data.get("downloadUrl")
 
     catalogs = [
         "prowlarr_streams",
