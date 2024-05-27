@@ -1,6 +1,8 @@
 import logging
+import re
 from datetime import date
 from typing import Literal
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, File, Form, APIRouter
@@ -189,6 +191,10 @@ async def add_torrent(
         info_hash = torrent_data.get("info_hash")
         if await is_torrent_stream_exists(info_hash):
             return {"status": "Torrent already exists."}
+
+    # if the source is url then only take the domain name
+    if re.match(r"^https?://", source):
+        source = urlparse(source).netloc.replace("www.", "")
 
     torrent_data.update(
         {
