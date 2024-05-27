@@ -138,11 +138,11 @@
         },
         "anyio": {
             "hashes": [
-                "sha256:048e05d0f6caeed70d731f3db756d35dcc1f35747c8c403364a8332c630441b8",
-                "sha256:f75253795a87df48568485fd18cdd2a3fa5c4f7c5be8e5e36637733fce06fed6"
+                "sha256:5aadc6a1bbb7cdb0bede386cac5e2940f5e2ff3aa20277e991cf028e0585ce94",
+                "sha256:c1b2d8f46a8a812513012e1107cb0e68c17159a7a594208005a57dc776e1bdc7"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==4.3.0"
+            "version": "==4.4.0"
         },
         "apscheduler": {
             "hashes": [
@@ -1392,7 +1392,7 @@
         },
         "parse-torrent-title": {
             "git": "git+https://github.com/mhdzumair/parse-torrent-title",
-            "ref": "5f4c12b3ac6ed108a68258f1c67e69d4c12a3c71"
+            "ref": "1c61386a4d4b9cd7f52c0a17877727f1d3146fc4"
         },
         "parsel": {
             "hashes": [
