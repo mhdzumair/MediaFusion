@@ -14,7 +14,11 @@ from scrapers.helpers import (
     update_torrent_movie_streams_metadata,
 )
 from utils.const import UA_HEADER
-from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
+from utils.parser import (
+    convert_size_to_bytes,
+    is_contain_18_plus_keywords,
+    calculate_max_similarity_ratio,
+)
 from utils.validation_helper import is_video_file
 
 
@@ -23,6 +27,8 @@ async def get_streams_from_torrentio(
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
+    title: str,
+    aka_titles: list[str],
     season: int = None,
     episode: int = None,
 ):
@@ -32,11 +38,15 @@ async def get_streams_from_torrentio(
         return streams
 
     if catalog_type == "movie":
-        streams.extend(await scrap_movie_streams_from_torrentio(video_id, catalog_type))
+        streams.extend(
+            await scrap_movie_streams_from_torrentio(
+                video_id, catalog_type, title, aka_titles
+            )
+        )
     elif catalog_type == "series":
         streams.extend(
             await scrap_series_streams_from_torrentio(
-                video_id, catalog_type, season, episode
+                video_id, catalog_type, title, aka_titles, season, episode
             )
         )
 
@@ -61,7 +71,7 @@ async def fetch_stream_data(url: str) -> dict:
 
 
 async def scrap_movie_streams_from_torrentio(
-    video_id: str, catalog_type: str
+    video_id: str, catalog_type: str, title: str, aka_titles: list[str]
 ) -> list[TorrentStreams]:
     """
     Get streams by IMDb ID from torrentio stremio addon.
@@ -70,7 +80,7 @@ async def scrap_movie_streams_from_torrentio(
     try:
         stream_data = await fetch_stream_data(url)
         return await store_and_parse_movie_stream_data(
-            video_id, stream_data.get("streams", [])
+            video_id, title, aka_titles, stream_data.get("streams", [])
         )
     except (httpx.HTTPError, httpx.TimeoutException):
         return []  # Return an empty list in case of HTTP errors or timeouts
@@ -82,6 +92,8 @@ async def scrap_movie_streams_from_torrentio(
 async def scrap_series_streams_from_torrentio(
     video_id: str,
     catalog_type: str,
+    title: str,
+    aka_titles: list[str],
     season: int,
     episode: int,
 ) -> list[TorrentStreams]:
@@ -92,7 +104,7 @@ async def scrap_series_streams_from_torrentio(
     try:
         stream_data = await fetch_stream_data(url)
         return await store_and_parse_series_stream_data(
-            video_id, season, episode, stream_data.get("streams", [])
+            video_id, title, aka_titles, season, episode, stream_data.get("streams", [])
         )
     except (httpx.HTTPError, httpx.TimeoutException):
         return []  # Return an empty list in case of HTTP errors or timeouts
@@ -108,59 +120,69 @@ def parse_stream_title(stream: dict) -> dict:
 
     return {
         "torrent_name": torrent_name,
+        "title": metadata.get("title") or "Unknown",
         "size": convert_size_to_bytes(extract_size_string(stream["title"])),
         "seeders": extract_seeders(stream["title"]),
         "languages": extract_languages(metadata, stream["title"]),
         "metadata": metadata,
-        "file_name": path.basename(file_name) if is_video_file(file_name) else None,
+        "file_name": stream.get("behaviorHints", {}).get("filename")
+        or path.basename(file_name)
+        if is_video_file(file_name)
+        else None,
     }
 
 
 async def store_and_parse_movie_stream_data(
-    video_id: str, stream_data: list
+    video_id: str, title: str, aka_titles: list[str], stream_data: list
 ) -> list[TorrentStreams]:
     streams = []
     info_hashes = []
     for stream in stream_data:
+        torrent_stream = await TorrentStreams.get(stream["infoHash"])
+        if torrent_stream:
+            continue
+
         if is_contain_18_plus_keywords(stream["title"]):
             logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
             continue
 
         parsed_data = parse_stream_title(stream)
+        source = (
+            stream["name"].split()[0].title() if stream.get("name") else "Torrentio"
+        )
 
-        torrent_stream = await TorrentStreams.get(stream["infoHash"])
-
-        if torrent_stream:
-            # Update existing stream
-            torrent_stream.seeders = parsed_data["seeders"]
-            torrent_stream.updated_at = datetime.now()
-            await torrent_stream.save()
-        else:
-            # Create new stream
-            source = (
-                stream["name"].split()[0].title() if stream["name"] else "Torrentio"
+        if source != "Torrentio":
+            # validate non-torrentio sources
+            max_similarity_ratio = calculate_max_similarity_ratio(
+                parsed_data.get("title"), title, aka_titles
             )
-            torrent_stream = TorrentStreams(
-                id=stream["infoHash"],
-                torrent_name=parsed_data["torrent_name"],
-                announce_list=[],
-                size=parsed_data["size"],
-                filename=parsed_data["file_name"],
-                file_index=stream.get("fileIdx"),
-                languages=parsed_data["languages"],
-                resolution=parsed_data["metadata"].get("resolution"),
-                codec=parsed_data["metadata"].get("codec"),
-                quality=parsed_data["metadata"].get("quality"),
-                audio=parsed_data["metadata"].get("audio"),
-                encoder=parsed_data["metadata"].get("encoder"),
-                source=source,
-                catalog=["torrentio_streams"],
-                updated_at=datetime.now(),
-                seeders=parsed_data["seeders"],
-                meta_id=video_id,
-            )
-            await torrent_stream.save()
+            if max_similarity_ratio < 75:
+                logging.error(
+                    f"Title mismatch: '{title}' != '{parsed_data.get('title')}' ratio: {max_similarity_ratio}"
+                )
+                continue
 
+        # Create new stream
+        torrent_stream = TorrentStreams(
+            id=stream["infoHash"],
+            torrent_name=parsed_data["torrent_name"],
+            announce_list=[],
+            size=parsed_data["size"],
+            filename=parsed_data["file_name"],
+            file_index=stream.get("fileIdx"),
+            languages=parsed_data["languages"],
+            resolution=parsed_data["metadata"].get("resolution"),
+            codec=parsed_data["metadata"].get("codec"),
+            quality=parsed_data["metadata"].get("quality"),
+            audio=parsed_data["metadata"].get("audio"),
+            encoder=parsed_data["metadata"].get("encoder"),
+            source=source,
+            catalog=["torrentio_streams"],
+            updated_at=datetime.now(),
+            seeders=parsed_data["seeders"],
+            meta_id=video_id,
+        )
+        await torrent_stream.create()
         streams.append(torrent_stream)
         if torrent_stream.filename is None:
             info_hashes.append(stream["infoHash"])
@@ -173,6 +195,8 @@ async def store_and_parse_movie_stream_data(
 
 async def store_and_parse_series_stream_data(
     video_id: str,
+    title: str,
+    aka_titles: list[str],
     season: int,
     episode: int,
     stream_data: list,
@@ -180,13 +204,29 @@ async def store_and_parse_series_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
+        torrent_stream = await TorrentStreams.get(stream["infoHash"])
+        if torrent_stream:
+            continue
+
         if is_contain_18_plus_keywords(stream["title"]):
             logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
             continue
 
+        source = (
+            stream["name"].split()[0].title() if stream.get("name") else "Torrentio"
+        )
         parsed_data = parse_stream_title(stream)
-        if not parsed_data["seeders"]:
-            continue
+
+        if source != "Torrentio":
+            # validate non-torrentio sources
+            max_similarity_ratio = calculate_max_similarity_ratio(
+                parsed_data.get("title"), title, aka_titles
+            )
+            if max_similarity_ratio < 75:
+                logging.error(
+                    f"Title mismatch: '{title}' != '{parsed_data.get('title')}' ratio: {max_similarity_ratio}"
+                )
+                continue
 
         if parsed_data["metadata"].get("season"):
             if isinstance(parsed_data["metadata"]["season"], int):
@@ -220,49 +260,31 @@ async def store_and_parse_series_stream_data(
                 Episode(episode_number=episode, file_index=stream.get("fileIdx"))
             ]
 
-        torrent_stream = await TorrentStreams.get(stream["infoHash"])
-
-        if torrent_stream:
-            # Update existing stream
-            torrent_stream.seeders = parsed_data["seeders"]
-            torrent_stream.updated_at = datetime.now()
-            episode_item = torrent_stream.get_episode(season, episode)
-            if episode_item is None:
-                if torrent_stream.season:
-                    torrent_stream.season.episodes.extend(episode_data)
-                else:
-                    torrent_stream.season = Season(
-                        season_number=season_number,
-                        episodes=episode_data,
-                    )
-                episode_item = torrent_stream.get_episode(season, episode)
-            await torrent_stream.save()
-        else:
-            # Create new stream
-            torrent_stream = TorrentStreams(
-                id=stream["infoHash"],
-                torrent_name=parsed_data["torrent_name"],
-                announce_list=[],
-                size=parsed_data["size"],
-                filename=None,
-                languages=parsed_data["languages"],
-                resolution=parsed_data["metadata"].get("resolution"),
-                codec=parsed_data["metadata"].get("codec"),
-                quality=parsed_data["metadata"].get("quality"),
-                audio=parsed_data["metadata"].get("audio"),
-                encoder=parsed_data["metadata"].get("encoder"),
-                source="Torrentio",
-                catalog=["torrentio_streams"],
-                updated_at=datetime.now(),
-                seeders=parsed_data["seeders"],
-                meta_id=video_id,
-                season=Season(
-                    season_number=season_number,
-                    episodes=episode_data,
-                ),
-            )
-            await torrent_stream.save()
-            episode_item = torrent_stream.get_episode(season, episode)
+        # Create new stream
+        torrent_stream = TorrentStreams(
+            id=stream["infoHash"],
+            torrent_name=parsed_data["torrent_name"],
+            announce_list=[],
+            size=parsed_data["size"],
+            filename=None,
+            languages=parsed_data["languages"],
+            resolution=parsed_data["metadata"].get("resolution"),
+            codec=parsed_data["metadata"].get("codec"),
+            quality=parsed_data["metadata"].get("quality"),
+            audio=parsed_data["metadata"].get("audio"),
+            encoder=parsed_data["metadata"].get("encoder"),
+            source=source,
+            catalog=["torrentio_streams"],
+            updated_at=datetime.now(),
+            seeders=parsed_data["seeders"],
+            meta_id=video_id,
+            season=Season(
+                season_number=season_number,
+                episodes=episode_data,
+            ),
+        )
+        await torrent_stream.create()
+        episode_item = torrent_stream.get_episode(season, episode)
 
         streams.append(torrent_stream)
 

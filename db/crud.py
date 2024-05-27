@@ -307,7 +307,12 @@ async def get_movie_streams(
             and "torrentio_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_torrentio(
-                redis, streams, video_id, "movie"
+                redis,
+                streams,
+                video_id,
+                catalog_type="movie",
+                title=movie_metadata.title,
+                aka_titles=movie_metadata.aka_titles,
             )
         if (
             settings.prowlarr_api_key
@@ -349,7 +354,14 @@ async def get_series_streams(
             and "torrentio_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_torrentio(
-                redis, streams, video_id, "series", season, episode
+                redis,
+                streams,
+                video_id,
+                catalog_type="series",
+                title=series_metadata.title,
+                aka_titles=series_metadata.aka_titles,
+                season=season,
+                episode=episode,
             )
 
         if (
