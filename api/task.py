@@ -2,13 +2,16 @@ import asyncio
 
 from db import database
 
-# import background actors
-from scrapers import helpers  # noqa: F401
-from scrapers import prowlarr  # noqa: F401
-from mediafusion_scrapy import task  # noqa: F401
 from utils import torrent
-from utils import validation_helper  # noqa: F401
-from scrapers import tv  # noqa: F401
+
+# import background actors
+# noqa: F401
+from scrapers import helpers
+from scrapers import prowlarr
+from mediafusion_scrapy import task
+from utils import validation_helper
+from scrapers import tv
+from scrapers import imdb_data
 
 
 async def async_setup():
