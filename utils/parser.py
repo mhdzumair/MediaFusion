@@ -356,7 +356,7 @@ def calculate_max_similarity_ratio(
     torrent_title: str, title: str, aka_titles: list[str] | None = None
 ) -> int:
     # Check similarity with the main title
-    title_similarity_ratio = fuzz.ratio(torrent_title.lower(), title.lower())
+    title_similarity_ratio = fuzz.partial_ratio(torrent_title.lower(), title.lower())
 
     # Check similarity with aka titles
     aka_similarity_ratios = (

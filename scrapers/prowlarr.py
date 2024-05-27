@@ -639,7 +639,7 @@ async def parse_and_store_stream(
     )
 
     if catalog_type == "movie":
-        if max_similarity_ratio < 85 and parsed_data.get("year") != year:
+        if max_similarity_ratio < 75 and parsed_data.get("year") != year:
             logging.warning(
                 f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {max_similarity_ratio} or year mismatch: '{parsed_data.get('year')}' != '{year}'"
             )
