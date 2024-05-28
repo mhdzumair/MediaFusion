@@ -97,8 +97,8 @@ async def streaming_provider_endpoint(
         file_index=stream.file_index,
         user_ip=user_ip,
         episode=episode,
-        max_retries=5,
-        retry_interval=5,
+        max_retries=1,
+        retry_interval=0,
         stream=stream,
         torrent_name=stream.torrent_name,
     )
@@ -130,6 +130,8 @@ async def streaming_provider_endpoint(
         redirect_status_code = 307
 
     await release_redis_lock(lock)
+
+    logging.info("Redirecting to: %s", video_url)
 
     return RedirectResponse(
         url=video_url, headers=response.headers, status_code=redirect_status_code
