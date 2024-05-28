@@ -140,7 +140,7 @@ class UserData(BaseModel):
     enable_catalogs: bool = True
     max_size: int | str | float = math.inf
     max_streams_per_resolution: int = 3
-    show_full_torrent_name: bool = False
+    show_full_torrent_name: bool = True
     torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
     api_password: str | None = None
 
