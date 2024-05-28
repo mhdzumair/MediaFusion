@@ -4,12 +4,27 @@ from datetime import datetime
 import aiohttp
 import httpx
 from pikpakapi import PikPakApi, PikpakException
-from thefuzz import fuzz
 
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
+
+
+async def get_torrent_file_by_info_hash(
+    pikpak: PikPakApi, my_pack_folder_id: str, info_hash: str
+):
+    """Gets the folder_id of a folder with a given info_hash in the root directory."""
+    files_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
+    info_hash_file = next(
+        (
+            f
+            for f in files_list_content["files"]
+            if info_hash in f.get("params", {}).get("url", "")
+        ),
+        None,
+    )
+    return info_hash_file
 
 
 async def get_info_hash_folder_id(pikpak: PikPakApi, info_hash: str):
@@ -21,16 +36,15 @@ async def get_info_hash_folder_id(pikpak: PikPakApi, info_hash: str):
     return info_hash_file["id"] if info_hash_file else None
 
 
-async def check_torrent_status(
-    pikpak: PikPakApi, info_hash: str, torrent_name: str
-) -> dict | None:
+async def check_torrent_status(pikpak: PikPakApi, info_hash: str) -> dict | None:
     """Checks the status of a torrent with a given info_hash or torrent_name."""
     try:
         available_task = await pikpak.offline_list()
     except PikpakException:
         raise ProviderException("Invalid PikPak token", "invalid_token.mp4")
     for task in available_task["tasks"]:
-        if task["name"] == info_hash or task["name"] == torrent_name:
+        magnet_link = task.get("params", {}).get("url", "")
+        if info_hash in magnet_link:
             return task
 
 
@@ -50,12 +64,10 @@ async def create_folder(pikpak: PikPakApi, info_hash: str) -> str:
     return info_hash_folder_id
 
 
-async def add_magnet(
-    pikpak: PikPakApi, magnet_link: str, info_hash_folder_id: str
-) -> str:
+async def add_magnet(pikpak: PikPakApi, magnet_link: str):
     """Adds a magnet link to the PikPak account and returns the folder_id of the torrent."""
     try:
-        await pikpak.offline_download(magnet_link, parent_id=info_hash_folder_id)
+        await pikpak.offline_download(magnet_link)
     except PikpakException as e:
         match str(e):
             case "You have reached the limits of free usage today":
@@ -70,20 +82,18 @@ async def add_magnet(
                 raise ProviderException(
                     f"Failed to add magnet link to PikPak: {e}", "api_error.mp4"
                 )
-    return info_hash_folder_id
 
 
 async def wait_for_torrent_to_complete(
     pikpak: PikPakApi,
     info_hash: str,
-    torrent_name: str,
     max_retries: int,
     retry_interval: int,
 ):
     """Waits for a torrent with the given info_hash to complete downloading."""
     retries = 0
     while retries < max_retries:
-        torrent = await check_torrent_status(pikpak, info_hash, torrent_name)
+        torrent = await check_torrent_status(pikpak, info_hash)
         if torrent is None:
             return  # Torrent was already downloaded
         if torrent and torrent.get("progress") == "100":
@@ -106,14 +116,22 @@ async def get_files_from_folder(pikpak: PikPakApi, folder_id: str) -> list[dict]
 
 async def find_file_in_folder_tree(
     pikpak: PikPakApi,
-    folder_id: str,
+    my_pack_folder_id: str,
+    info_hash: str,
     filename: str,
     file_index: int,
     episode: int | None,
 ) -> dict | None:
-    files = await get_files_from_folder(pikpak, folder_id)
-    if not files:
+    torrent_file = await get_torrent_file_by_info_hash(
+        pikpak, my_pack_folder_id, info_hash
+    )
+    if not torrent_file:
         return None
+
+    if torrent_file["kind"] == "drive#file":
+        files = [torrent_file]
+    else:
+        files = await get_files_from_folder(pikpak, torrent_file["id"])
 
     file_index = select_file_index_from_torrent(
         {"files": files}, filename, file_index, episode
@@ -142,18 +160,16 @@ async def initialize_pikpak(user_data: UserData):
 async def handle_torrent_status(
     pikpak: PikPakApi,
     info_hash: str,
-    torrent_name: str,
     max_retries: int,
     retry_interval: int,
 ):
-    torrent = await check_torrent_status(pikpak, info_hash, torrent_name)
-    if torrent and torrent["phase"] == "PHASE_TYPE_ERROR":
-        await handle_torrent_error(pikpak, torrent)
+    torrent = await check_torrent_status(pikpak, info_hash)
+    if not torrent:
+        return
 
-    await wait_for_torrent_to_complete(
-        pikpak, info_hash, torrent_name, max_retries, retry_interval
-    )
-    return torrent
+    if torrent["phase"] == "PHASE_TYPE_ERROR":
+        await handle_torrent_error(pikpak, torrent)
+    await wait_for_torrent_to_complete(pikpak, info_hash, max_retries, retry_interval)
 
 
 async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
@@ -178,14 +194,20 @@ async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
             )
 
 
-async def get_or_create_folder(pikpak: PikPakApi, info_hash: str) -> str:
-    folder_id = await get_info_hash_folder_id(pikpak, info_hash)
-    return folder_id if folder_id else await create_folder(pikpak, info_hash)
+async def get_my_pack_folder_id(pikpak: PikPakApi) -> str:
+    """Gets the folder_id of the 'My Pack' folder in the PikPak account."""
+    files_list_content = await pikpak.file_list()
+    my_pack_folder = next(
+        (f for f in files_list_content["files"] if f["name"] == "My Pack"), None
+    )
+    if not my_pack_folder:
+        raise ProviderException("My Pack folder not found", "api_error.mp4")
+    return my_pack_folder["id"]
 
 
 async def retrieve_or_download_file(
     pikpak: PikPakApi,
-    folder_id: str,
+    my_pack_folder_id: str,
     filename: str,
     magnet_link: str,
     info_hash: str,
@@ -195,20 +217,20 @@ async def retrieve_or_download_file(
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        pikpak, folder_id, filename, stream.file_index, episode
+        pikpak, my_pack_folder_id, info_hash, filename, stream.file_index, episode
     )
     if not selected_file:
         await free_up_space(pikpak, stream.size)
-        await add_magnet(pikpak, magnet_link, folder_id)
+        await add_magnet(pikpak, magnet_link)
         await wait_for_torrent_to_complete(
-            pikpak, info_hash, stream.torrent_name, max_retries, retry_interval
+            pikpak, info_hash, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            pikpak, folder_id, filename, stream.file_index, episode
+            pikpak, my_pack_folder_id, info_hash, filename, stream.file_index, episode
         )
         if selected_file is None:
             raise ProviderException(
-                "No matching file available for this torrent", "no_matching_file.mp4"
+                "Torrent not downloaded yet.", "torrent_not_downloaded.mp4"
             )
     return selected_file
 
@@ -253,20 +275,18 @@ async def get_video_url_from_pikpak(
     stream: TorrentStreams,
     filename: str,
     episode: int | None,
-    max_retries=5,
-    retry_interval=5,
+    max_retries=1,
+    retry_interval=0,
     **kwargs,
 ) -> str:
     pikpak = await initialize_pikpak(user_data)
-    await handle_torrent_status(
-        pikpak, info_hash, stream.torrent_name, max_retries, retry_interval
-    )
+    await handle_torrent_status(pikpak, info_hash, max_retries, retry_interval)
 
-    folder_id = await get_or_create_folder(pikpak, info_hash)
+    my_pack_folder_id = await get_my_pack_folder_id(pikpak)
     selected_file = await retrieve_or_download_file(
         pikpak,
-        folder_id,
-        filename or stream.torrent_name,
+        my_pack_folder_id,
+        filename,
         magnet_link,
         info_hash,
         stream,
@@ -276,6 +296,10 @@ async def get_video_url_from_pikpak(
     )
 
     file_data = await pikpak.get_download_url(selected_file["id"])
+
+    if file_data.get("medias"):
+        return file_data["medias"][0]["link"]["url"]
+
     return file_data["web_content_link"]
 
 
@@ -290,7 +314,7 @@ async def update_pikpak_cache_status(
     tasks = await pikpak.offline_list(phase=["PHASE_TYPE_COMPLETE"])
     for stream in streams:
         stream.cached = any(
-            task["name"] == stream.torrent_name or task["name"] == stream.id
+            stream.id in task.get("params", {}).get("url", "")
             for task in tasks["tasks"]
         )
 
@@ -304,9 +328,16 @@ async def fetch_downloaded_info_hashes_from_pikpak(
     except ProviderException:
         return []
 
-    file_list_content = await pikpak.file_list()
+    my_pack_folder_id = await get_my_pack_folder_id(pikpak)
+    file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
+
+    def _parse_info_hash_from_magnet(magnet_link: str) -> str:
+        return magnet_link.split(":")[-1]
+
     return [
-        file["name"] for file in file_list_content["files"] if file["name"] != "My Pack"
+        _parse_info_hash_from_magnet(file.get("params", {}).get("url"))
+        for file in file_list_content["files"]
+        if file.get("params", {}).get("url", "").startswith("magnet:")
     ]
 
 
@@ -317,8 +348,7 @@ async def delete_all_torrents_from_pikpak(user_data: UserData, **kwargs):
     except ProviderException:
         return
 
-    file_list_content = await pikpak.file_list()
-    file_ids = [
-        file["id"] for file in file_list_content["files"] if file["name"] != "My Pack"
-    ]
+    my_pack_folder_id = await get_my_pack_folder_id(pikpak)
+    file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
+    file_ids = [file["id"] for file in file_list_content["files"]]
     await pikpak.delete_forever(file_ids)
