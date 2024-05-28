@@ -35,17 +35,7 @@ def get_video_url_from_torbox(
             return response["data"]
     else:
         # If torrent doesn't exist, add it
-        response = torbox_client.add_magnet_link(magnet_link)
-        # Response detail has "Found Cached Torrent. Using Cached Torrent." if it's a cached torrent,
-        # create download link from it directly in the same call.
-        if "Found Cached" in response.get("detail"):
-            torrent_info = torbox_client.get_available_torrent(info_hash)
-            file_id = select_file_id_from_torrent(torrent_info, filename, episode)
-            response = torbox_client.create_download_link(
-                torrent_info.get("id"),
-                file_id,
-            )
-            return response["data"]
+        torbox_client.add_magnet_link(magnet_link)
 
     # Do not wait for download completion, just let the user retry again.
     raise ProviderException(
