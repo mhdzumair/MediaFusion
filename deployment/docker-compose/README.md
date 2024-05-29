@@ -51,8 +51,8 @@ nano .env
 Copy-Item .env-sample .env
 
 # Generate and update SECRET_KEY in the .env file
-$secretKey = [System.Guid]::NewGuid().ToString()
-Add-Content -Path .env -Value "SECRET_KEY=$secretKey"
+$guid = [System.Guid]::NewGuid().ToString("N").Substring(0, 32)
+Add-Content -Path .env -Value "SECRET_KEY=$guid"
 
 # Update .env with your Premiumize credentials if available
 # You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
