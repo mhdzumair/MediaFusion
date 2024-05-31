@@ -156,7 +156,7 @@ async def store_and_parse_movie_stream_data(
             max_similarity_ratio = calculate_max_similarity_ratio(
                 parsed_data.get("title"), title, aka_titles
             )
-            if max_similarity_ratio < 75:
+            if max_similarity_ratio < 85:
                 logging.error(
                     f"Title mismatch: '{title}' != '{parsed_data.get('title')}' ratio: {max_similarity_ratio}"
                 )
@@ -222,7 +222,7 @@ async def store_and_parse_series_stream_data(
             max_similarity_ratio = calculate_max_similarity_ratio(
                 parsed_data.get("title"), title, aka_titles
             )
-            if max_similarity_ratio < 75:
+            if max_similarity_ratio < 85:
                 logging.error(
                     f"Title mismatch: '{title}' != '{parsed_data.get('title')}' ratio: {max_similarity_ratio}"
                 )

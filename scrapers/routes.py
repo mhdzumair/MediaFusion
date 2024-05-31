@@ -210,7 +210,7 @@ async def add_torrent(
         max_similarity_ratio = calculate_max_similarity_ratio(
             torrent_data.get("title"), movie_data.title, movie_data.aka_titles
         )
-        if max_similarity_ratio < 75:
+        if max_similarity_ratio < 85:
             raise_error(
                 f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
             )
@@ -236,7 +236,7 @@ async def add_torrent(
         max_similarity_ratio = calculate_max_similarity_ratio(
             torrent_data.get("title"), series_data.title, series_data.aka_titles
         )
-        if max_similarity_ratio < 75:
+        if max_similarity_ratio < 85:
             raise_error(
                 f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
             )
