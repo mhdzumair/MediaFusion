@@ -392,15 +392,21 @@ async def prowlarr_data_parser(
         "BitSearch",
         "BitRu",
         "iDope",
+        "RuTor",
+        "Internet Archive",
+        "52BT",
     ]:
         # For these indexers, the guid is a direct torrent file download link or magnet link
         download_url = meta_data.get("guid")
     else:
-        meta_data.update(
-            await torrent_info.get_torrent_info(
-                meta_data.get("infoUrl"), meta_data.get("indexer")
+        if not meta_data.get("magnetUrl") and not meta_data.get(
+            "downloadUrl", ""
+        ).startswith("magnet:"):
+            meta_data.update(
+                await torrent_info.get_torrent_info(
+                    meta_data.get("infoUrl"), meta_data.get("indexer")
+                )
             )
-        )
 
         download_url = meta_data.get("magnetUrl") or meta_data.get("downloadUrl")
 
