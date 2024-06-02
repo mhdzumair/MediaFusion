@@ -36,3 +36,4 @@ DELETE_ALL_META = schemas.Meta(
 DELETE_ALL_META_ITEM = {
     "meta": DELETE_ALL_META.model_dump(by_alias=True, exclude_none=True)
 }
+TRACKERS = get_json_data("resources/json/trackers.json")

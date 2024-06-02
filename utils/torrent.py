@@ -17,25 +17,12 @@ from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
 from torf import Magnet, MagnetError
 
+import utils.runtime_const
 from utils.parser import is_contain_18_plus_keywords
+from utils.runtime_const import TRACKERS
 
 # remove logging from demagnetize
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
-
-TRACKERS = [
-    "http://tracker3.itzmx.com:8080/announce",
-    "udp://9.rarbg.me:2710/announce",
-    "udp://9.rarbg.to:2710/announce",
-    "udp://exodus.desync.com:6969/announce",
-    "udp://ipv4.tracker.harry.lu:80/announce",
-    "udp://tracker.coppersurfer.tk:6969/announce",
-    "udp://tracker.internetwarriors.net:1337/announce",
-    "udp://tracker.leechers-paradise.org:6969/announce",
-    "udp://tracker.openbittorrent.com:80/announce",
-    "udp://tracker.opentrackr.org:1337/announce",
-    "udp://tracker.pomf.se:80/announce",
-    "udp://tracker.tiny-vps.com:6969/announce",
-]
 
 
 def extract_torrent_metadata(content: bytes, is_parse_ptn: bool = True) -> dict:
@@ -171,7 +158,6 @@ async def info_hashes_to_torrent_metadata(
 
 async def init_best_trackers():
     # get the best trackers from https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt
-    global TRACKERS
 
     try:
         async with httpx.AsyncClient() as client:
@@ -181,10 +167,12 @@ async def init_best_trackers():
             )
             if response.status_code == 200:
                 trackers = [tracker for tracker in response.text.split("\n") if tracker]
-                TRACKERS.extend(trackers)
-                TRACKERS = list(set(TRACKERS))
+                utils.runtime_const.TRACKERS.extend(trackers)
+                utils.runtime_const.TRACKERS = list(set(utils.runtime_const.TRACKERS))
 
-                logging.info(f"Loaded {len(trackers)} trackers. Total: {len(TRACKERS)}")
+                logging.info(
+                    f"Loaded {len(trackers)} trackers. Total: {len(utils.runtime_const.TRACKERS)}"
+                )
             else:
                 logging.error(f"Failed to load trackers: {response.status_code}")
     except httpx.ConnectTimeout as e:
