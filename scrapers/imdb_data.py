@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import dramatiq
-import requests
+from beanie import BulkWriter
+from curl_cffi import requests
 from imdb import Cinemagoer
 from imdb import IMDbDataAccessError, Movie
 
@@ -100,6 +101,7 @@ async def process_imdb_data(movie_ids):
     )
 
     # Update database entries with the new data
+    bulk_writer = BulkWriter()
     for movie_id, imdb_movie in zip(movie_ids, results):
         if not imdb_movie:
             logging.warning(f"Failed to fetch data for movie {movie_id}")
@@ -118,10 +120,13 @@ async def process_imdb_data(movie_ids):
                 "aka_titles": imdb_movie.get("aka_titles"),
                 "last_updated_at": now,
             }
-            await MediaFusionMetaData.get_motor_collection().update_one(
-                {"_id": movie_id}, {"$set": update_data}
+            await MediaFusionMetaData.find({"_id": movie_id}).update(
+                {"$set": update_data}, bulk_writer=bulk_writer
             )
-            logging.info(f"Updated metadata for movie {movie_id}")
+            logging.info(f"Updating metadata for movie {movie_id}")
+
+    logging.info(f"Committing {len(bulk_writer.operations)} updates to the database")
+    await bulk_writer.commit()
 
 
 @dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
