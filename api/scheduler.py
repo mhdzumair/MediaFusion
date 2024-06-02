@@ -5,6 +5,7 @@ from db.config import settings
 from mediafusion_scrapy.task import run_spider
 from utils.validation_helper import validate_tv_streams_in_db
 from scrapers.imdb_data import fetch_movie_ids_to_update
+from scrapers.trackers import update_torrent_seeders
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -185,3 +186,12 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.motogp_tgx_scheduler_crontab,
             },
         )
+
+    scheduler.add_job(
+        update_torrent_seeders.send,
+        CronTrigger.from_crontab(settings.update_seeders_crontab),
+        name="update_seeders",
+        kwargs={
+            "crontab_expression": settings.update_seeders_crontab,
+        },
+    )

@@ -6,12 +6,9 @@ from utils import torrent
 
 # import background actors
 # noqa: F401
-from scrapers import helpers
-from scrapers import prowlarr
 from mediafusion_scrapy import task
+from scrapers import tv, imdb_data, trackers, helpers, prowlarr
 from utils import validation_helper
-from scrapers import tv
-from scrapers import imdb_data
 
 
 async def async_setup():

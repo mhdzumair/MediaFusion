@@ -39,6 +39,7 @@ m3u-ipytv = "*"
 python-multipart = "*"
 prometheus-client = "*"
 curl-cffi = "*"
+pyasynctracker = "*"
 
 [dev-packages]
 pysocks = "*"
