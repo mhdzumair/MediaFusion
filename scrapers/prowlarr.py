@@ -194,7 +194,7 @@ async def scrape_movie_title_streams_from_prowlarr(
     url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
         "query": title,
-        "categories": [2000],  # Movies
+        "categories": [2000, 8000],  # Movies & Others (BitSearch only works with 8000)
         "type": "search",
     }
 
@@ -287,7 +287,7 @@ async def scrape_series_title_streams_from_prowlarr(
     url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
         "query": title,
-        "categories": [5000],  # TV
+        "categories": [5000, 8000],  # TV & Others (BitSearch only works with 8000)
         "type": "search",
     }
 
@@ -381,6 +381,12 @@ async def prowlarr_data_parser(
     if is_contain_18_plus_keywords(meta_data.get("title")):
         logging.warning(
             f"Skipping '{meta_data.get('title')}' due to adult content keyword in {video_id}"
+        )
+        return {}, False
+
+    if not validate_category_with_title(meta_data):
+        logging.warning(
+            f"Skipping '{meta_data.get('title')}' due to invalid video by category."
         )
         return {}, False
 
@@ -747,3 +753,15 @@ async def parse_and_store_series_stream_data(
         update_torrent_series_streams_metadata.send(info_hashes)
 
     return streams
+
+
+def validate_category_with_title(meta_data: dict) -> bool:
+    if meta_data.get("categories") and meta_data.get("categories")[0]["id"] == 8000:
+        # Extra caution with category 8000 (Others) as it may contain non-movie torrents
+        if not any(
+            keyword in meta_data.get("fileName", meta_data.get("title", "")).lower()
+            for keyword in [".mkv", ".mp4", ".avi", ".webm", ".mov", ".flv"]
+        ):
+            return False
+
+    return True
