@@ -200,3 +200,8 @@ def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
     except MagnetError:
         return "", []
     return magnet.infohash, magnet.tr
+
+
+def get_info_hash_from_magnet(magnet_link: str) -> str:
+    info_hash, _ = parse_magnet(magnet_link)
+    return info_hash
