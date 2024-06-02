@@ -1,0 +1,23 @@
+{
+  "onHealthIssue": false,
+  "supportsOnHealthIssue": false,
+  "includeHealthWarnings": false,
+  "name": "FlareSolverr",
+  "fields": [
+	{
+	  "name": "host",
+	  "value": "$FLARESOLVERR_HOST"
+	},
+	{
+	  "name": "requestTimeout",
+	  "value": 60
+	}
+  ],
+  "implementationName": "FlareSolverr",
+  "implementation": "FlareSolverr",
+  "configContract": "FlareSolverrSettings",
+  "infoLink": "https://wiki.servarr.com/prowlarr/supported#flaresolverr",
+  "tags": [
+	1
+  ]
+}

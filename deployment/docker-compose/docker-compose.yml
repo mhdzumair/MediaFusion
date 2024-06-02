@@ -57,8 +57,13 @@ services:
     ports:
       - "9696:9696"
     volumes:
-      - prowlar-config:/config
+      - prowlarr-config:/config
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    ports:
+      - "8191:8191"
 
 volumes:
   mongo-data:
-  prowlar-config:
+  prowlarr-config:

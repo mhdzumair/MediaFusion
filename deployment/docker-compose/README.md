@@ -78,29 +78,27 @@ mkcert "mediafusion.local"
 
 ## Prowlarr Configuration 🔄
 
-Configure Prowlarr manually to retrieve the API token and set up indexers.
+To configure Prowlarr, Run the script based on your OS:
+> [!WARNING]
+> This script will clean up the existing configuration in Prowlarr and add the new configuration.
 
-1. Start Prowlarr container:
-    ```bash
-    docker compose -f docker-compose.yml up prowlarr
-    ```
-2. Retrieve the Prowlarr API token from the settings page at [http://127.0.0.1:9696/settings/general](http://127.0.0.1:9696/settings/general) and update the `.env` file.
-3. Configure indexers like TheRARBG, Torlock, etc., through Prowlarr's UI. or alternatively, you can use the following command to add indexers:
-   ```bash
-   # Open a new terminal window and run the following commands
-   # Replace YOUR_PROWLARR_API_KEY with the API token obtained from Prowlarr  
-   export PROWLARR_API_KEY="YOUR_PROWLARR_API_KEY"  
-   until curl -o prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json; do
-     echo "Failed to download indexers file. Retrying...";
-     sleep 3;
-   done;
-   jq -c '.[]' prowlarr-indexers.json | while read indexer; do
-     echo "Adding indexer named: $(echo $indexer | jq -r '.name')";
-     curl -H "Content-Type: application/json" -H "X-API-KEY: $PROWLARR_API_KEY" -X POST http://localhost:9696/api/v1/indexer -d "$indexer";
-   done;
-   echo "Indexers setup complete.";
-   ```
-4. Stop the Prowlarr container by pressing `Ctrl+C` in the terminal window where it was started.
+### Linux/macOS
+
+```bash
+export FLARESOLVERR_HOST=http://flaresolverr:8191
+./setup-prowlarr.sh
+```
+
+### Windows
+
+```powershell
+$env:FLARESOLVERR_HOST = "http://flaresolverr:8191"
+.\setup-prowlarr.ps1
+```
+
+> [!TIP]
+> This script will setup Prowlarr API key to the `.env` file, Add tested Public trackers and flaresolverr configuration in Prowlarr. 
+> Additionally, You can also add or modify your own trackers and other configuration in Prowlarr by visiting the prowlarr web interface http://localhost:9696.
 
 ## Deployment 🚢
 
