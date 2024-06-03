@@ -661,7 +661,8 @@ async def parse_and_store_stream(
     if catalog_type == "movie":
         if max_similarity_ratio < 85 and parsed_data.get("year") != year:
             logging.warning(
-                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {max_similarity_ratio} or year mismatch: '{parsed_data.get('year')}' != '{year}'"
+                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' full title: '{parsed_data.get('torrent_name')}' "
+                f"ratio: {max_similarity_ratio} or year mismatch: '{parsed_data.get('year')}' != '{year}'"
             )
             return torrent_stream, torrent_needed_update
         torrent_stream, torrent_needed_update = await handle_movie_stream_store(
@@ -670,7 +671,7 @@ async def parse_and_store_stream(
     elif catalog_type == "series":
         if max_similarity_ratio < 85:
             logging.warning(
-                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {max_similarity_ratio}"
+                f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {max_similarity_ratio} full title: '{parsed_data.get('torrent_name')}'"
             )
             return torrent_stream, torrent_needed_update
 
