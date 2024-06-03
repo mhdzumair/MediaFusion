@@ -7,8 +7,7 @@ set -e
 handle_curl() {
   skip_on_failure=$1
   shift
-  response=$(curl -s -o response.txt -w "%{http_code}" "$@")
-  status_code=$?
+  status_code=$(curl -s -o response.txt -w "%{http_code}" "$@")
   if [ "$status_code" -ge 200 ] && [ "$status_code" -lt 300 ]; then
     rm -f response.txt
   else
@@ -30,10 +29,12 @@ retry_curl() {
   shift 2
   retries=0
   while true; do
-    curl -s -o "$output_file" -w "%{http_code}" "$url" "$@"
-    if [ $? -eq 0 ]; then
+    status_code=$(curl -s -o "$output_file" -w "%{http_code}" "$url" "$@")
+    if [ "$status_code" -ge 200 ] && [ "$status_code" -lt 300 ]; then
+      echo "Request successful"
       break
     fi
+    echo "Request failed with status code $status_code. Retrying in $((2**retries)) seconds..."
     sleep $((2**retries))
     retries=$((retries + 1))
   done
