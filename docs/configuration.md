@@ -43,6 +43,7 @@ This guide describes the environment variables available in MediaFusion for conf
 - **torrentio_search_interval_days** (default: `3`): How often Torrentio searches are initiated, in days.
 - **prowlarr_live_title_search** (default: `False`): Enable or disable live title search in Prowlarr. If False, search movie/series by title in background worker So that you won't get the result at first.
 - **prowlarr_background_title_search**: Enable or disable background title search in Prowlarr.
+- **prowlarr_search_query_timeout** (default: `120`): The timeout for Prowlarr search queries, in seconds.
 
 #### Content Filters
 

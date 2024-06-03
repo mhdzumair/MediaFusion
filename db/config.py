@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     parent_guide_certificates_filter_regex: str = r"X|XXX|TV-MA|18\+|18SX"
     prowlarr_live_title_search: bool = False
     prowlarr_background_title_search: bool = True
+    prowlarr_search_query_timeout: int = 120
 
     # Scheduler settings
     disable_all_scheduler: bool = False

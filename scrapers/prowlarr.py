@@ -170,7 +170,9 @@ async def scrap_movies_streams_from_prowlarr(
     }
 
     try:
-        imdb_search = await fetch_stream_data(url, params_imdb)
+        imdb_search = await fetch_stream_data(
+            url, params_imdb, timeout=settings.prowlarr_search_query_timeout
+        )
     except Exception as e:
         logging.warning(
             f"Failed to fetch API data from Prowlarr for {title} ({year}): {e}"
@@ -199,7 +201,9 @@ async def scrape_movie_title_streams_from_prowlarr(
     }
 
     try:
-        title_search_result = await fetch_stream_data(url, params_title)
+        title_search_result = await fetch_stream_data(
+            url, params_title, timeout=settings.prowlarr_search_query_timeout * 3
+        )
     except Exception as e:
         logging.warning(
             f"Failed to fetch API data from Prowlarr for {title} ({year}): {e}"
@@ -252,7 +256,9 @@ async def scrap_series_streams_from_prowlarr(
     }
 
     try:
-        imdb_search_result = await fetch_stream_data(url, params_imdb)
+        imdb_search_result = await fetch_stream_data(
+            url, params_imdb, timeout=settings.prowlarr_search_query_timeout
+        )
     except Exception as e:
         logging.warning(
             f"Failed to fetch API data from Prowlarr for {title} ({season}) ({episode}): {e}"
@@ -292,7 +298,9 @@ async def scrape_series_title_streams_from_prowlarr(
     }
 
     try:
-        title_search = await fetch_stream_data(url, params_title)
+        title_search = await fetch_stream_data(
+            url, params_title, timeout=settings.prowlarr_search_query_timeout * 3
+        )
     except Exception as e:
         logging.warning(
             f"Failed to fetch API data from Prowlarr for {title} ({season}) ({episode}): {e}"
