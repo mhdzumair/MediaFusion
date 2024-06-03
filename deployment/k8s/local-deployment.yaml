@@ -310,36 +310,35 @@ kind: Deployment
 metadata:
   name: flaresolverr-deployment
 spec:
-    replicas: 1
-    selector:
-        matchLabels:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flaresolverr
+  template:
+    metadata:
+      labels:
         app: flaresolverr
-    template:
-        metadata:
-        labels:
-            app: flaresolverr
-        spec:
-        containers:
-        - name: flaresolverr
-          image: ghcr.io/flaresolverr/flaresolverr:latest
-          ports:
-          - containerPort: 8191
-          resources:
+    spec:
+      containers:
+      - name: flaresolverr
+        image: ghcr.io/flaresolverr/flaresolverr:latest
+        ports:
+        - containerPort: 8191
+        resources:
           requests:
-              memory: "100Mi"
-              cpu: "100m"
+            memory: "100Mi"
+            cpu: "100m"
           limits:
-              memory: "200Mi"
-              cpu: "200m"
-          livenessProbe:
-            httpGet:
-                path: /health
-                port: 8191
-            initialDelaySeconds: 10
-            periodSeconds: 60
-            failureThreshold: 5
-            timeoutSeconds: 10
-          readinessProbe:
+            memory: "200Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8191
+          initialDelaySeconds: 10
+          periodSeconds: 60
+          failureThreshold: 5
+          timeoutSeconds: 10
 
 ---
 
@@ -431,12 +430,12 @@ kind: Service
 metadata:
   name: flaresolverr-service
 spec:
-    selector:
-        app: flaresolverr
-    ports:
-      - protocol: TCP
-        port: 8191
-        targetPort: 8191
+  selector:
+    app: flaresolverr
+  ports:
+    - protocol: TCP
+      port: 8191
+      targetPort: 8191
 
 ---
 
