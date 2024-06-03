@@ -4,13 +4,16 @@ import re
 
 import dramatiq
 import redis
+from beanie import BulkWriter
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
 
 from db import schemas, crud
 from db.config import settings
+from db.models import TVStreams
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
+from utils.validation_helper import validate_m3u8_url
 
 
 @dramatiq.actor(priority=3, time_limit=5 * 60 * 1000, max_retries=3)
@@ -100,3 +103,48 @@ def parse_m3u_playlist(
 
     if batch:
         add_tv_metadata.send(batch)
+
+
+@dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
+async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
+    """Validate TV streams in the database."""
+    offset = page * page_size
+    tv_streams = await TVStreams.all().skip(offset).limit(page_size).to_list()
+
+    if not tv_streams:
+        logging.info(f"No TV streams to validate on page {page}")
+        return
+
+    async def validate_and_update_tv_stream(stream, bulk_writer):
+        is_valid = await validate_m3u8_url(stream.url, stream.behaviorHints or {})
+        logging.info(f"Stream: {stream.name}, Status: {is_valid}")
+        if is_valid:
+            stream.is_working = is_valid
+            stream.test_failure_count = 0
+            await stream.replace(bulk_writer=bulk_writer)
+            return
+
+        stream.test_failure_count += 1
+        if stream.test_failure_count >= 3:
+            await stream.delete(bulk_writer=bulk_writer)
+            logging.error(f"{stream.name} has failed 3 times and deleting it.")
+            return
+
+        stream.is_working = is_valid
+        await stream.replace(bulk_writer=bulk_writer)
+        logging.error(f"Stream failed validation: {stream.name}")
+
+    bulk_writer = BulkWriter()
+    tasks = [
+        asyncio.create_task(validate_and_update_tv_stream(stream, bulk_writer))
+        for stream in tv_streams
+    ]
+    await asyncio.gather(*tasks)
+
+    logging.info(f"Committing {len(bulk_writer.operations)} updates to the database")
+    await bulk_writer.commit()
+
+    # Schedule the next batch in 2 minutes
+    validate_tv_streams_in_db.send_with_options(
+        args=(page + 1, page_size), delay=2 * 6000
+    )

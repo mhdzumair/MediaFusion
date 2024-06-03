@@ -4,7 +4,6 @@ import logging
 from urllib.parse import urlparse
 
 import aiohttp
-import dramatiq
 from aiohttp import ClientError
 from redis.asyncio import Redis
 
@@ -159,25 +158,6 @@ def is_video_file(filename: str) -> bool:
             ".yuv",
         )
     )
-
-
-@dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
-async def validate_tv_streams_in_db(*args, **kwargs):
-    """Validate TV streams in the database."""
-    from db.models import TVStreams
-
-    async def validate_and_update_tv_stream(stream):
-        is_valid, _ = await validate_m3u8_url(stream.url, stream.behaviorHints or {})
-        stream.is_working = is_valid
-        await stream.save()
-        logging.info(f"Stream: {stream.name}, Status: {is_valid}")
-
-    tv_streams = await TVStreams.all().to_list()
-    tasks = [
-        asyncio.create_task(validate_and_update_tv_stream(stream))
-        for stream in tv_streams
-    ]
-    await asyncio.gather(*tasks)
 
 
 def validate_parent_guide_nudity(metadata) -> bool:

@@ -76,6 +76,7 @@ class TVStreams(Document):
     meta_id: Optional[str] = None
     country: str | None = None
     is_working: Optional[bool] = True
+    test_failure_count: int = 0
 
 
 class MediaFusionMetaData(Document):

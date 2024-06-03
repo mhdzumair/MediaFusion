@@ -3,7 +3,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
-from utils.validation_helper import validate_tv_streams_in_db
+from scrapers.tv import validate_tv_streams_in_db
 from scrapers.imdb_data import fetch_movie_ids_to_update
 from scrapers.trackers import update_torrent_seeders
 
