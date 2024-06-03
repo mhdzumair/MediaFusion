@@ -326,10 +326,10 @@ spec:
         - containerPort: 8191
         resources:
           requests:
-            memory: "100Mi"
+            memory: "200Mi"
             cpu: "100m"
           limits:
-            memory: "200Mi"
+            memory: "500Mi"
             cpu: "200m"
         livenessProbe:
           httpGet:
@@ -338,6 +338,13 @@ spec:
           initialDelaySeconds: 10
           periodSeconds: 60
           failureThreshold: 5
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8191
+          initialDelaySeconds: 30
+          periodSeconds: 5
           timeoutSeconds: 10
 
 ---
