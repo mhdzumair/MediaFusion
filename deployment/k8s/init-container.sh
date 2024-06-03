@@ -20,3 +20,5 @@ until curl -s -o /dev/null -w "%{http_code}" "$FLARESOLVERR_HOST/health" | grep 
   echo "FlareSolverr is not ready. Retrying..."
   sleep 5
 done
+
+echo "Everything is ready. Exiting init container."

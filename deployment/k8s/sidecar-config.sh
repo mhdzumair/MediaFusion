@@ -20,6 +20,20 @@ handle_curl() {
   fi
 }
 
+# Function to retry curl requests until success with exponential backoff
+retry_curl() {
+  shift
+  retries=0
+  while true; do
+    handle_curl true "$@"
+    if [[ $? -eq 0 ]]; then
+      break
+    fi
+    sleep $((2**retries))
+    retries=$((retries + 1))
+  done
+}
+
 # Wait for Prowlarr to be ready
 echo "Waiting for Prowlarr to be ready..."
 until curl -s -o /dev/null -w "%{http_code}" -H "X-API-KEY: $PROWLARR_API_KEY" http://localhost:9696/api/v1/health | grep -q '^2'; do
@@ -30,13 +44,13 @@ done
 handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://localhost:9696/api/v1/tag'
 
 # Create FlareSolverr proxy using the JSON file
-handle_curl false -o /config/prowlarr_indexer_proxy.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr_indexer_proxy.json
+retry_curl -o /config/flaresolverr_proxy.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/flaresolverr_proxy.json
 PROXY_DATA=$(cat /config/prowlarr_indexer_proxy.json)
 PROXY_DATA=$(echo "$PROXY_DATA" | sed "s#\\\$FLARESOLVERR_HOST#$FLARESOLVERR_HOST#g")
 handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://localhost:9696/api/v1/indexerProxy?'
 
 # Configure indexers using the JSON file
-handle_curl false -o /config/prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json
+retry_curl -o /config/prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json
 INDEXERS=$(jq -c '.[]' /config/prowlarr-indexers.json)
 echo "$INDEXERS" | while read -r indexer; do
   indexer_name=$(echo "$indexer" | jq -r '.name')
