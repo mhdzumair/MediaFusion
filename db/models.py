@@ -66,6 +66,7 @@ class TorrentStreams(Document):
 
 
 class TVStreams(Document):
+    meta_id: str
     name: str
     url: str | None = None
     ytId: str | None = None
@@ -73,10 +74,10 @@ class TVStreams(Document):
     source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
-    meta_id: Optional[str] = None
     country: str | None = None
     is_working: Optional[bool] = True
     test_failure_count: int = 0
+    namespace: str = "mediafusion"
 
 
 class MediaFusionMetaData(Document):

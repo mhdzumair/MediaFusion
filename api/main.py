@@ -32,7 +32,7 @@ from utils.lock import (
     maintain_heartbeat,
     release_scheduler_lock,
 )
-from utils.network import get_user_public_ip
+from utils.network import get_user_public_ip, get_request_namespace
 from utils.parser import generate_manifest
 from utils.runtime_const import TEMPLATES, DELETE_ALL_META, DELETE_ALL_META_ITEM
 
@@ -278,7 +278,11 @@ async def get_catalog(
 
     metas = schemas.Metas()
     if catalog_type == "tv":
-        metas.metas.extend(await crud.get_tv_meta_list(genre, skip))
+        metas.metas.extend(
+            await crud.get_tv_meta_list(
+                namespace=get_request_namespace(request), genre=genre, skip=skip
+            )
+        )
     elif catalog_type == "events":
         metas.metas.extend(
             await crud.get_events_meta_list(request.app.state.redis, genre, skip)
@@ -335,7 +339,7 @@ async def get_catalog(
 )
 @wrappers.auth_required
 async def search_meta(
-    response: Response,
+    request: Request,
     catalog_type: Literal["movie", "series", "tv"],
     catalog_id: Literal[
         "mediafusion_search_movies",
@@ -348,7 +352,9 @@ async def search_meta(
     logging.debug("search for catalog_id: %s", catalog_id)
 
     if catalog_type == "tv":
-        return await crud.process_tv_search_query(search_query)
+        return await crud.process_tv_search_query(
+            search_query, namespace=get_request_namespace(request)
+        )
 
     return await crud.process_search_query(search_query, catalog_type, user_data)
 
@@ -504,7 +510,9 @@ async def get_streams(
         response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
-        fetched_streams = await crud.get_tv_streams(request.app.state.redis, video_id)
+        fetched_streams = await crud.get_tv_streams(
+            request.app.state.redis, video_id, namespace=get_request_namespace(request)
+        )
 
     return {"streams": fetched_streams}
 

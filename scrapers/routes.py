@@ -21,6 +21,7 @@ from scrapers import imdb_data
 from scrapers.prowlarr import handle_series_stream_store, handle_movie_stream_store
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
+from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio
 from utils.runtime_const import TEMPLATES
 
@@ -84,9 +85,11 @@ async def run_scraper_task(task: schemas.ScraperTask):
 
 
 @router.post("/add_tv_metadata", tags=["scraper"])
-async def add_tv_meta_data(data: schemas.TVMetaDataUpload):
+async def add_tv_meta_data(data: schemas.TVMetaDataUpload, request: Request):
     validate_api_password(data.api_password)
-    add_tv_metadata.send([data.tv_metadata.model_dump()])
+    add_tv_metadata.send(
+        [data.tv_metadata.model_dump()], namespace=get_request_namespace(request)
+    )
     return {"status": "TV metadata task has been scheduled."}
 
 
@@ -107,10 +110,18 @@ async def upload_m3u_playlist(
         content = await m3u_playlist_file.read()
         redis_key = f"m3u_playlist_{uuid4().hex[:10]}"
         await request.app.state.redis.set(redis_key, content)
-        parse_m3u_playlist.send(m3u_playlist_source, playlist_redis_key=redis_key)
+        parse_m3u_playlist.send(
+            namespace=get_request_namespace(request),
+            playlist_source=m3u_playlist_source,
+            playlist_redis_key=redis_key,
+        )
     elif m3u_playlist_url:
         # Process URL submission...
-        parse_m3u_playlist.send(m3u_playlist_source, playlist_url=m3u_playlist_url)
+        parse_m3u_playlist.send(
+            namespace=get_request_namespace(request),
+            playlist_source=m3u_playlist_source,
+            playlist_url=m3u_playlist_url,
+        )
     else:
         raise_error("Either M3U playlist URL or file must be provided.")
 

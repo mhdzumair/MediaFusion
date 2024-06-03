@@ -163,3 +163,21 @@ def get_user_public_ip(request: Request):
         # Use host public IP address.
         return None
     return user_ip
+
+
+def get_request_namespace(request: Request) -> str:
+    """
+    Extract the namespace from the request URL.
+    """
+    host = request.url.hostname
+    if "elfhosted.com" not in host:
+        return "mediafusion"
+
+    subdomain = host.split(".")[0]
+    parts = subdomain.rsplit("-mediafusion")
+    if len(parts) == 1:
+        # public namespace
+        return "mediafusion"
+
+    namespace = f"tenant-{parts[0]}"
+    return namespace

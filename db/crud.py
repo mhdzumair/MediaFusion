@@ -115,30 +115,43 @@ async def get_meta_list(
 
 
 async def get_tv_meta_list(
-    genre: Optional[str] = None, skip: int = 0, limit: int = 25
+    namespace: str, genre: Optional[str] = None, skip: int = 0, limit: int = 25
 ) -> list[schemas.Meta]:
-    if genre:
-        query = MediaFusionTVMetaData.find(
-            In(MediaFusionTVMetaData.genres, [genre]),
-            MediaFusionMovieMetaData.streams.is_working == True,
-            fetch_links=True,
-        )
-    else:
-        query = MediaFusionTVMetaData.find(
-            MediaFusionMovieMetaData.streams.is_working == True,
-            fetch_links=True,
-        )
+    # Define query filters for TVStreams
+    query_filters = {
+        "is_working": True,
+        "namespace": {"$in": [namespace, "mediafusion", None]},
+    }
 
-    tv_meta_list = (
-        await query.skip(skip)
-        .limit(limit)
-        .sort(-MediaFusionTVMetaData.streams.created_at)
-        .project(schemas.Meta)
-        .to_list()
-    )
+    poster_path = f"{settings.poster_host_url}/poster/tv/"
 
-    for meta in tv_meta_list:
-        meta.poster = f"{settings.poster_host_url}/poster/tv/{meta.id}.jpg"
+    # Define the pipeline for aggregation
+    pipeline = [
+        {"$match": query_filters},
+        {"$group": {"_id": "$meta_id", "created_at": {"$max": "$created_at"}}},
+        {"$sort": {"created_at": -1}},
+        {
+            "$lookup": {
+                "from": MediaFusionTVMetaData.get_collection_name(),
+                "localField": "_id",
+                "foreignField": "_id",
+                "pipeline": [
+                    {"$match": {**({"genres": {"$in": [genre]}} if genre else {})}},
+                ],
+                "as": "meta_data",
+            }
+        },
+        {"$unwind": "$meta_data"},  # Flatten the results of the lookup
+        {"$replaceRoot": {"newRoot": "$meta_data"}},  # Flatten the structure
+        {"$skip": skip},  # Pagination with skip and limit
+        {"$limit": limit},
+        {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
+    ]
+
+    # Execute the aggregation pipeline
+    tv_meta_list = await TVStreams.aggregate(
+        pipeline, projection_model=schemas.Meta
+    ).to_list()
 
     return tv_meta_list
 
@@ -389,9 +402,13 @@ async def get_series_streams(
     )
 
 
-async def get_tv_streams(redis: Redis, video_id: str) -> list[Stream]:
+async def get_tv_streams(redis: Redis, video_id: str, namespace: str) -> list[Stream]:
     tv_streams = await TVStreams.find(
-        {"meta_id": video_id, "is_working": True}
+        {
+            "meta_id": video_id,
+            "is_working": True,
+            "namespace": {"$in": [namespace, "mediafusion", None]},
+        },
     ).to_list()
 
     return await parse_tv_stream_data(tv_streams, redis)
@@ -687,7 +704,7 @@ async def process_search_query(
     return {"metas": search_results}
 
 
-async def process_tv_search_query(search_query: str) -> dict:
+async def process_tv_search_query(search_query: str, namespace: str) -> dict:
     pipeline = [
         {
             "$match": {
@@ -702,7 +719,12 @@ async def process_tv_search_query(search_query: str) -> dict:
                 "localField": "_id",
                 "foreignField": "meta_id",
                 "pipeline": [
-                    {"$match": {"is_working": True}},  # Filter for working streams
+                    {
+                        "$match": {
+                            "is_working": True,
+                            "namespace": {"$in": [namespace, "mediafusion", None]},
+                        }
+                    },
                     {"$count": "num_working_streams"},
                 ],
                 "as": "working_stream_count",

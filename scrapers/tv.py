@@ -16,8 +16,10 @@ from utils.parser import is_contain_18_plus_keywords
 from utils.validation_helper import validate_m3u8_url
 
 
-@dramatiq.actor(priority=3, time_limit=5 * 60 * 1000, max_retries=3)
-async def add_tv_metadata(batch):
+@dramatiq.actor(
+    priority=3, time_limit=5 * 60 * 1000, max_retries=3, queue_name="scrapy"
+)
+async def add_tv_metadata(batch, namespace: str):
     for metadata_json in batch:
         metadata = schemas.TVMetaData.model_validate(metadata_json)
         if is_contain_18_plus_keywords(metadata.title) or any(
@@ -33,13 +35,17 @@ async def add_tv_metadata(batch):
             logging.error(f"Error validating TV metadata: {metadata.title}, {e}")
             return
 
+        metadata.namespace = namespace
         channel_id = await crud.save_tv_channel_metadata(metadata)
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
 
 
-@dramatiq.actor(priority=2, time_limit=15 * 60 * 1000)
+@dramatiq.actor(priority=2, time_limit=15 * 60 * 1000, queue_name="scrapy")
 def parse_m3u_playlist(
-    playlist_source: str, playlist_url: str = None, playlist_redis_key: str = None
+    namespace: str,
+    playlist_source: str,
+    playlist_url: str = None,
+    playlist_redis_key: str = None,
 ):
     logging.info(f"Parsing M3U playlist: {playlist_url}")
     if playlist_redis_key:
@@ -98,11 +104,11 @@ def parse_m3u_playlist(
         batch.append(metadata.model_dump())
 
         if len(batch) >= batch_size:
-            add_tv_metadata.send(batch)
+            add_tv_metadata.send(batch=batch, namespace=namespace)
             batch = []
 
     if batch:
-        add_tv_metadata.send(batch)
+        add_tv_metadata.send(batch=batch, namespace=namespace)
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
