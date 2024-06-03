@@ -8,13 +8,16 @@ handle_curl() {
   skip_on_failure=$1
   shift
   response=$(curl -s -o response.txt -w "%{http_code}" "$@")
-  if [[ $response -ge 200 && $response -lt 300 ]]; then
-    rm response.txt
+  status_code=$?
+  if [ "$status_code" -ge 200 ] && [ "$status_code" -lt 300 ]; then
+    rm -f response.txt
   else
-    echo "Request failed with status code $response"
-    cat response.txt
-    rm response.txt
-    if [[ "$skip_on_failure" != "true" ]]; then
+    echo "Request failed with status code $status_code"
+    if [ -f response.txt ]; then
+      cat response.txt
+      rm -f response.txt
+    fi
+    if [ "$skip_on_failure" != "true" ]; then
       exit 1
     fi
   fi
@@ -22,11 +25,13 @@ handle_curl() {
 
 # Function to retry curl requests until success with exponential backoff
 retry_curl() {
-  shift
+  url=$1
+  output_file=$2
+  shift 2
   retries=0
   while true; do
-    handle_curl true "$@"
-    if [[ $? -eq 0 ]]; then
+    curl -s -o "$output_file" -w "%{http_code}" "$url" "$@"
+    if [ $? -eq 0 ]; then
       break
     fi
     sleep $((2**retries))
@@ -44,13 +49,13 @@ done
 handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://localhost:9696/api/v1/tag'
 
 # Create FlareSolverr proxy using the JSON file
-retry_curl -o /config/flaresolverr_proxy.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/flaresolverr_proxy.json
-PROXY_DATA=$(cat /config/prowlarr_indexer_proxy.json)
+retry_curl https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/flaresolverr_proxy.json /config/flaresolverr_proxy.json
+PROXY_DATA=$(cat /config/flaresolverr_proxy.json)
 PROXY_DATA=$(echo "$PROXY_DATA" | sed "s#\\\$FLARESOLVERR_HOST#$FLARESOLVERR_HOST#g")
 handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://localhost:9696/api/v1/indexerProxy?'
 
 # Configure indexers using the JSON file
-retry_curl -o /config/prowlarr-indexers.json https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json
+retry_curl https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/prowlarr-indexers.json /config/prowlarr-indexers.json
 INDEXERS=$(jq -c '.[]' /config/prowlarr-indexers.json)
 echo "$INDEXERS" | while read -r indexer; do
   indexer_name=$(echo "$indexer" | jq -r '.name')
