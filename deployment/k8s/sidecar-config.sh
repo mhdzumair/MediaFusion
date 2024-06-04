@@ -73,3 +73,5 @@ echo "$INDEXERS" | while read -r indexer; do
 done
 
 echo "Indexers setup complete."
+# End of script. sleep indefinitely
+sleep infinity
