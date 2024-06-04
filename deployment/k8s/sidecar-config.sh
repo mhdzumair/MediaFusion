@@ -41,7 +41,7 @@ retry_curl() {
 }
 
 # Wait for Prowlarr to be ready
-echo "Waiting for Prowlarr to be ready..."
+echo "Waiting for Prowlarr to be ready ..."
 until [ "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-KEY: $PROWLARR_API_KEY" http://localhost:9696/api/v1/health)" -eq 200 ]; do
   echo "Prowlarr is not ready yet. Retrying in 5 seconds..."
   sleep 5
