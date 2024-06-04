@@ -7,14 +7,14 @@ set -e
 handle_curl() {
   skip_on_failure=$1
   shift
-  status_code=$(curl -s -o response.txt -w "%{http_code}" "$@")
+  status_code=$(curl -s -o /config/response.txt -w "%{http_code}" "$@")
   if [ "$status_code" -ge 200 ] && [ "$status_code" -lt 300 ]; then
-    rm -f response.txt
+    rm -f /config/response.txt
   else
     echo "Request failed with status code $status_code"
-    if [ -f response.txt ]; then
-      cat response.txt
-      rm -f response.txt
+    if [ -f /config/response.txt ]; then
+      cat /config/response.txt
+      rm -f /config/response.txt
     fi
     if [ "$skip_on_failure" != "true" ]; then
       exit 1
