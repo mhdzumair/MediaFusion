@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import uuid4
 
 from beanie.exceptions import RevisionIdWasChanged
-from beanie.operators import In, Set
+from beanie.operators import Set
 from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 
@@ -435,61 +435,185 @@ async def get_movie_meta(meta_id: str, redis: Redis):
 
 
 async def get_series_meta(meta_id: str):
-    series_data = await get_series_data_by_id(meta_id, True)
-
-    if not (series_data and validate_parent_guide_nudity(series_data)):
-        return {}
-
-    metadata = {
-        "meta": {
-            "_id": meta_id,
-            "type": "series",
-            "title": series_data.title,
-            "poster": f"{settings.poster_host_url}/poster/series/{meta_id}.jpg",
-            "background": series_data.background or series_data.poster,
-            "videos": [],
-        }
-    }
-
-    # Loop through streams to populate the videos list
-    for stream in series_data.streams:
-        stream: TorrentStreams
-        if stream.season:  # Ensure the stream has season data
-            for episode in stream.season.episodes:
-                stream_id = (
-                    f"{meta_id}:{stream.season.season_number}:{episode.episode_number}"
-                )
-                # check if the stream is already in the list
-                if next(
-                    (
-                        video
-                        for video in metadata["meta"]["videos"]
-                        if video["id"] == stream_id
-                    ),
-                    None,
-                ):
-                    continue
-
-                released_date = episode.released or stream.created_at
-
-                metadata["meta"]["videos"].append(
-                    {
-                        "id": stream_id,
-                        "title": f"S{stream.season.season_number} EP{episode.episode_number}"
-                        if not episode.title
-                        else episode.title,
-                        "season": stream.season.season_number,
-                        "episode": episode.episode_number,
-                        "released": released_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+    # Define the aggregation pipeline
+    pipeline = [
+        {
+            "$match": {
+                "_id": meta_id,
+                "$or": [
+                    {  # If nudity status exists and matches regex, filter it out
+                        "parent_guide_nudity_status": {
+                            "$not": {
+                                "$regex": settings.parent_guide_nudity_filter_types_regex,
+                                "$options": "i",
+                            }
+                        }
+                    },
+                    {  # Check certificates only if nudity status is null
+                        "parent_guide_nudity_status": {"$eq": None},
+                        "parent_guide_certificates": {
+                            "$not": {
+                                "$elemMatch": {
+                                    "$regex": settings.parent_guide_certificates_filter_regex,
+                                    "$options": "i",
+                                }
+                            }
+                        },
+                    },
+                ],
+            }
+        },
+        {
+            "$lookup": {
+                "from": "TorrentStreams",
+                "localField": "_id",
+                "foreignField": "meta_id",
+                "as": "streams",
+            }
+        },
+        {"$unwind": "$streams"},
+        {
+            "$group": {
+                "_id": "$_id",
+                "series_title": {"$first": "$title"},  # Store series title separately
+                "poster": {"$first": "$poster"},
+                "background": {"$first": "$background"},
+                "streams": {"$push": "$streams"},
+            }
+        },
+        {
+            "$addFields": {
+                "videos": {
+                    "$reduce": {
+                        "input": "$streams",
+                        "initialValue": [],
+                        "in": {
+                            "$concatArrays": [
+                                "$$value",
+                                {
+                                    "$map": {
+                                        "input": {
+                                            "$filter": {
+                                                "input": "$$this.season.episodes",
+                                                "as": "episode",
+                                                "cond": {"$ne": ["$$episode", None]},
+                                            }
+                                        },
+                                        "as": "episode",
+                                        "in": {
+                                            "id": {
+                                                "$concat": [
+                                                    {"$toString": "$_id"},
+                                                    ":",
+                                                    {
+                                                        "$toString": "$$this.season.season_number"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "$toString": "$$episode.episode_number"
+                                                    },
+                                                ]
+                                            },
+                                            "title": {
+                                                "$ifNull": [
+                                                    "$$episode.title",
+                                                    {
+                                                        "$concat": [
+                                                            "S",
+                                                            {
+                                                                "$toString": "$$this.season.season_number"
+                                                            },
+                                                            " EP",
+                                                            {
+                                                                "$toString": "$$episode.episode_number"
+                                                            },
+                                                        ]
+                                                    },
+                                                ]
+                                            },
+                                            "season": "$$this.season.season_number",
+                                            "episode": "$$episode.episode_number",
+                                            "released": {
+                                                "$dateToString": {
+                                                    "format": "%Y-%m-%dT%H:%M:%S.000Z",
+                                                    "date": {
+                                                        "$ifNull": [
+                                                            "$$episode.released",
+                                                            "$$this.created_at",
+                                                        ]
+                                                    },
+                                                }
+                                            },
+                                        },
+                                    }
+                                },
+                            ]
+                        },
                     }
-                )
+                }
+            }
+        },
+        {"$unwind": "$videos"},
+        {
+            "$group": {
+                "_id": {
+                    "id": "$videos.id",
+                    "meta_id": "$_id",
+                    "series_title": "$series_title",  # Store series title
+                    "poster": "$poster",
+                    "background": "$background",
+                },
+                "video": {"$first": "$videos"},
+            }
+        },
+        {
+            "$replaceRoot": {
+                "newRoot": {
+                    "id": "$_id.id",
+                    "meta_id": "$_id.meta_id",
+                    "series_title": "$_id.series_title",
+                    "poster": "$_id.poster",
+                    "background": "$_id.background",
+                    "video": "$video",
+                }
+            }
+        },
+        {"$sort": {"id": 1}},
+        {
+            "$group": {
+                "_id": "$meta_id",
+                "title": {"$first": "$series_title"},
+                "poster": {"$first": "$poster"},
+                "background": {"$first": "$background"},
+                "videos": {"$push": "$video"},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "meta": {
+                    "_id": "$_id",
+                    "type": {"$literal": "series"},
+                    "title": "$title",
+                    "poster": {
+                        "$concat": [
+                            settings.poster_host_url,
+                            "/poster/series/",
+                            {"$toString": "$_id"},
+                            ".jpg",
+                        ]
+                    },
+                    "background": {"$ifNull": ["$background", "$poster"]},
+                    "videos": "$videos",
+                },
+            }
+        },
+    ]
 
-    # Sort the videos by season and episode
-    metadata["meta"]["videos"] = sorted(
-        metadata["meta"]["videos"], key=lambda x: (x["season"], x["episode"])
-    )
+    # Execute the aggregation pipeline
+    series_data = await MediaFusionSeriesMetaData.aggregate(pipeline).to_list()
 
-    return metadata
+    return series_data[0] if series_data else {}
 
 
 async def get_tv_meta(meta_id: str):
