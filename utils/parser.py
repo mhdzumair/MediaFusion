@@ -12,7 +12,7 @@ from db.schemas import Stream, UserData
 from streaming_providers import mapper
 from utils import const
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
-from utils.runtime_const import ADULT_CONTENT_KEYWORDS
+from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS
 from utils.validation_helper import validate_m3u8_url_with_cache
 
 
@@ -192,7 +192,10 @@ async def parse_stream_data(
             stream_details.pop("infoHash", None)
             stream_details.pop("fileIdx", None)
         else:
-            sources = [f"tracker:{tracker}" for tracker in stream_data.announce_list]
+            sources = [
+                f"tracker:{tracker}"
+                for tracker in stream_data.announce_list or TRACKERS
+            ]
             sources.append(f"dht:{stream_data.id}")
             stream_details["sources"] = sources
 
