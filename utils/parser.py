@@ -117,6 +117,13 @@ async def parse_stream_data(
     for stream_data in streams:
         episode_data = stream_data.get_episode(season, episode)
 
+        if episode_data:
+            file_name = episode_data.filename
+            file_index = episode_data.file_index
+        else:
+            file_name = stream_data.filename
+            file_index = stream_data.file_index
+
         if show_full_torrent_name:
             torrent_name = (
                 f"{stream_data.torrent_name}/{episode_data.title}"
@@ -141,8 +148,10 @@ async def parse_stream_data(
             f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
         )
         if episode_data and episode_data.size:
+            file_size = episode_data.size
             size_info = f"{convert_bytes_to_readable(episode_data.size)} / {convert_bytes_to_readable(stream_data.size)}"
         else:
+            file_size = stream_data.size
             size_info = convert_bytes_to_readable(stream_data.size)
 
         languages = (
@@ -165,11 +174,11 @@ async def parse_stream_data(
             "name": f"{settings.addon_name} {streaming_provider_name} {resolution} {streaming_provider_status}",
             "description": description,
             "infoHash": stream_data.id,
-            "fileIdx": episode_data.file_index
-            if episode_data
-            else stream_data.file_index,
+            "fileIdx": file_index,
             "behaviorHints": {
                 "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
+                "filename": file_name,
+                "videoSize": file_size,
             },
         }
 

@@ -64,6 +64,8 @@ class StreamBehaviorHints(BaseModel):
     notWebReady: Optional[bool] = None
     bingeGroup: Optional[str] = None
     proxyHeaders: Optional[dict[Literal["request", "response"], dict]] = None
+    filename: Optional[str] = None
+    videoSize: Optional[int] = None
 
 
 class Stream(BaseModel):
