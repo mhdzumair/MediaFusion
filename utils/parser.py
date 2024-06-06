@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import math
 import re
 
@@ -41,10 +42,15 @@ async def filter_and_sort_streams(
         )
         kwargs = dict(streams=filtered_streams, user_data=user_data, user_ip=user_ip)
         if cache_update_function:
-            if asyncio.iscoroutinefunction(cache_update_function):
-                await cache_update_function(**kwargs)
-            else:
-                await asyncio.to_thread(cache_update_function, **kwargs)
+            try:
+                if asyncio.iscoroutinefunction(cache_update_function):
+                    await cache_update_function(**kwargs)
+                else:
+                    await asyncio.to_thread(cache_update_function, **kwargs)
+            except Exception as error:
+                logging.error(
+                    f"Failed to update cache status for {user_data.streaming_provider.service}: {error}"
+                )
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream):
@@ -264,16 +270,22 @@ async def fetch_downloaded_info_hashes(
     if fetch_downloaded_info_hashes_function := mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS.get(
         user_data.streaming_provider.service
     ):
-        if asyncio.iscoroutinefunction(fetch_downloaded_info_hashes_function):
-            downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
-                **kwargs
-            )
-        else:
-            downloaded_info_hashes = await asyncio.to_thread(
-                fetch_downloaded_info_hashes_function, **kwargs
-            )
+        try:
+            if asyncio.iscoroutinefunction(fetch_downloaded_info_hashes_function):
+                downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
+                    **kwargs
+                )
+            else:
+                downloaded_info_hashes = await asyncio.to_thread(
+                    fetch_downloaded_info_hashes_function, **kwargs
+                )
 
-        return downloaded_info_hashes
+            return downloaded_info_hashes
+        except Exception as error:
+            logging.error(
+                f"Failed to fetch downloaded info hashes for {user_data.streaming_provider.service}: {error}"
+            )
+            pass
 
     return []
 
