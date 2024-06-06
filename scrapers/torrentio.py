@@ -5,6 +5,7 @@ from os import path
 
 import PTN
 import httpx
+from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 
 from db.config import settings
@@ -182,7 +183,11 @@ async def store_and_parse_movie_stream_data(
             seeders=parsed_data["seeders"],
             meta_id=video_id,
         )
-        await torrent_stream.create()
+        try:
+            await torrent_stream.create()
+        except DuplicateKeyError:
+            # Skip if the stream already exists
+            continue
         streams.append(torrent_stream)
         if torrent_stream.filename is None:
             info_hashes.append(stream["infoHash"])
