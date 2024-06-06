@@ -939,6 +939,7 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
             source=stream.source,
             country=stream.country,
             meta_id=channel_id,
+            namespace=tv_metadata.namespace,
         )
 
         # Check if the stream exists (by URL or ytId) and upsert accordingly
