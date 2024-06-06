@@ -149,7 +149,7 @@ async def initialize_pikpak(user_data: UserData):
         await pikpak.login()
     except PikpakException:
         raise ProviderException("Invalid PikPak credentials", "invalid_credentials.mp4")
-    except aiohttp.ClientError:
+    except (aiohttp.ClientError, httpx.ReadTimeout):
         raise ProviderException(
             "Failed to connect to PikPak. Please try again later.",
             "debrid_service_down_error.mp4",
