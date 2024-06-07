@@ -1,15 +1,18 @@
 import asyncio
 from typing import Literal
 
+import humanize
 from fastapi import APIRouter, Request, Response
 from prometheus_client import Gauge, generate_latest, CONTENT_TYPE_LATEST
 
+from db.config import settings
 from db.crud import fetch_last_run
 from db.models import (
     MediaFusionMetaData,
     TorrentStreams,
 )
 from utils import const
+from utils.runtime_const import TEMPLATES
 
 metrics_router = APIRouter()
 total_torrents_gauge = Gauge("total_torrents", "Total number of torrents")
@@ -29,10 +32,36 @@ spider_last_run_gauge = Gauge(
 )
 
 
+@metrics_router.get("/", tags=["metrics"])
+async def render_dashboard(
+    request: Request,
+    response: Response,
+):
+    response.headers.update(const.NO_CACHE_HEADERS)
+    return TEMPLATES.TemplateResponse(
+        "html/metrics.html",
+        {
+            "request": request,
+            "logo_url": settings.logo_url,
+            "addon_name": settings.addon_name,
+        },
+    )
+
+
 @metrics_router.get("/torrents", tags=["metrics"])
-async def get_torrents_data():
+async def get_torrents_count(response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
     count = await TorrentStreams.get_motor_collection().count_documents({})
-    torrent_sources = (
+    return {
+        "total_torrents": count,
+        "total_torrents_readable": humanize.intword(count, "%0.3f"),
+    }
+
+
+@metrics_router.get("/torrents/sources", tags=["metrics"])
+async def get_torrents_by_sources(response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
+    results = (
         await TorrentStreams.get_motor_collection()
         .aggregate(
             [
@@ -43,14 +72,14 @@ async def get_torrents_data():
         .to_list(length=None)
     )
     torrent_sources = [
-        {"source": source["_id"], "count": source["count"]}
-        for source in torrent_sources
+        {"name": source["_id"], "count": source["count"]} for source in results
     ]
-    return {"total_torrents": count, "torrent_sources": torrent_sources}
+    return torrent_sources
 
 
 @metrics_router.get("/metadata", tags=["metrics"])
-async def get_total_metadata():
+async def get_total_metadata(response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
     results = await asyncio.gather(
         MediaFusionMetaData.get_motor_collection().count_documents({"type": "movie"}),
         MediaFusionMetaData.get_motor_collection().count_documents({"type": "series"}),
@@ -66,62 +95,49 @@ async def get_total_metadata():
 
 
 @metrics_router.get("/scrapy-schedulers", tags=["metrics"])
-async def get_schedulers_last_run(request: Request):
+async def get_schedulers_last_run(request: Request, response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
     tasks = [
         fetch_last_run(request.app.state.redis, spider_id, spider_name)
         for spider_id, spider_name in const.SCRAPY_SPIDERS.items()
     ]
     results = await asyncio.gather(*tasks)
-    stats = {spider_name: data for spider_name, data in results}
-    return stats
+    return results
 
 
-@metrics_router.get("/scrapy-scheduler/{spider_name}", tags=["metrics"])
-async def get_scheduler_last_run(
-    request: Request,
-    spider_name: Literal[
-        "formula_tgx",
-        "mhdtvworld",
-        "mhdtvsports",
-        "tamilultra",
-        "sport_video",
-        "streamed",
-        "mrgamingstreams",
-        "tamil_blasters",
-        "tamilmv",
-        "crictime",
-        "streambtw",
-        "dlhd",
-    ],
-):
-    data = await fetch_last_run(
-        request.app.state.redis, spider_name, const.SCRAPY_SPIDERS[spider_name]
+async def update_metrics(request: Request, response: Response):
+    # Define each task as a coroutine
+    count_task = TorrentStreams.get_motor_collection().count_documents({})
+    torrent_sources_task = get_torrents_by_sources(response)
+    total_metadata_task = get_total_metadata(response)
+    schedulers_last_run_task = get_schedulers_last_run(request, response)
+
+    # Run all tasks concurrently
+    count, torrent_sources, results, stats = await asyncio.gather(
+        count_task, torrent_sources_task, total_metadata_task, schedulers_last_run_task
     )
-    return data
 
-
-async def update_metrics(request: Request):
     # Update torrent count
-    torrents = await get_torrents_data()
-    total_torrents_gauge.set(torrents["total_torrents"])
-    for source in torrents["torrent_sources"]:
-        torrent_sources_gauge.labels(source=source["source"]).set(source["count"])
+    total_torrents_gauge.set(count)
+
+    # Update torrent sources
+    for source in torrent_sources:
+        torrent_sources_gauge.labels(source=source["name"]).set(source["count"])
 
     # Update metadata counts
-    results = await get_total_metadata()
     metadata_count_gauge.labels(metadata_type="movies").set(results["movies"])
     metadata_count_gauge.labels(metadata_type="series").set(results["series"])
     metadata_count_gauge.labels(metadata_type="tv_channels").set(results["tv_channels"])
 
     # Update spider metrics
-    stats = await get_schedulers_last_run(request)
-    for spider_name, data in stats.items():
-        spider_last_run_gauge.labels(spider_name=spider_name).set(
+    for data in stats:
+        spider_last_run_gauge.labels(spider_name=data["name"]).set(
             data["time_since_last_run_seconds"]
         )
 
 
 @metrics_router.get("/prometheus-metrics", tags=["metrics"])
-async def prometheus_metrics(request: Request):
-    await update_metrics(request)
+async def prometheus_metrics(request: Request, response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
+    await update_metrics(request, response)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

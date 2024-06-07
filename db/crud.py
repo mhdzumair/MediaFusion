@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
+import humanize
+from apscheduler.triggers.cron import CronTrigger
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Set
 from pymongo.errors import DuplicateKeyError
@@ -1129,18 +1131,40 @@ async def fetch_last_run(redis: Redis, spider_id: str, spider_name: str):
     task_key = f"background_tasks:run_spider:spider_name={spider_id}"
     last_run_timestamp = await redis.get(task_key)
 
+    if settings.disable_all_scheduler:
+        next_schedule_in = None
+        is_scheduler_disabled = True
+    else:
+        crontab_expression = getattr(settings, f"{spider_id}_scheduler_crontab")
+        is_scheduler_disabled = getattr(settings, f"disable_{spider_id}_scheduler")
+        cron_trigger = CronTrigger.from_crontab(crontab_expression)
+        next_time = cron_trigger.get_next_fire_time(
+            None, datetime.now(tz=cron_trigger.timezone)
+        )
+        next_schedule_in = humanize.naturaldelta(
+            next_time - datetime.now(tz=cron_trigger.timezone)
+        )
+
+    response = {
+        "name": spider_name,
+        "last_run": "Never",
+        "time_since_last_run": "Never run",
+        "time_since_last_run_seconds": -1,
+        "next_schedule_in": next_schedule_in,
+        "is_scheduler_disabled": is_scheduler_disabled,
+    }
+
     if last_run_timestamp:
         last_run = datetime.fromtimestamp(float(last_run_timestamp))
         delta = datetime.now() - last_run
-        delta_str = str(delta)
-        return spider_name, {
-            "last_run": last_run.isoformat(),
-            "time_since_last_run": delta_str,
-            "time_since_last_run_seconds": delta.total_seconds(),
-        }
-    else:
-        return spider_name, {
-            "last_run": "Never",
-            "time_since_last_run": "Never run",
-            "time_since_last_run_seconds": -1,
-        }
+        response.update(
+            {
+                "last_run": last_run.isoformat(),
+                "time_since_last_run": humanize.precisedelta(
+                    delta, minimum_unit="minutes"
+                ),
+                "time_since_last_run_seconds": delta.total_seconds(),
+            }
+        )
+
+    return response

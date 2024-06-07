@@ -40,6 +40,7 @@ python-multipart = "*"
 prometheus-client = "*"
 curl-cffi = "*"
 pyasynctracker = "*"
+humanize = {git = "git+https://github.com/python-humanize/humanize.git"}
 
 [dev-packages]
 pysocks = "*"

@@ -200,7 +200,9 @@ class TaskManager(dramatiq.Middleware):
         specified by a crontab expression.
         """
         cron_trigger = CronTrigger.from_crontab(crontab_expression)
-        next_time = cron_trigger.get_next_fire_time(None, datetime.now())
+        next_time = cron_trigger.get_next_fire_time(
+            None, datetime.now(tz=cron_trigger.timezone)
+        )
         second_next_time = cron_trigger.get_next_fire_time(next_time, next_time)
         return second_next_time - next_time
 

@@ -1,0 +1,183 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: 'OpenSans', Arial, sans-serif;
+    font-weight: 300;
+    color: white;
+    width: 100%;
+    height: 100%;
+    background-image: url('https://dl.strem.io/addon-background.jpg');
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    overflow-y: auto;
+}
+
+.config-container {
+    margin: 2% auto;
+    padding: 2%;
+    background: rgba(0, 0, 0, 0.85);
+    border-radius: 10px;
+    max-height: 95vh;
+    overflow-y: auto;
+    transition: padding 0.3s ease;
+}
+
+.chart-section {
+    margin-bottom: 2rem;
+}
+
+.chart-container {
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.37);
+    border-radius: 8px;
+    transition: margin-bottom 0.3s ease, padding 0.3s ease;
+    position: relative;
+}
+
+.chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 50%;
+}
+
+.chart-wrapper canvas {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+.logo {
+    max-width: 300px;
+    display: block;
+    margin: 0 auto 1.5rem;
+}
+
+.card {
+    background: #4a47a3;
+    position: relative;
+    text-align: center;
+}
+
+.card-text {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.skeleton-loader {
+    width: 100%;
+    height: 20vh; /* Dynamic height based on viewport */
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 25%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.1) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.card-scheduler {
+    background: #4a47a3;
+    color: white;
+    margin: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+}
+
+.card-scheduler.enabled {
+    background-color: rgba(74, 71, 163, 0.85); /* Enabled color */
+}
+
+.card-scheduler.disabled {
+    background-color: rgba(169, 169, 169, 0.85); /* Disabled color */
+}
+
+.section-divider {
+    border: 0;
+    height: 2px;
+    background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(74, 71, 163, 0.75), rgba(0, 0, 0, 0));
+    margin-bottom: 1rem;
+}
+
+.btn, button {
+    border: none;
+    outline: none;
+    color: white;
+    background: #4a47a3;
+    padding: 0.8rem 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 300;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: all 0.3s ease;
+}
+
+.btn:hover, button:hover {
+    opacity: 1;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.form-check-input:checked + .form-check-label {
+    background: #4a47a3;
+    border-color: #4a47a3;
+    color: white;
+    position: relative;
+}
+
+@media (max-width: 768px) {
+    .config-container {
+        padding: 10px;
+    }
+
+    .chart-container {
+        margin-bottom: 15px;
+        padding: 10px;
+    }
+
+    h3 {
+        font-size: 1.2rem;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+    .config-container {
+        padding: 30px;
+    }
+
+    .chart-container {
+        margin-bottom: 20px;
+        padding: 20px;
+    }
+
+    h3 {
+        font-size: 1.4rem;
+    }
+}
+
+@media (min-width: 1201px) {
+    .config-container {
+        padding: 50px;
+    }
+
+    .chart-container {
+        margin-bottom: 30px;
+        padding: 30px;
+    }
+
+    h3 {
+        font-size: 1.6rem;
+    }
+}
