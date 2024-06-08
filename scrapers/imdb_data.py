@@ -69,7 +69,7 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
             imdb_id = f"tt{movie.movieID}"
             movie.set_item(
                 "aka_titles",
-                list({title.split("(")[0].strip() for title in movie.get("aka")}),
+                list({title.split("(")[0].strip() for title in movie.get("aka", [])}),
             )
             poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
             if requests.get(poster).status_code == 200:
