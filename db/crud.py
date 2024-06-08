@@ -709,6 +709,8 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
             await movie_data.create()
         except DuplicateKeyError:
             logging.warning("Duplicate movie found: %s", movie_data.title)
+    else:
+        metadata["id"] = existing_movie.id
 
     new_stream = create_stream_object(metadata)
     await new_stream.create()
