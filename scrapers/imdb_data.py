@@ -54,10 +54,16 @@ def get_imdb_rating(movie_id: str) -> Optional[float]:
 
 
 def search_imdb(title: str, year: int, retry: int = 5) -> dict:
+    query = title
+    if year:
+        query += f" {year}"
     try:
-        result = ia.search_movie(f"{title} {year}")
+        result = ia.search_movie(query)
     except Exception:
         return search_imdb(title, year, retry - 1) if retry > 0 else {}
+    if not result:
+        return {}
+
     for movie in result:
         if movie.get("year") == year and movie.get("title").lower() in title.lower():
             imdb_id = f"tt{movie.movieID}"
