@@ -572,6 +572,8 @@ async def get_series_meta(meta_id: str):
             "$replaceRoot": {
                 "newRoot": {
                     "id": "$_id.id",
+                    "season": "$video.season",
+                    "episode": "$video.episode",
                     "meta_id": "$_id.meta_id",
                     "series_title": "$_id.series_title",
                     "poster": "$_id.poster",
@@ -580,7 +582,7 @@ async def get_series_meta(meta_id: str):
                 }
             }
         },
-        {"$sort": {"id": 1}},
+        {"$sort": {"season": 1, "episode": 1}},
         {
             "$group": {
                 "_id": "$meta_id",
