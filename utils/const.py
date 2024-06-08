@@ -1,5 +1,7 @@
 CATALOG_DATA = {
     "american_football": "American Football",
+    "arabic_movies": "Arabic Movies",
+    "arabic_series": "Arabic Series",
     "baseball": "Baseball",
     "basketball": "Basketball",
     "english_hdrip": "English HD Movies",

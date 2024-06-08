@@ -555,6 +555,28 @@
 		  "isRequired": false
 		}
 	  ]
+	},
+	{
+	  "id": "arabic_movies",
+	  "type": "movie",
+	  "name": "Arabic Movies",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
+	},
+	{
+	  "id": "arabic_series",
+	  "type": "series",
+	  "name": "Arabic Series",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		}
+	  ]
 	}
   ]
 }
