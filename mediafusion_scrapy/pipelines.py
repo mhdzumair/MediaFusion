@@ -628,7 +628,7 @@ class QueueBasedPipeline:
             try:
                 await self.parse_item(item, spider)
             except Exception as e:
-                logging.error(f"Error processing item: {e}")
+                logging.error(f"Error processing item: {e}", exc_info=True)
             finally:
                 self.queue.task_done()
 
@@ -814,10 +814,7 @@ class MagnetDownloadAndParsePipeline:
         if not torrent_metadata:
             raise DropItem(f"Failed to extract torrent metadata: {item}")
 
-        if not torrent_metadata:
-            raise DropItem(f"Failed to extract torrent metadata: {item}")
-
-        item.update(torrent_metadata)
+        item.update(torrent_metadata[0])
         return item
 
 
