@@ -47,10 +47,10 @@ class Settings(BaseSettings):
     disable_tamil_blasters_scheduler: bool = False
     formula_tgx_scheduler_crontab: str = "*/30 * * * *"
     disable_formula_tgx_scheduler: bool = False
-    mhdtvworld_scheduler_crontab: str = "0 0 * * 5"
-    disable_mhdtvworld_scheduler: bool = False
-    mhdtvsports_scheduler_crontab: str = "0 10 * * *"
-    disable_mhdtvsports_scheduler: bool = False
+    nowmetv_scheduler_crontab: str = "0 0 * * 5"
+    disable_nowmetv_scheduler: bool = False
+    nowsports_scheduler_crontab: str = "0 10 * * *"
+    disable_nowsports_scheduler: bool = False
     tamilultra_scheduler_crontab: str = "0 8 * * *"
     disable_tamilultra_scheduler: bool = False
     validate_tv_streams_in_db_crontab: str = "0 */6 * * *"
