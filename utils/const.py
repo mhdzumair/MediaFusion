@@ -146,8 +146,8 @@ M3U8_VALID_CONTENT_TYPES = [
 
 SCRAPY_SPIDERS = {
     "formula_tgx": "Formula TGX",
-    "mhdtvworld": "MHDTV World",
-    "mhdtvsports": "MHDTV Sports",
+    "nowmetv": "NowMeTV",
+    "nowsports": "NowSports",
     "tamilultra": "Tamil Ultra",
     "sport_video": "Sport Video",
     "streamed": "Streamed Sport Events",

@@ -68,7 +68,7 @@ class LiveTVSpider(scrapy.Spider):
 
     def parse_page(self, response):
         channel_elements = response.css("article.item.movies")
-        source_name = response.css(".logo a img::attr(alt)").get(default="MHDTVWORLD")
+        source_name = response.css(".logo a img::attr(alt)").get(default="NowMeTV")
 
         for channel_element in channel_elements:
             # Extract title, poster, and stream page URL using Scrapy's CSS selectors
@@ -209,6 +209,7 @@ class LiveTVSpider(scrapy.Spider):
                     "channel_data": channel_data,
                     "stream_title": stream_title,
                     "country_name": country_name,
+                    "iframe_url": iframe_url,
                 },
             )
 

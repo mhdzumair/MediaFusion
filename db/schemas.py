@@ -221,8 +221,8 @@ class TorrentStreamsList(BaseModel):
 class ScraperTask(BaseModel):
     spider_name: Literal[
         "formula_tgx",
-        "mhdtvworld",
-        "mhdtvsports",
+        "nowmetv",
+        "nowsports",
         "tamilultra",
         "sport_video",
         "streamed",

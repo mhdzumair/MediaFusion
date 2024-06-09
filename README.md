@@ -32,7 +32,7 @@
   - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, streambtw.com and crictime.com
   - 🎥 **TamilMV**: Specialized scraping for regional contents.
   - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
-  - 📺 **TamilUltra & MHDTVPlay**: Get the best of Live TV channels right at your fingertips.
+  - 📺 **TamilUltra & NowMeTV**: Get the best of Live TV channels right at your fingertips.
   - 🔄 **Prowlarr Integration**: Supercharge your scraping streams with Prowlarr's powerful integration.
   - 🌊 **Torrentio/KnightCrawler Streams**: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.
 

@@ -49,27 +49,27 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    # Setup mhdtvworld scraper
-    if not settings.disable_mhdtvworld_scheduler:
+    # Setup nowmetv scraper
+    if not settings.disable_nowmetv_scheduler:
         scheduler.add_job(
             run_spider.send,
-            CronTrigger.from_crontab(settings.mhdtvworld_scheduler_crontab),
-            name="mhdtvworld",
+            CronTrigger.from_crontab(settings.nowmetv_scheduler_crontab),
+            name="nowmetv",
             kwargs={
-                "spider_name": "mhdtvworld",
-                "crontab_expression": settings.mhdtvworld_scheduler_crontab,
+                "spider_name": "nowmetv",
+                "crontab_expression": settings.nowmetv_scheduler_crontab,
             },
         )
 
-    # Setup mhdtvsports scraper
-    if not settings.disable_mhdtvsports_scheduler:
+    # Setup nowsports scraper
+    if not settings.disable_nowsports_scheduler:
         scheduler.add_job(
             run_spider.send,
-            CronTrigger.from_crontab(settings.mhdtvsports_scheduler_crontab),
-            name="mhdtvsports",
+            CronTrigger.from_crontab(settings.nowsports_scheduler_crontab),
+            name="nowsports",
             kwargs={
-                "spider_name": "mhdtvsports",
-                "crontab_expression": settings.mhdtvsports_scheduler_crontab,
+                "spider_name": "nowsports",
+                "crontab_expression": settings.nowsports_scheduler_crontab,
             },
         )
 

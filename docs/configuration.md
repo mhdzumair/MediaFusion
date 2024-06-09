@@ -63,10 +63,10 @@ This guide describes the environment variables available in MediaFusion for conf
 - **disable_tamilultra_scheduler** (default: `False`): Disable TamilUltra scheduler.
 - **formula_tgx_scheduler_crontab** (default: `"*/30 * * * *"`): Scheduler for Formula TGX.
 - **disable_formula_tgx_scheduler** (default: `False`): Disable Formula TGX scheduler.
-- **mhdtvworld_scheduler_crontab** (default: `"0 0 * * 5"`): Scheduler for MHDTVWorld.
-- **disable_mhdtvworld_scheduler** (default: `False`): Disable MHDTVWorld scheduler.
-- **mhdtvsports_scheduler_crontab** (default: `"0 10 * * *"`): Scheduler for MHDTVSports.
-- **disable_mhdtvsports_scheduler** (default: `False`): Disable MHDTVSports scheduler.
+- **nowmetv_scheduler_crontab** (default: `"0 0 * * 5"`): Scheduler for NowMeTV.
+- **disable_nowmetv_scheduler** (default: `False`): Disable NowMeTV scheduler.
+- **nowsports_scheduler_crontab** (default: `"0 10 * * *"`): Scheduler for NowSports.
+- **disable_nowsports_scheduler** (default: `False`): Disable NowSports scheduler.
 - **streamed_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for Streamed.su Sports Events.
 - **disable_streamed_scheduler** (default: `False`): Disable Streamed.su scheduler.
 - **mrgamingstreams_scheduler_crontab** (default: `"*/15 * * * *"`): Scheduler for MrGamingStreams Sports Events.
