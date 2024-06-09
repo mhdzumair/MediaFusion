@@ -1004,7 +1004,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
     # Update or add streams based on the uniqueness of 'url'
     for stream in metadata["streams"]:
         # Create a TVStreams instance for each stream
-        stream_instance = TVStreams(**stream)
+        stream_instance = TVStreams(meta_id=meta_id, **stream)
         existing_streams[
             stream_instance.url or stream_instance.ytId or stream_instance.externalUrl
         ] = stream_instance.dict()
