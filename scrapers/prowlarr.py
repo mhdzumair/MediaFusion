@@ -354,7 +354,7 @@ async def get_torrent_data_from_prowlarr(
             download_url, follow_redirects=False, timeout=20, headers=UA_HEADER
         )
 
-    if response.status_code == 301:
+    if response.status_code in [301, 302, 303, 307, 308]:
         redirect_url = response.headers.get("Location")
         return await get_torrent_data_from_prowlarr(redirect_url, indexer)
     elif response.status_code == 200:
@@ -450,7 +450,9 @@ async def prowlarr_data_parser(
             download_url, meta_data.get("indexer")
         )
     except Exception as e:
-        if meta_data.get("magnetUrl", "").startswith("magnet:"):
+        if meta_data.get("magnetUrl") and meta_data.get("magnetUrl").startswith(
+            "magnet:"
+        ):
             try:
                 magnet = Magnet.from_string(meta_data.get("magnetUrl"))
             except MagnetError:
@@ -525,6 +527,10 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
     if torrent_stream:
         return None, False  # Skip existing torrents
 
+    languages = parsed_data.get("language", [])
+    if isinstance(languages, str):
+        languages = [languages]
+
     # Create new stream
     torrent_stream = TorrentStreams(
         id=info_hash,
@@ -533,7 +539,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         size=parsed_data.get("total_size"),
         filename=parsed_data.get("largest_file", {}).get("file_name"),
         file_index=parsed_data.get("largest_file", {}).get("index"),
-        languages=parsed_data.get("language", []),
+        languages=languages,
         resolution=parsed_data.get("resolution"),
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
@@ -603,6 +609,10 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
 
     season_number = parsed_data.get("season", season)
 
+    languages = parsed_data.get("language", [])
+    if isinstance(languages, str):
+        languages = [languages]
+
     # Create new stream, initially without episodes
     torrent_stream = TorrentStreams(
         id=info_hash,
@@ -610,7 +620,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
         announce_list=parsed_data.get("announce_list"),
         size=parsed_data.get("total_size"),
         filename=None,
-        languages=parsed_data.get("language", []),
+        languages=languages,
         resolution=parsed_data.get("resolution"),
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
@@ -769,7 +779,30 @@ def validate_category_with_title(meta_data: dict) -> bool:
         # Extra caution with category 8000 (Others) as it may contain non-movie torrents
         if not any(
             keyword in meta_data.get("fileName", meta_data.get("title", "")).lower()
-            for keyword in [".mkv", ".mp4", ".avi", ".webm", ".mov", ".flv"]
+            for keyword in [
+                ".mkv",
+                ".mp4",
+                ".avi",
+                ".webm",
+                ".mov",
+                ".flv",
+                "webdl",
+                "web-dl",
+                "webrip",
+                "bluray",
+                "brrip",
+                "bdrip",
+                "dvdrip",
+                "hdtv",
+                "hdcam",
+                "hdrip",
+                "1080p",
+                "720p",
+                "480p",
+                "360p",
+                "2160p",
+                "4k",
+            ]
         ):
             return False
 

@@ -96,7 +96,8 @@ async def batch_process_with_circuit_breaker(
                         retry_batch.append(item)
                     elif isinstance(result, Exception):
                         logging.error(
-                            f"Unexpected error during batch processing: {result}, {result.__class__.__name__}"
+                            f"Unexpected error during batch processing: {result}",
+                            exc_info=True,
                         )
                     else:
                         successful_results.append(result)
