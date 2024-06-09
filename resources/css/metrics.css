@@ -85,22 +85,41 @@ body, html {
 }
 
 .card-scheduler {
-    background: #4a47a3;
-    color: white;
-    margin: 10px;
-    padding: 10px;
+    background: rgba(0, 0, 0, 0.37);
+    padding: 1rem;
     border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: start;
+    margin: 1rem 0;
+    transition: background 0.3s ease;
 }
 
 .card-scheduler.enabled {
-    background-color: rgba(74, 71, 163, 0.85); /* Enabled color */
+    background: #4a47a3;
+    border-left: 5px solid #fff;
 }
 
 .card-scheduler.disabled {
-    background-color: rgba(169, 169, 169, 0.85); /* Disabled color */
+    background: #808080;
+    border-left: 5px solid #fff;
+}
+
+.card-scheduler.log-info {
+    border-left: 5px solid #4caf50; /* Green */
+}
+
+.card-scheduler.log-warning {
+    border-left: 5px solid #ffeb3b; /* Yellow */
+}
+
+.card-scheduler.log-error {
+    border-left: 5px solid #f44336; /* Red */
+}
+
+.scheduler-section {
+    margin-bottom: 30px;
+}
+
+.scheduler-section h5 {
+    margin-bottom: 15px;
 }
 
 .section-divider {

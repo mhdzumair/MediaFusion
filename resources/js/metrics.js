@@ -17,22 +17,103 @@ document.addEventListener('DOMContentLoaded', function () {
         const container = document.getElementById('schedulerChartsContainer');
         container.innerHTML = ''; // Clear loading skeleton
 
+        const enabledWithStats = [];
+        const enabledWithoutStats = [];
+        const disabledWithStats = [];
+        const disabledWithoutStats = [];
+
         data.forEach(scheduler => {
-            const schedulerCard = document.createElement('div');
-            schedulerCard.className = 'col-lg-4 col-md-6 col-sm-12';
-
-            const cardContent = `
-                <div class="card-scheduler ${scheduler.is_scheduler_disabled ? 'disabled' : 'enabled'}">
-                    <h5>${scheduler.name}</h5>
-                    <p>Last Run: ${scheduler.time_since_last_run}</p>
-                    <p>${scheduler.is_scheduler_disabled ? 'Scheduler Disabled' : `Next Schedule In: ${scheduler.next_schedule_in}`}</p>
-                </div>
-            `;
-            schedulerCard.innerHTML = cardContent;
-            container.appendChild(schedulerCard);
+            if (scheduler.is_scheduler_disabled) {
+                if (scheduler.last_run_state) {
+                    disabledWithStats.push(scheduler);
+                } else {
+                    disabledWithoutStats.push(scheduler);
+                }
+            } else {
+                if (scheduler.last_run_state) {
+                    enabledWithStats.push(scheduler);
+                } else {
+                    enabledWithoutStats.push(scheduler);
+                }
+            }
         });
-    };
 
+        const createSchedulerSection = (schedulers, sectionTitle) => {
+            const section = document.createElement('div');
+            section.className = 'scheduler-section';
+            const sectionTitleElem = document.createElement('h5');
+            sectionTitleElem.textContent = sectionTitle;
+            section.appendChild(sectionTitleElem);
+
+            let row;
+            schedulers.forEach((scheduler, index) => {
+                if (index % 3 === 0) {
+                    row = document.createElement('div');
+                    row.className = 'row';
+                    section.appendChild(row);
+                }
+
+                const schedulerCard = document.createElement('div');
+                schedulerCard.className = 'col-lg-4 col-md-6 col-sm-12 mb-4';
+
+                let cardClass = 'card-scheduler ';
+                if (scheduler.is_scheduler_disabled) {
+                    cardClass += 'disabled';
+                } else if (scheduler.last_run_state === null) {
+                    cardClass += 'enabled';
+                } else {
+                    const logCounts = {
+                        info: scheduler.last_run_state.log_count_info,
+                        warning: scheduler.last_run_state.log_count_warning,
+                        error: scheduler.last_run_state.log_count_error
+                    };
+
+                    const maxLogCount = Math.max(logCounts.info, logCounts.warning, logCounts.error);
+                    if (maxLogCount === logCounts.error) {
+                        cardClass += 'log-error';
+                    } else if (maxLogCount === logCounts.warning) {
+                        cardClass += 'log-warning';
+                    } else {
+                        cardClass += 'log-info';
+                    }
+                }
+
+                const lastRunState = scheduler.last_run_state ? `
+                    <p>Items Scraped: ${scheduler.last_run_state.item_scraped_count}</p>
+                    <p>Items Dropped: ${scheduler.last_run_state.item_dropped_count}</p>
+                    <p class="text-info">Info: ${scheduler.last_run_state.log_count_info}</p>
+                    <p class="text-warning">Warning: ${scheduler.last_run_state.log_count_warning}</p>
+                    <p class="text-danger">Error: ${scheduler.last_run_state.log_count_error}</p>
+                ` : '';
+
+                const cardContent = `
+                    <div class="${cardClass}">
+                        <h5>${scheduler.name}</h5>
+                        <p>Last Run: ${scheduler.time_since_last_run}</p>
+                        <p>${scheduler.is_scheduler_disabled ? 'Scheduler Disabled' : `Next Schedule In: ${scheduler.next_schedule_in}`}</p>
+                        ${lastRunState}
+                    </div>
+                `;
+                schedulerCard.innerHTML = cardContent;
+                row.appendChild(schedulerCard);
+            });
+
+            container.appendChild(section);
+        };
+
+        if (enabledWithStats.length > 0) {
+            createSchedulerSection(enabledWithStats, 'Enabled Schedulers with Stats');
+        }
+        if (enabledWithoutStats.length > 0) {
+            createSchedulerSection(enabledWithoutStats, 'Enabled Schedulers without Stats');
+        }
+        if (disabledWithStats.length > 0) {
+            createSchedulerSection(disabledWithStats, 'Disabled Schedulers with Stats');
+        }
+        if (disabledWithoutStats.length > 0) {
+            createSchedulerSection(disabledWithoutStats, 'Disabled Schedulers without Stats');
+        }
+    };
 
     const renderMetadataCountsChart = async () => {
         const data = await fetchData('/metrics/metadata');
@@ -146,7 +227,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     };
 
-
     const initCharts = () => {
         renderSchedulerDetails();
         renderMetadataCountsChart();
@@ -157,4 +237,3 @@ document.addEventListener('DOMContentLoaded', function () {
     Chart.register(ChartDataLabels);
     initCharts();
 });
-

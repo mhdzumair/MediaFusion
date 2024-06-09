@@ -54,7 +54,7 @@ async def get_torrents_count(response: Response):
     count = await TorrentStreams.get_motor_collection().count_documents({})
     return {
         "total_torrents": count,
-        "total_torrents_readable": humanize.intword(count, "%0.3f"),
+        "total_torrents_readable": humanize.intword(count),
     }
 
 

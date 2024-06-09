@@ -1133,7 +1133,9 @@ async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
 
 async def fetch_last_run(redis: Redis, spider_id: str, spider_name: str):
     task_key = f"background_tasks:run_spider:spider_name={spider_id}"
+    state_key = f"scrapy_stats:{spider_id}"
     last_run_timestamp = await redis.get(task_key)
+    last_run_state = await redis.get(state_key)
 
     if settings.disable_all_scheduler:
         next_schedule_in = None
@@ -1156,6 +1158,7 @@ async def fetch_last_run(redis: Redis, spider_id: str, spider_name: str):
         "time_since_last_run_seconds": -1,
         "next_schedule_in": next_schedule_in,
         "is_scheduler_disabled": is_scheduler_disabled,
+        "last_run_state": json.loads(last_run_state or "null"),
     }
 
     if last_run_timestamp:
