@@ -126,7 +126,7 @@ async def parse_stream_data(
 
         if show_full_torrent_name:
             torrent_name = (
-                f"{stream_data.torrent_name}/{episode_data.title}"
+                f"{stream_data.torrent_name}/{episode_data.title or episode_data.filename or ''}"
                 if episode_data
                 else stream_data.torrent_name
             )
