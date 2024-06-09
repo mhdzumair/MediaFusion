@@ -266,7 +266,7 @@ async def scrap_series_streams_from_prowlarr(
         return []
 
     logging.info(
-        f"Found {len(imdb_search_result)} streams for {title} ({season}) ({episode}) with IMDb ID"
+        f"Found {len(imdb_search_result)} streams for {title} ({season}) ({episode}) with IMDb ID {video_id}"
     )
     filtered_streams = imdb_search_result[: settings.prowlarr_immediate_max_process]
     logging.info(
@@ -292,7 +292,7 @@ async def scrape_series_title_streams_from_prowlarr(
     """
     url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
-        "query": f"{title}{{Season:{season}}}{{Episode:{episode}}}",
+        "query": title,
         "categories": [5000, 8000],  # TV & Others (BitSearch only works with 8000)
         "type": "search",
     }
