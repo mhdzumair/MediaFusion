@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     disable_tamil_blasters_scheduler: bool = False
     formula_tgx_scheduler_crontab: str = "*/30 * * * *"
     disable_formula_tgx_scheduler: bool = False
-    nowmetv_scheduler_crontab: str = "0 0 * * 5"
+    nowmetv_scheduler_crontab: str = "0 0 * * *"
     disable_nowmetv_scheduler: bool = False
     nowsports_scheduler_crontab: str = "0 10 * * *"
     disable_nowsports_scheduler: bool = False
