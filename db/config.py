@@ -66,9 +66,7 @@ class Settings(BaseSettings):
     streambtw_scheduler_crontab: str = "*/15 * * * *"
     disable_streambtw_scheduler: bool = False
     dlhd_scheduler_crontab: str = "25 * * * *"
-    disable_dlhd_scheduler: bool = (
-        True  # Disabled due to stremio server doesn't support #EXT-X-KEY in m3u8
-    )
+    disable_dlhd_scheduler: bool = False
     update_imdb_data_crontab: str = "0 2 * * *"
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
     disable_motogp_tgx_scheduler: bool = False

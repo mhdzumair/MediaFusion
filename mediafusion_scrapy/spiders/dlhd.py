@@ -11,7 +11,7 @@ from utils.runtime_const import SPORTS_ARTIFACTS
 
 class DaddyLiveHDSpider(scrapy.Spider):
     name = "dlhd"
-    site_url = "https://1.dlhd.sx"
+    site_url = "https://dlhd.so"
     start_urls = [f"{site_url}/schedule/schedule-generated.json"]
 
     # The number of hours to consider the event as starting within next hours from now.
