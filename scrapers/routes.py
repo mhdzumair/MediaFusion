@@ -257,10 +257,11 @@ async def add_torrent(
                 raise_error(
                     f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes}'"
                 )
-        elif torrent_data.get("episode") != episodes[0]:
-            raise_error(
-                f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes[0]}'"
-            )
+        elif torrent_data.get("episode"):
+            if torrent_data.get("episode") != episodes[0]:
+                raise_error(
+                    f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes[0]}'"
+                )
         else:
             raise_error("No episode found in torrent data")
 
