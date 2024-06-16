@@ -41,7 +41,7 @@
                     <div id="torrentUploadParameters" style="display: none;">
                         <div class="mb-3">
                             <label for="torrentImdbId" class="form-label">IMDb ID</label>
-                            <input type="text" class="form-control" id="torrentImdbId" name="meta_id" placeholder="Enter IMDb ID (e.g., tt1234567)" value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
+                            <input type="text" class="form-control" id="torrentImdbId" name="meta_id" maxlength="10" placeholder="Enter IMDb ID (e.g., tt1234567)" value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
                         </div>
                         <div class="mb-3">
                             <label for="metaType" class="form-label">Meta Type</label>
@@ -52,7 +52,7 @@
                         </div>
                         <div class="mb-3">
                             <label for="source" class="form-label">Source</label>
-                            <input type="text" class="form-control" id="source" name="source" placeholder="Enter Source Name Where Torrent was Found or Uploader Name">
+                            <input type="text" class="form-control" id="source" name="source" placeholder="Enter Source Name Where Torrent was Found or Uploader Name" maxlength="20">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Catalogs</label>
