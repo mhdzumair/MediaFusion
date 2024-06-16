@@ -91,6 +91,7 @@ class QBittorrentConfig(BaseModel):
     seeding_time_limit: int = 1440  # 24 hours
     seeding_ratio_limit: float = 1.0
     play_video_after: int = Field(default=100, le=100, ge=0)
+    category: str = "MediaFusion"
     webdav_url: str
     webdav_username: str
     webdav_password: str

@@ -276,6 +276,7 @@ function getUserData() {
                 seeding_time_limit: parseInt(document.getElementById('seeding_time_limit').value, 10),
                 seeding_ratio_limit: parseFloat(document.getElementById('seeding_ratio_limit').value),
                 play_video_after: parseInt(document.getElementById('play_video_after_download').value, 10),
+                category: document.getElementById('category').value,
                 webdav_url: document.getElementById('webdav_url').value,
                 webdav_username: document.getElementById('webdav_username').value,
                 webdav_password: document.getElementById('webdav_password').value,
@@ -286,6 +287,7 @@ function getUserData() {
             validateInput('seeding_time_limit', !isNaN(streamingProviderData.qbittorrent_config.seeding_time_limit));
             validateInput('seeding_ratio_limit', !isNaN(streamingProviderData.qbittorrent_config.seeding_ratio_limit));
             validateInput('play_video_after_download', !isNaN(streamingProviderData.qbittorrent_config.play_video_after));
+            validateInput('category', streamingProviderData.qbittorrent_config.category);
         } else {
             validateInput('provider_token', document.getElementById('provider_token').value);
             streamingProviderData.token = document.getElementById('provider_token').value;

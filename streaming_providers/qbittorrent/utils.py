@@ -42,6 +42,7 @@ async def add_magnet(
             .ratio_limit(
                 user_data.streaming_provider.qbittorrent_config.seeding_ratio_limit
             )
+            .category(user_data.streaming_provider.qbittorrent_config.category)
             .build()
         )
     except AddTorrentError:

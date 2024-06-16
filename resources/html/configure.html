@@ -143,6 +143,11 @@
                             <input class="form-control" type="number" id="play_video_after_download" name="play_video_after_download" placeholder="Enter Play Video After Download"
                                    value="{{ user_data.streaming_provider.qbittorrent_config.play_video_after if user_data.streaming_provider.qbittorrent_config else 100 }}">
                         </div>
+                        <div class="mb-3">
+                            <label for="category">Category: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                               title="Enter the category for the torrents to be tagged in qBittorrent."></span></label>
+                            <input class="form-control" type="text" id="category" name="category" value="{{ user_data.streaming_provider.qbittorrent_config.category if user_data.streaming_provider.qbittorrent_config else 'MediaFusion' }}">
+                        </div>
 
                         <!-- WebDAV Configuration -->
                         <h5 class="mt-3">WebDAV Configuration</h5>
