@@ -3,7 +3,7 @@ import logging
 import re
 
 import dramatiq
-import redis
+from redis.asyncio import Redis
 from beanie import BulkWriter
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
@@ -16,9 +16,6 @@ from utils.parser import is_contain_18_plus_keywords
 from utils.validation_helper import validate_m3u8_url
 
 
-@dramatiq.actor(
-    priority=3, time_limit=5 * 60 * 1000, max_retries=3, queue_name="scrapy"
-)
 async def add_tv_metadata(batch, namespace: str):
     for metadata_json in batch:
         metadata = schemas.TVMetaData.model_validate(metadata_json)
@@ -40,21 +37,23 @@ async def add_tv_metadata(batch, namespace: str):
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
 
 
-@dramatiq.actor(priority=2, time_limit=15 * 60 * 1000, queue_name="scrapy")
-def parse_m3u_playlist(
+async def parse_m3u_playlist(
     namespace: str,
     playlist_source: str,
+    redis_client: Redis,
     playlist_url: str = None,
     playlist_redis_key: str = None,
 ):
     logging.info(f"Parsing M3U playlist: {playlist_url}")
     if playlist_redis_key:
-        redis_client = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
-        playlist_content = redis_client.get(playlist_redis_key).decode("utf-8")
+        playlist_content = await redis_client.get(playlist_redis_key)
+        if not playlist_content:
+            logging.error(f"Playlist not found in Redis: {playlist_redis_key}")
+            return
+
+        playlist_content = playlist_content.decode("utf-8")
         iptv_playlist = playlist.loads(playlist_content)
-        redis_client.delete(playlist_redis_key)
+        await redis_client.delete(playlist_redis_key)
     else:
         iptv_playlist = playlist.loadu(playlist_url)
 
@@ -104,11 +103,26 @@ def parse_m3u_playlist(
         batch.append(metadata.model_dump())
 
         if len(batch) >= batch_size:
-            add_tv_metadata.send(batch=batch, namespace=namespace)
+            await add_tv_metadata(batch=batch, namespace=namespace)
             batch = []
 
     if batch:
-        add_tv_metadata.send(batch=batch, namespace=namespace)
+        await add_tv_metadata(batch=batch, namespace=namespace)
+
+
+@dramatiq.actor(priority=2, time_limit=15 * 60 * 1000, queue_name="scrapy")
+def parse_m3u_playlist_background(
+    namespace: str,
+    playlist_source: str,
+    playlist_url: str = None,
+    playlist_redis_key: str = None,
+):
+    parse_m3u_playlist(
+        namespace,
+        playlist_source,
+        playlist_url=playlist_url,
+        playlist_redis_key=playlist_redis_key,
+    )
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)  # time limit is 30 minutes
