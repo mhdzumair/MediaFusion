@@ -173,8 +173,6 @@ async def parse_stream_data(
         stream_details = {
             "name": f"{settings.addon_name} {streaming_provider_name} {resolution} {streaming_provider_status}",
             "description": description,
-            "infoHash": stream_data.id,
-            "fileIdx": file_index,
             "behaviorHints": {
                 "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
                 "filename": file_name,
@@ -186,12 +184,11 @@ async def parse_stream_data(
             base_proxy_url = base_proxy_url_template.format(stream_data.id) + (
                 f"&season={season}&episode={episode}" if episode_data else ""
             )
-            stream_details.update(
-                {"url": base_proxy_url, "behaviorHints": {"notWebReady": True}}
-            )
-            stream_details.pop("infoHash", None)
-            stream_details.pop("fileIdx", None)
+            stream_details["url"] = base_proxy_url
+            stream_details["behaviorHints"]["notWebReady"] = True
         else:
+            stream_details["infoHash"] = stream_data.id
+            stream_details["fileIdx"] = file_index
             sources = [
                 f"tracker:{tracker}"
                 for tracker in stream_data.announce_list or TRACKERS
