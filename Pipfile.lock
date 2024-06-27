@@ -1643,12 +1643,12 @@
         },
         "pydantic": {
             "hashes": [
-                "sha256:c46c76a40bb1296728d7a8b99aa73dd70a48c3510111ff290034f860c99c419e",
-                "sha256:ea91b002777bf643bb20dd717c028ec43216b24a6001a280f83877fd2655d0b4"
+                "sha256:0c84efd9548d545f63ac0060c1e4d39bb9b14db8b3c0652338aecc07b5adec52",
+                "sha256:ee8538d41ccb9c0a9ad3e0e5f07bf15ed8015b481ced539a1759d8cc89ae90d0"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==2.7.3"
+            "version": "==2.7.4"
         },
         "pydantic-core": {
             "hashes": [
@@ -1737,12 +1737,12 @@
         },
         "pydantic-settings": {
             "hashes": [
-                "sha256:acb2c213140dfff9669f4fe9f8180d43914f51626db28ab2db7308a576cce51a",
-                "sha256:e34bbd649803a6bb3e2f0f58fb0edff1f0c7f556849fda106cc21bcce12c30ab"
+                "sha256:87fda838b64b5039b970cd47c3e8a1ee460ce136278ff672980af21516f6e6ce",
+                "sha256:e4ed62ad851670975ec11285141db888fd24947f9440bd4380d7d8788d4965de"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==2.3.1"
+            "version": "==2.3.3"
         },
         "pydispatcher": {
             "hashes": [
@@ -2038,11 +2038,12 @@
                 "hiredis"
             ],
             "hashes": [
-                "sha256:30b47d4ebb6b7a0b9b40c1275a19b87bb6f46b3bed82a89012cf56dea4024ada",
-                "sha256:3417688621acf6ee368dec4a04dd95881be24efd34c79f00d31f62bb528800ae"
+                "sha256:38473cd7c6389ad3e44a91f4c3eaf6bcb8a9f746007f29bf4fb20824ff0b2197",
+                "sha256:c0d6d990850c627bbf7be01c5c4cbaadf67b48593e913bb71c9819c30df37eee"
             ],
+            "index": "pypi",
             "markers": "python_version >= '3.7'",
-            "version": "==5.0.5"
+            "version": "==5.0.6"
         },
         "requests": {
             "hashes": [
@@ -2248,11 +2249,11 @@
         },
         "typing-extensions": {
             "hashes": [
-                "sha256:6024b58b69089e5a89c347397254e35f1bf02a907728ec7fee9bf0fe837d203a",
-                "sha256:915f5e35ff76f56588223f15fdd5938f9a1cf9195c0de25130c627e4d597f6d1"
+                "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d",
+                "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==4.12.1"
+            "version": "==4.12.2"
         },
         "tzlocal": {
             "hashes": [
