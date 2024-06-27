@@ -60,8 +60,8 @@ class DaddyLiveHDSpider(scrapy.Spider):
         "DUPEFILTER_DEBUG": True,
     }
 
-    m3u8_base_url = "https://webhdrus.onlinehdhls.ru/lb/premium{}/index.m3u8"
-    referer = "https://lewblivehdplay.ru/"
+    m3u8_base_url = "https://webhdrunns.mizhls.ru/lb/premium{}/index.m3u8"
+    referer = "https://qqwebplay.xyz/"
 
     def __init__(self, *args, **kwargs):
         super(DaddyLiveHDSpider, self).__init__(*args, **kwargs)
