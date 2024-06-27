@@ -141,3 +141,5 @@ prowlarr-config/
 config/
 mediafusion.local*
 .lock
+kodi/build/
+kodi/*.zip

@@ -5,8 +5,7 @@ on:
     types: [ created ]
 
 jobs:
-  build:
-
+  mediafusion_docker_build:
     runs-on: ubuntu-latest
 
     steps:
@@ -44,3 +43,38 @@ jobs:
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
+
+  kodi_build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+
+      - name: Install zip
+        run: sudo apt-get install -y zip
+
+      - name: Get short SHA
+        id: short_sha
+        run: echo "GIT_REV=$(echo ${GITHUB_SHA::7})" >> $GITHUB_ENV
+
+      - name: Build addon
+        run: make -C kodi
+
+      - name: List build directory
+        run: ls -la kodi
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: kodi/plugin.video.mediafusion-*.zip
