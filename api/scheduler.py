@@ -195,3 +195,14 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             "crontab_expression": settings.update_seeders_crontab,
         },
     )
+
+    if not settings.arab_torrents_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.arab_torrents_scheduler_crontab),
+            name="arab_torrents",
+            kwargs={
+                "spider_name": "arab_torrents",
+                "crontab_expression": settings.arab_torrents_scheduler_crontab,
+            },
+        )
