@@ -64,6 +64,13 @@ services:
     ports:
       - "8191:8191"
 
+  browserless:
+    image: ghcr.io/browserless/chromium
+    ports:
+      - "3000:3000"
+    environment:
+      - TIMEOUT='-1'
+
 volumes:
   mongo-data:
   prowlarr-config:

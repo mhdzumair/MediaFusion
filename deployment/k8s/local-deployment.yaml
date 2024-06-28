@@ -351,6 +351,44 @@ spec:
 
 ---
 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browserless
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: browserless
+  template:
+    metadata:
+      labels:
+        app: browserless
+    spec:
+      containers:
+      - name: browserless
+        image: ghcr.io/browserless/chromium
+        ports:
+        - containerPort: 3000
+        env:
+        - name: TIMEOUT
+          value: "'-1'"
+        resources:
+          requests:
+            memory: "200Mi"
+            cpu: "100m"
+          limits:
+            memory: "500Mi"
+            cpu: "200m"
+        volumeMounts:
+          - name: temp
+            mountPath: /tmp
+      volumes:
+        - name: temp
+          emptyDir: {}
+
+---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -445,6 +483,20 @@ spec:
     - protocol: TCP
       port: 8191
       targetPort: 8191
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: browserless
+spec:
+  selector:
+    app: browserless
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
 
 ---
 

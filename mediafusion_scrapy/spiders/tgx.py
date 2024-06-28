@@ -4,10 +4,12 @@ from datetime import datetime
 
 import redis.asyncio as redis
 import scrapy
+from scrapy_playwright.page import PageMethod
 
 from db.config import settings
 from db.models import TorrentStreams
 from utils.parser import convert_size_to_bytes
+from utils.runtime_const import SPORTS_ARTIFACTS
 from utils.torrent import parse_magnet
 
 
@@ -18,16 +20,8 @@ class TgxSpider(scrapy.Spider):
     background_image: str
     logo_image: str
 
-    keyword_patterns = re.compile(r"formula[ .+]*[1234e]+", re.IGNORECASE)
-    scraped_info_hash_key = "formula_tgx_scraped_info_hash"
-
-    custom_settings = {
-        "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
-            "mediafusion_scrapy.pipelines.FormulaParserPipeline": 200,
-            "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
-        }
-    }
+    keyword_patterns: re.Pattern
+    scraped_info_hash_key: str
 
     def __init__(self, scrape_all: str = "True", *args, **kwargs):
         super(TgxSpider, self).__init__(*args, **kwargs)
@@ -123,7 +117,22 @@ class TgxSpider(scrapy.Spider):
                 yield response.follow(
                     torrent_page_link,
                     self.parse_torrent_details,
-                    meta={"torrent_data": torrent_data},
+                    meta={
+                        "playwright": True,
+                        "playwright_page_goto_kwargs": {
+                            "wait_until": "domcontentloaded",
+                            "referer": response.url,
+                            "timeout": 60000,
+                        },
+                        "playwright_page_methods": [
+                            PageMethod(
+                                "wait_for_selector",
+                                "#smallguestnav",
+                                timeout=60000,
+                            ),
+                        ],
+                        "torrent_data": torrent_data,
+                    },
                 )
 
     def parse_torrent_details(self, response):
@@ -131,7 +140,7 @@ class TgxSpider(scrapy.Spider):
 
         # Extracting file details and sizes
         file_details = []
-        for row in response.xpath('//table[contains(@class, "table-striped")]/tr'):
+        for row in response.xpath('//table[contains(@class, "table-striped")]//tr'):
             file_name = row.xpath('td[@class="table_col1"]/text()').get()
             file_size = row.xpath('td[@class="table_col2"]/text()').get()
             if file_name and file_size:
@@ -140,13 +149,7 @@ class TgxSpider(scrapy.Spider):
             self.logger.warning(
                 f"File details not found for {torrent_data['torrent_name']}. Retrying"
             )
-            yield response.follow(
-                response.url.replace(
-                    response.url.split("/")[2], random.choice(self.allowed_domains)
-                ),
-                self.parse_torrent_details,
-                meta={"torrent_data": torrent_data},
-            )
+            yield self.retry_request(response)
             return
 
         torrent_data["file_details"] = file_details
@@ -174,21 +177,6 @@ class TgxSpider(scrapy.Spider):
         ).get()
         if total_size:
             torrent_data["total_size"] = convert_size_to_bytes(total_size)
-        else:
-            # if the total size is not found, then tgx has shown captcha validation.
-            # so we need to slow down and retry the request
-            self.logger.warning(
-                f"Total size not found for {torrent_data['torrent_name']}. Retrying"
-            )
-            # change the hostname randomly to avoid captcha
-            yield response.follow(
-                response.url.replace(
-                    response.url.split("/")[2], random.choice(self.allowed_domains)
-                ),
-                self.parse_torrent_details,
-                meta={"torrent_data": torrent_data},
-            )
-            return
 
         # Extracting date created
         date_created = response.xpath(
@@ -208,3 +196,100 @@ class TgxSpider(scrapy.Spider):
             torrent_data["languages"] = [language.strip()]
 
         yield torrent_data
+
+    def handle_failure(self, failure):
+        self.logger.error(repr(failure))
+        yield self.retry_request(failure.request)
+
+    def retry_request(self, request):
+        retry_count = request.meta.get("retry_count", 0)
+        if retry_count < 3:  # Set your retry limit
+            new_url = request.url.replace(
+                request.url.split("/")[2], random.choice(self.allowed_domains)
+            )
+            self.logger.info(f"Retrying with new URL: {new_url}")
+            return scrapy.Request(
+                url=new_url,
+                callback=self.parse_torrent_details,
+                errback=self.handle_failure,
+                meta={
+                    "playwright": True,
+                    "playwright_page_goto_kwargs": {
+                        "wait_until": "domcontentloaded",
+                        "referer": request.url,
+                        "timeout": 60000,
+                    },
+                    "playwright_page_methods": [
+                        PageMethod(
+                            "wait_for_selector",
+                            "#smallguestnav",
+                            timeout=60000,
+                        ),
+                    ],
+                    "torrent_data": request.meta["torrent_data"],
+                    "retry_count": retry_count + 1,
+                },
+            )
+        else:
+            self.logger.error("Max retries reached")
+            return None
+
+
+class FormulaTgxSpider(TgxSpider):
+    name = "formula_tgx"
+    uploader_profiles = [
+        "egortech",
+        "F1Carreras",
+        "smcgill1969",
+    ]
+    catalog = ["formula_racing"]
+    background_image = "https://i.postimg.cc/S4wcrGRZ/f1background.png?dl=1"
+    logo_image = "https://i.postimg.cc/Sqf4V8tj/f1logo.png?dl=1"
+
+    keyword_patterns = re.compile(r"formula[ .+]*[1234e]+", re.IGNORECASE)
+    scraped_info_hash_key = "formula_tgx_scraped_info_hash3"
+
+    custom_settings = {
+        "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+            "mediafusion_scrapy.pipelines.FormulaParserPipeline": 200,
+            "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
+        },
+        "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+        "PLAYWRIGHT_CDP_URL": settings.playwright_cdp_url,
+        "DOWNLOAD_HANDLERS": {
+            "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+            "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+        },
+        "PLAYWRIGHT_MAX_CONTEXTS": 1,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
+    }
+
+
+class MotoGPTgxSpider(TgxSpider):
+    name = "motogp_tgx"
+    uploader_profiles = [
+        "smcgill1969",
+    ]
+    catalog = ["motogp_racing"]
+
+    keyword_patterns = re.compile(r"MotoGP[ .+]*", re.IGNORECASE)
+    scraped_info_hash_key = "motogp_tgx_scraped_info_hash"
+    background_image = random.choice(SPORTS_ARTIFACTS["MotoGP"]["background"])
+    logo_image = random.choice(SPORTS_ARTIFACTS["MotoGP"]["logo"])
+
+    custom_settings = {
+        "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+            "mediafusion_scrapy.pipelines.MotoGPParserPipeline": 200,
+            "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
+        },
+        "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+        "PLAYWRIGHT_CDP_URL": settings.playwright_cdp_url,
+        "DOWNLOAD_HANDLERS": {
+            "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+            "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+        },
+        "PLAYWRIGHT_MAX_CONTEXTS": 1,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
+    }

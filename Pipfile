@@ -41,6 +41,7 @@ prometheus-client = "*"
 curl-cffi = "*"
 pyasynctracker = "*"
 humanize = {git = "git+https://github.com/python-humanize/humanize.git"}
+scrapy-playwright = "*"
 
 [dev-packages]
 pysocks = "*"

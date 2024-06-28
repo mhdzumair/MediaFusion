@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     scraper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     prowlarr_url: str = "http://prowlarr-service:9696"
+    playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
 
     # External API keys and secrets
     secret_key: str
