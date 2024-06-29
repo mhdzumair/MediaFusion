@@ -143,3 +143,4 @@ mediafusion.local*
 .lock
 kodi/build/
 kodi/*.zip
+!kodi/**/lib/
