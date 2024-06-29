@@ -780,9 +780,9 @@ def validate_category_with_title(meta_data: dict) -> bool:
         if not any(
             keyword in meta_data.get("fileName", meta_data.get("title", "")).lower()
             for keyword in [
-                ".mkv",
-                ".mp4",
-                ".avi",
+                "mkv",
+                "mp4",
+                "avi",
                 ".webm",
                 ".mov",
                 ".flv",
@@ -802,6 +802,13 @@ def validate_category_with_title(meta_data: dict) -> bool:
                 "360p",
                 "2160p",
                 "4k",
+                "x264",
+                "x265",
+                "hevc",
+                "h264",
+                "h265",
+                "aac",
+                "xvid",
             ]
         ):
             return False
