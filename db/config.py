@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
     disable_motogp_tgx_scheduler: bool = False
     update_seeders_crontab: str = "0 0 * * *"
+    arab_torrents_scheduler_crontab: str = "0 0 * * *"
+    disable_arab_torrents_scheduler: bool = False
 
     # Time-related settings
     torrentio_search_interval_days: int = 3
