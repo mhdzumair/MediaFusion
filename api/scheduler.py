@@ -196,7 +196,7 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         },
     )
 
-    if not settings.arab_torrents_scheduler:
+    if not settings.disable_arab_torrents_scheduler:
         scheduler.add_job(
             run_spider.send,
             CronTrigger.from_crontab(settings.arab_torrents_scheduler_crontab),
