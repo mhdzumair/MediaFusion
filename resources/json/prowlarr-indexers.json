@@ -4,13 +4,6 @@
 	  "https://bitsearch.to/"
 	],
 	"legacyUrls": [
-	  "https://bitsearch.nocensor.biz/",
-	  "https://bitsearch.nocensor.sbs/",
-	  "https://bitsearch.nocensor.world/",
-	  "https://bitsearch.nocensor.lol/",
-	  "https://bitsearch.mrunblock.guru/",
-	  "https://bitsearch.mrunblock.life/",
-	  "https://bitsearch.nocensor.click/",
 	  "https://bitsearch.nocensor.cloud/",
 	  "https://bitsearch.mrunblock.bond/"
 	],
@@ -193,7 +186,7 @@
 		"value": 1
 	  },
 	  {
-		"name": "info_8000",
+		"name": "info_category_8000",
 		"value": "BitSearch does not properly return categories in its search results for some releases.</br>To add to your Apps' Torznab indexer, you will need to include the 8000(Other) category."
 	  }
 	],
@@ -2611,19 +2604,17 @@
   {
 	"indexerUrls": [
 	  "https://www.limetorrents.lol/",
-	  "https://limetorrents.abcproxy.org/",
-	  "https://limetorrents.unblockit.ong/",
+	  "https://limetorrents.unblockit.black/",
 	  "https://limetorrents.unblockninja.com/",
 	  "https://limetorrents.ninjaproxy1.com/",
 	  "https://limetorrents.proxyninja.org/",
-	  "https://limetorrents.torrentbay.st/"
+	  "https://limetorrents.proxyninja.net/",
+	  "https://limetorrents.torrentbay.st/",
+	  "https://limetorrents.torrentsbay.org/"
 	],
 	"legacyUrls": [
-	  "https://limetorrents.mrunblock.guru/",
-	  "https://limetorrents.unblockit.click/",
 	  "https://limetorrents.unblockit.asia/",
 	  "https://limetorrents.unblockit.mov/",
-	  "https://limetorrents.mrunblock.life/",
 	  "https://limetorrents.unblockit.rsvp/",
 	  "https://limetorrents.unblockit.vegas/",
 	  "https://limetorrents.unblockit.esq/",
@@ -2636,7 +2627,9 @@
 	  "https://limetorrents.unblockit.dad/",
 	  "https://limetorrents.unblockit.africa/",
 	  "https://limetorrents.unblockit.casa/",
-	  "https://limetorrents.unblockit.sbs/"
+	  "https://limetorrents.unblockit.sbs/",
+	  "https://limetorrents.unblockit.ong/",
+	  "https://limetorrents.abcproxy.org/"
 	],
 	"definitionName": "limetorrents",
 	"description": "LimeTorrents is a Public general torrent index with mostly verified torrents",
@@ -2780,7 +2773,7 @@
 		"value": 0
 	  },
 	  {
-		"name": "info_8000",
+		"name": "info_category_8000",
 		"value": "LimeTorrents only returns category <b>Other</b> in its <i>Keywordless</i> search results page.</br>To pass your apps' indexer TEST you will need to include the 8000(Other) category."
 	  }
 	],
@@ -3497,202 +3490,6 @@
   },
   {
 	"indexerUrls": [
-	  "https://www.oxtorrent.zip/",
-	  "https://oxtorrent.proxyninja.org/"
-	],
-	"legacyUrls": [
-	  "https://www.protege-liens.com/",
-	  "https://www.rantop.org/",
-	  "https://www.torrent.ws/",
-	  "http://www.torrent911.ws/",
-	  "https://www.torrent911.ws/",
-	  "https://t911.org/",
-	  "https://www.torrent911.io/",
-	  "https://www.torrent911.biz/",
-	  "https://www.torrent911.pw/",
-	  "https://www.torrent911.cx/",
-	  "https://www.torrent911.vc/",
-	  "https://www.torrent911.bz/",
-	  "https://www.torrent911.ac/",
-	  "https://www.oxtorrent.pm/",
-	  "https://www.torrent911.pe/",
-	  "https://oxtorrent.unblockninja.com/",
-	  "https://torrent911.ninjaproxy1.com/",
-	  "https://torrent9.torrentbay.st/",
-	  "https://www.t911.ws/",
-	  "https://www.t911.pw/",
-	  "https://www.oxtorrent.nl/",
-	  "https://www.oxtorrent.sbs/",
-	  "https://www.oxtorrent.wtf/",
-	  "https://www.oxtorrent.tf/",
-	  "https://www.oxtorrent.day/"
-	],
-	"definitionName": "torrent911",
-	"description": "Torrent911 is a French Public site for TV / MOVIES / GENERAL",
-	"language": "fr-FR",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": []
-		},
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
-			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			},
-			{
-			  "id": 5080,
-			  "name": "TV/Documentary",
-			  "subCategories": []
-			},
-			{
-			  "id": 5050,
-			  "name": "TV/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 5060,
-			  "name": "TV/Sport",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": []
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": []
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 1000,
-		  "name": "Console",
-		  "subCategories": [
-			{
-			  "id": 1050,
-			  "name": "Console/XBox 360",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": []
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": []
-		}
-	  ],
-	  "supportsRawSearch": true,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep"
-	  ],
-	  "movieSearchParams": [
-		"q"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
-	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "torrent911",
-	"name": "Torrent911",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "torrent911"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "multilang",
-		"value": false
-	  },
-	  {
-		"name": "multilanguage",
-		"value": 1
-	  },
-	  {
-		"name": "vostfr",
-		"value": false
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrent911",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
 	  "https://www.torrentdownload.info/",
 	  "https://torrentdownload.unblockit.ong/"
 	],
@@ -3912,314 +3709,6 @@
 	"implementation": "Cardigann",
 	"configContract": "CardigannSettings",
 	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrentdownload",
-	"tags": []
-  },
-  {
-	"indexerUrls": [
-	  "https://torrentgalaxy.to/",
-	  "https://torrentgalaxy.mx/",
-	  "https://tgx.rs/",
-	  "https://tgx.sb/",
-	  "https://tgx.proxyninja.org/"
-	],
-	"legacyUrls": [
-	  "https://torrentgalaxy.org/",
-	  "https://torrentgalaxy.pw/",
-	  "https://tgx.unblocked.monster/",
-	  "https://torrentgalaxy.nocensor.space/",
-	  "https://torrentgalaxy.nocensor.work/",
-	  "https://torrentgalaxy.nocensor.biz/",
-	  "https://torrentgalaxy.nocensor.sbs/",
-	  "https://torrentgalaxy.nocensor.world/",
-	  "https://torrentgalaxy.su/",
-	  "https://torrentgalaxy.unblockit.click/",
-	  "https://torrentgalaxy.unblockit.asia/",
-	  "https://torrentgalaxy.unblockit.mov/",
-	  "https://torrentgalaxy.unblockit.rsvp/",
-	  "https://torrentgalaxy.unblockit.vegas/",
-	  "https://torrentgalaxy.unblockit.esq/",
-	  "https://torrentgalaxy.unblockit.zip/",
-	  "https://torrentgalaxy.unblockit.foo/",
-	  "https://torrentgalaxy.unblockit.ing/",
-	  "https://torrentgalaxy.unblockninja.com/"
-	],
-	"definitionName": "torrentgalaxy",
-	"description": "TorrentGalaxy (TGx) is a Public site for TV / MOVIES / GENERAL",
-	"language": "en-US",
-	"enable": true,
-	"redirect": false,
-	"supportsRss": true,
-	"supportsSearch": true,
-	"supportsRedirect": false,
-	"supportsPagination": false,
-	"appProfileId": 1,
-	"protocol": "torrent",
-	"privacy": "public",
-	"capabilities": {
-	  "limitsMax": 100,
-	  "limitsDefault": 100,
-	  "categories": [
-		{
-		  "id": 5000,
-		  "name": "TV",
-		  "subCategories": [
-			{
-			  "id": 5070,
-			  "name": "TV/Anime",
-			  "subCategories": []
-			},
-			{
-			  "id": 5080,
-			  "name": "TV/Documentary",
-			  "subCategories": []
-			},
-			{
-			  "id": 5040,
-			  "name": "TV/HD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5030,
-			  "name": "TV/SD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5045,
-			  "name": "TV/UHD",
-			  "subCategories": []
-			},
-			{
-			  "id": 5050,
-			  "name": "TV/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 5060,
-			  "name": "TV/Sport",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 4000,
-		  "name": "PC",
-		  "subCategories": [
-			{
-			  "id": 4040,
-			  "name": "PC/Mobile-Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 4010,
-			  "name": "PC/0day",
-			  "subCategories": []
-			},
-			{
-			  "id": 4050,
-			  "name": "PC/Games",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 3000,
-		  "name": "Audio",
-		  "subCategories": [
-			{
-			  "id": 3030,
-			  "name": "Audio/Audiobook",
-			  "subCategories": []
-			},
-			{
-			  "id": 3040,
-			  "name": "Audio/Lossless",
-			  "subCategories": []
-			},
-			{
-			  "id": 3020,
-			  "name": "Audio/Video",
-			  "subCategories": []
-			},
-			{
-			  "id": 3050,
-			  "name": "Audio/Other",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 7000,
-		  "name": "Books",
-		  "subCategories": [
-			{
-			  "id": 7030,
-			  "name": "Books/Comics",
-			  "subCategories": []
-			},
-			{
-			  "id": 7020,
-			  "name": "Books/EBook",
-			  "subCategories": []
-			},
-			{
-			  "id": 7040,
-			  "name": "Books/Technical",
-			  "subCategories": []
-			},
-			{
-			  "id": 7010,
-			  "name": "Books/Mags",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 2000,
-		  "name": "Movies",
-		  "subCategories": [
-			{
-			  "id": 2045,
-			  "name": "Movies/UHD",
-			  "subCategories": []
-			},
-			{
-			  "id": 2010,
-			  "name": "Movies/Foreign",
-			  "subCategories": []
-			},
-			{
-			  "id": 2020,
-			  "name": "Movies/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 2040,
-			  "name": "Movies/HD",
-			  "subCategories": []
-			},
-			{
-			  "id": 2030,
-			  "name": "Movies/SD",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 8000,
-		  "name": "Other",
-		  "subCategories": [
-			{
-			  "id": 8010,
-			  "name": "Other/Misc",
-			  "subCategories": []
-			}
-		  ]
-		},
-		{
-		  "id": 6000,
-		  "name": "XXX",
-		  "subCategories": [
-			{
-			  "id": 6040,
-			  "name": "XXX/x264",
-			  "subCategories": []
-			},
-			{
-			  "id": 6070,
-			  "name": "XXX/Other",
-			  "subCategories": []
-			},
-			{
-			  "id": 6080,
-			  "name": "XXX/SD",
-			  "subCategories": []
-			},
-			{
-			  "id": 6045,
-			  "name": "XXX/UHD",
-			  "subCategories": []
-			}
-		  ]
-		}
-	  ],
-	  "supportsRawSearch": false,
-	  "searchParams": [
-		"q",
-		"q"
-	  ],
-	  "tvSearchParams": [
-		"q",
-		"season",
-		"ep",
-		"imdbId"
-	  ],
-	  "movieSearchParams": [
-		"q",
-		"imdbId"
-	  ],
-	  "musicSearchParams": [
-		"q"
-	  ],
-	  "bookSearchParams": [
-		"q"
-	  ]
-	},
-	"priority": 25,
-	"downloadClientId": 0,
-	"added": "0001-01-01T00:00:00Z",
-	"sortName": "torrentgalaxy",
-	"name": "TorrentGalaxy",
-	"fields": [
-	  {
-		"name": "definitionFile",
-		"value": "torrentgalaxy"
-	  },
-	  {
-		"name": "baseUrl"
-	  },
-	  {
-		"name": "baseSettings.queryLimit"
-	  },
-	  {
-		"name": "baseSettings.grabLimit"
-	  },
-	  {
-		"name": "baseSettings.limitsUnit",
-		"value": 0
-	  },
-	  {
-		"name": "torrentBaseSettings.appMinimumSeeders"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedRatio"
-	  },
-	  {
-		"name": "torrentBaseSettings.seedTime"
-	  },
-	  {
-		"name": "torrentBaseSettings.packSeedTime"
-	  },
-	  {
-		"name": "excludeads",
-		"value": false
-	  },
-	  {
-		"name": "sort",
-		"value": 0
-	  },
-	  {
-		"name": "type",
-		"value": 1
-	  },
-	  {
-		"name": "cardigannCaptcha",
-		"value": ""
-	  }
-	],
-	"implementationName": "Cardigann",
-	"implementation": "Cardigann",
-	"configContract": "CardigannSettings",
-	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#torrentgalaxy",
 	"tags": []
   },
   {
