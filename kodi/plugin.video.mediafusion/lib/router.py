@@ -291,10 +291,22 @@ def get_streams(params):
 
 def play_video(params):
     video_url = params["video_url"]
-
     li = xbmcgui.ListItem(path=video_url)
+
+    # If headers are present, append them to the URL for ffmpegdirect inputstream
     if "headers" in params:
-        li.setProperty("inputstream.adaptive.stream_headers", params["headers"])
+        headers = parse.parse_qs(params["headers"])
+        formatted_headers = "&".join([f"{k}={v[0]}" for k, v in headers.items()])
+        li.setPath(f"{video_url}|{formatted_headers}")
+
+        li.setProperty("inputstream", "inputstream.ffmpegdirect")
+        if video_url.endswith(".ts"):
+            li.setMimeType("video/mp2t")
+        elif video_url.endswith(".mpd"):
+            li.setMimeType("application/dash+xml")
+        elif video_url.endswith(".m3u8"):
+            li.setMimeType("application/vnd.apple.mpegurl")
+
     xbmcplugin.setResolvedUrl(ADDON_HANDLE, True, li)
 
 

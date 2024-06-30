@@ -43,6 +43,11 @@ def fetch_data(url):
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
+        if e.response is None:
+            xbmc.log(f"Request failed: {e}", xbmc.LOGERROR)
+            xbmcgui.Dialog().notification(
+                "MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR
+            )
         if e.response.status_code == 401:
             xbmc.log("Unauthorized request", xbmc.LOGERROR)
             xbmcgui.Dialog().notification(
