@@ -131,8 +131,6 @@ async def streaming_provider_endpoint(
 
     await release_redis_lock(lock)
 
-    logging.info("Redirecting to: %s", video_url)
-
     return RedirectResponse(
         url=video_url, headers=response.headers, status_code=redirect_status_code
     )
