@@ -13,6 +13,8 @@ from .utils import (
     SECRET_STR,
     add_context_menu_items,
     log,
+    convert_info_hash_to_magnet,
+    is_elementum_installed_and_enabled,
 )
 
 
@@ -252,11 +254,28 @@ def get_streams(params):
 
         li.setProperty("IsPlayable", "true")
 
+        if "url" in stream:
+            video_url = stream.get("url")
+        elif "infoHash" in stream:
+            if not is_elementum_installed_and_enabled():
+                xbmcgui.Dialog().notification(
+                    "MediaFusion",
+                    "Elementum is not installed. Please install Elementum to play p2p torrents.",
+                    xbmcgui.NOTIFICATION_ERROR,
+                )
+                return
+            magnet_link = convert_info_hash_to_magnet(
+                stream.get("infoHash"), stream.get("sources", [])
+            )
+            video_url = f"plugin://plugin.video.elementum/play?uri={parse.quote_plus(magnet_link)}"
+        else:
+            continue
+
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE,
             url=build_url(
                 "play_video",
-                video_url=stream["url"],
+                video_url=video_url,
                 headers=parse.urlencode(
                     stream.get("behaviorHints", {})
                     .get("proxyHeaders", {})

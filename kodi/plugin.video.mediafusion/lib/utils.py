@@ -92,3 +92,22 @@ def add_context_menu_items(li, video_id, catalog_type, catalog_id=None):
 
 def log(message, level=xbmc.LOGINFO):
     xbmc.log(f"[MediaFusion] {message}", level)
+
+
+def convert_info_hash_to_magnet(info_hash: str, trackers: list):
+    magnet = f"magnet:?xt=urn:btih:{info_hash}"
+    for tracker in trackers:
+        if tracker.startswith("tracker:"):
+            magnet += f"&tr={tracker.replace('tracker:', '')}"
+        elif tracker.startswith("dht:"):
+            magnet += f"&dht={tracker.replace('dht:', '')}"
+
+    return magnet
+
+
+def is_elementum_installed_and_enabled():
+    try:
+        addon = xbmcaddon.Addon("plugin.video.elementum")
+        return True
+    except Exception:
+        return False
