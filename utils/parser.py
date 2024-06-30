@@ -239,7 +239,7 @@ async def parse_tv_stream_data(
     tv_streams: list[TVStreams], redis: Redis
 ) -> list[Stream]:
     stream_list = []
-    for stream in tv_streams:
+    for stream in tv_streams[::-1]:
         if settings.validate_m3u8_urls_liveness:
             is_working = await validate_m3u8_url_with_cache(
                 redis, stream.url, stream.behaviorHints or {}
