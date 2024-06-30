@@ -28,7 +28,7 @@ class StreamedSpider(scrapy.Spider):
 
     m3u8_base_url = "https://{}ignores.top/js"
     sub_domains = {
-        "rr": "Main Server",
+        "rr.": "Main Server",
     }
     mediafusion_referer = "https://mediafusion.addon/"
 
