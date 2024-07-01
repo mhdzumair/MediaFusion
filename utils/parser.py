@@ -175,7 +175,7 @@ async def parse_stream_data(
             "description": description,
             "behaviorHints": {
                 "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
-                "filename": file_name,
+                "filename": file_name or stream_data.torrent_name,
                 "videoSize": file_size,
             },
         }
