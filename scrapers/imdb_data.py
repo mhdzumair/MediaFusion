@@ -1,17 +1,18 @@
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Optional
 
 import dramatiq
 from beanie import BulkWriter
 from curl_cffi import requests
-from imdb import Cinemagoer
-from imdb import IMDbDataAccessError, Movie
-
 from db.models import (
     MediaFusionMetaData,
 )
+from imdb import Cinemagoer, IMDbDataAccessError, Movie
+from thefuzz import fuzz
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
+
 
 ia = Cinemagoer()
 
@@ -55,8 +56,6 @@ def get_imdb_rating(movie_id: str) -> Optional[float]:
 
 def search_imdb(title: str, year: int, retry: int = 5) -> dict:
     query = title
-    if year:
-        query += f" {year}"
     try:
         result = ia.search_movie(query)
     except Exception:
@@ -65,27 +64,67 @@ def search_imdb(title: str, year: int, retry: int = 5) -> dict:
         return {}
 
     for movie in result:
-        if movie.get("year") == year and movie.get("title").lower() in title.lower():
-            imdb_id = f"tt{movie.movieID}"
-            movie.set_item(
-                "aka_titles",
-                list({title.split("(")[0].strip() for title in movie.get("aka", [])}),
+        if fuzz.ratio(movie.get("title").lower(), title.lower()) < 85:
+            continue
+
+        if movie.get("kind") == "tv series":
+            ia.update(movie, info=["main"])
+            series_years = movie.get("series years").split("-")
+            series_start_year = int(series_years[0])
+            series_end_year = int(series_years[1]) if series_years[1] else math.inf
+            if not (series_start_year <= year <= series_end_year):
+                continue
+        else:
+            if movie.get("year") != year:
+                continue
+            ia.update(movie, info=["main"])
+
+        ia.update(movie, info=["parents guide"])
+        imdb_id = f"tt{movie.movieID}"
+        movie.set_item(
+            "aka_titles",
+            list({title.split("(")[0].strip() for title in movie.get("aka", [])}),
+        )
+        movie.set_item(
+            "parent_guide_nudity_status",
+            movie.get("advisory votes", {}).get("nudity", {}).get("status"),
+        )
+        movie.set_item(
+            "parent_guide_certificates",
+            list(
+                set(
+                    [
+                        certificate.get("certificate")
+                        for certificate in movie.get("certificates", [])
+                    ]
+                )
+            ),
+        )
+
+        poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
+        if requests.get(poster).status_code == 200:
+            poster_image = poster.replace("small", "medium")
+            background_image = (
+                f"https://live.metahub.space/background/medium/{imdb_id}/img"
             )
-            poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
-            if requests.get(poster).status_code == 200:
-                return {
-                    "imdb_id": imdb_id,
-                    "poster": poster.replace("small", "medium"),
-                    "background": f"https://live.metahub.space/background/medium/{imdb_id}/img",
-                    "title": movie.get("title"),
-                }
-            poster = movie.get("full-size cover url")
-            return {
-                "imdb_id": imdb_id,
-                "poster": poster,
-                "background": poster,
-                "title": movie.get("title"),
-            }
+        else:
+            poster_image = movie.get("full-size cover url")
+            background_image = poster_image
+
+        return {
+            "imdb_id": imdb_id,
+            "poster": poster_image,
+            "background": background_image,
+            "title": movie.get("title"),
+            "description": movie.get("plot outline"),
+            "genres": movie.get("genres"),
+            "imdb_rating": movie.get("rating"),
+            "aka_titles": movie.get("aka_titles"),
+            "kind": movie.get("kind"),
+            "parent_guide_nudity_status": movie.get("parent_guide_nudity_status"),
+            "parent_guide_certificates": movie.get("parent_guide_certificates"),
+            "runtime": movie.get("runtimes", [None])[0],
+        }
     return {}
 
 
