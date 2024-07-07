@@ -648,7 +648,7 @@ async def get_existing_metadata(metadata, model):
 
 def create_metadata_object(metadata, imdb_data, model):
     poster = imdb_data.get("poster") or metadata["poster"]
-    background = imdb_data.get("background") or metadata["poster"]
+    background = imdb_data.get("background", metadata.get("background", poster))
     return model(
         id=metadata["id"],
         title=metadata["title"],
@@ -661,23 +661,27 @@ def create_metadata_object(metadata, imdb_data, model):
         website=metadata.get("website"),
         is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
         stars=metadata.get("stars"),
-        aka_titles=imdb_data.get("aka_titles"),
+        aka_titles=imdb_data.get("aka_titles", metadata.get("aka_titles")),
+        genres=imdb_data.get("genres", metadata.get("genres")),
     )
 
 
-def create_stream_object(metadata):
-    languages = (
-        [metadata["language"]]
-        if isinstance(metadata["language"], str)
-        else metadata["language"]
-    )
+def create_stream_object(metadata, is_movie: bool = False):
+    if "language" in metadata:
+        languages = (
+            [metadata["language"]]
+            if isinstance(metadata["language"], str)
+            else metadata["language"]
+        )
+    else:
+        languages = metadata["languages"]
     return TorrentStreams(
         id=metadata["info_hash"],
         torrent_name=metadata["torrent_name"],
         announce_list=metadata["announce_list"],
         size=metadata["total_size"],
-        filename=metadata["largest_file"]["filename"],
-        file_index=metadata["largest_file"]["index"],
+        filename=metadata["largest_file"]["filename"] if is_movie else None,
+        file_index=metadata["largest_file"]["index"] if is_movie else None,
         languages=languages,
         resolution=metadata.get("resolution"),
         codec=metadata.get("codec"),
@@ -701,7 +705,9 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
         imdb_data = {}
         if is_imdb:
             imdb_data = search_imdb(metadata["title"], metadata.get("year"))
-        metadata["id"] = imdb_data.get("imdb_id") or f"mf{uuid4().fields[-1]}"
+        metadata["id"] = imdb_data.get(
+            "imdb_id", metadata.get("id", f"mf{uuid4().fields[-1]}")
+        )
         movie_data = create_metadata_object(
             metadata, imdb_data, MediaFusionMovieMetaData
         )
@@ -712,7 +718,7 @@ async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
     else:
         metadata["id"] = existing_movie.id
 
-    new_stream = create_stream_object(metadata)
+    new_stream = create_stream_object(metadata, True)
     await new_stream.create()
     logging.info(
         "Added stream for movie %s, info_hash: %s",
@@ -730,7 +736,9 @@ async def save_series_metadata(metadata: dict, is_imdb: bool = True):
         imdb_data = {}
         if is_imdb:
             imdb_data = search_imdb(metadata["title"], metadata.get("year"))
-        metadata["id"] = imdb_data.get("imdb_id") or f"mf{uuid4().fields[-1]}"
+        metadata["id"] = imdb_data.get(
+            "imdb_id", metadata.get("id", f"mf{uuid4().fields[-1]}")
+        )
         series_data = create_metadata_object(
             metadata, imdb_data, MediaFusionSeriesMetaData
         )
@@ -756,7 +764,7 @@ async def save_series_metadata(metadata: dict, is_imdb: bool = True):
     if not episodes:
         logging.warning("No episodes found for series %s", series_data.title)
         return
-    new_stream = create_stream_object(metadata)
+    new_stream = create_stream_object(metadata, False)
     new_stream.season = Season(
         season_number=metadata.get("season", 1), episodes=episodes
     )
@@ -1007,7 +1015,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
         stream_instance = TVStreams(meta_id=meta_id, **stream)
         existing_streams[
             stream_instance.url or stream_instance.ytId or stream_instance.externalUrl
-        ] = stream_instance.dict()
+        ] = stream_instance.model_dump()
 
     # Update the event metadata with the updated list of streams
     streams = list(existing_streams.values())
