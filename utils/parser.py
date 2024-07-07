@@ -23,6 +23,11 @@ async def filter_and_sort_streams(
     selected_catalogs_set = set(user_data.selected_catalogs)
     selected_resolutions_set = set(user_data.selected_resolutions)
 
+    # Normalize resolutions
+    for stream in streams:
+        if stream.resolution not in const.RESOLUTIONS:
+            stream.resolution = None
+
     # Step 1: Filter streams by selected catalogs, resolutions, and size
     filtered_streams = [
         stream
@@ -66,7 +71,7 @@ async def filter_and_sort_streams(
 
         # Create the sort tuple, using resolution ranking for resolution sorting
         return tuple(
-            const.RESOLUTION_RANKING[stream.resolution]
+            const.RESOLUTION_RANKING.get(stream.resolution, 0)
             if sort_key == "resolution"
             else sort_key_values[sort_key]
             for sort_key in user_data.torrent_sorting_priority
@@ -216,15 +221,26 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
 
 def convert_size_to_bytes(size_str: str) -> int:
     """Convert size string to bytes."""
-    match = re.match(r"(\d+(?:\.\d+)?)\s*(GB|MB)", size_str, re.IGNORECASE)
+    match = re.match(r"(\d+(?:\.\d+)?)\s*(GB|MB|KB|B)", size_str, re.IGNORECASE)
     if match:
         size, unit = match.groups()
         size = float(size)
-        return int(size * 1024**3) if "GB" in unit.upper() else int(size * 1024**2)
+        match unit.lower():
+            case "gb":
+                return int(size * 1024**3)
+            case "mb":
+                return int(size * 1024**2)
+            case "kb":
+                return int(size * 1024)
+            case "b":
+                return int(size)
     return 0
 
 
 def get_catalogs(catalog: str, languages: list[str]) -> list[str]:
+    if isinstance(catalog, list):
+        return catalog
+
     base_catalogs = ["hdrip", "tcrip", "dubbed", "series"]
     base_catalog = catalog.split("_")[-1]
 
