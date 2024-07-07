@@ -15,15 +15,15 @@ from redis.asyncio import Redis
 from db import schemas
 from db.config import settings
 from db.models import (
-    MediaFusionMovieMetaData,
-    MediaFusionSeriesMetaData,
-    TorrentStreams,
-    Season,
     Episode,
-    MediaFusionTVMetaData,
-    TVStreams,
     MediaFusionEventsMetaData,
     MediaFusionMetaData,
+    MediaFusionMovieMetaData,
+    MediaFusionSeriesMetaData,
+    MediaFusionTVMetaData,
+    Season,
+    TorrentStreams,
+    TVStreams,
 )
 from db.schemas import Stream, TorrentStreamsList
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
@@ -31,10 +31,10 @@ from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
 from utils import crypto
 from utils.parser import (
-    parse_stream_data,
-    get_catalogs,
-    parse_tv_stream_data,
     fetch_downloaded_info_hashes,
+    get_catalogs,
+    parse_stream_data,
+    parse_tv_stream_data,
 )
 from utils.validation_helper import validate_parent_guide_nudity
 
@@ -47,6 +47,7 @@ async def get_meta_list(
     skip: int = 0,
     limit: int = 25,
     user_ip: str | None = None,
+    genre: Optional[str] = None,
 ) -> list[schemas.Meta]:
     # Define query filters for TorrentStreams based on catalog
     if is_watchlist_catalog:
@@ -56,6 +57,10 @@ async def get_meta_list(
         query_filters = {"_id": {"$in": downloaded_info_hashes}}
     else:
         query_filters = {"catalog": {"$in": [catalog]}}
+
+    genre_filter = {}
+    if genre:
+        genre_filter = {"genres": {"$in": [genre]}}
 
     poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
     meta_class = MediaFusionMetaData
@@ -74,6 +79,7 @@ async def get_meta_list(
                     {
                         "$match": {
                             "type": catalog_type,
+                            **genre_filter,
                             "$or": [
                                 {  # If nudity status exists and matches regex, filter it out
                                     "parent_guide_nudity_status": {

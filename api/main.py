@@ -297,6 +297,7 @@ async def get_catalog(
                 is_watchlist_catalog,
                 skip,
                 user_ip=user_ip,
+                genre=genre,
             )
         )
         if (

@@ -77,6 +77,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -88,6 +119,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -99,6 +161,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -110,6 +203,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -121,6 +245,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -132,6 +287,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -143,6 +329,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -154,6 +371,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -165,6 +413,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -176,6 +455,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -187,6 +497,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -198,6 +539,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -209,6 +581,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -220,6 +623,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -231,6 +665,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -242,6 +707,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -253,6 +749,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -264,6 +791,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -275,6 +833,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -286,6 +875,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -297,6 +917,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -308,6 +959,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -319,6 +1001,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -330,6 +1043,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -341,6 +1085,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -352,6 +1127,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -363,6 +1169,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -374,6 +1211,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -561,6 +1429,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -572,6 +1471,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -583,6 +1513,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	},
@@ -594,6 +1555,37 @@
 		{
 		  "name": "skip",
 		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"Action",
+			"Adventure",
+			"Animation",
+			"Biography",
+			"Comedy",
+			"Crime",
+			"Documentary",
+			"Drama",
+			"Family",
+			"Fantasy",
+			"Film-Noir",
+			"Game-Show",
+			"History",
+			"Horror",
+			"Music",
+			"Musical",
+			"Mystery",
+			"Reality-TV",
+			"Romance",
+			"Sci-Fi",
+			"Sport",
+			"Talk-Show",
+			"Thriller",
+			"War",
+			"Western"
+		  ]
 		}
 	  ]
 	}
