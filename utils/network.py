@@ -95,9 +95,10 @@ async def batch_process_with_circuit_breaker(
                     ):
                         retry_batch.append(item)
                     elif isinstance(result, Exception):
+                        traceback = getattr(result, "__traceback__", None)
                         logging.error(
                             f"Unexpected error during batch processing: {result}",
-                            exc_info=True,
+                            exc_info=(type(result), result, traceback),
                         )
                     else:
                         successful_results.append(result)
