@@ -493,6 +493,25 @@
 	  ]
 	},
 	{
+	  "id": "fighting",
+	  "type": "movie",
+	  "name": "Fighting (WWE, UFC)",
+	  "extra": [
+		{
+		  "name": "skip",
+		  "isRequired": false
+		},
+		{
+		  "name": "genre",
+		  "isRequired": false,
+		  "options": [
+			"WWE",
+			"UFC"
+		  ]
+		}
+	  ]
+	},
+	{
 	  "id": "other_sports",
 	  "type": "movie",
 	  "name": "Other Sports",

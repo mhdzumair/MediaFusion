@@ -15,7 +15,8 @@ from utils.torrent import parse_magnet
 
 class TgxSpider(scrapy.Spider):
     allowed_domains = ["torrentgalaxy.to", "tgx.rs", "torrentgalaxy.mx", "tgx.sb"]
-    uploader_profiles: list[str]
+    uploader_profiles: list[str] = []
+    search_queries: list[str] = []
     catalog: list[str]
     background_image: str
     logo_image: str
@@ -35,45 +36,119 @@ class TgxSpider(scrapy.Spider):
 
     def start_requests(self):
         for uploader_profile in self.uploader_profiles:
+            parse_url = f"https://{random.choice(self.allowed_domains)}/profile/{uploader_profile}/torrents/0"
             yield scrapy.Request(
-                f"https://{random.choice(self.allowed_domains)}/profile/{uploader_profile}/torrents/0",
+                parse_url,
                 self.parse,
-                meta={"uploader_profile": uploader_profile},
+                meta={
+                    "uploader_profile": uploader_profile,
+                    "playwright": True,
+                    "playwright_page_goto_kwargs": {
+                        "wait_until": "domcontentloaded",
+                        "timeout": 60000,
+                    },
+                    "playwright_page_methods": [
+                        PageMethod(
+                            "wait_for_selector",
+                            "#smallguestnav",
+                            timeout=60000,
+                        ),
+                    ],
+                    "is_search_query": False,
+                    "parse_url": parse_url,
+                },
+            )
+        for search_query in self.search_queries:
+            parse_url = f"https://{random.choice(self.allowed_domains)}/torrents.php?{search_query}"
+            yield scrapy.Request(
+                parse_url,
+                self.parse,
+                meta={
+                    "playwright": True,
+                    "playwright_page_goto_kwargs": {
+                        "wait_until": "domcontentloaded",
+                        "timeout": 60000,
+                    },
+                    "playwright_page_methods": [
+                        PageMethod(
+                            "wait_for_selector",
+                            "#smallguestnav",
+                            timeout=60000,
+                        ),
+                    ],
+                    "is_search_query": True,
+                    "parse_url": parse_url,
+                },
             )
 
     async def parse(self, response, **kwargs):
-        uploader_profile_name = response.meta["uploader_profile"]
-        self.logger.info(f"Scraping torrents from {uploader_profile_name}")
-
-        # Extract the last page number only once at the beginning
-        if self.scrape_all and response.url.endswith("/0"):
-            last_page_number = response.css(
-                "ul.pagination li.page-item:not(.disabled) a::attr(href)"
-            ).re(r"/profile/.*/torrents/(\d+)")[-2]
-            last_page_number = (
-                int(last_page_number) if last_page_number.isdigit() else 0
+        if "galaxyfence.php" in response.url:
+            self.logger.warning("Encountered galaxyfence.php. Retrying")
+            parse_url = response.meta.get("parse_url")
+            yield scrapy.Request(
+                parse_url, self.parse, meta=response.meta, dont_filter=True, priority=10
             )
+            return
 
-            # Generate requests for all pages
-            for page_number in range(1, last_page_number + 1):
-                next_page_url = (
-                    f"{response.url.split('/torrents/')[0]}/torrents/{page_number}"
+        uploader_profile_name = response.meta.get("uploader_profile")
+        is_search_query = response.meta.get("is_search_query")
+        if not is_search_query:
+            self.logger.info(f"Scraping torrents from {uploader_profile_name}")
+            # Extract the last page number only once at the beginning
+            if self.scrape_all and response.url.endswith("/0"):
+                last_page_number = response.css(
+                    "ul.pagination li.page-item:not(.disabled) a::attr(href)"
+                ).re(r"/profile/.*/torrents/(\d+)")[-2]
+                last_page_number = (
+                    int(last_page_number) if last_page_number.isdigit() else 0
                 )
-                yield response.follow(next_page_url, self.parse, meta=response.meta)
+
+                # Generate requests for all pages
+                for page_number in range(1, last_page_number + 1):
+                    next_page_url = (
+                        f"{response.url.split('/torrents/')[0]}/torrents/{page_number}"
+                    )
+                    response.meta["parse_url"] = next_page_url
+                    yield response.follow(next_page_url, self.parse, meta=response.meta)
+        else:
+            if self.scrape_all and response.url.endswith("page=0"):
+                last_page_number = response.css(
+                    "ul.pagination li.page-item:not(.disabled) a::attr(href)"
+                ).re(r"/torrents.php.*page=(\d+)")[-2]
+                last_page_number = (
+                    int(last_page_number) if last_page_number.isdigit() else 0
+                )
+
+                # Generate requests for all pages
+                for page_number in range(1, last_page_number + 1):
+                    next_page_url = (
+                        f"{response.url.replace('page=0', '')}page={page_number}"
+                    )
+                    response.meta["parse_url"] = next_page_url
+                    yield response.follow(next_page_url, self.parse, meta=response.meta)
+            self.logger.info(f"Scraping torrents from search query: {response.url}")
 
         # Extract torrents from the page
         for torrent in response.css("div.tgxtablerow.txlight"):
-            urls = torrent.css("div.tgxtablecell a::attr(href)").getall()
+            torrent_page_relative_link = torrent.css("div#click::attr(data-href)").get()
+
+            torrent.css("div#click::attr(data-href)")
 
             torrent_name = torrent.css(
                 "div.tgxtablecell.clickable-row.click.textshadow.rounded.txlight a b::text"
             ).get()
 
             if not self.keyword_patterns.search(torrent_name):
+                self.logger.info(f"Skipping torrent: {torrent_name}")
                 continue
+            self.logger.info(torrent_name)
 
-            tgx_unique_id = urls[0].split("/")[-2]
-            torrent_page_link = response.urljoin(urls[0])
+            if is_search_query:
+                uploader_profile_name = torrent.css("span.username.txlight::text").get()
+                self.logger.info(f"Scraping torrents from {uploader_profile_name}")
+
+            tgx_unique_id = torrent_page_relative_link.split("/")[-2]
+            torrent_page_link = response.urljoin(torrent_page_relative_link)
             torrent_link = torrent.css(
                 'a[href*="watercache.nanobytes.org"]::attr(href)'
             ).get()
@@ -90,6 +165,7 @@ class TgxSpider(scrapy.Spider):
             ).get()
 
             seeders = int(seeders) if seeders and seeders.isdigit() else None
+            imdb_id = torrent.css("a[href*='search=tt']::attr(href)").re_first(r"tt\d+")
 
             torrent_data = {
                 "info_hash": info_hash,
@@ -106,6 +182,7 @@ class TgxSpider(scrapy.Spider):
                 "announce_list": announce_list,
                 "catalog": self.catalog,
                 "scraped_info_hash_key": self.scraped_info_hash_key,
+                "imdb_id": imdb_id,
             }
 
             if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
@@ -155,9 +232,14 @@ class TgxSpider(scrapy.Spider):
         torrent_data["file_details"] = file_details
 
         cover_image_url = response.xpath(
-            "//img[contains(@class, 'img-responsive') and contains(@data-src, '.png')]/@data-src"
+            "//div[contains(@class, 'container-fluid')]/center//img[contains(@class, 'img-responsive')]/@data-src"
         ).get()
-        torrent_data["poster"] = cover_image_url
+
+        if cover_image_url:
+            torrent_data["poster"] = cover_image_url
+            torrent_data["background"] = cover_image_url
+        else:
+            torrent_data["poster"] = None
 
         # Getting the description for parsing video, audio, and other details
         torrent_description = "".join(
@@ -293,3 +375,76 @@ class MotoGPTgxSpider(TgxSpider):
         "PLAYWRIGHT_MAX_CONTEXTS": 1,
         "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
     }
+
+
+class BaseEventSpider(TgxSpider):
+    @staticmethod
+    def get_custom_settings(pipeline):
+        return {
+            "ITEM_PIPELINES": {
+                "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+                f"mediafusion_scrapy.pipelines.{pipeline}": 200,
+                "mediafusion_scrapy.pipelines.MovieStorePipeline": 300,
+            },
+            "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+            "PLAYWRIGHT_CDP_URL": settings.playwright_cdp_url,
+            "DOWNLOAD_HANDLERS": {
+                "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+                "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+            },
+            "PLAYWRIGHT_MAX_CONTEXTS": 1,
+            "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
+        }
+
+    def __init__(
+        self,
+        catalog,
+        search_queries,
+        keyword_patterns,
+        scraped_info_hash_key,
+        background_image,
+        logo_image,
+        *args,
+        **kwargs,
+    ):
+        self.catalog = catalog
+        self.search_queries = search_queries
+        self.keyword_patterns = re.compile(keyword_patterns, re.IGNORECASE)
+        self.scraped_info_hash_key = scraped_info_hash_key
+        self.background_image = background_image
+        self.logo_image = logo_image
+        super().__init__(*args, **kwargs)
+
+
+class WWETGXSpider(BaseEventSpider):
+    name = "wwe_tgx"
+    custom_settings = BaseEventSpider.get_custom_settings("WWEParserPipeline")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            catalog=["fighting"],
+            search_queries=["c7=1&c7=1&search=wwe&sort=id&order=desc&page=0"],
+            keyword_patterns=r"wwe[ .+]*",
+            scraped_info_hash_key="wwe_tgx_scraped_info_hash",
+            background_image=random.choice(SPORTS_ARTIFACTS["WWE"]["background"]),
+            logo_image=random.choice(SPORTS_ARTIFACTS["WWE"]["logo"]),
+            *args,
+            **kwargs,
+        )
+
+
+class UFCTGXSpider(BaseEventSpider):
+    name = "ufc_tgx"
+    custom_settings = BaseEventSpider.get_custom_settings("UFCParserPipeline")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            catalog=["fighting"],
+            search_queries=["c7=1&c7=1&search=ufc&sort=id&order=desc&page=0"],
+            keyword_patterns=r"ufc[ .+]*",
+            scraped_info_hash_key="ufc_tgx_scraped_info_hash",
+            background_image=random.choice(SPORTS_ARTIFACTS["UFC"]["background"]),
+            logo_image=random.choice(SPORTS_ARTIFACTS["UFC"]["logo"]),
+            *args,
+            **kwargs,
+        )

@@ -48,6 +48,7 @@ CATALOG_DATA = {
     "telugu_tcrip": "Telugu TCRip Movies",
     "torrentio_streams": "Torrentio Streams",
     "contribution_streams": "Contribution Streams",
+    "fighting": "Fighting (WWE, UFC)",
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [

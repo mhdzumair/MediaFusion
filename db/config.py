@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     update_seeders_crontab: str = "0 0 * * *"
     arab_torrents_scheduler_crontab: str = "0 0 * * *"
     disable_arab_torrents_scheduler: bool = False
+    wwe_tgx_scheduler_crontab: str = "10 */3 * * *"
+    disable_wwe_tgx_scheduler: bool = False
+    ufc_tgx_scheduler_crontab: str = "30 */3 * * *"
+    disable_ufc_tgx_scheduler: bool = False
 
     # Time-related settings
     torrentio_search_interval_days: int = 3

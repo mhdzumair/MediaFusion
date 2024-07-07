@@ -206,3 +206,25 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.arab_torrents_scheduler_crontab,
             },
         )
+
+    if not settings.disable_wwe_tgx_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.wwe_tgx_scheduler_crontab),
+            name="wwe_tgx",
+            kwargs={
+                "spider_name": "wwe_tgx",
+                "crontab_expression": settings.wwe_tgx_scheduler_crontab,
+            },
+        )
+
+    if not settings.disable_ufc_tgx_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.ufc_tgx_scheduler_crontab),
+            name="ufc_tgx",
+            kwargs={
+                "spider_name": "ufc_tgx",
+                "crontab_expression": settings.ufc_tgx_scheduler_crontab,
+            },
+        )

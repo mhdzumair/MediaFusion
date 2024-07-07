@@ -42,6 +42,7 @@ curl-cffi = "*"
 pyasynctracker = "*"
 humanize = {git = "git+https://github.com/python-humanize/humanize.git"}
 scrapy-playwright = "*"
+cinemagoerng = {git = "git+https://github.com/mhdzumair/cinemagoerng.git"}
 
 [dev-packages]
 pysocks = "*"
