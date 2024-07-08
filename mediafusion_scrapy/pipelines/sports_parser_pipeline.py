@@ -132,7 +132,7 @@ class BaseParserPipeline:
             imdb_id = result.get("imdb_id")
             self.imdb_cache[f"{title}_{year}"] = result
 
-            if result.get("kind") != "tv series":
+            if result.get("type_id") != "tvSeries":
                 torrent_data["id"] = imdb_id
                 torrent_data.update(
                     dict(
@@ -218,7 +218,7 @@ class UFCParserPipeline(BaseParserPipeline):
                     SPORTS_ARTIFACTS[self.event_name.upper()]["poster"]
                 )
             return
-        imdb_title = web.get_title(imdb_id=imdb_id)
+        imdb_title = web.get_title(imdb_id=imdb_id, page="main")
         torrent_data.update(
             dict(
                 id=imdb_id,

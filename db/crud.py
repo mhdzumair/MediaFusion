@@ -9,9 +9,6 @@ import humanize
 from apscheduler.triggers.cron import CronTrigger
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Set
-from pymongo.errors import DuplicateKeyError
-from redis.asyncio import Redis
-
 from db import schemas
 from db.config import settings
 from db.models import (
@@ -26,6 +23,8 @@ from db.models import (
     TVStreams,
 )
 from db.schemas import Stream, TorrentStreamsList
+from pymongo.errors import DuplicateKeyError
+from redis.asyncio import Redis
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
@@ -181,18 +180,20 @@ async def get_movie_data_by_id(
 
         movie_data = MediaFusionMovieMetaData(
             id=movie_id,
-            title=movie.get("title"),
-            year=movie.get("year"),
-            poster=movie.get("full-size cover url"),
-            background=movie.get("full-size cover url"),
+            title=movie.title,
+            year=movie.year,
+            poster=movie.primary_image,
+            background=movie.primary_image,
             streams=[],
-            description=movie.get("plot outline"),
-            genres=movie.get("genres"),
-            imdb_rating=movie.get("rating"),
-            parent_guide_nudity_status=movie.get("parent_guide_nudity_status"),
-            parent_guide_certificates=movie.get("parent_guide_certificates"),
-            aka_titles=movie.get("aka_titles"),
-            stars=movie.get("stars"),
+            description=movie.plot.get("en-US"),
+            genres=movie.genres,
+            imdb_rating=movie.rating,
+            parent_guide_nudity_status=movie.advisories.nudity.status,
+            parent_guide_certificates=list(
+                set(cert.certificate for cert in movie.certification.certificates)
+            ),
+            aka_titles=list(set(aka.title for aka in movie.akas))[10:],
+            stars=list(set(star.name for star in movie.cast))[10:],
         )
         try:
             await movie_data.create()
@@ -226,18 +227,20 @@ async def get_series_data_by_id(
 
         series_data = MediaFusionSeriesMetaData(
             id=series_id,
-            title=series.get("title"),
-            year=series.get("year"),
-            poster=series.get("full-size cover url"),
-            background=series.get("full-size cover url"),
+            title=series.title,
+            year=series.year,
+            poster=series.primary_image,
+            background=series.primary_image,
             streams=[],
-            description=series.get("plot outline"),
-            genres=series.get("genres"),
-            imdb_rating=series.get("rating"),
-            parent_guide_nudity_status=series.get("parent_guide_nudity_status"),
-            parent_guide_certificates=series.get("parent_guide_certificates"),
-            stars=series.get("stars"),
-            aka_titles=series.get("aka_titles"),
+            description=series.plot.get("en-US"),
+            genres=series.genres,
+            imdb_rating=series.rating,
+            parent_guide_nudity_status=series.advisories.nudity.status,
+            parent_guide_certificates=list(
+                set(cert.certificate for cert in series.certification.certificates)
+            ),
+            aka_titles=list(set(aka.title for aka in series.akas))[10:],
+            stars=list(set(star.name for star in series.cast))[10:],
         )
         try:
             await series_data.create()

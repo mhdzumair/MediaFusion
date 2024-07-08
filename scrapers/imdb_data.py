@@ -9,38 +9,23 @@ from curl_cffi import requests
 from db.models import (
     MediaFusionMetaData,
 )
-from imdb import Cinemagoer, IMDbDataAccessError, Movie
+from imdb import Cinemagoer, IMDbDataAccessError
 from thefuzz import fuzz
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
+
+from cinemagoerng import model, web
 
 
 ia = Cinemagoer()
 
 
-async def get_imdb_movie_data(movie_id: str) -> Optional[Movie]:
+async def get_imdb_movie_data(movie_id: str) -> Optional[model.Title]:
     try:
-        movie = ia.get_movie(
-            movie_id.removeprefix("tt"), info=["main", "parents guide"]
+        movie = web.get_title(movie_id, page="main")
+        web.update_title(
+            movie, page="parental_guide", keys=["certification", "advisories"]
         )
-        movie.set_item(
-            "parent_guide_nudity_status",
-            movie.get("advisory votes", {}).get("nudity", {}).get("status"),
-        )
-        movie.set_item(
-            "parent_guide_certificates",
-            list(
-                set(
-                    [
-                        certificate.get("certificate")
-                        for certificate in movie.get("certificates", [])
-                    ]
-                )
-            ),
-        )
-        movie.set_item(
-            "aka_titles",
-            list({title.split("(")[0].strip() for title in movie.get("aka")}),
-        )
+        web.update_title(movie, page="akas", keys=["akas"])
     except Exception:
         return None
     return movie
@@ -48,83 +33,93 @@ async def get_imdb_movie_data(movie_id: str) -> Optional[Movie]:
 
 def get_imdb_rating(movie_id: str) -> Optional[float]:
     try:
-        movie = ia.get_movie(movie_id.removeprefix("tt"), info=["main"])
+        movie = web.get_title(movie_id, page="main")
     except Exception:
         return None
-    return movie.get("rating")
+    return movie.rating
 
 
-def search_imdb(title: str, year: int, retry: int = 5) -> dict:
-    query = title
-    try:
-        result = ia.search_movie(query)
-    except Exception:
-        return search_imdb(title, year, retry - 1) if retry > 0 else {}
-    if not result:
-        return {}
-
-    for movie in result:
-        if fuzz.ratio(movie.get("title").lower(), title.lower()) < 85:
-            continue
-
-        if movie.get("kind") == "tv series":
-            ia.update(movie, info=["main"])
-            series_years = movie.get("series years").split("-")
-            series_start_year = int(series_years[0])
-            series_end_year = int(series_years[1]) if series_years[1] else math.inf
-            if not (series_start_year <= year <= series_end_year):
-                continue
-        else:
-            if movie.get("year") != year:
-                continue
-            ia.update(movie, info=["main"])
-
-        ia.update(movie, info=["parents guide"])
-        imdb_id = f"tt{movie.movieID}"
-        movie.set_item(
-            "aka_titles",
-            list({title.split("(")[0].strip() for title in movie.get("aka", [])}),
-        )
-        movie.set_item(
-            "parent_guide_nudity_status",
-            movie.get("advisory votes", {}).get("nudity", {}).get("status"),
-        )
-        movie.set_item(
-            "parent_guide_certificates",
-            list(
-                set(
-                    [
-                        certificate.get("certificate")
-                        for certificate in movie.get("certificates", [])
-                    ]
+def search_imdb(title: str, year: int, max_retries: int = 3) -> dict:
+    def get_poster_urls(imdb_id: str) -> tuple:
+        poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
+        try:
+            response = requests.head(poster, timeout=10)
+            if response.status_code == 200:
+                return (
+                    poster,
+                    poster,
                 )
-            ),
-        )
+        except requests.RequestsError:
+            pass
+        return None, None
 
-        poster = f"https://live.metahub.space/poster/small/{imdb_id}/img"
-        if requests.get(poster).status_code == 200:
-            poster_image = poster.replace("small", "medium")
-            background_image = (
-                f"https://live.metahub.space/background/medium/{imdb_id}/img"
+    def process_movie(movie, year: int) -> dict:
+        try:
+            imdb_title = web.get_title(f"tt{movie.movieID}", page="main")
+            if not imdb_title:
+                return {}
+
+            if imdb_title.type_id == "tvSeries":
+                if not (imdb_title.year <= year <= (imdb_title.end_year or math.inf)):
+                    return {}
+            elif imdb_title.year != year:
+                return {}
+
+            web.update_title(
+                imdb_title, page="parental_guide", keys=["certification", "advisories"]
             )
-        else:
-            poster_image = movie.get("full-size cover url")
-            background_image = poster_image
+            web.update_title(imdb_title, page="akas", keys=["akas"])
 
-        return {
-            "imdb_id": imdb_id,
-            "poster": poster_image,
-            "background": background_image,
-            "title": movie.get("title"),
-            "description": movie.get("plot outline"),
-            "genres": movie.get("genres"),
-            "imdb_rating": movie.get("rating"),
-            "aka_titles": movie.get("aka_titles"),
-            "kind": movie.get("kind"),
-            "parent_guide_nudity_status": movie.get("parent_guide_nudity_status"),
-            "parent_guide_certificates": movie.get("parent_guide_certificates"),
-            "runtime": movie.get("runtimes", [None])[0],
-        }
+            poster_image, background_image = get_poster_urls(imdb_title.imdb_id)
+            if not poster_image:
+                poster_image = imdb_title.primary_image
+                background_image = poster_image
+
+            return {
+                "imdb_id": imdb_title.imdb_id,
+                "poster": poster_image,
+                "background": background_image,
+                "title": imdb_title.title,
+                "description": imdb_title.plot.get("en-US"),
+                "genres": imdb_title.genres,
+                "imdb_rating": imdb_title.rating,
+                "aka_titles": list(set(aka.title for aka in imdb_title.akas))[:10],
+                "type_id": imdb_title.type_id,
+                "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
+                "parent_guide_certificates": list(
+                    set(
+                        cert.certificate
+                        for cert in imdb_title.certification.certificates
+                    )
+                ),
+                "runtime": imdb_title.runtime,
+            }
+        except (IMDbDataAccessError, AttributeError, Exception) as e:
+            logging.error(f"IMDB search: Error processing movie: {e}")
+            return {}
+
+    for attempt in range(max_retries):
+        try:
+            results = ia.search_movie(title)
+
+            for movie in results:
+                if fuzz.ratio(movie.get("title", "").lower(), title.lower()) < 85:
+                    continue
+
+                movie_data = process_movie(movie, year)
+                if movie_data:
+                    return movie_data
+
+            return {}  # No matching movie found
+
+        except (IMDbDataAccessError, Exception) as e:
+            logging.debug(f"Error in attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                logging.warning(
+                    "IMDB Search Max retries reached. Returning empty dictionary."
+                )
+                return {}
+
     return {}
 
 
@@ -154,15 +149,16 @@ async def process_imdb_data(movie_ids):
 
         if imdb_movie:
             update_data = {
-                "genres": imdb_movie.get("genres"),
-                "imdb_rating": imdb_movie.get("rating"),
-                "parent_guide_nudity_status": imdb_movie.get(
-                    "parent_guide_nudity_status"
+                "genres": imdb_movie.genres,
+                "imdb_rating": imdb_movie.rating,
+                "parent_guide_nudity_status": imdb_movie.advisories.nudity.status,
+                "parent_guide_certificates": list(
+                    set(
+                        cert.certificate
+                        for cert in imdb_movie.certification.certificates
+                    )
                 ),
-                "parent_guide_certificates": imdb_movie.get(
-                    "parent_guide_certificates"
-                ),
-                "aka_titles": imdb_movie.get("aka_titles"),
+                "aka_titles": list(set(aka.title for aka in imdb_movie.akas))[10:],
                 "last_updated_at": now,
             }
             await MediaFusionMetaData.find({"_id": movie_id}).update(

@@ -370,7 +370,7 @@
         "cinemagoerng": {
             "git": "git+https://github.com/mhdzumair/cinemagoerng.git",
             "markers": "python_version ~= '3.10'",
-            "ref": "90fda6bd96cfdb2510490472dccfe9827b39d12a"
+            "ref": "07153c9273430b3802fa30e0b376e12b0e712b62"
         },
         "click": {
             "hashes": [
