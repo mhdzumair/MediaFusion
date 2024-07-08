@@ -1,11 +1,10 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
-from scrapers.tv import validate_tv_streams_in_db
 from scrapers.imdb_data import fetch_movie_ids_to_update
 from scrapers.trackers import update_torrent_seeders
+from scrapers.tv import validate_tv_streams_in_db
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -184,6 +183,7 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             kwargs={
                 "spider_name": "motogp_tgx",
                 "crontab_expression": settings.motogp_tgx_scheduler_crontab,
+                "scrape_all": "false",
             },
         )
 
@@ -215,6 +215,7 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             kwargs={
                 "spider_name": "wwe_tgx",
                 "crontab_expression": settings.wwe_tgx_scheduler_crontab,
+                "scrape_all": "false",
             },
         )
 
@@ -226,5 +227,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             kwargs={
                 "spider_name": "ufc_tgx",
                 "crontab_expression": settings.ufc_tgx_scheduler_crontab,
+                "scrape_all": "false",
             },
         )
