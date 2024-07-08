@@ -361,8 +361,6 @@ async def get_series_streams(
     episode: int,
     user_ip: str | None = None,
 ) -> list[Stream]:
-    if season is None or episode is None:
-        season = episode = 1
     series_metadata = await get_series_data_by_id(video_id, False)
     if not (series_metadata and validate_parent_guide_nudity(series_metadata)):
         return []
@@ -401,12 +399,8 @@ async def get_series_streams(
                 episode,
             )
 
-    matched_episode_streams = filter(
-        lambda stream: stream.get_episode(season, episode), streams
-    )
-
     return await parse_stream_data(
-        matched_episode_streams, user_data, secret_str, season, episode, user_ip=user_ip
+        streams, user_data, secret_str, season, episode, user_ip=user_ip, is_series=True
     )
 
 

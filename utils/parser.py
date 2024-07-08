@@ -100,6 +100,7 @@ async def parse_stream_data(
     season: int = None,
     episode: int = None,
     user_ip: str | None = None,
+    is_series: bool = False,
 ) -> list[Stream]:
     stream_list = []
     streams = await filter_and_sort_streams(streams, user_data, user_ip)
@@ -121,6 +122,8 @@ async def parse_stream_data(
 
     for stream_data in streams:
         episode_data = stream_data.get_episode(season, episode)
+        if is_series and not episode_data:
+            continue
 
         if episode_data:
             file_name = episode_data.filename
