@@ -159,6 +159,9 @@ SCRAPY_SPIDERS = {
     "streambtw": "StreamBTW",
     "dlhd": "DaddyLiveHD",
     "motogp_tgx": "MotoGP TGX",
+    "arab_torrents": "Arab Torrents",
+    "wwe_tgx": "WWE TGX",
+    "ufc_tgx": "UFC TGX",
 }
 
 
