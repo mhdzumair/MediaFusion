@@ -370,7 +370,7 @@
         "cinemagoerng": {
             "git": "git+https://github.com/mhdzumair/cinemagoerng.git",
             "markers": "python_version ~= '3.10'",
-            "ref": "07153c9273430b3802fa30e0b376e12b0e712b62"
+            "ref": "e16c62220a4c87059a2948afc3c8d41cc2d35210"
         },
         "click": {
             "hashes": [
@@ -2121,12 +2121,12 @@
         },
         "scrapy-playwright": {
             "hashes": [
-                "sha256:ba287692a14c4b7e171718c821b3c2cd97985b76ea0f61462257090b6e7ecc62",
-                "sha256:ce060ca84ed0493a8ec843591c9080116134d62ec30b3e602d4e1641a8977187"
+                "sha256:7df0440fd46423122b2adb7cc67ec449d62cb5d7ee304bba7a20a8e326fa05d0",
+                "sha256:7ffb3db8dbd2b240de7f8a4f7b6f8806a0997c5d2d150abe940951a9afcd2135"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.0.37"
+            "version": "==0.0.38"
         },
         "seedrcc": {
             "hashes": [
@@ -2463,11 +2463,11 @@
         },
         "validators": {
             "hashes": [
-                "sha256:0f2387a9fe76d26c151ab716de18e34467413800abced256fd3a506f4f51cbdc",
-                "sha256:c2dc5ffef052040bc11b62677429a904f9e04abaf35e0196ac509237cd3c9961"
+                "sha256:de7574fc56a231c788162f3e7da15bc2053c5ff9e0281d9ff1afb3a7b69498df",
+                "sha256:e15a600d81555a4cd409b17bf55946c5edec7748e776afc85ed0a19bdee54e56"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==0.30.0"
+            "version": "==0.31.0"
         },
         "w3lib": {
             "hashes": [
