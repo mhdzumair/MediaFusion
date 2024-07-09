@@ -3,7 +3,6 @@ import re
 
 import redis
 import scrapy
-
 from db.config import settings
 from scrapers.helpers import get_scraper_config
 
@@ -191,16 +190,19 @@ class CommonTamilSpider(scrapy.Spider):
             return
 
         for torrent_link in torrent_links:
-            item.update(
+            torrent_item = item.copy()
+            torrent_item.update(
                 {
-                    "catalog": f"{item['language'].lower()}_{item['video_type']}",
-                    "type": "series" if item["video_type"] == "series" else "movie",
+                    "catalog": f"{torrent_item['language'].lower()}_{torrent_item['video_type']}",
+                    "type": "series"
+                    if torrent_item["video_type"] == "series"
+                    else "movie",
                     "poster": poster,
                     "created_at": created_at,
-                    "language": item["language"].title(),
+                    "language": torrent_item["language"].title(),
                     "torrent_link": torrent_link,
                     "scraped_url_key": self.scraped_urls_key,
                 }
             )
 
-            yield item
+            yield torrent_item
