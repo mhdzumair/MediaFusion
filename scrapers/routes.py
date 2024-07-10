@@ -12,9 +12,9 @@ from fastapi.responses import RedirectResponse, Response
 from db import schemas
 from db.config import settings
 from db.crud import (
-    is_torrent_stream_exists,
     get_movie_data_by_id,
     get_series_data_by_id,
+    get_stream_by_info_hash,
 )
 from mediafusion_scrapy.task import run_spider
 from scrapers import imdb_data
@@ -196,8 +196,10 @@ async def add_torrent(
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             raise_error("Failed to parse magnet link.")
-        if await is_torrent_stream_exists(info_hash):
-            return {"status": "Torrent already exists."}
+        if torrent_stream := await get_stream_by_info_hash(info_hash):
+            return {
+                "status": f"Torrent already exists and attached to meta id: {torrent_stream.meta_id}"
+            }
         data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
         if not data:
             raise_error("Failed to fetch torrent metadata.")
@@ -207,8 +209,10 @@ async def add_torrent(
         if not torrent_data:
             raise_error("Failed to extract torrent metadata.")
         info_hash = torrent_data.get("info_hash")
-        if await is_torrent_stream_exists(info_hash):
-            return {"status": "Torrent already exists."}
+        if torrent_stream := await get_stream_by_info_hash(info_hash):
+            return {
+                "status": f"Torrent already exists and attached to meta id: {torrent_stream.meta_id}"
+            }
 
     # if the source is url then only take the domain name
     if re.match(r"^https?://", source):
@@ -229,7 +233,7 @@ async def add_torrent(
         max_similarity_ratio = calculate_max_similarity_ratio(
             torrent_data.get("title"), movie_data.title, movie_data.aka_titles
         )
-        if max_similarity_ratio < 85:
+        if max_similarity_ratio < 75:
             raise_error(
                 f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
             )
@@ -255,7 +259,7 @@ async def add_torrent(
         max_similarity_ratio = calculate_max_similarity_ratio(
             torrent_data.get("title"), series_data.title, series_data.aka_titles
         )
-        if max_similarity_ratio < 85:
+        if max_similarity_ratio < 75:
             raise_error(
                 f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
             )

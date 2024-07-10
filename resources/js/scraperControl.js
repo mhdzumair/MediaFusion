@@ -371,9 +371,7 @@ async function handleAddTorrent(submitBtn, loadingSpinner) {
             method: 'POST',
             body: formData
         });
-        console.log(response);
         const data = await response.json();
-        console.log(data);
         if (data.detail) {
             showNotification(data.detail, 'error');
         } else {
@@ -381,7 +379,7 @@ async function handleAddTorrent(submitBtn, loadingSpinner) {
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
-        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+        showNotification(`Error submitting scraper form. Error: ${error.stringify()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
     }
@@ -449,7 +447,7 @@ async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
-        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+        showNotification(`Error submitting scraper form. Error: ${error.stringify()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
     }
@@ -478,7 +476,7 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
-        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+        showNotification(`Error submitting scraper form. Error: ${error.stringify()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
     }
@@ -510,7 +508,7 @@ async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
-        showNotification('Error submitting scraper form. Please check the console for more details.', 'error');
+        showNotification(`Error submitting scraper form. Error: ${error.stringify()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
     }
