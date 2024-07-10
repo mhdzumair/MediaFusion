@@ -749,6 +749,8 @@ async def save_series_metadata(metadata: dict, is_imdb: bool = True):
             await series_data.create()
         except DuplicateKeyError:
             logging.warning("Duplicate series found: %s", series_data.title)
+    else:
+        metadata["id"] = series_data.id
 
     if metadata.get("episodes"):
         episodes = metadata["episodes"]
