@@ -145,14 +145,13 @@ class CommonTamilSpider(scrapy.Spider):
 
     def parse_page_results(self, response):
         movies = response.css("li[data-rowid]")
-        item = response.meta["item"].copy()
-
         for movie in movies:
             movie_page_link = movie.css("a[data-ipshover-target]::attr(href)").get()
             if not movie_page_link:
                 continue
 
             if not self.check_scraped_urls(movie_page_link):
+                item = response.meta["item"].copy()
                 item["webpage_url"] = movie_page_link
                 yield response.follow(
                     movie_page_link, self.parse_movie_page, meta={"item": item}
