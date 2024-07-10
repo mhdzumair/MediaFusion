@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:v3.9.13
+        image: mhdzumair/mediafusion:v3.9.14
         ports:
         - containerPort: 8000
         resources:
@@ -124,7 +124,7 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:v3.9.13
+        image: mhdzumair/mediafusion:v3.9.14
         command: ["pipenv", "run", "dramatiq", "api.task", "-p", "1", "-t", "1"]
         env:
           - name: HOST_URL
