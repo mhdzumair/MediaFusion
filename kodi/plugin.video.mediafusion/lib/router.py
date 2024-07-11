@@ -35,46 +35,34 @@ def list_categories():
 
     for catalog in catalogs:
         if any(extra["name"] == "search" for extra in catalog.get("extra", [])):
-            continue
+            action = "search_catalog"
+            label = f"Search {catalog['name']}"
+        else:
+            action = "list_catalog"
+            label = catalog["name"]
 
-        url = build_url(
-            "list_catalog", catalog_type=catalog["type"], catalog_id=catalog["id"]
-        )
-        li = xbmcgui.ListItem(label=catalog["name"])
+        url = build_url(action, catalog_type=catalog["type"], catalog_id=catalog["id"])
+        li = xbmcgui.ListItem(label=label)
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
 
-def list_catalogs(params):
-    log(f"Loading {params['catalog_type']} videos...", xbmc.LOGINFO)
-    skip = int(params.get("skip", 0))
-    url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/skip={skip}.json"
-    response = fetch_data(url)
-    if not response:
-        return
-
-    videos = response.get("metas", [])
-    if not videos:
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "No videos available", xbmcgui.NOTIFICATION_ERROR
-        )
-        return
-
-    content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
+def process_videos(videos, catalog_type):
+    content_type = "movies" if catalog_type == "movie" else "tvshows"
     xbmcplugin.setContent(ADDON_HANDLE, content_type)
 
     for video in videos:
-        if params["catalog_type"] == "series":
+        if catalog_type == "series":
             url = build_url(
                 "list_seasons",
-                catalog_type=params["catalog_type"],
+                catalog_type=catalog_type,
                 video_id=video["id"],
             )
         else:
             url = build_url(
-                "get_streams", video_id=video["id"], catalog_type=params["catalog_type"]
+                "get_streams", video_id=video["id"], catalog_type=catalog_type
             )
         li = xbmcgui.ListItem(label=video["name"])
         tags = li.getVideoInfoTag()
@@ -99,12 +87,31 @@ def list_catalogs(params):
             }
         )
 
-        add_context_menu_items(
-            li, video["id"], params["catalog_type"], params["catalog_id"]
-        )
+        add_context_menu_items(li, video["id"], catalog_type)
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
+
+
+def list_catalogs(params):
+    log(f"Loading {params['catalog_type']} videos...", xbmc.LOGINFO)
+    skip = int(params.get("skip", 0))
+    url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/skip={skip}.json"
+    response = fetch_data(url)
+    if not response:
+        return
+
+    videos = response.get("metas", [])
+    if not videos:
+        xbmcgui.Dialog().notification(
+            "MediaFusion", "No videos available", xbmcgui.NOTIFICATION_ERROR
+        )
+        return
+
+    content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
+    xbmcplugin.setContent(ADDON_HANDLE, content_type)
+
+    process_videos(videos, params["catalog_type"])
 
     next_url = build_url(
         "list_catalog",
@@ -116,6 +123,30 @@ def list_catalogs(params):
     xbmcplugin.addDirectoryItem(
         handle=ADDON_HANDLE, url=next_url, listitem=li, isFolder=True
     )
+
+    xbmcplugin.endOfDirectory(ADDON_HANDLE)
+
+
+def search_catalog(params):
+    search_query = xbmcgui.Dialog().input("Search", type=xbmcgui.INPUT_ALPHANUM)
+    if not search_query:
+        return
+
+    url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/search={search_query}.json"
+    response = fetch_data(url)
+    if not response:
+        return
+
+    videos = response.get("metas", [])
+    if not videos:
+        xbmcgui.Dialog().notification(
+            "MediaFusion", "No results found", xbmcgui.NOTIFICATION_ERROR
+        )
+        return
+
+    content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
+    xbmcplugin.setContent(ADDON_HANDLE, content_type)
+    process_videos(videos, params["catalog_type"])
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
@@ -312,21 +343,22 @@ def play_video(params):
 
 def addon_router():
     param_string = sys.argv[2][1:]
+    actions = {
+        "list_catalog": list_catalogs,
+        "search_catalog": search_catalog,
+        "get_streams": get_streams,
+        "list_seasons": list_seasons,
+        "list_episodes": list_episodes,
+        "play_video": play_video,
+    }
+
     if param_string:
         params = dict(parse.parse_qsl(param_string))
         action = params.get("action")
 
-        if action == "list_catalog":
-            list_catalogs(params)
-        elif action == "get_streams":
-            get_streams(params)
-        elif action == "list_seasons":
-            list_seasons(params)
-        elif action == "list_episodes":
-            list_episodes(params)
-        elif action == "play_video":
-            play_video(params)
-        else:
-            list_categories()
-    else:
-        list_categories()
+        action_func = actions.get(action)
+        if action_func:
+            action_func(params)
+            return
+
+    list_categories()
