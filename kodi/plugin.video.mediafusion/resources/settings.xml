@@ -1,5 +1,5 @@
 <settings>
     <category label="30000">
-        <setting label="30001" id="manifest_url" type="text" />
+        <setting label="30001" id="manifest_url" type="text" default="" />
     </category>
 </settings>
