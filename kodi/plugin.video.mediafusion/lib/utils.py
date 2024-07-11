@@ -22,7 +22,6 @@ if not MANIFEST_URL:
     xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
     sys.exit(0)
 
-
 parsed_url = parse.urlparse(MANIFEST_URL)
 BASE_URL = f"{parsed_url.scheme}://{parsed_url.netloc}"
 try:
@@ -48,7 +47,7 @@ def fetch_data(url):
             xbmcgui.Dialog().notification(
                 "MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR
             )
-        if e.response.status_code == 401:
+        elif e.response.status_code == 401:
             xbmc.log("Unauthorized request", xbmc.LOGERROR)
             xbmcgui.Dialog().notification(
                 "MediaFusion", "Unauthorized request", xbmcgui.NOTIFICATION_ERROR
