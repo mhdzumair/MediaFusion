@@ -4,6 +4,7 @@
         <import addon="xbmc.python" version="3.0.0"/>
         <import addon="xbmc.metadata" version="2.1.0"/>
         <import addon="script.module.requests" version="2.31.0" />
+        <import addon="script.module.requests-cache" version="0.5.2+matrix.2" />
         <import addon="inputstream.ffmpegdirect" version="21.3.5" />
         <import addon="plugin.video.elementum" optional="true" />
     </requires>

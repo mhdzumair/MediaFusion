@@ -1,17 +1,27 @@
-import os
 import sys
 from urllib import parse
 
 import requests
+import requests_cache
 import xbmc
 import xbmcaddon
 import xbmcgui
+import xbmcvfs
 
 ADDON_HANDLE = int(sys.argv[1])
 ADDON = xbmcaddon.Addon()
 ADDON_PATH = sys.argv[0]
 MANIFEST_URL = ADDON.getSetting("manifest_url")
 ADDON_ID = ADDON.getAddonInfo("id")
+
+# Initialize requests_cache with CachedSession
+cache_file = xbmcvfs.translatePath(
+    f"special://profile/addon_data/{ADDON_ID}/cache.sqlite"
+)
+session = requests_cache.CachedSession(
+    cache_name=cache_file, backend="sqlite", cache_control=True
+)
+
 
 if not MANIFEST_URL:
     xbmcgui.Dialog().notification(
@@ -36,10 +46,23 @@ except IndexError:
     sys.exit(0)
 
 
-def fetch_data(url):
+def remove_cache(url):
+    session.cache.delete_url(url)
+
+
+def fetch_data(url, force_refresh=False):
+    if force_refresh:
+        with session.cache_disabled():
+            response = session.get(url)
+    else:
+        response = session.get(url)
+
     try:
-        response = requests.get(url)
         response.raise_for_status()
+        if "Cache-Control" in response.headers:
+            cache_control = response.headers["Cache-Control"]
+            if "no-store" in cache_control or "no-cache" in cache_control:
+                remove_cache(response.url)
         return response.json()
     except requests.RequestException as e:
         if e.response is None:
@@ -70,28 +93,6 @@ def fetch_data(url):
 def build_url(action, **params):
     query = parse.urlencode(params)
     return f"{ADDON_PATH}?action={action}&{query}"
-
-
-def add_context_menu_items(li, video_id, catalog_type, catalog_id=None):
-    context_menu = [
-        (
-            "Mark as Watched",
-            f"RunPlugin({build_url('mark_watched', video_id=video_id)})",
-        ),
-        (
-            "Mark as Unwatched",
-            f"RunPlugin({build_url('mark_unwatched', video_id=video_id)})",
-        ),
-    ]
-    if catalog_id:
-        context_menu.insert(
-            0,
-            (
-                "Refresh",
-                f"Container.Refresh({build_url('list_catalog', catalog_type=catalog_type, catalog_id=catalog_id)})",
-            ),
-        )
-    li.addContextMenuItems(context_menu)
 
 
 def log(message, level=xbmc.LOGINFO):

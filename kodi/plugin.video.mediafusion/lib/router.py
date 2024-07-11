@@ -11,10 +11,10 @@ from .utils import (
     ADDON_HANDLE,
     BASE_URL,
     SECRET_STR,
-    add_context_menu_items,
     log,
     convert_info_hash_to_magnet,
     is_elementum_installed_and_enabled,
+    remove_cache,
 )
 
 
@@ -37,6 +37,9 @@ def list_categories():
         if any(extra["name"] == "search" for extra in catalog.get("extra", [])):
             action = "search_catalog"
             label = f"Search {catalog['name']}"
+        elif "Watchlist" in catalog["name"]:
+            action = "list_catalog"
+            label = f"{catalog['name']} {catalog['type'].capitalize()}"
         else:
             action = "list_catalog"
             label = catalog["name"]
@@ -49,7 +52,7 @@ def list_categories():
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
 
-def process_videos(videos, catalog_type):
+def process_videos(videos, action, catalog_type, catalog_id):
     content_type = "movies" if catalog_type == "movie" else "tvshows"
     xbmcplugin.setContent(ADDON_HANDLE, content_type)
 
@@ -87,17 +90,25 @@ def process_videos(videos, catalog_type):
             }
         )
 
-        add_context_menu_items(li, video["id"], catalog_type)
+        li.addContextMenuItems(
+            [
+                (
+                    "Refresh API",
+                    f"Container.Refresh({build_url(action, catalog_type=catalog_type, catalog_id=catalog_id, force_refresh=1)})",
+                ),
+            ]
+        )
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
 
 
-def list_catalogs(params):
+def list_catalog(params):
     log(f"Loading {params['catalog_type']} videos...", xbmc.LOGINFO)
     skip = int(params.get("skip", 0))
     url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/skip={skip}.json"
-    response = fetch_data(url)
+    force_refresh = params.get("force_refresh", False)
+    response = fetch_data(url, force_refresh)
     if not response:
         return
 
@@ -106,23 +117,25 @@ def list_catalogs(params):
         xbmcgui.Dialog().notification(
             "MediaFusion", "No videos available", xbmcgui.NOTIFICATION_ERROR
         )
+        remove_cache(url)
         return
 
     content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
     xbmcplugin.setContent(ADDON_HANDLE, content_type)
 
-    process_videos(videos, params["catalog_type"])
+    process_videos(videos, "list_catalog", params["catalog_type"], params["catalog_id"])
 
-    next_url = build_url(
-        "list_catalog",
-        catalog_type=params["catalog_type"],
-        catalog_id=params["catalog_id"],
-        skip=skip + len(videos),
-    )
-    li = xbmcgui.ListItem(label="Next Page")
-    xbmcplugin.addDirectoryItem(
-        handle=ADDON_HANDLE, url=next_url, listitem=li, isFolder=True
-    )
+    if len(videos) >= 25:
+        next_url = build_url(
+            "list_catalog",
+            catalog_type=params["catalog_type"],
+            catalog_id=params["catalog_id"],
+            skip=skip + len(videos),
+        )
+        li = xbmcgui.ListItem(label="Next Page")
+        xbmcplugin.addDirectoryItem(
+            handle=ADDON_HANDLE, url=next_url, listitem=li, isFolder=True
+        )
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
@@ -133,7 +146,8 @@ def search_catalog(params):
         return
 
     url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/search={search_query}.json"
-    response = fetch_data(url)
+    force_refresh = params.get("force_refresh", False)
+    response = fetch_data(url, force_refresh)
     if not response:
         return
 
@@ -142,18 +156,22 @@ def search_catalog(params):
         xbmcgui.Dialog().notification(
             "MediaFusion", "No results found", xbmcgui.NOTIFICATION_ERROR
         )
+        remove_cache(url)
         return
 
     content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
     xbmcplugin.setContent(ADDON_HANDLE, content_type)
-    process_videos(videos, params["catalog_type"])
+    process_videos(
+        videos, "search_catalog", params["catalog_type"], params["catalog_id"]
+    )
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
 
 def list_seasons(params):
     url = f"{BASE_URL}/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json"
-    response = fetch_data(url)
+    force_refresh = params.get("force_refresh", False)
+    response = fetch_data(url, force_refresh)
     if not response:
         return
 
@@ -199,7 +217,14 @@ def list_seasons(params):
             }
         )
 
-        add_context_menu_items(li, params["video_id"], params["catalog_type"])
+        li.addContextMenuItems(
+            [
+                (
+                    "Refresh API",
+                    f"Container.Refresh({build_url('list_seasons', catalog_type=params['catalog_type'], video_id=params['video_id'], force_refresh=1)})",
+                ),
+            ]
+        )
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
@@ -209,7 +234,8 @@ def list_seasons(params):
 
 def list_episodes(params):
     url = f"{BASE_URL}/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json"
-    response = fetch_data(url)
+    force_refresh = params.get("force_refresh", False)
+    response = fetch_data(url, force_refresh)
     if not response:
         return
 
@@ -256,7 +282,15 @@ def list_episodes(params):
             }
         )
 
-        add_context_menu_items(li, params["video_id"], params["catalog_type"])
+        li.addContextMenuItems(
+            [
+                (
+                    "Refresh API",
+                    f"Container.Refresh({build_url('list_episodes', catalog_type=params['catalog_type'], video_id=params['video_id'], season={video['season']}, force_refresh=1)})",
+                ),
+            ]
+        )
+
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
@@ -266,7 +300,8 @@ def list_episodes(params):
 
 def get_streams(params):
     url = f"{BASE_URL}/{SECRET_STR}/stream/{params['catalog_type']}/{params['video_id']}.json"
-    response = fetch_data(url)
+    force_refresh = params.get("force_refresh", False)
+    response = fetch_data(url, force_refresh)
     if not response:
         return
 
@@ -301,6 +336,15 @@ def get_streams(params):
             video_url = f"plugin://plugin.video.elementum/play?uri={parse.quote_plus(magnet_link)}"
         else:
             continue
+
+        li.addContextMenuItems(
+            [
+                (
+                    "Refresh API",
+                    f"Container.Refresh({build_url('get_streams', catalog_type=params['catalog_type'], video_id=params['video_id'], force_refresh=1)})",
+                ),
+            ]
+        )
 
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE,
@@ -344,7 +388,7 @@ def play_video(params):
 def addon_router():
     param_string = sys.argv[2][1:]
     actions = {
-        "list_catalog": list_catalogs,
+        "list_catalog": list_catalog,
         "search_catalog": search_catalog,
         "get_streams": get_streams,
         "list_seasons": list_seasons,
