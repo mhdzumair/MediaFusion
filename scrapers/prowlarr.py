@@ -679,7 +679,8 @@ async def parse_and_store_stream(
             info_hash, parsed_data, video_id
         )
     elif catalog_type == "series":
-        if max_similarity_ratio < 85 or parsed_data.get("year") != year:
+        if max_similarity_ratio < 85 or parsed_data.get("year") < year:
+            # TODO: Set the series end year condition with scraping end year as well.
             logging.warning(
                 f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {max_similarity_ratio} full title: '{parsed_data.get('torrent_name')}'"
             )
