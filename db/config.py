@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     is_public_instance: bool = False
     validate_m3u8_urls_liveness: bool = True
     adult_content_regex_keywords: str = (
-        r"(^|\b|\s|$|[._-])"
-        r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer)"
-        r"(\b|\s|$|[._-])"
+        r"(^|\b|\s|$|[\[._-])"
+        r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|bigass|bigtits?|blowjob|hardfuck|onlyfans?|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer)"
+        r"(\b|\s|$|[\]._-])"
     )
     parent_guide_nudity_filter_types_regex: str = "Severe"
     parent_guide_certificates_filter_regex: str = r"X|XXX|TV-MA|18\+|18SX"
