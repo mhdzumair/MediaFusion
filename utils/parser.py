@@ -37,6 +37,13 @@ async def filter_and_sort_streams(
         and stream.size <= user_data.max_size
     ]
 
+    # Filter any adult content based on keywords
+    filtered_streams = [
+        stream
+        for stream in filtered_streams
+        if not is_contain_18_plus_keywords(stream.torrent_name)
+    ]
+
     if not filtered_streams:
         return []
 
