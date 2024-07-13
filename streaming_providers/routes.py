@@ -1,13 +1,16 @@
 import asyncio
 import logging
 
+import aiohttp
+import httpx
 from fastapi import (
     Request,
     Response,
     HTTPException,
     APIRouter,
 )
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from redis.asyncio import Redis
 
 from db import crud
@@ -135,6 +138,83 @@ async def streaming_provider_endpoint(
         url=video_url, headers=response.headers, status_code=redirect_status_code
     )
 
+
+# This endpoint is to proxy the debrid provider via this instance.
+@router.head("/{secret_str}/proxy_stream", tags=["streaming_provider"])
+@router.get("/{secret_str}/proxy_stream", tags=["streaming_provider"])
+@wrappers.exclude_rate_limit
+@wrappers.auth_required
+async def proxy_streaming_provider_endpoint(
+    secret_str: str,
+    info_hash: str,
+    response: Response,
+    request: Request,
+    season: int = None,
+    episode: int = None,
+):
+    response.headers.update(const.NO_CACHE_HEADERS)
+
+    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
+    if not user_data.streaming_provider:
+        raise HTTPException(status_code=400, detail="No streaming provider set.")
+
+    streaming_provider_response = await streaming_provider_endpoint(
+        secret_str, info_hash, response, request, season, episode)
+    if streaming_provider_response.status_code != 302:
+        return streaming_provider_response
+
+    # Validate if proxying is allowed
+    if (
+            not settings.is_public_instance
+            and user_data.proxy_debrid_stream
+            and user_data.streaming_provider
+    ):
+        video_url = streaming_provider_response.headers.get("location", "")
+        async with aiohttp.ClientSession() as session:
+            class Streamer:
+                def __init__(self):
+                    self.response = None
+
+                async def stream_content(self, headers: dict):
+                    async with httpx.AsyncClient() as client:
+                        async with client.stream(
+                                "GET", video_url, headers=headers
+                        ) as self.response:
+                            async for chunk in self.response.aiter_raw():
+                                yield chunk
+
+                async def close(self):
+                    if self.response is not None:
+                        await self.response.aclose()
+
+            range_content = None
+            range_header = request.headers.get("range")
+            if range_header:
+                range_value = range_header.strip().split("=")[1]
+                start, end = range_value.split("-")
+                start = int(start)
+                end = int(end) if end else ""
+                range_content = f"bytes={start}-{end}"
+
+            async with await session.get(
+                    video_url, headers={"Range": range_content},
+            ) as response:
+                if response.status == 206:
+                    streamer = Streamer()
+
+                    return StreamingResponse(
+                        streamer.stream_content({"Range": range_content}),
+                        status_code=206,
+                        headers={
+                            "Content-Range": response.headers["Content-Range"],
+                            "Content-Length": response.headers["Content-Length"],
+                            "Accept-Ranges": "bytes",
+                        },
+                        background=BackgroundTask(await streamer.close()),
+                    )
+            return
+
+    return streaming_provider_response
 
 @router.get("/{secret_str}/delete_all_watchlist", tags=["streaming_provider"])
 @wrappers.exclude_rate_limit
