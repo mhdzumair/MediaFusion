@@ -174,20 +174,11 @@ async def proxy_streaming_provider_endpoint(
                     self.response = None
 
                 async def stream_content(self, headers: dict):
-                    try:
-                        async with await session.get(
-                                video_url, headers={"Range": range_content},
-                        ) as r:
-                            r.raise_for_status()
-                            if r.status == 206:
-                                async with httpx.AsyncClient() as client, client.stream(
-                                        "GET", video_url, headers=headers
-                                ) as self.response:
-                                    async for chunk in self.response.aiter_raw():
-                                        yield chunk
-                    except aiohttp.ClientError as e:
-                        logging.error(f"Network error occurred: {e}")
-                        raise HTTPException(status_code=502, detail="Bad Gateway")
+                    async with httpx.AsyncClient() as client, client.stream(
+                        "GET", video_url, headers=headers
+                    ) as self.response:
+                        async for chunk in self.response.aiter_raw():
+                            yield chunk
 
                 async def close(self):
                     if self.response is not None:
@@ -202,9 +193,10 @@ async def proxy_streaming_provider_endpoint(
                 end = int(end) if end else ""
                 range_content = f"bytes={start}-{end}"
 
-            async with await session.get(
+            async with await session.head(
                     video_url, headers={"Range": range_content},
             ) as response:
+                response.raise_for_status()
                 if response.status == 206:
                     streamer = Streamer()
 
