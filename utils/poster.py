@@ -44,7 +44,7 @@ def process_poster_image(
     content: bytes, mediafusion_data: MediaFusionMetaData
 ) -> BytesIO:
     try:
-        image = Image.open(BytesIO(content)).convert("RGBA")
+        image = Image.open(BytesIO(content)).convert("RGB")
         image = image.resize((300, 450))
         imdb_rating = None
         if mediafusion_data.id.startswith("tt"):
@@ -83,8 +83,9 @@ async def create_poster(mediafusion_data: MediaFusionMetaData, redis: Redis) -> 
 def add_elements_to_poster(
     image: Image.Image, imdb_rating: float = None
 ) -> Image.Image:
-    draw = ImageDraw.Draw(image)
+    draw = ImageDraw.Draw(image, 'RGBA')
     margin = 10
+    padding = 10
 
     # Adding IMDb rating at the bottom left with a semi-transparent background
     if imdb_rating:
@@ -98,17 +99,18 @@ def add_elements_to_poster(
 
         # Draw a semi-transparent rectangle behind the text for better visibility
         rectangle_x0 = margin
-        rectangle_y0 = image.height - text_height - margin - 5  # 5 for a little padding
-        rectangle_x1 = rectangle_x0 + text_width + 10  # 10 for padding
+        rectangle_x1 = rectangle_x0 + text_width + padding
+        rectangle_y0 = image.height - margin - text_height - padding
         rectangle_y1 = image.height - margin
-
-        draw.rectangle(
+        draw.rounded_rectangle(
             (rectangle_x0, rectangle_y0, rectangle_x1, rectangle_y1),
-            fill=(0, 0, 0, 128),
+            fill=(0, 0, 0, 164), radius=8
         )
+
+        # Now draw the text
         draw.text(
-            (rectangle_x0 + 5, rectangle_y0), imdb_text, font=font, fill="#F5C518"
-        )  # 5 for padding
+            (rectangle_x0 + padding/2, rectangle_y0), imdb_text, font=font, fill="#F5C518"
+        )
 
     # Add MediaFusion watermark at the top right
     watermark = Image.open("resources/images/logo_text.png")
