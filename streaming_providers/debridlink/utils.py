@@ -33,7 +33,7 @@ def get_video_url_from_debridlink(
 
     torrent_info = dl_client.get_available_torrent(info_hash)
     if not torrent_info:
-        torrent_id = dl_client.add_magent_link(magnet_link).get("id")
+        torrent_id = dl_client.add_magnet_link(magnet_link).get("id")
         torrent_info = dl_client.get_torrent_info(torrent_id)
     else:
         torrent_id = torrent_info.get("id")

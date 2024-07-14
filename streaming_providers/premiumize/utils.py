@@ -47,7 +47,7 @@ def get_video_url_from_premiumize(
     else:
         # If torrent doesn't exist, add it
         folder_id = create_or_get_folder_id(pm_client, info_hash)
-        response_data = pm_client.add_magent_link(magnet_link, folder_id)
+        response_data = pm_client.add_magnet_link(magnet_link, folder_id)
         if "id" not in response_data:
             raise ProviderException(
                 "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"
