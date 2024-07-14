@@ -154,19 +154,17 @@ async def proxy_streaming_provider_endpoint(
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
-    if not user_data.streaming_provider:
-        raise HTTPException(status_code=400, detail="No streaming provider set.")
-
     streaming_provider_response = await streaming_provider_endpoint(
         secret_str, info_hash, response, request, season, episode)
     if streaming_provider_response.status_code != 302:
         return streaming_provider_response
 
+    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
+
     # Validate if proxying is allowed
     if (
-            not settings.is_public_instance
-            and user_data.proxy_debrid_stream
+            settings.is_public_instance is False
+            and user_data.proxy_debrid_stream is True
             and user_data.streaming_provider
     ):
         video_url = streaming_provider_response.headers.get("location", "")
@@ -176,12 +174,20 @@ async def proxy_streaming_provider_endpoint(
                     self.response = None
 
                 async def stream_content(self, headers: dict):
-                    async with httpx.AsyncClient() as client:
-                        async with client.stream(
-                                "GET", video_url, headers=headers
-                        ) as self.response:
-                            async for chunk in self.response.aiter_raw():
-                                yield chunk
+                    try:
+                        async with await session.get(
+                                video_url, headers={"Range": range_content},
+                        ) as r:
+                            r.raise_for_status()
+                            if r.status == 206:
+                                async with httpx.AsyncClient() as client, client.stream(
+                                        "GET", video_url, headers=headers
+                                ) as self.response:
+                                    async for chunk in self.response.aiter_raw():
+                                        yield chunk
+                    except aiohttp.ClientError as e:
+                        logging.error(f"Network error occurred: {e}")
+                        raise HTTPException(status_code=502, detail="Bad Gateway")
 
                 async def close(self):
                     if self.response is not None:

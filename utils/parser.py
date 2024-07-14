@@ -124,7 +124,7 @@ async def parse_stream_data(
     base_proxy_url_template = None
     if has_streaming_provider:
         base_proxy_url_template = f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
-        if not settings.is_public_instance and user_data.proxy_debrid_stream:
+        if  settings.is_public_instance is False and user_data.proxy_debrid_stream is True:
             base_proxy_url_template = f"{settings.host_url}/streaming_provider/{secret_str}/proxy_stream?info_hash={{}}"
 
     for stream_data in streams:
