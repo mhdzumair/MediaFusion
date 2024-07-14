@@ -266,8 +266,8 @@
                         <h6>Set File Size Filter: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                         title="Select the file size range for the streams. Slide to the end for no limit."></span></h6>
                         <!-- Slider for the file size -->
-                        <input type="range" class="form-range" id="max_size_slider" name="size_slider" min="0" max="21000000000"
-                               value="{{ user_data.max_size if user_data.max_size < 21000000000 else 21000000000 }}" step="1000000">
+                        <input type="range" class="form-range" id="max_size_slider" name="size_slider" min="0" max="43000000000"
+                               value="{{ user_data.max_size if user_data.max_size < 43000000000 else 43000000000 }}" step="100000000">
                         <label for="max_size_slider">Max File Size:</label>
                         <span id="max_size_output">Unlimited</span>
                     </div>
