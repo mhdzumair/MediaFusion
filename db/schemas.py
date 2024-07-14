@@ -146,6 +146,7 @@ class UserData(BaseModel):
     show_full_torrent_name: bool = True
     torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
     api_password: str | None = None
+    proxy_debrid_stream: bool = False
 
     @model_validator(mode="after")
     def validate_selected_resolutions(self) -> "UserData":

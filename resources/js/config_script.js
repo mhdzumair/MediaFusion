@@ -189,11 +189,13 @@ function updateProviderFields(isChangeEvent = false) {
             setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('watchlist_section', 'block');
+        setElementDisplay('proxy_debrid_section', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
     } else {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
         setElementDisplay('watchlist_section', 'none');
+        setElementDisplay('proxy_debrid_section', 'none');
         setElementDisplay('qbittorrent_config', 'none');
     }
 
@@ -294,6 +296,7 @@ function getUserData() {
         }
         streamingProviderData.service = provider;
         streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
+        streamingProviderData.proxy_debrid_stream = document.getElementById('proxy_debrid_stream').checked;
     } else {
         streamingProviderData = null;
     }
@@ -326,6 +329,7 @@ function getUserData() {
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
         selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
         enable_catalogs: document.getElementById('enable_catalogs').checked,
+        proxy_debrid_stream: document.getElementById('proxy_debrid_stream').checked,
         max_size: maxSizeBytes,
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
