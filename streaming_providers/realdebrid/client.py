@@ -106,7 +106,7 @@ class RealDebrid(DebridClient):
         else:
             return token_data
 
-    def add_magent_link(self, magnet_link):
+    def add_magnet_link(self, magnet_link):
         return self._make_request(
             "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
         )

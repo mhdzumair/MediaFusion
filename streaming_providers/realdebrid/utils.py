@@ -51,7 +51,7 @@ def get_video_url_from_realdebrid(
                 "Torrent is already being downloading", "torrent_not_downloaded.mp4"
             )
 
-        torrent_id = rd_client.add_magent_link(magnet_link).get("id")
+        torrent_id = rd_client.add_magnet_link(magnet_link).get("id")
         torrent_info = rd_client.get_torrent_info(torrent_id)
     else:
         torrent_id = torrent_info.get("id")

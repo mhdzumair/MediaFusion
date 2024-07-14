@@ -89,7 +89,7 @@ class DebridLink(DebridClient):
         else:
             return token_data
 
-    def add_magent_link(self, magnet_link):
+    def add_magnet_link(self, magnet_link):
         response = self._make_request(
             "POST",
             f"{self.BASE_URL}/seedbox/add",
