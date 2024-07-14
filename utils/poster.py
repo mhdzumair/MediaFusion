@@ -85,7 +85,7 @@ def add_elements_to_poster(
 ) -> Image.Image:
     draw = ImageDraw.Draw(image, 'RGBA')
     margin = 10
-    padding = 10
+    padding = 5
 
     # Adding IMDb rating at the bottom left with a semi-transparent background
     if imdb_rating:
@@ -99,17 +99,17 @@ def add_elements_to_poster(
 
         # Draw a semi-transparent rectangle behind the text for better visibility
         rectangle_x0 = margin
-        rectangle_x1 = rectangle_x0 + text_width + padding
-        rectangle_y0 = image.height - margin - text_height - padding
+        rectangle_x1 = rectangle_x0 + text_width + (2 * padding)
+        rectangle_y0 = image.height - margin - text_height - (2 * padding)
         rectangle_y1 = image.height - margin
         draw.rounded_rectangle(
             (rectangle_x0, rectangle_y0, rectangle_x1, rectangle_y1),
-            fill=(0, 0, 0, 164), radius=8
+            fill=(0, 0, 0, 176), radius=8
         )
 
         # Now draw the text
         draw.text(
-            (rectangle_x0 + padding/2, rectangle_y0), imdb_text, font=font, fill="#F5C518"
+            (rectangle_x0 + padding, rectangle_y0), imdb_text, font=font, fill="#F5C518"
         )
 
     # Add MediaFusion watermark at the top right
