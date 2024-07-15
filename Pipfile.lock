@@ -2121,12 +2121,12 @@
         },
         "scrapy-playwright": {
             "hashes": [
-                "sha256:7df0440fd46423122b2adb7cc67ec449d62cb5d7ee304bba7a20a8e326fa05d0",
-                "sha256:7ffb3db8dbd2b240de7f8a4f7b6f8806a0997c5d2d150abe940951a9afcd2135"
+                "sha256:4765963f06b727dbfa19d239cd103ba28ecfd90c9b4dda951dc18c7786c41faf",
+                "sha256:d7e10afa5b0dec58af44fc71508b4985937fe0f7df361f93fbbc513f99b19287"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.0.38"
+            "version": "==0.0.39"
         },
         "seedrcc": {
             "hashes": [
@@ -2147,11 +2147,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:b8b8060bb426838fbe942479c90296ce976249451118ef566a5a0b7d8b78fb05",
-                "sha256:bd63e505105011b25c3c11f753f7e3b8465ea739efddaccef8f0efac2137bac1"
+                "sha256:f171bab1dfbc86b132997f26a119f6056a57950d058587841a0082e8830f9dc5",
+                "sha256:fe384da74336c398e0d956d1cae0669bc02eed936cdb1d49b57de1990dc11ffc"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==70.2.0"
+            "version": "==70.3.0"
         },
         "shellingham": {
             "hashes": [
@@ -2310,7 +2310,7 @@
                 "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d",
                 "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "python_version < '3.13'",
             "version": "==4.12.2"
         },
         "tzlocal": {
