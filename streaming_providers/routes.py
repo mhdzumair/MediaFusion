@@ -25,11 +25,14 @@ from utils import crypto, torrent, wrappers, const
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_user_public_ip
 
+# Seconds until when the Video URLs are cached
+URL_CACHE_EXP = 3600
+
 router = APIRouter()
 
 
 async def get_cached_stream_url(redis: Redis, cached_stream_url_key):
-    if cached_stream_url := await redis.get(cached_stream_url_key):
+    if cached_stream_url := await redis.getex(cached_stream_url_key, ex=URL_CACHE_EXP):
         cached_stream_url = cached_stream_url.decode("utf-8")
         return cached_stream_url
     return None
@@ -73,6 +76,7 @@ async def streaming_provider_endpoint(
     if cached_stream_url := await get_cached_stream_url(
         request.app.state.redis, cached_stream_url_key
     ):
+        logging.info("Redirecting to cached URL...")
         return RedirectResponse(
             url=cached_stream_url,
             headers=response.headers,
@@ -113,11 +117,10 @@ async def streaming_provider_endpoint(
             video_url = get_video_url(**kwargs)
             # video_url = await asyncio.to_thread(get_video_url, **kwargs)
 
-        # Cache the streaming URL for 1 hour & release the lock
+        # Cache the streaming URL for URL_CACHE_EXP
         await request.app.state.redis.set(
-            cached_stream_url_key, video_url.encode("utf-8"), ex=3600
+            cached_stream_url_key, video_url.encode("utf-8"), ex=URL_CACHE_EXP
         )
-
     except ProviderException as error:
         logging.error(
             "Exception occurred for %s: %s",
@@ -132,6 +135,7 @@ async def streaming_provider_endpoint(
         video_url = f"{settings.host_url}/static/exceptions/api_error.mp4"
         redirect_status_code = 307
 
+    # Release the lock
     await release_redis_lock(lock)
 
     return RedirectResponse(
