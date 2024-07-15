@@ -1244,12 +1244,12 @@
         },
         "motor": {
             "hashes": [
-                "sha256:2b38e405e5a0c52d499edb8d23fa029debdf0158da092c21b44d92cac7f59942",
-                "sha256:e8f1d7a3370e8dd30eb4c68aaaee46dc608fbac70a757e58f3e828124f5e7693"
+                "sha256:1622bd7b39c3e6375607c14736f6e1d498128eadf6f5f93f8786cf17d37062ac",
+                "sha256:f95a9ea0f011464235e0bd72910baa291db3a6009e617ac27b82f57885abafb8"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==3.5.0"
+            "version": "==3.5.1"
         },
         "multidict": {
             "hashes": [
