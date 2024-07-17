@@ -1,21 +1,18 @@
 import asyncio
 import logging
 
-import aiohttp
-import httpx
 from fastapi import (
     Request,
     Response,
     HTTPException,
     APIRouter,
 )
-from fastapi.responses import RedirectResponse, StreamingResponse
-from starlette.background import BackgroundTask
+from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 
 from db import crud
 from db.config import settings
-from streaming_providers import mapper
+from streaming_providers import mapper, proxy_handlers
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.premiumize.api import router as premiumize_router
@@ -56,23 +53,14 @@ async def streaming_provider_endpoint(
     if not user_data.streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
 
-    stream = await crud.get_stream_by_info_hash(info_hash)
-    if not stream:
-        raise HTTPException(status_code=400, detail="Stream not found.")
-
-    magnet_link = await torrent.convert_info_hash_to_magnet(
-        info_hash, stream.announce_list
-    )
-
-    episode_data = stream.get_episode(season, episode)
-    filename = episode_data.filename if episode_data else stream.filename
     user_ip = get_user_public_ip(request)
     redirect_status_code = 302
     cached_stream_url_key = "streaming_provider_" + crypto.get_text_hash(
-        f"{user_ip}_{secret_str}_{info_hash}_{filename}_{stream.file_index}",
+        f"{user_ip}_{secret_str}_{info_hash}_{season}_{episode}",
         full_hash=True,
     )
 
+    # Check for cached URL before any database operations
     if cached_stream_url := await get_cached_stream_url(
         request.app.state.redis, cached_stream_url_key
     ):
@@ -83,7 +71,19 @@ async def streaming_provider_endpoint(
             status_code=redirect_status_code,
         )
 
-    # create a redis lock to prevent multiple requests from initiating a download task.
+    # Fetch stream data after checking cache
+    stream = await crud.get_stream_by_info_hash(info_hash)
+    if not stream:
+        raise HTTPException(status_code=400, detail="Stream not found.")
+
+    magnet_link = await torrent.convert_info_hash_to_magnet(
+        info_hash, stream.announce_list
+    )
+
+    episode_data = stream.get_episode(season, episode)
+    filename = episode_data.filename if episode_data else stream.filename
+
+    # Create a Redis lock to prevent multiple requests from initiating a download task.
     acquired, lock = await acquire_redis_lock(
         request.app.state.redis,
         f"{cached_stream_url_key}_locked",
@@ -114,8 +114,8 @@ async def streaming_provider_endpoint(
         if asyncio.iscoroutinefunction(get_video_url):
             video_url = await get_video_url(**kwargs)
         else:
-            video_url = get_video_url(**kwargs)
-            # video_url = await asyncio.to_thread(get_video_url, **kwargs)
+            # video_url = get_video_url(**kwargs)  # Use this, In case of debugging api calls
+            video_url = await asyncio.to_thread(get_video_url, **kwargs)
 
         # Cache the streaming URL for URL_CACHE_EXP
         await request.app.state.redis.set(
@@ -158,65 +158,41 @@ async def proxy_streaming_provider_endpoint(
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    streaming_provider_response = await streaming_provider_endpoint(
-        secret_str, info_hash, response, request, season, episode)
-    if streaming_provider_response.status_code != 302:
-        return streaming_provider_response
-
     user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
+    user_ip = get_user_public_ip(request)
+    cached_stream_url_key = "streaming_provider_" + crypto.get_text_hash(
+        f"{user_ip}_{secret_str}_{info_hash}_{season}_{episode}",
+        full_hash=True,
+    )
+
+    # Check if the URL is already cached
+    if cached_stream_url := await get_cached_stream_url(
+        request.app.state.redis, cached_stream_url_key
+    ):
+        video_url = cached_stream_url
+    else:
+        streaming_provider_response = await streaming_provider_endpoint(
+            secret_str, info_hash, response, request, season, episode
+        )
+        if streaming_provider_response.status_code != 302:
+            return streaming_provider_response
+
+        video_url = streaming_provider_response.headers.get("location", "")
 
     # Validate if proxying is allowed
     if (
-            settings.is_public_instance is False
-            and user_data.proxy_debrid_stream is True
-            and user_data.streaming_provider
+        settings.is_public_instance is False
+        and user_data.proxy_debrid_stream is True
+        and user_data.streaming_provider
     ):
-        video_url = streaming_provider_response.headers.get("location", "")
-        async with aiohttp.ClientSession() as session:
-            class Streamer:
-                def __init__(self):
-                    self.response = None
+        if request.method == "HEAD":
+            return await proxy_handlers.handle_head_request(video_url)
+        else:
+            range_header = request.headers.get("range", "bytes=0-")
+            return await proxy_handlers.handle_get_request(video_url, range_header)
 
-                async def stream_content(self, headers: dict):
-                    async with httpx.AsyncClient() as client, client.stream(
-                        "GET", video_url, headers=headers
-                    ) as self.response:
-                        async for chunk in self.response.aiter_raw():
-                            yield chunk
+    return RedirectResponse(url=video_url, headers=response.headers, status_code=302)
 
-                async def close(self):
-                    if self.response is not None:
-                        await self.response.aclose()
-
-            range_content = None
-            range_header = request.headers.get("range")
-            if range_header:
-                range_value = range_header.strip().split("=")[1]
-                start, end = range_value.split("-")
-                start = int(start)
-                end = int(end) if end else ""
-                range_content = f"bytes={start}-{end}"
-
-            async with await session.head(
-                    video_url, headers={"Range": range_content},
-            ) as response:
-                response.raise_for_status()
-                if response.status == 206:
-                    streamer = Streamer()
-
-                    return StreamingResponse(
-                        streamer.stream_content({"Range": range_content}),
-                        status_code=206,
-                        headers={
-                            "Content-Range": response.headers["Content-Range"],
-                            "Content-Length": response.headers["Content-Length"],
-                            "Accept-Ranges": "bytes",
-                        },
-                        background=BackgroundTask(await streamer.close()),
-                    )
-            return
-
-    return streaming_provider_response
 
 @router.get("/{secret_str}/delete_all_watchlist", tags=["streaming_provider"])
 @wrappers.exclude_rate_limit
