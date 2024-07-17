@@ -49,7 +49,7 @@ class Torbox(DebridClient):
         return response_data
 
     def get_user_torrent_list(self):
-        return self._make_request("GET", "/torrents/mylist")
+        return self._make_request("GET", "/torrents/mylist", params={"bypass_cache": "true"})
 
     def get_torrent_info(self, magnet_id):
         response = self.get_user_torrent_list()
