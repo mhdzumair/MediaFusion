@@ -1,8 +1,11 @@
 import aiohttp
 import httpx
+import logging
 from fastapi import Response
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
+
+logger = logging.getLogger(__name__)
 
 
 async def handle_head_request(video_url: str) -> Response:
@@ -21,8 +24,10 @@ async def handle_head_request(video_url: str) -> Response:
                 status_code=head_response.status,
             )
     except aiohttp.ClientError as e:
+        logger.error(f"Upstream service error while handling HEAD request: {e}")
         return Response(status_code=502, content=f"Upstream service error: {e}")
     except Exception as e:
+        logger.error(f"Internal server error while handling HEAD request: {e}")
         return Response(status_code=500, content=f"Internal server error: {e}")
 
 
@@ -40,14 +45,19 @@ class Streamer:
                 async for chunk in self.response.aiter_raw():
                     yield chunk
         except httpx.HTTPStatusError as e:
+            logger.error(f"HTTPStatusError while streaming content: {e}")
             raise e
         except Exception as e:
+            logger.error(f"Unexpected error while streaming content: {e}")
             raise e
 
     async def close(self):
-        if self.response is not None:
-            await self.response.aclose()
-        await self.client.aclose()
+        try:
+            if self.response is not None:
+                await self.response.aclose()
+            await self.client.aclose()
+        except Exception as e:
+            logger.error(f"Error while closing Streamer: {e}")
 
 
 async def handle_get_request(
@@ -73,9 +83,14 @@ async def handle_get_request(
                         background=BackgroundTask(streamer.close),
                     )
     except aiohttp.ClientError as e:
+        logger.error(f"Upstream service error while handling GET request: {e}")
         return Response(status_code=502, content=f"Upstream service error: {e}")
     except httpx.HTTPStatusError as e:
+        logger.error(f"Streaming service error: {e}")
         return Response(status_code=502, content=f"Streaming service error: {e}")
     except Exception as e:
+        logger.error(f"Internal server error while handling GET request: {e}")
         return Response(status_code=500, content=f"Internal server error: {e}")
+
+    logger.warning(f"Resource not found for video URL: {video_url}")
     return Response(status_code=404)
