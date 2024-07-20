@@ -39,16 +39,36 @@ async def cleanup_torrents(dry_run: bool = True) -> Dict[str, int]:
     }
     lock = asyncio.Lock()
     total_torrents = await TorrentStreams.count()
+    progress_bar = tqdm(
+        range(0, total_torrents, BATCH_SIZE), desc="Processing torrents"
+    )
+    torrent_bulk_writer = BulkWriter()
+    movies_bulk_writer = BulkWriter()
+    series_bulk_writer = BulkWriter()
 
-    for skip in tqdm(range(0, total_torrents, BATCH_SIZE), desc="Processing torrents"):
+    for skip in progress_bar:
         torrents = await TorrentStreams.find().skip(skip).limit(BATCH_SIZE).to_list()
-        bulk_writer = BulkWriter()
         tasks = [
-            process_torrent(torrent, dry_run, metrics, lock, bulk_writer)
+            process_torrent(
+                torrent,
+                dry_run,
+                metrics,
+                lock,
+                torrent_bulk_writer,
+                movies_bulk_writer,
+                series_bulk_writer,
+            )
             for torrent in torrents
         ]
         await asyncio.gather(*tasks)
-        await bulk_writer.commit()
+        await torrent_bulk_writer.commit()
+        await movies_bulk_writer.commit()
+        await series_bulk_writer.commit()
+        torrent_bulk_writer.operations.clear()
+        movies_bulk_writer.operations.clear()
+        series_bulk_writer.operations.clear()
+
+        progress_bar.set_postfix(metrics)
 
     return metrics
 
@@ -58,7 +78,9 @@ async def process_torrent(
     dry_run: bool,
     metrics: Dict[str, int],
     lock: asyncio.Lock,
-    bulk_writer: BulkWriter,
+    torrent_bulk_writer: BulkWriter,
+    movies_bulk_writer: BulkWriter,
+    series_bulk_writer: BulkWriter,
 ) -> str:
     async with lock:
         metrics["total_torrents"] += 1
@@ -66,29 +88,35 @@ async def process_torrent(
     meta_data = None
     if any("series" in catalog for catalog in torrent.catalog):
         meta_data = await MediaFusionSeriesMetaData.get(torrent.meta_id)
+        meta_data_bulk_writer = series_bulk_writer
     else:
         meta_data = await MediaFusionMovieMetaData.get(torrent.meta_id)
+        meta_data_bulk_writer = movies_bulk_writer
 
     if not meta_data:
         async with lock:
             metrics["no_metadata"] += 1
         return "no_metadata"
 
-    if not dry_run:
-        if torrent.meta_id.startswith("mf") and torrent.source in [
+    if (
+        not dry_run
+        and torrent.meta_id.startswith("mf")
+        and torrent.source
+        in [
             "TamilBlasters",
             "TamilMV",
-        ]:
-            await torrent.delete(bulk_writer=bulk_writer)
-            await meta_data.delete(bulk_writer=bulk_writer)
-            async with lock:
-                metrics["removed_torrents"] += 1
-                metrics["removed_non_imdb"] += 1
-            return "removed"
+        ]
+    ):
+        await torrent.delete(bulk_writer=torrent_bulk_writer)
+        await meta_data.delete(bulk_writer=meta_data_bulk_writer)
+        async with lock:
+            metrics["removed_torrents"] += 1
+            metrics["removed_non_imdb"] += 1
+        return "removed"
 
     if is_contain_18_plus_keywords(torrent.torrent_name):
         if not dry_run:
-            await torrent.delete(bulk_writer=bulk_writer)
+            await torrent.delete(bulk_writer=torrent_bulk_writer)
         async with lock:
             metrics["removed_torrents"] += 1
             metrics["adult_content"] += 1
@@ -103,7 +131,7 @@ async def process_torrent(
     expected_ratio = 70 if torrent.source in ["TamilMV", "TamilBlasters"] else 85
     if max_ratio < expected_ratio and torrent.meta_id.startswith("tt"):
         if not dry_run:
-            await torrent.delete(bulk_writer=bulk_writer)
+            await torrent.delete(bulk_writer=torrent_bulk_writer)
         async with lock:
             metrics["removed_torrents"] += 1
             metrics["ratio_error"] += 1
@@ -115,7 +143,7 @@ async def process_torrent(
     if "year" in parsed_data and torrent.meta_id.startswith("tt"):
         if meta_data.type == "movie" and parsed_data["year"] != meta_data.year:
             if not dry_run:
-                await torrent.delete(bulk_writer=bulk_writer)
+                await torrent.delete(bulk_writer=torrent_bulk_writer)
             async with lock:
                 metrics["removed_torrents"] += 1
                 metrics["year_mismatch"] += 1
@@ -124,13 +152,17 @@ async def process_torrent(
             )
             return "removed"
 
-    if not dry_run and torrent.meta_id.startswith("tt"):
+    if (
+        not dry_run
+        and torrent.meta_id.startswith("tt")
+        and "torrentgalaxy" not in torrent.source.lower()
+    ):
         torrent.languages = parsed_data.get("languages")
         torrent.resolution = parsed_data.get("resolution")
         torrent.codec = parsed_data.get("codec")
         torrent.quality = parsed_data.get("quality")
         torrent.audio = parsed_data.get("audio")
-        await torrent.save(bulk_writer=bulk_writer)
+        await torrent.save(bulk_writer=torrent_bulk_writer)
         async with lock:
             metrics["updated_torrents"] += 1
         return "updated"
