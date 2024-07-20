@@ -186,6 +186,7 @@ class CommonTamilSpider(scrapy.Spider):
 
         if not torrent_links:
             self.logger.warning(f"No torrents found for {response.url}")
+            self.redis.sadd(self.scraped_urls_key, response.url)
             return
 
         for torrent_link in torrent_links:

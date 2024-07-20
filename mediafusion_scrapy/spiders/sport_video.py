@@ -96,7 +96,7 @@ class SportVideoSpider(scrapy.Spider):
                             "poster": poster,
                             "background": poster,
                             "webpage_url": torrent_page_link,
-                            "is_parse_ptn": False,
+                            "is_parse_ptt": False,
                             "source": "sport-video.org.ua",
                             "is_add_title_to_poster": True,
                             "catalog": category,

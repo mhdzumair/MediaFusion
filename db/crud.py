@@ -192,7 +192,7 @@ async def get_movie_data_by_id(
             parent_guide_certificates=list(
                 set(cert.certificate for cert in movie.certification.certificates)
             ),
-            aka_titles=list(set(aka.title for aka in movie.akas))[10:],
+            aka_titles=list(set(aka.title for aka in movie.akas)),
             stars=list(set(star.name for star in movie.cast))[10:],
         )
         try:
@@ -229,6 +229,7 @@ async def get_series_data_by_id(
             id=series_id,
             title=series.title,
             year=series.year,
+            end_year=series.end_year,
             poster=series.primary_image,
             background=series.primary_image,
             streams=[],
@@ -640,8 +641,16 @@ async def get_tv_meta(meta_id: str):
 
 async def get_existing_metadata(metadata, model):
     filters = {"title": metadata["title"]}
+    year_filter = metadata.get("year", 0)
+
     if issubclass(model, MediaFusionMovieMetaData):
-        filters["year"] = metadata.get("year")
+        filters["year"] = year_filter
+    else:
+        filters["year"] = {"$gte": year_filter}
+        filters["$or"] = [
+            {"end_year": {"$lte": year_filter}},
+            {"end_year": None},
+        ]
 
     return await model.find_one(
         filters,
@@ -652,10 +661,15 @@ async def get_existing_metadata(metadata, model):
 def create_metadata_object(metadata, imdb_data, model):
     poster = imdb_data.get("poster") or metadata["poster"]
     background = imdb_data.get("background", metadata.get("background", poster))
+    year = imdb_data.get("year", metadata.get("year"))
+    end_year = imdb_data.get("end_year", metadata.get("end_year"))
+    if isinstance(year, str) and "-" in year:
+        year, end_year = year.split("-")
     return model(
         id=metadata["id"],
-        title=metadata["title"],
-        year=metadata["year"],
+        title=imdb_data.get("title", metadata["title"]),
+        year=year,
+        end_year=end_year,
         poster=poster,
         background=background,
         streams=[],
@@ -670,14 +684,7 @@ def create_metadata_object(metadata, imdb_data, model):
 
 
 def create_stream_object(metadata, is_movie: bool = False):
-    if "language" in metadata:
-        languages = (
-            [metadata["language"]]
-            if isinstance(metadata["language"], str)
-            else metadata["language"]
-        )
-    else:
-        languages = metadata["languages"]
+    languages = [language.title() for language in metadata.get("languages", [])]
     return TorrentStreams(
         id=metadata["info_hash"],
         torrent_name=metadata["torrent_name"],
@@ -690,7 +697,6 @@ def create_stream_object(metadata, is_movie: bool = False):
         codec=metadata.get("codec"),
         quality=metadata.get("quality"),
         audio=metadata.get("audio"),
-        encoder=metadata.get("encoder"),
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],
@@ -698,87 +704,74 @@ def create_stream_object(metadata, is_movie: bool = False):
     )
 
 
-async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
+async def save_metadata(metadata: dict, media_type: str, is_imdb: bool = True):
     if await is_torrent_stream_exists(metadata["info_hash"]):
-        logging.info("Stream already exists for movie %s", metadata["title"])
+        logging.info("Stream already exists for %s %s", media_type, metadata["title"])
         return
 
-    existing_movie = await get_existing_metadata(metadata, MediaFusionMovieMetaData)
-    if not existing_movie:
+    metadata_class = (
+        MediaFusionMovieMetaData if media_type == "movie" else MediaFusionSeriesMetaData
+    )
+    existing_data = await get_existing_metadata(metadata, metadata_class)
+    if not existing_data:
         imdb_data = {}
         if is_imdb:
-            imdb_data = search_imdb(metadata["title"], metadata.get("year"))
+            imdb_data = search_imdb(metadata["title"], metadata.get("year"), media_type)
+
         metadata["id"] = imdb_data.get(
             "imdb_id", metadata.get("id", f"mf{uuid4().fields[-1]}")
         )
-        movie_data = create_metadata_object(
-            metadata, imdb_data, MediaFusionMovieMetaData
+        is_exist_db = await metadata_class.find_one({"_id": metadata["id"]}).project(
+            schemas.MetaIdProjection
         )
-        try:
-            await movie_data.create()
-        except DuplicateKeyError:
-            logging.warning("Duplicate movie found: %s", movie_data.title)
+        if not is_exist_db:
+            new_data = create_metadata_object(metadata, imdb_data, metadata_class)
+            try:
+                await new_data.create()
+            except DuplicateKeyError:
+                logging.warning("Duplicate %s found: %s", media_type, new_data.title)
     else:
-        metadata["id"] = existing_movie.id
+        metadata["id"] = existing_data.id
 
-    new_stream = create_stream_object(metadata, True)
+    new_stream = create_stream_object(metadata, media_type == "movie")
+    if media_type == "series":
+        if metadata.get("episodes") and isinstance(metadata["episodes"][0], Episode):
+            episodes = metadata["episodes"]
+        else:
+            episodes = [
+                Episode(
+                    episode_number=file["episodes"][0],
+                    filename=file["filename"],
+                    size=file["size"],
+                    file_index=file["index"],
+                )
+                for file in metadata["file_data"]
+                if file["episodes"]
+            ]
+
+        if not episodes:
+            logging.warning("No episodes found for series %s", metadata["title"])
+            return
+        new_stream.season = Season(
+            season_number=metadata.get("seasons")[0] if metadata.get("seasons") else 1,
+            episodes=episodes,
+        )
+
     await new_stream.create()
     logging.info(
-        "Added stream for movie %s, info_hash: %s",
+        "Added stream for %s %s, info_hash: %s",
+        media_type,
         metadata["title"],
         metadata["info_hash"],
     )
+
+
+async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
+    await save_metadata(metadata, "movie", is_imdb)
 
 
 async def save_series_metadata(metadata: dict, is_imdb: bool = True):
-    if await is_torrent_stream_exists(metadata["info_hash"]):
-        logging.info("Stream already exists for series %s", metadata["title"])
-        return
-    series_data = await get_existing_metadata(metadata, MediaFusionSeriesMetaData)
-    if not series_data:
-        imdb_data = {}
-        if is_imdb:
-            imdb_data = search_imdb(metadata["title"], metadata.get("year"))
-        metadata["id"] = imdb_data.get(
-            "imdb_id", metadata.get("id", f"mf{uuid4().fields[-1]}")
-        )
-        series_data = create_metadata_object(
-            metadata, imdb_data, MediaFusionSeriesMetaData
-        )
-        try:
-            await series_data.create()
-        except DuplicateKeyError:
-            logging.warning("Duplicate series found: %s", series_data.title)
-    else:
-        metadata["id"] = series_data.id
-
-    if metadata.get("episodes"):
-        episodes = metadata["episodes"]
-    else:
-        episodes = [
-            Episode(
-                episode_number=file["episode"],
-                filename=file["filename"],
-                size=file["size"],
-                file_index=file["index"],
-            )
-            for file in metadata["file_data"]
-            if file["episode"]
-        ]
-
-    if not episodes:
-        logging.warning("No episodes found for series %s", series_data.title)
-        return
-    new_stream = create_stream_object(metadata, False)
-    new_stream.season = Season(
-        season_number=metadata.get("season", 1), episodes=episodes
-    )
-    await new_stream.create()
-    logging.info(
-        "Added stream for series %s, info_hash: %s",
-        metadata["title"],
-        metadata["info_hash"],
-    )
+    await save_metadata(metadata, "series", is_imdb)
 
 
 async def process_search_query(

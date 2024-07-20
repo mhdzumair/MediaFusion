@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta
 from os import path
 
-import PTN
+import PTT
 import httpx
 from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
@@ -117,7 +117,7 @@ async def scrap_series_streams_from_torrentio(
 def parse_stream_title(stream: dict) -> dict:
     """Parse the stream title for metadata and other details."""
     torrent_name, file_name = stream["title"].splitlines()[:2]
-    metadata = PTN.parse(torrent_name)
+    metadata = PTT.parse_title(torrent_name)
 
     return {
         "torrent_name": torrent_name,
@@ -176,7 +176,6 @@ async def store_and_parse_movie_stream_data(
             codec=parsed_data["metadata"].get("codec"),
             quality=parsed_data["metadata"].get("quality"),
             audio=parsed_data["metadata"].get("audio"),
-            encoder=parsed_data["metadata"].get("encoder"),
             source=source,
             catalog=["torrentio_streams"],
             updated_at=datetime.now(),
@@ -233,9 +232,9 @@ async def store_and_parse_series_stream_data(
                 )
                 continue
 
-        if parsed_data["metadata"].get("season"):
-            if isinstance(parsed_data["metadata"]["season"], int):
-                season_number = parsed_data["metadata"]["season"]
+        if seasons := parsed_data["metadata"].get("seasons"):
+            if len(seasons) == 1:
+                season_number = seasons[0]
             else:
                 # Skip This Stream due to multiple seasons in one torrent.
                 # TODO: Handle this case later.
@@ -244,21 +243,16 @@ async def store_and_parse_series_stream_data(
         else:
             season_number = season
 
-        if parsed_data["metadata"].get("episode"):
-            if isinstance(parsed_data["metadata"]["episode"], int):
-                episode_data = [
-                    Episode(episode_number=parsed_data["metadata"]["episode"])
-                ]
-            else:
-                episode_data = [
-                    Episode(
-                        episode_number=episode_number,
-                        file_index=stream.get("fileIdx")
-                        if episode_number == episode
-                        else None,
-                    )
-                    for episode_number in parsed_data["metadata"]["episode"]
-                ]
+        if parsed_data["metadata"].get("episodes"):
+            episode_data = [
+                Episode(
+                    episode_number=episode_number,
+                    file_index=stream.get("fileIdx")
+                    if episode_number == episode
+                    else None,
+                )
+                for episode_number in parsed_data["metadata"]["episodes"]
+            ]
 
         else:
             episode_data = [
@@ -277,7 +271,6 @@ async def store_and_parse_series_stream_data(
             codec=parsed_data["metadata"].get("codec"),
             quality=parsed_data["metadata"].get("quality"),
             audio=parsed_data["metadata"].get("audio"),
-            encoder=parsed_data["metadata"].get("encoder"),
             source=source,
             catalog=["torrentio_streams"],
             updated_at=datetime.now(),
@@ -326,12 +319,9 @@ def extract_languages_from_title(title: str) -> list:
 
 def extract_languages(metadata: dict, title: str) -> list:
     """Extract languages from metadata or title."""
-    language = metadata.get("language")
-    if language:
-        if isinstance(language, str):
-            return [language]
-        elif isinstance(language, list):
-            return language
+    languages = [language.title() for language in metadata.get("languages", [])]
+    if languages:
+        return languages
     return extract_languages_from_title(title)
 
 

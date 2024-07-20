@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar
 from urllib.parse import quote
 
-import PTN
+import PTT
 import anyio
 import bencodepy
 import httpx
@@ -25,7 +25,7 @@ from utils.runtime_const import TRACKERS
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 
-def extract_torrent_metadata(content: bytes, is_parse_ptn: bool = True) -> dict:
+def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
     try:
         torrent_data = bencodepy.decode(content)
         info = torrent_data[b"info"]
@@ -45,14 +45,14 @@ def extract_torrent_metadata(content: bytes, is_parse_ptn: bool = True) -> dict:
                 if b"files" in info
                 else file[b"name"].decode()
             )
-            parsed_data = PTN.parse(filename)
+            parsed_data = PTT.parse_title(filename)
             file_data.append(
                 {
                     "filename": filename,
                     "size": file[b"length"],
                     "index": idx,
-                    "season": parsed_data.get("season"),
-                    "episode": parsed_data.get("episode"),
+                    "seasons": parsed_data.get("seasons"),
+                    "episodes": parsed_data.get("episodes"),
                 }
             )
 
@@ -76,8 +76,8 @@ def extract_torrent_metadata(content: bytes, is_parse_ptn: bool = True) -> dict:
             "torrent_name": torrent_name,
             "largest_file": largest_file,
         }
-        if is_parse_ptn:
-            metadata.update(PTN.parse(torrent_name))
+        if is_parse_ptt:
+            metadata.update(PTT.parse_title(torrent_name))
         return metadata
     except Exception as e:
         logging.error(f"Error occurred: {e}")

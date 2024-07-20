@@ -64,23 +64,23 @@ async def update_torrent_series_streams_metadata(info_hashes: list[str]):
     streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
 
     for stream_metadata in streams_metadata:
-        if not (stream_metadata and "season" in stream_metadata):
+        if not (stream_metadata and "seasons" in stream_metadata):
             continue
 
         torrent_stream = await TorrentStreams.get(stream_metadata["info_hash"])
         if torrent_stream:
             episodes = [
                 Episode(
-                    episode_number=file["episode"],
+                    episode_number=file["episodes"][0],
                     filename=file["filename"],
                     size=file["size"],
                     file_index=file["index"],
                 )
                 for file in stream_metadata["file_data"]
-                if file["episode"]
+                if file["episodes"]
             ]
             torrent_stream.season = Season(
-                season_number=stream_metadata["season"],
+                season_number=stream_metadata["seasons"][0],
                 episodes=episodes,
             )
 

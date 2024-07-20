@@ -1,6 +1,6 @@
 from typing import Any
 
-import PTN
+import PTT
 
 from thefuzz import fuzz
 from urllib.request import urlopen
@@ -97,12 +97,14 @@ class OffCloud(DebridClient):
 
         # If the fuzzy ratio is less than 50, then select the largest file
         if selected_file["fuzzy_ratio"] < 50:
-            selected_file = max(links, key=lambda x: int(urlopen(x).info()['Content-Length']))
+            selected_file = max(
+                links, key=lambda x: int(urlopen(x).info()["Content-Length"])
+            )
 
         if episode:
             # Select the file with the matching episode number
             for link in links:
-                if PTN.parse(link).get("episode") == episode:
+                if episode in PTT.parse_title(link).get("episodes", []):
                     return link
 
         if is_video_file(selected_file):

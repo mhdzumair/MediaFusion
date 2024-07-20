@@ -98,6 +98,8 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
 
         meta_id = series.id
 
+        languages = [language.title() for language in item["languages"]]
+
         stream = next((s for s in series.streams if s.id == item["info_hash"]), None)
         if stream is None:
             # Create the stream
@@ -106,12 +108,11 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
                 torrent_name=item["torrent_name"],
                 announce_list=item["announce_list"],
                 size=item["total_size"],
-                languages=item["languages"],
+                languages=languages,
                 resolution=item.get("resolution"),
                 codec=item.get("codec"),
                 quality=item.get("quality"),
                 audio=item.get("audio"),
-                encoder=item.get("encoder"),
                 source=item["source"],
                 catalog=item["catalog"],
                 created_at=item["created_at"],
@@ -179,7 +180,7 @@ class TVStorePipeline(QueueBasedPipeline):
 class MovieStorePipeline(QueueBasedPipeline):
     async def parse_item(self, item, spider):
         if "title" not in item:
-            raise DropItem(f"title not found in item: {item}")
+            return item
 
         if item.get("type") != "movie":
             return item
@@ -191,7 +192,7 @@ class MovieStorePipeline(QueueBasedPipeline):
 class SeriesStorePipeline(QueueBasedPipeline):
     async def parse_item(self, item, spider):
         if "title" not in item:
-            raise DropItem(f"title not found in item: {item}")
+            return item
 
         if item.get("type") != "series":
             return item

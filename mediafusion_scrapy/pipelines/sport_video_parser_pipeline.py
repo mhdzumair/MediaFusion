@@ -7,7 +7,7 @@ from scrapy.exceptions import DropItem
 
 class SportVideoParserPipeline:
     RESOLUTIONS = {
-        "3840x2160": "4K",
+        "3840x2160": "4k",
         "2560x1440": "1440p",
         "1920x1080": "1080p",
         "1280x720": "720p",
@@ -78,7 +78,7 @@ class SportVideoParserPipeline:
                     return label
 
         # Fallback to checking against common labels
-        for label in ["4K", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p"]:
+        for label in ["4k", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p"]:
             if label in normalized_aspect_ratio:
                 return label
 
