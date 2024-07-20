@@ -1,6 +1,6 @@
 from typing import Any
 
-import PTN
+import PTT
 
 from thefuzz import fuzz
 
@@ -96,7 +96,7 @@ def select_file_id_from_torrent(
     if episode:
         # Select the file with the matching episode number
         for file in files:
-            if PTN.parse(file["name"]).get("episode") == episode:
+            if episode in PTT.parse_title(file["name"]).get("episodes", []):
                 return file["id"]
 
     if "video" not in selected_file["mime_type"]:

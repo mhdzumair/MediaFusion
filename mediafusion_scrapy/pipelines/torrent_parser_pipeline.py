@@ -38,7 +38,7 @@ class TorrentDownloadAndParsePipeline:
             raise DropItem(f"Unexpected Content-Type for {response.url}")
 
         torrent_metadata = torrent.extract_torrent_metadata(
-            response.body, item.get("is_parse_ptn", True)
+            response.body, item.get("is_parse_ptt", True)
         )
 
         if not torrent_metadata:

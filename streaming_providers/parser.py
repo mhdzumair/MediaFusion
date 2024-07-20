@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-import PTN
+import PTT
 
 
 def select_file_index_from_torrent(
@@ -32,7 +32,7 @@ def select_file_index_from_torrent(
     if episode:
         # Select the file with the matching episode number
         for index, file in enumerate(files):
-            if PTN.parse(file[name_key]).get("episode") == episode:
+            if episode in PTT.parse_title(file[name_key]).get("episodes", []):
                 return index
 
     # If no file index is provided, select the largest file

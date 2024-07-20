@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
-import PTN
+import PTT
 import dramatiq
 import httpx
 from pydantic import ValidationError
@@ -527,9 +527,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
     if torrent_stream:
         return None, False  # Skip existing torrents
 
-    languages = parsed_data.get("language", [])
-    if isinstance(languages, str):
-        languages = [languages]
+    languages = [language.title() for language in parsed_data.get("languages", [])]
 
     # Create new stream
     torrent_stream = TorrentStreams(
@@ -544,7 +542,6 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
         audio=parsed_data.get("audio"),
-        encoder=parsed_data.get("encoder"),
         source=parsed_data.get("source"),
         catalog=parsed_data.get("catalog"),
         updated_at=datetime.now(),
@@ -572,46 +569,33 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
     if torrent_stream:
         return None, False  # Skip existing torrents
 
-    # Check for unsupported torrents spanning multiple seasons
-    if isinstance(parsed_data.get("season"), list):
-        return None, False  # Skip torrents spanning multiple seasons
+    # Check for unsupported torrents spanning multiple seasons and no season
+    if len(parsed_data.get("seasons", [])) != 1:
+        return None, False
 
     # Prepare episode data based on detailed file data or basic episode numbers
     episode_data = []
-    try:
-        if parsed_data.get("file_data"):
-            episode_data = [
-                Episode(
-                    episode_number=file["episode"],
-                    filename=file.get("filename"),
-                    size=file.get("size"),
-                    file_index=file.get("index"),
-                )
-                for file in parsed_data["file_data"]
-                if file.get("episode")
-            ]
-        elif parsed_data.get("episode"):
-            if isinstance(parsed_data["episode"], list):
-                episode_data = [
-                    Episode(episode_number=ep) for ep in parsed_data["episode"]
-                ]
-            else:
-                episode_data = [Episode(episode_number=parsed_data["episode"])]
-    except ValidationError:
-        logging.error(
-            f"Error parsing episode data for {info_hash}: {parsed_data['file_data']}: episode_data: {parsed_data['episode']}",
-            exc_info=True,
-        )
+    if parsed_data.get("file_data"):
+        episode_data = [
+            Episode(
+                episode_number=file["episodes"][0],
+                filename=file.get("filename"),
+                size=file.get("size"),
+                file_index=file.get("index"),
+            )
+            for file in parsed_data["file_data"]
+            if file.get("episodes")
+        ]
+    elif episodes := parsed_data.get("episodes"):
+        episode_data = [Episode(episode_number=ep) for ep in episodes]
 
     # Skip the torrent if no episode data is available
     if not episode_data:
         return None, False  # Indicate that no operation was performed
 
-    season_number = parsed_data.get("season", season)
+    season_number = parsed_data.get("seasons")[0]
 
-    languages = parsed_data.get("language", [])
-    if isinstance(languages, str):
-        languages = [languages]
+    languages = [language.title() for language in parsed_data.get("languages", [])]
 
     # Create new stream, initially without episodes
     torrent_stream = TorrentStreams(
@@ -625,16 +609,13 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
         audio=parsed_data.get("audio"),
-        encoder=parsed_data.get("encoder"),
         source=parsed_data.get("source"),
         catalog=parsed_data.get("catalog"),
         updated_at=datetime.now(),
         seeders=parsed_data.get("seeders"),
         created_at=parsed_data.get("created_at"),
         meta_id=video_id,
-        season=Season(
-            season_number=season_number, episodes=episode_data
-        ),  # Add episodes
+        season=Season(season_number=season_number, episodes=episode_data),
     )
     logging.info(f"Created series stream {info_hash} for {video_id}")
 

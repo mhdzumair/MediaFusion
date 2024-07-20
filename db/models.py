@@ -39,7 +39,6 @@ class TorrentStreams(Document):
     codec: Optional[str] = None
     quality: Optional[str] = None
     audio: Optional[str] = None
-    encoder: Optional[str] = None
     seeders: Optional[int] = None
     cached: Optional[bool] = Field(default=False, exclude=True)
 
@@ -114,6 +113,7 @@ class MediaFusionMovieMetaData(MediaFusionMetaData):
 
 class MediaFusionSeriesMetaData(MediaFusionMetaData):
     type: str = "series"
+    end_year: Optional[int] = None
     imdb_rating: Optional[float] = None
     parent_guide_nudity_status: Optional[str] = "None"
     parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)

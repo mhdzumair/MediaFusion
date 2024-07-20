@@ -682,14 +682,7 @@ def create_metadata_object(metadata, imdb_data, model):
 
 
 def create_stream_object(metadata, is_movie: bool = False):
-    if "language" in metadata:
-        languages = (
-            [metadata["language"]]
-            if isinstance(metadata["language"], str)
-            else metadata["language"]
-        )
-    else:
-        languages = metadata["languages"]
+    languages = [language.title() for language in metadata.get("languages", [])]
     return TorrentStreams(
         id=metadata["info_hash"],
         torrent_name=metadata["torrent_name"],
@@ -702,7 +695,6 @@ def create_stream_object(metadata, is_movie: bool = False):
         codec=metadata.get("codec"),
         quality=metadata.get("quality"),
         audio=metadata.get("audio"),
-        encoder=metadata.get("encoder"),
         source=metadata["source"],
         catalog=get_catalogs(metadata["catalog"], languages),
         created_at=metadata["created_at"],

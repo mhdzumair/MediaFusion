@@ -264,20 +264,15 @@ async def add_torrent(
                 f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
             )
 
-        if isinstance(torrent_data.get("episode"), list):
-            if not set(torrent_data.get("episode")).issubset(set(episodes)):
+        if torrent_data.get("episodes"):
+            if not set(torrent_data.get("episodes")).issubset(set(episodes)):
                 raise_error(
-                    f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes}'"
-                )
-        elif torrent_data.get("episode"):
-            if torrent_data.get("episode") != episodes[0]:
-                raise_error(
-                    f"Episode mismatch: '{torrent_data.get('episode')}' != '{episodes[0]}'"
+                    f"Episode mismatch: '{torrent_data.get('episodes')}' != '{episodes}'"
                 )
         else:
             raise_error("No episode found in torrent data")
 
-        if torrent_data.get("season") != season:
+        if season not in torrent_data.get("seasons", []):
             if torrent_data.get("season") is None and season == 1:
                 pass  # If torrent doesn't mention season and it's season 1, it's okay
             else:

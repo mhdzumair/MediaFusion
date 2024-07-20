@@ -26,7 +26,6 @@ httpx = "*"
 uvloop = { version = "*", markers = "sys_platform != 'win32'" }
 thefuzz = "*"
 pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
-parse-torrent-title = {git = "git+https://github.com/mhdzumair/parse-torrent-title"}
 diskcache = "*"
 demagnetize = "*"
 redis = {extras = ["hiredis"], version = "*"}
@@ -43,6 +42,7 @@ pyasynctracker = "*"
 humanize = {git = "git+https://github.com/python-humanize/humanize.git"}
 scrapy-playwright = "*"
 cinemagoerng = {git = "git+https://github.com/mhdzumair/cinemagoerng.git"}
+parsett = {git = "git+https://github.com/mhdzumair/PTT"}
 
 [dev-packages]
 pysocks = "*"
