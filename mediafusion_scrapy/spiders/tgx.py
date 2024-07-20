@@ -177,7 +177,7 @@ class TgxSpider(scrapy.Spider):
                 "seeders": seeders,
                 "torrent_page_link": torrent_page_link,
                 "unique_id": tgx_unique_id,
-                "source": f"TorrentGalaxy ({uploader_profile_name})",
+                "source": "TorrentGalaxy",
                 "uploader": uploader_profile_name,
                 "announce_list": announce_list,
                 "catalog": self.catalog,
@@ -343,8 +343,8 @@ class FormulaTgxSpider(TgxSpider):
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
-        "PLAYWRIGHT_MAX_CONTEXTS": 1,
-        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
+        "PLAYWRIGHT_MAX_CONTEXTS": 2,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 3,
     }
 
 
@@ -372,8 +372,8 @@ class MotoGPTgxSpider(TgxSpider):
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
-        "PLAYWRIGHT_MAX_CONTEXTS": 1,
-        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
+        "PLAYWRIGHT_MAX_CONTEXTS": 2,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 3,
     }
 
 
@@ -392,8 +392,8 @@ class BaseEventSpider(TgxSpider):
                 "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
                 "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             },
-            "PLAYWRIGHT_MAX_CONTEXTS": 1,
-            "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 1,
+            "PLAYWRIGHT_MAX_CONTEXTS": 2,
+            "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 3,
         }
 
     def __init__(
