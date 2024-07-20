@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import PTT
 import dramatiq
 import httpx
-from pydantic import ValidationError
+from pymongo.errors import DuplicateKeyError
 from redis.asyncio import Redis
 from torf import Magnet, MagnetError
 
@@ -382,7 +382,8 @@ async def get_torrent_data_from_prowlarr(
 async def update_torrent_stream(
     torrent_stream, info_hash, video_id, source, seeders, catalogs
 ):
-    torrent_stream.source = source
+    if torrent_stream.source in ["Torrentio", "KnightCrawler"]:
+        torrent_stream.source = source
     if seeders is not None:
         torrent_stream.seeders = seeders
     torrent_stream.updated_at = datetime.now()
@@ -565,7 +566,12 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         created_at=parsed_data.get("created_at"),
         meta_id=video_id,
     )
-    await torrent_stream.create()
+
+    try:
+        await torrent_stream.create()
+    except DuplicateKeyError:
+        # If the stream already exists, skip the operation
+        return None, False
     logging.info(f"Created movies stream {info_hash} for {video_id}")
 
     # Determine if filename is None, indicating metadata update is needed
@@ -635,7 +641,11 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
     )
     logging.info(f"Created series stream {info_hash} for {video_id}")
 
-    await torrent_stream.create()
+    try:
+        await torrent_stream.create()
+    except DuplicateKeyError:
+        # If the stream already exists, skip the operation
+        return None, False
 
     # Indicate whether a metadata update is needed (e.g., missing size information)
     torrent_needed_update = any(ep.size is None for ep in episode_data)
@@ -680,7 +690,7 @@ async def parse_and_store_stream(
             info_hash, parsed_data, video_id
         )
     elif catalog_type == "series":
-        if max_similarity_ratio < 85 or parsed_data.get("year") < year:
+        if max_similarity_ratio < 85:
             # TODO: Set the series end year condition with scraping end year as well.
             logging.warning(
                 f"Skipping {info_hash} due to title mismatch: '{parsed_data.get('title')}' != '{title}' ratio: {max_similarity_ratio} full title: '{parsed_data.get('torrent_name')}'"
@@ -711,7 +721,7 @@ async def parse_and_store_movie_stream_data(
     parsed_results = await batch_process_with_circuit_breaker(
         parse_and_store_stream,
         stream_data,
-        10,
+        max(len(stream_data) // 5, 10),
         3,
         circuit_breaker,
         5,
@@ -754,7 +764,7 @@ async def parse_and_store_series_stream_data(
     parsed_results = await batch_process_with_circuit_breaker(
         parse_and_store_stream,
         stream_data,
-        5,
+        max(len(stream_data) // 5, 10),
         3,
         circuit_breaker,
         5,
