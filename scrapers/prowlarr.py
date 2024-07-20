@@ -195,7 +195,7 @@ async def scrape_movie_title_streams_from_prowlarr(
     """
     url = f"{settings.prowlarr_url}/api/v1/search"
     params_title = {
-        "query": title,
+        "query": f"{title} ({year})",
         "categories": [2000, 8000],  # Movies & Others (BitSearch only works with 8000)
         "type": "search",
     }
