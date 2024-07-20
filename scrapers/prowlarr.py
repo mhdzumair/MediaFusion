@@ -188,7 +188,12 @@ async def scrap_movies_streams_from_prowlarr(
 
 
 async def scrape_movie_title_streams_from_prowlarr(
-    video_id: str, title: str, aka_titles: list[str], year: int, max_process: int = None
+    video_id: str,
+    title: str,
+    aka_titles: list[str],
+    year: int,
+    max_process: int = None,
+    is_background_search: bool = False,
 ) -> list[TorrentStreams]:
     """
     Perform a movie stream search by title and year from Prowlarr, processing immediately.
@@ -218,7 +223,12 @@ async def scrape_movie_title_streams_from_prowlarr(
     )
     logging.info(f"Processing {len(stream_results)} streams for {title} ({year})")
     return await parse_and_store_movie_stream_data(
-        video_id, title, aka_titles, year, stream_results
+        video_id,
+        title,
+        aka_titles,
+        year,
+        stream_results,
+        is_background_search=is_background_search,
     )
 
 
@@ -233,7 +243,9 @@ async def scrape_movie_title_streams_from_prowlarr(
 async def background_movie_title_search(
     video_id: str, title: str, aka_titles: list[str], year: int
 ):
-    await scrape_movie_title_streams_from_prowlarr(video_id, title, aka_titles, year)
+    await scrape_movie_title_streams_from_prowlarr(
+        video_id, title, aka_titles, year, is_background_search=True
+    )
     logging.info(f"Background title search completed for {title} ({year})")
 
 
@@ -286,6 +298,7 @@ async def scrape_series_title_streams_from_prowlarr(
     season: int,
     episode: int,
     max_process: int = None,
+    is_background_search: bool = False,
 ) -> list[TorrentStreams]:
     """
     Perform a series stream search by title, season, and episode from Prowlarr, processing immediately.
@@ -313,7 +326,7 @@ async def scrape_series_title_streams_from_prowlarr(
     stream_results = title_search[:max_process] if max_process else title_search
     logging.info(f"Processing {len(stream_results)} streams for {title} ({year})")
     return await parse_and_store_series_stream_data(
-        video_id, title, aka_titles, year, season, stream_results
+        video_id, title, aka_titles, year, season, stream_results, is_background_search
     )
 
 
@@ -334,7 +347,7 @@ async def background_series_title_search(
     episode: int,
 ):
     await scrape_series_title_streams_from_prowlarr(
-        video_id, title, aka_titles, year, season, episode
+        video_id, title, aka_titles, year, season, episode, is_background_search=True
     )
     logging.info(f"Background title search completed for {title} S{season}E{episode}")
 
@@ -381,7 +394,7 @@ async def update_torrent_stream(
 
 
 async def prowlarr_data_parser(
-    meta_data: dict, video_id: str, catalog_type: str
+    meta_data: dict, video_id: str, catalog_type: str, is_background_search: bool
 ) -> tuple[dict, bool]:
     """Parse prowlarr data."""
     from db.crud import get_stream_by_info_hash
@@ -398,31 +411,34 @@ async def prowlarr_data_parser(
         )
         return {}, False
 
-    if meta_data.get("indexer") in [
-        "Torlock",
-        "YourBittorrent",
-        "The Pirate Bay",
-        "RuTracker.RU",
-        "BitSearch",
-        "BitRu",
-        "iDope",
-        "RuTor",
-        "Internet Archive",
-        "52BT",
-    ]:
-        # For these indexers, the guid is a direct torrent file download link or magnet link
-        download_url = meta_data.get("guid")
-    else:
-        if not meta_data.get("magnetUrl") and not meta_data.get(
-            "downloadUrl", ""
-        ).startswith("magnet:"):
-            meta_data.update(
-                await torrent_info.get_torrent_info(
-                    meta_data.get("infoUrl"), meta_data.get("indexer")
-                )
-            )
+    download_url = meta_data.get("downloadUrl") or meta_data.get("magnetUrl")
 
-        download_url = meta_data.get("magnetUrl") or meta_data.get("downloadUrl")
+    if is_background_search:
+        if meta_data.get("indexer") in [
+            "Torlock",
+            "YourBittorrent",
+            "The Pirate Bay",
+            "RuTracker.RU",
+            "BitSearch",
+            "BitRu",
+            "iDope",
+            "RuTor",
+            "Internet Archive",
+            "52BT",
+        ]:
+            # For these indexers, the guid is a direct torrent file download link or magnet link
+            download_url = meta_data.get("guid")
+        else:
+            if not meta_data.get("magnetUrl") and not meta_data.get(
+                "downloadUrl", ""
+            ).startswith("magnet:"):
+                meta_data.update(
+                    await torrent_info.get_torrent_info(
+                        meta_data.get("infoUrl"), meta_data.get("indexer")
+                    )
+                )
+
+            download_url = meta_data.get("magnetUrl") or meta_data.get("downloadUrl")
 
     catalogs = [
         "prowlarr_streams",
@@ -495,6 +511,14 @@ async def prowlarr_data_parser(
             )
             return {}, False
 
+    if is_torrent_downloaded is False:
+        torrent_data.update(
+            {
+                "torrent_name": meta_data.get("title"),
+                "total_size": meta_data.get("size"),
+                **PTT.parse_title(meta_data.get("title")),
+            }
+        )
     torrent_data.update(
         {
             "seeders": meta_data.get("seeders"),
@@ -506,14 +530,6 @@ async def prowlarr_data_parser(
             "catalog": catalogs,
         }
     )
-    if is_torrent_downloaded is False:
-        torrent_data.update(
-            {
-                "torrent_name": meta_data.get("title"),
-                "total_size": meta_data.get("size"),
-                **PTN.parse(meta_data.get("title")),
-            }
-        )
     return torrent_data, is_torrent_downloaded
 
 
@@ -634,10 +650,14 @@ async def parse_and_store_stream(
     aka_titles: list[str],
     year: int,
     catalog_type: str,
+    is_background_search: bool,
     season: int = None,
 ) -> tuple[TorrentStreams | None, bool]:
     parsed_data, _ = await prowlarr_data_parser(
-        stream_data, video_id, "movies" if catalog_type == "movie" else "series"
+        stream_data,
+        video_id,
+        "movies" if catalog_type == "movie" else "series",
+        is_background_search=is_background_search,
     )
     info_hash = parsed_data.get("info_hash", "").lower()
     torrent_stream, torrent_needed_update = None, False
@@ -680,6 +700,7 @@ async def parse_and_store_movie_stream_data(
     aka_titles: list[str],
     year: int,
     stream_data: list,
+    is_background_search: bool = False,
 ) -> list[TorrentStreams]:
     if not stream_data:
         return []
@@ -700,6 +721,7 @@ async def parse_and_store_movie_stream_data(
         aka_titles=aka_titles,
         year=year,
         catalog_type="movie",
+        is_background_search=is_background_search,
     )
 
     streams = [stream for stream, _ in parsed_results if stream is not None]
@@ -721,6 +743,7 @@ async def parse_and_store_series_stream_data(
     year: int,
     season: int,
     stream_data: list,
+    is_background_search: bool = False,
 ) -> list[TorrentStreams]:
     if not stream_data:
         return []
@@ -741,6 +764,7 @@ async def parse_and_store_series_stream_data(
         aka_titles=aka_titles,
         year=year,
         catalog_type="series",
+        is_background_search=is_background_search,
         season=season,
     )
 
