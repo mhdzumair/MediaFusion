@@ -578,7 +578,7 @@ async def get_poster(
         logging.error(f"Failed to create poster: {e}, status: {e.status}")
         if e.status != 404:
             raise HTTPException(status_code=404, detail="Failed to create poster.")
-    except aiohttp.ClientConnectorError as e:
+    except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
         logging.error(f"Failed to create poster: {e}")
     except Exception as e:
         logging.error(
