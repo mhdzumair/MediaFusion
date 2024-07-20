@@ -22,7 +22,12 @@ async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
     # Fetch torrents which updated_at is more than 1 day, limited by pagination
     torrents = (
         await TorrentStreams.find(
-            {"updated_at": {"$lt": datetime.now() - timedelta(days=1)}},
+            {
+                "$or": [
+                    {"seeders": None},
+                    {"updated_at": {"$lt": datetime.now() - timedelta(days=1)}},
+                ]
+            },
             skip=offset,
             limit=page_size,
         )
