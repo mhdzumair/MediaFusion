@@ -180,7 +180,7 @@ class TVStorePipeline(QueueBasedPipeline):
 class MovieStorePipeline(QueueBasedPipeline):
     async def parse_item(self, item, spider):
         if "title" not in item:
-            raise DropItem(f"title not found in item: {item}")
+            return item
 
         if item.get("type") != "movie":
             return item
@@ -192,7 +192,7 @@ class MovieStorePipeline(QueueBasedPipeline):
 class SeriesStorePipeline(QueueBasedPipeline):
     async def parse_item(self, item, spider):
         if "title" not in item:
-            raise DropItem(f"title not found in item: {item}")
+            return item
 
         if item.get("type") != "series":
             return item

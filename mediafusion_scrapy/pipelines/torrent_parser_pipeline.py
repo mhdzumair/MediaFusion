@@ -26,7 +26,7 @@ class TorrentDownloadAndParsePipeline:
             spider.logger.error(
                 f"Failed to download torrent file: {response.url} with status {response.status}"
             )
-            raise DropItem(f"Failed to download torrent file: {response.url}")
+            return item
 
         # Validate the content-type of the response
         if "application/x-bittorrent" not in response.headers.get(
@@ -35,14 +35,14 @@ class TorrentDownloadAndParsePipeline:
             spider.logger.error(
                 f"Unexpected Content-Type for {response.url}: {response.headers.get('Content-Type')}"
             )
-            raise DropItem(f"Unexpected Content-Type for {response.url}")
+            return item
 
         torrent_metadata = torrent.extract_torrent_metadata(
             response.body, item.get("is_parse_ptt", True)
         )
 
         if not torrent_metadata:
-            raise DropItem(f"Failed to extract torrent metadata: {item}")
+            return item
 
         item.update(torrent_metadata)
         return item
