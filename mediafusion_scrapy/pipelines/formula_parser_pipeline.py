@@ -157,7 +157,7 @@ class FormulaParserPipeline:
         self.default_poster = "https://i.postimg.cc/DZP4x8kM/Poster1.jpg"
 
         self.smcgill1969_resolutions = {
-            "4K": "4K",
+            "4K": "4k",
             "SD": "576p",
             "1080p": "1080p",
         }

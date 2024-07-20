@@ -37,7 +37,7 @@ class MotoGPParserPipeline:
         self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP"]["poster"])
 
         self.smcgill1969_resolutions = {
-            "4K": "4K",
+            "4K": "4k",
             "SD": "576p",
             "1080p": "1080p",
         }

@@ -86,7 +86,7 @@ USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS = [
 ]
 
 RESOLUTIONS = [
-    "4K",
+    "4k",
     "2160p",
     "1440p",
     "1080p",
