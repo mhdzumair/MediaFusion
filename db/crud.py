@@ -229,6 +229,7 @@ async def get_series_data_by_id(
             id=series_id,
             title=series.title,
             year=series.year,
+            end_year=series.end_year,
             poster=series.primary_image,
             background=series.primary_image,
             streams=[],
@@ -640,8 +641,16 @@ async def get_tv_meta(meta_id: str):
 
 async def get_existing_metadata(metadata, model):
     filters = {"title": metadata["title"]}
+    year_filter = metadata.get("year", 0)
+
     if issubclass(model, MediaFusionMovieMetaData):
-        filters["year"] = metadata.get("year")
+        filters["year"] = year_filter
+    else:
+        filters["year"] = {"$gte": year_filter}
+        filters["$or"] = [
+            {"end_year": {"$lte": year_filter}},
+            {"end_year": None},
+        ]
 
     return await model.find_one(
         filters,
@@ -652,10 +661,13 @@ async def get_existing_metadata(metadata, model):
 def create_metadata_object(metadata, imdb_data, model):
     poster = imdb_data.get("poster") or metadata["poster"]
     background = imdb_data.get("background", metadata.get("background", poster))
+    year = imdb_data.get("year", metadata.get("year"))
+    end_year = imdb_data.get("end_year", metadata.get("end_year"))
     return model(
         id=metadata["id"],
-        title=metadata["title"],
-        year=metadata["year"],
+        title=imdb_data.get("title", metadata["title"]),
+        year=year,
+        end_year=end_year,
         poster=poster,
         background=background,
         streams=[],

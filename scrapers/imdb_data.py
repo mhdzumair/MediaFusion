@@ -6,6 +6,8 @@ from typing import Optional
 import dramatiq
 from beanie import BulkWriter
 from curl_cffi import requests
+from typedload.exceptions import TypedloadValueError
+
 from db.models import (
     MediaFusionMetaData,
 )
@@ -39,7 +41,9 @@ def get_imdb_rating(movie_id: str) -> Optional[float]:
     return movie.rating
 
 
-def search_imdb(title: str, year: int, max_retries: int = 3) -> dict:
+def search_imdb(
+    title: str, year: int, media_type: str = None, max_retries: int = 3
+) -> dict:
     def get_poster_urls(imdb_id: str) -> tuple:
         poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
         try:
@@ -55,14 +59,18 @@ def search_imdb(title: str, year: int, max_retries: int = 3) -> dict:
 
     def process_movie(movie, year: int) -> dict:
         try:
-            imdb_title = web.get_title(f"tt{movie.movieID}", page="main")
+            try:
+                imdb_title = web.get_title(f"tt{movie.movieID}", page="main")
+            except TypedloadValueError:
+                return {}
             if not imdb_title:
                 return {}
 
-            if imdb_title.type_id == "tvSeries":
-                if not (imdb_title.year <= year <= (imdb_title.end_year or math.inf)):
-                    return {}
-            elif imdb_title.year != year:
+            if (imdb_title.type_id != "tvSeries" and imdb_title.year != year) or (
+                imdb_title.type_id == "tvSeries"
+                and year is not None
+                and not (imdb_title.year <= year <= (imdb_title.end_year or math.inf))
+            ):
                 return {}
 
             web.update_title(
@@ -75,11 +83,15 @@ def search_imdb(title: str, year: int, max_retries: int = 3) -> dict:
                 poster_image = imdb_title.primary_image
                 background_image = poster_image
 
+            end_year = imdb_title.end_year if imdb_title.type_id == "tvSeries" else None
+
             return {
                 "imdb_id": imdb_title.imdb_id,
                 "poster": poster_image,
                 "background": background_image,
                 "title": imdb_title.title,
+                "year": imdb_title.year,
+                "end_year": end_year,
                 "description": imdb_title.plot.get("en-US"),
                 "genres": imdb_title.genres,
                 "imdb_rating": imdb_title.rating,
@@ -98,11 +110,16 @@ def search_imdb(title: str, year: int, max_retries: int = 3) -> dict:
             logging.error(f"IMDB search: Error processing movie: {e}")
             return {}
 
+    if media_type:
+        media_type = "movie" if media_type == "movie" else "tv series"
     for attempt in range(max_retries):
         try:
             results = ia.search_movie(title)
 
             for movie in results:
+                if media_type and movie.get("kind", "") != media_type:
+                    continue
+
                 if fuzz.ratio(movie.get("title", "").lower(), title.lower()) < 85:
                     continue
 
@@ -161,6 +178,9 @@ async def process_imdb_data(movie_ids):
                 "aka_titles": list(set(aka.title for aka in imdb_movie.akas))[10:],
                 "last_updated_at": now,
             }
+            if imdb_movie.type_id == "tvSeries":
+                update_data["end_year"] = imdb_movie.end_year
+
             await MediaFusionMetaData.find({"_id": movie_id}).update(
                 {"$set": update_data}, bulk_writer=bulk_writer
             )
