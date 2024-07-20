@@ -95,7 +95,7 @@ def search_imdb(
                 "description": imdb_title.plot.get("en-US"),
                 "genres": imdb_title.genres,
                 "imdb_rating": imdb_title.rating,
-                "aka_titles": list(set(aka.title for aka in imdb_title.akas))[:10],
+                "aka_titles": list(set(aka.title for aka in imdb_title.akas)),
                 "type_id": imdb_title.type_id,
                 "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
                 "parent_guide_certificates": list(
@@ -175,7 +175,7 @@ async def process_imdb_data(movie_ids):
                         for cert in imdb_movie.certification.certificates
                     )
                 ),
-                "aka_titles": list(set(aka.title for aka in imdb_movie.akas))[10:],
+                "aka_titles": list(set(aka.title for aka in imdb_movie.akas)),
                 "last_updated_at": now,
             }
             if imdb_movie.type_id == "tvSeries":

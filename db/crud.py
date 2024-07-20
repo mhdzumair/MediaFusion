@@ -192,7 +192,7 @@ async def get_movie_data_by_id(
             parent_guide_certificates=list(
                 set(cert.certificate for cert in movie.certification.certificates)
             ),
-            aka_titles=list(set(aka.title for aka in movie.akas))[10:],
+            aka_titles=list(set(aka.title for aka in movie.akas)),
             stars=list(set(star.name for star in movie.cast))[10:],
         )
         try:
