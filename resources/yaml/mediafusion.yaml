@@ -45,13 +45,13 @@ search:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0",
       ]
   paths:
-    - path: "{{ if .Config.addon_url }}{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}{{ else }}{{ end }}/stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
+    - path: "{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}/stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
       method: get
       response:
         type: json
         noResultsMessage: '"streams": []'
       categories: [Movies]
-    - path: "{{ if .Config.addon_url }}{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}{{ else }}{{ end }}/stream/series/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_tv }}{{ end }}:{{ if .Query.Season }}{{ .Query.Season }}{{ else }}1{{ end }}:{{ if .Query.Ep }}{{ .Query.Ep }}{{ else }}1{{ end }}.json"
+    - path: "{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}/stream/series/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_tv }}{{ end }}:{{ if .Query.Season }}{{ .Query.Season }}{{ else }}1{{ end }}:{{ if .Query.Ep }}{{ .Query.Ep }}{{ else }}1{{ end }}.json"
       method: get
       response:
         type: json
