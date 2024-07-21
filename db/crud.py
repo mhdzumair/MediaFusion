@@ -29,6 +29,7 @@ from db.schemas import Stream, TorrentStreamsList
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
+from scrapers.zilean import get_streams_from_zilean
 from utils import crypto
 from utils.parser import (
     fetch_downloaded_info_hashes,
@@ -341,6 +342,18 @@ async def get_movie_streams(
                 movie_metadata.aka_titles,
                 movie_metadata.year,
             )
+        if (
+            settings.is_scrap_from_zilean
+            and "zilean_dmm_streams" in user_data.selected_catalogs
+        ):
+            streams = await get_streams_from_zilean(
+                redis,
+                streams,
+                video_id,
+                catalog_type="movie",
+                title=movie_metadata.title,
+                aka_titles=movie_metadata.aka_titles,
+            )
 
     return await parse_stream_data(streams, user_data, secret_str, user_ip=user_ip)
 
@@ -392,6 +405,20 @@ async def get_series_streams(
                 series_metadata.year,
                 season,
                 episode,
+            )
+        if (
+            settings.is_scrap_from_zilean
+            and "zilean_dmm_streams" in user_data.selected_catalogs
+        ):
+            streams = await get_streams_from_zilean(
+                redis,
+                streams,
+                video_id,
+                catalog_type="series",
+                title=series_metadata.title,
+                aka_titles=series_metadata.aka_titles,
+                season=season,
+                episode=episode,
             )
 
     return await parse_stream_data(

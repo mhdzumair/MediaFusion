@@ -137,7 +137,7 @@ class StreamingProvider(BaseModel):
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = None
     selected_catalogs: list[str] = Field(
-        default=["prowlarr_streams", "torrentio_streams"]
+        default=["prowlarr_streams", "torrentio_streams", "zilean_dmm_streams"]
     )
     selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
     enable_catalogs: bool = True

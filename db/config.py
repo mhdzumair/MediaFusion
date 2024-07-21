@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     scraper_proxy_url: str | None = None
     torrentio_url: str = "https://torrentio.strem.fun"
     prowlarr_url: str = "http://prowlarr-service:9696"
+    zilean_url: str = "http://zilean.zilean:8181"
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
 
     # External API keys and secrets
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
 
     # Feature toggles
     is_scrap_from_torrentio: bool = False
+    is_scrap_from_zilean: bool = False
     enable_rate_limit: bool = True
     is_public_instance: bool = False
     validate_m3u8_urls_liveness: bool = True

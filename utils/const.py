@@ -47,6 +47,7 @@ CATALOG_DATA = {
     "telugu_series": "Telugu Series",
     "telugu_tcrip": "Telugu TCRip Movies",
     "torrentio_streams": "Torrentio Streams",
+    "zilean_dmm_streams": "Zilean DMM Streams",
     "contribution_streams": "Contribution Streams",
     "fighting": "Fighting (WWE, UFC)",
 }
