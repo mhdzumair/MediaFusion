@@ -187,15 +187,11 @@ class UserData(BaseModel):
 
     @field_validator("nudity_filter", mode="after")
     def validate_nudity_filter(cls, v):
-        if not v:
-            v = ["Severe"]
-        return v
+        return v or ["Severe"]
 
     @field_validator("certification_filter", mode="after")
     def validate_certification_filter(cls, v):
-        if not v:
-            v = ["Adults"]
-        return v
+        return v or ["Adults"]
 
     class Config:
         extra = "ignore"
