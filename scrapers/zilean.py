@@ -8,7 +8,6 @@ from redis.asyncio import Redis
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
-from db.schemas import TorrentStreamsList
 from scrapers.helpers import (
     update_torrent_series_streams_metadata,
     update_torrent_movie_streams_metadata,
@@ -18,6 +17,8 @@ from utils.parser import (
     is_contain_18_plus_keywords,
     calculate_max_similarity_ratio,
 )
+
+ZILEAN_SEARCH_URL = f"{settings.zilean_url}/dmm/search"
 
 
 async def get_streams_from_zilean(
@@ -29,17 +30,15 @@ async def get_streams_from_zilean(
     aka_titles: list[str],
     season: int = None,
     episode: int = None,
-):
+) -> list[TorrentStreams]:
     cache_key = f"{catalog_type}_{video_id}_{season}_{episode}_zilean_dmm_streams"
     cached_data = await redis.get(cache_key)
     if cached_data:
-        return TorrentStreamsList.model_validate_json(cached_data).streams
+        return streams
 
     if catalog_type == "movie":
         streams.extend(
-            await scrap_movie_streams_from_zilean(
-                video_id, title, aka_titles
-            )
+            await scrap_movie_streams_from_zilean(video_id, title, aka_titles)
         )
     elif catalog_type == "series":
         streams.extend(
@@ -51,36 +50,44 @@ async def get_streams_from_zilean(
     # Cache the data for 24 hours
     await redis.set(
         cache_key,
-        TorrentStreamsList(streams=streams).model_dump_json(exclude_none=True),
+        "True",
         ex=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds()),
     )
 
     return streams
 
 
-async def fetch_stream_data(url: str) -> list:
+async def fetch_stream_data(title: str) -> list:
     """Fetch stream data asynchronously."""
     async with httpx.AsyncClient(
         headers=UA_HEADER, proxy=settings.scraper_proxy_url
     ) as client:
-        response = await client.get(url, timeout=10)
-        response.raise_for_status()  # Will raise an exception for 4xx/5xx responses
+        response = await client.post(
+            ZILEAN_SEARCH_URL, timeout=10, json={"queryText": title}
+        )
+        response.raise_for_status()
+        logging.info(f"Zilean DMM found {len(response.json())} streams for {title}")
         return response.json()
 
 
 async def scrap_movie_streams_from_zilean(
-    video_id: str, title: str, aka_titles: list[str],
+    video_id: str,
+    title: str,
+    aka_titles: list[str],
 ) -> list[TorrentStreams]:
     """
     Get streams by text from zilean DMM.
     """
-    url = f"{settings.zilean_url}/dmm/filtered?Query={title}"
     try:
-        stream_data = await fetch_stream_data(url)
+        stream_data = await fetch_stream_data(title)
         return await store_and_parse_movie_stream_data(
-            video_id, title, aka_titles, stream_data,
+            video_id,
+            title,
+            aka_titles,
+            stream_data,
         )
-    except (httpx.HTTPError, httpx.TimeoutException):
+    except (httpx.HTTPError, httpx.TimeoutException) as e:
+        logging.error(f"Error while fetching stream data from zilean: {e}")
         return []  # Return an empty list in case of HTTP errors or timeouts
     except Exception as e:
         logging.error(f"Error while fetching stream data from zilean: {e}")
@@ -97,13 +104,18 @@ async def scrap_series_streams_from_zilean(
     """
     Get streams by text from zilean DMM.
     """
-    url = f"{settings.zilean_url}/dmm/filtered?Query={title}&season={season}&episode={episode}"
     try:
-        stream_data = await fetch_stream_data(url)
+        stream_data = await fetch_stream_data(title)
         return await store_and_parse_series_stream_data(
-            video_id, title, aka_titles, season, episode, stream_data,
+            video_id,
+            title,
+            aka_titles,
+            season,
+            episode,
+            stream_data,
         )
-    except (httpx.HTTPError, httpx.TimeoutException):
+    except (httpx.HTTPError, httpx.TimeoutException) as e:
+        logging.error(f"Error while fetching stream data from zilean: {e}")
         return []  # Return an empty list in case of HTTP errors or timeouts
     except Exception as e:
         logging.error(f"Error while fetching stream data from zilean: {e}")
@@ -120,11 +132,11 @@ async def store_and_parse_movie_stream_data(
         if torrent_stream:
             continue
 
-        if is_contain_18_plus_keywords(stream["rawTitle"]):
-            logging.warning(f"Stream contains 18+ keywords: {stream['rawTitle']}")
+        if is_contain_18_plus_keywords(stream["filename"]):
+            logging.warning(f"Stream contains 18+ keywords: {stream['filename']}")
             continue
 
-        metadata = PTT.parse_title(stream['rawTitle'])
+        metadata = PTT.parse_title(stream["filename"])
 
         # validate the ratio as zilean provides only matching torrent names
         max_similarity_ratio = calculate_max_similarity_ratio(
@@ -132,34 +144,34 @@ async def store_and_parse_movie_stream_data(
         )
         if max_similarity_ratio < 85:
             logging.error(
-                f"Title mismatch: '{title}' != '{metadata.get('title')}' ratio: {max_similarity_ratio}"
+                f"Title mismatch: '{title}' != '{metadata.get('title')}' ratio: {max_similarity_ratio}, fullname: {stream['filename']}"
             )
             continue
 
         # Create new stream
         torrent_stream = TorrentStreams(
             id=stream["infoHash"],
-            torrent_name=stream["rawTitle"],
+            torrent_name=stream["filename"],
             announce_list=[],
-            size=stream["size"],
-            languages=[language.title() for language in metadata.get("languages", stream["languages"])],
+            size=stream["filesize"],
+            languages=[language.title() for language in metadata["languages"]],
             resolution=metadata.get("resolution"),
             codec=metadata.get("codec"),
             quality=metadata.get("quality"),
             audio=metadata.get("audio"),
             source="Zilean DMM",
-            catalog=["zilean_dmm_streams"],
+            catalog=["zilean_dmm_streams" "zilean_dmm_movies"],
             updated_at=datetime.now(),
             meta_id=video_id,
         )
         try:
             await torrent_stream.create()
+            logging.info(f"Zilean: Created new stream: {torrent_stream.id}")
         except DuplicateKeyError:
             # Skip if the stream already exists
             continue
         streams.append(torrent_stream)
-        if torrent_stream.filename is None:
-            info_hashes.append(stream["infoHash"])
+        info_hashes.append(stream["infoHash"])
 
     if info_hashes:
         update_torrent_movie_streams_metadata.send(info_hashes)
@@ -181,11 +193,11 @@ async def store_and_parse_series_stream_data(
         if torrent_stream:
             continue
 
-        if is_contain_18_plus_keywords(stream["title"]):
-            logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
+        if is_contain_18_plus_keywords(stream["filename"]):
+            logging.warning(f"Stream contains 18+ keywords: {stream['filename']}")
             continue
 
-        metadata = PTT.parse_title(stream['rawTitle'])
+        metadata = PTT.parse_title(stream["filename"])
 
         # validate the ratio as zilean provides only matching torrent names
         max_similarity_ratio = calculate_max_similarity_ratio(
@@ -193,11 +205,11 @@ async def store_and_parse_series_stream_data(
         )
         if max_similarity_ratio < 85:
             logging.error(
-                f"Title mismatch: '{title}' != '{metadata.get('title')}' ratio: {max_similarity_ratio}"
+                f"Title mismatch: '{title}' != '{metadata.get('title')}' ratio: {max_similarity_ratio}, fullname: {stream['filename']}"
             )
             continue
 
-        if (seasons := metadata.get("seasons")) or (seasons := stream["seasons"]):
+        if seasons := metadata.get("seasons"):
             if len(seasons) == 1:
                 season_number = seasons[0]
             else:
@@ -205,8 +217,10 @@ async def store_and_parse_series_stream_data(
                 # TODO: Handle this case later.
                 #  Need to refactor DB and how streaming provider works.
                 continue
+        else:
+            continue
 
-        if (episodes := metadata.get("episodes")) or (episodes := stream.get("episodes")):
+        if episodes := metadata.get("episodes"):
             episode_data = [
                 Episode(
                     episode_number=episode_number,
@@ -214,16 +228,14 @@ async def store_and_parse_series_stream_data(
                 for episode_number in episodes
             ]
         else:
-            episode_data = [
-                Episode(episode_number=episode, file_index=stream.get("fileIdx"))
-            ]
+            continue
 
         torrent_stream = TorrentStreams(
             id=stream["infoHash"],
-            torrent_name=stream["rawTitle"],
+            torrent_name=stream["filename"],
             announce_list=[],
-            size=stream["size"],
-            languages=[language.title() for language in metadata.get("languages", stream["languages"])],
+            size=stream["filesize"],
+            languages=[language.title() for language in metadata["languages"]],
             resolution=metadata.get("resolution"),
             codec=metadata.get("codec"),
             quality=metadata.get("quality"),
@@ -233,17 +245,18 @@ async def store_and_parse_series_stream_data(
             updated_at=datetime.now(),
             meta_id=video_id,
             season=Season(
-                season_number= season_number,
+                season_number=season_number,
                 episodes=episode_data,
             ),
         )
-        await torrent_stream.create()
-        episode_item = torrent_stream.get_episode(season, episode)
-
+        try:
+            await torrent_stream.create()
+            logging.info(f"Zilean: Created new stream: {torrent_stream.id}")
+        except DuplicateKeyError:
+            # Skip if the stream already exists
+            continue
         streams.append(torrent_stream)
-
-        if episode_item and episode_item.size is None:
-            info_hashes.append(stream["infoHash"])
+        info_hashes.append(stream["infoHash"])
 
     if info_hashes:
         update_torrent_series_streams_metadata.send(info_hashes)
