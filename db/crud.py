@@ -9,6 +9,9 @@ import humanize
 from apscheduler.triggers.cron import CronTrigger
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Set
+from pymongo.errors import DuplicateKeyError
+from redis.asyncio import Redis
+
 from db import schemas
 from db.config import settings
 from db.models import (
@@ -23,8 +26,6 @@ from db.models import (
     TVStreams,
 )
 from db.schemas import Stream, TorrentStreamsList
-from pymongo.errors import DuplicateKeyError
-from redis.asyncio import Redis
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
 from scrapers.prowlarr import get_streams_from_prowlarr
 from scrapers.torrentio import get_streams_from_torrentio
@@ -35,7 +36,10 @@ from utils.parser import (
     parse_stream_data,
     parse_tv_stream_data,
 )
-from utils.validation_helper import validate_parent_guide_nudity
+from utils.validation_helper import (
+    validate_parent_guide_nudity,
+    get_filter_certification_values,
+)
 
 
 async def get_meta_list(
@@ -48,6 +52,9 @@ async def get_meta_list(
     user_ip: str | None = None,
     genre: Optional[str] = None,
 ) -> list[schemas.Meta]:
+    poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
+    meta_class = MediaFusionMetaData
+
     # Define query filters for TorrentStreams based on catalog
     if is_watchlist_catalog:
         downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data, user_ip)
@@ -57,12 +64,20 @@ async def get_meta_list(
     else:
         query_filters = {"catalog": {"$in": [catalog]}}
 
-    genre_filter = {}
-    if genre:
-        genre_filter = {"genres": {"$in": [genre]}}
+    match_filter = {
+        "type": catalog_type,
+    }
 
-    poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
-    meta_class = MediaFusionMetaData
+    if genre:
+        match_filter["genres"] = {"$in": [genre]}
+
+    if "Disable" not in user_data.nudity_filter:
+        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+
+    if "Disable" not in user_data.certification_filter:
+        match_filter["parent_guide_certificates"] = {
+            "$nin": get_filter_certification_values(user_data)
+        }
 
     # Define the pipeline for aggregation
     pipeline = [
@@ -75,33 +90,7 @@ async def get_meta_list(
                 "localField": "_id",
                 "foreignField": "_id",
                 "pipeline": [
-                    {
-                        "$match": {
-                            "type": catalog_type,
-                            **genre_filter,
-                            "$or": [
-                                {  # If nudity status exists and matches regex, filter it out
-                                    "parent_guide_nudity_status": {
-                                        "$not": {
-                                            "$regex": settings.parent_guide_nudity_filter_types_regex,
-                                            "$options": "i",
-                                        }
-                                    }
-                                },
-                                {  # Check certificates only if nudity status is null
-                                    "parent_guide_nudity_status": {"$eq": None},
-                                    "parent_guide_certificates": {
-                                        "$not": {
-                                            "$elemMatch": {
-                                                "$regex": settings.parent_guide_certificates_filter_regex,
-                                                "$options": "i",
-                                            }
-                                        }
-                                    },
-                                },
-                            ],
-                        }
-                    },
+                    {"$match": match_filter},
                 ],
                 "as": "meta_data",
             }
@@ -321,7 +310,7 @@ async def get_movie_streams(
             )
         ]
     movie_metadata = await get_movie_data_by_id(video_id, redis)
-    if not (movie_metadata and validate_parent_guide_nudity(movie_metadata)):
+    if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
         return []
 
     streams = await get_cached_torrent_streams(redis, video_id)
@@ -366,7 +355,9 @@ async def get_series_streams(
     user_ip: str | None = None,
 ) -> list[Stream]:
     series_metadata = await get_series_data_by_id(video_id, False)
-    if not (series_metadata and validate_parent_guide_nudity(series_metadata)):
+    if not (
+        series_metadata and validate_parent_guide_nudity(series_metadata, user_data)
+    ):
         return []
 
     streams = await get_cached_torrent_streams(redis, video_id, season, episode)
@@ -420,10 +411,10 @@ async def get_tv_streams(redis: Redis, video_id: str, namespace: str) -> list[St
     return await parse_tv_stream_data(tv_streams, redis)
 
 
-async def get_movie_meta(meta_id: str, redis: Redis):
+async def get_movie_meta(meta_id: str, redis: Redis, user_data: schemas.UserData):
     movie_data = await get_movie_data_by_id(meta_id, redis)
 
-    if not (movie_data and validate_parent_guide_nudity(movie_data)):
+    if not (movie_data and validate_parent_guide_nudity(movie_data, user_data)):
         return {}
 
     return {
@@ -440,35 +431,23 @@ async def get_movie_meta(meta_id: str, redis: Redis):
     }
 
 
-async def get_series_meta(meta_id: str):
+async def get_series_meta(meta_id: str, user_data: schemas.UserData):
+    # Initialize the match filter
+    match_filter = {
+        "_id": meta_id,
+    }
+
+    if "Disable" not in user_data.nudity_filter:
+        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+
+    if "Disable" not in user_data.certification_filter:
+        match_filter["parent_guide_certificates"] = {
+            "$nin": get_filter_certification_values(user_data)
+        }
+
     # Define the aggregation pipeline
     pipeline = [
-        {
-            "$match": {
-                "_id": meta_id,
-                "$or": [
-                    {  # If nudity status exists and matches regex, filter it out
-                        "parent_guide_nudity_status": {
-                            "$not": {
-                                "$regex": settings.parent_guide_nudity_filter_types_regex,
-                                "$options": "i",
-                            }
-                        }
-                    },
-                    {  # Check certificates only if nudity status is null
-                        "parent_guide_nudity_status": {"$eq": None},
-                        "parent_guide_certificates": {
-                            "$not": {
-                                "$elemMatch": {
-                                    "$regex": settings.parent_guide_certificates_filter_regex,
-                                    "$options": "i",
-                                }
-                            }
-                        },
-                    },
-                ],
-            }
-        },
+        {"$match": match_filter},
         {
             "$lookup": {
                 "from": "TorrentStreams",
@@ -777,34 +756,24 @@ async def save_series_metadata(metadata: dict, is_imdb: bool = True):
 async def process_search_query(
     search_query: str, catalog_type: str, user_data: schemas.UserData
 ) -> dict:
+    # Get user's certification filter values
+    certification_values = get_filter_certification_values(user_data)
+
+    # Initialize the match filter
+    match_filter = {
+        "$text": {"$search": search_query},  # Perform the text search
+        "type": catalog_type,
+    }
+
+    if "Disable" not in user_data.nudity_filter:
+        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+
+    if "Disable" not in user_data.certification_filter:
+        match_filter["parent_guide_certificates"] = {"$nin": certification_values}
+
+    # Define the aggregation pipeline
     pipeline = [
-        {
-            "$match": {
-                "$text": {"$search": search_query},  # Perform the text search
-                "type": catalog_type,
-                "$or": [  # Nudity filtering
-                    {
-                        "parent_guide_nudity_status": {
-                            "$not": {
-                                "$regex": settings.parent_guide_nudity_filter_types_regex,
-                                "$options": "i",
-                            }
-                        }
-                    },
-                    {
-                        "parent_guide_nudity_status": {"$eq": None},
-                        "parent_guide_certificates": {
-                            "$not": {
-                                "$elemMatch": {
-                                    "$regex": settings.parent_guide_certificates_filter_regex,
-                                    "$options": "i",
-                                }
-                            }
-                        },
-                    },
-                ],
-            }
-        },
+        {"$match": match_filter},
         {"$limit": 50},  # Limit the search results to 50
         {
             "$lookup": {

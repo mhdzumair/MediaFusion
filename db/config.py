@@ -38,8 +38,6 @@ class Settings(BaseSettings):
         r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|bigass|bigtits?|blowjob|hardfuck|onlyfans?|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer)"
         r"(\b|\s|$|[\]._-])"
     )
-    parent_guide_nudity_filter_types_regex: str = "Severe"
-    parent_guide_certificates_filter_regex: str = r"X|XXX|TV-MA|18\+|18SX"
     prowlarr_live_title_search: bool = False
     prowlarr_background_title_search: bool = True
     prowlarr_search_query_timeout: int = 120

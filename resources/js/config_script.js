@@ -324,6 +324,12 @@ function getUserData() {
     const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
+    // Collect nudity filter data
+    const selectedNudityFilters = Array.from(document.querySelectorAll('input[name="nudity_filter"]:checked')).map(el => el.value);
+
+    // Collect certification filter data
+    const selectedCertificationFilters = Array.from(document.querySelectorAll('input[name="certification_filter"]:checked')).map(el => el.value);
+
     return {
         streaming_provider: streamingProviderData,
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
@@ -334,6 +340,8 @@ function getUserData() {
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
         show_full_torrent_name: torrentDisplayOption === 'fullName',
+        nudity_filter: selectedNudityFilters,
+        certification_filter: selectedCertificationFilters,
         api_password: apiPassword,
     };
 }
@@ -482,4 +490,44 @@ document.addEventListener('DOMContentLoaded', function () {
         preventOnFilter: false,
     });
 
+});
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Initialize the parental guide checkboxes
+    const parentalGuideCheckboxes = document.querySelectorAll('.parental-guide-checkbox');
+
+    parentalGuideCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function () {
+            const category = this.name;
+            if (this.value === 'Disable' && this.checked) {
+                parentalGuideCheckboxes.forEach(cb => {
+                    if (cb !== this && cb.name === category) {
+                        cb.checked = false;
+                        cb.parentNode.classList.add('disabled-checkbox');
+                    }
+                });
+            } else if (this.value === 'Disable' && !this.checked) {
+                parentalGuideCheckboxes.forEach(cb => {
+                    if (cb.name === category) {
+                        cb.parentNode.classList.remove('disabled-checkbox');
+                    }
+                });
+            } else if (this.checked) {
+                const disableCheckbox = document.querySelector(`input[name="${category}"][value="Disable"]`);
+                if (disableCheckbox) {
+                    disableCheckbox.checked = false;
+                    disableCheckbox.parentNode.classList.add('disabled-checkbox');
+                }
+            } else {
+                const anyChecked = Array.from(parentalGuideCheckboxes).some(cb => cb.checked && cb.name === category);
+                if (!anyChecked) {
+                    const disableCheckbox = document.querySelector(`input[name="${category}"][value="Disable"]`);
+                    if (disableCheckbox) {
+                        disableCheckbox.parentNode.classList.remove('disabled-checkbox');
+                    }
+                }
+            }
+        });
+    });
 });

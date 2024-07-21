@@ -8,33 +8,33 @@ import aiohttp
 import redis.asyncio as redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import (
+    Depends,
     FastAPI,
+    HTTPException,
     Request,
     Response,
-    Depends,
-    HTTPException,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from api import middleware
 from api.scheduler import setup_scheduler
-from db import database, crud, schemas
+from db import crud, database, schemas
 from db.config import settings
 from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
-from utils import crypto, torrent, poster, const, wrappers, get_json_data
+from utils import const, crypto, get_json_data, poster, torrent, wrappers
 from utils.lock import (
     acquire_scheduler_lock,
     maintain_heartbeat,
     release_scheduler_lock,
 )
-from utils.network import get_user_public_ip, get_request_namespace
+from utils.network import get_request_namespace, get_user_public_ip
 from utils.parser import generate_manifest
-from utils.runtime_const import TEMPLATES, DELETE_ALL_META, DELETE_ALL_META_ITEM
+from utils.runtime_const import DELETE_ALL_META, DELETE_ALL_META_ITEM, TEMPLATES
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
@@ -270,6 +270,10 @@ async def get_catalog(
     elif catalog_type == "events":
         response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
+    elif catalog_type in ["movie", "series"]:
+        cache_key += "_" + "_".join(
+            user_data.nudity_filter + user_data.certification_filter
+        )
 
     # Try retrieving the cached data
     if cache_key:
@@ -378,10 +382,16 @@ async def search_meta(
 async def get_meta(
     catalog_type: Literal["movie", "series", "tv", "events"],
     meta_id: str,
-    response: Response,
     request: Request,
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     cache_key = f"{catalog_type}_{meta_id}_meta"
+
+    if catalog_type in ["movie", "series"]:
+        cache_key += "_" + "_".join(
+            user_data.nudity_filter + user_data.certification_filter
+        )
+
     # Try retrieving the cached data
     cached_data = await request.app.state.redis.get(cache_key)
     if cached_data:
@@ -396,9 +406,11 @@ async def get_meta(
             delete_all_meta_item["meta"]["_id"] = meta_id
             data = delete_all_meta_item
         else:
-            data = await crud.get_movie_meta(meta_id, request.app.state.redis)
+            data = await crud.get_movie_meta(
+                meta_id, request.app.state.redis, user_data
+            )
     elif catalog_type == "series":
-        data = await crud.get_series_meta(meta_id)
+        data = await crud.get_series_meta(meta_id, user_data)
     elif catalog_type == "events":
         data = await crud.get_event_meta(request.app.state.redis, meta_id)
     else:

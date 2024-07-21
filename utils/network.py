@@ -145,13 +145,14 @@ def get_client_ip(request: Request) -> str | None:
     Extract the client's real IP address from the request headers or fallback to the client host.
     """
     x_forwarded_for = request.headers.get("X-Forwarded-For")
+    x_real_ip = request.headers.get("X-Real-IP")
+    logging.info(f"X-Forwarded-For: {x_forwarded_for}, X-Real-IP: {x_real_ip}")
     if x_forwarded_for:
         # In some cases, this header can contain multiple IPs
         # separated by commas.
         # The first one is the original client's IP.
         return x_forwarded_for.split(",")[0].strip()
     # Fallback to X-Real-IP if X-Forwarded-For is not available
-    x_real_ip = request.headers.get("X-Real-IP")
     if x_real_ip:
         return x_real_ip
     return request.client.host if request.client else "127.0.0.1"

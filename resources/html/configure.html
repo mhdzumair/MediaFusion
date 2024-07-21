@@ -17,8 +17,8 @@
 <div class="container">
     <div class="row">
         <div class="col-10 col-md-11 col-lg-11 config-container">
-            <a href="/"><img class="logo" src="{{logo_url}}"></a>
-            <h3 class="text-center mb-4">{{addon_name}} Addon Configuration</h3>
+            <a href="/"><img class="logo" src="{{ logo_url }}"></a>
+            <h3 class="text-center mb-4">{{ addon_name }} Addon Configuration</h3>
 
             <!-- Configuration Form -->
             <form id="configForm" class="mx-5 mx-lg-1 mx-md-3 mx-sm-4">
@@ -145,8 +145,9 @@
                         </div>
                         <div class="mb-3">
                             <label for="category">Category: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                               title="Enter the category for the torrents to be tagged in qBittorrent."></span></label>
-                            <input class="form-control" type="text" id="category" name="category" value="{{ user_data.streaming_provider.qbittorrent_config.category if user_data.streaming_provider.qbittorrent_config else 'MediaFusion' }}">
+                                                                  title="Enter the category for the torrents to be tagged in qBittorrent."></span></label>
+                            <input class="form-control" type="text" id="category" name="category"
+                                   value="{{ user_data.streaming_provider.qbittorrent_config.category if user_data.streaming_provider.qbittorrent_config else 'MediaFusion' }}">
                         </div>
 
                         <!-- WebDAV Configuration -->
@@ -193,16 +194,15 @@
                                                              title="Select and arrange the catalogs that you want to display in Stremio."></span></h6>
                         <div id="catalogs" class="row">
                             {% for catalog in catalogs %}
-                            <div class="col-12 col-md-6 col-lg-4 draggable-catalog" data-id="{{ catalog[0] }}">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="selected_catalogs" value="{{ catalog[0] }}" id="{{ catalog[0] }}" {% if catalog[0] in
-                                           user_data.selected_catalogs
-                                           %}checked{% endif %}>
-                                    <label class="form-check-label" for="{{ catalog[0] }}">
-                                        <span class="label-text">{{ catalog[1] }}</span>
-                                    </label>
+                                <div class="col-12 col-md-6 col-lg-4 draggable-catalog" data-id="{{ catalog[0] }}">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_catalogs" value="{{ catalog[0] }}" id="{{ catalog[0] }}" {% if catalog[0] in
+                                           user_data.selected_catalogs %}checked{% endif %}>
+                                        <label class="form-check-label" for="{{ catalog[0] }}">
+                                            <span class="label-text">{{ catalog[1] }}</span>
+                                        </label>
+                                    </div>
                                 </div>
-                            </div>
                             {% endfor %}
                         </div>
                     </div>
@@ -246,6 +246,103 @@
                     </div>
                 </div>
 
+                <!-- Parental Guides Configuration -->
+                <div class="section-container">
+                    <h4 class="section-header">Parental Guides</h4>
+                    <hr class="section-divider">
+
+                    <div class="mb-3">
+                        <h6>Select Certification Levels To Not Display: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                              title="Select the certification levels that you prefer not to display in Stremio."></span></h6>
+                        <div class="row">
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Disable" id="certification_disable"
+                                           {% if "Disable" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_disable">Disable</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="All Ages" id="certification_all_ages"
+                                           {% if "All Ages" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_all_ages">All Ages</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Children" id="certification_children"
+                                           {% if "Children" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_children">Children</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Parental Guidance" id="certification_pg"
+                                           {% if "Parental Guidance" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_pg">Parental Guidance</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Teens" id="certification_teens"
+                                           {% if "Teens" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_teens">Teens</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Adults" id="certification_adults"
+                                           {% if "Adults" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_adults">Adults</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <h6>Select Nudity Filter Levels To Not Display: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                              title="Select the nudity filter levels that you prefer not to display in Stremio."></span></h6>
+                        <div class="row">
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="Disable" id="nudity_disable"
+                                           {% if "Disable" in user_data.nudity_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="nudity_disable">Disable</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="None" id="nudity_none"
+                                           {% if "None" in user_data.nudity_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="nudity_none">None</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="Mild" id="nudity_mild"
+                                           {% if "Mild" in user_data.nudity_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="nudity_mild">Mild</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="Moderate" id="nudity_moderate"
+                                           {% if "Moderate" in user_data.nudity_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="nudity_moderate">Moderate</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="Severe" id="nudity_severe"
+                                           {% if "Severe" in user_data.nudity_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="nudity_severe">Severe</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Streaming Filter Configuration -->
                 <div class="section-container">
                     <h4 class="section-header">Streaming Preferences <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
@@ -259,17 +356,17 @@
                                                                 title="Select the streaming resolutions that you prefer. The addon will filter these when fetching streams."></span></h6>
                         <div class="row">
                             {% for resolution in resolutions %}
-                            <div class="col-12 col-md-6 col-lg-4">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="selected_resolutions"
-                                           value="{{ resolution if resolution else '' }}"
-                                           id="resolution_{{ resolution if resolution else 'unknown' }}"
-                                           {% if resolution in user_data.selected_resolutions %}checked{% endif %}>
-                                    <label class="form-check-label" for="resolution_{{ resolution if resolution else 'unknown' }}">
-                                        {{ resolution if resolution else 'Unknown' }}
-                                    </label>
+                                <div class="col-12 col-md-6 col-lg-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_resolutions"
+                                               value="{{ resolution if resolution else '' }}"
+                                               id="resolution_{{ resolution if resolution else 'unknown' }}"
+                                               {% if resolution in user_data.selected_resolutions %}checked{% endif %}>
+                                        <label class="form-check-label" for="resolution_{{ resolution if resolution else 'unknown' }}">
+                                            {{ resolution if resolution else 'Unknown' }}
+                                        </label>
+                                    </div>
                                 </div>
-                            </div>
                             {% endfor %}
                         </div>
                     </div>
@@ -293,17 +390,17 @@
 
                         <div id="streamSortOrder" class="row">
                             {% for sorting_option in sorting_options %}
-                            <div class="col-12 col-md-6 col-lg-4 sortable-list" data-id="{{ sorting_option }}">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="selected_sorting_options"
-                                           value="{{ sorting_option }}"
-                                           id="sorting_{{ sorting_option }}"
-                                           {% if sorting_option in user_data.torrent_sorting_priority %}checked{% endif %}>
-                                    <label class="form-check-label" for="sorting_{{ sorting_option }}">
-                                        {{ sorting_option.replace('_', ' ').title() }}
-                                    </label>
+                                <div class="col-12 col-md-6 col-lg-4 sortable-list" data-id="{{ sorting_option }}">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_sorting_options"
+                                               value="{{ sorting_option }}"
+                                               id="sorting_{{ sorting_option }}"
+                                               {% if sorting_option in user_data.torrent_sorting_priority %}checked{% endif %}>
+                                        <label class="form-check-label" for="sorting_{{ sorting_option }}">
+                                            {{ sorting_option.replace('_', ' ').title() }}
+                                        </label>
+                                    </div>
                                 </div>
-                            </div>
                             {% endfor %}
                         </div>
 
@@ -325,8 +422,8 @@
                         <h6>Torrent Stream Display option: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                  title="Choose how you want to display the torrent information in Stremio."></span></h6>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="torrentDisplayOption" id="showParsedTorrentData" value="parsedData" {% if not user_data.show_full_torrent_name
-                                   %}checked{% endif %}>
+                            <input class="form-check-input" type="radio" name="torrentDisplayOption" id="showParsedTorrentData" value="parsedData"
+                                   {% if not user_data.show_full_torrent_name %}checked{% endif %}>
                             <label class="form-check-label" for="showParsedTorrentData">
                                 Show Parsed Data (Quality, Resolution, Codec, Audio.)
                             </label>
@@ -342,26 +439,26 @@
                 </div>
 
                 {% if authentication_required %}
-                <!-- API Password Configuration -->
-                <div class="section-container">
-                    <h4 class="section-header">API Security Configuration</h4>
-                    <hr class="section-divider">
+                    <!-- API Password Configuration -->
+                    <div class="section-container">
+                        <h4 class="section-header">API Security Configuration</h4>
+                        <hr class="section-divider">
 
-                    <!-- API Password Input -->
-                    <div class="mb-3">
-                        <label for="api_password">API Password: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                      title="Enter the API password you configured in the environment variables."></span></label>
-                        <div class="input-group">
-                            <input class="form-control" type="password" id="api_password" name="api_password" placeholder="Enter API Password">
-                            <button class="btn btn-outline-secondary" type="button" id="toggleApiPassword">
-                                <span id="toggleApiPasswordIcon" class="bi bi-eye"></span>
-                            </button>
-                            <div class="invalid-feedback">
-                                API Password is required.
+                        <!-- API Password Input -->
+                        <div class="mb-3">
+                            <label for="api_password">API Password: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                          title="Enter the API password you configured in the environment variables."></span></label>
+                            <div class="input-group">
+                                <input class="form-control" type="password" id="api_password" name="api_password" placeholder="Enter API Password">
+                                <button class="btn btn-outline-secondary" type="button" id="toggleApiPassword">
+                                    <span id="toggleApiPasswordIcon" class="bi bi-eye"></span>
+                                </button>
+                                <div class="invalid-feedback">
+                                    API Password is required.
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
                 {% endif %}
 
 
