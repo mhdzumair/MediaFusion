@@ -48,8 +48,6 @@ This guide describes the environment variables available in MediaFusion for conf
 #### Content Filters
 
 - **adult_content_regex_keywords** (default: `r"(^|\b|\s)(18\+|adult|porn|sex|xxx|nude|naked|erotic|sexy|18\s*plus)(\b|\s|$|[._-])"`): The regular expression for adult content keywords.
-- **parent_guide_nudity_filter_types_regex** (default:`"Severe"`) : The regular expression for filtering nudity content types in the parent guide of IMDB data.
-- **parent_guide_certificates_filter_regex** (default:`r"X|XXX|TV-MA|18\+|18SX"`) : The regular expression for filtering certificates in the parent guide of IMDB data.
 
 #### Scheduler Crontabs
 > [!TIP]

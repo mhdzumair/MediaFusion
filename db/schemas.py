@@ -1,7 +1,7 @@
 import math
-from typing import Optional, Literal
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from db.models import TorrentStreams
 from utils import const
@@ -145,6 +145,14 @@ class UserData(BaseModel):
     max_streams_per_resolution: int = 3
     show_full_torrent_name: bool = True
     torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
+    nudity_filter: list[
+        Literal["Disable", "None", "Mild", "Moderate", "Severe"]
+    ] = Field(default=["Severe"])
+    certification_filter: list[
+        Literal[
+            "Disable", "All Ages", "Children", "Parental Guidance", "Teens", "Adults"
+        ]
+    ] = Field(default=["Adults"])
     api_password: str | None = None
     proxy_debrid_stream: bool = False
 
@@ -175,6 +183,18 @@ class UserData(BaseModel):
         for priority in v:
             if priority not in const.TORRENT_SORTING_PRIORITY:
                 raise ValueError("Invalid priority")
+        return v
+
+    @field_validator("nudity_filter", mode="after")
+    def validate_nudity_filter(cls, v):
+        if not v:
+            v = ["Severe"]
+        return v
+
+    @field_validator("certification_filter", mode="after")
+    def validate_certification_filter(cls, v):
+        if not v:
+            v = ["Adults"]
         return v
 
     class Config:

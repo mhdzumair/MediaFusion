@@ -8,7 +8,7 @@ from aiohttp import ClientError
 from redis.asyncio import Redis
 
 from db import schemas
-from utils import const, runtime_const
+from utils import const
 
 
 def is_valid_url(url: str) -> bool:
@@ -160,31 +160,28 @@ def is_video_file(filename: str) -> bool:
     )
 
 
-def validate_parent_guide_nudity(metadata) -> bool:
+def get_filter_certification_values(user_data: schemas.UserData) -> list[str]:
+    certification_values = []
+    for category in user_data.certification_filter:
+        certification_values.extend(const.CERTIFICATION_MAPPING.get(category, []))
+    return certification_values
+
+
+def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
     """
     Validate if the metadata has adult content based on the parent guide nudity status or if status is not available, based on certificates.
     """
-    if metadata.parent_guide_nudity_status:
-        if runtime_const.PARENT_GUIDE_NUDITY_FILTER_TYPES_REGEX.match(
-            metadata.parent_guide_nudity_status,
-        ):
-            logging.info(
-                "Adult content detected by nudity status as %s found in title '%s', meta id %s",
-                metadata.parent_guide_nudity_status,
-                metadata.title,
-                metadata.id,
-            )
-            return False
-    elif metadata.parent_guide_certificates and any(
-        runtime_const.PARENT_GUIDE_CERTIFICATES_FILTER_REGEX.match(certificate)
+    filter_certification_values = get_filter_certification_values(user_data)
+    if (
+        metadata.parent_guide_nudity_status
+        and metadata.parent_guide_nudity_status in user_data.nudity_filter
+    ):
+        return False
+
+    if metadata.parent_guide_certificates and any(
+        certificate in filter_certification_values
         for certificate in metadata.parent_guide_certificates
     ):
-        logging.info(
-            "Adult content detected by certificates as %s found in title '%s', meta id %s",
-            metadata.parent_guide_certificates,
-            metadata.title,
-            metadata.id,
-        )
         return False
 
     return True

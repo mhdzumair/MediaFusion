@@ -179,6 +179,21 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     color: white;
 }
 
+/* Style for disabled checkboxes */
+.form-check.disabled-checkbox {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.form-check.disabled-checkbox .form-check-input {
+    cursor: not-allowed;
+}
+
+.form-check.disabled-checkbox .form-check-label {
+    pointer-events: none;
+}
+
+
 .form-control {
     display: block;
     width: 100%;
