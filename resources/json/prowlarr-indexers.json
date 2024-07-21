@@ -3959,5 +3959,131 @@
 	"configContract": "CardigannSettings",
 	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#eztv",
 	"tags": []
+  },
+  {
+	"indexerUrls": [
+	  "https://yts.mx/",
+	  "https://yts.unblockit.meme/",
+	  "https://yts.unblockninja.com/",
+	  "https://yts.ninjaproxy1.com/",
+	  "https://yts.proxyninja.org/",
+	  "https://yts.proxyninja.net/",
+	  "https://yts.torrentbay.st/",
+	  "https://yts.torrentsbay.org/"
+	],
+	"legacyUrls": [
+	  "https://yts.unblockit.mov/",
+	  "https://yts.unblockit.rsvp/",
+	  "https://yts.unblockit.vegas/",
+	  "https://yts.unblockit.esq/",
+	  "https://yts.unblockit.zip/",
+	  "https://yts.unblockit.foo/",
+	  "https://yts.unblockit.ing/",
+	  "https://yts.mrunblock.bond/",
+	  "https://yts.nocensor.cloud/",
+	  "https://yts.unblockit.date/",
+	  "https://yts.unblockit.dad/",
+	  "https://yts.unblockit.africa/",
+	  "https://yts.unblockit.casa/",
+	  "https://yts.unblockit.sbs/",
+	  "https://yts.unblockit.ong/",
+	  "https://yts.abcproxy.org/",
+	  "https://yts.unblockit.black/",
+	  "https://yts.lt/",
+	  "https://yts.am/",
+	  "https://yts.ag/"
+	],
+	"definitionName": "yts",
+	"description": "YTS is a Public torrent site specialising in HD movies of small size",
+	"language": "en-US",
+	"enable": true,
+	"redirect": false,
+	"supportsRss": true,
+	"supportsSearch": true,
+	"supportsRedirect": false,
+	"supportsPagination": false,
+	"appProfileId": 1,
+	"protocol": "torrent",
+	"privacy": "public",
+	"capabilities": {
+	  "limitsMax": 100,
+	  "limitsDefault": 100,
+	  "categories": [
+		{
+		  "id": 2000,
+		  "name": "Movies",
+		  "subCategories": [
+			{
+			  "id": 2040,
+			  "name": "Movies/HD",
+			  "subCategories": []
+			},
+			{
+			  "id": 2045,
+			  "name": "Movies/UHD",
+			  "subCategories": []
+			},
+			{
+			  "id": 2060,
+			  "name": "Movies/3D",
+			  "subCategories": []
+			}
+		  ]
+		}
+	  ],
+	  "supportsRawSearch": false,
+	  "searchParams": [
+		"q",
+		"q"
+	  ],
+	  "tvSearchParams": [],
+	  "movieSearchParams": [
+		"q",
+		"imdbId"
+	  ],
+	  "musicSearchParams": [],
+	  "bookSearchParams": []
+	},
+	"priority": 25,
+	"downloadClientId": 0,
+	"added": "0001-01-01T00:00:00Z",
+	"sortName": "yts",
+	"name": "YTS",
+	"fields": [
+	  {
+		"name": "definitionFile",
+		"value": "yts"
+	  },
+	  {
+		"name": "baseUrl"
+	  },
+	  {
+		"name": "baseSettings.queryLimit"
+	  },
+	  {
+		"name": "baseSettings.grabLimit"
+	  },
+	  {
+		"name": "baseSettings.limitsUnit",
+		"value": 0
+	  },
+	  {
+		"name": "torrentBaseSettings.appMinimumSeeders"
+	  },
+	  {
+		"name": "torrentBaseSettings.seedRatio"
+	  },
+	  {
+		"name": "torrentBaseSettings.seedTime"
+	  },
+	  {
+		"name": "torrentBaseSettings.packSeedTime"
+	  }
+	],
+	"implementationName": "Cardigann",
+	"implementation": "Cardigann",
+	"configContract": "CardigannSettings",
+	"infoLink": "https://wiki.servarr.com/prowlarr/supported-indexers#yts",
+	"tags": []
   }
 ]
