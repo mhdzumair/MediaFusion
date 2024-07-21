@@ -1,6 +1,6 @@
 id: mediafusion-elfhosted
 name: MediaFusion - ElfHosted
-description: "MediaFusion - ElfHosted Free Public Indexer (Direct Torrent Only)"
+description: "MediaFusion - ElfHosted Free Public Indexer"
 language: en-US
 type: public
 encoding: UTF-8
@@ -24,7 +24,7 @@ settings:
   - name: mediafusion_note
     type: info
     label: MediaFusion Note
-    default: "Please enter the mediafusion addon url below (manifest.json)"
+    default: "Please enter the mediafusion addon url below (ends with manifest.json)"
   - name: addon_url
     type: text
     label: Addon URL
@@ -38,7 +38,6 @@ settings:
     label: IMDB ID of the TV show for Sonarr validation (required)
     default: "tt0959621"  # Breaking Bad S01E01
 
-search:
 search:
   headers:
     User-Agent: ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0"]
@@ -86,3 +85,8 @@ search:
       filters:
         - name: regexp
           args: "\\b(\\d+(?:\\.\\d+)? [MG]B)\\b"
+    seeders:
+      selector: description
+      filters:
+        - name: regexp
+          args: "(?<=👤 )(\\d+)"
