@@ -36,11 +36,14 @@ settings:
   - name: validate_imdb_tv
     type: text
     label: IMDB ID of the TV show for Sonarr validation (required)
-    default: "tt0959621"  # Breaking Bad S01E01
+    default: "tt0959621" # Breaking Bad S01E01
 
 search:
   headers:
-    User-Agent: ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0"]
+    User-Agent:
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0",
+      ]
   paths:
     - path: "{{ if .Config.addon_url }}{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}{{ else }}{{ end }}/stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
       method: get
@@ -54,7 +57,6 @@ search:
         type: json
         noResultsMessage: '"streams": []'
       categories: [TV]
-
 
   rows:
     selector: streams
