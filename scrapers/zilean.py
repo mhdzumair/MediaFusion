@@ -255,7 +255,6 @@ async def store_and_parse_series_stream_data(
         except DuplicateKeyError:
             # Skip if the stream already exists
             continue
-        episode_item = torrent_stream.get_episode(season, episode)
         streams.append(torrent_stream)
         info_hashes.append(stream["infoHash"])
 
