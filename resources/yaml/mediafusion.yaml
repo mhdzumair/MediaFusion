@@ -1,0 +1,94 @@
+id: mediafusion-elfhosted
+name: MediaFusion - ElfHosted
+description: "MediaFusion - ElfHosted Free Public Indexer"
+language: en-US
+type: public
+encoding: UTF-8
+followredirect: false
+testlinktorrent: false
+requestDelay: 2
+links:
+  - https://mediafusion.elfhosted.com
+caps:
+  categories:
+    Movies: Movies
+    TV: TV
+
+  modes:
+    search: [q]
+    movie-search: [q, imdbid]
+    tv-search: [q, imdbid, season, ep]
+  allowrawsearch: false
+
+settings:
+  - name: mediafusion_note
+    type: info
+    label: MediaFusion Note
+    default: "Please enter the mediafusion addon url below (ends with manifest.json)"
+  - name: addon_url
+    type: text
+    label: Addon URL
+    default: ""
+  - name: validate_imdb_movie
+    type: text
+    label: IMDB ID of the movie for Radarr validation (required)
+    default: "tt0110357" # The Lion King
+  - name: validate_imdb_tv
+    type: text
+    label: IMDB ID of the TV show for Sonarr validation (required)
+    default: "tt0959621" # Breaking Bad S01E01
+
+search:
+  headers:
+    User-Agent:
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0",
+      ]
+  paths:
+    - path: "{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}/stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
+      method: get
+      response:
+        type: json
+        noResultsMessage: '"streams": []'
+      categories: [Movies]
+    - path: "{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}/stream/series/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_tv }}{{ end }}:{{ if .Query.Season }}{{ .Query.Season }}{{ else }}1{{ end }}:{{ if .Query.Ep }}{{ .Query.Ep }}{{ else }}1{{ end }}.json"
+      method: get
+      response:
+        type: json
+        noResultsMessage: '"streams": []'
+      categories: [TV]
+
+  rows:
+    selector: streams
+    missingAttributeEqualsNoResults: true
+
+  fields:
+    title:
+      selector: description
+      filters:
+        - name: split
+          args: ["\n", 0]
+    year:
+      selector: description
+      filters:
+        - name: regexp
+          args: "(\\b(19|20)\\d\\d\\b)"
+    category_is_tv_show:
+      text: "{{ .Result.title }}"
+      filters:
+        - name: regexp
+          args: "\\b(S\\d+(?:E\\d+)?)\\b"
+    category:
+      text: "{{ if .Result.category_is_tv_show }}TV{{ else }}Movies{{ end }}"
+    infohash:
+      selector: infoHash
+    size:
+      selector: description
+      filters:
+        - name: regexp
+          args: "\\b(\\d+(?:\\.\\d+)? [MG]B)\\b"
+    seeders:
+      selector: description
+      filters:
+        - name: regexp
+          args: "(?<=👤 )(\\d+)"
