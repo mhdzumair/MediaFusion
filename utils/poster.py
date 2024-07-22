@@ -89,17 +89,22 @@ def add_elements_to_poster(
 
     # Adding IMDb rating at the bottom left with a semi-transparent background
     if imdb_rating:
+        imdb_text = f" {imdb_rating}/10"
+        imdb_logo = Image.open("resources/images/imdb_logo.png")
         font = load_font("resources/fonts/IBMPlexSans-Medium.ttf", 24)
-        imdb_text = f"IMDb: {imdb_rating}/10"
 
         # Calculate text bounding box using the draw instance
         left, top, right, bottom = draw.textbbox((0, 0), imdb_text, font=font)
         text_width = right - left
         text_height = bottom - top
 
-        # Draw a semi-transparent rectangle behind the text for better visibility
+        # Resize IMDb Logo according to text height
+        aspect_ratio = imdb_logo.width / imdb_logo.height
+        imdb_logo = imdb_logo.resize((int(text_height * aspect_ratio), text_height))
+
+        # Draw a semi-transparent rectangle behind the logo and rating for better visibility
         rectangle_x0 = margin
-        rectangle_x1 = rectangle_x0 + text_width + (2 * padding)
+        rectangle_x1 = rectangle_x0 + imdb_logo.width + text_width + (2 * padding)
         rectangle_y0 = image.height - margin - text_height - (2 * padding)
         rectangle_y1 = image.height - margin
         draw.rounded_rectangle(
@@ -107,9 +112,12 @@ def add_elements_to_poster(
             fill=(0, 0, 0, 176), radius=8
         )
 
-        # Now draw the text
+        # Place the IMDb Logo
+        image.paste(imdb_logo, (rectangle_x0 + padding, rectangle_y0 + padding), imdb_logo)
+
+        # Now draw the rating text
         draw.text(
-            (rectangle_x0 + padding, rectangle_y0), imdb_text, font=font, fill="#F5C518"
+            (rectangle_x0 + padding + imdb_logo.width, rectangle_y0), imdb_text, font=font, fill="#F5C518"
         )
 
     # Add MediaFusion watermark at the top right
