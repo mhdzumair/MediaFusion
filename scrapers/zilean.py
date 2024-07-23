@@ -86,11 +86,11 @@ async def scrap_movie_streams_from_zilean(
             aka_titles,
             stream_data,
         )
-    except (httpx.HTTPError, httpx.TimeoutException) as e:
-        logging.error(f"Error while fetching stream data from zilean: {e}")
+    except (httpx.HTTPError, httpx.TimeoutException):
+        logging.error("Error while fetching stream data from zilean")
         return []  # Return an empty list in case of HTTP errors or timeouts
     except Exception as e:
-        logging.error(f"Error while fetching stream data from zilean: {e}")
+        logging.exception(f"Error occurred on processing zilean stream data: {e}")
         return []
 
 
@@ -114,11 +114,11 @@ async def scrap_series_streams_from_zilean(
             episode,
             stream_data,
         )
-    except (httpx.HTTPError, httpx.TimeoutException) as e:
-        logging.error(f"Error while fetching stream data from zilean: {e}")
+    except (httpx.HTTPError, httpx.TimeoutException):
+        logging.error("Error while fetching stream data from zilean")
         return []  # Return an empty list in case of HTTP errors or timeouts
     except Exception as e:
-        logging.error(f"Error while fetching stream data from zilean: {e}")
+        logging.exception(f"Error occurred on processing zilean stream data: {e}")
         return []
 
 
