@@ -32,12 +32,14 @@ def get_scraper_config(site_name: str, get_key: str) -> dict:
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=10)
-async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
+async def update_torrent_movie_streams_metadata(
+    info_hashes: list[str], tracker: list[str] = None
+):
     """Update torrent streams metadata."""
     if not info_hashes:
         return
 
-    streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
+    streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, tracker or [])
 
     for stream_metadata in streams_metadata:
         if not stream_metadata:
@@ -56,12 +58,14 @@ async def update_torrent_movie_streams_metadata(info_hashes: list[str]):
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=10)
-async def update_torrent_series_streams_metadata(info_hashes: list[str]):
+async def update_torrent_series_streams_metadata(
+    info_hashes: list[str], tracker: list[str] = None
+):
     """Update torrent streams metadata."""
     if not info_hashes:
         return
 
-    streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, [])
+    streams_metadata = await info_hashes_to_torrent_metadata(info_hashes, tracker or [])
 
     for stream_metadata in streams_metadata:
         if not (stream_metadata and "seasons" in stream_metadata):
