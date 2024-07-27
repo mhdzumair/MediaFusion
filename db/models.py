@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
@@ -22,6 +22,8 @@ class Season(BaseModel):
 
 
 class TorrentStreams(Document):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     meta_id: str
     torrent_name: str
@@ -52,6 +54,10 @@ class TorrentStreams(Document):
                 ]
             )
         ]
+
+    @field_validator("languages", mode="after")
+    def languages_with_title_format(cls, v):
+        return [lang.title() for lang in v]
 
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
