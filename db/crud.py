@@ -1021,6 +1021,7 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
         id=meta_id,
         streams=streams,
         title=metadata["title"],
+        description=metadata["description"] or metadata["title"],
         genres=metadata.get("genres", []),
         event_start_timestamp=event_start_timestamp,
         poster=metadata.get("poster"),
@@ -1090,7 +1091,6 @@ async def get_event_meta(redis, meta_id: str) -> dict:
         "meta": {
             "_id": meta_id,
             **event_data.model_dump(),
-            "description": event_data.description or event_data.title,
         }
     }
 

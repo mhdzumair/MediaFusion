@@ -2,6 +2,7 @@ import random
 import re
 
 import scrapy
+from datetime import datetime
 
 from utils.runtime_const import SPORTS_ARTIFACTS
 
@@ -90,6 +91,12 @@ class StreamedSpider(scrapy.Spider):
                 event_timestamp_ms = int(timestamp_match.group(1))
                 event_start_timestamp = event_timestamp_ms / 1000
 
+        if event_start_timestamp != 0:
+            event_start_time = datetime.fromtimestamp(event_start_timestamp).strftime("%I:%M%p GMT")
+            description = f'{response.meta["item"]["title"]} - {event_start_time}'
+        else:
+            description = response.meta["item"]["title"]
+
         # If no timer, proceed to scrape available stream links
         stream_links = response.xpath('//a[contains(@href, "/watch/")]')
         if not stream_links:
@@ -111,7 +118,8 @@ class StreamedSpider(scrapy.Spider):
                         "stream_name": f"{stream_name} - 📡 {sub_domain_name}\n📺 {stream_quality} - 🌐 {language}",
                         "stream_url": m3u8_url,
                         "referer": self.mediafusion_referer,
-                        "event_start_timestamp": event_start_timestamp,
+                        "description": description,
+                        "event_start_timestamp": event_start_timestamp
                     }
                 )
                 yield item
