@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 import math
 import re
@@ -254,6 +255,7 @@ async def parse_stream_data(
     return stream_list
 
 
+@functools.lru_cache(maxsize=1024)
 def convert_bytes_to_readable(size_bytes: int) -> str:
     """
     Convert a size in bytes into a more human-readable format.
@@ -267,6 +269,7 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     return f"💾 {s} {size_name[i]}"
 
 
+@functools.lru_cache(maxsize=1024)
 def convert_size_to_bytes(size_str: str) -> int:
     """Convert size string to bytes."""
     match = re.match(r"(\d+(?:\.\d+)?)\s*(GB|MB|KB|B)", size_str, re.IGNORECASE)
@@ -416,6 +419,7 @@ async def generate_manifest(manifest: dict, user_data: UserData, redis: Redis) -
     return manifest
 
 
+@functools.lru_cache(maxsize=1024)
 def is_contain_18_plus_keywords(title: str) -> bool:
     """
     Check if the title contains 18+ keywords to filter out adult content.
