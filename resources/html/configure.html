@@ -240,7 +240,7 @@
                                    id="proxy_debrid_stream" {% if user_data.streaming_provider and user_data.proxy_debrid_stream %}checked{% endif %}>
                             <label class="form-check-label" for="proxy_debrid_stream">
                                 Proxy the video via Mediafusion for debrid <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                               title="Toggle to proxy the video via Mediafusion. This is perfect for when you want to have only one IP registered with your debrid provider. Available in ElfHosted Premium & Self Hosting users."></span>
+                                                                                 title="Toggle to proxy the video via Mediafusion. This is perfect for when you want to have only one IP registered with your debrid provider. Available in ElfHosted Premium & Self Hosting users."></span>
                             </label>
                         </div>
                     </div>
@@ -371,6 +371,26 @@
                         </div>
                     </div>
 
+                    <!-- Quality Filter -->
+                    <div class="mb-3">
+                        <h6>Select Quality Filter: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                         title="Select the quality levels to filter streams."></span></h6>
+                        <div class="row">
+                            {% for group, qualities in quality_groups.items() %}
+                                <div class="col-12 col-md-6 col-lg-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="quality_filter" value="{{ group }}" id="quality_{{ group }}"
+                                               {% if group in user_data.quality_filter %}checked{% endif %}>
+                                        <label class="form-check-label" for="quality_{{ group }}">
+                                            {{ group }} <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                              title="Contains: {{ qualities }}"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
                     <!-- File Size Range Filter -->
                     <div class="mb-3">
                         <h6>Set File Size Filter: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
@@ -381,7 +401,6 @@
                         <label for="max_size_slider">Max File Size:</label>
                         <span id="max_size_output">Unlimited</span>
                     </div>
-
 
                     <!-- Stream Sorting Priority -->
                     <div class="mb-3">
@@ -403,7 +422,25 @@
                                 </div>
                             {% endfor %}
                         </div>
+                    </div>
 
+                    <!-- Preferred Language Sorting -->
+                    <div class="mb-3" id="languageSortSection" style="display:none;">
+                        <h6>Filter & Arrange Preferred Languages: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                        title="Select and arrange your preferred languages for streams."></span></h6>
+                        <div id="languageSortOrder" class="row">
+                            {% for language in sorted_languages %}
+                                <div class="col-12 col-md-6 col-lg-4 draggable-language">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_languages" value="{{ language if language else '' }}" id="language_{{ language }}"
+                                               {% if language in user_data.language_sorting %}checked{% endif %}>
+                                        <label class="form-check-label" for="language_{{ language }}">
+                                            {{ language if language else 'Unknown' }}
+                                        </label>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
                     </div>
 
                     <!-- Maximum Streams Result per Resolution Configuration -->
@@ -435,7 +472,6 @@
                             </label>
                         </div>
                     </div>
-
                 </div>
 
                 {% if authentication_required %}

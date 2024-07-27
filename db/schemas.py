@@ -152,21 +152,20 @@ class UserData(BaseModel):
         Literal[
             "Disable", "All Ages", "Children", "Parental Guidance", "Teens", "Adults"
         ]
-    ] = Field(default=["Adults"])
-    api_password: str | None = None
-    proxy_debrid_stream: bool = False
+    language_sorting: list[str | None] = Field(
+        default=const.SUPPORTED_LANGUAGES, alias="ls"
+    )
+    quality_filter: list[str] = Field(
+        default=list(const.QUALITY_GROUPS.keys()), alias="qf"
+    )
 
-    @model_validator(mode="after")
-    def validate_selected_resolutions(self) -> "UserData":
-        if "" in self.selected_resolutions:
-            self.selected_resolutions.remove("")
-            self.selected_resolutions.append(None)
-
+    @field_validator("selected_resolutions", mode="after")
+    def validate_selected_resolutions(cls, v):
         # validating the selected resolutions
-        for resolution in self.selected_resolutions:
+        for resolution in v:
             if resolution not in const.RESOLUTIONS:
                 raise ValueError("Invalid resolution")
-        return self
+        return v
 
     @field_validator("max_size", mode="before")
     def parse_max_size(cls, v):
@@ -181,7 +180,7 @@ class UserData(BaseModel):
     @field_validator("torrent_sorting_priority", mode="after")
     def validate_torrent_sorting_priority(cls, v):
         for priority in v:
-            if priority not in const.TORRENT_SORTING_PRIORITY:
+            if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
                 raise ValueError("Invalid priority")
         return v
 
@@ -192,6 +191,20 @@ class UserData(BaseModel):
     @field_validator("certification_filter", mode="after")
     def validate_certification_filter(cls, v):
         return v or ["Adults"]
+
+    @field_validator("quality_filter", mode="after")
+    def validate_quality_filter(cls, v):
+        for quality in v:
+            if quality not in const.QUALITY_GROUPS:
+                raise ValueError("Invalid quality")
+        return v
+
+    @field_validator("language_sorting", mode="after")
+    def validate_language_sorting(cls, v):
+        for language in v:
+            if language not in const.SUPPORTED_LANGUAGES:
+                raise ValueError("Invalid language")
+        return v
 
     class Config:
         extra = "ignore"

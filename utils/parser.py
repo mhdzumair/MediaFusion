@@ -22,27 +22,54 @@ async def filter_and_sort_streams(
     # Convert to sets for faster lookups
     selected_catalogs_set = set(user_data.selected_catalogs)
     selected_resolutions_set = set(user_data.selected_resolutions)
+    quality_filter_set = set(
+        quality
+        for group in user_data.quality_filter
+        for quality in const.QUALITY_GROUPS[group]
+    )
+    language_filter_set = set(user_data.language_sorting)
 
-    # Normalize resolutions
+    valid_resolutions = const.SUPPORTED_RESOLUTIONS
+    valid_qualities = const.SUPPORTED_QUALITIES
+    valid_languages = const.SUPPORTED_LANGUAGES
+
+    # Step 1: Filter streams and add normalized attributes
+    filtered_streams = []
     for stream in streams:
-        if stream.resolution not in const.RESOLUTIONS:
-            stream.resolution = None
+        # Add normalized attributes as dynamic properties
+        stream.filtered_resolution = (
+            stream.resolution if stream.resolution in valid_resolutions else None
+        )
+        stream.filtered_quality = (
+            stream.quality if stream.quality in valid_qualities else None
+        )
+        stream.filtered_languages = [
+            lang for lang in stream.languages if lang in valid_languages
+        ] or [None]
 
-    # Step 1: Filter streams by selected catalogs, resolutions, and size
-    filtered_streams = [
-        stream
-        for stream in streams
-        if any(catalog_id in selected_catalogs_set for catalog_id in stream.catalog)
-        and stream.resolution in selected_resolutions_set
-        and stream.size <= user_data.max_size
-    ]
+        # Check if any of the stream's catalogs are in the selected catalogs
+        if not any(catalog in selected_catalogs_set for catalog in stream.catalog):
+            continue
 
-    # Filter any adult content based on keywords
-    filtered_streams = [
-        stream
-        for stream in filtered_streams
-        if not is_contain_18_plus_keywords(stream.torrent_name)
-    ]
+        if stream.filtered_resolution not in selected_resolutions_set:
+            continue
+
+        if stream.size > user_data.max_size:
+            continue
+
+        if stream.filtered_quality not in quality_filter_set:
+            continue
+
+        if "language" in user_data.torrent_sorting_priority:
+            if not any(
+                lang in language_filter_set for lang in stream.filtered_languages
+            ):
+                continue
+
+        if is_contain_18_plus_keywords(stream.torrent_name):
+            continue
+
+        filtered_streams.append(stream)
 
     if not filtered_streams:
         return []
@@ -66,22 +93,24 @@ async def filter_and_sort_streams(
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream):
-        # Compute sort key values only once per stream
-        sort_key_values = {
-            sort_key: (
-                getattr(stream, sort_key)
-                if getattr(stream, sort_key) is not None
-                else 0
-            )
-            for sort_key in user_data.torrent_sorting_priority
-        }
-
-        # Create the sort tuple, using resolution ranking for resolution sorting
         return tuple(
-            const.RESOLUTION_RANKING.get(stream.resolution, 0)
-            if sort_key == "resolution"
-            else sort_key_values[sort_key]
-            for sort_key in user_data.torrent_sorting_priority
+            const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
+            if key == "resolution"
+            else -min(
+                (
+                    user_data.language_sorting.index(lang)
+                    for lang in stream.filtered_languages
+                    if lang in language_filter_set
+                ),
+                default=len(user_data.language_sorting),
+            )
+            if key == "language"
+            else const.QUALITY_RANKING.get(stream.filtered_quality, 0)
+            if key == "quality"
+            else getattr(stream, key, 0)
+            if key in stream.model_fields_set
+            else 0
+            for key in user_data.torrent_sorting_priority
         )
 
     dynamically_sorted_streams = sorted(
@@ -92,10 +121,10 @@ async def filter_and_sort_streams(
     limited_streams = []
     streams_count_per_resolution = {}
     for stream in dynamically_sorted_streams:
-        count = streams_count_per_resolution.get(stream.resolution, 0)
+        count = streams_count_per_resolution.get(stream.filtered_resolution, 0)
         if count < user_data.max_streams_per_resolution:
             limited_streams.append(stream)
-            streams_count_per_resolution[stream.resolution] = count + 1
+            streams_count_per_resolution[stream.filtered_resolution] = count + 1
 
     return limited_streams
 
@@ -110,6 +139,9 @@ async def parse_stream_data(
     is_series: bool = False,
 ) -> list[Stream]:
     stream_list = []
+    if not streams:
+        return stream_list
+
     streams = await filter_and_sort_streams(streams, user_data, user_ip)
 
     # Compute values that do not change per iteration outside the loop
