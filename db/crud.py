@@ -33,7 +33,6 @@ from scrapers.zilean import get_streams_from_zilean
 from utils import crypto
 from utils.parser import (
     fetch_downloaded_info_hashes,
-    get_catalogs,
     parse_stream_data,
     parse_tv_stream_data,
 )
@@ -704,7 +703,7 @@ def create_stream_object(metadata, is_movie: bool = False):
         quality=metadata.get("quality"),
         audio=metadata.get("audio"),
         source=metadata["source"],
-        catalog=get_catalogs(metadata["catalog"], languages),
+        catalog=metadata.get("catalog"),
         created_at=metadata["created_at"],
         meta_id=metadata["id"],
     )
