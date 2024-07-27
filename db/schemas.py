@@ -85,17 +85,25 @@ class Streams(BaseModel):
 
 
 class QBittorrentConfig(BaseModel):
-    qbittorrent_url: str
-    qbittorrent_username: str
-    qbittorrent_password: str
-    seeding_time_limit: int = 1440  # 24 hours
-    seeding_ratio_limit: float = 1.0
-    play_video_after: int = Field(default=100, le=100, ge=0)
-    category: str = "MediaFusion"
-    webdav_url: str
-    webdav_username: str
-    webdav_password: str
-    webdav_downloads_path: str = "/"  # Default to a root path if not specified
+    qbittorrent_url: str = Field(alias="qur")
+    qbittorrent_username: str = Field(alias="qus")
+    qbittorrent_password: str = Field(alias="qpw")
+    seeding_time_limit: int = Field(default=1440, alias="stl")  # 24 hours
+    seeding_ratio_limit: float = Field(default=1.0, alias="srl")
+    play_video_after: int = Field(
+        default=100, le=100, ge=0, alias="pva"
+    )  # 100% downloaded
+    category: str = Field(default="MediaFusion", alias="cat")
+    webdav_url: str = Field(alias="wur")
+    webdav_username: str = Field(alias="wus")
+    webdav_password: str = Field(alias="wpw")
+    webdav_downloads_path: str = Field(
+        default="/", alias="wdp"
+    )  # Default to a root path if not specified
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
 
 
 class StreamingProvider(BaseModel):
@@ -109,12 +117,12 @@ class StreamingProvider(BaseModel):
         "torbox",
         "premiumize",
         "qbittorrent",
-    ]
-    token: str | None = None
-    email: str | None = None
-    password: str | None = None
-    enable_watchlist_catalogs: bool = True
-    qbittorrent_config: QBittorrentConfig | None = None
+    ] = Field(alias="sv")
+    token: str | None = Field(default=None, alias="tk")
+    email: str | None = Field(default=None, alias="em")
+    password: str | None = Field(default=None, alias="pw")
+    enable_watchlist_catalogs: bool = Field(default=True, alias="ewc")
+    qbittorrent_config: QBittorrentConfig | None = Field(default=None, alias="qbc")
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
@@ -132,41 +140,49 @@ class StreamingProvider(BaseModel):
 
     class Config:
         extra = "ignore"
+        populate_by_name = True
 
 
 class UserData(BaseModel):
-    streaming_provider: StreamingProvider | None = None
+    streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
     selected_catalogs: list[str] = Field(
-        default=["prowlarr_streams", "torrentio_streams", "zilean_dmm_streams"]
+        default=["prowlarr_streams", "torrentio_streams", "zilean_dmm_streams"],
+        alias="sc",
     )
-    selected_resolutions: list[str | None] = Field(default=const.RESOLUTIONS)
-    enable_catalogs: bool = True
-    max_size: int | str | float = math.inf
-    max_streams_per_resolution: int = 3
-    show_full_torrent_name: bool = True
-    torrent_sorting_priority: list[str] = Field(default=const.TORRENT_SORTING_PRIORITY)
+    selected_resolutions: list[str | None] = Field(
+        default=const.RESOLUTIONS, alias="sr"
+    )
+    enable_catalogs: bool = Field(default=True, alias="ec")
+    max_size: int | str | float = Field(default=math.inf, alias="ms")
+    max_streams_per_resolution: int = Field(default=3, alias="mspr")
+    show_full_torrent_name: bool = Field(default=True, alias="sftn")
+    torrent_sorting_priority: list[str] = Field(
+        default=const.TORRENT_SORTING_PRIORITY, alias="tsp"
+    )
     nudity_filter: list[
         Literal["Disable", "None", "Mild", "Moderate", "Severe"]
-    ] = Field(default=["Severe"])
+    ] = Field(default=["Severe"], alias="nf")
     certification_filter: list[
         Literal[
             "Disable", "All Ages", "Children", "Parental Guidance", "Teens", "Adults"
         ]
-    ] = Field(default=["Adults"])
-    api_password: str | None = None
-    proxy_debrid_stream: bool = False
+    ] = Field(default=["Adults"], alias="cf")
+    api_password: str | None = Field(default=None, alias="ap")
+    proxy_debrid_stream: bool = Field(default=False, alias="pds")
+    language_sorting: list[str | None] = Field(
+        default=const.SUPPORTED_LANGUAGES, alias="ls"
+    )
+    quality_filter: list[str] = Field(
+        default=list(const.QUALITY_GROUPS.keys()), alias="qf"
+    )
 
-    @model_validator(mode="after")
-    def validate_selected_resolutions(self) -> "UserData":
-        if "" in self.selected_resolutions:
-            self.selected_resolutions.remove("")
-            self.selected_resolutions.append(None)
-
+    @field_validator("selected_resolutions", mode="after")
+    def validate_selected_resolutions(cls, v):
         # validating the selected resolutions
-        for resolution in self.selected_resolutions:
+        for resolution in v:
             if resolution not in const.RESOLUTIONS:
                 raise ValueError("Invalid resolution")
-        return self
+        return v
 
     @field_validator("max_size", mode="before")
     def parse_max_size(cls, v):
@@ -181,7 +197,7 @@ class UserData(BaseModel):
     @field_validator("torrent_sorting_priority", mode="after")
     def validate_torrent_sorting_priority(cls, v):
         for priority in v:
-            if priority not in const.TORRENT_SORTING_PRIORITY:
+            if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
                 raise ValueError("Invalid priority")
         return v
 
@@ -193,8 +209,23 @@ class UserData(BaseModel):
     def validate_certification_filter(cls, v):
         return v or ["Adults"]
 
+    @field_validator("quality_filter", mode="after")
+    def validate_quality_filter(cls, v):
+        for quality in v:
+            if quality not in const.QUALITY_GROUPS:
+                raise ValueError("Invalid quality")
+        return v
+
+    @field_validator("language_sorting", mode="after")
+    def validate_language_sorting(cls, v):
+        for language in v:
+            if language not in const.SUPPORTED_LANGUAGES:
+                raise ValueError("Invalid language")
+        return v
+
     class Config:
         extra = "ignore"
+        populate_by_name = True
 
 
 class AuthorizeData(BaseModel):

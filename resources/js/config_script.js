@@ -330,10 +330,16 @@ function getUserData() {
     // Collect certification filter data
     const selectedCertificationFilters = Array.from(document.querySelectorAll('input[name="certification_filter"]:checked')).map(el => el.value);
 
+    // Collect language sorting order
+    const languageSorting = Array.from(document.querySelectorAll('input[name="selected_languages"]:checked')).map(el => el.value || null);
+
+    // Collect quality filter data
+    const selectedQualityFilters = Array.from(document.querySelectorAll('input[name="quality_filter"]:checked')).map(el => el.value);
+
     return {
         streaming_provider: streamingProviderData,
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
-        selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value),
+        selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value || null),
         enable_catalogs: document.getElementById('enable_catalogs').checked,
         proxy_debrid_stream: document.getElementById('proxy_debrid_stream').checked,
         max_size: maxSizeBytes,
@@ -342,6 +348,8 @@ function getUserData() {
         show_full_torrent_name: torrentDisplayOption === 'fullName',
         nudity_filter: selectedNudityFilters,
         certification_filter: selectedCertificationFilters,
+        language_sorting: languageSorting,
+        quality_filter: selectedQualityFilters,
         api_password: apiPassword,
     };
 }
@@ -490,10 +498,36 @@ document.addEventListener('DOMContentLoaded', function () {
         preventOnFilter: false,
     });
 
+    new Sortable(document.getElementById('languageSortOrder'), {
+        handle: '.draggable-language',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+        delay: 200,
+        delayOnTouchOnly: true,
+        filter: '.form-check-input',
+        preventOnFilter: false,
+    });
 });
 
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Show or hide the language sort section based on the sorting options
+    document.querySelectorAll('input[name="selected_sorting_options"]').forEach(checkbox => {
+        checkbox.addEventListener('change', function () {
+            const languageSortSection = document.getElementById('languageSortSection');
+            if (document.querySelector('input[name="selected_sorting_options"][value="language"]').checked) {
+                languageSortSection.style.display = 'block';
+            } else {
+                languageSortSection.style.display = 'none';
+            }
+        });
+    });
+    // Initial check to show/hide the language sort section
+    if (document.querySelector('input[name="selected_sorting_options"][value="language"]').checked) {
+        document.getElementById('languageSortSection').style.display = 'block';
+    }
+
     // Initialize the parental guide checkboxes
     const parentalGuideCheckboxes = document.querySelectorAll('.parental-guide-checkbox');
 

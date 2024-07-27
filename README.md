@@ -1,4 +1,4 @@
-# Media Fusion Stremio Addon 🎬
+# Media Fusion Add-On For Stremio & Kodi 🎬
 
 ![Media Fusion Logo](resources/images/mediafusion_logo.png?raw=true)
 
@@ -28,6 +28,7 @@
 
 - **Scraper Support**:
   - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
+  - 🥊 **Fighting Sports**: Catch up on all the latest fighting sports content from UFC and WWE.
   - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua for catchup videos.
   - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, streambtw.com and crictime.com
   - 🎥 **TamilMV**: Specialized scraping for regional contents.
@@ -45,7 +46,8 @@
   - 📺 **M3U Playlist Import**: Import M3U playlists for a more personalized streaming experience.
   - ✨ **Manual Scraper Triggering UI**: Manage your scraping sources with a manual trigger UI for a more hands-on approach.
   - 🗑️ **Delete Watchlist**: Delete your watchlist from the stremio for quick control over your content.
-  - 🔍 **Prowlarr Indexer Support**: Use MediaFusion as an indexer in Prowlarr for searching movies and TV shows with Radarr and Sonarr.
+  - 🔍 **Prowlarr Indexer Support**: Use [MediaFusion as an indexer in Prowlarr](/resources/yaml/mediafusion.yaml) for searching movies and TV shows with Radarr and Sonarr.
+  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for a cached debrid contents.
 
 ## 🚀 Installation
 
@@ -74,7 +76,7 @@ A special thank you to all our contributors!
 - [cinemagoer](https://cinemagoer.readthedocs.io/en/latest/)
 - [beanie](https://roman-right.github.io/beanie/)
 - [parse-torrent-title](https://github.com/platelminto/parse-torrent-title)
-- [torrentio-scraper Stremio Add-on](https://github.com/TheBeastLT/torrentio-scraper)
+- [torrentio Stremio Add-on](https://github.com/TheBeastLT/torrentio-scraper)
 - [kubernetes](https://kubernetes.io/)
 - [docker](https://www.docker.com/)
 - [dramatiq](https://dramatiq.io/)

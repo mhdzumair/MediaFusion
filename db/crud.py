@@ -33,7 +33,6 @@ from scrapers.zilean import get_streams_from_zilean
 from utils import crypto
 from utils.parser import (
     fetch_downloaded_info_hashes,
-    get_catalogs,
     parse_stream_data,
     parse_tv_stream_data,
 )
@@ -690,7 +689,6 @@ def create_metadata_object(metadata, imdb_data, model):
 
 
 def create_stream_object(metadata, is_movie: bool = False):
-    languages = [language.title() for language in metadata.get("languages", [])]
     return TorrentStreams(
         id=metadata["info_hash"],
         torrent_name=metadata["torrent_name"],
@@ -698,13 +696,13 @@ def create_stream_object(metadata, is_movie: bool = False):
         size=metadata["total_size"],
         filename=metadata["largest_file"]["filename"] if is_movie else None,
         file_index=metadata["largest_file"]["index"] if is_movie else None,
-        languages=languages,
+        languages=metadata.get("languages"),
         resolution=metadata.get("resolution"),
         codec=metadata.get("codec"),
         quality=metadata.get("quality"),
         audio=metadata.get("audio"),
         source=metadata["source"],
-        catalog=get_catalogs(metadata["catalog"], languages),
+        catalog=metadata.get("catalog"),
         created_at=metadata["created_at"],
         meta_id=metadata["id"],
     )

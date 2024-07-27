@@ -1,3 +1,4 @@
+from .catalog_parse_pipeline import CatalogParsePipeline
 from .duplicates_pipeline import TorrentDuplicatesPipeline
 from .formula_parser_pipeline import FormulaParserPipeline
 from .live_stream_resolver_pipeline import LiveStreamResolverPipeline
@@ -36,4 +37,5 @@ __all__ = [
     "MagnetDownloadAndParsePipeline",
     "WWEParserPipeline",
     "UFCParserPipeline",
+    "CatalogParsePipeline",
 ]

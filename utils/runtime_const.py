@@ -29,3 +29,5 @@ DELETE_ALL_META_ITEM = {
     "meta": DELETE_ALL_META.model_dump(by_alias=True, exclude_none=True)
 }
 TRACKERS = get_json_data("resources/json/trackers.json")
+
+SECRET_KEY = settings.secret_key.encode("utf-8")

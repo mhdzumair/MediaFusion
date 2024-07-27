@@ -14,6 +14,7 @@ class CommonTamilSpider(scrapy.Spider):
     custom_settings = {
         "ITEM_PIPELINES": {
             "mediafusion_scrapy.pipelines.TorrentDownloadAndParsePipeline": 100,
+            "mediafusion_scrapy.pipelines.CatalogParsePipeline": 150,
             "mediafusion_scrapy.pipelines.MovieStorePipeline": 200,
             "mediafusion_scrapy.pipelines.SeriesStorePipeline": 300,
             "mediafusion_scrapy.pipelines.RedisCacheURLPipeline": 400,
@@ -193,7 +194,6 @@ class CommonTamilSpider(scrapy.Spider):
             torrent_item = item.copy()
             torrent_item.update(
                 {
-                    "catalog": f"{torrent_item['language'].lower()}_{torrent_item['video_type']}",
                     "type": "series"
                     if torrent_item["video_type"] == "series"
                     else "movie",

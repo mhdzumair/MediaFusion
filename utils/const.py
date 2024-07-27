@@ -100,7 +100,7 @@ RESOLUTIONS = [
 ]
 
 RESOLUTION_RANKING = {res: rank for rank, res in enumerate(reversed(RESOLUTIONS))}
-
+SUPPORTED_RESOLUTIONS = set(RESOLUTIONS)
 
 DEBRID_SERVER_TIMEOUT = 15
 
@@ -119,7 +119,15 @@ NO_CACHE_HEADERS = {
     "Expires": "0",
 }
 
-TORRENT_SORTING_PRIORITY = ["cached", "resolution", "size", "seeders", "created_at"]
+TORRENT_SORTING_PRIORITY = [
+    "cached",
+    "resolution",
+    "quality",
+    "size",
+    "seeders",
+    "created_at",
+]
+TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY + ["language"]
 
 STREAMING_SERVICE_REQUIREMENTS = {
     "pikpak": ["email", "password"],
@@ -234,4 +242,54 @@ CERTIFICATION_MAPPING = {
         "18TC",
         "21+",
     ],
+}
+
+SUPPORTED_LANGUAGES = {
+    "English",
+    "Tamil",
+    "Hindi",
+    "Malayalam",
+    "Kannada",
+    "Telugu",
+    "Chinese",
+    "Russian",
+    "Arabic",
+    "Japanese",
+    "Korean",
+    "Taiwanese",
+    "Latino",
+    "French",
+    "Spanish",
+    "Portuguese",
+    "Italian",
+    "German",
+    "Ukrainian",
+    "Polish",
+    "Czech",
+    "Thai",
+    "Indonesian",
+    "Vietnamese",
+    "Dutch",
+    "Bengali",
+    "Turkish",
+    "Greek",
+    None,
+}
+
+QUALITY_GROUPS = {
+    "BluRay/UHD": ["BluRay", "BluRay REMUX", "BRRip", "BDRip", "UHDRip"],
+    "WEB/HD": ["WEB-DL", "WEB-DLRip", "WEBRip", "HDRip"],
+    "DVD/TV/SAT": ["DVD", "DVDRip", "HDTV", "SATRip", "TVRip", "PPVRip"],
+    "CAM/Screener": ["CAM", "TeleSync", "TeleCine", "SCR"],
+    "Unknown": [None],
+}
+
+SUPPORTED_QUALITIES = {
+    quality for qualities in QUALITY_GROUPS.values() for quality in qualities
+}
+
+QUALITY_RANKING = {
+    quality: rank
+    for rank, qualities in enumerate(reversed(QUALITY_GROUPS.values()))
+    for quality in qualities
 }
