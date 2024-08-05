@@ -1718,12 +1718,12 @@
         },
         "pydantic-settings": {
             "hashes": [
-                "sha256:11ad8bacb68a045f00e4f862c7a718c8a9ec766aa8fd4c32e39a0594b207b53a",
-                "sha256:c5802e3d62b78e82522319bbc9b8f8ffb28ad1c988a99311d04f2a6051fca0a7"
+                "sha256:bb6849dc067f1687574c12a639e231f3a6feeed0a12d710c1382045c5db1c315",
+                "sha256:ed81c3a0f46392b4d7c0a565c05884e6e54b3456e6f0fe4d8814981172dc9a88"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==2.3.4"
+            "version": "==2.4.0"
         },
         "pydispatcher": {
             "hashes": [
@@ -2363,7 +2363,7 @@
                 "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d",
                 "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "python_version < '3.13'",
             "version": "==4.12.2"
         },
         "tzlocal": {
