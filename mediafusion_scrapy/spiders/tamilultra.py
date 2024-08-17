@@ -7,7 +7,7 @@ from mediafusion_scrapy.spiders.live_tv import LiveTVSpider
 
 class TamilUltraSpider(LiveTVSpider):
     name = "tamilultra"
-    start_urls = ["https://tamilultra.team/"]
+    start_urls = ["https://tamilultra.tv/"]
 
     def extract_player_api_base(self, response):
         """Extracts the admin-ajax URL for POST requests."""
