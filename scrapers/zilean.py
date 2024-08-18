@@ -128,7 +128,7 @@ async def store_and_parse_movie_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
-        torrent_stream = await TorrentStreams.get(stream["infoHash"])
+        torrent_stream = await TorrentStreams.get(stream["info_hash"])
         if torrent_stream:
             continue
 
@@ -150,7 +150,7 @@ async def store_and_parse_movie_stream_data(
 
         # Create new stream
         torrent_stream = TorrentStreams(
-            id=stream["infoHash"],
+            id=stream["info_hash"],
             torrent_name=stream["filename"],
             announce_list=[],
             size=stream["filesize"],
@@ -171,7 +171,7 @@ async def store_and_parse_movie_stream_data(
             # Skip if the stream already exists
             continue
         streams.append(torrent_stream)
-        info_hashes.append(stream["infoHash"])
+        info_hashes.append(stream["info_hash"])
 
     if info_hashes:
         update_torrent_movie_streams_metadata.send(info_hashes)
@@ -189,7 +189,7 @@ async def store_and_parse_series_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
-        torrent_stream = await TorrentStreams.get(stream["infoHash"])
+        torrent_stream = await TorrentStreams.get(stream["info_hash"])
         if torrent_stream:
             continue
 
@@ -231,7 +231,7 @@ async def store_and_parse_series_stream_data(
             continue
 
         torrent_stream = TorrentStreams(
-            id=stream["infoHash"],
+            id=stream["info_hash"],
             torrent_name=stream["filename"],
             announce_list=[],
             size=stream["filesize"],
@@ -256,7 +256,7 @@ async def store_and_parse_series_stream_data(
             # Skip if the stream already exists
             continue
         streams.append(torrent_stream)
-        info_hashes.append(stream["infoHash"])
+        info_hashes.append(stream["info_hash"])
 
     if info_hashes:
         update_torrent_series_streams_metadata.send(info_hashes)
