@@ -517,7 +517,7 @@ async def prowlarr_data_parser(
             {
                 "torrent_name": meta_data.get("title"),
                 "total_size": meta_data.get("size"),
-                **PTT.parse_title(meta_data.get("title")),
+                **PTT.parse_title(meta_data.get("title"), True),
             }
         )
     torrent_data.update(
@@ -544,8 +544,6 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
     if torrent_stream:
         return None, False  # Skip existing torrents
 
-    languages = [language.title() for language in parsed_data.get("languages", [])]
-
     # Create new stream
     torrent_stream = TorrentStreams(
         id=info_hash,
@@ -554,7 +552,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         size=parsed_data.get("total_size"),
         filename=parsed_data.get("largest_file", {}).get("file_name"),
         file_index=parsed_data.get("largest_file", {}).get("index"),
-        languages=languages,
+        languages=parsed_data.get("languages"),
         resolution=parsed_data.get("resolution"),
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
@@ -617,8 +615,6 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
 
     season_number = parsed_data.get("seasons")[0]
 
-    languages = [language.title() for language in parsed_data.get("languages", [])]
-
     # Create new stream, initially without episodes
     torrent_stream = TorrentStreams(
         id=info_hash,
@@ -626,7 +622,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
         announce_list=parsed_data.get("announce_list"),
         size=parsed_data.get("total_size"),
         filename=None,
-        languages=languages,
+        languages=parsed_data.get("languages"),
         resolution=parsed_data.get("resolution"),
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),

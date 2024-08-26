@@ -167,8 +167,15 @@ async def configure(
 
     sorted_sorting_options = user_data.torrent_sorting_priority + [
         option
-        for option in const.TORRENT_SORTING_PRIORITY
+        for option in const.TORRENT_SORTING_PRIORITY_OPTIONS
         if option not in user_data.torrent_sorting_priority
+    ]
+
+    # Sort languages based on user preference
+    sorted_languages = user_data.language_sorting + [
+        lang
+        for lang in const.SUPPORTED_LANGUAGES
+        if lang not in user_data.language_sorting
     ]
 
     return TEMPLATES.TemplateResponse(
@@ -181,6 +188,8 @@ async def configure(
             "catalogs": sorted_catalogs,
             "resolutions": const.RESOLUTIONS,
             "sorting_options": sorted_sorting_options,
+            "sorted_languages": sorted_languages,
+            "quality_groups": const.QUALITY_GROUPS,
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
         },

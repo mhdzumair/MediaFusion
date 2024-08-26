@@ -122,7 +122,7 @@ async def process_torrent(
         logger.debug(f"Removed torrent due to adult content: {torrent.torrent_name}")
         return "removed"
 
-    parsed_data = PTT.parse_title(torrent.torrent_name)
+    parsed_data = PTT.parse_title(torrent.torrent_name, True)
 
     max_ratio = calculate_max_similarity_ratio(
         parsed_data.get("title", ""), meta_data.title, meta_data.aka_titles

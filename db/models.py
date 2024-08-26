@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
@@ -22,6 +22,8 @@ class Season(BaseModel):
 
 
 class TorrentStreams(Document):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     meta_id: str
     torrent_name: str

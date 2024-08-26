@@ -136,7 +136,7 @@ async def store_and_parse_movie_stream_data(
             logging.warning(f"Stream contains 18+ keywords: {stream['filename']}")
             continue
 
-        metadata = PTT.parse_title(stream["filename"])
+        metadata = PTT.parse_title(stream["filename"], True)
 
         # validate the ratio as zilean provides only matching torrent names
         max_similarity_ratio = calculate_max_similarity_ratio(
@@ -154,7 +154,7 @@ async def store_and_parse_movie_stream_data(
             torrent_name=stream["filename"],
             announce_list=[],
             size=stream["filesize"],
-            languages=[language.title() for language in metadata["languages"]],
+            languages=metadata["languages"],
             resolution=metadata.get("resolution"),
             codec=metadata.get("codec"),
             quality=metadata.get("quality"),
@@ -197,7 +197,7 @@ async def store_and_parse_series_stream_data(
             logging.warning(f"Stream contains 18+ keywords: {stream['filename']}")
             continue
 
-        metadata = PTT.parse_title(stream["filename"])
+        metadata = PTT.parse_title(stream["filename"], True)
 
         # validate the ratio as zilean provides only matching torrent names
         max_similarity_ratio = calculate_max_similarity_ratio(
@@ -235,7 +235,7 @@ async def store_and_parse_series_stream_data(
             torrent_name=stream["filename"],
             announce_list=[],
             size=stream["filesize"],
-            languages=[language.title() for language in metadata["languages"]],
+            languages=metadata["languages"],
             resolution=metadata.get("resolution"),
             codec=metadata.get("codec"),
             quality=metadata.get("quality"),

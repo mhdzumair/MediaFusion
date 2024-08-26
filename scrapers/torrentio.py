@@ -117,7 +117,7 @@ async def scrap_series_streams_from_torrentio(
 def parse_stream_title(stream: dict) -> dict:
     """Parse the stream title for metadata and other details."""
     torrent_name, file_name = stream["title"].splitlines()[:2]
-    metadata = PTT.parse_title(torrent_name)
+    metadata = PTT.parse_title(torrent_name, True)
 
     return {
         "torrent_name": torrent_name,
@@ -319,7 +319,7 @@ def extract_languages_from_title(title: str) -> list:
 
 def extract_languages(metadata: dict, title: str) -> list:
     """Extract languages from metadata or title."""
-    languages = [language.title() for language in metadata.get("languages", [])]
+    languages = metadata.get("languages", [])
     if languages:
         return languages
     return extract_languages_from_title(title)
