@@ -517,7 +517,7 @@ async def prowlarr_data_parser(
             {
                 "torrent_name": meta_data.get("title"),
                 "total_size": meta_data.get("size"),
-                **PTT.parse_title(meta_data.get("title")),
+                **PTT.parse_title(meta_data.get("title"), True),
             }
         )
     torrent_data.update(

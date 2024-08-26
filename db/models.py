@@ -55,10 +55,6 @@ class TorrentStreams(Document):
             )
         ]
 
-    @field_validator("languages", mode="after")
-    def languages_with_title_format(cls, v):
-        return [lang.title() for lang in v]
-
     def get_episode(self, season_number: int, episode_number: int) -> Optional[Episode]:
         """
         Returns the Episode object for the given season and episode number.

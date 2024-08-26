@@ -77,7 +77,7 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
             "largest_file": largest_file,
         }
         if is_parse_ptt:
-            metadata.update(PTT.parse_title(torrent_name))
+            metadata.update(PTT.parse_title(torrent_name, True))
         return metadata
     except Exception as e:
         logging.error(f"Error occurred: {e}")

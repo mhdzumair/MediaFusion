@@ -117,7 +117,7 @@ async def scrap_series_streams_from_torrentio(
 def parse_stream_title(stream: dict) -> dict:
     """Parse the stream title for metadata and other details."""
     torrent_name, file_name = stream["title"].splitlines()[:2]
-    metadata = PTT.parse_title(torrent_name)
+    metadata = PTT.parse_title(torrent_name, True)
 
     return {
         "torrent_name": torrent_name,
