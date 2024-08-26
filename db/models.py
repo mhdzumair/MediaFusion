@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
