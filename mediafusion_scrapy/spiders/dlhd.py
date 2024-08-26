@@ -96,6 +96,11 @@ class DaddyLiveHDSpider(scrapy.Spider):
 
                     # Convert to UNIX timestamp
                     event_start_timestamp = int(aware_datetime.timestamp())
+                    if event_start_timestamp != 0:
+                        event_start_time = datetime.fromtimestamp(event_start_timestamp).strftime("%I:%M%p GMT")
+                        description = f'{event["event"]} - {event_start_time}'
+                    else:
+                        description = event["event"]
                     category = self.category_map.get(sport, "Other Sports")
 
                     item = {
@@ -108,6 +113,7 @@ class DaddyLiveHDSpider(scrapy.Spider):
                         "logo": random.choice(SPORTS_ARTIFACTS[category]["logo"]),
                         "is_add_title_to_poster": True,
                         "title": event["event"],
+                        "description": description,
                         "channels": event["channels"],
                         "event_start_timestamp": event_start_timestamp,
                         "streams": [],

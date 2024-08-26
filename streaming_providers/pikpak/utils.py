@@ -80,7 +80,7 @@ async def add_magnet(pikpak: PikPakApi, magnet_link: str):
                 )
             case _:
                 raise ProviderException(
-                    f"Failed to add magnet link to PikPak: {e}", "api_error.mp4"
+                    f"Failed to add magnet link to PikPak: {e}", "not_enough_space.mp4"
                 )
 
 
@@ -177,7 +177,10 @@ async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
         case "Save failed, retry please":
             await pikpak.delete_tasks([torrent["id"]])
         case "Storage space is not enough":
-            await pikpak.delete_tasks([torrent["id"]])
+            try:
+                await pikpak.delete_tasks([torrent["id"]])
+            except PikpakException:
+                pass
             raise ProviderException(
                 "Not enough storage space available", "not_enough_space.mp4"
             )
@@ -297,8 +300,8 @@ async def get_video_url_from_pikpak(
 
     file_data = await pikpak.get_download_url(selected_file["id"])
 
-    if file_data.get("medias"):
-        return file_data["medias"][0]["link"]["url"]
+    # if file_data.get("medias"):
+    #     return file_data["medias"][0]["link"]["url"]
 
     return file_data["web_content_link"]
 
