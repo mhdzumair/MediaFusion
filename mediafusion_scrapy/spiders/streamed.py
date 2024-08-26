@@ -27,7 +27,7 @@ class StreamedSpider(scrapy.Spider):
         "Other Sports": "https://streamed.su/category/other",
     }
 
-    m3u8_base_url = "https://{}ignores.top/js"
+    m3u8_base_url = "https://rr.vipstreams.in/alpha/js"
     sub_domains = {
         "rr.": "Main Server",
     }
@@ -92,7 +92,9 @@ class StreamedSpider(scrapy.Spider):
                 event_start_timestamp = event_timestamp_ms / 1000
 
         if event_start_timestamp != 0:
-            event_start_time = datetime.fromtimestamp(event_start_timestamp).strftime("%I:%M%p GMT")
+            event_start_time = datetime.fromtimestamp(event_start_timestamp).strftime(
+                "%I:%M%p GMT"
+            )
             description = f'{response.meta["item"]["title"]} - {event_start_time}'
         else:
             description = response.meta["item"]["title"]
@@ -111,7 +113,7 @@ class StreamedSpider(scrapy.Spider):
             language = link.xpath(".//div[last()]/text()").get().strip()
 
             for sub_domain, sub_domain_name in self.sub_domains.items():
-                m3u8_url = f"{self.m3u8_base_url.format(sub_domain)}{stream_url.replace('/watch', '')}/playlist.m3u8"
+                m3u8_url = f"{self.m3u8_base_url}{stream_url.replace('/watch', '').replace('/alpha', '')}/playlist.m3u8"
                 item = response.meta["item"].copy()
                 item.update(
                     {
@@ -119,7 +121,7 @@ class StreamedSpider(scrapy.Spider):
                         "stream_url": m3u8_url,
                         "referer": self.mediafusion_referer,
                         "description": description,
-                        "event_start_timestamp": event_start_timestamp
+                        "event_start_timestamp": event_start_timestamp,
                     }
                 )
                 yield item
