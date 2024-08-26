@@ -61,11 +61,10 @@ async def filter_and_sort_streams(
         if stream.filtered_quality not in quality_filter_set:
             continue
 
-        if "language" in user_data.torrent_sorting_priority:
-            if not any(
-                lang in language_filter_set for lang in stream.filtered_languages
-            ):
-                continue
+        if "language" in user_data.torrent_sorting_priority and not any(
+            lang in language_filter_set for lang in stream.filtered_languages
+        ):
+            continue
 
         if is_contain_18_plus_keywords(stream.torrent_name):
             continue
