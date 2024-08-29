@@ -106,6 +106,17 @@ class QBittorrentConfig(BaseModel):
         populate_by_name = True
 
 
+class MediaFlowConfig(BaseModel):
+    proxy_url: str | None = Field(alias="pu")
+    api_password: str | None = Field(alias="ap")
+    proxy_live_streams: bool = Field(default=False, alias="pls")
+    proxy_debrid_streams: bool = Field(default=False, alias="pds")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
 class StreamingProvider(BaseModel):
     service: Literal[
         "realdebrid",
@@ -168,13 +179,13 @@ class UserData(BaseModel):
         ]
     ] = Field(default=["Adults"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")
-    proxy_debrid_stream: bool = Field(default=False, alias="pds")
     language_sorting: list[str | None] = Field(
-        default=const.SUPPORTED_LANGUAGES, alias="ls"
+        default=list(const.SUPPORTED_LANGUAGES), alias="ls"
     )
     quality_filter: list[str] = Field(
         default=list(const.QUALITY_GROUPS.keys()), alias="qf"
     )
+    mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):

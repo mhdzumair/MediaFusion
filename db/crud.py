@@ -425,7 +425,9 @@ async def get_series_streams(
     )
 
 
-async def get_tv_streams(redis: Redis, video_id: str, namespace: str) -> list[Stream]:
+async def get_tv_streams(
+    redis: Redis, video_id: str, namespace: str, user_data
+) -> list[Stream]:
     tv_streams = await TVStreams.find(
         {
             "meta_id": video_id,
@@ -434,7 +436,7 @@ async def get_tv_streams(redis: Redis, video_id: str, namespace: str) -> list[St
         },
     ).to_list()
 
-    return await parse_tv_stream_data(tv_streams, redis)
+    return await parse_tv_stream_data(tv_streams, redis, user_data)
 
 
 async def get_movie_meta(meta_id: str, redis: Redis, user_data: schemas.UserData):
@@ -1102,14 +1104,14 @@ async def get_event_data_by_id(redis, meta_id: str) -> MediaFusionEventsMetaData
     return MediaFusionEventsMetaData.model_validate_json(events_json)
 
 
-async def get_event_streams(redis, meta_id: str) -> list[Stream]:
+async def get_event_streams(redis, meta_id: str, user_data) -> list[Stream]:
     event_key = f"event:{meta_id}"
     event_json = await redis.get(event_key)
     if not event_json:
-        return await parse_tv_stream_data([], redis)
+        return await parse_tv_stream_data([], redis, user_data)
 
     event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
-    return await parse_tv_stream_data(event_data.streams, redis)
+    return await parse_tv_stream_data(event_data.streams, redis, user_data)
 
 
 async def get_genres(catalog_type: str, redis: Redis) -> list[str]:

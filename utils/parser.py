@@ -13,6 +13,7 @@ from db.schemas import Stream, UserData
 from streaming_providers import mapper
 from utils import const
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
+from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS
 from utils.validation_helper import validate_m3u8_url_with_cache
 
@@ -154,15 +155,15 @@ async def parse_stream_data(
 
     base_proxy_url_template = ""
     if has_streaming_provider:
-        stream_path = "stream"
         if (
-            settings.is_public_instance is False
-            and user_data.proxy_debrid_stream is True
+            user_data.mediaflow_config
+            and user_data.mediaflow_config.proxy_debrid_streams
         ):
             streaming_provider_name += " 🕵🏼‍♂️"
-            stream_path = "proxy_stream"
 
-        base_proxy_url_template = f"{settings.host_url}/streaming_provider/{secret_str}/{stream_path}?info_hash={{}}"
+        base_proxy_url_template = (
+            f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
+        )
 
     stream_list = []
     for stream_data in streams:
@@ -211,7 +212,9 @@ async def parse_stream_data(
             file_size = stream_data.size
             size_info = convert_bytes_to_readable(file_size)
 
-        languages = f"🌐 {' + '.join(stream_data.languages)}"
+        languages = (
+            f"🌐 {' + '.join(stream_data.languages)}" if stream_data.languages else None
+        )
         source_info = f"🔗 {stream_data.source}"
 
         description = "\n".join(
@@ -288,9 +291,15 @@ def convert_size_to_bytes(size_str: str) -> int:
 
 
 async def parse_tv_stream_data(
-    tv_streams: list[TVStreams], redis: Redis
+    tv_streams: list[TVStreams], redis: Redis, user_data: UserData
 ) -> list[Stream]:
     stream_list = []
+    is_mediaflow_proxy_enabled = (
+        user_data.mediaflow_config and user_data.mediaflow_config.proxy_live_streams
+    )
+    addon_name = (
+        f"{settings.addon_name} {'🕵🏼‍♂️' if is_mediaflow_proxy_enabled else '📡'}"
+    )
     for stream in tv_streams[::-1]:
         if settings.validate_m3u8_urls_liveness:
             is_working = await validate_m3u8_url_with_cache(
@@ -299,11 +308,23 @@ async def parse_tv_stream_data(
             if not is_working:
                 continue
 
+        if is_mediaflow_proxy_enabled:
+            stream.url = encode_mediaflow_proxy_url(
+                user_data.mediaflow_config.proxy_url,
+                "/proxy/hls",
+                stream.url,
+                request_headers=stream.behaviorHints.get("proxyHeaders", {}).get(
+                    "request", {}
+                ),
+                query_params={"api_password": user_data.mediaflow_config.api_password},
+            )
+            stream.behaviorHints.update({"proxyHeaders": {}})
+
         country_info = f"\n🌐 {stream.country}" if stream.country else ""
 
         stream_list.append(
             Stream(
-                name=settings.addon_name,
+                name=addon_name,
                 description=f"📺 {stream.name}{country_info}\n🔗 {stream.source}",
                 url=stream.url,
                 ytId=stream.ytId,

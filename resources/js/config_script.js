@@ -124,6 +124,12 @@ function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
 }
 
+function validateUrl(url) {
+    // This regex supports domain names, IPv4, and IPv6 addresses
+    const urlPattern = /^(https?:\/\/)?(([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}|localhost|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\])(:?\d+)?(\/[-a-z\d%_.~+]*)*(\?[;&a-z\d%_.~+=-]*)?(\#[-a-z\d_]*)?$/i;
+    return urlPattern.test(url);
+}
+
 // Function to format bytes into a human-readable format
 function formatBytes(bytes, decimals = 2) {
     if (bytes === "0") return '0 Bytes';
@@ -189,13 +195,11 @@ function updateProviderFields(isChangeEvent = false) {
             setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('watchlist_section', 'block');
-        setElementDisplay('proxy_debrid_section', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
     } else {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
         setElementDisplay('watchlist_section', 'none');
-        setElementDisplay('proxy_debrid_section', 'none');
         setElementDisplay('qbittorrent_config', 'none');
     }
 
@@ -296,9 +300,21 @@ function getUserData() {
         }
         streamingProviderData.service = provider;
         streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
-        streamingProviderData.proxy_debrid_stream = document.getElementById('proxy_debrid_stream').checked;
     } else {
         streamingProviderData = null;
+    }
+
+    const mediaflowEnabled = document.getElementById('enable_mediaflow').checked
+    let mediaflowConfig = null;
+    if (mediaflowEnabled) {
+        mediaflowConfig = {
+            proxy_url: document.getElementById('mediaflow_proxy_url').value,
+            api_password: document.getElementById('mediaflow_api_password').value,
+            proxy_live_streams: document.getElementById('proxy_live_streams').checked,
+            proxy_debrid_streams: document.getElementById('proxy_debrid_streams').checked
+        };
+        validateInput('mediaflow_proxy_url', validateUrl(mediaflowConfig.proxy_url));
+        validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
 
     // Collect and validate other user data
@@ -341,7 +357,6 @@ function getUserData() {
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
         selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value || null),
         enable_catalogs: document.getElementById('enable_catalogs').checked,
-        proxy_debrid_stream: document.getElementById('proxy_debrid_stream').checked,
         max_size: maxSizeBytes,
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
@@ -351,6 +366,7 @@ function getUserData() {
         language_sorting: languageSorting,
         quality_filter: selectedQualityFilters,
         api_password: apiPassword,
+        mediaflow_config: mediaflowConfig,
     };
 }
 
@@ -381,6 +397,10 @@ function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
 
 document.getElementById('provider_token').addEventListener('input', function () {
     adjustOAuthSectionDisplay();
+});
+
+document.getElementById('enable_mediaflow').addEventListener('change', function () {
+    setElementDisplay('mediaflow_config', this.checked ? 'block' : 'none');
 });
 
 // Event listener for the slider
@@ -472,6 +492,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     setupPasswordToggle('qbittorrent_password', 'toggleQbittorrentPassword', 'toggleQbittorrentPasswordIcon');
     setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
+    setupPasswordToggle('mediaflow_api_password', 'toggleMediaFlowPassword', 'toggleMediaFlowPasswordIcon');
 });
 
 

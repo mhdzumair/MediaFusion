@@ -32,7 +32,7 @@ from utils.lock import (
     maintain_heartbeat,
     release_scheduler_lock,
 )
-from utils.network import get_request_namespace, get_user_public_ip
+from utils.network import get_request_namespace, get_user_public_ip, get_user_data
 from utils.parser import generate_manifest
 from utils.runtime_const import DELETE_ALL_META, DELETE_ALL_META_ITEM, TEMPLATES
 
@@ -71,10 +71,6 @@ app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
 app.mount("/static", StaticFiles(directory="resources"), name="static")
-
-
-def get_user_data(request: Request) -> schemas.UserData:
-    return request.user
 
 
 @app.on_event("startup")
@@ -301,7 +297,7 @@ async def get_catalog(
             await crud.get_events_meta_list(request.app.state.redis, genre, skip)
         )
     else:
-        user_ip = get_user_public_ip(request)
+        user_ip = await get_user_public_ip(request, user_data)
         metas.metas.extend(
             await crud.get_meta_list(
                 user_data,
@@ -471,7 +467,7 @@ async def get_streams(
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    user_ip = get_user_public_ip(request)
+    user_ip = await get_user_public_ip(request, user_data)
     user_feeds = []
     if season is None or episode is None:
         season = episode = 1
@@ -527,13 +523,13 @@ async def get_streams(
         fetched_streams.extend(user_feeds)
     elif catalog_type == "events":
         fetched_streams = await crud.get_event_streams(
-            request.app.state.redis, video_id
+            request.app.state.redis, video_id, user_data
         )
         response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
         fetched_streams = await crud.get_tv_streams(
-            request.app.state.redis, video_id, namespace=get_request_namespace(request)
+            request.app.state.redis, video_id, get_request_namespace(request), user_data
         )
 
     return {"streams": fetched_streams}

@@ -1,6 +1,7 @@
 import re
 
 from fastapi.templating import Jinja2Templates
+import redis.asyncio as redis
 
 from db import schemas
 from db.config import settings
@@ -31,3 +32,8 @@ DELETE_ALL_META_ITEM = {
 TRACKERS = get_json_data("resources/json/trackers.json")
 
 SECRET_KEY = settings.secret_key.encode("utf-8")
+
+
+REDIS_CLIENT = redis.Redis(
+    connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
+)
