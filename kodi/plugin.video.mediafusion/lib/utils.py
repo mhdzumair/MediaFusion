@@ -69,13 +69,11 @@ def fetch_data(url, force_refresh=False):
         xbmcgui.Dialog().notification(
             "MediaFusion", "Connection failed", xbmcgui.NOTIFICATION_ERROR
         )
-        return None
     except requests.Timeout as e:
         xbmc.log(f"Request timed out: {e}", xbmc.LOGERROR)
         xbmcgui.Dialog().notification(
             "MediaFusion", "Request timed out", xbmcgui.NOTIFICATION_ERROR
         )
-        return None
     except requests.RequestException as e:
         if e.response is None:
             xbmc.log(f"Request failed: {e}", xbmc.LOGERROR)
@@ -99,13 +97,11 @@ def fetch_data(url, force_refresh=False):
             xbmcgui.Dialog().notification(
                 "MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR
             )
-        return None
     except Exception as e:
         xbmc.log(f"Failed to fetch data: {e}", xbmc.LOGERROR)
         xbmcgui.Dialog().notification(
             "MediaFusion", "Failed to fetch data", xbmcgui.NOTIFICATION_ERROR
         )
-        return None
 
 
 def build_url(action, **params):
