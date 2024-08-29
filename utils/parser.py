@@ -294,6 +294,12 @@ async def parse_tv_stream_data(
     tv_streams: list[TVStreams], redis: Redis, user_data: UserData
 ) -> list[Stream]:
     stream_list = []
+    is_mediaflow_proxy_enabled = (
+        user_data.mediaflow_config and user_data.mediaflow_config.proxy_live_streams
+    )
+    addon_name = (
+        f"{settings.addon_name} {'🕵🏼‍♂️' if is_mediaflow_proxy_enabled else '📡'}"
+    )
     for stream in tv_streams[::-1]:
         if settings.validate_m3u8_urls_liveness:
             is_working = await validate_m3u8_url_with_cache(
@@ -302,7 +308,7 @@ async def parse_tv_stream_data(
             if not is_working:
                 continue
 
-        if user_data.mediaflow_config and user_data.mediaflow_config.proxy_live_streams:
+        if is_mediaflow_proxy_enabled:
             stream.url = encode_mediaflow_proxy_url(
                 user_data.mediaflow_config.proxy_url,
                 "/proxy/hls",
@@ -318,7 +324,7 @@ async def parse_tv_stream_data(
 
         stream_list.append(
             Stream(
-                name=settings.addon_name,
+                name=addon_name,
                 description=f"📺 {stream.name}{country_info}\n🔗 {stream.source}",
                 url=stream.url,
                 ytId=stream.ytId,

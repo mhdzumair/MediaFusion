@@ -184,8 +184,13 @@ async def get_mediaflow_proxy_public_ip(
             if public_ip:
                 await REDIS_CLIENT.set(cache_key, public_ip, ex=300)
                 return public_ip
-    except Exception:
-        pass
+    except httpx.HTTPStatusError as e:
+        logging.error(f"HTTP error occurred: {e}")
+    except httpx.RequestError as e:
+        logging.error(f"Request error occurred: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+    return None
 
 
 async def get_user_public_ip(
