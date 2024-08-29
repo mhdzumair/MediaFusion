@@ -175,7 +175,7 @@ async def init_best_trackers():
                 )
             else:
                 logging.error(f"Failed to load trackers: {response.status_code}")
-    except httpx.ConnectTimeout as e:
+    except (httpx.ConnectTimeout, Exception) as e:
         logging.error(f"Failed to load trackers: {e}")
 
 
