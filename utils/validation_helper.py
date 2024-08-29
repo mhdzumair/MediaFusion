@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from urllib import parse
 from urllib.parse import urlparse
 
 import aiohttp
@@ -58,7 +59,7 @@ async def validate_m3u8_url(
 
 
 async def validate_m3u8_url_with_cache(redis: Redis, url: str, behaviour_hint: dict):
-    cache_key = f"m3u8_url:{url}"
+    cache_key = f"m3u8_url:{parse.urlparse(url).netloc}"
     cache_data = await redis.get(cache_key)
     if cache_data:
         return json.loads(cache_data)

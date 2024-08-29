@@ -55,6 +55,11 @@ class DebridClient:
         try:
             response.raise_for_status()
         except RequestException as error:
+            if error.response.status_code in [502, 503, 504]:
+                raise ProviderException(
+                    "Debrid service is down.", "debrid_service_down_error.mp4"
+                ) from error
+
             if is_expected_to_fail:
                 return
             self._handle_service_specific_errors(error)
