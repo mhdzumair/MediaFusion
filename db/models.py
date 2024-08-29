@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 from beanie import Document, Link
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
@@ -43,6 +43,13 @@ class TorrentStreams(Document):
     audio: Optional[str] = None
     seeders: Optional[int] = None
     cached: Optional[bool] = Field(default=False, exclude=True)
+
+    @field_validator("audio", mode="before")
+    def validate_audio(cls, v):
+        # Ensure audio is a string
+        if v and isinstance(v, list):
+            return v[0]
+        return v
 
     class Settings:
         indexes = [

@@ -1,11 +1,14 @@
 import asyncio
 import logging
 from typing import Callable
+from urllib import parse
 
 import httpx
 from fastapi.requests import Request
 
-from utils.runtime_const import PRIVATE_CIDR
+from db.schemas import UserData
+from utils import crypto
+from utils.runtime_const import PRIVATE_CIDR, REDIS_CLIENT
 
 
 class CircuitBreakerOpenException(Exception):
@@ -157,7 +160,49 @@ def get_client_ip(request: Request) -> str | None:
     return request.client.host if request.client else "127.0.0.1"
 
 
-def get_user_public_ip(request: Request):
+async def get_mediaflow_proxy_public_ip(
+    mediaflow_proxy_url: str, api_password
+) -> str | None:
+    """
+    Get the public IP address of the MediaFlow proxy server.
+    """
+    cache_key = crypto.get_text_hash(
+        f"{mediaflow_proxy_url}:{api_password}", full_hash=True
+    )
+    if public_ip := await REDIS_CLIENT.getex(cache_key, ex=300):
+        return public_ip
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                mediaflow_proxy_url + "/proxy/ip",
+                params={"api_password": api_password},
+                timeout=10,
+            )
+            response.raise_for_status()
+            public_ip = response.json().get("ip")
+            if public_ip:
+                await REDIS_CLIENT.set(cache_key, public_ip, ex=300)
+                return public_ip
+    except Exception:
+        pass
+
+
+async def get_user_public_ip(
+    request: Request, user_data: UserData | None = None
+) -> str:
+    # Check if user has mediaflow config
+    if (
+        user_data
+        and user_data.mediaflow_config
+        and user_data.mediaflow_config.proxy_debrid_streams
+    ):
+        public_ip = await get_mediaflow_proxy_public_ip(
+            user_data.mediaflow_config.proxy_url,
+            user_data.mediaflow_config.api_password,
+        )
+        if public_ip:
+            return public_ip
     # Get the user's public IP address
     user_ip = get_client_ip(request)
     # check if the user's IP address is a private IP address
@@ -183,3 +228,31 @@ def get_request_namespace(request: Request) -> str:
 
     namespace = f"tenant-{parts[0]}"
     return namespace
+
+
+def get_user_data(request: Request) -> UserData:
+    return request.user
+
+
+def encode_mediaflow_proxy_url(
+    mediaflow_proxy_url: str,
+    endpoint: str,
+    destination_url: str | None = None,
+    query_params: dict | None = None,
+    request_headers: dict | None = None,
+) -> str:
+    query_params = query_params or {}
+    if destination_url is not None:
+        query_params["d"] = destination_url
+
+    # Add headers if provided
+    if request_headers:
+        query_params.update(
+            {f"h_{key}": value for key, value in request_headers.items()}
+        )
+    # Encode the query parameters
+    encoded_params = parse.urlencode(query_params, quote_via=parse.quote)
+
+    # Construct the full URL
+    base_url = parse.urljoin(mediaflow_proxy_url, endpoint)
+    return f"{base_url}?{encoded_params}"

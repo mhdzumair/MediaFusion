@@ -6,13 +6,14 @@ from fastapi import (
     Response,
     HTTPException,
     APIRouter,
+    Depends,
 )
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 
-from db import crud
+from db import crud, schemas
 from db.config import settings
-from streaming_providers import mapper, proxy_handlers
+from streaming_providers import mapper
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.premiumize.api import router as premiumize_router
@@ -20,7 +21,7 @@ from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.seedr.api import router as seedr_router
 from utils import crypto, torrent, wrappers, const
 from utils.lock import acquire_redis_lock, release_redis_lock
-from utils.network import get_user_public_ip
+from utils.network import get_user_public_ip, get_user_data, encode_mediaflow_proxy_url
 
 # Seconds until when the Video URLs are cached
 URL_CACHE_EXP = 3600
@@ -46,14 +47,14 @@ async def streaming_provider_endpoint(
     request: Request,
     season: int = None,
     episode: int = None,
+    user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
     if not user_data.streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
 
-    user_ip = get_user_public_ip(request)
+    user_ip = await get_user_public_ip(request, user_data)
     redirect_status_code = 302
     cached_stream_url_key = "streaming_provider_" + crypto.get_text_hash(
         f"{user_ip}_{secret_str}_{info_hash}_{season}_{episode}",
@@ -64,7 +65,16 @@ async def streaming_provider_endpoint(
     if cached_stream_url := await get_cached_stream_url(
         request.app.state.redis, cached_stream_url_key
     ):
-        logging.info("Redirecting to cached URL...")
+        if (
+            user_data.mediaflow_config
+            and user_data.mediaflow_config.proxy_debrid_streams
+        ):
+            cached_stream_url = encode_mediaflow_proxy_url(
+                user_data.mediaflow_config.proxy_url,
+                "/proxy/stream",
+                cached_stream_url,
+                query_params={"api_password": user_data.mediaflow_config.api_password},
+            )
         return RedirectResponse(
             url=cached_stream_url,
             headers=response.headers,
@@ -121,6 +131,17 @@ async def streaming_provider_endpoint(
         await request.app.state.redis.set(
             cached_stream_url_key, video_url.encode("utf-8"), ex=URL_CACHE_EXP
         )
+        if (
+            user_data.mediaflow_config
+            and user_data.mediaflow_config.proxy_debrid_streams
+        ):
+            video_url = encode_mediaflow_proxy_url(
+                user_data.mediaflow_config.proxy_url,
+                "/proxy/stream",
+                video_url,
+                query_params={"api_password": user_data.mediaflow_config.api_password},
+            )
+
     except ProviderException as error:
         logging.error(
             "Exception occurred for %s: %s",
@@ -143,65 +164,17 @@ async def streaming_provider_endpoint(
     )
 
 
-# This endpoint is to proxy the debrid provider via this instance.
-@router.head("/{secret_str}/proxy_stream", tags=["streaming_provider"])
-@router.get("/{secret_str}/proxy_stream", tags=["streaming_provider"])
-@wrappers.exclude_rate_limit
-@wrappers.auth_required
-async def proxy_streaming_provider_endpoint(
-    secret_str: str,
-    info_hash: str,
-    response: Response,
-    request: Request,
-    season: int = None,
-    episode: int = None,
-):
-    response.headers.update(const.NO_CACHE_HEADERS)
-
-    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
-    user_ip = get_user_public_ip(request)
-    cached_stream_url_key = "streaming_provider_" + crypto.get_text_hash(
-        f"{user_ip}_{secret_str}_{info_hash}_{season}_{episode}",
-        full_hash=True,
-    )
-
-    # Check if the URL is already cached
-    if cached_stream_url := await get_cached_stream_url(
-        request.app.state.redis, cached_stream_url_key
-    ):
-        video_url = cached_stream_url
-    else:
-        streaming_provider_response = await streaming_provider_endpoint(
-            secret_str, info_hash, response, request, season, episode
-        )
-        if streaming_provider_response.status_code != 302:
-            return streaming_provider_response
-
-        video_url = streaming_provider_response.headers.get("location", "")
-
-    # Validate if proxying is allowed
-    if (
-        settings.is_public_instance is False
-        and user_data.proxy_debrid_stream is True
-        and user_data.streaming_provider
-    ):
-        if request.method == "HEAD":
-            return await proxy_handlers.handle_head_request(video_url)
-        else:
-            range_header = request.headers.get("range", "bytes=0-")
-            return await proxy_handlers.handle_get_request(video_url, range_header)
-
-    return RedirectResponse(url=video_url, headers=response.headers, status_code=302)
-
-
 @router.get("/{secret_str}/delete_all_watchlist", tags=["streaming_provider"])
 @wrappers.exclude_rate_limit
 @wrappers.auth_required
-async def delete_all_watchlist(request: Request, response: Response, secret_str: str):
+async def delete_all_watchlist(
+    request: Request,
+    response: Response,
+    user_data: schemas.UserData = Depends(get_user_data),
+):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    user_data = request.scope.get("user", crypto.decrypt_user_data(secret_str))
-    user_ip = get_user_public_ip(request)
+    user_ip = get_user_public_ip(request, user_data)
 
     if not user_data.streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
