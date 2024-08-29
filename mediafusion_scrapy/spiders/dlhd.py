@@ -61,7 +61,7 @@ class DaddyLiveHDSpider(scrapy.Spider):
     }
 
     m3u8_base_url = "https://webhdrunns.mizhls.ru/lb/premium{}/index.m3u8"
-    referer = "https://qqwebplay.xyz/"
+    referer = "https://cookiewebplay.xyz/"
 
     def __init__(self, *args, **kwargs):
         super(DaddyLiveHDSpider, self).__init__(*args, **kwargs)
@@ -97,7 +97,9 @@ class DaddyLiveHDSpider(scrapy.Spider):
                     # Convert to UNIX timestamp
                     event_start_timestamp = int(aware_datetime.timestamp())
                     if event_start_timestamp != 0:
-                        event_start_time = datetime.fromtimestamp(event_start_timestamp).strftime("%I:%M%p GMT")
+                        event_start_time = datetime.fromtimestamp(
+                            event_start_timestamp
+                        ).strftime("%I:%M%p GMT")
                         description = f'{event["event"]} - {event_start_time}'
                     else:
                         description = event["event"]

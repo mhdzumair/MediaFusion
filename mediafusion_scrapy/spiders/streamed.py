@@ -28,9 +28,6 @@ class StreamedSpider(scrapy.Spider):
     }
 
     m3u8_base_url = "https://rr.vipstreams.in/alpha/js"
-    sub_domains = {
-        "rr.": "Main Server",
-    }
     mediafusion_referer = "https://mediafusion.addon/"
 
     custom_settings = {
@@ -112,16 +109,15 @@ class StreamedSpider(scrapy.Spider):
             stream_quality = link.xpath(".//h2/text()").get().strip()
             language = link.xpath(".//div[last()]/text()").get().strip()
 
-            for sub_domain, sub_domain_name in self.sub_domains.items():
-                m3u8_url = f"{self.m3u8_base_url}{stream_url.replace('/watch', '').replace('/alpha', '')}/playlist.m3u8"
-                item = response.meta["item"].copy()
-                item.update(
-                    {
-                        "stream_name": f"{stream_name} - 📡 {sub_domain_name}\n📺 {stream_quality} - 🌐 {language}",
-                        "stream_url": m3u8_url,
-                        "referer": self.mediafusion_referer,
-                        "description": description,
-                        "event_start_timestamp": event_start_timestamp,
-                    }
-                )
-                yield item
+            m3u8_url = f"{self.m3u8_base_url}{stream_url.replace('/watch', '').replace('/alpha', '')}/playlist.m3u8"
+            item = response.meta["item"].copy()
+            item.update(
+                {
+                    "stream_name": f"{stream_name}\n📺 {stream_quality} - 🌐 {language}",
+                    "stream_url": m3u8_url,
+                    "referer": self.mediafusion_referer,
+                    "description": description,
+                    "event_start_timestamp": event_start_timestamp,
+                }
+            )
+            yield item
