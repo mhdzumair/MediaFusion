@@ -208,13 +208,16 @@ async def store_and_parse_series_stream_data(
     streams = []
     info_hashes = []
     for stream in stream_data:
-        torrent_stream = await TorrentStreams.get(stream["infoHash"])
-        if torrent_stream:
-            continue
+        existing_stream = await TorrentStreams.get(stream["infoHash"])
+        
+        if existing_stream:
+            if existing_stream.get_episode(season, episode): #if true, we already have in db
+                continue
+            #logging.debug(f"Attempting to add episode {episode} to existing infoHash: {stream.infoHash}")
 
         if is_contain_18_plus_keywords(stream["title"]):
             logging.warning(f"Stream contains 18+ keywords: {stream['title']}")
-            continue
+            #continue                   #commenting out because torrentio should already filter 18+, this probably just adds false positives
 
         source = (
             stream["name"].split()[0].title() if stream.get("name") else "Torrentio"
@@ -243,21 +246,25 @@ async def store_and_parse_series_stream_data(
         else:
             season_number = season
 
-        if parsed_data["metadata"].get("episodes"):
-            episode_data = [
-                Episode(
-                    episode_number=episode_number,
-                    file_index=stream.get("fileIdx")
-                    if episode_number == episode
-                    else None,
+        episode_data = existing_stream.season.episodes if existing_stream else []
+        if parsed_data["metadata"].get("episode"):
+            if isinstance(parsed_data["metadata"]["episode"], int): 
+                episode_data.append(Episode(episode_number=parsed_data["metadata"]["episode"]))
+            else:
+                episode_data.append(
+                    Episode(
+                        episode_number=episode_number,
+                        file_index=stream.get("fileIdx")
+                        if episode_number == episode
+                        else None,
+                    )
+                    for episode_number in parsed_data["metadata"]["episode"]
                 )
-                for episode_number in parsed_data["metadata"]["episodes"]
-            ]
 
         else:
-            episode_data = [
+            episode_data.append(
                 Episode(episode_number=episode, file_index=stream.get("fileIdx"))
-            ]
+            )
 
         # Create new stream
         torrent_stream = TorrentStreams(
@@ -281,7 +288,8 @@ async def store_and_parse_series_stream_data(
                 episodes=episode_data,
             ),
         )
-        await torrent_stream.create()
+        logging.debug(f"Saving torrent stream: {torrent_stream}")
+        await torrent_stream.save()           #updates existing db entries
         episode_item = torrent_stream.get_episode(season, episode)
 
         streams.append(torrent_stream)
