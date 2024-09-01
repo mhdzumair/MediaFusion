@@ -1,4 +1,4 @@
-FROM python:3.11.9-slim-bullseye AS builder
+FROM python:3.12-slim-bookworm AS builder
 
 WORKDIR /mediafusion
 
@@ -24,7 +24,7 @@ COPY --chown=mediafusion:mediafusion Pipfile Pipfile.lock ./
 RUN pip install --user pipenv && \
     pipenv install --deploy --ignore-pipfile
 
-FROM python:3.11.9-slim-bullseye
+FROM python:3.12-slim-bookworm
 
 WORKDIR /mediafusion
 
