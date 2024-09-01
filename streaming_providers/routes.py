@@ -9,7 +9,6 @@ from fastapi import (
     Depends,
 )
 from fastapi.responses import RedirectResponse
-from redis.asyncio import Redis
 
 from db import crud, schemas
 from db.config import settings
@@ -22,6 +21,7 @@ from streaming_providers.seedr.api import router as seedr_router
 from utils import crypto, torrent, wrappers, const
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_user_public_ip, get_user_data, encode_mediaflow_proxy_url
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 # Seconds until when the Video URLs are cached
 URL_CACHE_EXP = 3600
@@ -29,8 +29,8 @@ URL_CACHE_EXP = 3600
 router = APIRouter()
 
 
-async def get_cached_stream_url(redis: Redis, cached_stream_url_key):
-    if cached_stream_url := await redis.getex(cached_stream_url_key, ex=URL_CACHE_EXP):
+async def get_cached_stream_url(cached_stream_url_key):
+    if cached_stream_url := await REDIS_ASYNC_CLIENT.getex(cached_stream_url_key, ex=URL_CACHE_EXP):
         cached_stream_url = cached_stream_url.decode("utf-8")
         return cached_stream_url
     return None
@@ -63,7 +63,7 @@ async def streaming_provider_endpoint(
 
     # Check for cached URL before any database operations
     if cached_stream_url := await get_cached_stream_url(
-        request.app.state.redis, cached_stream_url_key
+        cached_stream_url_key
     ):
         if (
             user_data.mediaflow_config
@@ -95,7 +95,6 @@ async def streaming_provider_endpoint(
 
     # Create a Redis lock to prevent multiple requests from initiating a download task.
     acquired, lock = await acquire_redis_lock(
-        request.app.state.redis,
         f"{cached_stream_url_key}_locked",
         timeout=60,
         block=True,
@@ -128,7 +127,7 @@ async def streaming_provider_endpoint(
             video_url = await asyncio.to_thread(get_video_url, **kwargs)
 
         # Cache the streaming URL for URL_CACHE_EXP
-        await request.app.state.redis.set(
+        await REDIS_ASYNC_CLIENT.set(
             cached_stream_url_key, video_url.encode("utf-8"), ex=URL_CACHE_EXP
         )
         if (

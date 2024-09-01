@@ -2,22 +2,18 @@ import asyncio
 import logging
 from uuid import uuid4
 
-import logging
-from uuid import uuid4
-
-import redis.asyncio as redis_async
 from beanie import WriteRules
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
 from db import crud
-from db.config import settings
 from db.models import (
     TorrentStreams,
     Season,
     MediaFusionSeriesMetaData,
 )
 from db.schemas import TVMetaData
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 
 class QueueBasedPipeline:
@@ -62,7 +58,7 @@ class QueueBasedPipeline:
 class EventSeriesStorePipeline(QueueBasedPipeline):
     def __init__(self):
         super().__init__()
-        self.redis = redis_async.Redis.from_url(settings.redis_url)
+        self.redis = REDIS_ASYNC_CLIENT
 
     async def close(self):
         await super().close()
@@ -201,7 +197,7 @@ class SeriesStorePipeline(QueueBasedPipeline):
 class LiveEventStorePipeline(QueueBasedPipeline):
     def __init__(self):
         super().__init__()
-        self.redis = redis_async.Redis.from_url(settings.redis_url)
+        self.redis = REDIS_ASYNC_CLIENT
 
     async def close(self):
         await super().close()
@@ -211,5 +207,5 @@ class LiveEventStorePipeline(QueueBasedPipeline):
         if "title" not in item:
             raise DropItem(f"name not found in item: {item}")
 
-        await crud.save_events_data(self.redis, item)
+        await crud.save_events_data(item)
         return item

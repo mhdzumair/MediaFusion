@@ -6,7 +6,6 @@ from os import path
 import PTT
 import httpx
 from pymongo.errors import DuplicateKeyError
-from redis.asyncio import Redis
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
@@ -20,11 +19,11 @@ from utils.parser import (
     is_contain_18_plus_keywords,
     calculate_max_similarity_ratio,
 )
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 from utils.validation_helper import is_video_file
 
 
 async def get_streams_from_torrentio(
-    redis: Redis,
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
@@ -34,7 +33,7 @@ async def get_streams_from_torrentio(
     episode: int = None,
 ):
     cache_key = f"{catalog_type}_{video_id}_{season}_{episode}_torrentio_streams"
-    cached_data = await redis.get(cache_key)
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_data:
         return streams
 
@@ -52,7 +51,7 @@ async def get_streams_from_torrentio(
         )
 
     # Cache the data for 24 hours
-    await redis.set(
+    await REDIS_ASYNC_CLIENT.set(
         cache_key,
         "True",
         ex=int(timedelta(days=settings.torrentio_search_interval_days).total_seconds()),
@@ -126,10 +125,11 @@ def parse_stream_title(stream: dict) -> dict:
         "seeders": extract_seeders(stream["title"]),
         "languages": extract_languages(metadata, stream["title"]),
         "metadata": metadata,
-        "file_name": stream.get("behaviorHints", {}).get("filename")
-        or path.basename(file_name)
-        if is_video_file(file_name)
-        else None,
+        "file_name": (
+            stream.get("behaviorHints", {}).get("filename") or path.basename(file_name)
+            if is_video_file(file_name)
+            else None
+        ),
     }
 
 
@@ -247,9 +247,9 @@ async def store_and_parse_series_stream_data(
             episode_data = [
                 Episode(
                     episode_number=episode_number,
-                    file_index=stream.get("fileIdx")
-                    if episode_number == episode
-                    else None,
+                    file_index=(
+                        stream.get("fileIdx") if episode_number == episode else None
+                    ),
                 )
                 for episode_number in parsed_data["metadata"]["episodes"]
             ]

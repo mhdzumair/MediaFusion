@@ -8,7 +8,7 @@ from fastapi.requests import Request
 
 from db.schemas import UserData
 from utils import crypto
-from utils.runtime_const import PRIVATE_CIDR, REDIS_CLIENT
+from utils.runtime_const import PRIVATE_CIDR, REDIS_ASYNC_CLIENT
 
 
 class CircuitBreakerOpenException(Exception):
@@ -169,7 +169,7 @@ async def get_mediaflow_proxy_public_ip(
     cache_key = crypto.get_text_hash(
         f"{mediaflow_proxy_url}:{api_password}", full_hash=True
     )
-    if public_ip := await REDIS_CLIENT.getex(cache_key, ex=300):
+    if public_ip := await REDIS_ASYNC_CLIENT.getex(cache_key, ex=300):
         return public_ip
 
     try:
@@ -182,7 +182,7 @@ async def get_mediaflow_proxy_public_ip(
             response.raise_for_status()
             public_ip = response.json().get("ip")
             if public_ip:
-                await REDIS_CLIENT.set(cache_key, public_ip, ex=300)
+                await REDIS_ASYNC_CLIENT.set(cache_key, public_ip, ex=300)
                 return public_ip
     except httpx.HTTPStatusError as e:
         logging.error(f"HTTP error occurred: {e}")

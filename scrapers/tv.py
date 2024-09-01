@@ -3,16 +3,15 @@ import logging
 import re
 
 import dramatiq
-from redis.asyncio import Redis
 from beanie import BulkWriter
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
 
 from db import schemas, crud
-from db.config import settings
 from db.models import TVStreams
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 from utils.validation_helper import validate_m3u8_url
 
 
@@ -40,20 +39,19 @@ async def add_tv_metadata(batch, namespace: str):
 async def parse_m3u_playlist(
     namespace: str,
     playlist_source: str,
-    redis_client: Redis,
     playlist_url: str = None,
     playlist_redis_key: str = None,
 ):
     logging.info(f"Parsing M3U playlist: {playlist_url}")
     if playlist_redis_key:
-        playlist_content = await redis_client.get(playlist_redis_key)
+        playlist_content = await REDIS_ASYNC_CLIENT.get(playlist_redis_key)
         if not playlist_content:
             logging.error(f"Playlist not found in Redis: {playlist_redis_key}")
             return
 
         playlist_content = playlist_content.decode("utf-8")
         iptv_playlist = playlist.loads(playlist_content)
-        await redis_client.delete(playlist_redis_key)
+        await REDIS_ASYNC_CLIENT.delete(playlist_redis_key)
     else:
         iptv_playlist = playlist.loadu(playlist_url)
 

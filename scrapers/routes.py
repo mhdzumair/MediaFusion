@@ -23,7 +23,7 @@ from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio
-from utils.runtime_const import TEMPLATES
+from utils.runtime_const import TEMPLATES, REDIS_ASYNC_CLIENT
 
 router = APIRouter()
 
@@ -110,12 +110,11 @@ async def upload_m3u_playlist(
     if m3u_playlist_file:
         content = await m3u_playlist_file.read()
         redis_key = f"m3u_playlist_{uuid4().hex[:10]}"
-        await request.app.state.redis.set(redis_key, content)
+        await REDIS_ASYNC_CLIENT.set(redis_key, content)
         background_tasks.add_task(
             parse_m3u_playlist,
             namespace=get_request_namespace(request),
             playlist_source=m3u_playlist_source,
-            redis_client=request.app.state.redis,
             playlist_redis_key=redis_key,
             playlist_url=None,
         )
@@ -126,7 +125,6 @@ async def upload_m3u_playlist(
             parse_m3u_playlist,
             namespace=get_request_namespace(request),
             playlist_source=m3u_playlist_source,
-            redis_client=request.app.state.redis,
             playlist_url=m3u_playlist_url,
             playlist_redis_key=None,
         )
@@ -156,7 +154,6 @@ async def update_imdb_data(
 
 @router.post("/torrent", tags=["scraper"])
 async def add_torrent(
-    request: Request,
     meta_id: str = Form(...),
     meta_type: Literal["movie", "series"] = Form(...),
     source: str = Form(...),
@@ -170,7 +167,6 @@ async def add_torrent(
     torrent_data: dict = {}
     error_msg = None
     info_hash = None
-    title = None
     catalogs = catalogs.split(",")
 
     if not magnet_link and not torrent_file:
@@ -227,7 +223,7 @@ async def add_torrent(
     catalogs.append("user_upload")
 
     if meta_type == "movie":
-        movie_data = await get_movie_data_by_id(meta_id, request.app.state.redis)
+        movie_data = await get_movie_data_by_id(meta_id)
         title = movie_data.title
 
         max_similarity_ratio = calculate_max_similarity_ratio(
@@ -253,7 +249,7 @@ async def add_torrent(
         )
 
     else:
-        series_data = await get_series_data_by_id(meta_id, request.app.state.redis)
+        series_data = await get_series_data_by_id(meta_id)
         title = series_data.title
 
         max_similarity_ratio = calculate_max_similarity_ratio(

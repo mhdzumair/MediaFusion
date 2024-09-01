@@ -1,13 +1,12 @@
-import redis.asyncio as redis_async
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
-from db.config import settings
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 
 class RedisCacheURLPipeline:
     def __init__(self):
-        self.redis = redis_async.Redis.from_url(settings.redis_url)
+        self.redis = REDIS_ASYNC_CLIENT
 
     async def close(self):
         await self.redis.aclose()

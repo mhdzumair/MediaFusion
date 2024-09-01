@@ -1,18 +1,17 @@
 import json
 import logging
 
-import redis
 from scrapy import signals
 from scrapy.statscollectors import StatsCollector
 
-from db.config import settings
+from utils.runtime_const import REDIS_SYNC_CLIENT
 
 
 class RedisStatsCollector(StatsCollector):
     def __init__(self, crawler):
         super().__init__(crawler)
         crawler.signals.connect(self.spider_closed, signal=signals.spider_closed)
-        self.redis_client = redis.Redis.from_url(settings.redis_url)
+        self.redis_client = REDIS_SYNC_CLIENT
 
     def spider_closed(self, spider, reason):
         # Access the stats dictionary

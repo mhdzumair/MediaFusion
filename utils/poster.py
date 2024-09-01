@@ -11,15 +11,16 @@ from redis.asyncio import Redis
 from db.models import MediaFusionMetaData
 from scrapers.imdb_data import get_imdb_rating
 from utils import const
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 ia = Cinemagoer()
 font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
 
-async def fetch_poster_image(url: str, redis: Redis) -> bytes:
+async def fetch_poster_image(url: str) -> bytes:
     # Check if the image is cached in Redis
-    cached_image = await redis.get(url)
+    cached_image = await REDIS_ASYNC_CLIENT.get(url)
     if cached_image:
         logging.info(f"Using cached image for URL: {url}")
         return cached_image
@@ -35,7 +36,7 @@ async def fetch_poster_image(url: str, redis: Redis) -> bytes:
 
             # Cache the image in Redis for 1 hour
             logging.info(f"Caching image for URL: {url}")
-            await redis.set(url, content, ex=3600)
+            await REDIS_ASYNC_CLIENT.set(url, content, ex=3600)
             return content
 
 
@@ -68,8 +69,8 @@ def process_poster_image(
         raise ValueError(f"Cannot identify image from URL: {mediafusion_data.poster}")
 
 
-async def create_poster(mediafusion_data: MediaFusionMetaData, redis: Redis) -> BytesIO:
-    content = await fetch_poster_image(mediafusion_data.poster, redis)
+async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
+    content = await fetch_poster_image(mediafusion_data.poster)
 
     loop = asyncio.get_event_loop()
     byte_io = await asyncio.wait_for(
@@ -83,7 +84,7 @@ async def create_poster(mediafusion_data: MediaFusionMetaData, redis: Redis) -> 
 def add_elements_to_poster(
     image: Image.Image, imdb_rating: float = None
 ) -> Image.Image:
-    draw = ImageDraw.Draw(image, 'RGBA')
+    draw = ImageDraw.Draw(image, "RGBA")
     margin = 10
     padding = 5
 
@@ -109,15 +110,21 @@ def add_elements_to_poster(
         rectangle_y1 = image.height - margin
         draw.rounded_rectangle(
             (rectangle_x0, rectangle_y0, rectangle_x1, rectangle_y1),
-            fill=(0, 0, 0, 176), radius=8
+            fill=(0, 0, 0, 176),
+            radius=8,
         )
 
         # Place the IMDb Logo
-        image.paste(imdb_logo, (rectangle_x0 + padding, rectangle_y0 + padding), imdb_logo)
+        image.paste(
+            imdb_logo, (rectangle_x0 + padding, rectangle_y0 + padding), imdb_logo
+        )
 
         # Now draw the rating text
         draw.text(
-            (rectangle_x0 + padding + imdb_logo.width, rectangle_y0), imdb_text, font=font, fill="#F5C518"
+            (rectangle_x0 + padding + imdb_logo.width, rectangle_y0),
+            imdb_text,
+            font=font,
+            fill="#F5C518",
         )
 
     # Add MediaFusion watermark at the top right

@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import PTT
 import httpx
 from pymongo.errors import DuplicateKeyError
-from redis.asyncio import Redis
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode
@@ -17,12 +16,12 @@ from utils.parser import (
     is_contain_18_plus_keywords,
     calculate_max_similarity_ratio,
 )
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 ZILEAN_SEARCH_URL = f"{settings.zilean_url}/dmm/search"
 
 
 async def get_streams_from_zilean(
-    redis: Redis,
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
@@ -32,7 +31,7 @@ async def get_streams_from_zilean(
     episode: int = None,
 ) -> list[TorrentStreams]:
     cache_key = f"{catalog_type}_{video_id}_{season}_{episode}_zilean_dmm_streams"
-    cached_data = await redis.get(cache_key)
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_data:
         return streams
 
@@ -48,7 +47,7 @@ async def get_streams_from_zilean(
         )
 
     # Cache the data for 24 hours
-    await redis.set(
+    await REDIS_ASYNC_CLIENT.set(
         cache_key,
         "True",
         ex=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds()),

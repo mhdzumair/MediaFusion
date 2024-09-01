@@ -1,7 +1,7 @@
 import re
 
 from fastapi.templating import Jinja2Templates
-import redis.asyncio as redis
+import redis
 
 from db import schemas
 from db.config import settings
@@ -34,6 +34,10 @@ TRACKERS = get_json_data("resources/json/trackers.json")
 SECRET_KEY = settings.secret_key.encode("utf-8")
 
 
-REDIS_CLIENT = redis.Redis(
+REDIS_SYNC_CLIENT: redis.Redis = redis.Redis(
     connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
+)
+
+REDIS_ASYNC_CLIENT: redis.asyncio.Redis = redis.asyncio.Redis(
+    connection_pool=redis.asyncio.ConnectionPool.from_url(settings.redis_url)
 )
