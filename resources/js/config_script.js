@@ -9,7 +9,7 @@ const providerSignupLinks = {
     realdebrid: 'http://real-debrid.com/?id=9490816',
     debridlink: 'https://debrid-link.com/id/kHgZs',
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
-    torbox: 'https://torbox.app/login?ref=mediafusion',
+    torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
 };
