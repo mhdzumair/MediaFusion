@@ -9,6 +9,7 @@ import humanize
 from apscheduler.triggers.cron import CronTrigger
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Set
+from fastapi import BackgroundTasks
 from pymongo.errors import DuplicateKeyError
 
 from db import schemas
@@ -25,10 +26,8 @@ from db.models import (
     TVStreams,
 )
 from db.schemas import Stream, TorrentStreamsList
+from scrapers import run_scrapers
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
-from scrapers.prowlarr import get_streams_from_prowlarr
-from scrapers.torrentio import get_streams_from_torrentio
-from scrapers.zilean import get_streams_from_zilean
 from utils import crypto
 from utils.parser import (
     fetch_downloaded_info_hashes,
@@ -294,7 +293,11 @@ async def get_cached_torrent_streams(
 
 
 async def get_movie_streams(
-    user_data, secret_str: str, video_id: str, user_ip: str | None = None
+    user_data,
+    secret_str: str,
+    video_id: str,
+    user_ip: str | None,
+    background_tasks: BackgroundTasks,
 ) -> list[Stream]:
     if video_id.startswith("dl"):
         if not video_id.endswith(user_data.streaming_provider.service):
@@ -306,49 +309,28 @@ async def get_movie_streams(
                 url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
             )
         ]
+
     movie_metadata = await get_movie_data_by_id(video_id)
     if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
         return []
 
-    streams = await get_cached_torrent_streams(video_id)
+    cached_streams = await get_cached_torrent_streams(video_id)
 
     if video_id.startswith("tt"):
-        if (
-            settings.is_scrap_from_torrentio
-            and "torrentio_streams" in user_data.selected_catalogs
-        ):
-            streams = await get_streams_from_torrentio(
-                streams,
-                video_id,
-                catalog_type="movie",
-                title=movie_metadata.title,
-                aka_titles=movie_metadata.aka_titles,
-            )
-        if (
-            settings.prowlarr_api_key
-            and "prowlarr_streams" in user_data.selected_catalogs
-        ):
-            streams = await get_streams_from_prowlarr(
-                streams,
-                video_id,
-                "movie",
-                movie_metadata.title,
-                movie_metadata.aka_titles,
-                movie_metadata.year,
-            )
-        if (
-            settings.is_scrap_from_zilean
-            and "zilean_dmm_streams" in user_data.selected_catalogs
-        ):
-            streams = await get_streams_from_zilean(
-                streams,
-                video_id,
-                catalog_type="movie",
-                title=movie_metadata.title,
-                aka_titles=movie_metadata.aka_titles,
-            )
+        new_streams = await run_scrapers(
+            video_id,
+            "movie",
+            movie_metadata.title,
+            movie_metadata.aka_titles,
+            movie_metadata.year,
+            user_data,
+        )
+        all_streams = cached_streams + new_streams
+        background_tasks.add_task(store_new_torrent_streams, new_streams)
+    else:
+        all_streams = cached_streams
 
-    return await parse_stream_data(streams, user_data, secret_str, user_ip=user_ip)
+    return await parse_stream_data(all_streams, user_data, secret_str, user_ip=user_ip)
 
 
 async def get_series_streams(
@@ -357,7 +339,8 @@ async def get_series_streams(
     video_id: str,
     season: int,
     episode: int,
-    user_ip: str | None = None,
+    user_ip: str | None,
+    background_tasks: BackgroundTasks,
 ) -> list[Stream]:
     series_metadata = await get_series_data_by_id(video_id, False)
     if not (
@@ -365,54 +348,46 @@ async def get_series_streams(
     ):
         return []
 
-    streams = await get_cached_torrent_streams(video_id, season, episode)
+    cached_streams = await get_cached_torrent_streams(video_id, season, episode)
 
     if video_id.startswith("tt"):
-        if (
-            settings.is_scrap_from_torrentio
-            and "torrentio_streams" in user_data.selected_catalogs
-        ):
-            streams = await get_streams_from_torrentio(
-                streams,
-                video_id,
-                catalog_type="series",
-                title=series_metadata.title,
-                aka_titles=series_metadata.aka_titles,
-                season=season,
-                episode=episode,
-            )
-
-        if (
-            settings.prowlarr_api_key
-            and "prowlarr_streams" in user_data.selected_catalogs
-        ):
-            streams = await get_streams_from_prowlarr(
-                streams,
-                video_id,
-                "series",
-                series_metadata.title,
-                series_metadata.aka_titles,
-                series_metadata.year,
-                season,
-                episode,
-            )
-        if (
-            settings.is_scrap_from_zilean
-            and "zilean_dmm_streams" in user_data.selected_catalogs
-        ):
-            streams = await get_streams_from_zilean(
-                streams,
-                video_id,
-                catalog_type="series",
-                title=series_metadata.title,
-                aka_titles=series_metadata.aka_titles,
-                season=season,
-                episode=episode,
-            )
+        new_streams = await run_scrapers(
+            video_id,
+            "series",
+            series_metadata.title,
+            series_metadata.aka_titles,
+            series_metadata.year,
+            user_data,
+            season,
+            episode,
+        )
+        all_streams = cached_streams + new_streams
+        background_tasks.add_task(store_new_torrent_streams, new_streams)
+    else:
+        all_streams = cached_streams
 
     return await parse_stream_data(
-        streams, user_data, secret_str, season, episode, user_ip=user_ip, is_series=True
+        all_streams,
+        user_data,
+        secret_str,
+        season,
+        episode,
+        user_ip=user_ip,
+        is_series=True,
     )
+
+
+async def store_new_torrent_streams(streams: list[TorrentStreams]):
+    for stream in streams:
+        existing_stream = await TorrentStreams.get(stream.id)
+        if existing_stream:
+            # Update existing stream
+            existing_stream.seeders = stream.seeders
+            existing_stream.updated_at = datetime.now()
+            await existing_stream.save()
+        else:
+            # Create new stream
+            await stream.create()
 
 
 async def get_tv_streams(video_id: str, namespace: str, user_data) -> list[Stream]:
