@@ -137,7 +137,7 @@ def handle_provider_exception(error, usage):
         "Provider exception occurred for %s: %s",
         usage,
         error.message,
-        exc_info=True if error.video_file_name == "api_error.mp4" else False,
+        exc_info=error.video_file_name == "api_error.mp4",
     )
     return f"{settings.host_url}/static/exceptions/{error.video_file_name}"
 
