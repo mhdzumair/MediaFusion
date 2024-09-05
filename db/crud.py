@@ -10,7 +10,6 @@ from apscheduler.triggers.cron import CronTrigger
 from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import Set
 from pymongo.errors import DuplicateKeyError
-from redis.asyncio import Redis
 
 from db import schemas
 from db.config import settings
@@ -36,6 +35,7 @@ from utils.parser import (
     parse_stream_data,
     parse_tv_stream_data,
 )
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_parent_guide_nudity,
     get_filter_certification_values,
@@ -152,11 +152,9 @@ async def get_tv_meta_list(
     return tv_meta_list
 
 
-async def get_movie_data_by_id(
-    movie_id: str, redis: Redis
-) -> Optional[MediaFusionMovieMetaData]:
+async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaData]:
     # Check if the movie data is already in the cache
-    cached_data = await redis.get(f"movie_data:{movie_id}")
+    cached_data = await REDIS_ASYNC_CLIENT.get(f"movie_data:{movie_id}")
     if cached_data:
         return MediaFusionMovieMetaData.model_validate_json(cached_data)
 
@@ -194,7 +192,7 @@ async def get_movie_data_by_id(
 
     # Serialize the data and store it in the Redis cache for 1 day
     if movie_data:
-        await redis.set(
+        await REDIS_ASYNC_CLIENT.set(
             f"movie_data:{movie_id}",
             movie_data.model_dump_json(exclude_none=True),
             ex=86400,
@@ -251,7 +249,6 @@ async def get_tv_data_by_id(
 
 
 async def get_cached_torrent_streams(
-    redis: Redis,
     video_id: str,
     season: Optional[int] = None,
     episode: Optional[int] = None,
@@ -260,7 +257,7 @@ async def get_cached_torrent_streams(
     cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
 
     # Try to get the data from the Redis cache
-    cached_data = await redis.get(cache_key)
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
 
     if cached_data is not None:
         # If the data is in the cache, deserialize it and return it
@@ -289,7 +286,7 @@ async def get_cached_torrent_streams(
         torrent_streams = TorrentStreamsList(streams=streams)
 
         # Serialize the data and store it in the Redis cache for 30 minutes
-        await redis.set(
+        await REDIS_ASYNC_CLIENT.set(
             cache_key, torrent_streams.model_dump_json(exclude_none=True), ex=1800
         )
 
@@ -297,7 +294,7 @@ async def get_cached_torrent_streams(
 
 
 async def get_movie_streams(
-    user_data, secret_str: str, redis: Redis, video_id: str, user_ip: str | None = None
+    user_data, secret_str: str, video_id: str, user_ip: str | None = None
 ) -> list[Stream]:
     if video_id.startswith("dl"):
         if not video_id.endswith(user_data.streaming_provider.service):
@@ -309,11 +306,11 @@ async def get_movie_streams(
                 url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
             )
         ]
-    movie_metadata = await get_movie_data_by_id(video_id, redis)
+    movie_metadata = await get_movie_data_by_id(video_id)
     if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
         return []
 
-    streams = await get_cached_torrent_streams(redis, video_id)
+    streams = await get_cached_torrent_streams(video_id)
 
     if video_id.startswith("tt"):
         if (
@@ -321,7 +318,6 @@ async def get_movie_streams(
             and "torrentio_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_torrentio(
-                redis,
                 streams,
                 video_id,
                 catalog_type="movie",
@@ -333,7 +329,6 @@ async def get_movie_streams(
             and "prowlarr_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_prowlarr(
-                redis,
                 streams,
                 video_id,
                 "movie",
@@ -346,7 +341,6 @@ async def get_movie_streams(
             and "zilean_dmm_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_zilean(
-                redis,
                 streams,
                 video_id,
                 catalog_type="movie",
@@ -360,7 +354,6 @@ async def get_movie_streams(
 async def get_series_streams(
     user_data,
     secret_str: str,
-    redis: Redis,
     video_id: str,
     season: int,
     episode: int,
@@ -372,7 +365,7 @@ async def get_series_streams(
     ):
         return []
 
-    streams = await get_cached_torrent_streams(redis, video_id, season, episode)
+    streams = await get_cached_torrent_streams(video_id, season, episode)
 
     if video_id.startswith("tt"):
         if (
@@ -380,7 +373,6 @@ async def get_series_streams(
             and "torrentio_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_torrentio(
-                redis,
                 streams,
                 video_id,
                 catalog_type="series",
@@ -395,7 +387,6 @@ async def get_series_streams(
             and "prowlarr_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_prowlarr(
-                redis,
                 streams,
                 video_id,
                 "series",
@@ -410,7 +401,6 @@ async def get_series_streams(
             and "zilean_dmm_streams" in user_data.selected_catalogs
         ):
             streams = await get_streams_from_zilean(
-                redis,
                 streams,
                 video_id,
                 catalog_type="series",
@@ -425,9 +415,7 @@ async def get_series_streams(
     )
 
 
-async def get_tv_streams(
-    redis: Redis, video_id: str, namespace: str, user_data
-) -> list[Stream]:
+async def get_tv_streams(video_id: str, namespace: str, user_data) -> list[Stream]:
     tv_streams = await TVStreams.find(
         {
             "meta_id": video_id,
@@ -436,11 +424,11 @@ async def get_tv_streams(
         },
     ).to_list()
 
-    return await parse_tv_stream_data(tv_streams, redis, user_data)
+    return await parse_tv_stream_data(tv_streams, user_data)
 
 
-async def get_movie_meta(meta_id: str, redis: Redis, user_data: schemas.UserData):
-    movie_data = await get_movie_data_by_id(meta_id, redis)
+async def get_movie_meta(meta_id: str, user_data: schemas.UserData):
+    movie_data = await get_movie_data_by_id(meta_id)
 
     if not (movie_data and validate_parent_guide_nudity(movie_data, user_data)):
         return {}
@@ -940,9 +928,11 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
         stream_doc = TVStreams(
             url=stream.url,
             name=stream.name,
-            behaviorHints=stream.behaviorHints.model_dump(exclude_none=True)
-            if stream.behaviorHints
-            else None,
+            behaviorHints=(
+                stream.behaviorHints.model_dump(exclude_none=True)
+                if stream.behaviorHints
+                else None
+            ),
             ytId=stream.ytId,
             source=stream.source,
             country=stream.country,
@@ -982,13 +972,13 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
     return channel_id
 
 
-async def save_events_data(redis: Redis, metadata: dict) -> str:
+async def save_events_data(metadata: dict) -> str:
     # Generate a unique event key
     meta_id = "mf" + crypto.get_text_hash(metadata["title"])
     event_key = f"event:{meta_id}"
 
     # Attempt to fetch existing event data
-    existing_event_json = await redis.get(event_key)
+    existing_event_json = await REDIS_ASYNC_CLIENT.get(event_key)
 
     if existing_event_json:
         # Deserialize the existing event data
@@ -1036,37 +1026,39 @@ async def save_events_data(redis: Redis, metadata: dict) -> str:
 
     # Set or update the event data in Redis with an appropriate TTL
     cache_ttl = 86400 if events_data.event_start_timestamp == 0 else 3600
-    await redis.set(event_key, events_json, ex=cache_ttl)
+    await REDIS_ASYNC_CLIENT.set(event_key, events_json, ex=cache_ttl)
 
     logging.info(
         f"{'Updating' if existing_event_json else 'Inserting'} event data for {events_data.title} with event key {event_key}"
     )
 
     # Add the event key to a set of all events
-    await redis.zadd("events:all", {event_key: event_start_timestamp})
+    await REDIS_ASYNC_CLIENT.zadd("events:all", {event_key: event_start_timestamp})
 
     # Index the event by genre
     for genre in events_data.genres:
-        await redis.zadd(f"events:genre:{genre}", {event_key: event_start_timestamp})
+        await REDIS_ASYNC_CLIENT.zadd(
+            f"events:genre:{genre}", {event_key: event_start_timestamp}
+        )
 
     return event_key
 
 
-async def get_events_meta_list(
-    redis, genre=None, skip=0, limit=25
-) -> list[schemas.Meta]:
+async def get_events_meta_list(genre=None, skip=0, limit=25) -> list[schemas.Meta]:
     if genre:
         key_pattern = f"events:genre:{genre}"
     else:
         key_pattern = "events:all"
 
     # Fetch event keys sorted by timestamp in descending order
-    events_keys = await redis.zrevrange(key_pattern, skip, skip + limit - 1)
+    events_keys = await REDIS_ASYNC_CLIENT.zrevrange(
+        key_pattern, skip, skip + limit - 1
+    )
     events = []
 
     # Iterate over event keys, fetching and decoding JSON data
     for key in events_keys:
-        events_json = await redis.get(key)
+        events_json = await REDIS_ASYNC_CLIENT.get(key)
         if events_json:
             meta_data = schemas.Meta.model_validate_json(events_json)
             meta_data.poster = (
@@ -1075,14 +1067,14 @@ async def get_events_meta_list(
             events.append(meta_data)
         else:
             # Cleanup: Remove expired or missing event key from the index
-            await redis.zrem(key_pattern, key)
+            await REDIS_ASYNC_CLIENT.zrem(key_pattern, key)
 
     return events
 
 
-async def get_event_meta(redis, meta_id: str) -> dict:
+async def get_event_meta(meta_id: str) -> dict:
     events_key = f"event:{meta_id}"
-    events_json = await redis.get(events_key)
+    events_json = await REDIS_ASYNC_CLIENT.get(events_key)
     if not events_json:
         return {}
 
@@ -1095,26 +1087,26 @@ async def get_event_meta(redis, meta_id: str) -> dict:
     }
 
 
-async def get_event_data_by_id(redis, meta_id: str) -> MediaFusionEventsMetaData | None:
+async def get_event_data_by_id(meta_id: str) -> MediaFusionEventsMetaData | None:
     event_key = f"event:{meta_id}"
-    events_json = await redis.get(event_key)
+    events_json = await REDIS_ASYNC_CLIENT.get(event_key)
     if not events_json:
         return None
 
     return MediaFusionEventsMetaData.model_validate_json(events_json)
 
 
-async def get_event_streams(redis, meta_id: str, user_data) -> list[Stream]:
+async def get_event_streams(meta_id: str, user_data) -> list[Stream]:
     event_key = f"event:{meta_id}"
-    event_json = await redis.get(event_key)
+    event_json = await REDIS_ASYNC_CLIENT.get(event_key)
     if not event_json:
-        return await parse_tv_stream_data([], redis, user_data)
+        return await parse_tv_stream_data([], user_data)
 
     event_data = MediaFusionEventsMetaData.model_validate_json(event_json)
-    return await parse_tv_stream_data(event_data.streams, redis, user_data)
+    return await parse_tv_stream_data(event_data.streams, user_data)
 
 
-async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
+async def get_genres(catalog_type: str) -> list[str]:
     if catalog_type == "movie":
         meta_class = MediaFusionMovieMetaData
     elif catalog_type == "tv":
@@ -1122,22 +1114,22 @@ async def get_genres(catalog_type: str, redis: Redis) -> list[str]:
     else:
         meta_class = MediaFusionSeriesMetaData
 
-    genres = await redis.get(f"{catalog_type}_genres")
+    genres = await REDIS_ASYNC_CLIENT.get(f"{catalog_type}_genres")
     if genres:
         return json.loads(genres)
 
     genres = await meta_class.distinct("genres", {"genres": {"$ne": ""}})
 
     # cache the genres for 30 minutes
-    await redis.set(f"{catalog_type}_genres", json.dumps(genres), ex=1800)
+    await REDIS_ASYNC_CLIENT.set(f"{catalog_type}_genres", json.dumps(genres), ex=1800)
     return genres
 
 
-async def fetch_last_run(redis: Redis, spider_id: str, spider_name: str):
+async def fetch_last_run(spider_id: str, spider_name: str):
     task_key = f"background_tasks:run_spider:spider_name={spider_id}"
     state_key = f"scrapy_stats:{spider_id}"
-    last_run_timestamp = await redis.get(task_key)
-    last_run_state = await redis.get(state_key)
+    last_run_timestamp = await REDIS_ASYNC_CLIENT.get(task_key)
+    last_run_state = await REDIS_ASYNC_CLIENT.get(state_key)
 
     if settings.disable_all_scheduler:
         next_schedule_in = None

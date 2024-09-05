@@ -95,22 +95,30 @@ async def filter_and_sort_streams(
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream):
         return tuple(
-            const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
-            if key == "resolution"
-            else -min(
-                (
-                    user_data.language_sorting.index(lang)
-                    for lang in stream.filtered_languages
-                    if lang in language_filter_set
-                ),
-                default=len(user_data.language_sorting),
+            (
+                const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
+                if key == "resolution"
+                else (
+                    -min(
+                        (
+                            user_data.language_sorting.index(lang)
+                            for lang in stream.filtered_languages
+                            if lang in language_filter_set
+                        ),
+                        default=len(user_data.language_sorting),
+                    )
+                    if key == "language"
+                    else (
+                        const.QUALITY_RANKING.get(stream.filtered_quality, 0)
+                        if key == "quality"
+                        else (
+                            getattr(stream, key, 0)
+                            if key in stream.model_fields_set
+                            else 0
+                        )
+                    )
+                )
             )
-            if key == "language"
-            else const.QUALITY_RANKING.get(stream.filtered_quality, 0)
-            if key == "quality"
-            else getattr(stream, key, 0)
-            if key in stream.model_fields_set
-            else 0
             for key in user_data.torrent_sorting_priority
         )
 
@@ -184,7 +192,9 @@ async def parse_stream_data(
                 if episode_data
                 else stream_data.torrent_name
             )
-            torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(".", " ")
+            torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(
+                ".", " "
+            )
         else:
             torrent_name = None
 
@@ -291,7 +301,7 @@ def convert_size_to_bytes(size_str: str) -> int:
 
 
 async def parse_tv_stream_data(
-    tv_streams: list[TVStreams], redis: Redis, user_data: UserData
+    tv_streams: list[TVStreams], user_data: UserData
 ) -> list[Stream]:
     stream_list = []
     is_mediaflow_proxy_enabled = (
@@ -303,7 +313,7 @@ async def parse_tv_stream_data(
     for stream in tv_streams[::-1]:
         if settings.validate_m3u8_urls_liveness:
             is_working = await validate_m3u8_url_with_cache(
-                redis, stream.url, stream.behaviorHints or {}
+                stream.url, stream.behaviorHints or {}
             )
             if not is_working:
                 continue
@@ -372,7 +382,7 @@ async def fetch_downloaded_info_hashes(
     return []
 
 
-async def generate_manifest(manifest: dict, user_data: UserData, redis: Redis) -> dict:
+async def generate_manifest(manifest: dict, user_data: UserData) -> dict:
     from db.crud import get_genres
 
     resources = manifest.get("resources", [])
@@ -390,7 +400,7 @@ async def generate_manifest(manifest: dict, user_data: UserData, redis: Redis) -
                     if catalog_id == "live_tv":
                         # Add the available genres to the live TV catalog
                         catalog["extra"][1]["options"] = await get_genres(
-                            catalog_type="tv", redis=redis
+                            catalog_type="tv"
                         )
                     ordered_catalogs.append(catalog)
                     break

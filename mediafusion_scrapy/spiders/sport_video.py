@@ -1,9 +1,8 @@
 from urllib.parse import urlparse
 
-import redis
 import scrapy
 
-from db.config import settings
+from utils.runtime_const import REDIS_SYNC_CLIENT
 
 
 class SportVideoSpider(scrapy.Spider):
@@ -31,9 +30,7 @@ class SportVideoSpider(scrapy.Spider):
     def __init__(self, scrape_all: str = "True", *args, **kwargs):
         super(SportVideoSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
-        self.redis = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
+        self.redis = REDIS_SYNC_CLIENT
         self.scraped_urls_key = "sport_video_scraped_urls"
 
     def __del__(self):

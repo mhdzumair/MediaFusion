@@ -95,10 +95,10 @@ async def get_total_metadata(response: Response):
 
 
 @metrics_router.get("/scrapy-schedulers", tags=["metrics"])
-async def get_schedulers_last_run(request: Request, response: Response):
+async def get_schedulers_last_run(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
     tasks = [
-        fetch_last_run(request.app.state.redis, spider_id, spider_name)
+        fetch_last_run(spider_id, spider_name)
         for spider_id, spider_name in const.SCRAPY_SPIDERS.items()
     ]
     results = await asyncio.gather(*tasks)

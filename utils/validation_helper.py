@@ -6,10 +6,10 @@ from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import ClientError
-from redis.asyncio import Redis
 
 from db import schemas
 from utils import const
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 
 def is_valid_url(url: str) -> bool:
@@ -58,14 +58,14 @@ async def validate_m3u8_url(
             return False
 
 
-async def validate_m3u8_url_with_cache(redis: Redis, url: str, behaviour_hint: dict):
+async def validate_m3u8_url_with_cache(url: str, behaviour_hint: dict):
     cache_key = f"m3u8_url:{parse.urlparse(url).netloc}"
-    cache_data = await redis.get(cache_key)
+    cache_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cache_data:
         return json.loads(cache_data)
 
     is_valid = await validate_m3u8_url(url, behaviour_hint)
-    await redis.set(cache_key, json.dumps(is_valid), ex=180)
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(is_valid), ex=180)
     return is_valid
 
 
@@ -93,9 +93,11 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
             stream_validation_tasks.append(
                 validate_m3u8_url(
                     stream.url,
-                    stream.behaviorHints.model_dump(exclude_none=True)
-                    if stream.behaviorHints
-                    else {},
+                    (
+                        stream.behaviorHints.model_dump(exclude_none=True)
+                        if stream.behaviorHints
+                        else {}
+                    ),
                     validate_url=True,
                 )
             )

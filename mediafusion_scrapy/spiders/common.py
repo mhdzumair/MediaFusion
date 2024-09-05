@@ -1,10 +1,10 @@
 import logging
 import re
 
-import redis
 import scrapy
-from db.config import settings
+
 from scrapers.helpers import get_scraper_config
+from utils.runtime_const import REDIS_SYNC_CLIENT
 
 
 class CommonTamilSpider(scrapy.Spider):
@@ -43,9 +43,7 @@ class CommonTamilSpider(scrapy.Spider):
             return
         self.scrap_catalog_id = scrap_catalog_id
         logging.info(f"Scraping catalog ID: {self.scrap_catalog_id}")
-        self.redis = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
+        self.redis = REDIS_SYNC_CLIENT
         self.scraped_urls_key = f"{self.name}_scraped_urls"
         self.catalogs = get_scraper_config(self.name, "catalogs")
         self.homepage = get_scraper_config(self.name, "homepage")
@@ -194,9 +192,9 @@ class CommonTamilSpider(scrapy.Spider):
             torrent_item = item.copy()
             torrent_item.update(
                 {
-                    "type": "series"
-                    if torrent_item["video_type"] == "series"
-                    else "movie",
+                    "type": (
+                        "series" if torrent_item["video_type"] == "series" else "movie"
+                    ),
                     "poster": poster,
                     "created_at": created_at,
                     "language": torrent_item["language"].title(),

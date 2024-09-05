@@ -49,4 +49,4 @@ parsett = {git = "git+https://github.com/mhdzumair/PTT"}
 pysocks = "*"
 
 [requires]
-python_version = "3.11"
+python_version = "3.12"

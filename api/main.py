@@ -1,11 +1,11 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Literal
 
 import aiohttp
-import redis.asyncio as redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import (
     Depends,
@@ -34,15 +34,56 @@ from utils.lock import (
 )
 from utils.network import get_request_namespace, get_user_public_ip, get_user_data
 from utils.parser import generate_manifest
-from utils.runtime_const import DELETE_ALL_META, DELETE_ALL_META_ITEM, TEMPLATES
+from utils.runtime_const import (
+    DELETE_ALL_META,
+    DELETE_ALL_META_ITEM,
+    TEMPLATES,
+    REDIS_ASYNC_CLIENT,
+)
 
 logging.basicConfig(
     format="%(levelname)s::%(asctime)s - %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
     level=settings.logging_level,
 )
-app = FastAPI()
 
+
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+    # Startup logic
+    await database.init()
+    await torrent.init_best_trackers()
+
+    if not settings.disable_all_scheduler:
+        acquired, lock = await acquire_scheduler_lock()
+        if acquired:
+            try:
+                scheduler = AsyncIOScheduler()
+                setup_scheduler(scheduler)
+                scheduler.start()
+                fastapi_app.state.scheduler = scheduler
+                fastapi_app.state.scheduler_lock = lock
+                await asyncio.create_task(maintain_heartbeat())
+            except Exception as e:
+                await release_scheduler_lock(lock)
+                raise e
+
+    yield
+
+    # Shutdown logic
+    if hasattr(fastapi_app.state, "scheduler"):
+        fastapi_app.state.scheduler.shutdown(wait=False)
+
+    if (
+        hasattr(fastapi_app.state, "scheduler_lock")
+        and fastapi_app.state.scheduler_lock
+    ):
+        await release_scheduler_lock(fastapi_app.state.scheduler_lock)
+
+    await REDIS_ASYNC_CLIENT.aclose()
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,55 +103,12 @@ async def add_cors_header(request: Request, call_next):
     return response
 
 
-app.state.redis = redis.Redis(
-    connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-)
-app.add_middleware(middleware.RateLimitMiddleware, redis_client=app.state.redis)
+app.add_middleware(middleware.RateLimitMiddleware)
 app.add_middleware(middleware.TimingMiddleware)
 app.add_middleware(middleware.SecureLoggingMiddleware)
 app.add_middleware(middleware.UserDataMiddleware)
 
 app.mount("/static", StaticFiles(directory="resources"), name="static")
-
-
-@app.on_event("startup")
-async def init_server():
-    await database.init()
-    await torrent.init_best_trackers()
-
-
-@app.on_event("startup")
-async def start_scheduler():
-    if settings.disable_all_scheduler:
-        logging.info("All Schedulers are disabled. Not setting up any jobs.")
-        return
-
-    acquired, lock = await acquire_scheduler_lock(app.state.redis)
-    if acquired:
-        try:
-            scheduler = AsyncIOScheduler()
-            setup_scheduler(scheduler)
-            scheduler.start()
-            app.state.scheduler = scheduler
-            app.state.scheduler_lock = lock
-            await asyncio.create_task(maintain_heartbeat(app.state.redis))
-        except Exception as e:
-            await release_scheduler_lock(app.state.redis, lock)
-            raise e
-
-
-@app.on_event("shutdown")
-async def stop_scheduler():
-    if hasattr(app.state, "scheduler"):
-        app.state.scheduler.shutdown(wait=False)
-
-    if hasattr(app.state, "scheduler_lock") and app.state.scheduler_lock:
-        await release_scheduler_lock(app.state.redis, app.state.scheduler_lock)
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await app.state.redis.aclose()
 
 
 @app.get("/", tags=["home"])
@@ -130,7 +128,7 @@ async def get_home(request: Request):
 
 @app.get("/health", tags=["health"])
 @wrappers.exclude_rate_limit
-async def health(request: Request):
+async def health():
     return {"status": "healthy"}
 
 
@@ -156,9 +154,11 @@ async def configure(
     # Prepare catalogs based on user preferences or default order
     sorted_catalogs = sorted(
         const.CATALOG_DATA.items(),
-        key=lambda x: user_data.selected_catalogs.index(x[0])
-        if x[0] in user_data.selected_catalogs
-        else len(user_data.selected_catalogs),
+        key=lambda x: (
+            user_data.selected_catalogs.index(x[0])
+            if x[0] in user_data.selected_catalogs
+            else len(user_data.selected_catalogs)
+        ),
     )
 
     sorted_sorting_options = user_data.torrent_sorting_priority + [
@@ -197,13 +197,12 @@ async def configure(
 @wrappers.auth_required
 async def get_manifest(
     response: Response,
-    request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
     manifest = get_json_data("resources/manifest.json")
-    return await generate_manifest(manifest, user_data, request.app.state.redis)
+    return await generate_manifest(manifest, user_data)
 
 
 @app.get(
@@ -282,7 +281,7 @@ async def get_catalog(
 
     # Try retrieving the cached data
     if cache_key:
-        if cached_data := await request.app.state.redis.get(cache_key):
+        if cached_data := await REDIS_ASYNC_CLIENT.get(cache_key):
             return json.loads(cached_data)
 
     metas = schemas.Metas()
@@ -293,9 +292,7 @@ async def get_catalog(
             )
         )
     elif catalog_type == "events":
-        metas.metas.extend(
-            await crud.get_events_meta_list(request.app.state.redis, genre, skip)
-        )
+        metas.metas.extend(await crud.get_events_meta_list(genre, skip))
     else:
         user_ip = await get_user_public_ip(request, user_data)
         metas.metas.extend(
@@ -324,7 +321,7 @@ async def get_catalog(
             metas.metas.insert(0, delete_all_meta)
 
     if cache_key:
-        await request.app.state.redis.set(
+        await REDIS_ASYNC_CLIENT.set(
             cache_key,
             metas.model_dump_json(exclude_none=True, by_alias=True),
             ex=settings.meta_cache_ttl,
@@ -387,7 +384,6 @@ async def search_meta(
 async def get_meta(
     catalog_type: Literal["movie", "series", "tv", "events"],
     meta_id: str,
-    request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
     cache_key = f"{catalog_type}_{meta_id}_meta"
@@ -398,7 +394,7 @@ async def get_meta(
         )
 
     # Try retrieving the cached data
-    cached_data = await request.app.state.redis.get(cache_key)
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_data:
         meta_data = json.loads(cached_data)
         if not meta_data:
@@ -411,19 +407,17 @@ async def get_meta(
             delete_all_meta_item["meta"]["_id"] = meta_id
             data = delete_all_meta_item
         else:
-            data = await crud.get_movie_meta(
-                meta_id, request.app.state.redis, user_data
-            )
+            data = await crud.get_movie_meta(meta_id, user_data)
     elif catalog_type == "series":
         data = await crud.get_series_meta(meta_id, user_data)
     elif catalog_type == "events":
-        data = await crud.get_event_meta(request.app.state.redis, meta_id)
+        data = await crud.get_event_meta(meta_id)
     else:
         data = await crud.get_tv_meta(meta_id)
 
     # Cache the data with a TTL of 30 minutes
     # If the data is not found, cached the empty data to avoid db query.
-    await request.app.state.redis.set(cache_key, json.dumps(data, default=str), ex=1800)
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data, default=str), ex=1800)
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
@@ -507,14 +501,13 @@ async def get_streams(
                 raise HTTPException(status_code=404, detail="Meta ID not found.")
         else:
             fetched_streams = await crud.get_movie_streams(
-                user_data, secret_str, request.app.state.redis, video_id, user_ip
+                user_data, secret_str, video_id, user_ip
             )
             fetched_streams.extend(user_feeds)
     elif catalog_type == "series":
         fetched_streams = await crud.get_series_streams(
             user_data,
             secret_str,
-            request.app.state.redis,
             video_id,
             season,
             episode,
@@ -522,14 +515,12 @@ async def get_streams(
         )
         fetched_streams.extend(user_feeds)
     elif catalog_type == "events":
-        fetched_streams = await crud.get_event_streams(
-            request.app.state.redis, video_id, user_data
-        )
+        fetched_streams = await crud.get_event_streams(video_id, user_data)
         response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
         fetched_streams = await crud.get_tv_streams(
-            request.app.state.redis, video_id, get_request_namespace(request), user_data
+            video_id, get_request_namespace(request), user_data
         )
 
     return {"streams": fetched_streams}
@@ -547,27 +538,22 @@ async def encrypt_user_data(user_data: schemas.UserData):
 async def get_poster(
     catalog_type: Literal["movie", "series", "tv", "events"],
     mediafusion_id: str,
-    request: Request,
 ):
     cache_key = f"{catalog_type}_{mediafusion_id}.jpg"
 
     # Check if the poster is cached in Redis
-    cached_image = await request.app.state.redis.get(cache_key)
+    cached_image = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_image:
         image_byte_io = BytesIO(cached_image)
         return StreamingResponse(image_byte_io, media_type="image/jpeg")
 
     # Query the MediaFusion data
     if catalog_type == "movie":
-        mediafusion_data = await crud.get_movie_data_by_id(
-            mediafusion_id, request.app.state.redis
-        )
+        mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
     elif catalog_type == "series":
         mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
     elif catalog_type == "events":
-        mediafusion_data = await crud.get_event_data_by_id(
-            request.app.state.redis, mediafusion_id
-        )
+        mediafusion_data = await crud.get_event_data_by_id(mediafusion_id)
     else:
         mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
 
@@ -578,13 +564,11 @@ async def get_poster(
         raise HTTPException(status_code=404, detail="Poster not found.")
 
     try:
-        image_byte_io = await poster.create_poster(
-            mediafusion_data, request.app.state.redis
-        )
+        image_byte_io = await poster.create_poster(mediafusion_data)
         # Convert BytesIO to bytes for Redis
         image_bytes = image_byte_io.getvalue()
         # Save the generated image to Redis. expire in 7 days
-        await request.app.state.redis.set(cache_key, image_bytes, ex=604800)
+        await REDIS_ASYNC_CLIENT.set(cache_key, image_bytes, ex=604800)
         image_byte_io.seek(0)
 
         return StreamingResponse(image_byte_io, media_type="image/jpeg")

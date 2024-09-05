@@ -7,7 +7,6 @@ import PTT
 import dramatiq
 import httpx
 from pymongo.errors import DuplicateKeyError
-from redis.asyncio import Redis
 from torf import Magnet, MagnetError
 
 from db.config import settings
@@ -20,12 +19,12 @@ from scrapers.helpers import (
 from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords, calculate_max_similarity_ratio
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 from utils.torrent import extract_torrent_metadata
 from utils.wrappers import minimum_run_interval
 
 
 async def get_streams_from_prowlarr(
-    redis: Redis,
     streams: list[TorrentStreams],
     video_id: str,
     catalog_type: str,
@@ -36,7 +35,7 @@ async def get_streams_from_prowlarr(
     episode: int = None,
 ):
     cache_key = f"{catalog_type}_{video_id}_{year}_{season}_{episode}_prowlarr_streams"
-    cached_data = await redis.get(cache_key)
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_data:
         return streams
 
@@ -101,7 +100,7 @@ async def get_streams_from_prowlarr(
                 season=season,
                 episode=episode,
             )
-    await redis.set(
+    await REDIS_ASYNC_CLIENT.set(
         cache_key,
         "True",
         ex=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds()),

@@ -2,14 +2,13 @@ import random
 import re
 from datetime import datetime
 
-import redis.asyncio as redis
 import scrapy
 from scrapy_playwright.page import PageMethod
 
 from db.config import settings
 from db.models import TorrentStreams
 from utils.parser import convert_size_to_bytes
-from utils.runtime_const import SPORTS_ARTIFACTS
+from utils.runtime_const import SPORTS_ARTIFACTS, REDIS_ASYNC_CLIENT
 from utils.torrent import parse_magnet
 
 
@@ -27,9 +26,7 @@ class TgxSpider(scrapy.Spider):
     def __init__(self, scrape_all: str = "True", *args, **kwargs):
         super(TgxSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
-        self.redis = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
+        self.redis = REDIS_ASYNC_CLIENT
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.redis.aclose()

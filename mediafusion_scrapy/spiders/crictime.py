@@ -1,11 +1,9 @@
 import random
 import re
 
-import redis
 import scrapy
 
-from db.config import settings
-from utils.runtime_const import SPORTS_ARTIFACTS
+from utils.runtime_const import SPORTS_ARTIFACTS, REDIS_SYNC_CLIENT
 
 
 class CricTimeSpider(scrapy.Spider):
@@ -22,9 +20,7 @@ class CricTimeSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super(CricTimeSpider, self).__init__(*args, **kwargs)
-        self.redis = redis.Redis(
-            connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-        )
+        self.redis = REDIS_SYNC_CLIENT
 
     def __del__(self):
         self.redis.close()

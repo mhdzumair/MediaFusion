@@ -8,12 +8,10 @@ from threading import Lock
 from typing import Callable, Optional
 
 import dramatiq
-import redis
 from apscheduler.triggers.cron import CronTrigger
 from dramatiq.middleware import Retries as OriginalRetries, Shutdown, SkipMessage
 from fastapi.requests import Request
 from fastapi.responses import Response
-from redis.asyncio import Redis
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.routing import Match
 
@@ -21,6 +19,7 @@ from db.config import settings
 from db.schemas import UserData
 from utils import crypto, const
 from utils.network import get_client_ip
+from utils.runtime_const import REDIS_ASYNC_CLIENT, REDIS_SYNC_CLIENT
 
 
 async def find_route_handler(app, request: Request) -> Optional[Callable]:
@@ -81,9 +80,8 @@ class UserDataMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, redis_client: Redis):
+    def __init__(self, app):
         super().__init__(app)
-        self.redis = redis_client
 
     async def dispatch(self, request: Request, call_next: Callable):
         # Skip rate limiting for exempt paths
@@ -133,12 +131,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             raw_identifier += f"-{provider_profile}"
         return hashlib.md5(raw_identifier.encode()).hexdigest()
 
-    async def check_rate_limit_with_redis(
-        self, key: str, limit: int, window: int
-    ) -> bool:
+    @staticmethod
+    async def check_rate_limit_with_redis(key: str, limit: int, window: int) -> bool:
         try:
             results = await (
-                self.redis.pipeline(transaction=True)
+                REDIS_ASYNC_CLIENT.pipeline(transaction=True)
                 .incr(key)
                 .expire(key, window)
                 .execute()
@@ -190,8 +187,6 @@ class Retries(OriginalRetries):
 
 
 class TaskManager(dramatiq.Middleware):
-    def __init__(self):
-        self.redis: redis.Redis = redis.Redis.from_url(settings.redis_url)
 
     @staticmethod
     def calculate_interval_from_crontab(crontab_expression: str) -> timedelta:
@@ -247,7 +242,7 @@ class TaskManager(dramatiq.Middleware):
         # Subtract 10 seconds to account for processing time
         min_interval = min_interval - timedelta(seconds=10)
 
-        last_run = self.redis.get(task_key)
+        last_run = REDIS_SYNC_CLIENT.get(task_key)
         if last_run is not None:
             last_run = datetime.fromtimestamp(float(last_run))
             difference = datetime.now() - last_run
@@ -259,7 +254,7 @@ class TaskManager(dramatiq.Middleware):
 
         # Set the cache expiry for the task
         ex_time = int(min_interval.total_seconds()) if set_cache_expiry else None
-        self.redis.set(
+        REDIS_SYNC_CLIENT.set(
             task_key,
             datetime.now().timestamp(),
             ex=ex_time,
@@ -276,7 +271,7 @@ class TaskManager(dramatiq.Middleware):
         task_name, min_interval, set_cache_expiry, task_key = task_data
 
         # Update the cache with the latest run time
-        self.redis.set(
+        REDIS_SYNC_CLIENT.set(
             task_key,
             datetime.now().timestamp(),
             ex=int(min_interval.total_seconds()) if set_cache_expiry else None,
