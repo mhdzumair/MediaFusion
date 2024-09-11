@@ -393,6 +393,59 @@ function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
     });
 }
 
+async function initiateKodiSetup() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const kodiCode = urlParams.get('kodi_code');
+
+    if (kodiCode) {
+        await setupKodiAddon(kodiCode);
+    } else {
+        // Show modal to input Kodi code
+        const kodiCodeModal = new bootstrap.Modal(document.getElementById('kodiCodeModal'));
+        kodiCodeModal.show();
+    }
+}
+
+async function submitKodiCodeAndSetup() {
+    const kodiCode = document.getElementById('kodiCodeInput').value;
+    if (kodiCode && kodiCode.length === 6) {
+        const kodiCodeModal = bootstrap.Modal.getInstance(document.getElementById('kodiCodeModal'));
+        kodiCodeModal.hide();
+        await setupKodiAddon(kodiCode);
+    } else {
+        showNotification('Please enter a valid 6-digit code.', 'error');
+    }
+}
+
+async function setupKodiAddon(kodiCode) {
+    const installationUrl = await getInstallationUrl();
+
+    if (installationUrl) {
+        try {
+            const response = await fetch('/kodi/associate_manifest', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    code: kodiCode,
+                    manifest_url: installationUrl
+                }),
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                showNotification('Kodi addon setup successful!', 'success');
+            } else {
+                showNotification(`An error occurred while setting up the Kodi addon. ${data.detail}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error setting up Kodi addon:', error);
+            showNotification('An error occurred while setting up the Kodi addon.', 'error');
+        }
+    }
+}
+
 // ---- Event Listeners ----
 
 document.getElementById('provider_token').addEventListener('input', function () {
@@ -434,16 +487,16 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
 document.getElementById('shareBtn').addEventListener('click', async function (event) {
     event.preventDefault();
-    const installationUrl = await getInstallationUrl();
-    if (installationUrl) {
+    const manifestUrl = await getInstallationUrl();
+    if (manifestUrl) {
         try {
             await navigator.share({
-                title: 'MediaFusion Addon Installation',
-                url: installationUrl,
+                title: 'MediaFusion Addon Manifest',
+                url: manifestUrl,
             });
-            showNotification('Installation URL shared successfully. Do not share this URL with unknown persons.', 'success');
+            showNotification('Manifest URL shared successfully. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
-            displayFallbackUrl(installationUrl);
+            displayFallbackUrl(manifestUrl);
             showNotification('Unable to use Share API. URL is ready to be copied manually.', 'info');
         }
     }
@@ -451,15 +504,13 @@ document.getElementById('shareBtn').addEventListener('click', async function (ev
 
 document.getElementById('copyBtn').addEventListener('click', async function (event) {
     event.preventDefault();
-
-    // Get the installation URL asynchronously
-    const installationUrl = await getInstallationUrl();
-    if (installationUrl) {
+    const manifestUrl = await getInstallationUrl();
+    if (manifestUrl) {
         try {
-            await navigator.clipboard.writeText(installationUrl);
-            showNotification('Installation URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
+            await navigator.clipboard.writeText(manifestUrl);
+            showNotification('Manifest URL copied to clipboard. Do not share this URL with unknown persons.', 'success');
         } catch (error) {
-            displayFallbackUrl(installationUrl);
+            displayFallbackUrl(manifestUrl);
             showNotification('Unable to access clipboard. URL is ready to be copied manually.', 'info');
         }
     }
@@ -531,6 +582,18 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+
+document.addEventListener('DOMContentLoaded', function() {
+    const kodiSetupBtn = document.getElementById('kodiSetupBtn');
+    if (kodiSetupBtn) {
+        kodiSetupBtn.addEventListener('click', initiateKodiSetup);
+    }
+
+    const submitKodiCode = document.getElementById('submitKodiCode');
+    if (submitKodiCode) {
+        submitKodiCode.addEventListener('click', submitKodiCodeAndSetup);
+    }
+});
 
 document.addEventListener('DOMContentLoaded', function () {
     // Show or hide the language sort section based on the sorting options

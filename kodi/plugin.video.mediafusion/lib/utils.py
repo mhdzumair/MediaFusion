@@ -11,7 +11,6 @@ import xbmcvfs
 ADDON_HANDLE = int(sys.argv[1])
 ADDON = xbmcaddon.Addon()
 ADDON_PATH = sys.argv[0]
-MANIFEST_URL = ADDON.getSetting("manifest_url")
 ADDON_ID = ADDON.getAddonInfo("id")
 
 # Initialize requests_cache with CachedSession
@@ -22,27 +21,18 @@ session = requests_cache.CachedSession(
     cache_name=cache_file, backend="sqlite", cache_control=True
 )
 
+BASE_URL = ADDON.getSetting("base_url")
+SECRET_STR = ADDON.getSetting("secret_string")
 
-if not MANIFEST_URL:
+if not SECRET_STR:
     xbmcgui.Dialog().notification(
         "MediaFusion",
-        "Manifest URL is not set. Please configure the addon",
+        "MediaFusion is not configured. Please configure the addon",
         xbmcgui.NOTIFICATION_INFO,
     )
-    xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
-    sys.exit(0)
-
-parsed_url = parse.urlparse(MANIFEST_URL)
-BASE_URL = f"{parsed_url.scheme}://{parsed_url.netloc}"
-try:
-    SECRET_STR = parsed_url.path.split("/")[1]
-except IndexError:
-    xbmcgui.Dialog().notification(
-        "MediaFusion",
-        "Invalid manifest URL. Please configure the addon",
-        xbmcgui.NOTIFICATION_ERROR,
+    xbmc.executebuiltin(
+        f"RunScript(special://home/addons/{ADDON_ID}/lib/custom_settings_window.py)"
     )
-    xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
     sys.exit(0)
 
 

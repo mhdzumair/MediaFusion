@@ -556,16 +556,39 @@
 
                 <!-- Submit and Share Buttons -->
                 <div class="button-container">
-                    <button type="submit" class="btn btn-primary btn-block custom-btn">Install Addon</button>
-                    <!-- Conditional display of buttons based on Web Share API support -->
-                    <button type="button" id="shareBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Share Installation URL</button>
-                    <button type="button" id="copyBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Copy Installation URL</button>
+                    <button type="submit" class="btn btn-primary btn-block custom-btn">Install in Stremio</button>
+                    <button type="button" id="shareBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Share Manifest URL</button>
+                    <button type="button" id="copyBtn" style="display: none;" class="btn btn-primary btn-block custom-btn">Copy Manifest URL</button>
+                    <button type="button" id="kodiSetupBtn" class="btn btn-primary btn-block custom-btn">Setup Kodi Addon</button>
+                </div>
+
+                <!-- Kodi Code Input Modal -->
+                <div class="modal fade" id="kodiCodeModal" tabindex="-1" aria-labelledby="kodiCodeModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="kodiCodeModalLabel">Enter Kodi Setup Code</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <input type="text" id="kodiCodeInput" class="form-control" placeholder="Enter 6-digit code" maxlength="6">
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                <button type="button" class="btn btn-primary" id="submitKodiCode">Submit</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
             </form>
         </div>
     </div>
 </div>
+
+<script>
+    const kodiCode = "{{ kodi_code or '' }}";
+</script>
 
 <!-- JS for Bootstrap and form validation -->
 <script src="/static/js/jquery-3.6.0.min.js"></script>
