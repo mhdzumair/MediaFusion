@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window>
+    <defaultcontrol always="true">305</defaultcontrol>
+    <coordinates>
+        <system>1</system>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <!-- Background image -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>100%</width>
+            <height>100%</height>
+            <texture>background.jpg</texture>
+        </control>
+
+        <!-- Semi-transparent overlay for content area -->
+        <control type="image">
+            <left>5%</left>
+            <top>12%</top>
+            <width>90%</width>
+            <height>76%</height>
+            <texture colordiffuse="C0000000">white.png</texture>
+        </control>
+
+        <!-- Title -->
+        <control type="label" id="300">
+            <left>0</left>
+            <top>4%</top>
+            <width>100%</width>
+            <height>50</height>
+            <font>font60</font>
+            <label>MediaFusion Settings</label>
+            <textcolor>FF00FFFF</textcolor>
+            <align>center</align>
+        </control>
+
+        <!-- Back Button -->
+        <control type="button" id="307">
+            <left>2%</left>
+            <top>2%</top>
+            <width>50</width>
+            <height>50</height>
+            <focusedcolor>FFFFFF00</focusedcolor>
+            <texturefocus colordiffuse="FF00FFFF">triangle-left.png</texturefocus>
+            <texturenofocus colordiffuse="FF8080FF">triangle-left.png</texturenofocus>
+        </control>
+
+        <!-- Left Side Group -->
+        <control type="group">
+            <left>7%</left>
+            <top>15%</top>
+            <width>40%</width>
+            <height>70%</height>
+
+            <!-- Base URL Label -->
+            <control type="label" id="310">
+                <top>0</top>
+                <width>100%</width>
+                <height>30</height>
+                <font>font16</font>
+                <label>MediaFusion Base URL:</label>
+                <textcolor>FFFFFFFF</textcolor>
+            </control>
+
+            <!-- Base URL Value -->
+            <control type="button" id="301">
+                <top>40</top>
+                <width>100%</width>
+                <height>40</height>
+                <font>font16</font>
+                <textcolor>FF00FF00</textcolor>
+                <focusedcolor>FFFFFF00</focusedcolor>
+                <texturefocus colordiffuse="80FFFFFF">white.png</texturefocus>
+                <texturenofocus colordiffuse="40FFFFFF">white.png</texturenofocus>
+            </control>
+
+            <!-- Secret String Label -->
+            <control type="label" id="311">
+                <top>100</top>
+                <width>100%</width>
+                <height>30</height>
+                <font>font16</font>
+                <label>Secret String:</label>
+                <textcolor>FFFFFFFF</textcolor>
+            </control>
+
+            <!-- Secret String Value -->
+            <control type="button" id="302">
+                <top>140</top>
+                <width>100%</width>
+                <height>40</height>
+                <font>font16</font>
+                <textcolor>FF00FF00</textcolor>
+                <focusedcolor>FFFFFF00</focusedcolor>
+                <texturefocus colordiffuse="80FFFFFF">white.png</texturefocus>
+                <texturenofocus colordiffuse="40FFFFFF">white.png</texturenofocus>
+            </control>
+
+            <!-- Configure Secret button -->
+            <control type="button" id="305">
+                <top>200</top>
+                <width>80%</width>
+                <height>50</height>
+                <font>font16</font>
+                <label>Configure Secret</label>
+                <textcolor>FF000000</textcolor>
+                <focusedcolor>FFFFFFFF</focusedcolor>
+                <texturefocus colordiffuse="FF00FFFF">white.png</texturefocus>
+                <texturenofocus colordiffuse="FF8080FF">white.png</texturenofocus>
+                <align>center</align>
+                <aligny>center</aligny>
+            </control>
+
+            <!-- Instructions -->
+            <control type="textbox" id="304">
+                <top>280</top>
+                <width>100%</width>
+                <height>50%</height>
+                <font>font14</font>
+                <textcolor>FFFFFFFF</textcolor>
+                <align>left</align>
+            </control>
+        </control>
+
+        <!-- Right Side Group -->
+        <control type="group">
+            <left>55%</left>
+            <top>15%</top>
+            <width>38%</width>
+            <height>70%</height>
+
+            <!-- QR Code -->
+            <control type="image" id="303">
+                <top>0</top>
+                <width>100%</width>
+                <height>50%</height>
+                <aspectratio>keep</aspectratio>
+            </control>
+
+            <!-- Setup Code -->
+            <control type="label" id="308">
+                <top>55%</top>
+                <width>100%</width>
+                <height>30</height>
+                <font>font16</font>
+                <textcolor>FF00FF00</textcolor>
+                <align>center</align>
+            </control>
+
+            <!-- Time Remaining -->
+            <control type="label" id="309">
+                <top>65%</top>
+                <width>100%</width>
+                <height>30</height>
+                <font>font16</font>
+                <textcolor>FF00FF00</textcolor>
+                <align>center</align>
+            </control>
+
+            <!-- Open Configuration Page Button -->
+            <control type="button" id="306">
+                <top>75%</top>
+                <width>80%</width>
+                <height>40</height>
+                <font>font16</font>
+                <label>Open Configuration Page</label>
+                <textcolor>FF000000</textcolor>
+                <focusedcolor>FFFFFFFF</focusedcolor>
+                <texturefocus colordiffuse="FF00FFFF">white.png</texturefocus>
+                <texturenofocus colordiffuse="FF8080FF">white.png</texturenofocus>
+                <align>center</align>
+                <aligny>center</aligny>
+            </control>
+        </control>
+    </controls>
+</window>

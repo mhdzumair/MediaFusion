@@ -22,6 +22,7 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import crud, database, schemas
 from db.config import settings
+from kodi.routes import kodi_router
 from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
 from streaming_providers import mapper
@@ -143,6 +144,7 @@ async def configure(
     response: Response,
     request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
+    kodi_code: str = None,
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
@@ -188,6 +190,7 @@ async def configure(
             "quality_groups": const.QUALITY_GROUPS,
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
+            "kodi_code": kodi_code,
         },
     )
 
@@ -599,3 +602,5 @@ app.include_router(
 app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])
 
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
+
+app.include_router(kodi_router, prefix="/kodi", tags=["kodi"])

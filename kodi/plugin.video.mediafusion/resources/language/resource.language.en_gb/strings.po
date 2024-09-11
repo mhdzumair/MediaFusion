@@ -21,5 +21,29 @@ msgid "MediaFusion Settings"
 msgstr ""
 
 msgctxt "#30001"
-msgid "MediaFusion URL"
+msgid "MediaFusion Base URL"
+msgstr ""
+
+msgctxt "#30002"
+msgid "Secret String"
+msgstr ""
+
+msgctxt "#30003"
+msgid "Configure/Reconfigure Secret String"
+msgstr ""
+
+msgctxt "#30004"
+msgid "Scan QR Code or Enter Code"
+msgstr ""
+
+msgctxt "#30005"
+msgid "Time Remaining"
+msgstr ""
+
+msgctxt "#30006"
+msgid "Setup Completed Successfully"
+msgstr ""
+
+msgctxt "#30007"
+msgid "Setup Failed. Please try again."
 msgstr ""

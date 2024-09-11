@@ -1,5 +1,7 @@
 <settings>
     <category label="30000">
-        <setting label="30001" id="manifest_url" type="text" default="" />
+        <setting label="30001" id="base_url" type="text" default="http://mediafusion.local:8000/" />
+        <setting label="30002" id="secret_string" type="text" default="" />
+        <setting label="30003" id="configure_secret" type="action" action="RunScript(special://home/addons/plugin.video.mediafusion/lib/custom_settings_window.py)" />
     </category>
 </settings>
