@@ -23,7 +23,7 @@ kodi_router = APIRouter()
 async def generate_setup_code(secret_str: Annotated[str, Body()]):
     code = secrets.token_hex(3)  # 6-digit hex code
     configure_url = f"{settings.host_url}{'/' + secret_str if secret_str else ''}/configure?kodi_code={code}"
-    qr_code_url = f"http://mediafusion.local:8000/kodi/qr_code/{code}"
+    qr_code_url = f"{settings.host_url}/kodi/qr_code{'/' + secret_str if secret_str else ''}/{code}"
 
     # Store code in Redis
     await REDIS_ASYNC_CLIENT.set(
@@ -42,11 +42,12 @@ async def generate_setup_code(secret_str: Annotated[str, Body()]):
 
 
 @kodi_router.get("/qr_code/{code}")
-async def get_qr_code(code: str):
+@kodi_router.get("/qr_code/{secret_str}/{code}")
+async def get_qr_code(code: str, secret_str: str = None):
     if not await REDIS_ASYNC_CLIENT.exists(f"setup_code:{code}"):
         raise HTTPException(status_code=404, detail="Invalid setup code")
 
-    configure_url = f"{settings.host_url}/configure/{code}"
+    configure_url = f"{settings.host_url}{'/' + secret_str if secret_str else ''}/configure?kodi_code={code}"
 
     qr = qrcode.QRCode(
         version=1,
