@@ -117,6 +117,14 @@ class MediaFlowConfig(BaseModel):
         populate_by_name = True
 
 
+class RPDBConfig(BaseModel):
+    api_key: str = Field(alias="ak")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
 class StreamingProvider(BaseModel):
     service: Literal[
         "realdebrid",
@@ -186,6 +194,7 @@ class UserData(BaseModel):
         default=list(const.QUALITY_GROUPS.keys()), alias="qf"
     )
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
+    rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):

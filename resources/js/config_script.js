@@ -317,6 +317,14 @@ function getUserData() {
         validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
 
+    let rpdbConfig = null;
+    if (document.getElementById('enable_rpdb').checked) {
+        rpdbConfig = {
+            api_key: document.getElementById('rpdb_api_key').value,
+        };
+        validateInput('rpdb_api_key', rpdbConfig.api_key.trim() !== '');
+    }
+
     // Collect and validate other user data
     const maxSizeSlider = document.getElementById('max_size_slider');
     const maxSizeValue = maxSizeSlider.value;
@@ -367,6 +375,7 @@ function getUserData() {
         quality_filter: selectedQualityFilters,
         api_password: apiPassword,
         mediaflow_config: mediaflowConfig,
+        rpdb_config: rpdbConfig,
     };
 }
 
@@ -456,6 +465,11 @@ document.getElementById('enable_mediaflow').addEventListener('change', function 
     setElementDisplay('mediaflow_config', this.checked ? 'block' : 'none');
 });
 
+document.getElementById('enable_rpdb').addEventListener('change', function () {
+    setElementDisplay('rpdb_config', this.checked ? 'block' : 'none');
+});
+
+
 // Event listener for the slider
 document.getElementById('max_size_slider').addEventListener('input', updateSizeOutput);
 
@@ -544,6 +558,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setupPasswordToggle('qbittorrent_password', 'toggleQbittorrentPassword', 'toggleQbittorrentPasswordIcon');
     setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
     setupPasswordToggle('mediaflow_api_password', 'toggleMediaFlowPassword', 'toggleMediaFlowPasswordIcon');
+    setupPasswordToggle('rpdb_api_key', 'toggleRPDBApiKey', 'toggleRPDBApiKeyIcon');
 });
 
 
@@ -583,7 +598,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     const kodiSetupBtn = document.getElementById('kodiSetupBtn');
     if (kodiSetupBtn) {
         kodiSetupBtn.addEventListener('click', initiateKodiSetup);
