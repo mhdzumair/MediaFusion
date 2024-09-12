@@ -478,6 +478,11 @@
                         </div>
                         <div id="mediaflow_config" style="display: {% if user_data.mediaflow_config %}block{% else %}none{% endif %};">
                             <div class="mb-2">
+                                <a href="https://github.com/mhdzumair/mediaflow-proxy?tab=readme-ov-file#mediaflow-proxy" target="_blank" rel="noopener">
+                                    MediaFlow Setup Guide
+                                </a>
+                            </div>
+                            <div class="mb-2">
                                 <label for="mediaflow_proxy_url">MediaFlow Proxy URL:</label>
                                 <input type="text" class="form-control" id="mediaflow_proxy_url" name="mediaflow_proxy_url"
                                        placeholder="https://your-mediaflow-proxy-url.com"
@@ -516,6 +521,42 @@
                                     <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                        title="Enable to proxy debrid streams through MediaFlow."></i>
                                 </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <h6>RPDB (RatingPosterDB) Configuration</h6>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="enable_rpdb" name="enable_rpdb"
+                                   {% if user_data.rpdb_config %}checked{% endif %}>
+                            <label class="form-check-label" for="enable_rpdb">
+                                Enable RPDB Posters
+                                <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                   title="Enable to use RPDB for rating posters. Poster configurations can be managed in your RPDB account settings."></i>
+                            </label>
+                        </div>
+                        <div id="rpdb_config" style="display: {% if user_data.rpdb_config %}block{% else %}none{% endif %};">
+                            <div class="mb-2">
+                                <a href="https://ratingposterdb.com/api-key/" target="_blank" rel="noopener">Get RPDB API Key</a>
+                                <span class="mx-2">|</span>
+                                <a href="https://manager.ratingposterdb.com" target="_blank" rel="noopener">Configure RPDB Posters Settings</a>
+                            </div>
+                            <p class="text-secondary">
+                                <small>RPDB is an optional <b>Freemium</b> third-party service for enhanced rating posters. By default, MediaFusion generates rating posters using IMDb ratings.</small>
+                            </p>
+                            <div class="mb-2">
+                                <label for="rpdb_api_key">RPDB API Key:</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="rpdb_api_key" name="rpdb_api_key"
+                                           value="{{ user_data.rpdb_config.api_key if user_data.rpdb_config else '' }}">
+                                    <button class="btn btn-outline-secondary" type="button" id="toggleRPDBApiKey">
+                                        <i id="toggleRPDBApiKeyIcon" class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="invalid-feedback">
+                                    Please enter a valid RPDB API Key.
+                                </div>
                             </div>
                         </div>
                     </div>
