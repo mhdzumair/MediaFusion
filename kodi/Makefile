@@ -2,9 +2,11 @@
 ADDON_DIR = plugin.video.mediafusion
 BUILD_DIR = build/$(ADDON_DIR)
 LIB_DIR = $(BUILD_DIR)/lib
-VERSION = $(shell sed -ne "s/.*version=\"\([0-9a-z\.\-]*\)\"\sname=.*/\1/p" $(ADDON_DIR)/addon.xml)
-ZIP_FILE = $(ADDON_DIR)-$(VERSION).zip
-DEV_ZIP_FILE = $(ADDON_DIR)-dev-$(VERSION).zip
+VERSION := $(shell sed -ne "s/.*version=\"\([0-9a-z\.\-]*\)\"\sname=.*/\1/p" $(ADDON_DIR)/addon.xml)
+RANDOM_STRING = $(shell head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
+NEW_VERSION := $(VERSION)-$(RANDOM_STRING)
+ZIP_FILE := $(ADDON_DIR)-$(VERSION).zip
+DEV_ZIP_FILE := $(ADDON_DIR)-dev-$(NEW_VERSION).zip
 
 # Default target
 all: $(ZIP_FILE)

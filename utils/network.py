@@ -235,7 +235,7 @@ def get_request_namespace(request: Request) -> str:
     return namespace
 
 
-def get_user_data(request: Request) -> UserData:
+def get_user_data(request: Request, secret_str: str | None = None) -> UserData:
     return request.user
 
 

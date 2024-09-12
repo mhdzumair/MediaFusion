@@ -309,7 +309,6 @@ async def get_movie_streams(
                 url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
             )
         ]
-
     movie_metadata = await get_movie_data_by_id(video_id)
     if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
         return []
@@ -436,6 +435,8 @@ async def get_series_meta(meta_id: str, user_data: schemas.UserData):
             "$nin": get_filter_certification_values(user_data)
         }
 
+    poster_path = f"{settings.poster_host_url}/poster/series/{meta_id}.jpg"
+
     # Define the aggregation pipeline
     pipeline = [
         {"$match": match_filter},
@@ -536,7 +537,6 @@ async def get_series_meta(meta_id: str, user_data: schemas.UserData):
                     "id": "$videos.id",
                     "meta_id": "$_id",
                     "series_title": "$series_title",  # Store series title
-                    "poster": "$poster",
                     "background": "$background",
                 },
                 "video": {"$first": "$videos"},
@@ -550,7 +550,6 @@ async def get_series_meta(meta_id: str, user_data: schemas.UserData):
                     "episode": "$video.episode",
                     "meta_id": "$_id.meta_id",
                     "series_title": "$_id.series_title",
-                    "poster": "$_id.poster",
                     "background": "$_id.background",
                     "video": "$video",
                 }
@@ -561,7 +560,6 @@ async def get_series_meta(meta_id: str, user_data: schemas.UserData):
             "$group": {
                 "_id": "$meta_id",
                 "title": {"$first": "$series_title"},
-                "poster": {"$first": "$poster"},
                 "background": {"$first": "$background"},
                 "videos": {"$push": "$video"},
             }
@@ -573,14 +571,7 @@ async def get_series_meta(meta_id: str, user_data: schemas.UserData):
                     "_id": "$_id",
                     "type": {"$literal": "series"},
                     "title": "$title",
-                    "poster": {
-                        "$concat": [
-                            settings.poster_host_url,
-                            "/poster/series/",
-                            {"$toString": "$_id"},
-                            ".jpg",
-                        ]
-                    },
+                    "poster": {"$literal": poster_path},
                     "background": {"$ifNull": ["$background", "$poster"]},
                     "videos": "$videos",
                 },

@@ -1,7 +1,7 @@
 import math
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
 from db.models import TorrentStreams
 from utils import const
@@ -117,6 +117,14 @@ class MediaFlowConfig(BaseModel):
         populate_by_name = True
 
 
+class RPDBConfig(BaseModel):
+    api_key: str = Field(alias="ak")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
 class StreamingProvider(BaseModel):
     service: Literal[
         "realdebrid",
@@ -170,9 +178,9 @@ class UserData(BaseModel):
     torrent_sorting_priority: list[str] = Field(
         default=const.TORRENT_SORTING_PRIORITY, alias="tsp"
     )
-    nudity_filter: list[
-        Literal["Disable", "None", "Mild", "Moderate", "Severe"]
-    ] = Field(default=["Severe"], alias="nf")
+    nudity_filter: list[Literal["Disable", "None", "Mild", "Moderate", "Severe"]] = (
+        Field(default=["Severe"], alias="nf")
+    )
     certification_filter: list[
         Literal[
             "Disable", "All Ages", "Children", "Parental Guidance", "Teens", "Adults"
@@ -186,6 +194,7 @@ class UserData(BaseModel):
         default=list(const.QUALITY_GROUPS.keys()), alias="qf"
     )
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
+    rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):
@@ -329,3 +338,8 @@ class ScraperTask(BaseModel):
 class TVMetaDataUpload(BaseModel):
     api_password: str = None
     tv_metadata: TVMetaData
+
+
+class KodiConfig(BaseModel):
+    code: str = Field(max_length=6)
+    manifest_url: HttpUrl

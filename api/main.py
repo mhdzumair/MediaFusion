@@ -23,8 +23,10 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import crud, database, schemas
 from db.config import settings
+from kodi.routes import kodi_router
 from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
+from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
 from utils import const, crypto, get_json_data, poster, torrent, wrappers
@@ -144,6 +146,7 @@ async def configure(
     response: Response,
     request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
+    kodi_code: str = None,
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
@@ -189,6 +192,7 @@ async def configure(
             "quality_groups": const.QUALITY_GROUPS,
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
+            "kodi_code": kodi_code,
         },
     )
 
@@ -259,33 +263,78 @@ async def get_catalog(
     genre: str = None,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
+    skip, genre = parse_genre_and_skip(genre, skip)
+    cache_key, is_watchlist_catalog = get_cache_key(
+        catalog_type, catalog_id, skip, genre, user_data
+    )
+
+    if cache_key:
+        response.headers.update(const.CACHE_HEADERS)
+        if cached_data := await REDIS_ASYNC_CLIENT.get(cache_key):
+            return await update_rpdb_posters(
+                schemas.Metas.model_validate_json(cached_data), user_data, catalog_type
+            )
+    else:
+        response.headers.update(const.NO_CACHE_HEADERS)
+
+    metas = await fetch_metas(
+        catalog_type, catalog_id, genre, skip, user_data, request, is_watchlist_catalog
+    )
+
+    if cache_key:
+        await REDIS_ASYNC_CLIENT.set(
+            cache_key,
+            metas.model_dump_json(exclude_none=True, by_alias=True),
+            ex=settings.meta_cache_ttl,
+        )
+
+    return await update_rpdb_posters(metas, user_data, catalog_type)
+
+
+def parse_genre_and_skip(genre: str, skip: int) -> tuple[int, str]:
     if genre and "&" in genre:
         genre, skip = genre.split("&")
         skip = skip.split("=")[1] if "=" in skip else "0"
         skip = int(skip) if skip and skip.isdigit() else 0
+    return skip, genre
 
+
+def get_cache_key(
+    catalog_type: str,
+    catalog_id: str,
+    skip: int,
+    genre: str,
+    user_data: schemas.UserData,
+) -> tuple[str, bool]:
     cache_key = f"{catalog_type}_{catalog_id}_{skip}_{genre}_catalog"
     is_watchlist_catalog = False
+
     if user_data.streaming_provider and catalog_id.startswith(
         user_data.streaming_provider.service
     ):
-        response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
         is_watchlist_catalog = True
     elif catalog_type == "events":
-        response.headers.update(const.NO_CACHE_HEADERS)
         cache_key = None
     elif catalog_type in ["movie", "series"]:
         cache_key += "_" + "_".join(
             user_data.nudity_filter + user_data.certification_filter
         )
 
-    # Try retrieving the cached data
-    if cache_key:
-        if cached_data := await REDIS_ASYNC_CLIENT.get(cache_key):
-            return json.loads(cached_data)
+    return cache_key, is_watchlist_catalog
 
+
+async def fetch_metas(
+    catalog_type: str,
+    catalog_id: str,
+    genre: str,
+    skip: int,
+    user_data: schemas.UserData,
+    request: Request,
+    is_watchlist_catalog: bool,
+) -> schemas.Metas:
     metas = schemas.Metas()
+
     if catalog_type == "tv":
         metas.metas.extend(
             await crud.get_tv_meta_list(
@@ -307,6 +356,7 @@ async def get_catalog(
                 genre=genre,
             )
         )
+
         if (
             is_watchlist_catalog
             and catalog_type == "movie"
@@ -320,13 +370,6 @@ async def get_catalog(
                 user_data.streaming_provider.service
             )
             metas.metas.insert(0, delete_all_meta)
-
-    if cache_key:
-        await REDIS_ASYNC_CLIENT.set(
-            cache_key,
-            metas.model_dump_json(exclude_none=True, by_alias=True),
-            ex=settings.meta_cache_ttl,
-        )
 
     return metas
 
@@ -364,7 +407,10 @@ async def search_meta(
             search_query, namespace=get_request_namespace(request)
         )
 
-    return await crud.process_search_query(search_query, catalog_type, user_data)
+    metadata = await crud.process_search_query(search_query, catalog_type, user_data)
+    return await update_rpdb_posters(
+        schemas.Metas.model_validate(metadata), user_data, catalog_type
+    )
 
 
 @app.get(
@@ -397,10 +443,10 @@ async def get_meta(
     # Try retrieving the cached data
     cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_data:
-        meta_data = json.loads(cached_data)
+        meta_data = schemas.MetaItem.model_validate_json(cached_data)
         if not meta_data:
             raise HTTPException(status_code=404, detail="Meta ID not found.")
-        return meta_data
+        return await update_rpdb_poster(meta_data, user_data, catalog_type)
 
     if catalog_type == "movie":
         if meta_id.startswith("dl"):
@@ -423,7 +469,9 @@ async def get_meta(
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")
 
-    return data
+    return await update_rpdb_poster(
+        schemas.MetaItem.model_validate(data), user_data, catalog_type
+    )
 
 
 @app.get(
@@ -601,3 +649,5 @@ app.include_router(
 app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])
 
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
+
+app.include_router(kodi_router, prefix="/kodi", tags=["kodi"])

@@ -13,6 +13,7 @@ from utils.parser import (
     is_contain_18_plus_keywords,
     calculate_max_similarity_ratio,
 )
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 
 class ZileanScraper(BaseScraper):
