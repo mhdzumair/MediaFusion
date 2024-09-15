@@ -43,7 +43,7 @@ humanize = {git = "git+https://github.com/python-humanize/humanize.git"}
 scrapy-playwright = "*"
 cinemagoerng = {git = "git+https://github.com/mhdzumair/cinemagoerng.git"}
 tqdm = "*"
-parsett = {git = "git+https://github.com/mhdzumair/PTT"}
+parsett = "*"
 
 [dev-packages]
 pysocks = "*"

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional, Any
 
 import pymongo
+import pytz
 from beanie import Document, Link
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
@@ -43,6 +44,24 @@ class TorrentStreams(Document):
     audio: Optional[str] = None
     seeders: Optional[int] = None
     cached: Optional[bool] = Field(default=False, exclude=True)
+    indexer_flags: Optional[list[str]] = Field(default_factory=list)
+
+    def __eq__(self, other):
+        if not isinstance(other, TorrentStreams):
+            return False
+        return self.id == other.id
+
+    def __hash__(self):
+        return hash(self.id)
+
+    @field_validator("id", mode="after")
+    def validate_id(cls, v):
+        return v.lower()
+
+    @field_validator("created_at", mode="after")
+    def validate_created_at(cls, v):
+        # convert to UTC
+        return v.astimezone(pytz.utc)
 
     @field_validator("audio", mode="before")
     def validate_audio(cls, v):
@@ -110,6 +129,12 @@ class MediaFusionMetaData(Document):
             IndexModel([("title", ASCENDING), ("year", ASCENDING)], unique=True),
             IndexModel([("title", pymongo.TEXT)]),
         ]
+
+    @field_validator("runtime", mode="before")
+    def validate_runtime(cls, v):
+        if v and isinstance(v, int):
+            return f"{v} min"
+        return v
 
 
 class MediaFusionMovieMetaData(MediaFusionMetaData):

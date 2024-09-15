@@ -1,25 +1,24 @@
 import asyncio
-from typing import List, Dict, Any
-from os import path
-import PTT
 import re
 from datetime import timedelta
+from os import path
+from typing import List, Dict, Any
 
-from db.models import TorrentStreams, Season, Episode
+import PTT
+
 from db.config import settings
+from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper, ScraperError
 from utils.parser import (
     convert_size_to_bytes,
     is_contain_18_plus_keywords,
-    calculate_max_similarity_ratio,
 )
-from utils.runtime_const import REDIS_ASYNC_CLIENT
 from utils.validation_helper import is_video_file
 
 
 class TorrentioScraper(BaseScraper):
     def __init__(self):
-        super().__init__()
+        super().__init__(cache_key_prefix="torrentio")
         self.base_url = settings.torrentio_url
         self.semaphore = asyncio.Semaphore(10)
 
@@ -29,16 +28,14 @@ class TorrentioScraper(BaseScraper):
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def scrape_and_parse(
         self,
-        video_id: str,
+        metadata: MediaFusionMetaData,
         catalog_type: str,
-        title: str,
-        aka_titles: list[str],
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
-        url = f"{self.base_url}/stream/{catalog_type}/{video_id}.json"
+        url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}.json"
         if catalog_type == "series":
-            url = f"{self.base_url}/stream/{catalog_type}/{video_id}:{season}:{episode}.json"
+            url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
 
         try:
             response = await self.make_request(url)
@@ -50,20 +47,7 @@ class TorrentioScraper(BaseScraper):
             self.logger.warning(f"Invalid response received for {url}")
             return []
 
-        return await self.parse_response(
-            data, video_id, title, aka_titles, catalog_type, season, episode
-        )
-
-    def get_cache_key(
-        self,
-        video_id: str,
-        catalog_type: str,
-        title: str,
-        aka_titles: list[str],
-        season: int = None,
-        episode: int = None,
-    ) -> str:
-        return f"torrentio:{catalog_type}:{video_id}:{season}:{episode}"
+        return await self.parse_response(data, metadata, catalog_type, season, episode)
 
     def validate_response(self, response: Dict[str, Any]) -> bool:
         return "streams" in response and isinstance(response["streams"], list)
@@ -71,17 +55,13 @@ class TorrentioScraper(BaseScraper):
     async def parse_response(
         self,
         response: Dict[str, Any],
-        video_id: str,
-        title: str,
-        aka_titles: list[str],
+        metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
         tasks = [
-            self.process_stream(
-                stream_data, video_id, title, aka_titles, catalog_type, season, episode
-            )
+            self.process_stream(stream_data, metadata, catalog_type, season, episode)
             for stream_data in response.get("streams", [])
         ]
         results = await asyncio.gather(*tasks)
@@ -90,9 +70,7 @@ class TorrentioScraper(BaseScraper):
     async def process_stream(
         self,
         stream_data: Dict[str, Any],
-        video_id: str,
-        title: str,
-        aka_titles: list[str],
+        metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
@@ -113,18 +91,18 @@ class TorrentioScraper(BaseScraper):
                 )
 
                 if source != "Torrentio":
-                    max_similarity_ratio = calculate_max_similarity_ratio(
-                        parsed_data.get("title"), title, aka_titles
-                    )
-                    if max_similarity_ratio < 85:
-                        self.logger.error(
-                            f"Title mismatch: '{title}' != '{parsed_data.get('title')}' ratio: {max_similarity_ratio}"
-                        )
+                    if not self.validate_title_and_year(
+                        parsed_data.get("title"),
+                        parsed_data.get("metadata").get("year"),
+                        metadata,
+                        catalog_type,
+                        parsed_data.get("torrent_name"),
+                    ):
                         return None
 
                 stream = TorrentStreams(
                     id=stream_data["infoHash"],
-                    meta_id=video_id,
+                    meta_id=metadata.id,
                     torrent_name=parsed_data["torrent_name"],
                     size=parsed_data["size"],
                     filename=parsed_data["file_name"],

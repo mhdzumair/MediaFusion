@@ -45,7 +45,7 @@ from utils.runtime_const import (
 )
 
 logging.basicConfig(
-    format="%(levelname)s::%(asctime)s - %(message)s",
+    format="%(levelname)s::%(asctime)s::%(filename)s::%(lineno)d - %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
     level=settings.logging_level,
 )
@@ -562,6 +562,7 @@ async def get_streams(
             season,
             episode,
             user_ip,
+            background_tasks,
         )
         fetched_streams.extend(user_feeds)
     elif catalog_type == "events":

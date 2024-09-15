@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable
+from typing import Callable, AsyncGenerator, Any
 from urllib import parse
 
 import httpx
@@ -75,60 +75,67 @@ async def batch_process_with_circuit_breaker(
     retry_exceptions: list[type[Exception]] = (),
     *args,
     **kwargs,
-):
+) -> AsyncGenerator[Any, None]:
     """
     Process data in batches using the circuit breaker pattern with a maximum number of retries.
+    Yields results as they become available.
     """
-    results = []
     total_retries = 0
+    processed_count = 0
+
+    # Ensure retry_exceptions is a tuple for the except clause
+    retry_exceptions = tuple(retry_exceptions) + (CircuitBreakerOpenException,)
 
     for i in range(0, len(data), batch_size):
         batch = data[i : i + batch_size]
+        batch_retries = 0
+
         while batch:  # Continue until all items in the batch are processed
-            try:
-                batch_results = await asyncio.gather(
-                    *(cb.call(process_func, item, *args, **kwargs) for item in batch),
-                    return_exceptions=True,  # Collect exceptions instead of raising
-                )
-                # Separate results and exceptions
-                successful_results, retry_batch = [], []
-                for item, result in zip(batch, batch_results):
-                    if isinstance(
-                        result, (CircuitBreakerOpenException, *retry_exceptions)
-                    ):
-                        retry_batch.append(item)
-                    elif isinstance(result, Exception):
-                        traceback = getattr(result, "__traceback__", None)
+            retry_batch = []  # Reset retry list for this iteration
+
+            async with asyncio.TaskGroup() as tg:  # Using TaskGroup to manage tasks
+                task_data = [
+                    (item, tg.create_task(cb.call(process_func, item, *args, **kwargs)))
+                    for item in batch
+                ]
+
+                # Process results as soon as they complete
+                for item, task in task_data:
+                    try:
+                        result = await task
+                        processed_count += 1
+                        yield result  # Yield successful results immediately
+                    except retry_exceptions:
+                        retry_batch.append(item)  # Append item for retry
+                    except Exception as e:
                         logging.error(
-                            f"Unexpected error during batch processing: {result}",
-                            exc_info=(type(result), result, traceback),
+                            f"Unexpected error during batch processing: {e}",
+                            exc_info=True,
                         )
-                    else:
-                        successful_results.append(result)
 
-                if retry_batch:
-                    if max_retries is not None and total_retries >= max_retries:
-                        logging.info(
-                            f"Reached maximum number of retries ({max_retries})."
-                        )
-                        batch = []  # Stop retrying
-                    else:
-                        total_retries += 1
-                        logging.info(
-                            f"Retrying {len(retry_batch)} items due to circuit breaker."
-                        )
-                        batch = retry_batch  # Prepare to retry only the failed items
-                        await asyncio.sleep(
-                            cb.recovery_timeout
-                        )  # Wait for the breaker to potentially close
+            if retry_batch:
+                if batch_retries >= max_retries:
+                    logging.info(
+                        f"Reached maximum number of retries ({max_retries}) for this batch."
+                    )
+                    break  # Move to the next batch
                 else:
-                    # Extend results with successful results
-                    results.extend(successful_results)
-                    break  # Break the loop when all items are processed successfully
-            finally:
-                await asyncio.sleep(rate_limit_delay)  # Always respect the rate limit
+                    batch_retries += 1
+                    total_retries += 1
+                    logging.info(
+                        f"Retrying {len(retry_batch)} items due to circuit breaker. Retry attempt {batch_retries}"
+                    )
+                    batch = retry_batch  # Retry only failed items
+                    await asyncio.sleep(
+                        cb.recovery_timeout
+                    )  # Wait for breaker to close
+            else:
+                break  # Exit loop if all items in the batch have been processed successfully
 
-    return results
+            # Respect the rate limit
+            await asyncio.sleep(rate_limit_delay)
+
+    logging.info(f"Processed {processed_count} items out of {len(data)} total items.")
 
 
 async def get_redirector_url(url: str, headers: dict) -> str | None:
@@ -195,7 +202,7 @@ async def get_mediaflow_proxy_public_ip(
 
 async def get_user_public_ip(
     request: Request, user_data: UserData | None = None
-) -> str:
+) -> str | None:
     # Check if user has mediaflow config
     if (
         user_data

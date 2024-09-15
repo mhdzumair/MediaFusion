@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -15,10 +15,11 @@ from db.crud import (
     get_movie_data_by_id,
     get_series_data_by_id,
     get_stream_by_info_hash,
+    store_new_torrent_streams,
 )
+from db.models import TorrentStreams, Episode, Season
 from mediafusion_scrapy.task import run_spider
 from scrapers import imdb_data
-from scrapers.prowlarr import handle_series_stream_store, handle_movie_stream_store
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
@@ -244,7 +245,7 @@ async def add_torrent(
         )
         torrent_data["catalog"] = catalogs
 
-        torrent_stream, _ = await handle_movie_stream_store(
+        torrent_stream = await handle_movie_stream_store(
             info_hash, torrent_data, meta_id
         )
 
@@ -281,7 +282,7 @@ async def add_torrent(
         )
         torrent_data["catalog"] = catalogs
 
-        torrent_stream, _ = await handle_series_stream_store(
+        torrent_stream = await handle_series_stream_store(
             info_hash, torrent_data, meta_id, season
         )
 
@@ -290,3 +291,89 @@ async def add_torrent(
     return {
         "status": f"Successfully added torrent: {torrent_stream.id} for {title}. Thanks for your contribution."
     }
+
+
+async def handle_movie_stream_store(info_hash, parsed_data, video_id):
+    """
+    Handles the store logic for a single torrent stream.
+    """
+    # Create new stream
+    torrent_stream = TorrentStreams(
+        id=info_hash,
+        torrent_name=parsed_data.get("torrent_name"),
+        announce_list=parsed_data.get("announce_list"),
+        size=parsed_data.get("total_size"),
+        filename=parsed_data.get("largest_file", {}).get("file_name"),
+        file_index=parsed_data.get("largest_file", {}).get("index"),
+        languages=parsed_data.get("languages"),
+        resolution=parsed_data.get("resolution"),
+        codec=parsed_data.get("codec"),
+        quality=parsed_data.get("quality"),
+        audio=parsed_data.get("audio"),
+        source=parsed_data.get("source"),
+        catalog=parsed_data.get("catalog"),
+        updated_at=datetime.now(),
+        seeders=parsed_data.get("seeders"),
+        created_at=parsed_data.get("created_at"),
+        meta_id=video_id,
+    )
+
+    await store_new_torrent_streams([torrent_stream])
+    logging.info(f"Created movies stream {info_hash} for {video_id}")
+    return torrent_stream
+
+
+async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
+    """
+    Handles the storage logic for a single series torrent stream, including updating
+    or creating records for all episodes contained within the torrent.
+    """
+    # Check for unsupported torrents spanning multiple seasons and no season
+    if len(parsed_data.get("seasons", [])) != 1:
+        return None
+
+    # Prepare episode data based on detailed file data or basic episode numbers
+    episode_data = []
+    if parsed_data.get("file_data"):
+        episode_data = [
+            Episode(
+                episode_number=file["episodes"][0],
+                filename=file.get("filename"),
+                size=file.get("size"),
+                file_index=file.get("index"),
+            )
+            for file in parsed_data["file_data"]
+            if file.get("episodes")
+        ]
+    elif episodes := parsed_data.get("episodes"):
+        episode_data = [Episode(episode_number=ep) for ep in episodes]
+
+    # Skip the torrent if no episode data is available
+    if not episode_data:
+        return None
+
+    season_number = parsed_data.get("seasons")[0]
+
+    # Create new stream, initially without episodes
+    torrent_stream = TorrentStreams(
+        id=info_hash,
+        torrent_name=parsed_data.get("torrent_name"),
+        announce_list=parsed_data.get("announce_list"),
+        size=parsed_data.get("total_size"),
+        filename=None,
+        languages=parsed_data.get("languages"),
+        resolution=parsed_data.get("resolution"),
+        codec=parsed_data.get("codec"),
+        quality=parsed_data.get("quality"),
+        audio=parsed_data.get("audio"),
+        source=parsed_data.get("source"),
+        catalog=parsed_data.get("catalog"),
+        updated_at=datetime.now(),
+        seeders=parsed_data.get("seeders"),
+        created_at=parsed_data.get("created_at"),
+        meta_id=video_id,
+        season=Season(season_number=season_number, episodes=episode_data),
+    )
+    await store_new_torrent_streams([torrent_stream])
+
+    return torrent_stream

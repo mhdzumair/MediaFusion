@@ -1,14 +1,15 @@
 import abc
 import logging
-from typing import List, Any, Dict
 from datetime import timedelta
 from functools import wraps
+from typing import List, Any, Dict
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 from ratelimit import limits, sleep_and_retry
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from db.models import TorrentStreams
+from db.models import TorrentStreams, MediaFusionMetaData
+from utils.parser import calculate_max_similarity_ratio
 from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 
@@ -17,9 +18,10 @@ class ScraperError(Exception):
 
 
 class BaseScraper(abc.ABC):
-    def __init__(self):
+    def __init__(self, cache_key_prefix: str):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.http_client = httpx.AsyncClient(timeout=30)
+        self.cache_key_prefix = cache_key_prefix
 
     async def __aenter__(self):
         return self
@@ -34,15 +36,6 @@ class BaseScraper(abc.ABC):
         This method should be implemented by each specific scraper.
         """
         pass
-
-    @classmethod
-    async def get_streams(cls, *args, **kwargs) -> List[TorrentStreams]:
-        """
-        Common method to get streams for all scrapers.
-        This method calls the scrape_and_parse method and returns the result.
-        """
-        async with cls() as instance:
-            return await instance.scrape_and_parse(*args, **kwargs)
 
     @staticmethod
     def cache(ttl: int = 3600):
@@ -111,7 +104,6 @@ class BaseScraper(abc.ABC):
             self.logger.error(f"An error occurred while requesting {e.request.url!r}.")
             raise ScraperError(f"An error occurred while requesting {e.request.url!r}.")
 
-    @abc.abstractmethod
     def validate_response(self, response: Dict[str, Any]) -> bool:
         """
         Validate the response from the scraper.
@@ -120,13 +112,10 @@ class BaseScraper(abc.ABC):
         """
         pass
 
-    @abc.abstractmethod
     def parse_response(
         self,
         response: Dict[str, Any],
-        video_id: str,
-        title: str,
-        aka_titles: list[str],
+        metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
@@ -134,9 +123,7 @@ class BaseScraper(abc.ABC):
         """
         Parse the response into TorrentStreams objects.
         :param response: Response dictionary
-        :param video_id: Video ID
-        :param title: Video title
-        :param aka_titles: List of aka titles
+        :param metadata: MediaFusionMetaData object
         :param catalog_type: Catalog type (movie, series)
         :param season: Season number (for series)
         :param episode: Episode number (for series)
@@ -144,9 +131,84 @@ class BaseScraper(abc.ABC):
         """
         pass
 
-    def get_cache_key(self, *args, **kwargs) -> str:
+    def get_cache_key(
+        self,
+        metadata: MediaFusionMetaData,
+        catalog_type: str,
+        season: str = None,
+        episode: str = None,
+        *_args,
+        **_kwargs,
+    ) -> str:
         """
         Generate a cache key for the given arguments.
         :return: Cache key string
         """
-        return f"{self.__class__.__name__}:{args}:{kwargs}"
+        if catalog_type == "movie":
+            return f"{self.cache_key_prefix}:{catalog_type}:{metadata.id}"
+
+        return (
+            f"{self.cache_key_prefix}:{catalog_type}:{metadata.id}:{season}:{episode}"
+        )
+
+    def validate_title_and_year(
+        self,
+        parsed_title: str,
+        parsed_year: int | None,
+        metadata: MediaFusionMetaData,
+        catalog_type: str,
+        torrent_title: str,
+        expected_ratio: int = 85,
+    ) -> bool:
+        """
+        Validate the title and year of the parsed data against the metadata.
+        :param parsed_title: Parsed title
+        :param parsed_year: Parsed year
+        :param metadata: MediaFusionMetaData object
+        :param catalog_type: Catalog type (movie, series)
+        :param torrent_title: Torrent title
+        :param expected_ratio: Expected similarity ratio
+
+        :return: True if valid, False otherwise
+        """
+        # Check similarity ratios
+        max_similarity_ratio = calculate_max_similarity_ratio(
+            parsed_title, metadata.title, metadata.aka_titles
+        )
+
+        # Log and return False if similarity ratios is below the expected threshold
+        if max_similarity_ratio < expected_ratio:
+            self.logger.warning(
+                f"Title mismatch: '{parsed_title}' vs. '{metadata.title}'. Torrent title: '{torrent_title}'"
+            )
+            return False
+
+        # Validate year based on a catalog type
+        if catalog_type == "movie" and parsed_year != metadata.year:
+            self.logger.warning(
+                f"Year mismatch for movie: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year}). Torrent title: '{torrent_title}'"
+            )
+            return False
+
+        if catalog_type == "series" and parsed_year:
+            # If end_year exists, check parsed_year is within the range; otherwise, check parsed_year >= metadata.year
+            if (
+                metadata.end_year
+                and not (metadata.year <= parsed_year <= metadata.end_year)
+            ) or (not metadata.end_year and parsed_year < metadata.year):
+                self.logger.warning(
+                    f"Year mismatch for series: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
+                )
+                return False
+
+        return True
+
+    @staticmethod
+    async def store_streams(streams: List[TorrentStreams]):
+        """
+        Store the parsed streams in the database.
+        :param streams: List of TorrentStreams objects
+        """
+        from db.crud import store_new_torrent_streams
+
+        await store_new_torrent_streams(streams)

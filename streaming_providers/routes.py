@@ -66,9 +66,15 @@ async def fetch_stream_or_404(info_hash):
     Fetches stream by info hash, raises a 404 error if not found.
     """
     stream = await crud.get_stream_by_info_hash(info_hash)
-    if not stream:
-        raise HTTPException(status_code=400, detail="Stream not found.")
-    return stream
+    if stream:
+        return stream
+
+    # TODO: added for backwards compatibility, remove in the future
+    stream = await crud.get_stream_by_info_hash(info_hash.upper())
+    if stream:
+        return stream
+
+    raise HTTPException(status_code=400, detail="Stream not found.")
 
 
 async def get_or_create_video_url(
@@ -179,6 +185,7 @@ async def streaming_provider_endpoint(
     locking mechanisms to prevent duplicate tasks.
     """
     response.headers.update(const.NO_CACHE_HEADERS)
+    info_hash = info_hash.lower()
 
     if not user_data.streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
