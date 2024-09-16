@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable, AsyncGenerator, Any
+from typing import Callable, AsyncGenerator, Any, Tuple
 from urllib import parse
 
 import httpx
@@ -33,13 +33,13 @@ class CircuitBreaker:
         self.failures = 0
         self.last_failure_time = None
 
-    async def call(self, func: Callable, *args, **kwargs):
+    async def call(self, func: Callable, item: Any, *args, **kwargs) -> Tuple[Any, Any]:
         if (
             self.state == "OPEN"
             and (asyncio.get_event_loop().time() - self.last_failure_time)
             < self.recovery_timeout
         ):
-            raise CircuitBreakerOpenException(
+            return item, CircuitBreakerOpenException(
                 "Circuit breaker is open; calls are temporarily halted"
             )
         elif self.state == "OPEN":
@@ -47,22 +47,19 @@ class CircuitBreaker:
             self.failures = 0  # Reset failures in half-open state
 
         try:
-            result = await func(*args, **kwargs)
+            result = await func(item, *args, **kwargs)
             if self.state == "HALF-OPEN":
                 self.failures += 1
-                if self.failures < self.half_open_attempts:
-                    return result
-                else:
+                if self.failures >= self.half_open_attempts:
                     self.state = "CLOSED"
                     self.failures = 0
+            return item, result
         except Exception as e:
             self.failures += 1
             self.last_failure_time = asyncio.get_event_loop().time()
             if self.failures >= self.failure_threshold:
                 self.state = "OPEN"
-            raise e  # Reraise the exception to handle it outside
-
-        return result
+            return item, e
 
 
 async def batch_process_with_circuit_breaker(
@@ -95,23 +92,26 @@ async def batch_process_with_circuit_breaker(
 
             async with asyncio.TaskGroup() as tg:  # Using TaskGroup to manage tasks
                 task_data = [
-                    (item, tg.create_task(cb.call(process_func, item, *args, **kwargs)))
+                    tg.create_task(cb.call(process_func, item, *args, **kwargs))
                     for item in batch
                 ]
 
                 # Process results as soon as they complete
-                for item, task in task_data:
-                    try:
-                        result = await task
+                for task in asyncio.as_completed(task_data):
+                    item, result = await task
+                    if isinstance(result, Exception):
+                        if isinstance(result, retry_exceptions):
+                            retry_batch.append(item)
+                            logging.info(
+                                f"Retryable exception occurred for item {item}: {result}"
+                            )
+                        else:
+                            logging.exception(
+                                f"Unexpected error during batch processing for item {item}: {result}"
+                            )
+                    else:
                         processed_count += 1
-                        yield result  # Yield successful results immediately
-                    except retry_exceptions:
-                        retry_batch.append(item)  # Append item for retry
-                    except Exception as e:
-                        logging.error(
-                            f"Unexpected error during batch processing: {e}",
-                            exc_info=True,
-                        )
+                        yield result
 
             if retry_batch:
                 if batch_retries >= max_retries:

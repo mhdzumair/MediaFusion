@@ -217,12 +217,12 @@ class ProwlarrScraper(BaseScraper):
             try:
                 async for stream_item in gen:
                     await queue.put((stream_item, generator_id))
-                    self.logger.info(f"Generator {generator_id} produced a stream")
+                    self.logger.debug(f"Generator {generator_id} produced a stream")
             except Exception as err:
                 self.logger.exception(f"Error in generator {generator_id}: {err}")
             finally:
                 await queue.put(("DONE", generator_id))
-                self.logger.info(f"Generator {generator_id} finished")
+                self.logger.debug(f"Generator {generator_id} finished")
 
         async def queue_processor():
             nonlocal active_generators, streams_processed
@@ -231,7 +231,7 @@ class ProwlarrScraper(BaseScraper):
 
                 if item == "DONE":
                     active_generators -= 1
-                    self.logger.info(
+                    self.logger.debug(
                         f"Generator {gen_id} completed. {active_generators} generators remaining"
                     )
                 elif (
@@ -244,7 +244,7 @@ class ProwlarrScraper(BaseScraper):
                         or item.get_episode(season, episode) is not None
                     ):
                         streams_processed += 1
-                    self.logger.info(
+                    self.logger.debug(
                         f"Processed stream from generator {gen_id}. Total streams processed: {streams_processed}"
                     )
                     yield item
