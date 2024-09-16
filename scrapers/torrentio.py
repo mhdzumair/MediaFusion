@@ -137,7 +137,7 @@ class TorrentioScraper(BaseScraper):
                             Episode(
                                 episode_number=episode_number,
                                 file_index=(
-                                    stream.get("fileIdx")
+                                    stream_data.get("fileIdx")
                                     if episode_number == episode
                                     else None
                                 ),
@@ -147,7 +147,8 @@ class TorrentioScraper(BaseScraper):
                     else:
                         episode_data = [
                             Episode(
-                                episode_number=episode, file_index=stream.get("fileIdx")
+                                episode_number=episode,
+                                file_index=stream_data.get("fileIdx"),
                             )
                         ]
 
@@ -159,7 +160,7 @@ class TorrentioScraper(BaseScraper):
 
                 return stream
             except Exception as e:
-                self.logger.error(f"Error processing stream: {e}")
+                self.logger.exception(f"Error processing stream: {e}")
                 return None
 
     def parse_stream_title(self, stream: dict) -> dict:

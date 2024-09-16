@@ -236,9 +236,9 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
     if not settings.disable_prowlarr_feed_scraper:
         scheduler.add_job(
             run_prowlarr_feed_scraper.send,
-            CronTrigger.from_crontab(settings.prowlarr_feed_scrape_interval),
+            CronTrigger.from_crontab(settings.prowlarr_feed_scraper_crontab),
             name="prowlarr_feed_scraper",
             kwargs={
-                "crontab_expression": settings.prowlarr_feed_scrape_interval,
+                "crontab_expression": settings.prowlarr_feed_scraper_crontab,
             },
         )

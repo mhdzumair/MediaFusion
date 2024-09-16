@@ -4,17 +4,16 @@ from typing import Annotated
 
 import qrcode
 from fastapi import APIRouter, HTTPException, Body
-from qrcode.image.styledpil import StyledPilImage
-from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
-from qrcode.image.styles.colormasks import RadialGradiantColorMask
 from fastapi.responses import JSONResponse
+from qrcode.image.styledpil import StyledPilImage
+from qrcode.image.styles.colormasks import RadialGradiantColorMask
+from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
 from starlette.responses import StreamingResponse
 
 from db.config import settings
 from db.schemas import KodiConfig
 from utils import const
 from utils.runtime_const import REDIS_ASYNC_CLIENT
-
 
 kodi_router = APIRouter()
 

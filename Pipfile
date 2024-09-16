@@ -44,6 +44,9 @@ scrapy-playwright = "*"
 cinemagoerng = {git = "git+https://github.com/mhdzumair/cinemagoerng.git"}
 tqdm = "*"
 parsett = "*"
+tenacity = "*"
+ratelimit = "*"
+qrcode = "*"
 
 [dev-packages]
 pysocks = "*"

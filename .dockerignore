@@ -44,3 +44,4 @@ mediafusion.local*
 .lock
 .git
 kodi/
+!kodi/*.py
