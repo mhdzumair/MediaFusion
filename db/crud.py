@@ -349,7 +349,9 @@ async def get_series_streams(
         return []
 
     cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
-    cached_streams = await get_cached_torrent_streams(cache_key, video_id, season, episode)
+    cached_streams = await get_cached_torrent_streams(
+        cache_key, video_id, season, episode
+    )
 
     if video_id.startswith("tt"):
         new_streams = await run_scrapers(
