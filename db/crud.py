@@ -670,6 +670,7 @@ def create_metadata_object(metadata, imdb_data, model):
 
 
 def create_stream_object(metadata, is_movie: bool = False):
+    catalog = metadata.get("catalog")
     return TorrentStreams(
         id=metadata["info_hash"],
         torrent_name=metadata["torrent_name"],
@@ -683,7 +684,7 @@ def create_stream_object(metadata, is_movie: bool = False):
         quality=metadata.get("quality"),
         audio=metadata.get("audio"),
         source=metadata["source"],
-        catalog=metadata.get("catalog"),
+        catalog=[catalog] if isinstance(catalog, str) else catalog,
         created_at=metadata["created_at"],
         meta_id=metadata["id"],
     )
