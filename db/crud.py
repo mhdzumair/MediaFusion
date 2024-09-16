@@ -249,13 +249,12 @@ async def get_tv_data_by_id(
 
 
 async def get_cached_torrent_streams(
+    cache_key: str,
     video_id: str,
     season: Optional[int] = None,
     episode: Optional[int] = None,
 ) -> list[TorrentStreams]:
     # Create a unique key for Redis
-    cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
-
     # Try to get the data from the Redis cache
     cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
 
@@ -314,7 +313,8 @@ async def get_movie_streams(
     if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
         return []
 
-    cached_streams = await get_cached_torrent_streams(video_id)
+    cache_key = f"torrent_streams:{video_id}"
+    cached_streams = await get_cached_torrent_streams(cache_key, video_id)
 
     if video_id.startswith("tt"):
         new_streams = await run_scrapers(
@@ -323,7 +323,10 @@ async def get_movie_streams(
             user_data,
         )
         all_streams = set(cached_streams).union(new_streams)
-        background_tasks.add_task(store_new_torrent_streams, new_streams)
+        if new_streams:
+            # reset the cache
+            await REDIS_ASYNC_CLIENT.delete(cache_key)
+            background_tasks.add_task(store_new_torrent_streams, new_streams)
     else:
         all_streams = cached_streams
 
@@ -345,7 +348,8 @@ async def get_series_streams(
     ):
         return []
 
-    cached_streams = await get_cached_torrent_streams(video_id, season, episode)
+    cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
+    cached_streams = await get_cached_torrent_streams(cache_key, video_id, season, episode)
 
     if video_id.startswith("tt"):
         new_streams = await run_scrapers(
@@ -356,7 +360,10 @@ async def get_series_streams(
             episode,
         )
         all_streams = set(cached_streams).union(new_streams)
-        background_tasks.add_task(store_new_torrent_streams, new_streams)
+        if new_streams:
+            # reset the cache
+            await REDIS_ASYNC_CLIENT.delete(cache_key)
+            background_tasks.add_task(store_new_torrent_streams, new_streams)
     else:
         all_streams = cached_streams
 
