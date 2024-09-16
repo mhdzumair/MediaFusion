@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import model_validator, Field
 from pydantic_settings import BaseSettings
 
 
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
 
     # External API keys and secrets
-    secret_key: str
+    secret_key: str = Field(..., max_length=32, min_length=32)
     prowlarr_api_key: str | None = None
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None

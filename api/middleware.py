@@ -90,6 +90,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             except RuntimeError:
                 return Response(status_code=204)
+            except Exception as e:
+                logging.exception(f"Internal Server Error: {e}")
+                return Response(
+                    content=f"Internal Server Error. Check the server log & Create GitHub Issue",
+                    status_code=500,
+                    headers=const.NO_CACHE_HEADERS,
+                )
 
         # Retrieve the endpoint function from the request
         endpoint = request.scope.get("endpoint")
