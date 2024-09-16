@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     logging_level: str = "INFO"
     git_rev: str = "stable"
     addon_name: str = "MediaFusion"
-    logo_url: str = "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
+    logo_url: str = (
+        "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
+    )
 
     # Feature toggles
     is_scrap_from_torrentio: bool = False
@@ -82,6 +84,9 @@ class Settings(BaseSettings):
     disable_wwe_tgx_scheduler: bool = False
     ufc_tgx_scheduler_crontab: str = "30 */3 * * *"
     disable_ufc_tgx_scheduler: bool = False
+    prowlarr_feed_scrape_interval: int = 3
+    prowlarr_feed_scraper_crontab: str = "0 */3 * * *"
+    disable_prowlarr_feed_scraper: bool = False
 
     # Time-related settings
     torrentio_search_interval_days: int = 3

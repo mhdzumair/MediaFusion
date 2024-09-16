@@ -1,22 +1,20 @@
 import logging
-import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional
 
 import dramatiq
-from beanie import BulkWriter
+import math
+from cinemagoerng import model, web
+from cinemagoerng.model import TVSeries
 from curl_cffi import requests
+from imdb import Cinemagoer, IMDbDataAccessError
+from thefuzz import fuzz
 from typedload.exceptions import TypedloadValueError
 
 from db.models import (
     MediaFusionMetaData,
 )
-from imdb import Cinemagoer, IMDbDataAccessError
-from thefuzz import fuzz
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
-
-from cinemagoerng import model, web
-
 
 ia = Cinemagoer()
 
@@ -148,46 +146,38 @@ async def process_imdb_data(movie_ids):
         failure_threshold=2, recovery_timeout=10, half_open_attempts=2
     )
 
-    results = await batch_process_with_circuit_breaker(
+    async for result in batch_process_with_circuit_breaker(
         get_imdb_movie_data,
         movie_ids,
         5,
         rate_limit_delay=3,
         cb=circuit_breaker,
         retry_exceptions=[IMDbDataAccessError],
-    )
-
-    # Update database entries with the new data
-    bulk_writer = BulkWriter()
-    for movie_id, imdb_movie in zip(movie_ids, results):
-        if not imdb_movie:
-            logging.warning(f"Failed to fetch data for movie {movie_id}")
+    ):
+        if not result:
             continue
 
-        if imdb_movie:
-            update_data = {
-                "genres": imdb_movie.genres,
-                "imdb_rating": imdb_movie.rating,
-                "parent_guide_nudity_status": imdb_movie.advisories.nudity.status,
+        movie_id = result.imdb_id
+        imdb_rating = get_imdb_rating(movie_id)
+        end_year_dict = (
+            {"end_year": result.end_year} if result.type_id == "tvSeries" else {}
+        )
+
+        # Update database entries with the new data
+        await MediaFusionMetaData.find({"_id": movie_id}).update(
+            {
+                "genres": result.genres,
+                "imdb_rating": imdb_rating,
+                "parent_guide_nudity_status": result.advisories.nudity.status,
                 "parent_guide_certificates": list(
-                    set(
-                        cert.certificate
-                        for cert in imdb_movie.certification.certificates
-                    )
+                    set(cert.certificate for cert in result.certification.certificates)
                 ),
-                "aka_titles": list(set(aka.title for aka in imdb_movie.akas)),
+                "aka_titles": list(set(aka.title for aka in result.akas)),
                 "last_updated_at": now,
+                **end_year_dict,
             }
-            if imdb_movie.type_id == "tvSeries":
-                update_data["end_year"] = imdb_movie.end_year
-
-            await MediaFusionMetaData.find({"_id": movie_id}).update(
-                {"$set": update_data}, bulk_writer=bulk_writer
-            )
-            logging.info(f"Updating metadata for movie {movie_id}")
-
-    logging.info(f"Committing {len(bulk_writer.operations)} updates to the database")
-    await bulk_writer.commit()
+        )
+        logging.info(f"Updating metadata for movie {movie_id}")
 
 
 @dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
@@ -225,3 +215,42 @@ async def fetch_movie_ids_to_update(*args, **kwargs):
     for i in range(0, len(movie_ids), chunk_size):
         chunk_ids = movie_ids[i : i + chunk_size]
         process_imdb_data_background.send(chunk_ids)
+
+
+async def get_episode_by_date(
+    series_id: str, series_title: str, expected_date: date
+) -> Optional[model.TVEpisode]:
+    imdb_title = TVSeries(imdb_id=series_id, title=series_title)
+    web.update_title(
+        imdb_title,
+        page="episodes_with_pagination",
+        keys=["episodes"],
+        filter_type="year",
+        start_year=expected_date.year,
+        end_year=expected_date.year,
+        paginate_result=True,
+    )
+    filtered_episode = [
+        ep
+        for season in imdb_title.episodes.values()
+        for ep in season.values()
+        if ep.release_date == expected_date
+    ]
+    if not filtered_episode:
+        return
+    return filtered_episode[0]
+
+
+async def get_season_episodes(
+    series_id: str, series_title: str, season: str
+) -> list[model.TVEpisode]:
+    imdb_title = TVSeries(imdb_id=series_id, title=series_title)
+    web.update_title(
+        imdb_title,
+        page="episodes_with_pagination",
+        keys=["episodes"],
+        filter_type="season",
+        season=season,
+        paginate_result=True,
+    )
+    return imdb_title.get_episodes_by_season(season)

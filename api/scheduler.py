@@ -5,6 +5,7 @@ from mediafusion_scrapy.task import run_spider
 from scrapers.imdb_data import fetch_movie_ids_to_update
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
+from scrapers.prowlarr_feed import run_prowlarr_feed_scraper
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -228,5 +229,16 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "spider_name": "ufc_tgx",
                 "crontab_expression": settings.ufc_tgx_scheduler_crontab,
                 "scrape_all": "false",
+            },
+        )
+
+    # Schedule the feed scraper
+    if not settings.disable_prowlarr_feed_scraper:
+        scheduler.add_job(
+            run_prowlarr_feed_scraper.send,
+            CronTrigger.from_crontab(settings.prowlarr_feed_scrape_interval),
+            name="prowlarr_feed_scraper",
+            kwargs={
+                "crontab_expression": settings.prowlarr_feed_scrape_interval,
             },
         )

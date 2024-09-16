@@ -4,7 +4,6 @@ import logging
 import math
 import re
 
-from redis.asyncio import Redis
 from thefuzz import fuzz
 
 from db.config import settings
@@ -88,7 +87,7 @@ async def filter_and_sort_streams(
                 else:
                     await asyncio.to_thread(cache_update_function, **kwargs)
             except Exception as error:
-                logging.error(
+                logging.exception(
                     f"Failed to update cache status for {user_data.streaming_provider.service}: {error}"
                 )
 

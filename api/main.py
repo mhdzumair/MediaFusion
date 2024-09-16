@@ -13,6 +13,7 @@ from fastapi import (
     HTTPException,
     Request,
     Response,
+    BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -44,7 +45,7 @@ from utils.runtime_const import (
 )
 
 logging.basicConfig(
-    format="%(levelname)s::%(asctime)s - %(message)s",
+    format="%(levelname)s::%(asctime)s::%(filename)s::%(lineno)d - %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
     level=settings.logging_level,
 )
@@ -508,6 +509,7 @@ async def get_streams(
     season: int = None,
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     user_ip = await get_user_public_ip(request, user_data)
     user_feeds = []
@@ -549,7 +551,7 @@ async def get_streams(
                 raise HTTPException(status_code=404, detail="Meta ID not found.")
         else:
             fetched_streams = await crud.get_movie_streams(
-                user_data, secret_str, video_id, user_ip
+                user_data, secret_str, video_id, user_ip, background_tasks
             )
             fetched_streams.extend(user_feeds)
     elif catalog_type == "series":
@@ -560,6 +562,7 @@ async def get_streams(
             season,
             episode,
             user_ip,
+            background_tasks,
         )
         fetched_streams.extend(user_feeds)
     elif catalog_type == "events":

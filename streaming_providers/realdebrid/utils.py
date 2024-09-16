@@ -94,6 +94,8 @@ def update_rd_cache_status(
         instant_availability_data = rd_client.get_torrent_instant_availability(
             [stream.id for stream in streams]
         )
+        if not instant_availability_data:
+            return
         for stream in streams:
             stream.cached = bool(instant_availability_data.get(stream.id, False))
 
