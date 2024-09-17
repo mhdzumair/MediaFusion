@@ -18,6 +18,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import HTMLResponse
 
 from api import middleware
 from api.scheduler import setup_scheduler
@@ -641,6 +642,78 @@ async def get_poster(
     if catalog_type != "events":
         await mediafusion_data.save()
     raise HTTPException(status_code=404, detail="Failed to create poster.")
+
+
+@app.get(
+    "/{secret_str}/download/{catalog_type}/{video_id}",
+    response_class=HTMLResponse,
+    tags=["download"],
+)
+@app.get(
+    "/{secret_str}/download/{catalog_type}/{video_id}/{season}/{episode}",
+    response_class=HTMLResponse,
+    tags=["download"],
+)
+@wrappers.auth_required
+async def download_info(
+    request: Request,
+    secret_str: str,
+    catalog_type: Literal["movie", "series"],
+    video_id: str,
+    season: int = None,
+    episode: int = None,
+    user_data: schemas.UserData = Depends(get_user_data),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    if (
+        not user_data.streaming_provider
+        or not user_data.streaming_provider.download_via_browser
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Download option is not enabled or no streaming provider configured",
+        )
+
+    metadata = (
+        await crud.get_movie_data_by_id(video_id)
+        if catalog_type == "movie"
+        else await crud.get_series_data_by_id(video_id)
+    )
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Metadata not found")
+
+    user_ip = await get_user_public_ip(request, user_data)
+
+    if catalog_type == "movie":
+        streams = await crud.get_movie_streams(
+            user_data, secret_str, video_id, user_ip, background_tasks
+        )
+    else:
+        streams = await crud.get_series_streams(
+            user_data, secret_str, video_id, season, episode, user_ip, background_tasks
+        )
+
+    streaming_provider_path = f"{settings.host_url}/streaming_provider/"
+    downloadable_streams = [
+        stream
+        for stream in streams
+        if stream.url and stream.url.startswith(streaming_provider_path)
+    ]
+
+    context = {
+        "title": metadata.title,
+        "year": metadata.year,
+        "poster": metadata.poster,
+        "description": metadata.description,
+        "streams": downloadable_streams,
+        "catalog_type": catalog_type,
+        "season": season,
+        "episode": episode,
+    }
+
+    return TEMPLATES.TemplateResponse(
+        "html/download_info.html", {"request": request, **context}
+    )
 
 
 app.include_router(

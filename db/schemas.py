@@ -142,6 +142,7 @@ class StreamingProvider(BaseModel):
     password: str | None = Field(default=None, alias="pw")
     enable_watchlist_catalogs: bool = Field(default=True, alias="ewc")
     qbittorrent_config: QBittorrentConfig | None = Field(default=None, alias="qbc")
+    download_via_browser: bool = Field(default=False, alias="dvb")
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
@@ -172,6 +173,7 @@ class UserData(BaseModel):
         default=const.RESOLUTIONS, alias="sr"
     )
     enable_catalogs: bool = Field(default=True, alias="ec")
+    enable_imdb_metadata: bool = Field(default=True, alias="eim")
     max_size: int | str | float = Field(default=math.inf, alias="ms")
     max_streams_per_resolution: int = Field(default=3, alias="mspr")
     show_full_torrent_name: bool = Field(default=True, alias="sftn")

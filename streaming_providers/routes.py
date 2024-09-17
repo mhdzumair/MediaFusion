@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from os import path
 
 from fastapi import (
     Request,
@@ -54,6 +55,11 @@ async def get_cached_stream_url_and_redirect(
                 "/proxy/stream",
                 cached_stream_url,
                 query_params={"api_password": user_data.mediaflow_config.api_password},
+                response_headers={
+                    "Content-Disposition": "attachment, filename={}".format(
+                        path.basename(cached_stream_url)
+                    )
+                },
             )
         return RedirectResponse(
             url=cached_stream_url, headers=response.headers, status_code=302
@@ -131,11 +137,16 @@ def apply_mediaflow_proxy_if_needed(video_url, user_data):
             "/proxy/stream",
             video_url,
             query_params={"api_password": user_data.mediaflow_config.api_password},
+            response_headers={
+                "Content-Disposition": "attachment, filename={}".format(
+                    path.basename(video_url)
+                )
+            },
         )
     return video_url
 
 
-def handle_provider_exception(error, usage):
+def handle_provider_exception(error, usage) -> str:
     """
     Handles exceptions raised by the provider and logs them.
     """
@@ -148,7 +159,7 @@ def handle_provider_exception(error, usage):
     return f"{settings.host_url}/static/exceptions/{error.video_file_name}"
 
 
-def handle_generic_exception(exception, info_hash):
+def handle_generic_exception(exception, info_hash) -> str:
     """
     Handles generic exceptions and logs them.
     """
@@ -272,11 +283,11 @@ async def delete_all_watchlist(
 
     except ProviderException as error:
         # Handle provider-specific exceptions
-        video_url, _ = handle_provider_exception(error, "delete_watchlist")
+        video_url = handle_provider_exception(error, "delete_watchlist")
 
     except Exception as e:
         # Handle generic exceptions
-        video_url, _ = handle_generic_exception(e, "delete_watchlist")
+        video_url = handle_generic_exception(e, "delete_watchlist")
 
     return RedirectResponse(url=video_url, headers=response.headers)
 

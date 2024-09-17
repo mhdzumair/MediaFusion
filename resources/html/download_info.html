@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Download Options - {{ title }}</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <link rel="shortcut icon" href="{{logo_url}}" type="image/x-icon">
+</head>
+<body>
+<style>
+    .stream-options {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+
+    .stream-card {
+        background: rgba(38, 38, 38, 0.68);
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .stream-title {
+        font-size: 1.2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .stream-description p {
+        margin: 0.25rem 0;
+        line-height: 1.4;
+    }
+
+    .download-btn {
+        margin-top: auto;
+        padding: 0.5rem 1rem;
+        background: #4a47a3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }
+
+    .download-btn:hover {
+        background: #5f5cc3;
+    }
+</style>
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
+            <a href="/"><img class="logo" src="{{logo_url}}"></a>
+            <h3 class="text-center mb-4"><b>Download Options</b> - {{ title }} ({{ year }})</h3>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <img src="{{ poster }}" alt="{{ title }} Poster" class="img-fluid mb-3">
+                </div>
+                <div class="col-md-8">
+                    {% if description %} <p>{{ description }}</p> {% endif %}
+                    {% if catalog_type == "series" %}
+                    <p><strong>Season:</strong> {{ season }}, <strong>Episode:</strong> {{ episode }}</p>
+                    {% endif %}
+
+                    <h4 class="mt-4">🎬 Available Streams</h4>
+                    {% if streams %}
+                    <div class="stream-options">
+                        {% for stream in streams %}
+                        <div class="stream-card">
+                            <h3 class="stream-title">{{ stream.name }}</h3>
+                            <div class="stream-description">
+                                {% for line in stream.description.split('\n') %}
+                                <p>{{ line | safe }}</p>
+                                {% endfor %}
+                            </div>
+                            <button class="download-btn" data-url="{{ stream.url }}">Download</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p>No download options available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JS for Bootstrap -->
+<script src="/static/js/jquery-3.5.1.slim.min.js"></script>
+<script src="/static/js/popper.min.js"></script>
+<script src="/static/js/bootstrap.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const downloadButtons = document.querySelectorAll('.download-btn');
+        downloadButtons.forEach(button => {
+            button.addEventListener('click', async function () {
+                const url = this.getAttribute('data-url');
+                const originalText = this.textContent;
+                this.textContent = 'Loading...';
+                this.disabled = true;
+
+                // Instead of fetching, we'll redirect the browser to our download endpoint
+                window.location.href = url;
+
+                // Reset button after a short delay
+                setTimeout(() => {
+                    this.textContent = originalText;
+                    this.disabled = false;
+                }, 2000);
+            });
+        });
+
+    });
+</script>
+</body>
+</html>
