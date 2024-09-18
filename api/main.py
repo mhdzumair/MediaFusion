@@ -18,6 +18,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.responses import HTMLResponse
 
 from api import middleware
@@ -273,9 +274,11 @@ async def get_catalog(
     if cache_key:
         response.headers.update(const.CACHE_HEADERS)
         if cached_data := await REDIS_ASYNC_CLIENT.get(cache_key):
-            return await update_rpdb_posters(
-                schemas.Metas.model_validate_json(cached_data), user_data, catalog_type
-            )
+            try:
+                metas = schemas.Metas.model_validate_json(cached_data)
+                return await update_rpdb_posters(metas, user_data, catalog_type)
+            except ValidationError:
+                pass
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
 
@@ -445,10 +448,11 @@ async def get_meta(
     # Try retrieving the cached data
     cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_data:
-        meta_data = schemas.MetaItem.model_validate_json(cached_data)
-        if not meta_data:
-            raise HTTPException(status_code=404, detail="Meta ID not found.")
-        return await update_rpdb_poster(meta_data, user_data, catalog_type)
+        try:
+            meta_data = schemas.MetaItem.model_validate_json(cached_data)
+            return await update_rpdb_poster(meta_data, user_data, catalog_type)
+        except ValidationError:
+            pass
 
     if catalog_type == "movie":
         if meta_id.startswith("dl"):

@@ -3,8 +3,9 @@ from datetime import datetime, timedelta, date
 from typing import Optional
 
 import dramatiq
+import httpx
 import math
-from cinemagoerng import model, web
+from cinemagoerng import model, web, piculet
 from cinemagoerng.model import TVSeries
 from curl_cffi import requests
 from imdb import Cinemagoer, IMDbDataAccessError
@@ -14,21 +15,30 @@ from typedload.exceptions import TypedloadValueError
 from db.models import (
     MediaFusionMetaData,
 )
+from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 
 ia = Cinemagoer()
 
 
-async def get_imdb_movie_data(movie_id: str) -> Optional[model.Title]:
+async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.Title]:
     try:
-        movie = web.get_title(movie_id, page="main")
-        web.update_title(
-            movie, page="parental_guide", keys=["certification", "advisories"]
-        )
-        web.update_title(movie, page="akas", keys=["akas"])
+        title = web.get_title(imdb_id, page="main")
     except Exception:
+        title = await get_imdb_data_via_cinemeta(imdb_id, media_type)
+
+    if not title:
         return None
-    return movie
+
+    try:
+        web.update_title(
+            title, page="parental_guide", keys=["certification", "advisories"]
+        )
+        web.update_title(title, page="akas", keys=["akas"])
+    except Exception:
+        pass
+
+    return title
 
 
 def get_imdb_rating(movie_id: str) -> Optional[float]:
@@ -254,3 +264,62 @@ async def get_season_episodes(
         paginate_result=True,
     )
     return imdb_title.get_episodes_by_season(season)
+
+
+async def get_imdb_data_via_cinemeta(
+    title_id: str, media_type: str
+) -> Optional[model.Title]:
+    url = f"https://v3-cinemeta.strem.io/meta/{media_type}/{title_id}.json"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=10, headers=UA_HEADER)
+            response.raise_for_status()
+    except httpx.RequestError as e:
+        logging.error(f"Error fetching Cinemeta data: {e}")
+        return None
+
+    data = response.json()["meta"]
+    data.update(
+        {
+            "title": data["name"],
+            "rating": data["imdbRating"] if data.get("imdbRating") else None,
+            "primary_image": data["poster"],
+            "plot": {"en-US": data["description"]},
+            "type_id": "tvSeries" if media_type == "series" else "movie",
+            "cast": [{"name": cast, "imdb_id": ""} for cast in data.get("cast", [])],
+            "runtime": (
+                int(data["runtime"].split(" ")[0]) if data.get("runtime") else None
+            ),
+        }
+    )
+    year = data.get("year", "").split("–")
+    if len(year) == 2:
+        year, end_year = int(year[0]), int(year[1])
+        data["year"] = year
+        data["end_year"] = end_year
+    elif len(year) == 1:
+        data["year"] = int(year[0])
+    if media_type == "series":
+        episode_data = {}
+        for video in data.get("videos", []):
+            season = str(video["season"])
+            episode = str(video["episode"])
+            release_date = datetime.strptime(
+                video["released"], "%Y-%m-%dT%H:%M:%S.%fZ"
+            ).date()
+            if season not in episode_data:
+                episode_data[season] = {}
+            episode_data[season][episode] = {
+                "title": video["name"],
+                "type_id": "tvEpisode",
+                "imdb_id": "",
+                "release_date": release_date.isoformat(),
+                "year": release_date.year,
+                "season": season,
+                "episode": episode,
+            }
+        data["episodes"] = episode_data
+    try:
+        return piculet.deserialize(data, model.Title)
+    except TypedloadValueError:
+        return None

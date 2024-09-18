@@ -2,11 +2,14 @@
 #
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+import random
 
 # useful for handling different item types with a single interface
 
-import aiohttp
 from scrapy import signals
+from scrapy.downloadermiddlewares.retry import RetryMiddleware
+from scrapy.utils.response import response_status_message
+from twisted.internet import reactor, defer
 
 from db import database
 
@@ -117,3 +120,74 @@ class DatabaseInitializationMiddleware:
         # Initialize your database here
         await database.init()
         spider.logger.info("Database initialized successfully.")
+
+
+class TooManyRequestsRetryMiddleware(RetryMiddleware):
+    """
+    Middleware to handle 429 Too Many Requests with a backoff retry mechanism.
+    """
+
+    DEFAULT_DELAY = 6  # Default initial delay in seconds.
+    MAX_DELAY = 300  # Max delay between retries.
+    BACKOFF_FACTOR = 2  # Exponential backoff factor.
+
+    def __init__(self, settings):
+        super().__init__(settings)
+        self.max_retry_times = settings.getint(
+            "RETRY_TIMES", 5
+        )  # Get max retries from settings.
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(crawler.settings)
+
+    def process_response(self, request, response, spider):
+        """
+        Handle response with 429 status by retrying the request with an exponential backoff delay.
+        """
+        if request.meta.get("dont_retry", False):
+            return response
+
+        # If we get a 429 Too Many Requests response
+        if response.status == 429:
+            retries = request.meta.get("retry_times", 0) + 1
+
+            # If max retries exceeded, give up
+            if retries > self.max_retry_times:
+                spider.logger.error(
+                    f"Gave up retrying {request.url} after {retries} attempts."
+                )
+                return response
+
+            # Calculate the delay with exponential backoff
+            retry_after = response.headers.get("retry-after")
+            try:
+                retry_after = int(retry_after)
+            except (ValueError, TypeError):
+                delay = min(
+                    self.MAX_DELAY, self.DEFAULT_DELAY * (self.BACKOFF_FACTOR**retries)
+                )
+            else:
+                delay = min(
+                    self.MAX_DELAY, retry_after + random.randint(0, 10)
+                )  # Add some jitter
+
+            spider.logger.info(
+                f"Retrying {request.url} in {delay} seconds (retry {retries}/{self.max_retry_times})."
+            )
+
+            # Update retry meta information
+            request.meta["retry_times"] = retries
+
+            # Defer the retry with the calculated delay
+            deferred = defer.Deferred()
+            reactor.callLater(delay, deferred.callback, None)
+
+            def retry_request(_):
+                reason = response_status_message(response.status)
+                return self._retry(request, reason, spider) or response
+
+            deferred.addCallback(retry_request)
+            return deferred
+
+        return response

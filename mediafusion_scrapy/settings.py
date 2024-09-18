@@ -50,9 +50,9 @@ SPIDER_MIDDLEWARES = {
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-# DOWNLOADER_MIDDLEWARES = {
-#    "mediafusion_scrapy.middlewares.MediafusionScrapyDownloaderMiddleware": 543,
-# }
+DOWNLOADER_MIDDLEWARES = {
+    "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
+}
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
@@ -86,7 +86,7 @@ HTTPCACHE_EXPIRATION_SECS = (
     900  # 15 minutes to avoid a multiple scraping task of same time.
 )
 HTTPCACHE_DIR = "httpcache"
-HTTPCACHE_IGNORE_HTTP_CODES = []
+HTTPCACHE_IGNORE_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408, 429]
 HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 # HTTPCACHE_POLICY = "scrapy.extensions.httpcache.RFC2616Policy"
 
@@ -97,3 +97,15 @@ FEED_EXPORT_ENCODING = "utf-8"
 LOG_LEVEL = "DEBUG"
 
 STATS_CLASS = "mediafusion_scrapy.custom_stats.RedisStatsCollector"
+
+RETRY_ENABLED = True
+RETRY_HTTP_CODES = [
+    500,
+    502,
+    503,
+    504,
+    522,
+    524,
+    408,
+]  # 429 is handled by the middleware
+RETRY_TIMES = 5
