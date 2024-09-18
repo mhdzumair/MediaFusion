@@ -127,9 +127,9 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
     Middleware to handle 429 Too Many Requests with a backoff retry mechanism.
     """
 
-    DEFAULT_DELAY = 6  # Default initial delay in seconds.
+    DEFAULT_DELAY = 30  # Default initial delay in seconds.
     MAX_DELAY = 300  # Max delay between retries.
-    BACKOFF_FACTOR = 2  # Exponential backoff factor.
+    BACKOFF_FACTOR = 3  # Exponential backoff factor.
 
     def __init__(self, settings):
         super().__init__(settings)
