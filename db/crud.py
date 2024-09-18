@@ -161,7 +161,7 @@ async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaDa
     movie_data = await MediaFusionMovieMetaData.get(movie_id)
     # store it in the db for feature reference.
     if not movie_data and movie_id.startswith("tt"):
-        movie = await get_imdb_movie_data(movie_id)
+        movie = await get_imdb_movie_data(movie_id, "movie")
         if not movie:
             return None
 
@@ -208,7 +208,7 @@ async def get_series_data_by_id(
     )
 
     if not series_data and series_id.startswith("tt"):
-        series = await get_imdb_movie_data(series_id)
+        series = await get_imdb_movie_data(series_id, "series")
         if not series:
             return None
 
