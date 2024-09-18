@@ -19,8 +19,6 @@ class CommonTamilSpider(scrapy.Spider):
             "mediafusion_scrapy.pipelines.SeriesStorePipeline": 300,
             "mediafusion_scrapy.pipelines.RedisCacheURLPipeline": 400,
         },
-        "RETRY_HTTP_CODES": [500, 502, 503, 504, 522, 524, 408, 429],
-        "RETRY_TIMES": 5,
     }
 
     def __init__(
