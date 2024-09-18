@@ -217,14 +217,16 @@
                                 Enable Watchlist Catalogs
                             </label>
                         </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="download_via_browser"
-                                   id="download_via_browser" {% if user_data.streaming_provider and user_data.streaming_provider.download_via_browser %}checked{% endif %}>
-                            <label class="form-check-label" for="download_via_browser">
-                                Enable Download via Browser <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                               title="Show a download option in Stremio & Kodi to access torrent streams via web browser."></i>
-                            </label>
-                        </div>
+                        {% if not disable_download_via_browser %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="download_via_browser"
+                                       id="download_via_browser" {% if user_data.streaming_provider and user_data.streaming_provider.download_via_browser %}checked{% endif %}>
+                                <label class="form-check-label" for="download_via_browser">
+                                    Enable Download via Browser <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                   title="Show a download option in Stremio & Kodi to access torrent streams via web browser."></i>
+                                </label>
+                            </div>
+                        {% endif %}
                     </div>
 
                     <!-- Enable Catalogs Checkbox -->

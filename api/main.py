@@ -3,7 +3,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from io import BytesIO
-from typing import Literal
+from typing import Literal, Annotated
 
 import aiohttp
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -194,6 +194,7 @@ async def configure(
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
+            "disable_download_via_browser": settings.disable_download_via_browser,
         },
     )
 
@@ -645,12 +646,12 @@ async def get_poster(
 
 
 @app.get(
-    "/{secret_str}/download/{catalog_type}/{video_id}",
+    "/download/{secret_str}/{catalog_type}/{video_id}",
     response_class=HTMLResponse,
     tags=["download"],
 )
 @app.get(
-    "/{secret_str}/download/{catalog_type}/{video_id}/{season}/{episode}",
+    "/download/{secret_str}/{catalog_type}/{video_id}/{season}/{episode}",
     response_class=HTMLResponse,
     tags=["download"],
 )
@@ -660,14 +661,15 @@ async def download_info(
     secret_str: str,
     catalog_type: Literal["movie", "series"],
     video_id: str,
+    user_data: Annotated[schemas.UserData, Depends(get_user_data)],
+    background_tasks: BackgroundTasks,
     season: int = None,
     episode: int = None,
-    user_data: schemas.UserData = Depends(get_user_data),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     if (
         not user_data.streaming_provider
         or not user_data.streaming_provider.download_via_browser
+        or settings.disable_download_via_browser
     ):
         raise HTTPException(
             status_code=403,

@@ -300,7 +300,9 @@ function getUserData() {
         }
         streamingProviderData.service = provider;
         streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
-        streamingProviderData.download_via_browser = document.getElementById('download_via_browser').checked;
+        if (document.getElementById('download_via_browser')) {
+            streamingProviderData.download_via_browser = document.getElementById('download_via_browser').checked;
+        }
     } else {
         streamingProviderData = null;
     }
