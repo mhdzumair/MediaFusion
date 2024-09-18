@@ -207,16 +207,26 @@
                         </div>
                     </div>
 
-                    <!-- Enable Provider Watchlist -->
-                    <div id="watchlist_section" style="display:none" class="mb-3">
-                        <h6>Provider Watchlist Catalog:</h6>
-                        <div class="form-check">
+                    <!-- Streaming Provider Options -->
+                    <div id="streaming_provider_options" style="display:none" class="mb-3">
+                        <h6>Streaming Provider Options:</h6>
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="enable_watchlist"
                                    id="enable_watchlist" {% if user_data.streaming_provider and user_data.streaming_provider.enable_watchlist_catalogs %}checked{% endif %}>
                             <label class="form-check-label" for="enable_watchlist" id="watchlist_label">
-                                Enable Watchlist
+                                Enable Watchlist Catalogs
                             </label>
                         </div>
+                        {% if not disable_download_via_browser %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="download_via_browser"
+                                       id="download_via_browser" {% if user_data.streaming_provider and user_data.streaming_provider.download_via_browser %}checked{% endif %}>
+                                <label class="form-check-label" for="download_via_browser">
+                                    Enable Download via Browser <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                   title="Show a download option in Stremio & Kodi to access torrent streams via web browser."></i>
+                                </label>
+                            </div>
+                        {% endif %}
                     </div>
 
                     <!-- Enable Catalogs Checkbox -->
@@ -226,8 +236,22 @@
                             <input class="form-check-input" type="checkbox" name="enable_catalogs"
                                    id="enable_catalogs" {% if user_data.enable_catalogs %}checked{% endif %}>
                             <label class="form-check-label" for="enable_catalogs">
-                                Show Catalogs in Stremio <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                               title="Toggle to add or hide catalogs in Stremio. This is perfect for when you want to install multiple addons without creating duplicate catalog content and only want to display streams."></span>
+                                Show Catalogs in Stremio & Kodi <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                      title="Toggle to add or hide catalogs in Stremio. This is perfect for when you want to install multiple addons without creating duplicate catalog content and only want to display streams."></span>
+                            </label>
+                        </div>
+                    </div>
+                    <!-- Enable MetaData Response Checkbox -->
+                    <div class="mb-3">
+                        <h6>Enable IMDb Title Meta Data Response:</h6>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="enable_imdb_metadata"
+                                   id="enable_imdb_metadata" {% if user_data.enable_imdb_metadata %}checked{% endif %}>
+                            <label class="form-check-label" for="enable_imdb_metadata">
+                                Enable IMDb Meta Data Response
+                                <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                      title="Toggle to enable or disable IMDb title metadata response.
+                                      Stremio user prefer to only use cinemeta Addon for metadata and disable this. For the Kodi users, this option need to be enabled."></span>
                             </label>
                         </div>
                     </div>

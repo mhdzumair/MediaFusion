@@ -3,7 +3,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from io import BytesIO
-from typing import Literal
+from typing import Literal, Annotated
 
 import aiohttp
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -18,6 +18,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import HTMLResponse
 
 from api import middleware
 from api.scheduler import setup_scheduler
@@ -193,6 +194,7 @@ async def configure(
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
+            "disable_download_via_browser": settings.disable_download_via_browser,
         },
     )
 
@@ -641,6 +643,79 @@ async def get_poster(
     if catalog_type != "events":
         await mediafusion_data.save()
     raise HTTPException(status_code=404, detail="Failed to create poster.")
+
+
+@app.get(
+    "/download/{secret_str}/{catalog_type}/{video_id}",
+    response_class=HTMLResponse,
+    tags=["download"],
+)
+@app.get(
+    "/download/{secret_str}/{catalog_type}/{video_id}/{season}/{episode}",
+    response_class=HTMLResponse,
+    tags=["download"],
+)
+@wrappers.auth_required
+async def download_info(
+    request: Request,
+    secret_str: str,
+    catalog_type: Literal["movie", "series"],
+    video_id: str,
+    user_data: Annotated[schemas.UserData, Depends(get_user_data)],
+    background_tasks: BackgroundTasks,
+    season: int = None,
+    episode: int = None,
+):
+    if (
+        not user_data.streaming_provider
+        or not user_data.streaming_provider.download_via_browser
+        or settings.disable_download_via_browser
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Download option is not enabled or no streaming provider configured",
+        )
+
+    metadata = (
+        await crud.get_movie_data_by_id(video_id)
+        if catalog_type == "movie"
+        else await crud.get_series_data_by_id(video_id)
+    )
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Metadata not found")
+
+    user_ip = await get_user_public_ip(request, user_data)
+
+    if catalog_type == "movie":
+        streams = await crud.get_movie_streams(
+            user_data, secret_str, video_id, user_ip, background_tasks
+        )
+    else:
+        streams = await crud.get_series_streams(
+            user_data, secret_str, video_id, season, episode, user_ip, background_tasks
+        )
+
+    streaming_provider_path = f"{settings.host_url}/streaming_provider/"
+    downloadable_streams = [
+        stream
+        for stream in streams
+        if stream.url and stream.url.startswith(streaming_provider_path)
+    ]
+
+    context = {
+        "title": metadata.title,
+        "year": metadata.year,
+        "poster": metadata.poster,
+        "description": metadata.description,
+        "streams": downloadable_streams,
+        "catalog_type": catalog_type,
+        "season": season,
+        "episode": episode,
+    }
+
+    return TEMPLATES.TemplateResponse(
+        "html/download_info.html", {"request": request, **context}
+    )
 
 
 app.include_router(

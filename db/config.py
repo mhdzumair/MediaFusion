@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     prowlarr_live_title_search: bool = False
     prowlarr_background_title_search: bool = True
     prowlarr_search_query_timeout: int = 120
+    disable_download_via_browser: bool = False
 
     # Scheduler settings
     disable_all_scheduler: bool = False

@@ -252,6 +252,7 @@ def encode_mediaflow_proxy_url(
     destination_url: str | None = None,
     query_params: dict | None = None,
     request_headers: dict | None = None,
+    response_headers: dict | None = None,
 ) -> str:
     query_params = query_params or {}
     if destination_url is not None:
@@ -261,6 +262,10 @@ def encode_mediaflow_proxy_url(
     if request_headers:
         query_params.update(
             {f"h_{key}": value for key, value in request_headers.items()}
+        )
+    if response_headers:
+        query_params.update(
+            {f"r_{key}": value for key, value in response_headers.items()}
         )
     # Encode the query parameters
     encoded_params = parse.urlencode(query_params, quote_via=parse.quote)

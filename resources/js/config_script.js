@@ -194,12 +194,12 @@ function updateProviderFields(isChangeEvent = false) {
             setElementDisplay('token_input', 'block');
             setElementDisplay('qbittorrent_config', 'none');
         }
-        setElementDisplay('watchlist_section', 'block');
+        setElementDisplay('streaming_provider_options', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
     } else {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
-        setElementDisplay('watchlist_section', 'none');
+        setElementDisplay('streaming_provider_options', 'none');
         setElementDisplay('qbittorrent_config', 'none');
     }
 
@@ -300,6 +300,9 @@ function getUserData() {
         }
         streamingProviderData.service = provider;
         streamingProviderData.enable_watchlist_catalogs = document.getElementById('enable_watchlist').checked;
+        if (document.getElementById('download_via_browser')) {
+            streamingProviderData.download_via_browser = document.getElementById('download_via_browser').checked;
+        }
     } else {
         streamingProviderData = null;
     }
@@ -365,6 +368,7 @@ function getUserData() {
         selected_catalogs: Array.from(document.querySelectorAll('input[name="selected_catalogs"]:checked')).map(el => el.value),
         selected_resolutions: Array.from(document.querySelectorAll('input[name="selected_resolutions"]:checked')).map(el => el.value || null),
         enable_catalogs: document.getElementById('enable_catalogs').checked,
+        enable_imdb_metadata: document.getElementById('enable_imdb_metadata').checked,
         max_size: maxSizeBytes,
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,

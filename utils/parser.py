@@ -159,6 +159,11 @@ async def parse_stream_data(
         else "P2P"
     )
     has_streaming_provider = user_data.streaming_provider is not None
+    download_via_browser = (
+        has_streaming_provider
+        and user_data.streaming_provider.download_via_browser
+        and not settings.disable_download_via_browser
+    )
 
     base_proxy_url_template = ""
     if has_streaming_provider:
@@ -262,6 +267,18 @@ async def parse_stream_data(
             ] + [f"dht:{stream_data.id}"]
 
         stream_list.append(Stream(**stream_details))
+
+    if stream_list and download_via_browser:
+        download_url = f"{settings.host_url}/download/{secret_str}/{'series' if is_series else 'movie'}/{streams[0].meta_id}"
+        if is_series:
+            download_url += f"/{season}/{episode}"
+        stream_list.append(
+            Stream(
+                name=f"{settings.addon_name} {streaming_provider_name} 📥",
+                description="📥 Download Torrent Streams via WebBrowser",
+                externalUrl=download_url,
+            )
+        )
 
     return stream_list
 
@@ -405,6 +422,9 @@ async def generate_manifest(manifest: dict, user_data: UserData) -> dict:
                     break
 
         manifest["catalogs"] = ordered_catalogs
+        if not user_data.enable_imdb_metadata:
+            # Remove IMDb metadata if disabled
+            resources[-1]["idPrefixes"].remove("tt")
     else:
         # If catalogs are not enabled, clear them from the manifest
         manifest["catalogs"] = []
