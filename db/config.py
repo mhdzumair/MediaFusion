@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     prowlarr_url: str = "http://prowlarr-service:9696"
     zilean_url: str = "http://zilean.zilean:8181"
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
+    flaresolverr_url: str = "http://flaresolverr:8191/v1"
 
     # External API keys and secrets
     secret_key: str = Field(..., max_length=32, min_length=32)

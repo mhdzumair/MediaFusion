@@ -6,6 +6,7 @@
 #     https://docs.scrapy.org/en/latest/topics/settings.html
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+from db.config import settings
 
 BOT_NAME = "mediafusion_scrapy"
 
@@ -51,6 +52,7 @@ SPIDER_MIDDLEWARES = {
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
+    "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 542,
     "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
 }
 
@@ -107,5 +109,8 @@ RETRY_HTTP_CODES = [
     522,
     524,
     408,
+    403,
 ]  # 429 is handled by the middleware
 RETRY_TIMES = 5
+
+FLARESOLVERR_URL = settings.flaresolverr_url
