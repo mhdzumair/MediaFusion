@@ -57,7 +57,7 @@ function addStreamInput() {
                     <input type="text" class="form-control" id="streamName-${streamIndex}" name="streamName-${streamIndex}" required>
                 </div>
                 <div class="mb-3">
-                    <label for="streamUrl-${streamIndex}" class="form-label">M3U8 URL</label>
+                    <label for="streamUrl-${streamIndex}" class="form-label">M3U8 or MPD URL</label>
                     <input type="url" class="form-control" id="streamUrl-${streamIndex}" name="streamUrl-${streamIndex}" oninput="toggleField('streamYtId-${streamIndex}', this.value)">
                 </div>
                 <div class="mb-3">
@@ -75,6 +75,14 @@ function addStreamInput() {
                 <div class="mb-3">
                     <label class="form-label">Proxy Headers (Optional)</label>
                     <textarea class="form-control" id="streamProxyHeaders-${streamIndex}" name="streamProxyHeaders-${streamIndex}" placeholder="Enter JSON format for proxy headers"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label for="streamDrmKeyId-${streamIndex}" class="form-label">DRM Key ID (Optional)</label>
+                    <input type="text" class="form-control" id="streamDrmKeyId-${streamIndex}" name="streamDrmKeyId-${streamIndex}">
+                </div>
+                <div class="mb-3">
+                    <label for="streamDrmKey-${streamIndex}" class="form-label">DRM Key (Optional)</label>
+                    <input type="text" class="form-control" id="streamDrmKey-${streamIndex}" name="streamDrmKey-${streamIndex}">
                 </div>
                 <button type="button" class="btn btn-danger" onclick="removeStreamInput('stream-${streamIndex}')">Remove Stream</button>
             </div>
@@ -266,6 +274,8 @@ function constructTvMetadata() {
             ytId: document.getElementById(`streamYtId-${index}`).value.trim(),
             source: document.getElementById(`streamSource-${index}`).value.trim(),
             country: document.getElementById(`streamCountry-${index}`).value.trim(),
+            drm_key_id: document.getElementById(`streamDrmKeyId-${index}`).value.trim(),
+            drm_key: document.getElementById(`streamDrmKey-${index}`).value.trim(),
             behaviorHints: {
                 proxyHeaders: document.getElementById(`streamProxyHeaders-${index}`) ? JSON.parse(document.getElementById(`streamProxyHeaders-${index}`).value || "{}") : {},
                 notWebReady: true
