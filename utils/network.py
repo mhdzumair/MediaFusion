@@ -2,12 +2,14 @@ import asyncio
 import logging
 from typing import Callable, AsyncGenerator, Any, Tuple
 from urllib import parse
+from urllib.parse import urlencode
 
 import httpx
 from fastapi.requests import Request
 
 from db.schemas import UserData
 from utils import crypto
+from utils.crypto import encrypt_data
 from utils.runtime_const import PRIVATE_CIDR, REDIS_ASYNC_CLIENT
 
 
@@ -253,6 +255,9 @@ def encode_mediaflow_proxy_url(
     query_params: dict | None = None,
     request_headers: dict | None = None,
     response_headers: dict | None = None,
+    encryption_api_password: str = None,
+    expiration: int = None,
+    ip: str = None,
 ) -> str:
     query_params = query_params or {}
     if destination_url is not None:
@@ -267,8 +272,16 @@ def encode_mediaflow_proxy_url(
         query_params.update(
             {f"r_{key}": value for key, value in response_headers.items()}
         )
-    # Encode the query parameters
-    encoded_params = parse.urlencode(query_params, quote_via=parse.quote)
+
+    if encryption_api_password:
+        if "api_password" not in query_params:
+            query_params["api_password"] = encryption_api_password
+        encrypted_token = encrypt_data(
+            encryption_api_password, query_params, expiration, ip
+        )
+        encoded_params = urlencode({"token": encrypted_token})
+    else:
+        encoded_params = urlencode(query_params)
 
     # Construct the full URL
     base_url = parse.urljoin(mediaflow_proxy_url, endpoint)

@@ -34,7 +34,7 @@ async def validate_image_url(url: str) -> bool:
     return is_valid_url(url) and await does_url_exist(url)
 
 
-async def validate_m3u8_url(
+async def validate_live_stream_url(
     url: str, behaviour_hint: dict, validate_url: bool = False
 ) -> bool:
     if validate_url and not is_valid_url(url):
@@ -47,24 +47,23 @@ async def validate_m3u8_url(
                 url,
                 allow_redirects=True,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30),
+                timeout=aiohttp.ClientTimeout(total=20),
             ) as response:
-                content_type = response.headers.get("Content-Type", "").lower()
-
-                is_valid = content_type in const.M3U8_VALID_CONTENT_TYPES
+                content_type = response.headers.get("content-type", "").lower()
+                is_valid = content_type in const.IPTV_VALID_CONTENT_TYPES
                 return is_valid
         except (ClientError, asyncio.TimeoutError) as err:
             logging.error(err)
             return False
 
 
-async def validate_m3u8_url_with_cache(url: str, behaviour_hint: dict):
+async def validate_m3u8_or_mpd_url_with_cache(url: str, behaviour_hint: dict):
     cache_key = f"m3u8_url:{parse.urlparse(url).netloc}"
     cache_data = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cache_data:
         return json.loads(cache_data)
 
-    is_valid = await validate_m3u8_url(url, behaviour_hint)
+    is_valid = await validate_live_stream_url(url, behaviour_hint)
     await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(is_valid), ex=180)
     return is_valid
 
@@ -91,7 +90,7 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
     for stream in metadata.streams:
         if stream.url:
             stream_validation_tasks.append(
-                validate_m3u8_url(
+                validate_live_stream_url(
                     stream.url,
                     (
                         stream.behaviorHints.model_dump(exclude_none=True)
