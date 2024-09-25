@@ -32,7 +32,7 @@ class LiveStreamResolverPipeline:
         )
         content_type = response.headers.get("Content-Type", b"").decode().lower()
 
-        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
+        if response.status == 200 and content_type in const.IPTV_VALID_CONTENT_TYPES:
             stream_headers.update(
                 {
                     "User-Agent": response.request.headers.get("User-Agent").decode(),

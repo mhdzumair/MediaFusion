@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, parse_qs
 
 import scrapy
 
@@ -9,7 +9,13 @@ from utils import const
 
 class LiveTVSpider(scrapy.Spider):
     fallback_pattern = re.compile(
-        r"source: ['\"](.*?)['\"],\s*[\s\S]*?mimeType: ['\"]application/x-mpegURL['\"]"
+        r"source: ['\"](.*?)['\"],\s*[\s\S]*?mimeType: ['\"]application/(x-mpegURL|vnd\.apple\.mpegURL|dash\+xml)['\"]",
+        re.IGNORECASE,
+    )
+
+    any_m3u8_pattern = re.compile(
+        r'(?:"|\')?(https?://.*?\.m3u8(?:\?[^"\']*)?)(?:"|\')?',
+        re.IGNORECASE,
     )
 
     # this site sometimes returns html instead of image
@@ -92,7 +98,7 @@ class LiveTVSpider(scrapy.Spider):
 
     def parse_channel_page(self, response):
         channel_data = self.extract_channel_data(response)
-        player_api_base = self.extract_player_api_base(response)
+        player_api_base, player_api_method = self.extract_player_api_base(response)
         if not player_api_base:
             self.logger.error(f"Player API base URL not found for {response.url}")
             return
@@ -106,6 +112,7 @@ class LiveTVSpider(scrapy.Spider):
                 meta={
                     "channel_data": channel_data,
                     "player_api_base": player_api_base,
+                    "player_api_method": player_api_method,
                     "response": response,  # Pass the original response to access player options later
                 },
                 dont_filter=True,
@@ -116,6 +123,7 @@ class LiveTVSpider(scrapy.Spider):
         original_response = meta["response"]
         channel_data = meta["channel_data"]
         player_api_base = meta["player_api_base"]
+        player_api_method = meta["player_api_method"]
         content_type = response.headers.get("Content-Type", b"").decode().lower()
         is_image = "image" in content_type
 
@@ -125,7 +133,7 @@ class LiveTVSpider(scrapy.Spider):
 
         if is_image or is_allowed_url:
             yield from self.process_player_options(
-                original_response, channel_data, player_api_base
+                original_response, channel_data, player_api_base, player_api_method
             )
         else:
             self.logger.error(f"Invalid poster URL: {response.url}")
@@ -146,12 +154,26 @@ class LiveTVSpider(scrapy.Spider):
         return channel_data
 
     def extract_player_api_base(self, response):
-        """Extracts the player API base URL."""
-        return (
-            response.xpath("//script[contains(text(), 'player_api')]/text()")
-            .re_first(r'"player_api":"([^"]+)"', default="")
-            .replace("\\/", "/")
-        )
+        """Extracts the admin-ajax URL or player API base for GET or POST requests."""
+        # Directly extract the URL used for admin-ajax POST requests
+        admin_ajax = response.xpath("//script[contains(text(), 'player_api')]/text()")
+        admin_ajax_method = admin_ajax.re_first(r'"play_method"\s*:\s*"([^"]+)"')
+        if admin_ajax_method == "wp_json":
+            admin_ajax_url = admin_ajax.re_first(r'"player_api"\s*:\s*"([^"]+)"')
+        elif admin_ajax_method == "admin_ajax":
+            admin_ajax_url = admin_ajax.re_first(r'"url"\s*:\s*"([^"]+)"')
+        else:
+            admin_ajax_url = None
+
+        if admin_ajax_url:
+            # Correctly format and return the full URL
+            admin_ajax_full_url = urljoin(
+                response.url, admin_ajax_url.replace("\\/", "/")
+            )
+            return admin_ajax_full_url, admin_ajax_method
+        else:
+            self.logger.error("Admin AJAX URL not found for TamilUltra.")
+            return None, None
 
     def extract_stream_details(self, element):
         """Extracts stream title and country name from an element."""
@@ -163,13 +185,17 @@ class LiveTVSpider(scrapy.Spider):
             country_name = get_country_name(country_code)
         return stream_title, country_name
 
-    def process_player_options(self, response, channel_data, player_api_base):
+    def process_player_options(
+        self, response, channel_data, player_api_base, player_api_method
+    ):
         for element in response.css("#playeroptionsul > li.dooplay_player_option"):
             yield from self.process_player_option(
-                element, channel_data, player_api_base
+                element, channel_data, player_api_base, player_api_method
             )
 
-    def process_player_option(self, element, channel_data, player_api_base):
+    def process_player_option(
+        self, element, channel_data, player_api_base, player_api_method
+    ):
         """Processes each player option element to yield API request."""
         stream_title, country_name = self.extract_stream_details(element)
         data_post, data_nume, data_type = (
@@ -179,16 +205,34 @@ class LiveTVSpider(scrapy.Spider):
         )
 
         if all([data_post, data_nume, data_type]):
-            api_url = f"{player_api_base}{data_post}/{data_type}/{data_nume}"
-            yield scrapy.Request(
-                url=api_url,
-                callback=self.parse_api_response,
-                meta={
-                    "channel_data": channel_data,
-                    "stream_title": stream_title,
-                    "country_name": country_name,
-                },
-            )
+            if player_api_method == "wp_json":
+                api_url = f"{player_api_base}{data_post}/{data_type}/{data_nume}"
+                yield scrapy.Request(
+                    url=api_url,
+                    callback=self.parse_api_response,
+                    meta={
+                        "channel_data": channel_data,
+                        "stream_title": stream_title,
+                        "country_name": country_name,
+                    },
+                )
+            else:
+                form_data = {
+                    "action": "doo_player_ajax",
+                    "post": data_post,
+                    "nume": data_nume,
+                    "type": data_type,
+                }
+                yield scrapy.FormRequest(
+                    url=player_api_base,
+                    formdata=form_data,
+                    callback=self.parse_api_response,
+                    meta={
+                        "channel_data": channel_data,
+                        "stream_title": stream_title,
+                        "country_name": country_name,
+                    },
+                )
 
     def parse_api_response(self, response):
         channel_data = response.meta.get("channel_data")
@@ -213,17 +257,95 @@ class LiveTVSpider(scrapy.Spider):
                 },
             )
 
-    def extract_m3u8_urls(self, response):
-        """Extracts M3U8 URLs using direct and fallback regex patterns."""
+    def extract_m3u8_or_mpd_urls(self, response) -> tuple[list[dict], dict]:
+        """Extracts M3U8 and MPD URLs with appropriate metadata."""
         parsed_url = urlparse(response.url)
-        channel_id = parsed_url.query.split("=")[-1]
+        parsed_query = parse_qs(parsed_url.query)
 
-        m3u8_urls = re.findall(
-            rf"{re.escape(channel_id)}['\"]:\s*{{\s*url:\s*['\"](.*?\.m3u8.*?)['\"]",
-            response.text,
-        )
-        if not m3u8_urls:
-            m3u8_urls = self.fallback_pattern.findall(response.text)
+        if (
+            response.headers.get("Content-Type", b"").decode().lower()
+            in const.IPTV_VALID_CONTENT_TYPES[:2]
+        ):
+            # If the content type is M3U8, return the URL directly
+            return [{"url": response.url, "type": "m3u8"}], {}
+
+        stream_data = []
+
+        if "source" in parsed_query:
+            stream_data.append(
+                {
+                    "url": urljoin(response.url, parsed_query["source"][0]),
+                    "type": "unknown",  # We'll determine the type later
+                }
+            )
+        elif "zy" in parsed_query and ".mpd``" in parsed_query["zy"][0]:
+            data = parsed_query["zy"][0]
+            url, key_data = data.split("``")
+            drm_key_id, drm_key = key_data.split(":")
+            stream_data.append(
+                {
+                    "url": url,
+                    "type": "mpd",
+                    "drm_key_id": drm_key_id,
+                    "drm_key": drm_key,
+                }
+            )
+        elif "tamilultra" in response.url:
+            query_string = parsed_url.query
+            stream_data.append(
+                {
+                    "url": urljoin(response.url, query_string),
+                    "type": "m3u8",
+                }
+            )
+
+        else:
+            channel_id = parsed_query.get("id", [""])[0]
+
+            # Pattern to match both M3U8 and MPD URLs
+            pattern = rf"{re.escape(channel_id)}['\"]:\s*{{\s*['\"]?url['\"]?\s*:\s*['\"](.*?)['\"]"
+            matches = re.findall(pattern, response.text, re.DOTALL)
+
+            if not matches:
+                matches = self.fallback_pattern.findall(response.text)
+
+            if not matches:
+                matches = self.any_m3u8_pattern.findall(response.text)
+
+            for match in matches:
+                url = match[0] if isinstance(match, tuple) else match
+                stream_info = {
+                    "url": url,
+                    "type": "unknown",  # We'll determine the type later
+                }
+
+                # Extract clearkeys if it's an MPD stream
+                if url.endswith(".mpd"):
+                    drm_data = self.extract_drm_keys(response.text, channel_id)
+                    if not drm_data:
+                        self.logger.error(
+                            f"Clearkeys not found for MPD URL: {url} on channel page: {response.url}"
+                        )
+                        continue
+                    stream_info.update(drm_data)
+
+                stream_data.append(stream_info)
+
+        if not stream_data:
+            self.logger.error(
+                "No M3U8 or MPD URLs found for channel page: %s",
+                response.meta["channel_data"]["channel_page_url"],
+            )
+            return [], {}
+
+        # Determine stream types
+        for stream in stream_data:
+            if stream["url"].endswith(".mpd"):
+                stream["type"] = "mpd"
+            elif any(ext in stream["url"] for ext in [".m3u8", ".m3u"]):
+                stream["type"] = "m3u8"
+            else:
+                stream["type"] = "m3u8"
 
         user_agent = response.request.headers.get("User-Agent").decode()
         parsed_url = urlparse(response.url)
@@ -239,34 +361,37 @@ class LiveTVSpider(scrapy.Spider):
             },
         }
 
-        return m3u8_urls, behavior_hints
+        return stream_data, behavior_hints
 
     def request_and_extract_video_url(self, response):
         channel_data = response.meta.get("channel_data")
         stream_title = response.meta.get("stream_title")
         country_name = response.meta.get("country_name")
 
-        # Extract M3U8 URLs
-        m3u8_urls, behavior_hints = self.extract_m3u8_urls(response)
-        if not m3u8_urls:
+        # Extract M3U8 & MPD URLs and behavior hints
+        streams_data, behavior_hints = self.extract_m3u8_or_mpd_urls(response)
+        if not streams_data:
             self.logger.error(
-                "No M3U8 URLs found for channel url: %s, stream title: %s",
+                "No M3U8 or MPD URLs found for channel url: %s, stream title: %s",
                 channel_data["channel_page_url"],
                 stream_title,
             )
             return
 
-        for index, url in enumerate(m3u8_urls, 1):
+        for index, stream_data in enumerate(streams_data, 1):
+            url = stream_data["url"]
             full_url = urljoin(response.url, url)
             # Instead of appending to streams_info, initiate validation request
             yield scrapy.Request(
                 url=full_url,
-                headers=behavior_hints["proxyHeaders"]["request"],
-                callback=self.validate_m3u8_url,
-                errback=self.handle_m3u8_failure,
+                headers=behavior_hints.get("proxyHeaders", {}).get("request", {}),
+                callback=self.validate_m3u8_or_mpd_url,
+                errback=self.handle_m3u8_or_mpd_failure,
                 meta={
-                    "index": index if len(m3u8_urls) > 1 else None,
+                    "index": index if len(streams_data) > 1 else None,
                     "stream_title": stream_title,
+                    "drm_key_id": stream_data.get("drm_key_id"),
+                    "drm_key": stream_data.get("drm_key"),
                     "full_url": full_url,
                     "country_name": country_name,
                     "channel_data": channel_data,
@@ -275,17 +400,21 @@ class LiveTVSpider(scrapy.Spider):
                 dont_filter=True,
             )
 
-    def validate_m3u8_url(self, response):
+    def validate_m3u8_or_mpd_url(self, response):
         meta = response.meta
         content_type = response.headers.get("Content-Type", b"").decode().lower()
 
-        if response.status == 200 and content_type in const.M3U8_VALID_CONTENT_TYPES:
+        if response.status == 200 and content_type in const.IPTV_VALID_CONTENT_TYPES:
             # Content type is valid, proceed with adding the stream
             stream_info = {
-                "name": f"{meta['stream_title']} - {meta['index']}"
-                if meta["index"]
-                else meta["stream_title"],
+                "name": (
+                    f"{meta['stream_title']} - {meta['index']}"
+                    if meta["index"]
+                    else meta["stream_title"]
+                ),
                 "url": meta["full_url"],
+                "drm_key_id": meta["drm_key_id"],
+                "drm_key": meta["drm_key"],
                 "country": meta["country_name"],
                 "behaviorHints": meta["behavior_hints"],
                 "source": meta["channel_data"]["source"],
@@ -300,9 +429,9 @@ class LiveTVSpider(scrapy.Spider):
                 f"Invalid M3U8 URL: {meta['full_url']} with Content-Type: {content_type}"
             )
 
-    def handle_m3u8_failure(self, failure):
+    def handle_m3u8_or_mpd_failure(self, failure):
         self.logger.error(
-            "Failed to get m3u8 URL from channel page: %s stream title: %s",
+            "Failed to get m3u8 or MPD URL from channel page: %s stream title: %s",
             failure.request.meta["channel_data"]["channel_page_url"],
             failure.request.meta["stream_title"],
         )
@@ -317,3 +446,35 @@ class LiveTVSpider(scrapy.Spider):
         channel_data_copy["country"] = country_name
 
         return channel_data_copy
+
+    @staticmethod
+    def extract_drm_keys(response_text: str, channel_id: str) -> dict:
+        stream_info = {}
+
+        # Pattern for channel entry
+        channel_pattern = rf'"{re.escape(channel_id)}"\s*:\s*{{[^}}]+}}'
+        channel_match = re.search(channel_pattern, response_text, re.DOTALL)
+
+        if channel_match:
+            channel_data = channel_match.group(0)
+
+            # Pattern for clearkeys
+            clearkey_pattern = (
+                r'["\']?clearkeys["\']?\s*:\s*{\s*["\'](.+?)["\']\s*:\s*["\'](.+?)["\']'
+            )
+            clearkey_match = re.search(clearkey_pattern, channel_data, re.DOTALL)
+
+            # Pattern for k1 and k2
+            k1k2_pattern = r'["\']?k1["\']?\s*:\s*["\'](.+?)["\'],\s*["\']?k2["\']?\s*:\s*["\'](.+?)["\']'
+            k1k2_match = re.search(k1k2_pattern, channel_data)
+
+            if clearkey_match:
+                key_id, key = clearkey_match.groups()
+                stream_info["drm_key_id"] = key_id
+                stream_info["drm_key"] = key
+            elif k1k2_match:
+                key_id, key = k1k2_match.groups()
+                stream_info["drm_key_id"] = key_id
+                stream_info["drm_key"] = key
+
+        return stream_info
