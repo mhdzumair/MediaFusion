@@ -4,7 +4,7 @@ from typing import Optional, Any
 import pymongo
 import pytz
 from beanie import Document, Link
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
@@ -104,7 +104,38 @@ class TVStreams(Document):
     country: str | None = None
     is_working: Optional[bool] = True
     test_failure_count: int = 0
-    namespace: str = "mediafusion"
+    namespaces: list[str] = ["mediafusion"]
+    drm_key_id: str | None = None
+    drm_key: str | None = None
+
+    def __eq__(self, other):
+        if not isinstance(other, TVStreams):
+            return False
+        return (
+            self.url == other.url
+            and self.ytId == other.ytId
+            and self.externalUrl == other.externalUrl
+            and self.drm_key_id == other.drm_key_id
+            and self.drm_key == other.drm_key
+        )
+
+    def __hash__(self):
+        return hash(
+            (self.url, self.ytId, self.externalUrl, self.drm_key_id, self.drm_key)
+        )
+
+    class Settings:
+        indexes = [
+            IndexModel(
+                [
+                    ("meta_id", ASCENDING),
+                    ("created_at", DESCENDING),
+                    ("namespaces", ASCENDING),
+                    ("is_working", ASCENDING),
+                ]
+            ),
+            IndexModel([("url", pymongo.TEXT), ("ytId", pymongo.TEXT)]),
+        ]
 
 
 class MediaFusionMetaData(Document):

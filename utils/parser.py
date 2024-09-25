@@ -1,6 +1,8 @@
 import asyncio
 import functools
 import logging
+from typing import Optional, List
+
 import math
 import re
 
@@ -14,7 +16,7 @@ from utils import const
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
 from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS
-from utils.validation_helper import validate_m3u8_url_with_cache
+from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 
 async def filter_and_sort_streams(
@@ -317,58 +319,121 @@ def convert_size_to_bytes(size_str: str) -> int:
 
 
 async def parse_tv_stream_data(
-    tv_streams: list[TVStreams], user_data: UserData
-) -> list[Stream]:
-    stream_list = []
+    tv_streams: List[TVStreams], user_data: UserData
+) -> List[Stream]:
     is_mediaflow_proxy_enabled = (
         user_data.mediaflow_config and user_data.mediaflow_config.proxy_live_streams
     )
     addon_name = (
         f"{settings.addon_name} {'🕵🏼‍♂️' if is_mediaflow_proxy_enabled else '📡'}"
     )
-    for stream in tv_streams[::-1]:
-        if settings.validate_m3u8_urls_liveness:
-            is_working = await validate_m3u8_url_with_cache(
-                stream.url, stream.behaviorHints or {}
-            )
-            if not is_working:
-                continue
 
-        if is_mediaflow_proxy_enabled:
-            stream.url = encode_mediaflow_proxy_url(
-                user_data.mediaflow_config.proxy_url,
-                "/proxy/hls",
-                stream.url,
-                request_headers=stream.behaviorHints.get("proxyHeaders", {}).get(
-                    "request", {}
-                ),
-                query_params={"api_password": user_data.mediaflow_config.api_password},
-            )
-            stream.behaviorHints.update({"proxyHeaders": {}})
+    stream_processor = functools.partial(
+        process_stream,
+        is_mediaflow_proxy_enabled=is_mediaflow_proxy_enabled,
+        mediaflow_config=user_data.mediaflow_config,
+        addon_name=addon_name,
+    )
 
-        country_info = f"\n🌐 {stream.country}" if stream.country else ""
+    processed_streams = await asyncio.gather(
+        *[stream_processor(stream) for stream in reversed(tv_streams)]
+    )
 
-        stream_list.append(
-            Stream(
-                name=addon_name,
-                description=f"📺 {stream.name}{country_info}\n🔗 {stream.source}",
-                url=stream.url,
-                ytId=stream.ytId,
-                behaviorHints=stream.behaviorHints,
-            )
-        )
+    stream_list = []
+    is_mediaflow_needed = False
+
+    for result in processed_streams:
+        if result:
+            if isinstance(result, Stream):
+                stream_list.append(result)
+            elif result == "MEDIAFLOW_NEEDED":
+                is_mediaflow_needed = True
 
     if not stream_list:
-        stream_list.append(
-            Stream(
-                name=settings.addon_name,
-                description="🚫 No streams are live at the moment.",
-                url=f"{settings.host_url}/static/exceptions/no_streams_live.mp4",
-                behaviorHints={"notWebReady": True},
+        if is_mediaflow_needed:
+            stream_list.append(
+                create_exception_stream(
+                    addon_name,
+                    "🚫 MediaFlow Proxy is required to watch this stream.",
+                    "mediaflow_proxy_required.mp4",
+                )
             )
-        )
+        else:
+            stream_list.append(
+                create_exception_stream(
+                    addon_name,
+                    "🚫 No streams are live at the moment.",
+                    "no_streams_live.mp4",
+                )
+            )
 
     return stream_list
+
+
+async def process_stream(
+    stream: TVStreams,
+    is_mediaflow_proxy_enabled: bool,
+    mediaflow_config,
+    addon_name: str,
+) -> Optional[Stream | str]:
+    if settings.validate_m3u8_urls_liveness:
+        is_working = await validate_m3u8_or_mpd_url_with_cache(
+            stream.url, stream.behaviorHints or {}
+        )
+        if not is_working:
+            return None
+
+    stream_url, behavior_hints = stream.url, stream.behaviorHints
+
+    if stream.drm_key or "dlhd" in stream.source:
+        if not is_mediaflow_proxy_enabled:
+            return "MEDIAFLOW_NEEDED"
+        stream_url = get_proxy_url(stream, mediaflow_config)
+        behavior_hints["proxyHeaders"] = None
+    elif is_mediaflow_proxy_enabled:
+        stream_url = get_proxy_url(stream, mediaflow_config)
+        behavior_hints["proxyHeaders"] = None
+
+    country_info = f"\n🌐 {stream.country}" if stream.country else ""
+
+    return Stream(
+        name=addon_name,
+        description=f"📺 {stream.name}{country_info}\n🔗 {stream.source}",
+        url=stream_url,
+        ytId=stream.ytId,
+        behaviorHints=behavior_hints,
+    )
+
+
+def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
+    endpoint = (
+        "/proxy/mpd/manifest.m3u8" if stream.drm_key else "/proxy/hls/manifest.m3u8"
+    )
+    query_params = {}
+    if stream.drm_key:
+        query_params = {"key_id": stream.drm_key_id, "key": stream.drm_key}
+    elif "dlhd" in stream.source:
+        query_params = {"use_request_proxy": False}
+
+    return encode_mediaflow_proxy_url(
+        mediaflow_config.proxy_url,
+        endpoint,
+        stream.url,
+        query_params=query_params,
+        request_headers=stream.behaviorHints.get("proxyHeaders", {}).get("request", {}),
+        encryption_api_password=mediaflow_config.api_password,
+    )
+
+
+def create_exception_stream(
+    addon_name: str, description: str, exc_file_name: str
+) -> Stream:
+    return Stream(
+        name=addon_name,
+        description=description,
+        url=f"{settings.host_url}/static/exceptions/{exc_file_name}",
+        behaviorHints={"notWebReady": True},
+    )
 
 
 async def fetch_downloaded_info_hashes(

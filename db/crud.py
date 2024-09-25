@@ -116,7 +116,7 @@ async def get_tv_meta_list(
     # Define query filters for TVStreams
     query_filters = {
         "is_working": True,
-        "namespace": {"$in": [namespace, "mediafusion", None]},
+        "namespaces": {"$in": [namespace, "mediafusion", None]},
     }
 
     poster_path = f"{settings.poster_host_url}/poster/tv/"
@@ -428,7 +428,7 @@ async def get_tv_streams(video_id: str, namespace: str, user_data) -> list[Strea
         {
             "meta_id": video_id,
             "is_working": True,
-            "namespace": {"$in": [namespace, "mediafusion", None]},
+            "namespaces": {"$in": [namespace, "mediafusion", None]},
         },
     ).to_list()
 
@@ -848,7 +848,7 @@ async def process_tv_search_query(search_query: str, namespace: str) -> dict:
                     {
                         "$match": {
                             "is_working": True,
-                            "namespace": {"$in": [namespace, "mediafusion", None]},
+                            "namespaces": {"$in": [namespace, "mediafusion", None]},
                         }
                     },
                     {"$count": "num_working_streams"},
@@ -907,11 +907,25 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
 
     # Ensure the channel document is upserted
     try:
-        await MediaFusionTVMetaData.find_one(
-            MediaFusionTVMetaData.id == channel_id
-        ).upsert(
-            Set({}),  # Update operation is a no-op for now
-            on_insert=MediaFusionTVMetaData(
+        channel_data = await MediaFusionTVMetaData.get(channel_id)
+        if channel_data:
+            if channel_data.is_poster_working is False:
+                background = (
+                    {"background": tv_metadata.background}
+                    if tv_metadata.background
+                    else {}
+                )
+                await channel_data.update(
+                    Set(
+                        {
+                            "poster": tv_metadata.poster,
+                            "is_poster_working": True,
+                            **background,
+                        }
+                    )
+                )
+        else:
+            channel_data = MediaFusionTVMetaData(
                 id=channel_id,
                 title=tv_metadata.title,
                 poster=tv_metadata.poster,
@@ -922,13 +936,13 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
                 genres=genres,
                 type="tv",
                 streams=[],
-            ),
-        )
+            )
+            await channel_data.create()
     except DuplicateKeyError:
         pass
 
     # Stream processing
-    stream_ids = []
+    bulk_writer = BulkWriter()
     for stream in tv_metadata.streams:
         # Define stream document with meta_id
         stream_doc = TVStreams(
@@ -943,7 +957,9 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
             source=stream.source,
             country=stream.country,
             meta_id=channel_id,
-            namespace=tv_metadata.namespace,
+            namespaces=[tv_metadata.namespace],
+            drm_key_id=stream.drm_key_id,
+            drm_key=stream.drm_key,
         )
 
         # Check if the stream exists (by URL or ytId) and upsert accordingly
@@ -951,29 +967,29 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
             TVStreams.url == stream.url,
             TVStreams.ytId == stream.ytId,
         )
-        if existing_stream:
-            stream_ids.append(existing_stream.id)
-        else:
-            inserted_stream = await stream_doc.insert()
-            stream_ids.append(inserted_stream.id)
-
-    # Update the TV channel with new stream links, if there are any new streams
-    if stream_ids:
-        await MediaFusionTVMetaData.find_one(
-            MediaFusionTVMetaData.id == channel_id
-        ).update(
-            {
-                "$addToSet": {
-                    "streams": {
-                        "$each": [
-                            TVStreams.link_from_id(stream_id)
-                            for stream_id in stream_ids
-                        ]
-                    }
+        if existing_stream == stream_doc:
+            update_data = {}
+            if (
+                stream.drm_key_id != existing_stream.drm_key_id
+                or stream.drm_key != existing_stream.drm_key
+            ) and stream.namespace in existing_stream.namespaces:
+                update_data = {
+                    "drm_key_id": stream.drm_key_id,
+                    "drm_key": stream.drm_key,
                 }
-            }
-        )
+            if tv_metadata.namespace not in existing_stream.namespaces:
+                existing_stream.namespaces.append(tv_metadata.namespace)
+                update_data.update({"namespaces": existing_stream.namespaces})
 
+            if update_data:
+                await existing_stream.update(
+                    Set(update_data),
+                    bulk_writer=bulk_writer,
+                )
+        else:
+            await TVStreams.insert_one(stream_doc, bulk_writer=bulk_writer)
+
+    await bulk_writer.commit()
     logging.info(f"Processed TV channel {tv_metadata.title}")
     return channel_id
 
@@ -991,24 +1007,17 @@ async def save_events_data(metadata: dict) -> str:
         existing_event_data = MediaFusionEventsMetaData.model_validate_json(
             existing_event_json
         )
-        # Use a dictionary keyed by 'url' to ensure uniqueness of streams
-        existing_streams = {
-            stream.url or stream.ytId or stream.externalUrl: stream
-            for stream in existing_event_data.streams
-        }
+        existing_streams = set(existing_event_data.streams)
     else:
-        existing_streams = {}
+        existing_streams = set()
 
     # Update or add streams based on the uniqueness of 'url'
     for stream in metadata["streams"]:
         # Create a TVStreams instance for each stream
         stream_instance = TVStreams(meta_id=meta_id, **stream)
-        existing_streams[
-            stream_instance.url or stream_instance.ytId or stream_instance.externalUrl
-        ] = stream_instance.model_dump()
+        existing_streams.add(stream_instance)
 
-    # Update the event metadata with the updated list of streams
-    streams = list(existing_streams.values())
+    streams = list(existing_streams)
 
     event_start_timestamp = metadata.get("event_start_timestamp", 0)
 

@@ -258,6 +258,11 @@ class MetaIdProjection(BaseModel):
     id: str = Field(alias="_id")
 
 
+class TVMetaProjection(BaseModel):
+    id: str = Field(alias="_id")
+    title: str
+
+
 class TVStreams(BaseModel):
     name: str
     url: str | None = None
@@ -265,6 +270,8 @@ class TVStreams(BaseModel):
     source: str
     country: str | None = None
     behaviorHints: StreamBehaviorHints | None = None
+    drm_key_id: str | None = None
+    drm_key: str | None = None
 
     @model_validator(mode="after")
     def validate_url_or_yt_id(self) -> "TVStreams":
