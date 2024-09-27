@@ -35,6 +35,10 @@ cp .env-sample .env
 # Generate and update SECRET_KEY in the .env file
 echo SECRET_KEY=$(openssl rand -hex 16) >> .env
 
+# Set API Password to secure the API endpoints
+echo API_PASSWORD=your_password >> .env
+
+# Optional:
 # Update .env with your Premiumize credentials if available
 # You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
 echo PREMIUMIZE_OAUTH_CLIENT_ID=your_client_id >> .env
@@ -54,6 +58,10 @@ Copy-Item .env-sample .env
 $guid = [System.Guid]::NewGuid().ToString("N").Substring(0, 32)
 Add-Content -Path .env -Value "SECRET_KEY=$guid"
 
+# Set API Password to secure the API endpoints
+Add-Content -Path .env -Value "API_PASSWORD=your_password"
+
+# Optional:
 # Update .env with your Premiumize credentials if available
 # You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
 $clientId = 'your_client_id'
@@ -142,6 +150,9 @@ echo "127.0.0.1 mediafusion.local" | sudo tee -a /etc/hosts
 
 Now, access MediaFusion at [https://mediafusion.local](https://mediafusion.local) 🎉
 
+> [!TIP]
+> When you first access MediaFusion, scraped results may not be immediately available until background scheduled tasks are completed.
+> You can manually trigger these tasks by visiting the scraper control interface at [https://mediafusion.local/scraper](https://mediafusion.local/scraper).
 
 ## Updating MediaFusion 🔄
 

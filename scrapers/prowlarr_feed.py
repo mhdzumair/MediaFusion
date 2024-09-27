@@ -142,9 +142,9 @@ async def search_and_create_metadata(metadata: dict, media_type: str):
     return await get_metadata_by_id(metadata["id"], media_type)
 
 
-@minimum_run_interval(hours=settings.prowlarr_feed_scrape_interval)
+@minimum_run_interval(hours=settings.prowlarr_feed_scrape_interval_hour)
 @dramatiq.actor(
-    time_limit=30 * 60 * 1000,  # 30 minutes
+    time_limit=60 * 60 * 1000,  # 60 minutes
     max_retries=3,
     min_backoff=60000,
     max_backoff=3600000,

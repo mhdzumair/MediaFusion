@@ -36,6 +36,7 @@
   - 📺 **TamilUltra & NowMeTV**: Get the best of Live TV channels right at your fingertips.
   - 🔄 **Prowlarr Integration**: Supercharge your scraping streams with Prowlarr's powerful integration.
   - 🌊 **Torrentio/KnightCrawler Streams**: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.
+  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for a cached debrid contents.
 
 - **Additional Features**:
   - 🔒 **API Security**: Fortify your self-hosted API with a password to prevent unauthorized access.
@@ -47,12 +48,19 @@
   - ✨ **Manual Scraper Triggering UI**: Manage your scraping sources with a manual trigger UI for a more hands-on approach.
   - 🗑️ **Delete Watchlist**: Delete your watchlist from the stremio for quick control over your content.
   - 🔍 **Prowlarr Indexer Support**: Use [MediaFusion as an indexer in Prowlarr](/resources/yaml/mediafusion.yaml) for searching movies and TV shows with Radarr and Sonarr.
-  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for a cached debrid contents.
 
-## 🚀 Installation
+## 🚀 Installation Guide
+
+### Stremio Add-on Installation
 
 1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads).
 2. **MediaFusion Community Instance (Non-Affiliated)**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button.
+
+### Kodi Add-on Installation
+1. **Kodi**: Install Kodi from [here](https://kodi.tv/download).
+2. **MediaFusion Kodi Zip**: Download the [plugin.video.mediafusion.zip](https://github.com/mhdzumair/MediaFusion/releases) file.
+3. Install the zip file in Kodi by navigating to `Add-ons` > `Install from zip file`.
+4. Configure the add-on by navigating to `Add-ons` > `My add-ons` > `Video add-ons` > `MediaFusion` > `Configure` and follow the instructions.
 
 ## 🚀 Local Add-on Deployment
 
