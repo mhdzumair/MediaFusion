@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     logo_url: str = (
         "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
     )
+    remote_config_source: str = (
+        "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/scraper_config.json"
+    )
+    local_config_path: str = "resources/json/scraper_config.json"
 
     # Feature toggles
     is_scrap_from_torrentio: bool = False

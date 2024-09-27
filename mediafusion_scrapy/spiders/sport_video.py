@@ -2,21 +2,13 @@ from urllib.parse import urlparse
 
 import scrapy
 
+from utils.config import config_manager
 from utils.runtime_const import REDIS_SYNC_CLIENT
 
 
 class SportVideoSpider(scrapy.Spider):
     name = "sport_video"
-    allowed_domains = ["www.sport-video.org.ua"]
-    categories = {
-        "american_football": "https://www.sport-video.org.ua/americanfootball.html",
-        "basketball": "https://www.sport-video.org.ua/basketball.html",
-        "baseball": "https://www.sport-video.org.ua/baseball.html",
-        "football": "https://www.sport-video.org.ua/football.html",
-        "hockey": "https://www.sport-video.org.ua/hockey.html",
-        "rugby": "https://www.sport-video.org.ua/rugby.html",
-        "other_sports": "https://www.sport-video.org.ua/other.html",
-    }
+    categories = config_manager.get_scraper_config(name, "categories")
 
     custom_settings = {
         "ITEM_PIPELINES": {

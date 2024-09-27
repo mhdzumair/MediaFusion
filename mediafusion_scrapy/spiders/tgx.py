@@ -7,13 +7,14 @@ from scrapy_playwright.page import PageMethod
 
 from db.config import settings
 from db.models import TorrentStreams
+from utils.config import config_manager
 from utils.parser import convert_size_to_bytes
 from utils.runtime_const import SPORTS_ARTIFACTS, REDIS_ASYNC_CLIENT
 from utils.torrent import parse_magnet
 
 
 class TgxSpider(scrapy.Spider):
-    allowed_domains = ["torrentgalaxy.to", "tgx.rs", "torrentgalaxy.mx", "tgx.sb"]
+    allowed_domains = config_manager.get_start_url("tgx")
     uploader_profiles: list[str] = []
     search_queries: list[str] = []
     catalog: list[str]

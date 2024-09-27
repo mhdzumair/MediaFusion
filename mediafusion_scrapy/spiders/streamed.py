@@ -7,42 +7,26 @@ from urllib.parse import urljoin
 import pytz
 import scrapy
 
+from utils.config import config_manager
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class StreamedSpider(scrapy.Spider):
     name = "streamed"
 
-    api_base_url = "https://streamed.su/api"
-    live_matches_url = f"{api_base_url}/matches/live"
-    stream_url_template = f"{api_base_url}/stream/{{source}}/{{id}}"
+    api_base_url = config_manager.get_scraper_config(name, "api_base_url")
+    live_matches_url = f"{api_base_url}{config_manager.get_scraper_config(name, 'live_matches_endpoint')}"
+    stream_url_template = f"{api_base_url}{config_manager.get_scraper_config(name, 'stream_url_template')}"
     image_url_template = (
-        f"{api_base_url}/images/poster/{{batch_id_1}}/{{batch_id_2}}.webp"
+        f"{api_base_url}{config_manager.get_scraper_config(name, 'image_url_template')}"
     )
-
-    m3u8_base_url = "https://{domain}/{source}/js/{id}/{stream_no}/playlist.m3u8"
-    mediafusion_referer = "https://mediafusion.addon/"
-
-    category_mapping = {
-        "afl": "Afl",
-        "american-football": "American Football",
-        "baseball": "Baseball",
-        "basketball": "Basketball",
-        "billiards": "Billiards",
-        "cricket": "Cricket",
-        "darts": "Dart",
-        "fight": "Fighting",
-        "football": "Football",
-        "golf": "Golf",
-        "hockey": "Hockey",
-        "motor-sports": "Motor Sport",
-        "other": "Other Sports",
-        "rugby": "Rugby",
-        "tennis": "Tennis",
-    }
+    m3u8_base_url = config_manager.get_scraper_config(name, "m3u8_base_url")
+    mediafusion_referer = config_manager.get_scraper_config(name, "mediafusion_referer")
+    category_mapping = config_manager.get_scraper_config(name, "category_mapping")
 
     domains = None
     domain_host = None
+    gmt = pytz.timezone("Etc/GMT")
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -167,7 +151,7 @@ class StreamedSpider(scrapy.Spider):
                 f"🔗 {stream_data['source'].title()} Stream {stream_data['streamNo']}",
                 "stream_url": m3u8_url,
                 "referer": self.mediafusion_referer,
-                "description": f"{item['title']} - {datetime.fromtimestamp(item['event_start_timestamp'], tz=pytz.utc).strftime('%I:%M%p GMT')}",
+                "description": f"{item['title']} - {datetime.fromtimestamp(item['event_start_timestamp'], tz=self.gmt).strftime('%I:%M%p GMT')}",
             }
         )
 

@@ -6,51 +6,22 @@ import pytz
 import scrapy
 from dateutil import parser as date_parser
 
+from utils.config import config_manager
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class DaddyLiveHDSpider(scrapy.Spider):
     name = "dlhd"
-    site_url = "https://dlhd.so"
-    start_urls = [f"{site_url}/schedule/schedule-generated.json"]
+    start_urls = [config_manager.get_scraper_config(name, "schedule_url")]
 
     # The number of hours to consider the event as starting within next hours from now.
     start_within_next_hours = 1
     started_within_hours_ago = 6
 
-    category_map = {
-        "Tv Shows": "Other Sports",
-        "Soccer": "Football",
-        "Cricket": "Cricket",
-        "Tennis": "Tennis",
-        "Motorsport": "Motor Sport",
-        "Boxing": "Boxing",
-        "MMA": "MMA",
-        "Golf": "Golf",
-        "Snooker": "Other Sports",
-        "Am. Football": "American Football",
-        "Athletics": "Athletics",
-        "Aussie rules": "Aussie Rules",
-        "Baseball": "Baseball",
-        "Basketball": "Basketball",
-        "Bowling": "Bowling",
-        "Cycling": "Cycling",
-        "Darts": "Dart",
-        "Floorball": "Floorball",
-        "Futsal": "Futsal",
-        "Gymnastics": "Gymnastics",
-        "Handball": "Handball",
-        "Horse Racing": "Horse Racing",
-        "Ice Hockey": "Hockey",
-        "Lacrosse": "Lacrosse",
-        "Netball": "Netball",
-        "Rugby League": "Rugby",
-        "Rugby Union": "Rugby",
-        "Squash": "Squash",
-        "Volleyball": "Volleyball",
-        "GAA": "GAA",
-        "Clubber": "Other Sports",
-    }
+    category_map = config_manager.get_scraper_config(name, "category_mapping")
+    m3u8_base_url = config_manager.get_scraper_config(name, "m3u8_base_url")
+    referer = config_manager.get_scraper_config(name, "referer")
+    gmt = pytz.timezone("Etc/GMT")
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -60,12 +31,8 @@ class DaddyLiveHDSpider(scrapy.Spider):
         "DUPEFILTER_DEBUG": True,
     }
 
-    m3u8_base_url = "https://webhdrunns.mizhls.ru/lb/premium{}/index.m3u8"
-    referer = "https://cookiewebplay.xyz/"
-
-    def __init__(self, *args, **kwargs):
-        super(DaddyLiveHDSpider, self).__init__(*args, **kwargs)
-        self.gmt = pytz.timezone("Etc/GMT")
+    def start_requests(self):
+        yield scrapy.Request(self.start_urls[0], self.parse)
 
     def parse(self, response, **kwargs):
         data = response.json()
@@ -125,7 +92,7 @@ class DaddyLiveHDSpider(scrapy.Spider):
     def parse_channels(self, item):
         for channel in item["channels"]:
             item_copy = item.copy()
-            m3u8_url = self.m3u8_base_url.format(channel["channel_id"])
+            m3u8_url = self.m3u8_base_url.format(channel_id=channel["channel_id"])
             item_copy.update(
                 {
                     "stream_name": channel["channel_name"],
