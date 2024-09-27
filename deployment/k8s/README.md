@@ -31,6 +31,9 @@ SECRET_KEY=$(openssl rand -hex 16)
 # Generate a random API key for Prowlarr
 PROWLARR_API_KEY=$(openssl rand -hex 16)
 
+# Set a password to secure the API endpoints
+API_PASSWORD="your_password"
+
 # If using Premiumize, fill in your OAuth client ID and secret. Otherwise, leave these empty.
 # You can obtain OAuth credentials from the https://www.premiumize.me/registerclient with free user account.
 PREMIUMIZE_OAUTH_CLIENT_ID=""
@@ -38,6 +41,7 @@ PREMIUMIZE_OAUTH_CLIENT_SECRET=""
 
 kubectl create secret generic mediafusion-secrets \
     --from-literal=SECRET_KEY=$SECRET_KEY \
+    --from-literal=API_PASSWORD=$API_PASSWORD \
     --from-literal=PROWLARR_API_KEY=$PROWLARR_API_KEY \
     --from-literal=PREMIUMIZE_OAUTH_CLIENT_ID=$PREMIUMIZE_OAUTH_CLIENT_ID \
     --from-literal=PREMIUMIZE_OAUTH_CLIENT_SECRET=$PREMIUMIZE_OAUTH_CLIENT_SECRET
@@ -50,6 +54,7 @@ To update existing secrets, use the following command:
 ```bash
 kubectl create secret generic mediafusion-secrets \
     --from-literal=SECRET_KEY=$SECRET_KEY \
+    --from-literal=API_PASSWORD=$API_PASSWORD \
     --from-literal=PROWLARR_API_KEY=$PROWLARR_API_KEY \
     --from-literal=PREMIUMIZE_OAUTH_CLIENT_ID=$PREMIUMIZE_OAUTH_CLIENT_ID \
     --from-literal=PREMIUMIZE_OAUTH_CLIENT_SECRET=$PREMIUMIZE_OAUTH_CLIENT_SECRET \
@@ -148,3 +153,7 @@ echo "$(minikube ip) mediafusion.local" | sudo tee -a /etc/hosts
 ```
 
 Now, you can access MediaFusion at [https://mediafusion.local](https://mediafusion.local) 🎉
+
+> [!TIP]
+> When you first access MediaFusion, scraped results may not be immediately available until background scheduled tasks are completed.
+> You can manually trigger these tasks by visiting the scraper control interface at [https://mediafusion.local/scraper](https://mediafusion.local/scraper).
