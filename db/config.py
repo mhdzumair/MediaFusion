@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     disable_validate_tv_streams_in_db: bool = False
     sport_video_scheduler_crontab: str = "*/20 * * * *"
     disable_sport_video_scheduler: bool = False
-    streamed_scheduler_crontab: str = "*/15 * * * *"
+    streamed_scheduler_crontab: str = "*/30 * * * *"
     disable_streamed_scheduler: bool = False
     mrgamingstreams_scheduler_crontab: str = "*/15 * * * *"
     disable_mrgamingstreams_scheduler: bool = True  # Disabled due to site being down.

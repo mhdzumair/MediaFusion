@@ -1,34 +1,48 @@
+import json
 import random
 import re
-
-import scrapy
 from datetime import datetime
+from urllib.parse import urljoin
+
+import pytz
+import scrapy
 
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class StreamedSpider(scrapy.Spider):
     name = "streamed"
-    allowed_domains = ["streamed.su"]
-    categories = {
-        "American Football": "https://streamed.su/category/american-football",
-        "Basketball": "https://streamed.su/category/basketball",
-        "Baseball": "https://streamed.su/category/baseball",
-        "Cricket": "https://streamed.su/category/cricket",
-        "Football": "https://streamed.su/category/football",
-        "Fighting": "https://streamed.su/category/fight",
-        "Hockey": "https://streamed.su/category/hockey",
-        "Tennis": "https://streamed.su/category/tennis",
-        "Rugby": "https://streamed.su/category/rugby",
-        "Golf": "https://streamed.su/category/golf",
-        "Dart": "https://streamed.su/category/darts",
-        "Afl": "https://streamed.su/category/afl",
-        "Motor Sport": "https://streamed.su/category/motor-sports",
-        "Other Sports": "https://streamed.su/category/other",
+
+    api_base_url = "https://streamed.su/api"
+    live_matches_url = f"{api_base_url}/matches/live"
+    stream_url_template = f"{api_base_url}/stream/{{source}}/{{id}}"
+    image_url_template = (
+        f"{api_base_url}/images/poster/{{batch_id_1}}/{{batch_id_2}}.webp"
+    )
+
+    m3u8_base_url = "https://{domain}/{source}/js/{id}/{stream_no}/playlist.m3u8"
+    mediafusion_referer = "https://mediafusion.addon/"
+
+    category_mapping = {
+        "afl": "Afl",
+        "american-football": "American Football",
+        "baseball": "Baseball",
+        "basketball": "Basketball",
+        "billiards": "Billiards",
+        "cricket": "Cricket",
+        "darts": "Dart",
+        "fight": "Fighting",
+        "football": "Football",
+        "golf": "Golf",
+        "hockey": "Hockey",
+        "motor-sports": "Motor Sport",
+        "other": "Other Sports",
+        "rugby": "Rugby",
+        "tennis": "Tennis",
     }
 
-    m3u8_base_url = "https://rr.vipstreams.in/alpha/js"
-    mediafusion_referer = "https://mediafusion.addon/"
+    domains = None
+    domain_host = None
 
     custom_settings = {
         "ITEM_PIPELINES": {
@@ -39,85 +53,114 @@ class StreamedSpider(scrapy.Spider):
         "DEFAULT_REQUEST_HEADERS": {"Referer": mediafusion_referer},
     }
 
-    def __init__(self, *args, **kwargs):
-        super(StreamedSpider, self).__init__(*args, **kwargs)
-
     def start_requests(self):
-        for category, url in self.categories.items():
-            yield scrapy.Request(url, self.parse, meta={"category": category})
+        yield scrapy.Request(self.live_matches_url, self.parse_live_matches)
 
-    def parse(self, response, **kwargs):
-        category = response.meta["category"]
-        events = response.xpath('//a[contains(@href,"/watch/")]')
+    def parse_live_matches(self, response):
+        matches = response.json()
+        for match in matches:
+            if not match.get("sources"):
+                self.logger.info(f"No sources available for match: {match['title']}")
+                continue
 
-        for event in events:
-            event_name = event.xpath(".//h1/text()").get().strip()
-            event_url = event.xpath(".//@href").get()
+            category = self.category_mapping.get(match["category"], "Other")
 
             item = {
                 "stream_source": "Streamed (streamed.su)",
                 "genres": [category],
-                "poster": random.choice(SPORTS_ARTIFACTS[category]["poster"]),
-                "background": random.choice(SPORTS_ARTIFACTS[category]["background"]),
-                "logo": random.choice(SPORTS_ARTIFACTS[category]["logo"]),
-                "is_add_title_to_poster": True,
-                "title": event_name,
-                "url": response.urljoin(event_url),
+                "title": match["title"],
+                "event_start_timestamp": match["date"] / 1000,  # Convert to seconds
                 "streams": [],
             }
 
-            yield response.follow(
-                event_url,
-                self.parse_event,
-                meta={"item": item},
-                headers={"Referer": self.mediafusion_referer},
-            )
+            # Handle poster image
+            if "poster" in match and match["poster"]:
+                item["poster"] = urljoin(self.api_base_url, match["poster"])
+            elif (
+                match.get("teams")
+                and match["teams"].get("home", {}).get("badge")
+                and match["teams"].get("away", {}).get("badge")
+            ):
+                item["poster"] = self.image_url_template.format(
+                    batch_id_1=match["teams"]["home"]["badge"],
+                    batch_id_2=match["teams"]["away"]["badge"],
+                )
+            else:
+                item["poster"] = random.choice(SPORTS_ARTIFACTS[category]["poster"])
 
-    def parse_event(self, response):
-        script_text = response.xpath(
-            '//script[contains(text(), "const data =")]/text()'
-        ).get()
+            item["background"] = random.choice(SPORTS_ARTIFACTS[category]["background"])
+            item["logo"] = random.choice(SPORTS_ARTIFACTS[category]["logo"])
+            item["is_add_title_to_poster"] = True
 
-        event_start_timestamp = 0
-        if script_text:
-            # Use a regular expression to find the timestamp
-            timestamp_match = re.search(r"date:(\d+)", script_text)
+            for source in match["sources"]:
+                yield scrapy.Request(
+                    self.stream_url_template.format(
+                        source=source["source"], id=source["id"]
+                    ),
+                    self.parse_stream,
+                    meta={"item": item},
+                )
 
-            if timestamp_match:
-                # Extract the timestamp and convert to UTC datetime
-                event_timestamp_ms = int(timestamp_match.group(1))
-                event_start_timestamp = event_timestamp_ms / 1000
+    def parse_stream(self, response):
+        item = response.meta["item"].copy()
+        stream_data_list = response.json()
 
-        if event_start_timestamp != 0:
-            event_start_time = datetime.fromtimestamp(event_start_timestamp).strftime(
-                "%I:%M%p GMT"
-            )
-            description = f'{response.meta["item"]["title"]} - {event_start_time}'
+        for stream_data in stream_data_list:
+            if self.domains and self.domain_host:
+                yield self.create_stream_item(stream_data, item)
+            else:
+                yield scrapy.Request(
+                    stream_data["embedUrl"],
+                    self.parse_embed,
+                    meta={"item": item, "stream_data": stream_data},
+                    headers={"Referer": self.mediafusion_referer},
+                )
+
+    def parse_embed(self, response):
+        item = response.meta["item"]
+        stream_data = response.meta["stream_data"]
+
+        if self.domains is None or self.domain_host is None:
+            self.extract_domain_info(response)
+
+        if self.domains and self.domain_host:
+            yield self.create_stream_item(stream_data, item)
         else:
-            description = response.meta["item"]["title"]
-
-        # If no timer, proceed to scrape available stream links
-        stream_links = response.xpath('//a[contains(@href, "/watch/")]')
-        if not stream_links:
-            # No streams available atm
-            self.logger.info(f"No streams available for this event yet. {response.url}")
-            return
-
-        for link in stream_links:
-            stream_name = link.xpath(".//h1/text()").get().strip()
-            stream_url = link.xpath(".//@href").get()
-            stream_quality = link.xpath(".//h2/text()").get().strip()
-            language = link.xpath(".//div[last()]/text()").get().strip()
-
-            m3u8_url = f"{self.m3u8_base_url}{stream_url.replace('/watch', '').replace('/alpha', '')}/playlist.m3u8"
-            item = response.meta["item"].copy()
-            item.update(
-                {
-                    "stream_name": f"{stream_name}\n📺 {stream_quality} - 🌐 {language}",
-                    "stream_url": m3u8_url,
-                    "referer": self.mediafusion_referer,
-                    "description": description,
-                    "event_start_timestamp": event_start_timestamp,
-                }
+            self.logger.error(
+                f"Failed to extract domain information for stream: {stream_data['id']}"
             )
-            yield item
+
+    def extract_domain_info(self, response):
+        script_content = response.xpath(
+            '//script[contains(text(), "var k=")]/text()'
+        ).get()
+        if script_content:
+            vars_match = re.search(
+                r'var k="(\w+)",i="([^"]+)",s="(\d+)",l=(\[.+?\]),h="([^"]+)";',
+                script_content,
+            )
+            if vars_match:
+                _, _, _, domains, domain_host = vars_match.groups()
+                self.domains = json.loads(domains)
+                self.domain_host = domain_host
+
+    def create_stream_item(self, stream_data, item):
+        m3u8_url = self.m3u8_base_url.format(
+            domain=f"{random.choice(self.domains)}.{self.domain_host}",
+            source=stream_data["source"],
+            id=stream_data["id"],
+            stream_no=stream_data["streamNo"],
+        )
+
+        stream_item = item.copy()
+        stream_item.update(
+            {
+                "stream_name": f"{'HD' if stream_data['hd'] else 'SD'} - 🌐 {stream_data['language']}\n"
+                f"🔗 {stream_data['source'].title()} Stream {stream_data['streamNo']}",
+                "stream_url": m3u8_url,
+                "referer": self.mediafusion_referer,
+                "description": f"{item['title']} - {datetime.fromtimestamp(item['event_start_timestamp'], tz=pytz.utc).strftime('%I:%M%p GMT')}",
+            }
+        )
+
+        return stream_item

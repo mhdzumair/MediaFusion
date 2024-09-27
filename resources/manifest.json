@@ -1403,20 +1403,21 @@
 		  "name": "genre",
 		  "isRequired": false,
 		  "options": [
-			"American Football",
-			"Basketball",
-			"Baseball",
-			"Cricket",
-			"Football",
-			"Fighting",
-			"Hockey",
-			"Tennis",
-			"Rugby",
-			"Golf",
-			"Dart",
 			"Afl",
+			"American Football",
+			"Baseball",
+			"Basketball",
+			"Billiards",
+			"Cricket",
+			"Dart",
+			"Fighting",
+			"Football",
+			"Golf",
+			"Hockey",
 			"Motor Sport",
-			"Other Sports"
+			"Other Sports",
+			"Rugby",
+			"Tennis"
 		  ]
 		}
 	  ]

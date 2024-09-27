@@ -88,6 +88,19 @@
 		"https://external-content.duckduckgo.com/iu/?u=http%3A//cliparts.co/cliparts/Aib/Kr4/AibKr4gGT.png&f=1&nofb=1"
 	  ]
 	},
+  	"Billiards": {
+	  "background": [
+		"https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Feskipaper.com%2Fimages%2Fbilliards-15.jpg&f=1&nofb=1&ipt=8b9307b8db760ec15d07a6ed66717495b73db55a0dfcc4bd688a901dcff463ed&ipo=images"
+	  ],
+	  "poster": [
+		"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fak.picdn.net%2Fshutterstock%2Fvideos%2F9725927%2Fthumb%2F1.jpg%3Fip%3Dx480&f=1&nofb=1&ipt=36b55f7a9456378df6799f8f9edab09a45cb9c8ad7670353c30c3c10049b01c1&ipo=images",
+	  	"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwallpapercave.com%2Fwp%2Fwp3177240.jpg&f=1&nofb=1&ipt=5dc29a21348a01f83b30f5b67ad204fbd1371b3109cf69eaa90e0803ba7c4f6d&ipo=images"
+	  ],
+	  "logo": [
+	  	"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.vecteezy.com%2Fsystem%2Fresources%2Fthumbnails%2F009%2F730%2F725%2Fsmall%2Fbilliards-championship-sports-badge-design-logo-and-simple-text-billiard-room-or-pool-club-and-team-billiard-ball-icon-symbol-template-vector.jpg&f=1&nofb=1&ipt=e7e888ffd1287f424e7cd3d05bd0bce1a8dbd2f4af4cfd2d82c4a51e8875d519&ipo=images",
+		"https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ftse1.mm.bing.net%2Fth%3Fid%3DOIP.D6r9x55zsgJtybnoheuHZAAAAA%26pid%3DApi&f=1&ipt=9ab2e7fd4ce8760177a69b6d493646f9142b3657b899685fed8d36f8b230b616&ipo=images"
+	  ]
+	},
 	"Bowling": {
 	  "background": [
 		"https://i.pinimg.com/736x/fa/2d/21/fa2d21f56d7c44e03760a3db74a306e6.jpg"
