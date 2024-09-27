@@ -2,12 +2,14 @@
 #
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+import asyncio
 import random
+from urllib.parse import urlparse
 
-# useful for handling different item types with a single interface
-
-from scrapy import signals
+import httpx
+from scrapy import signals, Request
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
+from scrapy.exceptions import IgnoreRequest
 from scrapy.utils.response import response_status_message
 from twisted.internet import reactor, defer
 
@@ -128,7 +130,7 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
     """
 
     DEFAULT_DELAY = 30  # Default initial delay in seconds.
-    MAX_DELAY = 300  # Max delay between retries.
+    MAX_DELAY = 180  # Max delay between retries.
     BACKOFF_FACTOR = 3  # Exponential backoff factor.
 
     def __init__(self, settings):
@@ -162,14 +164,14 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
             # Calculate the delay with exponential backoff
             retry_after = response.headers.get("retry-after")
             try:
-                retry_after = int(retry_after)
+                retry_after = int(retry_after) + random.randint(1, 10)
             except (ValueError, TypeError):
                 delay = min(
                     self.MAX_DELAY, self.DEFAULT_DELAY * (self.BACKOFF_FACTOR**retries)
                 )
             else:
                 delay = min(
-                    self.MAX_DELAY, retry_after + random.randint(0, 10)
+                    self.MAX_DELAY, retry_after + random.randint(5, 120)
                 )  # Add some jitter
 
             spider.logger.info(
@@ -191,3 +193,102 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
             return deferred
 
         return response
+
+
+class FlaresolverrMiddleware:
+
+    def __init__(self, flaresolverr_url, cache_duration, max_timeout, max_attempts):
+        self.flaresolverr_url = flaresolverr_url
+        self.cache_duration = cache_duration
+        self.max_timeout = max_timeout
+        self.max_attempts = max_attempts
+        self.solved_domains = {}
+        self.client = httpx.AsyncClient()
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            flaresolverr_url=crawler.settings.get(
+                "FLARESOLVERR_URL", "http://localhost:8191/v1"
+            ),
+            cache_duration=crawler.settings.get("FLARESOLVERR_CACHE_DURATION", 3600),
+            max_timeout=crawler.settings.get("FLARESOLVERR_MAX_TIMEOUT", 60000),
+            max_attempts=crawler.settings.get("FLARESOLVERR_MAX_ATTEMPTS", 3),
+        )
+
+    async def process_request(self, request, spider):
+        return None
+
+    async def process_response(self, request, response, spider):
+        if not hasattr(spider, "use_flaresolverr") or not spider.use_flaresolverr:
+            return response
+
+        if response.status == 403 or (
+            response.status == 503 and "cloudflare" in response.text.lower()
+        ):
+            return await self._handle_cloudflare(request, spider)
+
+        return response
+
+    async def _handle_cloudflare(self, request, spider):
+        domain = urlparse(request.url).netloc
+        current_time = reactor.seconds()
+
+        if domain in self.solved_domains:
+            last_solved_time, solution = self.solved_domains[domain]
+            if current_time - last_solved_time < self.cache_duration:
+                return self._apply_solution(request, solution)
+
+        for attempt in range(self.max_attempts):
+            try:
+                timeout = min(
+                    self.max_timeout, 30000 * (2**attempt)
+                )  # Exponential backoff
+                flaresolverr_response = await self.client.post(
+                    self.flaresolverr_url,
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "cmd": "request.get",
+                        "url": request.url,
+                        "maxTimeout": timeout,
+                    },
+                    timeout=timeout / 1000 + 5,
+                )
+
+                if flaresolverr_response.status_code == 200:
+                    solution = flaresolverr_response.json()
+                    if solution.get("status") == "ok":
+                        self.solved_domains[domain] = (current_time, solution)
+                        return self._apply_solution(request, solution)
+
+                spider.logger.error(
+                    f"FlareSolverr attempt {attempt + 1} failed: {flaresolverr_response.text}"
+                )
+                await asyncio.sleep(2**attempt)  # Wait before next attempt
+
+            except httpx.RequestError as e:
+                spider.logger.error(
+                    f"FlareSolverr request error on attempt {attempt + 1}: {e}"
+                )
+                await asyncio.sleep(2**attempt)
+
+        spider.logger.error(
+            f"Failed to solve Cloudflare challenge for {request.url} after {self.max_attempts} attempts"
+        )
+        raise IgnoreRequest()
+
+    def _apply_solution(self, original_request, solution):
+        solution_response = solution.get("solution", {}).get("response", {})
+        return Request(
+            url=original_request.url,
+            headers=solution_response.get("headers", {}),
+            cookies={
+                cookie["name"]: cookie["value"]
+                for cookie in solution_response.get("cookies", [])
+            },
+            dont_filter=True,
+            meta={"flaresolverr_solved": True, **original_request.meta},
+        )
+
+    async def close_spider(self, spider):
+        await self.client.aclose()

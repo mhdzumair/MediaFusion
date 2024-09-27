@@ -147,11 +147,12 @@ UA_HEADER = {
 }
 
 
-M3U8_VALID_CONTENT_TYPES = [
+IPTV_VALID_CONTENT_TYPES = [
     "application/vnd.apple.mpegurl",
     "application/x-mpegurl",
     "video/mp2t",
     "application/octet-stream",
+    "application/dash+xml",
 ]
 
 SCRAPY_SPIDERS = {

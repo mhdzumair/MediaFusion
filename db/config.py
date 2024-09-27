@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     prowlarr_url: str = "http://prowlarr-service:9696"
     zilean_url: str = "http://zilean.zilean:8181"
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
+    flaresolverr_url: str = "http://flaresolverr:8191/v1"
 
     # External API keys and secrets
     secret_key: str = Field(..., max_length=32, min_length=32)
@@ -65,7 +66,7 @@ class Settings(BaseSettings):
     disable_validate_tv_streams_in_db: bool = False
     sport_video_scheduler_crontab: str = "*/20 * * * *"
     disable_sport_video_scheduler: bool = False
-    streamed_scheduler_crontab: str = "*/15 * * * *"
+    streamed_scheduler_crontab: str = "*/30 * * * *"
     disable_streamed_scheduler: bool = False
     mrgamingstreams_scheduler_crontab: str = "*/15 * * * *"
     disable_mrgamingstreams_scheduler: bool = True  # Disabled due to site being down.
