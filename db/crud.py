@@ -972,7 +972,7 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
             if (
                 stream.drm_key_id != existing_stream.drm_key_id
                 or stream.drm_key != existing_stream.drm_key
-            ) and stream.namespace in existing_stream.namespaces:
+            ) and tv_metadata.namespace in existing_stream.namespaces:
                 update_data = {
                     "drm_key_id": stream.drm_key_id,
                     "drm_key": stream.drm_key,

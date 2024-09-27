@@ -4,7 +4,7 @@ from typing import Optional, Any
 import pymongo
 import pytz
 from beanie import Document, Link
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
@@ -104,7 +104,7 @@ class TVStreams(Document):
     country: str | None = None
     is_working: Optional[bool] = True
     test_failure_count: int = 0
-    namespaces: list[str] = ["mediafusion"]
+    namespaces: list[str] = Field(default_factory=lambda: ["mediafusion"])
     drm_key_id: str | None = None
     drm_key: str | None = None
 

@@ -384,6 +384,7 @@ async def process_stream(
             return None
 
     stream_url, behavior_hints = stream.url, stream.behaviorHints
+    behavior_hints = behavior_hints if behavior_hints else {}
 
     if stream.drm_key or "dlhd" in stream.source:
         if not is_mediaflow_proxy_enabled:

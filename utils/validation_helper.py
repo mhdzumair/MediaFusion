@@ -58,14 +58,18 @@ async def validate_live_stream_url(
 
 
 async def validate_m3u8_or_mpd_url_with_cache(url: str, behaviour_hint: dict):
-    cache_key = f"m3u8_url:{parse.urlparse(url).netloc}"
-    cache_data = await REDIS_ASYNC_CLIENT.get(cache_key)
-    if cache_data:
-        return json.loads(cache_data)
+    try:
+        cache_key = f"m3u8_url:{parse.urlparse(url).netloc}"
+        cache_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+        if cache_data:
+            return json.loads(cache_data)
 
-    is_valid = await validate_live_stream_url(url, behaviour_hint)
-    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(is_valid), ex=180)
-    return is_valid
+        is_valid = await validate_live_stream_url(url, behaviour_hint)
+        await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(is_valid), ex=180)
+        return is_valid
+    except Exception as e:
+        logging.exception(e)
+        return False
 
 
 class ValidationError(Exception):

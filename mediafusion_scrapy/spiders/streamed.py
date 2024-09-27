@@ -143,6 +143,14 @@ class StreamedSpider(scrapy.Spider):
                 _, _, _, domains, domain_host = vars_match.groups()
                 self.domains = json.loads(domains)
                 self.domain_host = domain_host
+            else:
+                self.logger.warning(
+                    "Failed to extract domain variables from script content."
+                )
+        else:
+            self.logger.warning(
+                "Failed to find script content with domain variables in response."
+            )
 
     def create_stream_item(self, stream_data, item):
         m3u8_url = self.m3u8_base_url.format(

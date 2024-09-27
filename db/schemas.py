@@ -289,7 +289,7 @@ class TVMetaData(BaseModel):
     logo: Optional[str] = None
     genres: list[str] = []
     streams: list[TVStreams]
-    namespace: str = "mediafusion"
+    namespace: str = Field(default="mediafusion")
 
 
 class TorrentStreamsList(BaseModel):

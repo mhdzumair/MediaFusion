@@ -2,8 +2,8 @@
 #
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+import asyncio
 import random
-import time
 from urllib.parse import urlparse
 
 import httpx
@@ -264,13 +264,13 @@ class FlaresolverrMiddleware:
                 spider.logger.error(
                     f"FlareSolverr attempt {attempt + 1} failed: {flaresolverr_response.text}"
                 )
-                time.sleep(2**attempt)  # Wait before next attempt
+                await asyncio.sleep(2**attempt)  # Wait before next attempt
 
             except httpx.RequestError as e:
                 spider.logger.error(
                     f"FlareSolverr request error on attempt {attempt + 1}: {e}"
                 )
-                time.sleep(2**attempt)
+                await asyncio.sleep(2**attempt)
 
         spider.logger.error(
             f"Failed to solve Cloudflare challenge for {request.url} after {self.max_attempts} attempts"

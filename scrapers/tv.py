@@ -12,7 +12,6 @@ from ipytv.channel import IPTVAttr
 
 from db import schemas, crud
 from db.models import TVStreams, MediaFusionTVMetaData
-from db.schemas import TVMetaProjection
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
 from utils.runtime_const import REDIS_ASYNC_CLIENT
@@ -137,7 +136,7 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
         logging.info(f"No TV streams to validate on page {page}")
         return
 
-    async def validate_and_update_tv_stream(stream, bulk_writer):
+    async def validate_and_update_tv_stream(stream, bw):
         is_valid = await validate_live_stream_url(
             stream.url, stream.behaviorHints or {}
         )
@@ -145,17 +144,17 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
         if is_valid:
             stream.is_working = is_valid
             stream.test_failure_count = 0
-            await stream.replace(bulk_writer=bulk_writer)
+            await stream.replace(bulk_writer=bw)
             return
 
         stream.test_failure_count += 1
         if stream.test_failure_count >= 3:
-            await stream.delete(bulk_writer=bulk_writer)
+            await stream.delete(bulk_writer=bw)
             logging.error(f"{stream.name} has failed 3 times and deleting it.")
             return
 
         stream.is_working = is_valid
-        await stream.replace(bulk_writer=bulk_writer)
+        await stream.replace(bulk_writer=bw)
         logging.error(f"Stream failed validation: {stream.name}")
 
     bulk_writer = BulkWriter()
@@ -195,14 +194,14 @@ async def update_tv_posters_in_db(*args, **kwargs):
     iptv_org_channel_data = {}
     for channel in iptv_channels:
         iptv_org_channel_data[channel["name"].casefold()] = channel
-        if channel["alt_names"]:
+        if channel.get("alt_names"):
             for alt_name in channel["alt_names"]:
                 iptv_org_channel_data[alt_name.casefold()] = channel
     iptv_org_channel_names = iptv_org_channel_data.keys()
 
     def get_similar_channel_name(name, cutoff=0.8):
         name = name.casefold()
-        name = re.sub(r"\s*\[.*?\]|\s*\(.*?\)", "", name)
+        name = re.sub(r"\s*\[.*?]|\s*\(.*?\)", "", name)
         name = name.split(" – ")[0]
         matches = difflib.get_close_matches(
             name, iptv_org_channel_names, n=1, cutoff=cutoff
