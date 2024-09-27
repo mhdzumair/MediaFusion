@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
-from httpx import HTTPError
 
 from db.config import settings
 from utils.runtime_const import REDIS_SYNC_CLIENT
@@ -57,10 +56,10 @@ class RemoteConfigManager:
     def _fetch_remote_config(config_url: str) -> Dict[str, Any]:
         """Fetch the configuration from a remote URL."""
         try:
-            response = httpx.get(config_url)
+            response = httpx.get(config_url, timeout=10)
             response.raise_for_status()
             return response.json()
-        except HTTPError as e:
+        except (httpx.HTTPError, httpx.RequestError) as e:
             logger.error(f"HTTP error occurred while fetching remote config: {e}")
             raise
         except json.JSONDecodeError as e:
@@ -93,7 +92,7 @@ class RemoteConfigManager:
         config = self.get_config()
         return config.get("start_urls", {}).get(spider_name)
 
-    def get_scraper_config(self, site_name: str, key: str) -> Dict[str, Any]:
+    def get_scraper_config(self, site_name: str, key: str) -> Any:
         """Get a specific configuration for a scraper."""
         config = self.get_config()
         return config.get(site_name, {}).get(key)
