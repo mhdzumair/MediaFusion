@@ -30,7 +30,7 @@
   - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
   - 🥊 **Fighting Sports**: Catch up on all the latest fighting sports content from UFC and WWE.
   - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua for catchup videos.
-  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, streambtw.com and crictime.com
+  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from streamed.su, streambtw.com
   - 🎥 **TamilMV**: Specialized scraping for regional contents.
   - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
   - 📺 **TamilUltra & NowMeTV**: Get the best of Live TV channels right at your fingertips.

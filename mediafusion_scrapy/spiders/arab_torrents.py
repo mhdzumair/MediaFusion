@@ -3,7 +3,7 @@ from datetime import datetime
 
 import scrapy
 
-from scrapers.helpers import get_scraper_config
+from utils.config import config_manager
 
 
 class ArabTorrentSpider(scrapy.Spider):
@@ -38,9 +38,9 @@ class ArabTorrentSpider(scrapy.Spider):
             return
         self.scrap_catalog_id = scrap_catalog_id
         logging.info(f"Scraping catalog ID: {self.scrap_catalog_id}")
-        self.catalogs = get_scraper_config(self.name, "catalogs")
-        self.homepage = get_scraper_config(self.name, "homepage")
-        self.supported_search_forums = get_scraper_config(
+        self.catalogs = config_manager.get_scraper_config(self.name, "catalogs")
+        self.homepage = config_manager.get_scraper_config(self.name, "homepage")
+        self.supported_search_forums = config_manager.get_scraper_config(
             self.name, "supported_search_forums"
         )
 

@@ -8,7 +8,6 @@ from curl_cffi.requests import AsyncSession
 
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
-from utils import get_json_data
 from utils.torrent import info_hashes_to_torrent_metadata
 
 # set httpx logging level
@@ -23,12 +22,6 @@ PROXIES = (
     if settings.scraper_proxy_url
     else None
 )
-
-
-def get_scraper_config(site_name: str, get_key: str) -> dict:
-    config = get_json_data("resources/json/scraper_config.json")
-
-    return config.get(site_name, {}).get(get_key, {})
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=10)

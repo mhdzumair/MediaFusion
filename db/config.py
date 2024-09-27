@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     logo_url: str = (
         "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
     )
+    remote_config_source: str = (
+        "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/scraper_config.json"
+    )
+    local_config_path: str = "resources/json/scraper_config.json"
 
     # Feature toggles
     is_scrap_from_torrentio: bool = False
@@ -68,10 +72,6 @@ class Settings(BaseSettings):
     disable_sport_video_scheduler: bool = False
     streamed_scheduler_crontab: str = "*/30 * * * *"
     disable_streamed_scheduler: bool = False
-    mrgamingstreams_scheduler_crontab: str = "*/15 * * * *"
-    disable_mrgamingstreams_scheduler: bool = True  # Disabled due to site being down.
-    crictime_scheduler_crontab: str = "*/15 * * * *"
-    disable_crictime_scheduler: bool = False
     streambtw_scheduler_crontab: str = "*/15 * * * *"
     disable_streambtw_scheduler: bool = False
     dlhd_scheduler_crontab: str = "25 * * * *"

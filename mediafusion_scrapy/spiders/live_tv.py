@@ -5,6 +5,7 @@ import scrapy
 
 from scrapers.helpers import get_country_name
 from utils import const
+from utils.config import config_manager
 
 
 class LiveTVSpider(scrapy.Spider):
@@ -14,7 +15,7 @@ class LiveTVSpider(scrapy.Spider):
     )
 
     any_m3u8_pattern = re.compile(
-        r'(?:"|\')?(https?://.*?\.m3u8(?:\?[^"\']*)?)(?:"|\')?',
+        r'["\']?(https?://.*?\.m3u8(?:\?[^"\']*)?)["\']?',
         re.IGNORECASE,
     )
 
@@ -34,6 +35,10 @@ class LiveTVSpider(scrapy.Spider):
             "mediafusion_scrapy.pipelines.TVStorePipeline": 300,
         },
     }
+
+    def start_requests(self):
+        start_url = config_manager.get_start_url(self.name)
+        yield scrapy.Request(start_url, self.parse)
 
     def parse(self, response, **kwargs):
         category_urls = [
@@ -138,7 +143,8 @@ class LiveTVSpider(scrapy.Spider):
         else:
             self.logger.error(f"Invalid poster URL: {response.url}")
 
-    def extract_channel_data(self, response):
+    @staticmethod
+    def extract_channel_data(response):
         """Extracts channel data such as genres and poster."""
         channel_data = response.meta.get("channel_data").copy()
         poster = response.css(".poster > img::attr(src)").get()
@@ -175,7 +181,8 @@ class LiveTVSpider(scrapy.Spider):
             self.logger.error("Admin AJAX URL not found for TamilUltra.")
             return None, None
 
-    def extract_stream_details(self, element):
+    @staticmethod
+    def extract_stream_details(element):
         """Extracts stream title and country name from an element."""
         stream_title = element.css("span.title::text").get().strip()
         country_flag_url = element.css("span.flag > img::attr(src)").get()
@@ -436,7 +443,8 @@ class LiveTVSpider(scrapy.Spider):
             failure.request.meta["stream_title"],
         )
 
-    def create_channel_data_with_stream(self, channel_data, stream_info, country_name):
+    @staticmethod
+    def create_channel_data_with_stream(channel_data, stream_info, country_name):
         """Create channel data with a single stream info"""
         # Copy the original channel data to avoid mutating the original meta
         channel_data_copy = channel_data.copy()
@@ -478,3 +486,20 @@ class LiveTVSpider(scrapy.Spider):
                 stream_info["drm_key"] = key
 
         return stream_info
+
+
+class NowMeTVSpider(LiveTVSpider):
+    name = "nowmetv"
+
+
+class NowSportsSpider(LiveTVSpider):
+    name = "nowsports"
+
+
+class TamilUltraSpider(LiveTVSpider):
+    name = "tamilultra"
+
+
+class TamilBulbSpider(LiveTVSpider):
+    name = "tamilbulb"
+    use_flaresolverr = True

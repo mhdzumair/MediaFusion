@@ -1,4 +1,11 @@
 {
+  "start_urls": {
+	"nowsports": "https://nowmesports.nl/",
+    "nowmetv": "https://nowmelive.com/",
+	"tamilultra": "https://tamilultra.tv/",
+	"tamilbulb": "https://tamilbulb.tv/",
+	"tgx": ["torrentgalaxy.to", "tgx.rs", "torrentgalaxy.mx", "tgx.sb"]
+  },
   "tamil_blasters": {
 	"homepage": "https://1tamilblasters.link",
 	"catalogs": {
@@ -247,6 +254,80 @@
 		"movies": ["41", "59", "88", "116", "114"],
 		"series": ["44", "57", "89", "71", "115", "113"]
 	  }
+	}
+  },
+  "streamed": {
+    "api_base_url": "https://streamed.su/api",
+    "live_matches_url": "/matches/live",
+    "stream_url_template": "/stream/{source}/{id}",
+    "image_url_template": "/images/poster/{batch_id_1}/{batch_id_2}.webp",
+    "m3u8_base_url": "https://{domain}/{source}/js/{id}/{stream_no}/playlist.m3u8",
+    "mediafusion_referer": "https://mediafusion.addon/",
+    "category_mapping": {
+      "afl": "Afl",
+      "american-football": "American Football",
+      "baseball": "Baseball",
+      "basketball": "Basketball",
+      "billiards": "Billiards",
+      "cricket": "Cricket",
+      "darts": "Dart",
+      "fight": "Fighting",
+      "football": "Football",
+      "golf": "Golf",
+      "hockey": "Hockey",
+      "motor-sports": "Motor Sport",
+      "other": "Other Sports",
+      "rugby": "Rugby",
+      "tennis": "Tennis"
+    }
+  },
+  "dlhd": {
+	"schedule_url": "https://dlhd.so/schedule/schedule-generated.json",
+	"m3u8_base_url": "https://webhdrunns.mizhls.ru/lb/premium{channel_id}/index.m3u8",
+	"referer": "https://cookiewebplay.xyz/",
+	"category_mapping": {
+        "Tv Shows": "Other Sports",
+        "Soccer": "Football",
+        "Cricket": "Cricket",
+        "Tennis": "Tennis",
+        "Motorsport": "Motor Sport",
+        "Boxing": "Boxing",
+        "MMA": "MMA",
+        "Golf": "Golf",
+        "Snooker": "Other Sports",
+        "Am. Football": "American Football",
+        "Athletics": "Athletics",
+        "Aussie rules": "Aussie Rules",
+        "Baseball": "Baseball",
+        "Basketball": "Basketball",
+        "Bowling": "Bowling",
+        "Cycling": "Cycling",
+        "Darts": "Dart",
+        "Floorball": "Floorball",
+        "Futsal": "Futsal",
+        "Gymnastics": "Gymnastics",
+        "Handball": "Handball",
+        "Horse Racing": "Horse Racing",
+        "Ice Hockey": "Hockey",
+        "Lacrosse": "Lacrosse",
+        "Netball": "Netball",
+        "Rugby League": "Rugby",
+        "Rugby Union": "Rugby",
+        "Squash": "Squash",
+        "Volleyball": "Volleyball",
+        "GAA": "GAA",
+        "Clubber": "Other Sports"
+    }
+  },
+  "sport_video": {
+	"categories": {
+	  "american_football": "https://www.sport-video.org.ua/americanfootball.html",
+	  "basketball": "https://www.sport-video.org.ua/basketball.html",
+	  "baseball": "https://www.sport-video.org.ua/baseball.html",
+	  "football": "https://www.sport-video.org.ua/football.html",
+	  "hockey": "https://www.sport-video.org.ua/hockey.html",
+	  "rugby": "https://www.sport-video.org.ua/rugby.html",
+	  "other_sports": "https://www.sport-video.org.ua/other.html"
 	}
   }
 }

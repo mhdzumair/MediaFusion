@@ -119,30 +119,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    # Schedule mrgamingstreams scraper
-    if not settings.disable_mrgamingstreams_scheduler:
-        scheduler.add_job(
-            run_spider.send,
-            CronTrigger.from_crontab(settings.mrgamingstreams_scheduler_crontab),
-            name="mrgamingstreams",
-            kwargs={
-                "spider_name": "mrgamingstreams",
-                "crontab_expression": settings.mrgamingstreams_scheduler_crontab,
-            },
-        )
-
-    # Schedule crictime scraper
-    if not settings.disable_crictime_scheduler:
-        scheduler.add_job(
-            run_spider.send,
-            CronTrigger.from_crontab(settings.crictime_scheduler_crontab),
-            name="crictime",
-            kwargs={
-                "spider_name": "crictime",
-                "crontab_expression": settings.crictime_scheduler_crontab,
-            },
-        )
-
     # Schedule streambtw scraper
     if not settings.disable_streambtw_scheduler:
         scheduler.add_job(

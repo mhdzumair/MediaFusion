@@ -3,7 +3,7 @@ import re
 
 import scrapy
 
-from scrapers.helpers import get_scraper_config
+from utils.config import config_manager
 from utils.runtime_const import REDIS_SYNC_CLIENT
 
 
@@ -43,9 +43,9 @@ class CommonTamilSpider(scrapy.Spider):
         logging.info(f"Scraping catalog ID: {self.scrap_catalog_id}")
         self.redis = REDIS_SYNC_CLIENT
         self.scraped_urls_key = f"{self.name}_scraped_urls"
-        self.catalogs = get_scraper_config(self.name, "catalogs")
-        self.homepage = get_scraper_config(self.name, "homepage")
-        self.supported_search_forums = get_scraper_config(
+        self.catalogs = config_manager.get_scraper_config(self.name, "catalogs")
+        self.homepage = config_manager.get_scraper_config(self.name, "homepage")
+        self.supported_search_forums = config_manager.get_scraper_config(
             self.name, "supported_search_forums"
         )
 
