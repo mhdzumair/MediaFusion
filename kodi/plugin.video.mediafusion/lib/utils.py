@@ -14,22 +14,6 @@ ADDON = xbmcaddon.Addon()
 ADDON_PATH = sys.argv[0]
 ADDON_ID = ADDON.getAddonInfo("id")
 
-# Initialize requests_cache with CachedSession
-cache_file = xbmcvfs.translatePath(
-    f"special://profile/addon_data/{ADDON_ID}/cache.sqlite"
-)
-try:
-    session = requests_cache.CachedSession(
-        cache_name=cache_file, backend="sqlite", cache_control=True
-    )
-except sqlite3.OperationalError as e:
-    xbmc.log(f"Failed to setup cache: {e}", xbmc.LOGERROR)
-    xbmcgui.Dialog().notification(
-        "MediaFusion", "Failed to setup cache", xbmcgui.NOTIFICATION_ERROR
-    )
-    session = requests_cache.CachedSession(
-        cache_name="mediafusion_request", backend="memory", cache_control=True
-    )  # Fallback to a regular session
 
 BASE_URL = ADDON.getSetting("base_url")
 SECRET_STR = ADDON.getSetting("secret_string")
@@ -47,10 +31,13 @@ if not SECRET_STR:
 
 
 def remove_cache(url):
+    session = get_request_session()
     session.cache.delete_url(url)
 
 
 def fetch_data(url, force_refresh=False):
+    session = get_request_session()
+
     if force_refresh:
         with session.cache_disabled():
             response = session.get(url)
@@ -130,3 +117,35 @@ def is_elementum_installed_and_enabled():
         return True
     except Exception:
         return False
+
+
+def get_request_session():
+    # Initialize requests_cache with CachedSession
+    cache_file = xbmcvfs.translatePath(
+        f"special://profile/addon_data/{ADDON_ID}/cache.sqlite"
+    )
+    try:
+        session = requests_cache.CachedSession(
+            cache_name=cache_file, backend="sqlite", cache_control=True
+        )
+    except sqlite3.OperationalError as e:
+        xbmc.log(f"Failed to setup cache: {e}", xbmc.LOGERROR)
+        try:
+            fallback_cache_file = xbmcvfs.translatePath(
+                f"special://temp/{ADDON_ID}_cache.sqlite"
+            )
+            session = requests_cache.CachedSession(
+                cache_name=fallback_cache_file, backend="sqlite", cache_control=True
+            )
+            xbmc.log(
+                f"Using fallback cache location: {fallback_cache_file}", xbmc.LOGINFO
+            )
+        except sqlite3.OperationalError:
+            xbmc.log("Fallback to in-memory cache", xbmc.LOGWARNING)
+            session = requests_cache.CachedSession(
+                cache_name="mediafusion_request", backend="memory", cache_control=True
+            )
+        xbmcgui.Dialog().notification(
+            "MediaFusion", f"Cache setup issue: {str(e)}", xbmcgui.NOTIFICATION_WARNING
+        )
+    return session

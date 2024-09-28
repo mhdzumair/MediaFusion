@@ -58,10 +58,12 @@ Configure MediaFusion:
 1. Open MediaFusion config page.
 2. Select "qBittorrent - WebDav" as the streaming provider.
 3. Get the Docker IP address using following command:
-    ```bash
-    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' qbittorrent-webdav
-    ```
-4. Fill in WebUI and WebDAV URLs (use docker ip address for MediaFusion docker container).
+   ```bash
+   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <container_name>
+   ```
+4. Fill in WebUI and WebDAV URLs:
+   - If running MediaFusion locally (not in Docker): Use `http://localhost:8080`
+   - If running MediaFusion in Docker: Use `http://<docker_ip>:8080`, where `<docker_ip>` is the IP obtained in step 3.
 5. Enter WebDAV credentials if set; leave blank if not.
 6. Adjust seeding settings and 'Play Video After Download' percentage.
 7. Save and start streaming through Stremio.
