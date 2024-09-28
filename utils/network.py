@@ -184,7 +184,7 @@ async def get_mediaflow_proxy_public_ip(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                mediaflow_proxy_url + "/proxy/ip",
+                parse.urljoin(mediaflow_proxy_url, "/proxy/ip"),
                 params={"api_password": api_password},
                 timeout=10,
             )

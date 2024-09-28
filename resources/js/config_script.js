@@ -407,16 +407,9 @@ function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
 }
 
 async function initiateKodiSetup() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const kodiCode = urlParams.get('kodi_code');
-
-    if (kodiCode) {
-        await setupKodiAddon(kodiCode);
-    } else {
-        // Show modal to input Kodi code
-        const kodiCodeModal = new bootstrap.Modal(document.getElementById('kodiCodeModal'));
-        kodiCodeModal.show();
-    }
+    // Show modal to input Kodi code
+    const kodiCodeModal = new bootstrap.Modal(document.getElementById('kodiCodeModal'));
+    kodiCodeModal.show();
 }
 
 async function submitKodiCodeAndSetup() {

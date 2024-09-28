@@ -26,7 +26,7 @@
 
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)
 
-- **Scraper Support**:
+- **Advanced Scraper Support**:
   - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
   - 🥊 **Fighting Sports**: Catch up on all the latest fighting sports content from UFC and WWE.
   - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua for catchup videos.
@@ -35,8 +35,11 @@
   - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
   - 📺 **TamilUltra & NowMeTV**: Get the best of Live TV channels right at your fingertips.
   - 🔄 **Prowlarr Integration**: Supercharge your scraping streams with Prowlarr's powerful integration.
+  - 🔍 **Advanced Prowlarr Integration**: Improved Prowlarr feed scraping for more comprehensive content discovery with latest updates.
   - 🌊 **Torrentio/KnightCrawler Streams**: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.
-  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for a cached debrid contents.
+  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for cached debrid contents.
+  - 📺 **MPD DRM Scraping**: Scraping MPD & Support streaming functionality with MediaFlow MPD DRM support.
+
 
 - **Additional Features**:
   - 🔒 **API Security**: Fortify your self-hosted API with a password to prevent unauthorized access.
@@ -48,6 +51,13 @@
   - ✨ **Manual Scraper Triggering UI**: Manage your scraping sources with a manual trigger UI for a more hands-on approach.
   - 🗑️ **Delete Watchlist**: Delete your watchlist from the stremio for quick control over your content.
   - 🔍 **Prowlarr Indexer Support**: Use [MediaFusion as an indexer in Prowlarr](/resources/yaml/mediafusion.yaml) for searching movies and TV shows with Radarr and Sonarr.
+  - 🔞 **Parental Controls**: Filter content based on nudity and certification ratings.
+  - 🎬 **IMDb Integration**: Display IMDb ratings with the logo for quick quality assessment.
+  - 🕰️ **Sports Event Timing**: View the time for sports events directly on the poster for better planning.
+  - 🌐 **MediaFlow Proxy**: Support for MediaFlow Proxy for Debrid and Live streams, enhancing accessibility.
+  - 🎥 **RPDB Posters**: RPDB posters support with fallback to MediaFusion posters.
+  - 📥 **Browser Download Support**: Support for downloading video files from debrid services directly in the browser.
+  - 🚫 **Support DMCA Take Down**: Torrent blocking feature for DMCA compliance.
 
 ## 🚀 Installation Guide
 

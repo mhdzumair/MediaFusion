@@ -33,7 +33,6 @@
             <height>50</height>
             <font>font60</font>
             <label>MediaFusion Settings</label>
-            <textcolor>FF00FFFF</textcolor>
             <align>center</align>
         </control>
 
@@ -44,7 +43,7 @@
             <width>50</width>
             <height>50</height>
             <focusedcolor>FFFFFF00</focusedcolor>
-            <texturefocus colordiffuse="FF00FFFF">triangle-left.png</texturefocus>
+            <texturefocus colordiffuse="FF4B0082">triangle-left.png</texturefocus>
             <texturenofocus colordiffuse="FF8080FF">triangle-left.png</texturenofocus>
         </control>
 
@@ -108,7 +107,7 @@
                 <label>Configure Secret</label>
                 <textcolor>FF000000</textcolor>
                 <focusedcolor>FFFFFFFF</focusedcolor>
-                <texturefocus colordiffuse="FF00FFFF">white.png</texturefocus>
+                <texturefocus colordiffuse="FF4B0082">white.png</texturefocus>
                 <texturenofocus colordiffuse="FF8080FF">white.png</texturenofocus>
                 <align>center</align>
                 <aligny>center</aligny>
@@ -169,7 +168,7 @@
                 <label>Open Configuration Page</label>
                 <textcolor>FF000000</textcolor>
                 <focusedcolor>FFFFFFFF</focusedcolor>
-                <texturefocus colordiffuse="FF00FFFF">white.png</texturefocus>
+                <texturefocus colordiffuse="FF4B0082">white.png</texturefocus>
                 <texturenofocus colordiffuse="FF8080FF">white.png</texturenofocus>
                 <align>center</align>
                 <aligny>center</aligny>

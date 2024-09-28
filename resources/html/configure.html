@@ -641,7 +641,7 @@
                                         Kodi Addon Setup Guide
                                     </a>
                                 </div>
-                                <input type="text" id="kodiCodeInput" class="form-control" placeholder="Enter 6-digit code" maxlength="6">
+                                <input type="text" id="kodiCodeInput" class="form-control" placeholder="Enter 6-digit code" maxlength="6" value="{{ kodi_code or '' }}">
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -655,10 +655,6 @@
         </div>
     </div>
 </div>
-
-<script>
-    const kodiCode = "{{ kodi_code or '' }}";
-</script>
 
 <!-- JS for Bootstrap and form validation -->
 <script src="/static/js/jquery-3.6.0.min.js"></script>

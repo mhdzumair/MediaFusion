@@ -5,18 +5,18 @@
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{addon_name}} - Stremio Addon</title>
+    <title>{{ addon_name }} - Stremio Addon</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
-    <link rel="shortcut icon" href="{{logo_url}}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ logo_url }}" type="image/x-icon">
 </head>
 
 <body>
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
-            <a href="/"><img class="logo" src="{{logo_url}}"></a>
-            <h3 class="text-center mb-5"><b>{{addon_name}}</b> - {{version}}</h3>
+            <a href="/"><img class="logo" src="{{ logo_url }}"></a>
+            <h3 class="text-center mb-5"><b>{{ addon_name }}</b> - {{ version }}</h3>
 
             <h4 class="mt-4">🔎 Advanced Scraping Capabilities</h4>
             <p>Tap into a world of content with our enhanced scraping features:</p>
@@ -29,6 +29,8 @@
                 <li>📺 TamilUltra & NowMeTV: Get the best of Live TV channels right at your fingertips.</li>
                 <li>🔄 Prowlarr Integration: Supercharge your scraping streams with Prowlarr's powerful integration.</li>
                 <li>🌊 Torrentio/KnightCrawler Streams: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.</li>
+                <li>🔍 Advanced Prowlarr Integration: Improved Prowlarr feed scraping for more comprehensive content discovery with latest updates.</li>
+                <li>📺 MPD DRM Scraping: Scraping MPD & Support streaming functionality with MediaFlow MPD DRM support.</li>
             </ul>
 
             <h4 class="mt-4">🎬 Streaming Provider Integration</h4>
@@ -49,35 +51,22 @@
             <h4 class="mt-4">🛠️ Enhanced Additional Features</h4>
             <p>Our addon comes packed with features designed to elevate your streaming experience:</p>
             <ul>
-                <li>🔒 API Security: Fortify your self-hosted API with a password to prevent unauthorized access.
-                </li>
-                <li>🔐 User Data Encryption: Encrypt user data for heightened privacy and security, storing only
-                    encrypted URLs on Stremio.
-                </li>
-                <li>📋 Watchlist Catalog Support: Sync your streaming provider's watchlist directly into the
-                    Stremio catalog for a personalized touch.
-                </li>
-                <li>⚙️ Stream Filters: Customize your viewing experience with filters that sort streams by file
-                    size, resolution, seeders and much more.
-                </li>
-                <li>
-                    🖼️ Poster with Title: Display the poster with the title for a more visually appealing
-                    catalog on sport events.
-                </li>
-                <li>
-                    📺 M3U Playlist Import: Import M3U playlists for a more personalized streaming experience.
-                </li>
-                <li>
-                    ✨ Manual Scraper Triggering UI: Manage your scraping sources with a manual trigger UI for a
-                    more hands-on approach.
-                </li>
-                <li>
-                    🗑️ Delete Watchlist: Delete your watchlist from the stremio for quick control over your
-                    content.
-                </li>
-                <li>
-                    🔍 Prowlarr Indexer Support: Use MediaFusion as an indexer in Prowlarr for searching movies and TV shows with Radarr and Sonarr.
-                </li>
+                <li>🔒 API Security: Fortify your self-hosted API with a password to prevent unauthorized access.</li>
+                <li>🔐 User Data Encryption: Encrypt user data for heightened privacy and security, storing only encrypted URLs on Stremio.</li>
+                <li>📋 Watchlist Catalog Support: Sync your streaming provider's watchlist directly into the Stremio catalog for a personalized touch.</li>
+                <li>⚙️ Stream Filters: Customize your viewing experience with filters that sort streams by file size, resolution, seeders and much more.</li>
+                <li>🖼️ Poster with Title: Display the poster with the title for a more visually appealing catalog on sport events.</li>
+                <li>📺 M3U Playlist Import: Import M3U playlists for a more personalized streaming experience.</li>
+                <li>✨ Manual Scraper Triggering UI: Manage your scraping sources with a manual trigger UI for a more hands-on approach.</li>
+                <li>🗑️ Delete Watchlist: Delete your watchlist from the stremio for quick control over your content.</li>
+                <li>🔍 Prowlarr Indexer Support: Use MediaFusion as an indexer in Prowlarr for searching movies and TV shows with Radarr and Sonarr.</li>
+                <li>🔞 Parental Controls: Filter content based on nudity and certification ratings.</li>
+                <li>🎬 IMDb Integration: Display IMDb ratings with the logo for quick quality assessment.</li>
+                <li>🕰️ Sports Event Timing: View the time for sports events directly on the poster for better planning.</li>
+                <li>🌐 MediaFlow Proxy: Support for MediaFlow Proxy for Debrid and Live streams, enhancing accessibility.</li>
+                <li>🎥 RPDB Posters: Support for RPDB posters with fallback to MediaFusion posters.</li>
+                <li>📥 Browser Download Support: Support for downloading video files from debrid services directly in the browser.</li>
+                <li>🚫 Support DMCA Take Down: Torrent blocking feature for DMCA compliance.</li>
             </ul>
 
             <div class="button-container">

@@ -19,7 +19,7 @@ from .utils import (
 
 
 def list_categories():
-    manifest_data = fetch_data(f"{BASE_URL}/{SECRET_STR}/manifest.json")
+    manifest_data = fetch_data(parse.urljoin(BASE_URL, f"/{SECRET_STR}/manifest.json"))
     if not manifest_data:
         return
 
@@ -106,7 +106,10 @@ def process_videos(videos, action, catalog_type, catalog_id):
 def list_catalog(params):
     log(f"Loading {params['catalog_type']} videos...", xbmc.LOGINFO)
     skip = int(params.get("skip", 0))
-    url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/skip={skip}.json"
+    url = parse.urljoin(
+        BASE_URL,
+        f"/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/skip={skip}.json",
+    )
     force_refresh = params.get("force_refresh", False)
     response = fetch_data(url, force_refresh)
     if not response:
@@ -145,7 +148,10 @@ def search_catalog(params):
     if not search_query:
         return
 
-    url = f"{BASE_URL}/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/search={search_query}.json"
+    url = parse.urljoin(
+        BASE_URL,
+        f"/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/search={search_query}.json",
+    )
     force_refresh = params.get("force_refresh", False)
     response = fetch_data(url, force_refresh)
     if not response:
@@ -169,7 +175,10 @@ def search_catalog(params):
 
 
 def list_seasons(params):
-    url = f"{BASE_URL}/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json"
+    url = parse.urljoin(
+        BASE_URL,
+        f"/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json",
+    )
     force_refresh = params.get("force_refresh", False)
     response = fetch_data(url, force_refresh)
     if not response:
@@ -233,7 +242,10 @@ def list_seasons(params):
 
 
 def list_episodes(params):
-    url = f"{BASE_URL}/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json"
+    url = parse.urljoin(
+        BASE_URL,
+        f"/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json",
+    )
     force_refresh = params.get("force_refresh", False)
     response = fetch_data(url, force_refresh)
     if not response:
@@ -299,7 +311,10 @@ def list_episodes(params):
 
 
 def get_streams(params):
-    url = f"{BASE_URL}/{SECRET_STR}/stream/{params['catalog_type']}/{params['video_id']}.json"
+    url = parse.urljoin(
+        BASE_URL,
+        f"/{SECRET_STR}/stream/{params['catalog_type']}/{params['video_id']}.json",
+    )
     force_refresh = params.get("force_refresh", False)
     response = fetch_data(url, force_refresh)
     if not response:
