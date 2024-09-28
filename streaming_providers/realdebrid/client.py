@@ -1,6 +1,8 @@
 from base64 import b64encode, b64decode
 from typing import Any
 
+from binascii import Error as BinasciiError
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -67,7 +69,7 @@ class RealDebrid(DebridClient):
     def decode_token_str(token: str) -> dict[str, str]:
         try:
             client_id, client_secret, code = b64decode(token).decode().split(":")
-        except ValueError:
+        except (ValueError, BinasciiError):
             return {"private_token": token}
         return {"client_id": client_id, "client_secret": client_secret, "code": code}
 
