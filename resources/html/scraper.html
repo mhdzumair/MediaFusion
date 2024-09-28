@@ -32,6 +32,7 @@
                         <option value="add_tv_metadata">Add TV Metadata</option>
                         <option value="add_m3u_playlist">Add M3U Playlist</option>
                         <option value="update_imdb_data">Update IMDb Data</option>
+                        <option value="block_torrent">Block Torrent</option>
                     </select>
                 </div>
 
@@ -41,7 +42,8 @@
                     <div id="torrentUploadParameters" style="display: none;">
                         <div class="mb-3">
                             <label for="torrentImdbId" class="form-label">IMDb ID</label>
-                            <input type="text" class="form-control" id="torrentImdbId" name="meta_id" maxlength="10" placeholder="Enter IMDb ID (e.g., tt1234567)" value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
+                            <input type="text" class="form-control" id="torrentImdbId" name="meta_id" maxlength="10" placeholder="Enter IMDb ID (e.g., tt1234567)"
+                                   value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
                         </div>
                         <div class="mb-3">
                             <label for="metaType" class="form-label">Meta Type</label>
@@ -235,6 +237,13 @@
                             <input type="text" class="form-control" id="imdbId" name="imdb_id" placeholder="Enter IMDb ID (e.g., tt1234567)">
                         </div>
                     </div>
+
+                    <div id="blockTorrentParameters" style="display: none;">
+                        <div class="mb-3">
+                            <label for="blockTorrentInfoHash" class="form-label">Torrent Info Hash</label>
+                            <input type="text" class="form-control" id="blockTorrentInfoHash" name="blockTorrentInfoHash" required>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -255,7 +264,7 @@
             </div>
 
             <div class="button-container mt-5">
-                <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitScraperForm()">Run Scraper</button>
+                <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitScraperForm()">Run</button>
                 <div id="loadingSpinner" class="spinner-border text-primary" role="status" style="display: none;">
                     <span class="visually-hidden">Loading...</span>
                 </div>

@@ -201,6 +201,7 @@ function updateFormFields() {
     setElementDisplay("imdbDataParameters", "none");
     setElementDisplay("torrentUploadParameters", "none");
     setElementDisplay("apiPasswordContainer", "none");
+    setElementDisplay('blockTorrentParameters', 'none');
 
     // Get the selected scraper type
     const scraperType = document.getElementById('scraperSelect').value;
@@ -232,6 +233,9 @@ function updateFormFields() {
             break;
         case 'update_imdb_data':
             setElementDisplay("imdbDataParameters", "block");
+            break;
+        case 'block_torrent':
+            setElementDisplay("blockTorrentParameters", "block");
             break;
         default:
             // Optionally handle any default cases if needed
@@ -524,6 +528,40 @@ async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
     }
 }
 
+async function handleBlockTorrent(apiPassword, submitBtn, loadingSpinner) {
+    const infoHash = document.getElementById('blockTorrentInfoHash').value.trim();
+    if (!infoHash) {
+        showNotification('Torrent Info Hash is required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+
+    try {
+        const response = await fetch('/scraper/block_torrent', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                info_hash: infoHash,
+                api_password: apiPassword
+            })
+        });
+
+        const data = await response.json();
+        if (data.detail) {
+            showNotification(data.detail, 'error');
+        } else {
+            showNotification(data.status, 'success');
+        }
+    } catch (error) {
+        console.error('Error blocking torrent:', error);
+        showNotification(`Error blocking torrent. Error: ${error.toString()}`, 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
 // Main function
 async function submitScraperForm() {
     const apiPassword = document.getElementById('api_password').value;
@@ -549,6 +587,9 @@ async function submitScraperForm() {
             break;
         case 'update_imdb_data':
             await handleUpdateImdbData(submitBtn, loadingSpinner);
+            break;
+        case 'block_torrent':
+            await handleBlockTorrent(apiPassword, submitBtn, loadingSpinner);
             break;
         default:
             await handleScrapyParameters(payload, submitBtn, loadingSpinner);

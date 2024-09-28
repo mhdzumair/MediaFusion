@@ -30,8 +30,8 @@ router = APIRouter()
 
 
 def validate_api_password(api_password: str):
-    if settings.api_password and api_password != settings.api_password:
-        raise HTTPException(status_code=200, detail="Invalid API password.")
+    if api_password != settings.api_password:
+        raise HTTPException(status_code=401, detail="Invalid API password.")
     return True
 
 
@@ -377,3 +377,21 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
     await store_new_torrent_streams([torrent_stream])
 
     return torrent_stream
+
+
+@router.post("/block_torrent", tags=["scraper"])
+async def block_torrent(block_data: schemas.BlockTorrent):
+    validate_api_password(block_data.api_password)
+    torrent_stream = await TorrentStreams.get(block_data.info_hash)
+    if not torrent_stream:
+        raise HTTPException(status_code=404, detail="Torrent not found.")
+    if torrent_stream.is_blocked:
+        return {"status": f"Torrent {block_data.info_hash} is already blocked."}
+    torrent_stream.is_blocked = True
+    try:
+        await torrent_stream.save()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to block torrent: {str(e)}"
+        )
+    return {"status": f"Torrent {block_data.info_hash} has been successfully blocked."}
