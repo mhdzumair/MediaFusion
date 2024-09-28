@@ -179,7 +179,7 @@ async def get_mediaflow_proxy_public_ip(
         f"{mediaflow_proxy_url}:{api_password}", full_hash=True
     )
     if public_ip := await REDIS_ASYNC_CLIENT.getex(cache_key, ex=300):
-        return public_ip
+        return public_ip.decode()
 
     try:
         async with httpx.AsyncClient() as client:

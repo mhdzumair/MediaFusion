@@ -57,6 +57,14 @@ class AllDebrid(DebridClient):
                     raise ProviderException(
                         f"API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"
                     )
+                case "MAGNET_MUST_BE_PREMIUM":
+                    raise ProviderException(
+                        f"Torrent must be premium on AllDebrid", "need_premium.mp4"
+                    )
+                case "MAGNET_TOO_MANY_ACTIVE":
+                    raise ProviderException(
+                        f"Too many active torrents on AllDebrid", "torrent_limit.mp4"
+                    )
                 case _:
                     raise ProviderException(
                         f"Failed to add magnet link to AllDebrid {response_data}",
