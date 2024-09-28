@@ -88,7 +88,7 @@ class ProwlarrScraper(BaseScraper):
             ):
                 results.append(stream)
         except Exception as e:
-            self.logger.error(f"An error occurred during scraping: {str(e)}")
+            self.logger.exception(f"An error occurred during scraping: {str(e)}")
 
         self.logger.info(
             f"Returning {len(results)} scraped streams for {metadata.title}"

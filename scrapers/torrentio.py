@@ -5,6 +5,7 @@ from os import path
 from typing import List, Dict, Any
 
 import PTT
+from tenacity import RetryError
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
@@ -40,14 +41,19 @@ class TorrentioScraper(BaseScraper):
         try:
             response = await self.make_request(url)
             data = response.json()
-        except ScraperError:
-            return []
 
-        if not self.validate_response(data):
-            self.logger.warning(f"Invalid response received for {url}")
-            return []
+            if not self.validate_response(data):
+                self.logger.warning(f"Invalid response received for {url}")
+                return []
 
-        return await self.parse_response(data, metadata, catalog_type, season, episode)
+            return await self.parse_response(
+                data, metadata, catalog_type, season, episode
+            )
+        except (ScraperError, RetryError):
+            return []
+        except Exception as e:
+            self.logger.exception(f"Error occurred while fetching {url}: {e}")
+            return []
 
     def validate_response(self, response: Dict[str, Any]) -> bool:
         return "streams" in response and isinstance(response["streams"], list)

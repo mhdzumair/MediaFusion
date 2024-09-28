@@ -160,7 +160,9 @@ async def process_torrent(
         torrent.resolution = parsed_data.get("resolution")
         torrent.codec = parsed_data.get("codec")
         torrent.quality = parsed_data.get("quality")
-        torrent.audio = parsed_data.get("audio")
+        torrent.audio = (
+            parsed_data.get("audio")[0] if parsed_data.get("audio") else None
+        )
         await torrent.save(bulk_writer=torrent_bulk_writer)
         async with lock:
             metrics["updated_torrents"] += 1
