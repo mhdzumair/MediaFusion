@@ -1,3 +1,4 @@
+import sqlite3
 import sys
 from urllib import parse
 
@@ -17,9 +18,18 @@ ADDON_ID = ADDON.getAddonInfo("id")
 cache_file = xbmcvfs.translatePath(
     f"special://profile/addon_data/{ADDON_ID}/cache.sqlite"
 )
-session = requests_cache.CachedSession(
-    cache_name=cache_file, backend="sqlite", cache_control=True
-)
+try:
+    session = requests_cache.CachedSession(
+        cache_name=cache_file, backend="sqlite", cache_control=True
+    )
+except sqlite3.OperationalError as e:
+    xbmc.log(f"Failed to setup cache: {e}", xbmc.LOGERROR)
+    xbmcgui.Dialog().notification(
+        "MediaFusion", "Failed to setup cache", xbmcgui.NOTIFICATION_ERROR
+    )
+    session = requests_cache.CachedSession(
+        cache_name="mediafusion_request", backend="memory", cache_control=True
+    )  # Fallback to a regular session
 
 BASE_URL = ADDON.getSetting("base_url")
 SECRET_STR = ADDON.getSetting("secret_string")

@@ -104,6 +104,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
             response = requests.post(
                 urljoin(self.base_url, "kodi/generate_setup_code"), json=data
             )
+            response.raise_for_status()
             data = response.json()
             code = data["code"]
             qr_code_url = data["qr_code_url"]
