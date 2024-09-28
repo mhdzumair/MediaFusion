@@ -29,10 +29,12 @@ HTPASSWD_PATH="/etc/apache2/.htpasswd"
 # Check if .htpasswd file exists and configure basic auth for WebDAV accordingly
 if [ -f "$HTPASSWD_PATH" ]; then
     echo "Basic auth password file found. Configuring WebDAV with basic auth."
-    sed -i '/<Directory \/downloads>/,/<\/Directory>/{/Require /d}' /etc/apache2/conf.d/000-default.conf
+    sed -i '/<Directory \/downloads>/,/<\/Directory>/{/AuthType/d;/AuthName/d;/AuthUserFile/d;/Require/d}' /etc/apache2/conf.d/000-default.conf
     sed -i '/<Directory \/downloads>/a \\tAuthType Basic\n\tAuthName "WebDAV"\n\tAuthUserFile '"$HTPASSWD_PATH"'\n\tRequire valid-user' /etc/apache2/conf.d/000-default.conf
 else
     echo "No basic auth password file found. Configuring WebDAV without basic auth."
+    sed -i '/<Directory \/downloads>/,/<\/Directory>/{/AuthType/d;/AuthName/d;/AuthUserFile/d;/Require/d}' /etc/apache2/conf.d/000-default.conf
+    sed -i '/<Directory \/downloads>/a \\tRequire all granted' /etc/apache2/conf.d/000-default.conf
 fi
 
 # start supervisord
