@@ -3,12 +3,11 @@ from datetime import timedelta
 from typing import List, Dict, Any
 
 import PTT
-import httpx
+from tenacity import RetryError
 
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper, ScraperError
-from utils.const import UA_HEADER
 from utils.parser import (
     is_contain_18_plus_keywords,
 )
@@ -33,33 +32,27 @@ class ZileanScraper(BaseScraper):
     ) -> List[TorrentStreams]:
         try:
             stream_response = await self.make_request(
-                self.base_url, json={"queryText": metadata.title}, timeout=10
+                self.base_url,
+                method="POST",
+                json={"queryText": metadata.title},
+                timeout=10,
             )
-        except ScraperError:
+
+            stream_data = stream_response.json()
+            if not self.validate_response(stream_data):
+                self.logger.warning(f"Invalid response received for {metadata.title}")
+                return []
+
+            return await self.parse_response(
+                stream_data, metadata, catalog_type, season, episode
+            )
+        except (ScraperError, RetryError):
             return []
-
-        stream_data = stream_response.json()
-        if not self.validate_response(stream_data):
-            self.logger.warning(f"Invalid response received for {metadata.title}")
+        except Exception as e:
+            self.logger.exception(
+                f"Error occurred while fetching {metadata.title}: {e}"
+            )
             return []
-
-        return await self.parse_response(
-            stream_data, metadata, catalog_type, season, episode
-        )
-
-    async def fetch_stream_data(self, title: str) -> list:
-        """Fetch stream data asynchronously."""
-        async with httpx.AsyncClient(
-            headers=UA_HEADER, proxy=settings.scraper_proxy_url
-        ) as client:
-            response = await client.post(
-                self.base_url, timeout=10, json={"queryText": title}
-            )
-            response.raise_for_status()
-            self.logger.info(
-                f"Zilean DMM found {len(response.json())} streams for {title}"
-            )
-            return response.json()
 
     async def parse_response(
         self,
@@ -85,28 +78,28 @@ class ZileanScraper(BaseScraper):
         episode: int = None,
     ) -> TorrentStreams | None:
         async with self.semaphore:
-            if is_contain_18_plus_keywords(stream["filename"]):
+            if is_contain_18_plus_keywords(stream["raw_title"]):
                 self.logger.warning(
                     f"Stream contains 18+ keywords: {stream['filename']}"
                 )
                 return None
 
-            torrent_data = PTT.parse_title(stream["filename"], True)
+            torrent_data = PTT.parse_title(stream["raw_title"], True)
             if not self.validate_title_and_year(
                 torrent_data.get("title"),
                 torrent_data.get("year"),
                 metadata,
                 catalog_type,
-                stream["filename"],
+                stream["raw_title"],
             ):
                 return None
 
             torrent_stream = TorrentStreams(
                 id=stream["info_hash"],
                 meta_id=metadata.id,
-                torrent_name=stream["filename"],
+                torrent_name=stream["raw_title"],
                 announce_list=[],
-                size=stream["filesize"],
+                size=stream["size"],
                 languages=torrent_data["languages"],
                 resolution=torrent_data.get("resolution"),
                 codec=torrent_data.get("codec"),
