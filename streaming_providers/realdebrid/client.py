@@ -12,6 +12,7 @@ class RealDebrid(DebridClient):
 
     def __init__(self, token: str | None = None, user_ip: str | None = None):
         self.user_ip = user_ip
+        self.is_private_token = False
         super().__init__(token)
 
     def _handle_service_specific_errors(self, error):
@@ -42,12 +43,20 @@ class RealDebrid(DebridClient):
     def initialize_headers(self):
         if self.token:
             token_data = self.decode_token_str(self.token)
-            access_token_data = self.get_token(
-                token_data["client_id"], token_data["client_secret"], token_data["code"]
-            )
-            self.headers = {
-                "Authorization": f"Bearer {access_token_data['access_token']}"
-            }
+            if "private_token" in token_data:
+                self.headers = {
+                    "Authorization": f"Bearer {token_data['private_token']}"
+                }
+                self.is_private_token = True
+            else:
+                access_token_data = self.get_token(
+                    token_data["client_id"],
+                    token_data["client_secret"],
+                    token_data["code"],
+                )
+                self.headers = {
+                    "Authorization": f"Bearer {access_token_data['access_token']}"
+                }
 
     @staticmethod
     def encode_token_data(client_id: str, client_secret: str, code: str):
@@ -59,7 +68,7 @@ class RealDebrid(DebridClient):
         try:
             client_id, client_secret, code = b64decode(token).decode().split(":")
         except ValueError:
-            raise ProviderException("Invalid token", "invalid_token.mp4")
+            return {"private_token": token}
         return {"client_id": client_id, "client_secret": client_secret, "code": code}
 
     def get_device_code(self):
@@ -130,6 +139,9 @@ class RealDebrid(DebridClient):
         )
 
     def disable_access_token(self):
+        if self.is_private_token:
+            return
+
         return self._make_request(
             "GET",
             f"{self.BASE_URL}/disable_access_token",
