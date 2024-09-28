@@ -59,7 +59,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         user_data = crypto.decrypt_user_data(secret_str)
 
         # validate api password if set
-        if settings.api_password and settings.is_public_instance is False:
+        if settings.is_public_instance is False:
             is_auth_required = getattr(endpoint, "auth_required", False)
             if is_auth_required and user_data.api_password != settings.api_password:
                 return Response(

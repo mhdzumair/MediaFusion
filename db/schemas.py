@@ -350,3 +350,8 @@ class TVMetaDataUpload(BaseModel):
 class KodiConfig(BaseModel):
     code: str = Field(max_length=6)
     manifest_url: HttpUrl
+
+
+class BlockTorrent(BaseModel):
+    info_hash: str
+    api_password: str

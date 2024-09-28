@@ -45,6 +45,7 @@ class TorrentStreams(Document):
     seeders: Optional[int] = None
     cached: Optional[bool] = Field(default=False, exclude=True)
     indexer_flags: Optional[list[str]] = Field(default_factory=list)
+    is_blocked: Optional[bool] = False
 
     def __eq__(self, other):
         if not isinstance(other, TorrentStreams):

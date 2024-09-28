@@ -64,6 +64,7 @@ async def get_meta_list(
     else:
         query_filters = {"catalog": {"$in": [catalog]}}
 
+    query_filters["is_blocked"] = {"$ne": True}
     match_filter = {
         "type": catalog_type,
     }
@@ -265,7 +266,9 @@ async def get_cached_torrent_streams(
         # If the data is not in the cache, query it from the database
         if season is not None and episode is not None:
             streams = (
-                await TorrentStreams.find({"meta_id": video_id})
+                await TorrentStreams.find(
+                    {"meta_id": video_id, "is_blocked": {"$ne": True}}
+                )
                 .find(
                     {
                         "season.season_number": season,
@@ -277,7 +280,9 @@ async def get_cached_torrent_streams(
             )
         else:
             streams = (
-                await TorrentStreams.find({"meta_id": video_id})
+                await TorrentStreams.find(
+                    {"meta_id": video_id, "is_blocked": {"$ne": True}}
+                )
                 .sort("-updated_at")
                 .to_list()
             )
@@ -802,7 +807,12 @@ async def process_search_query(
                 "localField": "_id",
                 "foreignField": "meta_id",
                 "pipeline": [
-                    {"$match": {"catalog": {"$in": user_data.selected_catalogs}}},
+                    {
+                        "$match": {
+                            "catalog": {"$in": user_data.selected_catalogs},
+                            "is_blocked": {"$ne": True},
+                        }
+                    },
                     {"$count": "num_torrents"},
                 ],
                 "as": "torrent_count",
@@ -885,7 +895,9 @@ async def process_tv_search_query(search_query: str, namespace: str) -> dict:
 
 
 async def get_stream_by_info_hash(info_hash: str) -> TorrentStreams | None:
-    stream = await TorrentStreams.get(info_hash)
+    stream = await TorrentStreams.find_one(
+        {"_id": info_hash, "is_blocked": {"$ne": True}}
+    )
     return stream
 
 
