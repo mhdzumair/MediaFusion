@@ -123,8 +123,12 @@ async def filter_and_sort_streams(
             for key in user_data.torrent_sorting_priority
         )
 
+    def safe_sort_key(stream):
+        raw_key = dynamic_sort_key(stream)
+        return tuple(0 if item is None else item for item in raw_key)
+
     dynamically_sorted_streams = sorted(
-        filtered_streams, key=dynamic_sort_key, reverse=True
+        filtered_streams, key=safe_sort_key, reverse=True
     )
 
     # Step 4: Limit streams per resolution based on user preference, after dynamic sorting
