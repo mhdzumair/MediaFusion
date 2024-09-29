@@ -80,7 +80,7 @@ class ZileanScraper(BaseScraper):
         async with self.semaphore:
             if is_contain_18_plus_keywords(stream["raw_title"]):
                 self.logger.warning(
-                    f"Stream contains 18+ keywords: {stream['filename']}"
+                    f"Stream contains 18+ keywords: {stream['raw_title']}"
                 )
                 return None
 
