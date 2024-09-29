@@ -178,14 +178,14 @@ class BaseScraper(abc.ABC):
 
         # Log and return False if similarity ratios is below the expected threshold
         if max_similarity_ratio < expected_ratio:
-            self.logger.warning(
+            self.logger.debug(
                 f"Title mismatch: '{parsed_title}' vs. '{metadata.title}'. Torrent title: '{torrent_title}'"
             )
             return False
 
         # Validate year based on a catalog type
         if catalog_type == "movie" and parsed_year != metadata.year:
-            self.logger.warning(
+            self.logger.debug(
                 f"Year mismatch for movie: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year}). Torrent title: '{torrent_title}'"
             )
             return False
@@ -196,7 +196,7 @@ class BaseScraper(abc.ABC):
                 metadata.end_year
                 and not (metadata.year <= parsed_year <= metadata.end_year)
             ) or (not metadata.end_year and parsed_year < metadata.year):
-                self.logger.warning(
+                self.logger.debug(
                     f"Year mismatch for series: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
                 )
                 return False
