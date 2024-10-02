@@ -258,7 +258,7 @@
   },
   "streamed": {
     "api_base_url": "https://streamed.su/api",
-    "live_matches_url": "/matches/live",
+    "live_matches_endpoint": "/matches/live",
     "stream_url_template": "/stream/{source}/{id}",
     "image_url_template": "/images/poster/{batch_id_1}/{batch_id_2}.webp",
     "m3u8_base_url": "https://{domain}/{source}/js/{id}/{stream_no}/playlist.m3u8",
