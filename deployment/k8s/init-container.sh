@@ -11,6 +11,12 @@ done
 
 # Replace placeholder with actual API key
 sed -i 's/\$PROWLARR_API_KEY/'"$PROWLARR_API_KEY"'/g' /config/config.xml
+sed -i 's/\$PROWLARR__POSTGRES_USER/'"$PROWLARR__POSTGRES_USER"'/g' /config/config.xml
+sed -i 's/\$PROWLARR__POSTGRES_PASSWORD/'"$PROWLARR__POSTGRES_PASSWORD"'/g' /config/config.xml
+sed -i 's/\$PROWLARR__POSTGRES_PORT/'"$PROWLARR__POSTGRES_PORT"'/g' /config/config.xml
+sed -i 's/\$PROWLARR__POSTGRES_HOST/'"$PROWLARR__POSTGRES_HOST"'/g' /config/config.xml
+sed -i 's/\$PROWLARR__POSTGRES_MAIN_DB/'"$PROWLARR__POSTGRES_MAIN_DB"'/g' /config/config.xml
+sed -i 's/\$PROWLARR__POSTGRES_LOG_DB/'"$PROWLARR__POSTGRES_LOG_DB"'/g' /config/config.xml
 chmod 664 /config/config.xml
 echo "Prowlarr config setup complete."
 

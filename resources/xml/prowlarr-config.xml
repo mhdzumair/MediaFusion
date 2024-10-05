@@ -8,11 +8,17 @@
   <AuthenticationMethod>External</AuthenticationMethod>
   <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
   <Branch>master</Branch>
-  <LogLevel>trace</LogLevel>
+  <LogLevel>info</LogLevel>
   <SslCertPath></SslCertPath>
   <SslCertPassword></SslCertPassword>
   <UrlBase></UrlBase>
   <InstanceName>Prowlarr</InstanceName>
   <UpdateMechanism>Docker</UpdateMechanism>
   <AnalyticsEnabled>False</AnalyticsEnabled>
+  <PostgresUser>$PROWLARR__POSTGRES_USER</PostgresUser>
+  <PostgresPassword>$PROWLARR__POSTGRES_PASSWORD</PostgresPassword>
+  <PostgresPort>$PROWLARR__POSTGRES_PORT</PostgresPort>
+  <PostgresHost>$PROWLARR__POSTGRES_HOST</PostgresHost>
+  <PostgresMainDb>$PROWLARR__POSTGRES_MAIN_DB</PostgresMainDb>
+  <PostgresLogDb>$PROWLARR__POSTGRES_LOG_DB</PostgresLogDb>
 </Config>
