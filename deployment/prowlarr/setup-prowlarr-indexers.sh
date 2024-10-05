@@ -9,38 +9,14 @@ cd "$(dirname "$0")"
 # Set the repo root directory
 REPO_ROOT="$(pwd)/../.."
 
-# Generate PROWLARR_API_KEY and add to .env file
-PROWLARR_API_KEY=$(openssl rand -hex 16)
-echo "PROWLARR_API_KEY=$PROWLARR_API_KEY" >> .env
+# Load the environment variables
+source "$REPO_ROOT/.env"
 
-# Stop & delete Prowlarr container if it's running
-docker-compose rm -sf prowlarr
-
-# delete the volume if it exists
-docker volume rm -f docker-compose_prowlarr-config
-
-# Ensure the volume is available
-docker volume create docker-compose_prowlarr-config
-
-# Copy the configuration file to the volume
-docker run --rm -v "$REPO_ROOT/resources/xml/prowlarr-config.xml:/prowlarr-config/config.xml" -v docker-compose_prowlarr-config:/config alpine /bin/sh -c "
-  cp /prowlarr-config/config.xml /config/config.xml;
-  sed -i 's/\$PROWLARR_API_KEY/'"$PROWLARR_API_KEY"'/g' /config/config.xml;
-  sed -i 's/\$PROWLARR__POSTGRES_USER/'"$PROWLARR__POSTGRES_USER"'/g' /config/config.xml;
-  sed -i 's/\$PROWLARR__POSTGRES_PASSWORD/'"$PROWLARR__POSTGRES_PASSWORD"'/g' /config/config.xml;
-  sed -i 's/\$PROWLARR__POSTGRES_PORT/'"$PROWLARR__POSTGRES_PORT"'/g' /config/config.xml;
-  sed -i 's/\$PROWLARR__POSTGRES_HOST/'"$PROWLARR__POSTGRES_HOST"'/g' /config/config.xml;
-  sed -i 's/\$PROWLARR__POSTGRES_MAIN_DB/'"$PROWLARR__POSTGRES_MAIN_DB"'/g' /config/config.xml;
-  sed -i 's/\$PROWLARR__POSTGRES_LOG_DB/'"$PROWLARR__POSTGRES_LOG_DB"'/g' /config/config.xml;
-  chmod 664 /config/config.xml;
-  echo 'Prowlarr config setup complete.';
-"
-
-# pull the latest images
-docker-compose pull prowlarr flaresolverr
-
-# Start Prowlarr and FlareSolverr containers
-docker-compose up -d prowlarr flaresolverr
+# Ensure the required environment variables are set
+if [[ -z "$PROWLARR_API_KEY" ]]; then
+  echo "PROWLARR_API_KEY is not set. Please set it in the .env file."
+  exit 1
+fi
 
 # Function to handle curl requests
 handle_curl() {
@@ -66,12 +42,12 @@ until curl -s -o /dev/null -w "%{http_code}" -H "X-API-KEY: $PROWLARR_API_KEY" h
 done
 
 # Create tag "flaresolverr"
-handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://127.0.0.1:9696/api/v1/tag'
+handle_curl true -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw '{"label":"flaresolverr"}' 'http://127.0.0.1:9696/api/v1/tag'
 
 # Create FlareSolverr proxy using the JSON file
 PROXY_DATA=$(cat "$REPO_ROOT/resources/json/prowlarr_indexer_proxy.json")
 PROXY_DATA=$(echo "$PROXY_DATA" | sed "s#\\\$FLARESOLVERR_HOST#$FLARESOLVERR_HOST#g")
-handle_curl false -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://127.0.0.1:9696/api/v1/indexerProxy?'
+handle_curl true -X POST -H 'Content-Type: application/json' -H "X-API-KEY: $PROWLARR_API_KEY" --data-raw "$PROXY_DATA" 'http://127.0.0.1:9696/api/v1/indexerProxy?'
 
 # Configure indexers using the JSON file
 INDEXERS=$(jq -c '.[]' "$REPO_ROOT/resources/json/prowlarr-indexers.json")

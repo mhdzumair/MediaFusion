@@ -85,7 +85,13 @@ try {
     Copy-Item "$REPO_ROOT/resources/xml/prowlarr-config.xml" $tempConfigPath
 
     # Replace the API key placeholder in the temporary file
-    (Get-Content $tempConfigPath) -replace '\$PROWLARR_API_KEY', $env:PROWLARR_API_KEY | Set-Content $tempConfigPath
+    (Get-Content $tempConfigPath) -replace '\$PROWLARR_API_KEY', $env:PROWLARR_API_KEY `
+    -replace '\$PROWLARR__POSTGRES_USER', $env:PROWLARR__POSTGRES_USER `
+    -replace '\$PROWLARR__POSTGRES_PASSWORD', $env:PROWLARR__POSTGRES_PASSWORD `
+    -replace '\$PROWLARR__POSTGRES_PORT', $env:PROWLARR__POSTGRES_PORT `
+    -replace '\$PROWLARR__POSTGRES_HOST', $env:PROWLARR__POSTGRES_HOST `
+    -replace '\$PROWLARR__POSTGRES_MAIN_DB', $env:PROWLARR__POSTGRES_MAIN_DB `
+    -replace '\$PROWLARR__POSTGRES_LOG_DB', $env:PROWLARR__POSTGRES_LOG_DB | Set-Content $tempConfigPath
 
     # Copy the modified configuration file to the Docker volume
     docker run --rm `
