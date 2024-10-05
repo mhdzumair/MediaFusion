@@ -8,7 +8,7 @@
   <AuthenticationMethod>External</AuthenticationMethod>
   <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
   <Branch>master</Branch>
-  <LogLevel>info</LogLevel>
+  <LogLevel>trace</LogLevel>
   <SslCertPath></SslCertPath>
   <SslCertPassword></SslCertPassword>
   <UrlBase></UrlBase>
