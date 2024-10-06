@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime
 
 import aiohttp
@@ -143,12 +144,23 @@ async def initialize_pikpak(user_data: UserData):
     pikpak = PikPakApi(
         username=user_data.streaming_provider.email,
         password=user_data.streaming_provider.password,
-        httpx_client_args={"transport": httpx.AsyncHTTPTransport(retries=3)},
+        httpx_client_args={
+            "transport": httpx.AsyncHTTPTransport(retries=3),
+            "timeout": 10,
+        },
     )
     try:
         await pikpak.login()
-    except PikpakException:
-        raise ProviderException("Invalid PikPak credentials", "invalid_credentials.mp4")
+    except PikpakException as error:
+        if "Invalid username or password" == str(error):
+            raise ProviderException(
+                "Invalid PikPak credentials", "invalid_credentials.mp4"
+            )
+        logging.error(f"Failed to connect to PikPak: {error}")
+        raise ProviderException(
+            "Failed to connect to PikPak. Please try again later.",
+            "debrid_service_down_error.mp4",
+        )
     except (aiohttp.ClientError, httpx.ReadTimeout):
         raise ProviderException(
             "Failed to connect to PikPak. Please try again later.",
