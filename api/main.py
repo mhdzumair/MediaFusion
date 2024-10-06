@@ -534,7 +534,7 @@ async def get_streams(
                 name=settings.addon_name,
                 description=f"🔄 Update IMDb metadata for {video_id}\n"
                 f"This will fetch the latest IMDb data for this {catalog_type},\n Once after you make contribution to IMDb.",
-                url=f"{settings.host_url}/scraper/imdb_data?meta_id={video_id}&redirect_video=true",
+                url=f"{settings.host_url}/scraper/imdb_data?meta_id={video_id}&media_type={catalog_type}&redirect_video=true",
             ),
             schemas.Stream(
                 name=settings.addon_name,
