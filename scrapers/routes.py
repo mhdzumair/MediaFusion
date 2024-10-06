@@ -137,7 +137,10 @@ async def upload_m3u_playlist(
 
 @router.get("/imdb_data", tags=["scraper"])
 async def update_imdb_data(
-    response: Response, meta_id: str, media_type, redirect_video: bool = False
+    response: Response,
+    meta_id: str,
+    media_type: Literal["movie", "series"],
+    redirect_video: bool = False,
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
     if not (meta_id.startswith("tt") and meta_id[2:].isdigit()):

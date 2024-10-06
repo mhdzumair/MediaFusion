@@ -169,9 +169,11 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
             continue
 
         movie_id = result.imdb_id
-        imdb_rating = float(result.rating)
+        imdb_rating = float(result.rating) if result.rating is not None else None
         end_year_dict = (
-            {"end_year": result.end_year} if metadata_type == "series" else {}
+            {"end_year": result.end_year}
+            if metadata_type == "series" and result.end_year
+            else {}
         )
 
         # Update database entries with the new data
