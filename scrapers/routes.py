@@ -137,13 +137,13 @@ async def upload_m3u_playlist(
 
 @router.get("/imdb_data", tags=["scraper"])
 async def update_imdb_data(
-    response: Response, meta_id: str, redirect_video: bool = False
+    response: Response, meta_id: str, media_type, redirect_video: bool = False
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
     if not (meta_id.startswith("tt") and meta_id[2:].isdigit()):
         raise_error("Invalid IMDb ID. Must start with 'tt'.")
 
-    await imdb_data.process_imdb_data([meta_id])
+    await imdb_data.process_imdb_data([meta_id], media_type)
 
     if redirect_video:
         return RedirectResponse(

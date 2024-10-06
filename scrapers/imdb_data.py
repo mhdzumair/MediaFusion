@@ -148,7 +148,7 @@ def search_imdb(
     return {}
 
 
-async def process_imdb_data(movie_ids):
+async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
     now = datetime.now()
 
     # Initialize circuit breaker
@@ -158,41 +158,48 @@ async def process_imdb_data(movie_ids):
 
     async for result in batch_process_with_circuit_breaker(
         get_imdb_movie_data,
-        movie_ids,
+        imdb_ids,
         5,
         rate_limit_delay=3,
         cb=circuit_breaker,
         retry_exceptions=[IMDbDataAccessError],
+        media_type=metadata_type,
     ):
         if not result:
             continue
 
         movie_id = result.imdb_id
-        imdb_rating = get_imdb_rating(movie_id)
+        imdb_rating = float(result.rating)
         end_year_dict = (
-            {"end_year": result.end_year} if result.type_id == "tvSeries" else {}
+            {"end_year": result.end_year} if metadata_type == "series" else {}
         )
 
         # Update database entries with the new data
-        await MediaFusionMetaData.find({"_id": movie_id}).update(
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": movie_id},
             {
-                "genres": result.genres,
-                "imdb_rating": imdb_rating,
-                "parent_guide_nudity_status": result.advisories.nudity.status,
-                "parent_guide_certificates": list(
-                    set(cert.certificate for cert in result.certification.certificates)
-                ),
-                "aka_titles": list(set(aka.title for aka in result.akas)),
-                "last_updated_at": now,
-                **end_year_dict,
-            }
+                "$set": {
+                    "genres": result.genres,
+                    "imdb_rating": imdb_rating,
+                    "parent_guide_nudity_status": result.advisories.nudity.status,
+                    "parent_guide_certificates": list(
+                        set(
+                            cert.certificate
+                            for cert in result.certification.certificates
+                        )
+                    ),
+                    "aka_titles": list(set(aka.title for aka in result.akas)),
+                    "last_updated_at": now,
+                    **end_year_dict,
+                }
+            },
         )
         logging.info(f"Updating metadata for movie {movie_id}")
 
 
 @dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
-async def process_imdb_data_background(movie_ids):
-    await process_imdb_data(movie_ids)
+async def process_imdb_data_background(imdb_ids, metadata_type="movie"):
+    await process_imdb_data(imdb_ids, metadata_type)
 
 
 @dramatiq.actor(
@@ -213,18 +220,30 @@ async def fetch_movie_ids_to_update(*args, **kwargs):
                     {"last_updated_at": None},
                 ],
             },
-            {"_id": 1},
+            {"_id": 1, "type": 1},
         )
         .to_list(None)
     )
-    movie_ids = [doc["_id"] for doc in movie_documents]
-    logging.info(f"Fetched {len(movie_ids)} movie IDs for updating")
+    movie_ids = []
+    series_ids = []
+    for movie in movie_documents:
+        if movie["type"] == "movie":
+            movie_ids.append(movie["_id"])
+        elif movie["type"] == "series":
+            series_ids.append(movie["_id"])
+    logging.info(
+        f"Fetched {len(movie_ids)} movie and {len(series_ids)} series IDs for updating"
+    )
 
     # Divide the IDs into chunks and send them to another actor for processing
     chunk_size = 25
     for i in range(0, len(movie_ids), chunk_size):
         chunk_ids = movie_ids[i : i + chunk_size]
-        process_imdb_data_background.send(chunk_ids)
+        process_imdb_data_background.send(chunk_ids, metadata_type="movie")
+
+    for i in range(0, len(series_ids), chunk_size):
+        chunk_ids = series_ids[i : i + chunk_size]
+        process_imdb_data_background.send(chunk_ids, metadata_type="series")
 
 
 async def get_episode_by_date(
@@ -272,7 +291,9 @@ async def get_imdb_data_via_cinemeta(
     url = f"https://v3-cinemeta.strem.io/meta/{media_type}/{title_id}.json"
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10, headers=UA_HEADER)
+            response = await client.get(
+                url, timeout=10, headers=UA_HEADER, follow_redirects=True
+            )
             response.raise_for_status()
     except httpx.RequestError as e:
         logging.error(f"Error fetching Cinemeta data: {e}")
