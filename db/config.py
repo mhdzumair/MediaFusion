@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # Content Filtering
     adult_content_regex_keywords: str = (
         r"(^|\b|\s|$|[\[._-])"
-        r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|bigass|bigtits?|blowjob|hardfuck|onlyfans?|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer)"
+        r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|bigass|bigtits?|blowjob|hardfuck|onlyfans?|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer|RiffTrax)"
         r"(\b|\s|$|[\]._-])"
     )
 

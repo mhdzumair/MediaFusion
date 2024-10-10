@@ -15,7 +15,7 @@ from utils.parser import (
 
 class ZileanScraper(BaseScraper):
     def __init__(self):
-        super().__init__(cache_key_prefix="zilean")
+        super().__init__(cache_key_prefix="zilean", logger_name=self.__class__.__name__)
         self.base_url = f"{settings.zilean_url}/dmm/search"
         self.semaphore = asyncio.Semaphore(10)
 
@@ -86,8 +86,7 @@ class ZileanScraper(BaseScraper):
 
             torrent_data = PTT.parse_title(stream["raw_title"], True)
             if not self.validate_title_and_year(
-                torrent_data.get("title"),
-                torrent_data.get("year"),
+                torrent_data,
                 metadata,
                 catalog_type,
                 stream["raw_title"],
