@@ -1,6 +1,6 @@
 import asyncio
 from datetime import timedelta, datetime
-from typing import List, Dict, Any, AsyncGenerator, Literal
+from typing import List, Dict, Any, AsyncGenerator, Literal, AsyncIterable
 
 import PTT
 import dramatiq
@@ -21,6 +21,7 @@ from scrapers.base_scraper import BaseScraper
 from scrapers.imdb_data import get_episode_by_date, get_season_episodes
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 from utils.torrent import extract_torrent_metadata
 from utils.wrappers import minimum_run_interval
 
@@ -61,7 +62,7 @@ class ProwlarrScraper(BaseScraper):
     ]
 
     def __init__(self):
-        super().__init__(cache_key_prefix="prowlarr")
+        super().__init__(cache_key_prefix="prowlarr", logger_name=__name__)
         self.base_url = f"{settings.prowlarr_url}/api/v1/search"
 
     @BaseScraper.cache(
@@ -87,6 +88,12 @@ class ProwlarrScraper(BaseScraper):
                 episode,
             ):
                 results.append(stream)
+        except httpx.ReadTimeout:
+            self.logger.warning("Timeout while fetching search results")
+        except httpx.HTTPStatusError as e:
+            self.logger.error(
+                f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
+            )
         except Exception as e:
             self.logger.exception(f"An error occurred during scraping: {str(e)}")
 
@@ -213,7 +220,7 @@ class ProwlarrScraper(BaseScraper):
         active_generators = len(stream_generators)
         processed_info_hashes = set()
 
-        async def producer(gen: AsyncGenerator, generator_id: int):
+        async def producer(gen: AsyncIterable, generator_id: int):
             try:
                 async for stream_item in gen:
                     await queue.put((stream_item, generator_id))
@@ -457,8 +464,7 @@ class ProwlarrScraper(BaseScraper):
         parsed_data = self.parse_title_data(stream_data.get("title"))
 
         if not self.validate_title_and_year(
-            parsed_data["title"],
-            parsed_data.get("year"),
+            parsed_data,
             metadata,
             catalog_type,
             stream_data.get("title"),
@@ -562,22 +568,26 @@ class ProwlarrScraper(BaseScraper):
     async def parse_prowlarr_data(
         self, prowlarr_data: dict, catalog_type: str, parsed_data: dict
     ) -> dict | None:
-        download_url = prowlarr_data.get("downloadUrl") or prowlarr_data.get(
-            "magnetUrl"
-        )
-
+        download_url = await self.get_download_url(prowlarr_data)
         if not download_url:
-            download_url = await self.get_download_url(prowlarr_data)
+            return None
 
         try:
             torrent_data, is_torrent_downloaded = await self.get_torrent_data(
                 download_url, prowlarr_data.get("indexer")
             )
-        except httpx.TimeoutException:
-            self.logger.warning("Timeout while getting torrent data")
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code in [429, 500]:
+                raise error
+            self.logger.error(
+                f"HTTP Error getting torrent data: {error.response.text}, status code: {e.response.status_code}"
+            )
             return None
+        except httpx.TimeoutException as error:
+            self.logger.warning("Timeout while getting torrent data")
+            raise error
         except Exception as e:
-            self.logger.error(f"Error getting torrent data: {e}")
+            self.logger.exception(f"Error getting torrent data: {e}")
             return None
 
         info_hash = torrent_data.get("info_hash", "").lower()
@@ -604,30 +614,24 @@ class ProwlarrScraper(BaseScraper):
 
     @staticmethod
     async def get_download_url(prowlarr_data: dict) -> str:
-        if prowlarr_data.get("indexer") in [
-            "Torlock",
-            "YourBittorrent",
-            "The Pirate Bay",
-            "RuTracker.RU",
-            "BitSearch",
-            "BitRu",
-            "iDope",
-            "RuTor",
-            "Internet Archive",
-            "52BT",
-        ]:
-            return prowlarr_data.get("guid")
-        else:
-            if not prowlarr_data.get("magnetUrl") and not prowlarr_data.get(
-                "downloadUrl", ""
-            ).startswith("magnet:"):
-                torrent_info_data = await torrent_info.get_torrent_info(
-                    prowlarr_data.get("infoUrl"), prowlarr_data.get("indexer")
-                )
-                return torrent_info_data.get("magnetUrl") or torrent_info_data.get(
-                    "downloadUrl"
-                )
-        return prowlarr_data.get("magnetUrl") or prowlarr_data.get("downloadUrl")
+        guid = prowlarr_data.get("guid") or ""
+        magnet_url = prowlarr_data.get("magnetUrl") or ""
+        download_url = prowlarr_data.get("downloadUrl") or ""
+
+        if guid and guid.startswith("magnet:"):
+            return guid
+
+        if not magnet_url.startswith("magnet:") and not download_url.startswith(
+            "magnet:"
+        ):
+            torrent_info_data = await torrent_info.get_torrent_info(
+                prowlarr_data["infoUrl"], prowlarr_data["indexer"]
+            )
+            return torrent_info_data.get("magnetUrl") or torrent_info_data.get(
+                "downloadUrl"
+            )
+
+        return magnet_url or download_url
 
     async def get_torrent_data(
         self, download_url: str, indexer: str
@@ -695,9 +699,7 @@ class ProwlarrScraper(BaseScraper):
 
 @minimum_run_interval(hours=settings.prowlarr_search_interval_hour)
 @dramatiq.actor(
-    time_limit=10 * 60 * 1000,  # 10 minutes
-    min_backoff=2 * 60 * 1000,  # 2 minutes
-    max_backoff=10 * 60 * 1000,  # 10 minutes
+    time_limit=30 * 60 * 1000,  # 30 minutes
     priority=100,
 )
 async def background_movie_title_search(
@@ -718,8 +720,22 @@ async def background_movie_title_search(
         for query in scraper.MOVIE_SEARCH_QUERY_TEMPLATES
     ]
 
-    async for stream in scraper.process_streams(*title_streams_generators):
-        await scraper.store_streams([stream])
+    try:
+        async for stream in scraper.process_streams(*title_streams_generators):
+            await scraper.store_streams([stream])
+    except httpx.ReadTimeout:
+        scraper.logger.warning(
+            f"Timeout while fetching search results for movie {metadata.title} ({metadata.year}), retrying later"
+        )
+        task_cache_key = f"background_tasks:background_movie_title_search:{metadata_id}"
+        await REDIS_ASYNC_CLIENT.delete(task_cache_key)
+        background_movie_title_search.send_with_options(
+            kwargs={"metadata_id": metadata_id}, delay=timedelta(minutes=5)
+        )
+    except httpx.HTTPStatusError as e:
+        scraper.logger.error(
+            f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
+        )
 
     scraper.logger.info(
         f"Background title search completed for {metadata.title} ({metadata.year})"
@@ -728,9 +744,7 @@ async def background_movie_title_search(
 
 @minimum_run_interval(hours=settings.prowlarr_search_interval_hour)
 @dramatiq.actor(
-    time_limit=10 * 60 * 1000,  # 10 minutes
-    min_backoff=2 * 60 * 1000,  # 2 minutes
-    max_backoff=10 * 60 * 1000,  # 10 minutes
+    time_limit=30 * 60 * 1000,  # 30 minutes
     priority=100,
 )
 async def background_series_title_search(
@@ -759,8 +773,23 @@ async def background_series_title_search(
         for query in scraper.SERIES_SEARCH_QUERY_TEMPLATES
     ]
 
-    async for stream in scraper.process_streams(*title_streams_generators):
-        await scraper.store_streams([stream])
+    try:
+        async for stream in scraper.process_streams(*title_streams_generators):
+            await scraper.store_streams([stream])
+    except httpx.ReadTimeout:
+        scraper.logger.warning(
+            f"Timeout while fetching search results for {metadata.title} S{season}E{episode}, retrying later"
+        )
+        task_cache_key = f"background_tasks:background_series_title_search:metadata_id={metadata_id}_season={season}_episode={episode}"
+        await REDIS_ASYNC_CLIENT.delete(task_cache_key)
+        background_series_title_search.send_with_options(
+            kwargs={"metadata_id": metadata_id, "season": season, "episode": episode},
+            delay=timedelta(minutes=5),
+        )
+    except httpx.HTTPStatusError as e:
+        scraper.logger.error(
+            f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
+        )
 
     scraper.logger.info(
         f"Background title search completed for {metadata.title} S{season}E{episode}"

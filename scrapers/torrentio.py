@@ -19,7 +19,7 @@ from utils.validation_helper import is_video_file
 
 class TorrentioScraper(BaseScraper):
     def __init__(self):
-        super().__init__(cache_key_prefix="torrentio")
+        super().__init__(cache_key_prefix="torrentio", logger_name=__name__)
         self.base_url = settings.torrentio_url
         self.semaphore = asyncio.Semaphore(10)
 
@@ -98,8 +98,7 @@ class TorrentioScraper(BaseScraper):
 
                 if source != "Torrentio":
                     if not self.validate_title_and_year(
-                        parsed_data.get("title"),
-                        parsed_data.get("metadata").get("year"),
+                        parsed_data,
                         metadata,
                         catalog_type,
                         parsed_data.get("torrent_name"),

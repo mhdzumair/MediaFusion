@@ -18,8 +18,8 @@ class ScraperError(Exception):
 
 
 class BaseScraper(abc.ABC):
-    def __init__(self, cache_key_prefix: str):
-        self.logger = logging.getLogger(self.__class__.__name__)
+    def __init__(self, cache_key_prefix: str, logger_name: str):
+        self.logger = logging.getLogger(logger_name)
         self.http_client = httpx.AsyncClient(timeout=30)
         self.cache_key_prefix = cache_key_prefix
 
@@ -153,8 +153,7 @@ class BaseScraper(abc.ABC):
 
     def validate_title_and_year(
         self,
-        parsed_title: str,
-        parsed_year: int | None,
+        parsed_data: dict,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         torrent_title: str,
@@ -162,8 +161,7 @@ class BaseScraper(abc.ABC):
     ) -> bool:
         """
         Validate the title and year of the parsed data against the metadata.
-        :param parsed_title: Parsed title
-        :param parsed_year: Parsed year
+        :param parsed_data: Parsed data dictionary
         :param metadata: MediaFusionMetaData object
         :param catalog_type: Catalog type (movie, series)
         :param torrent_title: Torrent title
@@ -173,31 +171,37 @@ class BaseScraper(abc.ABC):
         """
         # Check similarity ratios
         max_similarity_ratio = calculate_max_similarity_ratio(
-            parsed_title, metadata.title, metadata.aka_titles
+            parsed_data["title"], metadata.title, metadata.aka_titles
         )
 
         # Log and return False if similarity ratios is below the expected threshold
         if max_similarity_ratio < expected_ratio:
             self.logger.debug(
-                f"Title mismatch: '{parsed_title}' vs. '{metadata.title}'. Torrent title: '{torrent_title}'"
+                f"Title mismatch: '{parsed_data['title']}' vs. '{metadata.title}'. Torrent title: '{torrent_title}'"
             )
             return False
 
         # Validate year based on a catalog type
-        if catalog_type == "movie" and parsed_year != metadata.year:
-            self.logger.debug(
-                f"Year mismatch for movie: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year}). Torrent title: '{torrent_title}'"
-            )
-            return False
+        if catalog_type == "movie":
+            if parsed_data.get("year") != metadata.year:
+                self.logger.debug(
+                    f"Year mismatch for movie: {parsed_data['title']} ({parsed_data.get('year')}) vs. {metadata.title} ({metadata.year}). Torrent title: '{torrent_title}'"
+                )
+                return False
+            if parsed_data.get("season"):
+                self.logger.debug(
+                    f"Season found for movie: {parsed_data['title']} ({parsed_data.get('season')}). Torrent title: '{torrent_title}'"
+                )
+                return False
 
-        if catalog_type == "series" and parsed_year:
+        if catalog_type == "series" and parsed_data.get("year"):
             # If end_year exists, check parsed_year is within the range; otherwise, check parsed_year >= metadata.year
             if (
                 metadata.end_year
-                and not (metadata.year <= parsed_year <= metadata.end_year)
-            ) or (not metadata.end_year and parsed_year < metadata.year):
+                and not (metadata.year <= parsed_data.get("year") <= metadata.end_year)
+            ) or (not metadata.end_year and parsed_data.get("year") < metadata.year):
                 self.logger.debug(
-                    f"Year mismatch for series: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
+                    f"Year mismatch for series: {parsed_data['title']} ({parsed_data.get('year')}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
                 )
                 return False
 
