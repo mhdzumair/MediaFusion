@@ -16,10 +16,14 @@ from utils.parser import (
 )
 from utils.validation_helper import is_video_file
 
+from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
+
 
 class TorrentioScraper(BaseScraper):
     def __init__(self):
-        super().__init__(cache_key_prefix="torrentio", logger_name=__name__)
+        super().__init__(
+            cache_key_prefix="torrentio", logger_name=self.__class__.__name__
+        )
         self.base_url = settings.torrentio_url
         self.semaphore = asyncio.Semaphore(10)
 
@@ -35,8 +39,16 @@ class TorrentioScraper(BaseScraper):
         episode: int = None,
     ) -> List[TorrentStreams]:
         url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}.json"
+        job_name = f"{metadata.title}:{metadata.id}"
         if catalog_type == "series":
             url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
+            job_name += f":{season}:{episode}"
+
+        scrapeops_logger = ScrapeOpsRequests(
+            scrapeops_api_key=settings.scrapeops_api_key,
+            spider_name="Torrentio Scraper",
+            job_name=job_name,
+        )
 
         try:
             response = await self.make_request(url)
@@ -46,14 +58,21 @@ class TorrentioScraper(BaseScraper):
                 self.logger.warning(f"Invalid response received for {url}")
                 return []
 
-            return await self.parse_response(
+            stream_data = await self.parse_response(
                 data, metadata, catalog_type, season, episode
             )
+            for stream in stream_data:
+                scrapeops_logger.item_scraped(
+                    item=stream.model_dump(include={"id", "meta_id"}), response=response
+                )
+            return stream_data
         except (ScraperError, RetryError):
             return []
         except Exception as e:
             self.logger.exception(f"Error occurred while fetching {url}: {e}")
             return []
+        finally:
+            scrapeops_logger.logger.close_sdk()
 
     def validate_response(self, response: Dict[str, Any]) -> bool:
         return "streams" in response and isinstance(response["streams"], list)

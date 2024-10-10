@@ -15,7 +15,7 @@ from utils.parser import (
 
 class ZileanScraper(BaseScraper):
     def __init__(self):
-        super().__init__(cache_key_prefix="zilean", logger_name=__name__)
+        super().__init__(cache_key_prefix="zilean", logger_name=self.__class__.__name__)
         self.base_url = f"{settings.zilean_url}/dmm/search"
         self.semaphore = asyncio.Semaphore(10)
 

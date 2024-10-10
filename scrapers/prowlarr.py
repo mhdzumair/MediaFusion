@@ -62,7 +62,9 @@ class ProwlarrScraper(BaseScraper):
     ]
 
     def __init__(self):
-        super().__init__(cache_key_prefix="prowlarr", logger_name=__name__)
+        super().__init__(
+            cache_key_prefix="prowlarr", logger_name=self.__class__.__name__
+        )
         self.base_url = f"{settings.prowlarr_url}/api/v1/search"
 
     @BaseScraper.cache(
@@ -580,7 +582,7 @@ class ProwlarrScraper(BaseScraper):
             if error.response.status_code in [429, 500]:
                 raise error
             self.logger.error(
-                f"HTTP Error getting torrent data: {error.response.text}, status code: {e.response.status_code}"
+                f"HTTP Error getting torrent data: {error.response.text}, status code: {error.response.status_code}"
             )
             return None
         except httpx.TimeoutException as error:
