@@ -86,9 +86,10 @@ class OffCloud(DebridClient):
 
         links = self.explore_folder_links(request_id)
 
-        exact_match = next((link for link in links if filename in link), None)
-        if exact_match:
-            return exact_match
+        if filename:
+            exact_match = next((link for link in links if filename in link), None)
+            if exact_match:
+                return exact_match
 
         # Fuzzy matching as a fallback
         for link in links:
