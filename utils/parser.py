@@ -128,9 +128,15 @@ async def filter_and_sort_streams(
         raw_key = dynamic_sort_key(stream)
         return tuple(0 if item is None else item for item in raw_key)
 
-    dynamically_sorted_streams = sorted(
-        filtered_streams, key=safe_sort_key, reverse=True
-    )
+    try:
+        dynamically_sorted_streams = sorted(
+            filtered_streams, key=safe_sort_key, reverse=True
+        )
+    except TypeError as error:
+        logging.error(
+            f"Failed to dynamically sort streams: {error}. Using default sorting."
+        )
+        dynamically_sorted_streams = filtered_streams
 
     # Step 4: Limit streams per resolution based on user preference, after dynamic sorting
     limited_streams = []
