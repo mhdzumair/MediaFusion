@@ -12,6 +12,7 @@ class LiveStreamResolverPipeline:
         adapter = ItemAdapter(item)
         stream_url = adapter.get("stream_url")
         stream_headers = adapter.get("stream_headers")
+        response_headers = adapter.get("response_headers", {})
         if not stream_headers:
             referer = adapter.get("referer")
             stream_headers = {"Referer": referer} if referer else {}
@@ -30,7 +31,9 @@ class LiveStreamResolverPipeline:
                 )
             )
         )
-        content_type = response.headers.get("Content-Type", b"").decode().lower()
+        content_type = response_headers.get(
+            "Content-Type", response.headers.get("Content-Type", b"").decode().lower()
+        )
 
         if response.status == 200 and content_type in const.IPTV_VALID_CONTENT_TYPES:
             stream_headers.update(
@@ -49,6 +52,7 @@ class LiveStreamResolverPipeline:
                         "notWebReady": True,
                         "proxyHeaders": {
                             "request": stream_headers,
+                            "response": response_headers,
                         },
                     },
                 }

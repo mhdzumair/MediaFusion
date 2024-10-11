@@ -283,8 +283,9 @@
   },
   "dlhd": {
 	"schedule_url": "https://dlhd.so/schedule/schedule-generated.json",
-	"m3u8_base_url": "https://webhdrunns.mizhls.ru/lb/premium{channel_id}/index.m3u8",
-	"referer": "https://cookiewebplay.xyz/",
+	"m3u8_base_url": "https://xyzdddd.mizhls.ru/lb/premium{channel_id}/index.m3u8",
+	"key_url": "https://key.keylocking.ru",
+	"referer": "https://ilovetoplay.xyz/",
 	"category_mapping": {
         "Tv Shows": "Other Sports",
         "Soccer": "Football",

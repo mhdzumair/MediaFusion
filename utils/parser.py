@@ -13,6 +13,7 @@ from db.models import TorrentStreams, TVStreams
 from db.schemas import Stream, UserData
 from streaming_providers import mapper
 from utils import const
+from utils.config import config_manager
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
 from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS
@@ -390,7 +391,7 @@ async def process_stream(
     stream_url, behavior_hints = stream.url, stream.behaviorHints
     behavior_hints = behavior_hints if behavior_hints else {}
 
-    if stream.drm_key or "dlhd" in stream.source:
+    if stream.drm_key:
         if not is_mediaflow_proxy_enabled:
             return "MEDIAFLOW_NEEDED"
         stream_url = get_proxy_url(stream, mediaflow_config)
@@ -418,7 +419,10 @@ def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
     if stream.drm_key:
         query_params = {"key_id": stream.drm_key_id, "key": stream.drm_key}
     elif "dlhd" in stream.source:
-        query_params = {"use_request_proxy": False}
+        query_params = {
+            "use_request_proxy": False,
+            "key_url": config_manager.get_scraper_config("dlhd", "key_url"),
+        }
 
     return encode_mediaflow_proxy_url(
         mediaflow_config.proxy_url,
@@ -426,6 +430,9 @@ def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
         stream.url,
         query_params=query_params,
         request_headers=stream.behaviorHints.get("proxyHeaders", {}).get("request", {}),
+        response_headers=stream.behaviorHints.get("proxyHeaders", {}).get(
+            "response", {}
+        ),
         encryption_api_password=mediaflow_config.api_password,
     )
 
@@ -460,7 +467,7 @@ async def fetch_downloaded_info_hashes(
 
             return downloaded_info_hashes
         except Exception as error:
-            logging.error(
+            logging.exception(
                 f"Failed to fetch downloaded info hashes for {user_data.streaming_provider.service}: {error}"
             )
             pass

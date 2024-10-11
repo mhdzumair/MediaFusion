@@ -96,33 +96,16 @@ class DaddyLiveHDSpider(scrapy.Spider):
             item_copy.update(
                 {
                     "stream_name": channel["channel_name"],
+                    "stream_url": m3u8_url,
                     "stream_headers": {
                         "Referer": self.referer,
                         "Origin": self.referer.rstrip("/"),
+                    },
+                    "response_headers": {
+                        "Content-Type": "application/vnd.apple.mpegurl",
                     },
                     "channel_id": channel["channel_id"],
                 }
             )
 
-            yield scrapy.Request(
-                m3u8_url,
-                self.parse_stream_link,
-                meta={
-                    "item": item_copy,
-                    "dont_redirect": True,
-                    "handle_httpstatus_list": [301],
-                },
-                headers={"Referer": self.referer},
-                dont_filter=True,
-            )
-
-    def parse_stream_link(self, response):
-        item = response.meta["item"]
-        stream_url = response.headers.get("Location", b"").decode("utf-8")
-        if not stream_url:
-            self.logger.error(
-                f"Failed to get stream URL for {item['stream_name']} channel_id: {item['channel_id']}"
-            )
-            return
-        item["stream_url"] = stream_url
-        yield item
+            yield item_copy
