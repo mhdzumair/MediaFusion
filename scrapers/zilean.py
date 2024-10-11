@@ -3,6 +3,7 @@ from datetime import timedelta
 from typing import List, Dict, Any
 
 import PTT
+from httpx import Response
 from tenacity import RetryError
 
 from db.config import settings
@@ -16,7 +17,6 @@ from utils.parser import (
 class ZileanScraper(BaseScraper):
     def __init__(self):
         super().__init__(cache_key_prefix="zilean", logger_name=self.__class__.__name__)
-        self.base_url = f"{settings.zilean_url}/dmm/search"
         self.semaphore = asyncio.Semaphore(10)
 
     @BaseScraper.cache(
@@ -30,19 +30,59 @@ class ZileanScraper(BaseScraper):
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
-        try:
-            stream_response = await self.make_request(
-                self.base_url,
+        search_task = asyncio.create_task(
+            self.make_request(
+                f"{settings.zilean_url}/dmm/search",
                 method="POST",
                 json={"queryText": metadata.title},
                 timeout=10,
             )
+        )
 
-            stream_data = stream_response.json()
-            if not self.validate_response(stream_data):
-                self.logger.warning(f"Invalid response received for {metadata.title}")
-                return []
+        if metadata.type == "movie":
+            params = {
+                "Query": metadata.title,
+                "Year": metadata.year,
+            }
+        else:
+            params = {
+                "Query": metadata.title,
+                "Season": season,
+                "Episode": episode,
+            }
 
+        filtered_task = asyncio.create_task(
+            self.make_request(
+                f"{settings.zilean_url}/dmm/filtered",
+                method="GET",
+                params=params,
+                timeout=10,
+            )
+        )
+
+        search_response, filtered_response = await asyncio.gather(
+            search_task, filtered_task, return_exceptions=True
+        )
+
+        stream_data = []
+        if isinstance(search_response, Response):
+            stream_data.extend(search_response.json())
+        else:
+            self.logger.error(
+                f"Error occurred while search {metadata.title}: {search_response}"
+            )
+        if isinstance(filtered_response, Response):
+            stream_data.extend(filtered_response.json())
+        else:
+            self.logger.error(
+                f"Error occurred while filtering {metadata.title}: {filtered_response}"
+            )
+
+        if not self.validate_response(stream_data):
+            self.logger.error(f"No valid streams found for {metadata.title}")
+            return []
+
+        try:
             return await self.parse_response(
                 stream_data, metadata, catalog_type, season, episode
             )
