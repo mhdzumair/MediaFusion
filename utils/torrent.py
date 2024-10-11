@@ -80,7 +80,7 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
             metadata.update(PTT.parse_title(torrent_name, True))
         return metadata
     except Exception as e:
-        logging.error(f"Error occurred: {e}")
+        logging.exception(f"Error occurred: {e}")
         return {}
 
 
