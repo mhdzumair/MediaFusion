@@ -8,6 +8,7 @@ from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.torbox.client import Torbox
+from streaming_providers.parser import select_file_index_from_torrent
 
 
 def get_video_url_from_torbox(
@@ -89,32 +90,10 @@ def select_file_id_from_torrent(
     torrent_info: dict[str, Any], filename: str, episode: int
 ) -> int:
     """Select the file id from the torrent info."""
-    files = torrent_info["files"]
-    exact_match = next((f for f in files if filename in f["name"]), None)
-    if exact_match:
-        return exact_match["id"]
-
-    # Fuzzy matching as a fallback
-    for file in files:
-        file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    selected_file = max(files, key=lambda x: x["fuzzy_ratio"])
-
-    # If the fuzzy ratio is less than 50, then select the largest file
-    if selected_file["fuzzy_ratio"] < 50:
-        selected_file = max(files, key=lambda x: x["size"])
-
-    if episode:
-        # Select the file with the matching episode number
-        for file in files:
-            if episode in PTT.parse_title(file["name"]).get("episodes", []):
-                return file["id"]
-
-    if "video" not in selected_file["mime_type"]:
-        raise ProviderException(
-            "No matching file available for this torrent", "no_matching_file.mp4"
-        )
-
-    return selected_file["id"]
+    file_index = select_file_index_from_torrent(
+        torrent_info, filename, None, episode, name_key="short_name",
+    )
+    return torrent_info["files"][file_index]["id"]
 
 
 def delete_all_torrents_from_torbox(user_data: UserData, **kwargs):
