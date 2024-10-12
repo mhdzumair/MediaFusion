@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import PTT
 from httpx import Response
 from tenacity import RetryError
-
+from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper, ScraperError
@@ -30,6 +30,16 @@ class ZileanScraper(BaseScraper):
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
+        job_name = f"{metadata.title}:{metadata.id}"
+        if catalog_type == "series":
+            job_name += f":{season}:{episode}"
+
+        scrapeops_logger = ScrapeOpsRequests(
+            scrapeops_api_key=settings.scrapeops_api_key,
+            spider_name="Zilean Scraper",
+            job_name=job_name,
+        )
+
         search_task = asyncio.create_task(
             self.make_request(
                 f"{settings.zilean_url}/dmm/search",
@@ -83,9 +93,15 @@ class ZileanScraper(BaseScraper):
             return []
 
         try:
-            return await self.parse_response(
+            streams = await self.parse_response(
                 stream_data, metadata, catalog_type, season, episode
             )
+            for stream in streams:
+                scrapeops_logger.item_scraped(
+                    item=stream.model_dump(include={"id"}),
+                    response=response,
+                )
+            return streams
         except (ScraperError, RetryError):
             return []
         except Exception as e:
@@ -93,6 +109,8 @@ class ZileanScraper(BaseScraper):
                 f"Error occurred while fetching {metadata.title}: {e}"
             )
             return []
+        finally:
+            scrapeops_logger.logger.close_sdk()
 
     async def parse_response(
         self,

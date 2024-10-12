@@ -51,16 +51,28 @@ SPIDER_MIDDLEWARES = {
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-DOWNLOADER_MIDDLEWARES = {
-    "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 542,
-    "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
-}
 
-# Enable or disable extensions
-# See https://docs.scrapy.org/en/latest/topics/extensions.html
-# EXTENSIONS = {
-#    "scrapy.extensions.telnet.TelnetConsole": None,
-# }
+if settings.scrapeops_api_key:
+    SCRAPEOPS_API_KEY = settings.scrapeops_api_key
+    DOWNLOADER_MIDDLEWARES = {
+        "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 542,
+        "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
+        "scrapeops_scrapy.middleware.retry.RetryMiddleware": 550,
+        "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,
+    }
+    EXTENSIONS = {
+        "mediafusion_scrapy.extensions.InactivityMonitor": 100,
+        "scrapeops_scrapy.extension.ScrapeOpsMonitor": 500,  # ScrapeOps Monitor
+    }
+else:
+    DOWNLOADER_MIDDLEWARES = {
+        "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 542,
+        "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
+        "scrapy.downloadermiddlewares.retry.RetryMiddleware": 550,
+    }
+    EXTENSIONS = {
+        "mediafusion_scrapy.extensions.InactivityMonitor": 100,
+    }
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
@@ -114,3 +126,5 @@ RETRY_HTTP_CODES = [
 RETRY_TIMES = 5
 
 FLARESOLVERR_URL = settings.flaresolverr_url
+
+INACTIVITY_TIMEOUT_MINUTES = 2

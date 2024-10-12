@@ -5,6 +5,7 @@ from os import path
 from typing import List, Dict, Any
 
 import PTT
+from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 from tenacity import RetryError
 
 from db.config import settings
@@ -52,6 +53,7 @@ class TorrentioScraper(BaseScraper):
 
         try:
             response = await self.make_request(url)
+            response.raise_for_status()
             data = response.json()
 
             if not self.validate_response(data):
@@ -63,7 +65,7 @@ class TorrentioScraper(BaseScraper):
             )
             for stream in stream_data:
                 scrapeops_logger.item_scraped(
-                    item=stream.model_dump(include={"id", "meta_id"}), response=response
+                    item=stream.model_dump(include={"id"}), response=response
                 )
             return stream_data
         except (ScraperError, RetryError):

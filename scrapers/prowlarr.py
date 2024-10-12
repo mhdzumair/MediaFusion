@@ -5,6 +5,7 @@ from typing import List, Dict, Any, AsyncGenerator, Literal, AsyncIterable
 import PTT
 import dramatiq
 import httpx
+from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 from torf import Magnet, MagnetError
 
 from db.config import settings
@@ -66,6 +67,8 @@ class ProwlarrScraper(BaseScraper):
             cache_key_prefix="prowlarr", logger_name=self.__class__.__name__
         )
         self.base_url = f"{settings.prowlarr_url}/api/v1/search"
+        self.scrapeops_logger = None
+        self.scrape_response = None
 
     @BaseScraper.cache(
         ttl=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds())
@@ -80,6 +83,14 @@ class ProwlarrScraper(BaseScraper):
     ) -> List[TorrentStreams]:
         results = []
         processed_info_hashes: set[str] = set()
+        job_name = f"{metadata.title}:{metadata.id}"
+        if catalog_type == "series":
+            job_name += f":{season}:{episode}"
+        self.scrapeops_logger = ScrapeOpsRequests(
+            scrapeops_api_key=settings.scrapeops_api_key,
+            spider_name="Prowlarr Scraper",
+            job_name=job_name,
+        )
 
         try:
             async for stream in self._scrape_and_parse(
@@ -90,6 +101,11 @@ class ProwlarrScraper(BaseScraper):
                 episode,
             ):
                 results.append(stream)
+                if self.scrape_response:
+                    self.scrapeops_logger.item_scraped(
+                        item=stream.model_dump(include={"id"}),
+                        response=self.scrape_response,
+                    )
         except httpx.ReadTimeout:
             self.logger.warning("Timeout while fetching search results")
         except httpx.HTTPStatusError as e:
@@ -98,6 +114,8 @@ class ProwlarrScraper(BaseScraper):
             )
         except Exception as e:
             self.logger.exception(f"An error occurred during scraping: {str(e)}")
+        finally:
+            self.scrapeops_logger.logger.close_sdk()
 
         self.logger.info(
             f"Returning {len(results)} scraped streams for {metadata.title}"
@@ -299,6 +317,7 @@ class ProwlarrScraper(BaseScraper):
                 params=params,
                 timeout=settings.prowlarr_search_query_timeout,
             )
+            self.scrape_response = response
             response.raise_for_status()
             return response.json()
 
@@ -717,6 +736,12 @@ async def background_movie_title_search(
     if not metadata:
         return
 
+    scraper.scrapeops_logger = ScrapeOpsRequests(
+        scrapeops_api_key=settings.scrapeops_api_key,
+        spider_name="Prowlarr Scraper",
+        job_name=f"background:{metadata.title}:{metadata.id}",
+    )
+
     title_streams_generators = [
         scraper.scrape_movie_by_title(
             processed_info_hashes,
@@ -729,6 +754,9 @@ async def background_movie_title_search(
     try:
         async for stream in scraper.process_streams(*title_streams_generators):
             await scraper.store_streams([stream])
+            scraper.scrapeops_logger.item_scraped(
+                item=stream.model_dump(include={"id"}), response=scraper.scrape_response
+            )
     except httpx.ReadTimeout:
         scraper.logger.warning(
             f"Timeout while fetching search results for movie {metadata.title} ({metadata.year}), retrying later"
@@ -742,6 +770,8 @@ async def background_movie_title_search(
         scraper.logger.error(
             f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
         )
+    finally:
+        scraper.scrapeops_logger.logger.close_sdk()
 
     scraper.logger.info(
         f"Background title search completed for {metadata.title} ({metadata.year})"
@@ -766,6 +796,12 @@ async def background_series_title_search(
     if not metadata:
         return
 
+    scraper.scrapeops_logger = ScrapeOpsRequests(
+        scrapeops_api_key=settings.scrapeops_api_key,
+        spider_name="Prowlarr Scraper",
+        job_name=f"background:{metadata.title}:{metadata.id}:{season}:{episode}",
+    )
+
     title_streams_generators = [
         scraper.scrape_series_by_title(
             processed_info_hashes,
@@ -782,6 +818,9 @@ async def background_series_title_search(
     try:
         async for stream in scraper.process_streams(*title_streams_generators):
             await scraper.store_streams([stream])
+            scraper.scrapeops_logger.item_scraped(
+                item=stream.model_dump(include={"id"}), response=scraper.scrape_response
+            )
     except httpx.ReadTimeout:
         scraper.logger.warning(
             f"Timeout while fetching search results for {metadata.title} S{season}E{episode}, retrying later"
@@ -796,6 +835,8 @@ async def background_series_title_search(
         scraper.logger.error(
             f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
         )
+    finally:
+        scraper.scrapeops_logger.logger.close_sdk()
 
     scraper.logger.info(
         f"Background title search completed for {metadata.title} S{season}E{episode}"
