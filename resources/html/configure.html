@@ -509,7 +509,7 @@
                             <div class="mb-2">
                                 <label for="mediaflow_proxy_url">MediaFlow Proxy URL:</label>
                                 <input type="text" class="form-control" id="mediaflow_proxy_url" name="mediaflow_proxy_url"
-                                       placeholder="https://your-mediaflow-proxy-url.com"
+                                       placeholder="https://your-mediaflow-proxy-url.com or http://127.0.0.1:8888"
                                        value="{{ user_data.mediaflow_config.proxy_url if user_data.mediaflow_config else '' }}">
                                 <div class="invalid-feedback">
                                     Please enter a valid MediaFlow Proxy URL.
@@ -527,6 +527,14 @@
                                 <div class="invalid-feedback">
                                     Please enter the MediaFlow API password.
                                 </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="mediaflow_public_ip">MediaFlow Public IP (Optional):</label>
+                                <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                   title="Configure this only when running MediaFlow locally with a proxy service. Leave empty if MediaFlow is configured locally without a proxy server or if it's hosted on
+                                    a remote server."></i>
+                                <input type="text" class="form-control" id="mediaflow_public_ip" placeholder="Enter public IP address. (Optional, See tooltip for details)"
+                                       value="{{ user_data.mediaflow_config.public_ip if user_data.mediaflow_config else '' }}">
                             </div>
                             <div class="form-check mb-2">
                                 <input class="form-check-input" type="checkbox" id="proxy_live_streams" name="proxy_live_streams"

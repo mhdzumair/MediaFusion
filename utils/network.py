@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Callable, AsyncGenerator, Any, Tuple
 from urllib import parse
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from fastapi.requests import Request
@@ -169,14 +169,21 @@ def get_client_ip(request: Request) -> str | None:
     return request.client.host if request.client else "127.0.0.1"
 
 
-async def get_mediaflow_proxy_public_ip(
-    mediaflow_proxy_url: str, api_password
-) -> str | None:
+async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
     """
     Get the public IP address of the MediaFlow proxy server.
     """
+    if mediaflow_config.public_ip:
+        return mediaflow_config.public_ip
+
+    parsed_url = urlparse(mediaflow_config.mediaflow_proxy_url)
+    if PRIVATE_CIDR.match(parsed_url.netloc):
+        # MediaFlow proxy URL is a private IP address
+        return None
+
     cache_key = crypto.get_text_hash(
-        f"{mediaflow_proxy_url}:{api_password}", full_hash=True
+        f"{mediaflow_config.mediaflow_proxy_url}:{mediaflow_config.api_password}",
+        full_hash=True,
     )
     if public_ip := await REDIS_ASYNC_CLIENT.getex(cache_key, ex=300):
         return public_ip.decode()
@@ -184,8 +191,8 @@ async def get_mediaflow_proxy_public_ip(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                parse.urljoin(mediaflow_proxy_url, "/proxy/ip"),
-                params={"api_password": api_password},
+                parse.urljoin(mediaflow_config.mediaflow_proxy_url, "/proxy/ip"),
+                params={"api_password": mediaflow_config.api_password},
                 timeout=10,
             )
             response.raise_for_status()
@@ -211,10 +218,7 @@ async def get_user_public_ip(
         and user_data.mediaflow_config
         and user_data.mediaflow_config.proxy_debrid_streams
     ):
-        public_ip = await get_mediaflow_proxy_public_ip(
-            user_data.mediaflow_config.proxy_url,
-            user_data.mediaflow_config.api_password,
-        )
+        public_ip = await get_mediaflow_proxy_public_ip(user_data.mediaflow_config)
         if public_ip:
             return public_ip
     # Get the user's public IP address

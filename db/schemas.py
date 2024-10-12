@@ -109,6 +109,7 @@ class QBittorrentConfig(BaseModel):
 class MediaFlowConfig(BaseModel):
     proxy_url: str | None = Field(alias="pu")
     api_password: str | None = Field(alias="ap")
+    public_ip: str | None = Field(alias="pip")
     proxy_live_streams: bool = Field(default=False, alias="pls")
     proxy_debrid_streams: bool = Field(default=False, alias="pds")
 
