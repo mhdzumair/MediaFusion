@@ -23,7 +23,6 @@ class Settings(BaseSettings):
 
     # External Service URLs
     scraper_proxy_url: str | None = None
-    zilean_url: str = "http://zilean.zilean:8181"
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
     flaresolverr_url: str = "http://flaresolverr:8191/v1"
 
@@ -44,6 +43,10 @@ class Settings(BaseSettings):
     # Torrentio Settings
     torrentio_search_interval_days: int = 3
     torrentio_url: str = "https://torrentio.strem.fun"
+
+    # Zilean Settings
+    zilean_search_interval_hour: int = 24
+    zilean_url: str = "http://zilean.zilean:8181"
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None
@@ -96,7 +99,7 @@ class Settings(BaseSettings):
     streamed_scheduler_crontab: str = "*/30 * * * *"
     disable_streamed_scheduler: bool = False
     streambtw_scheduler_crontab: str = "*/15 * * * *"
-    disable_streambtw_scheduler: bool = False
+    disable_streambtw_scheduler: bool = True
     dlhd_scheduler_crontab: str = "25 * * * *"
     disable_dlhd_scheduler: bool = False
     update_imdb_data_crontab: str = "0 2 * * *"
@@ -111,6 +114,7 @@ class Settings(BaseSettings):
     disable_ufc_tgx_scheduler: bool = False
     prowlarr_feed_scraper_crontab: str = "0 */3 * * *"
     disable_prowlarr_feed_scraper: bool = False
+    cleanup_expired_scraper_task_crontab: str = "0 * * * *"
 
     @model_validator(mode="after")
     def default_poster_host_url(self) -> "Settings":

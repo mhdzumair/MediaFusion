@@ -15,22 +15,21 @@ from utils.parser import (
     convert_size_to_bytes,
     is_contain_18_plus_keywords,
 )
+from utils.runtime_const import TORRENTIO_SEARCH_TTL
 from utils.validation_helper import is_video_file
-
-from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 
 
 class TorrentioScraper(BaseScraper):
+    cache_key_prefix = "torrentio"
+
     def __init__(self):
         super().__init__(
-            cache_key_prefix="torrentio", logger_name=self.__class__.__name__
+            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
         )
         self.base_url = settings.torrentio_url
         self.semaphore = asyncio.Semaphore(10)
 
-    @BaseScraper.cache(
-        ttl=int(timedelta(days=settings.torrentio_search_interval_days).total_seconds())
-    )
+    @BaseScraper.cache(ttl=TORRENTIO_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def scrape_and_parse(
         self,

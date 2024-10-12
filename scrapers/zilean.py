@@ -12,16 +12,19 @@ from scrapers.base_scraper import BaseScraper, ScraperError
 from utils.parser import (
     is_contain_18_plus_keywords,
 )
+from utils.runtime_const import ZILEAN_SEARCH_TTL
 
 
 class ZileanScraper(BaseScraper):
+    cache_key_prefix = "zilean"
+
     def __init__(self):
-        super().__init__(cache_key_prefix="zilean", logger_name=self.__class__.__name__)
+        super().__init__(
+            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
+        )
         self.semaphore = asyncio.Semaphore(10)
 
-    @BaseScraper.cache(
-        ttl=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds())
-    )
+    @BaseScraper.cache(ttl=ZILEAN_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def scrape_and_parse(
         self,
@@ -75,13 +78,16 @@ class ZileanScraper(BaseScraper):
         )
 
         stream_data = []
+        response = None
         if isinstance(search_response, Response):
+            response = search_response
             stream_data.extend(search_response.json())
         else:
             self.logger.error(
                 f"Error occurred while search {metadata.title}: {search_response}"
             )
         if isinstance(filtered_response, Response):
+            response = filtered_response
             stream_data.extend(filtered_response.json())
         else:
             self.logger.error(
@@ -90,6 +96,7 @@ class ZileanScraper(BaseScraper):
 
         if not self.validate_response(stream_data):
             self.logger.error(f"No valid streams found for {metadata.title}")
+            scrapeops_logger.logger.close_sdk()
             return []
 
         try:

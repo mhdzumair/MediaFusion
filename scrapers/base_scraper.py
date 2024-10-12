@@ -1,5 +1,6 @@
 import abc
 import logging
+import time
 from datetime import timedelta
 from functools import wraps
 from typing import List, Any, Dict
@@ -40,7 +41,7 @@ class BaseScraper(abc.ABC):
     @staticmethod
     def cache(ttl: int = 3600):
         """
-        Decorator for caching the results of a method.
+        Decorator for caching the scraping status using Redis Sorted Sets with timestamps.
         :param ttl: Time to live for the cache in seconds
         """
 
@@ -48,12 +49,23 @@ class BaseScraper(abc.ABC):
             @wraps(func)
             async def wrapper(self, *args, **kwargs):
                 cache_key = self.get_cache_key(*args, **kwargs)
-                cached_result = await REDIS_ASYNC_CLIENT.get(cache_key)
-                if cached_result:
-                    return []
+                current_time = int(time.time())
+
+                # Check if the item has been scraped recently
+                score = await REDIS_ASYNC_CLIENT.zscore(
+                    self.cache_key_prefix, cache_key
+                )
+
+                if score and current_time - score < ttl:
+                    return []  # Item has been scraped recently, no need to scrape again
 
                 result = await func(self, *args, **kwargs)
-                await REDIS_ASYNC_CLIENT.set(cache_key, "True", ex=ttl)
+
+                # Mark the item as scraped with the current timestamp
+                await REDIS_ASYNC_CLIENT.zadd(
+                    self.cache_key_prefix, {cache_key: current_time}
+                )
+
                 return result
 
             return wrapper
@@ -145,11 +157,9 @@ class BaseScraper(abc.ABC):
         :return: Cache key string
         """
         if catalog_type == "movie":
-            return f"{self.cache_key_prefix}:{catalog_type}:{metadata.id}"
+            return f"{catalog_type}:{metadata.id}"
 
-        return (
-            f"{self.cache_key_prefix}:{catalog_type}:{metadata.id}:{season}:{episode}"
-        )
+        return f"{catalog_type}:{metadata.id}:{season}:{episode}"
 
     def validate_title_and_year(
         self,
@@ -223,3 +233,11 @@ class BaseScraper(abc.ABC):
         from db.crud import store_new_torrent_streams
 
         await store_new_torrent_streams(streams)
+
+    @staticmethod
+    async def remove_expired_items(scraper_prefix: str, ttl: int = 3600):
+        """
+        Remove expired items from the cache.
+        """
+        current_time = int(time.time())
+        await REDIS_ASYNC_CLIENT.zremrangebyscore(scraper_prefix, 0, current_time - ttl)

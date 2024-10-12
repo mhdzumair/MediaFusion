@@ -22,7 +22,7 @@ from scrapers.base_scraper import BaseScraper
 from scrapers.imdb_data import get_episode_by_date, get_season_episodes
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from utils.runtime_const import REDIS_ASYNC_CLIENT, PROWLARR_SEARCH_TTL
 from utils.torrent import extract_torrent_metadata
 from utils.wrappers import minimum_run_interval
 
@@ -61,18 +61,17 @@ class ProwlarrScraper(BaseScraper):
         "{title} S{season:02d}",  # Short season search with leading zeros
         "{title}",  # Title-only fallback
     ]
+    cache_key_prefix = "prowlarr"
 
     def __init__(self):
         super().__init__(
-            cache_key_prefix="prowlarr", logger_name=self.__class__.__name__
+            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
         )
         self.base_url = f"{settings.prowlarr_url}/api/v1/search"
         self.scrapeops_logger = None
         self.scrape_response = None
 
-    @BaseScraper.cache(
-        ttl=int(timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds())
-    )
+    @BaseScraper.cache(ttl=PROWLARR_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def scrape_and_parse(
         self,
