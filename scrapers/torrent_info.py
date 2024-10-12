@@ -75,10 +75,8 @@ def parse_badass_torrents(soup, torrent_info, url):
     torrent_link = soup.find("a", string="Torrent Download")
     if torrent_link:
         torrent_info["downloadUrl"] = urljoin(url, torrent_link.get("href"))
-        torrent_info["magnetUrl"] = None
-    elif magnet_link:
+    if magnet_link:
         torrent_info["magnetUrl"] = magnet_link.get("href")
-        torrent_info["downloadUrl"] = None
     return torrent_info
 
 

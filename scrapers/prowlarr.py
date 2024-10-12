@@ -677,7 +677,12 @@ class ProwlarrScraper(BaseScraper):
                 redirect_url = response.headers.get("Location")
                 return await self.get_torrent_data(redirect_url, indexer)
             response.raise_for_status()
-            return extract_torrent_metadata(response.content, is_parse_ptt=False), True
+            if response.headers.get("Content-Type") == "application/x-bittorrent":
+                return (
+                    extract_torrent_metadata(response.content, is_parse_ptt=False),
+                    True,
+                )
+            return {}, False
 
     @staticmethod
     def parse_title_data(title: str) -> dict:
