@@ -260,7 +260,7 @@ class ProwlarrScraper(BaseScraper):
 
                 if max_process and streams_processed >= max_process:
                     self.logger.info(f"Reached max process limit of {max_process}")
-                    break
+                    raise asyncio.CancelledError("Max process limit reached")
 
         try:
             async with asyncio.timeout(max_process_time):
@@ -278,6 +278,10 @@ class ProwlarrScraper(BaseScraper):
             self.logger.warning(
                 f"Stream processing timed out after {max_process_time} seconds. "
                 f"Processed {streams_processed} streams"
+            )
+        except asyncio.CancelledError:
+            self.logger.info(
+                f"Stream processing cancelled after reaching max process limit of {max_process}"
             )
         except Exception as e:
             self.logger.error(f"An error occurred during stream processing: {e}")
