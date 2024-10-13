@@ -41,11 +41,12 @@ async def mark_item_as_processed(item_id: str):
 async def scrape_prowlarr_feed():
     scraper = ProwlarrScraper()
 
-    scraper.scrapeops_logger = ScrapeOpsRequests(
-        scrapeops_api_key=settings.scrapeops_api_key,
-        spider_name="Prowlarr Scraper",
-        job_name="Prowlarr Feed Scraper",
-    )
+    if settings.scrapeops_api_key:
+        scraper.scrapeops_logger = ScrapeOpsRequests(
+            scrapeops_api_key=settings.scrapeops_api_key,
+            spider_name="Prowlarr Scraper",
+            job_name="Prowlarr Feed Scraper",
+        )
 
     params = {
         "type": "search",
@@ -78,7 +79,8 @@ async def scrape_prowlarr_feed():
     except Exception as e:
         logger.exception(f"Error scraping Prowlarr feed: {e}")
     finally:
-        scraper.scrapeops_logger.logger.close_sdk()
+        if scraper.scrapeops_logger:
+            scraper.scrapeops_logger.logger.close_sdk()
 
 
 async def process_feed_item(item: dict, scraper: ProwlarrScraper):
@@ -92,11 +94,12 @@ async def process_feed_item(item: dict, scraper: ProwlarrScraper):
     parsed_title_data = scraper.parse_title_data(item["title"])
     if is_contain_18_plus_keywords(item["title"]):
         logger.warning(f"Item {item['title']} contains black listed keywords")
-        scraper.scrapeops_logger.logger.item_dropped(
-            item={"info_hash": item_id},
-            response=scraper.scrape_response,
-            message="Contains blacklisted keywords",
-        )
+        if settings.scrapeops_api_key:
+            scraper.scrapeops_logger.logger.item_dropped(
+                item={"info_hash": item_id},
+                response=scraper.scrape_response,
+                message="Contains blacklisted keywords",
+            )
         return item_id
 
     # Determine media type
@@ -111,20 +114,22 @@ async def process_feed_item(item: dict, scraper: ProwlarrScraper):
             logger.warning(
                 f"Category 8000 item {item['title']} does not match expected format"
             )
-            scraper.scrapeops_logger.logger.item_dropped(
-                item={"info_hash": item_id},
-                response=scraper.scrape_response,
-                message="Does not match expected format",
-            )
+            if settings.scrapeops_api_key:
+                scraper.scrapeops_logger.logger.item_dropped(
+                    item={"info_hash": item_id},
+                    response=scraper.scrape_response,
+                    message="Does not match expected format",
+                )
             return item_id
         media_type = "series" if parsed_title_data.get("seasons") else "movie"
     else:
         logger.warning(f"Unsupported category {category_ids} for item {item['title']}")
-        scraper.scrapeops_logger.logger.item_dropped(
-            item={"info_hash": item_id},
-            response=scraper.scrape_response,
-            message="Unsupported category",
-        )
+        if settings.scrapeops_api_key:
+            scraper.scrapeops_logger.logger.item_dropped(
+                item={"info_hash": item_id},
+                response=scraper.scrape_response,
+                message="Unsupported category",
+            )
         return item_id
 
     # Fetch or create metadata
@@ -135,11 +140,12 @@ async def process_feed_item(item: dict, scraper: ProwlarrScraper):
 
     if not metadata:
         logger.warning(f"Unable to find or create metadata for {item['title']}")
-        scraper.scrapeops_logger.logger.item_dropped(
-            item={"info_hash": item_id},
-            response=scraper.scrape_response,
-            message="Unable to find or create metadata",
-        )
+        if settings.scrapeops_api_key:
+            scraper.scrapeops_logger.logger.item_dropped(
+                item={"info_hash": item_id},
+                response=scraper.scrape_response,
+                message="Unable to find or create metadata",
+            )
         return item_id
 
     # Process the stream
@@ -148,17 +154,19 @@ async def process_feed_item(item: dict, scraper: ProwlarrScraper):
     )
     if stream:
         await store_new_torrent_streams([stream])
-        scraper.scrapeops_logger.item_scraped(
-            item={"info_hash": item_id}, response=scraper.scrape_response
-        )
+        if settings.scrapeops_api_key:
+            scraper.scrapeops_logger.item_scraped(
+                item={"info_hash": item_id}, response=scraper.scrape_response
+            )
         return item_id
     else:
         logger.warning(f"Failed to process stream for {item['title']}")
-        scraper.scrapeops_logger.logger.item_dropped(
-            item={"info_hash": item_id},
-            response=scraper.scrape_response,
-            message="Failed to process stream",
-        )
+        if settings.scrapeops_api_key:
+            scraper.scrapeops_logger.logger.item_dropped(
+                item={"info_hash": item_id},
+                response=scraper.scrape_response,
+                message="Failed to process stream",
+            )
         return item_id
 
 
