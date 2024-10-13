@@ -1,7 +1,8 @@
 import asyncio
 import functools
 import logging
-from typing import Optional, List
+from datetime import datetime
+from typing import Optional, List, Any
 
 import math
 import re
@@ -95,13 +96,29 @@ async def filter_and_sort_streams(
                 )
 
     # Step 3: Dynamically sort streams based on user preferences
-    def dynamic_sort_key(stream):
-        return tuple(
-            (
-                const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
-                if key == "resolution"
-                else (
-                    -min(
+    def dynamic_sort_key(stream: TorrentStreams) -> tuple:
+        def key_value(key: str) -> Any:
+            match key:
+                case "cached":
+                    return stream.cached or False
+                case "resolution":
+                    return const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
+                case "quality":
+                    return const.QUALITY_RANKING.get(stream.filtered_quality, 0)
+                case "size":
+                    return stream.size
+                case "seeders":
+                    return stream.seeders or 0
+                case "created_at":
+                    created_at = stream.created_at
+                    if isinstance(created_at, datetime):
+                        return created_at
+                    elif isinstance(created_at, (int, float)):
+                        return datetime.fromtimestamp(created_at)
+                    else:
+                        return datetime.min
+                case "language":
+                    return -min(
                         (
                             user_data.language_sorting.index(lang)
                             for lang in stream.filtered_languages
@@ -109,32 +126,20 @@ async def filter_and_sort_streams(
                         ),
                         default=len(user_data.language_sorting),
                     )
-                    if key == "language"
-                    else (
-                        const.QUALITY_RANKING.get(stream.filtered_quality, 0)
-                        if key == "quality"
-                        else (
-                            getattr(stream, key, 0)
-                            if key in stream.model_fields_set
-                            else 0
-                        )
-                    )
-                )
-            )
-            for key in user_data.torrent_sorting_priority
-        )
+                case _ if key in stream.model_fields_set:
+                    return getattr(stream, key, 0)
+                case _:
+                    return 0
 
-    def safe_sort_key(stream):
-        raw_key = dynamic_sort_key(stream)
-        return tuple(0 if item is None else item for item in raw_key)
+        return tuple(key_value(key) for key in user_data.torrent_sorting_priority)
 
     try:
         dynamically_sorted_streams = sorted(
-            filtered_streams, key=safe_sort_key, reverse=True
+            filtered_streams, key=dynamic_sort_key, reverse=True
         )
-    except TypeError as error:
+    except (TypeError, Exception):
         logging.exception(
-            f"torrent_sorting_priority: {user_data.torrent_sorting_priority}: stream: {filtered_streams[0].model_dump()}. error: {error}"
+            f"torrent_sorting_priority: {user_data.torrent_sorting_priority}: sort data: {[dynamic_sort_key(stream) for stream in filtered_streams]}"
         )
         dynamically_sorted_streams = filtered_streams
 
