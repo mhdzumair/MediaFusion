@@ -1,8 +1,6 @@
+import logging
+
 from typing import Any
-
-import PTT
-
-from thefuzz import fuzz
 
 from db.models import TorrentStreams
 from db.schemas import UserData
@@ -55,20 +53,32 @@ def get_video_url_from_torbox(
     )
 
 
+# Yield successive n-sized
+# chunks from l.
+def divide_chunks(lst, n):
+    # looping till length lst
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
 def update_torbox_cache_status(
     streams: list[TorrentStreams], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on Torbox's instant availability."""
+    torbox_client = Torbox(token=user_data.streaming_provider.token)
 
-    try:
-        torbox_client = Torbox(token=user_data.streaming_provider.token)
-        instant_availability_data = torbox_client.get_torrent_instant_availability(
-            [stream.id for stream in streams]
-        )
-        for stream in streams:
-            stream.cached = bool(stream.id in instant_availability_data)
-    except ProviderException:
-        pass
+    # Torbox allows only 100 torrents to be passed for cache status, send 80 at a time.
+    streams_divided_list = list(divide_chunks(streams, 80))
+    for streams_list in streams_divided_list:
+        try:
+            instant_availability_data = torbox_client.get_torrent_instant_availability(
+                [stream.id for stream in streams_list]
+            ) or []
+            for stream in streams_list:
+                stream.cached = bool(stream.id in instant_availability_data)
+        except ProviderException as e:
+            logging.error(f"Failed to get cached status from torbox {e}")
+            pass
 
 
 def fetch_downloaded_info_hashes_from_torbox(
