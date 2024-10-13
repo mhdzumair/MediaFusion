@@ -158,7 +158,7 @@ async def process_torrent(
     if (
         max_ratio < expected_ratio
         and torrent.meta_id.startswith("tt")
-        and not any([x in torrent.catalog for x in ["wwe_tgx", "ufc_tgx"]])
+        and not any(x in torrent.catalog for x in ["wwe_tgx", "ufc_tgx"])
     ):
         if not dry_run:
             await torrent.delete(bulk_writer=torrent_bulk_writer)

@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta
 
 from scrapy import signals
@@ -15,12 +16,12 @@ class InactivityMonitor:
         self.interval = interval
         self.inactivity_timeout = inactivity_timeout
         self.task = None
-        self.last_scraped_time = datetime.now()
+        self.last_scraped_time = time.monotonic()
 
     @classmethod
     def from_crawler(cls, crawler):
         interval = crawler.settings.getfloat("INACTIVITY_CHECK_INTERVAL", 60.0)
-        inactivity_timeout = crawler.settings.getint("INACTIVITY_TIMEOUT_MINUTES", 3)
+        inactivity_timeout = crawler.settings.getint("INACTIVITY_TIMEOUT_MINUTES", 15)
 
         if not interval or not inactivity_timeout:
             raise NotConfigured
@@ -34,12 +35,13 @@ class InactivityMonitor:
         return ext
 
     def spider_opened(self, spider):
-        self.last_scraped_time = datetime.now()
+        self.last_scraped_time = time.monotonic()
         self.task = task.LoopingCall(self.check_inactivity, spider)
         self.task.start(self.interval)
 
     def check_inactivity(self, spider):
-        time_since_last_scrape = datetime.now() - self.last_scraped_time
+        time_since_last_scrape_seconds = time.monotonic() - self.last_scraped_time
+        time_since_last_scrape = timedelta(seconds=time_since_last_scrape_seconds)
         logger.debug(
             "Checking inactivity for spider %s, last scraped %s ago",
             spider.name,

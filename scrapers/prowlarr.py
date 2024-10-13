@@ -48,6 +48,10 @@ allowlist_keywords = [
 # fmt: on
 
 
+class MaxProcessLimitReached(Exception):
+    pass
+
+
 class ProwlarrScraper(BaseScraper):
     MOVIE_SEARCH_QUERY_TEMPLATES = [
         "{title} ({year})",  # Exact match with year
@@ -277,7 +281,7 @@ class ProwlarrScraper(BaseScraper):
 
                 if max_process and streams_processed >= max_process:
                     self.logger.info(f"Reached max process limit of {max_process}")
-                    raise asyncio.CancelledError("Max process limit reached")
+                    raise MaxProcessLimitReached("Max process limit reached")
 
         try:
             async with asyncio.timeout(max_process_time):
@@ -296,7 +300,7 @@ class ProwlarrScraper(BaseScraper):
                 f"Stream processing timed out after {max_process_time} seconds. "
                 f"Processed {streams_processed} streams"
             )
-        except asyncio.CancelledError:
+        except MaxProcessLimitReached:
             self.logger.info(
                 f"Stream processing cancelled after reaching max process limit of {max_process}"
             )

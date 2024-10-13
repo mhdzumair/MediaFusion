@@ -133,8 +133,8 @@ async def filter_and_sort_streams(
             filtered_streams, key=safe_sort_key, reverse=True
         )
     except TypeError as error:
-        logging.error(
-            f"Failed to dynamically sort streams: {error}. Using default sorting."
+        logging.exception(
+            f"torrent_sorting_priority: {user_data.torrent_sorting_priority}: stream: {filtered_streams[0].model_dump()}. error: {error}"
         )
         dynamically_sorted_streams = filtered_streams
 

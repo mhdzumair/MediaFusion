@@ -22,7 +22,7 @@ async def does_url_exist(url: str) -> bool:
             response = await client.head(
                 url, timeout=10, headers=const.UA_HEADER, follow_redirects=True
             )
-            logging.info("URL: %s, Status: %s", url, response.status_code)
+            response.raise_for_status()
             return response.status_code == 200
         except httpx.HTTPStatusError as err:
             logging.error("URL: %s, Status: %s", url, err.response.status_code)
