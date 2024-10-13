@@ -154,6 +154,7 @@ class MediaFusionMetaData(Document):
     runtime: Optional[str] = None
     website: Optional[str] = None
     genres: Optional[list[str]] = Field(default_factory=list)
+    last_updated_at: datetime = Field(default_factory=datetime.now)
 
     class Settings:
         is_root = True
