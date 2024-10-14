@@ -10,6 +10,8 @@ from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
+from utils import crypto
+from utils.runtime_const import REDIS_ASYNC_CLIENT
 
 
 async def get_torrent_file_by_info_hash(
@@ -141,6 +143,22 @@ async def find_file_in_folder_tree(
 
 
 async def initialize_pikpak(user_data: UserData):
+    cache_key = f"pikpak:{crypto.get_text_hash(user_data.streaming_provider.email + user_data.streaming_provider.password, full_hash=True)}"
+    if pikpak_encrypted_token := await REDIS_ASYNC_CLIENT.get(cache_key):
+        pikpak_encoded_token = crypto.decrypt_text(
+            pikpak_encrypted_token, user_data.streaming_provider.password
+        )
+        pikpak = PikPakApi(
+            encoded_token=pikpak_encoded_token,
+            httpx_client_args={
+                "transport": httpx.AsyncHTTPTransport(retries=3),
+                "timeout": 10,
+            },
+            token_refresh_callback=store_pikpak_token_in_cache,
+            token_refresh_callback_kwargs={"user_data": user_data},
+        )
+        return pikpak
+
     pikpak = PikPakApi(
         username=user_data.streaming_provider.email,
         password=user_data.streaming_provider.password,
@@ -148,7 +166,10 @@ async def initialize_pikpak(user_data: UserData):
             "transport": httpx.AsyncHTTPTransport(retries=3),
             "timeout": 10,
         },
+        token_refresh_callback=store_pikpak_token_in_cache,
+        token_refresh_callback_kwargs={"user_data": user_data},
     )
+
     try:
         await pikpak.login()
     except PikpakException as error:
@@ -166,7 +187,20 @@ async def initialize_pikpak(user_data: UserData):
             "Failed to connect to PikPak. Please try again later.",
             "debrid_service_down_error.mp4",
         )
+
+    await store_pikpak_token_in_cache(pikpak, user_data)
     return pikpak
+
+
+async def store_pikpak_token_in_cache(pikpak: PikPakApi, user_data: UserData):
+    cache_key = f"pikpak:{crypto.get_text_hash(user_data.streaming_provider.email + user_data.streaming_provider.password, full_hash=True)}"
+    await REDIS_ASYNC_CLIENT.set(
+        cache_key,
+        crypto.encrypt_text(
+            pikpak.encoded_token, user_data.streaming_provider.password
+        ),
+        ex=7 * 24 * 60 * 60,  # Store for 7 days
+    )
 
 
 async def handle_torrent_status(

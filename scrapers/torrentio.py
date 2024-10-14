@@ -5,6 +5,7 @@ from os import path
 from typing import List, Dict, Any
 
 import PTT
+from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 from tenacity import RetryError
 
 from db.config import settings
@@ -14,22 +15,21 @@ from utils.parser import (
     convert_size_to_bytes,
     is_contain_18_plus_keywords,
 )
+from utils.runtime_const import TORRENTIO_SEARCH_TTL
 from utils.validation_helper import is_video_file
-
-from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 
 
 class TorrentioScraper(BaseScraper):
+    cache_key_prefix = "torrentio"
+
     def __init__(self):
         super().__init__(
-            cache_key_prefix="torrentio", logger_name=self.__class__.__name__
+            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
         )
         self.base_url = settings.torrentio_url
         self.semaphore = asyncio.Semaphore(10)
 
-    @BaseScraper.cache(
-        ttl=int(timedelta(days=settings.torrentio_search_interval_days).total_seconds())
-    )
+    @BaseScraper.cache(ttl=TORRENTIO_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def scrape_and_parse(
         self,
@@ -44,14 +44,17 @@ class TorrentioScraper(BaseScraper):
             url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
             job_name += f":{season}:{episode}"
 
-        scrapeops_logger = ScrapeOpsRequests(
-            scrapeops_api_key=settings.scrapeops_api_key,
-            spider_name="Torrentio Scraper",
-            job_name=job_name,
-        )
+        scrapeops_logger = None
+        if settings.scrapeops_api_key:
+            scrapeops_logger = ScrapeOpsRequests(
+                scrapeops_api_key=settings.scrapeops_api_key,
+                spider_name="Torrentio Scraper",
+                job_name=job_name,
+            )
 
         try:
             response = await self.make_request(url)
+            response.raise_for_status()
             data = response.json()
 
             if not self.validate_response(data):
@@ -62,9 +65,10 @@ class TorrentioScraper(BaseScraper):
                 data, metadata, catalog_type, season, episode
             )
             for stream in stream_data:
-                scrapeops_logger.item_scraped(
-                    item=stream.model_dump(include={"id", "meta_id"}), response=response
-                )
+                if scrapeops_logger:
+                    scrapeops_logger.item_scraped(
+                        item=stream.model_dump(include={"id"}), response=response
+                    )
             return stream_data
         except (ScraperError, RetryError):
             return []
@@ -72,7 +76,8 @@ class TorrentioScraper(BaseScraper):
             self.logger.exception(f"Error occurred while fetching {url}: {e}")
             return []
         finally:
-            scrapeops_logger.logger.close_sdk()
+            if scrapeops_logger:
+                scrapeops_logger.logger.close_sdk()
 
     def validate_response(self, response: Dict[str, Any]) -> bool:
         return "streams" in response and isinstance(response["streams"], list)

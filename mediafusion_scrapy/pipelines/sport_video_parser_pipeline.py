@@ -22,7 +22,7 @@ class SportVideoParserPipeline:
     def process_item(self, item, spider):
         adapter = ItemAdapter(item)
         if "title" not in adapter or "torrent_name" not in adapter:
-            raise DropItem(f"title not found in item: {item}")
+            raise DropItem(f"title or torrent_name not found in item: {item}")
 
         match = self.title_regex.search(adapter["title"]) or self.title_regex.search(
             adapter["torrent_name"]

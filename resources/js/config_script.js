@@ -313,6 +313,7 @@ function getUserData() {
         mediaflowConfig = {
             proxy_url: document.getElementById('mediaflow_proxy_url').value,
             api_password: document.getElementById('mediaflow_api_password').value,
+            mediaflow_public_ip: document.getElementById('mediaflow_public_ip').value,
             proxy_live_streams: document.getElementById('proxy_live_streams').checked,
             proxy_debrid_streams: document.getElementById('proxy_debrid_streams').checked
         };

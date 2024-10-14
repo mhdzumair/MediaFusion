@@ -7,9 +7,10 @@ from utils.torrent import get_info_hash_from_magnet
 
 async def get_torrent_info(url: str, indexer: str) -> dict:
     torrent_info = {}
+    pre_process_func = pre_process_map.get(indexer, get_page_bs4)
     parse_func = parser_function_map.get(indexer, parse_common_torrents)
 
-    soup = await get_page_bs4(url)
+    soup = await pre_process_func(url)
     if not soup:
         return torrent_info
 
@@ -43,7 +44,7 @@ def parse_torrent_downloads(soup, torrent_info, url):
         info_hash = (
             info_hash_span.find_parent("p").text.replace("Infohash:", "").strip()
         )
-        torrent_info["infoHash"] = info_hash.strip()
+        torrent_info["infoHash"] = info_hash
 
     return torrent_info
 
@@ -74,10 +75,8 @@ def parse_badass_torrents(soup, torrent_info, url):
     torrent_link = soup.find("a", string="Torrent Download")
     if torrent_link:
         torrent_info["downloadUrl"] = urljoin(url, torrent_link.get("href"))
-        torrent_info["magnetUrl"] = None
-    elif magnet_link:
+    if magnet_link:
         torrent_info["magnetUrl"] = magnet_link.get("href")
-        torrent_info["downloadUrl"] = None
     return torrent_info
 
 
@@ -115,6 +114,15 @@ def parse_gktorrent(soup, torrent_info, url):
 
     return torrent_info
 
+
+async def pre_process_therarbg(url):
+    url = url.replace("?format=json", "")
+    return await get_page_bs4(url)
+
+
+pre_process_map = {
+    "TheRARBG": pre_process_therarbg,
+}
 
 parser_function_map = {
     "1337x": parse_1337x,

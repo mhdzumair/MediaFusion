@@ -327,7 +327,7 @@ class FormulaTgxSpider(TgxSpider):
     logo_image = "https://i.postimg.cc/Sqf4V8tj/f1logo.png?dl=1"
 
     keyword_patterns = re.compile(r"formula[ .+]*[1234e]+", re.IGNORECASE)
-    scraped_info_hash_key = "formula_tgx_scraped_info_hash3"
+    scraped_info_hash_key = "formula_tgx_scraped_info_hash"
 
     custom_settings = {
         "ITEM_PIPELINES": {

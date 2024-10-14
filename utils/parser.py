@@ -1,7 +1,8 @@
 import asyncio
 import functools
 import logging
-from typing import Optional, List
+from datetime import datetime
+from typing import Optional, List, Any
 
 import math
 import re
@@ -13,6 +14,7 @@ from db.models import TorrentStreams, TVStreams
 from db.schemas import Stream, UserData
 from streaming_providers import mapper
 from utils import const
+from utils.config import config_manager
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
 from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS
@@ -94,13 +96,29 @@ async def filter_and_sort_streams(
                 )
 
     # Step 3: Dynamically sort streams based on user preferences
-    def dynamic_sort_key(stream):
-        return tuple(
-            (
-                const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
-                if key == "resolution"
-                else (
-                    -min(
+    def dynamic_sort_key(stream: TorrentStreams) -> tuple:
+        def key_value(key: str) -> Any:
+            match key:
+                case "cached":
+                    return stream.cached or False
+                case "resolution":
+                    return const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
+                case "quality":
+                    return const.QUALITY_RANKING.get(stream.filtered_quality, 0)
+                case "size":
+                    return stream.size
+                case "seeders":
+                    return stream.seeders or 0
+                case "created_at":
+                    created_at = stream.created_at
+                    if isinstance(created_at, datetime):
+                        return created_at
+                    elif isinstance(created_at, (int, float)):
+                        return datetime.fromtimestamp(created_at)
+                    else:
+                        return datetime.min
+                case "language":
+                    return -min(
                         (
                             user_data.language_sorting.index(lang)
                             for lang in stream.filtered_languages
@@ -108,28 +126,22 @@ async def filter_and_sort_streams(
                         ),
                         default=len(user_data.language_sorting),
                     )
-                    if key == "language"
-                    else (
-                        const.QUALITY_RANKING.get(stream.filtered_quality, 0)
-                        if key == "quality"
-                        else (
-                            getattr(stream, key, 0)
-                            if key in stream.model_fields_set
-                            else 0
-                        )
-                    )
-                )
-            )
-            for key in user_data.torrent_sorting_priority
+                case _ if key in stream.model_fields_set:
+                    return getattr(stream, key, 0)
+                case _:
+                    return 0
+
+        return tuple(key_value(key) for key in user_data.torrent_sorting_priority)
+
+    try:
+        dynamically_sorted_streams = sorted(
+            filtered_streams, key=dynamic_sort_key, reverse=True
         )
-
-    def safe_sort_key(stream):
-        raw_key = dynamic_sort_key(stream)
-        return tuple(0 if item is None else item for item in raw_key)
-
-    dynamically_sorted_streams = sorted(
-        filtered_streams, key=safe_sort_key, reverse=True
-    )
+    except (TypeError, Exception):
+        logging.exception(
+            f"torrent_sorting_priority: {user_data.torrent_sorting_priority}: sort data: {[dynamic_sort_key(stream) for stream in filtered_streams]}"
+        )
+        dynamically_sorted_streams = filtered_streams
 
     # Step 4: Limit streams per resolution based on user preference, after dynamic sorting
     limited_streams = []
@@ -390,7 +402,7 @@ async def process_stream(
     stream_url, behavior_hints = stream.url, stream.behaviorHints
     behavior_hints = behavior_hints if behavior_hints else {}
 
-    if stream.drm_key or "dlhd" in stream.source:
+    if stream.drm_key:
         if not is_mediaflow_proxy_enabled:
             return "MEDIAFLOW_NEEDED"
         stream_url = get_proxy_url(stream, mediaflow_config)
@@ -418,7 +430,10 @@ def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
     if stream.drm_key:
         query_params = {"key_id": stream.drm_key_id, "key": stream.drm_key}
     elif "dlhd" in stream.source:
-        query_params = {"use_request_proxy": False}
+        query_params = {
+            "use_request_proxy": False,
+            "key_url": config_manager.get_scraper_config("dlhd", "key_url"),
+        }
 
     return encode_mediaflow_proxy_url(
         mediaflow_config.proxy_url,
@@ -426,6 +441,9 @@ def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
         stream.url,
         query_params=query_params,
         request_headers=stream.behaviorHints.get("proxyHeaders", {}).get("request", {}),
+        response_headers=stream.behaviorHints.get("proxyHeaders", {}).get(
+            "response", {}
+        ),
         encryption_api_password=mediaflow_config.api_password,
     )
 
@@ -460,7 +478,7 @@ async def fetch_downloaded_info_hashes(
 
             return downloaded_info_hashes
         except Exception as error:
-            logging.error(
+            logging.exception(
                 f"Failed to fetch downloaded info hashes for {user_data.streaming_provider.service}: {error}"
             )
             pass

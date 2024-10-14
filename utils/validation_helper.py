@@ -4,8 +4,7 @@ import logging
 from urllib import parse
 from urllib.parse import urlparse
 
-import aiohttp
-from aiohttp import ClientError
+import httpx
 
 from db import schemas
 from utils import const
@@ -18,14 +17,17 @@ def is_valid_url(url: str) -> bool:
 
 
 async def does_url_exist(url: str) -> bool:
-    async with aiohttp.ClientSession() as session:
+    async with httpx.AsyncClient() as client:
         try:
-            async with session.head(
-                url, allow_redirects=True, timeout=10, headers=const.UA_HEADER
-            ) as response:
-                logging.info("URL: %s, Status: %s", url, response.status)
-                return response.status == 200
-        except (ClientError, asyncio.TimeoutError) as err:
+            response = await client.head(
+                url, timeout=10, headers=const.UA_HEADER, follow_redirects=True
+            )
+            response.raise_for_status()
+            return response.status_code == 200
+        except httpx.HTTPStatusError as err:
+            logging.error("URL: %s, Status: %s", url, err.response.status_code)
+            return False
+        except (httpx.RequestError, httpx.TimeoutException) as err:
             logging.error("URL: %s, Status: %s", url, err)
             return False
 
@@ -41,19 +43,28 @@ async def validate_live_stream_url(
         return False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
-    async with aiohttp.ClientSession() as session:
+    async with httpx.AsyncClient() as client:
         try:
-            async with session.head(
-                url,
-                allow_redirects=True,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as response:
-                content_type = response.headers.get("content-type", "").lower()
-                is_valid = content_type in const.IPTV_VALID_CONTENT_TYPES
-                return is_valid
-        except (ClientError, asyncio.TimeoutError) as err:
+            response = await client.head(
+                url, timeout=10, headers=headers, follow_redirects=True
+            )
+            response.raise_for_status()
+            content_type = (
+                behaviour_hint.get("proxyHeaders", {})
+                .get("response", {})
+                .get("Content-Type", response.headers.get("content-type", "").lower())
+            )
+            is_valid = content_type in const.IPTV_VALID_CONTENT_TYPES
+            return is_valid
+        except (
+            httpx.RequestError,
+            httpx.TimeoutException,
+            httpx.HTTPStatusError,
+        ) as err:
             logging.error(err)
+            return False
+        except Exception as e:
+            logging.exception(e)
             return False
 
 
@@ -78,13 +89,12 @@ class ValidationError(Exception):
 
 async def validate_yt_id(yt_id: str) -> bool:
     image_url = f"https://img.youtube.com/vi/{yt_id}/mqdefault.jpg"
-    async with aiohttp.ClientSession() as session:
+    async with httpx.AsyncClient() as client:
         try:
-            async with session.head(
-                image_url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)
-            ) as response:
-                return response.status == 200
-        except (ClientError, asyncio.TimeoutError):
+            response = await client.head(image_url, timeout=10, follow_redirects=True)
+            response.raise_for_status()
+            return response.status_code == 200
+        except (httpx.HTTPStatusError, httpx.TimeoutException, Exception):
             return False
 
 

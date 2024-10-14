@@ -1,11 +1,13 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
 from scrapers.imdb_data import fetch_movie_ids_to_update
+from scrapers.prowlarr_feed import run_prowlarr_feed_scraper
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
-from scrapers.prowlarr_feed import run_prowlarr_feed_scraper
+from scrapers.utils import cleanup_expired_scraper_task
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -218,3 +220,12 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.prowlarr_feed_scraper_crontab,
             },
         )
+
+    scheduler.add_job(
+        cleanup_expired_scraper_task.send,
+        CronTrigger.from_crontab(settings.cleanup_expired_scraper_task_crontab),
+        name="cleanup_expired_scraper_task",
+        kwargs={
+            "crontab_expression": settings.cleanup_expired_scraper_task_crontab,
+        },
+    )
