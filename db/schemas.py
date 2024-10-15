@@ -168,7 +168,13 @@ class StreamingProvider(BaseModel):
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
     selected_catalogs: list[str] = Field(
-        default=["prowlarr_streams", "torrentio_streams", "zilean_dmm_streams"],
+        default=[
+            "prowlarr_streams",
+            "torrentio_streams",
+            "zilean_dmm_streams",
+            "english_hdrip",
+            "english_series",
+        ],
         alias="sc",
     )
     selected_resolutions: list[str | None] = Field(
@@ -177,7 +183,7 @@ class UserData(BaseModel):
     enable_catalogs: bool = Field(default=True, alias="ec")
     enable_imdb_metadata: bool = Field(default=True, alias="eim")
     max_size: int | str | float = Field(default=math.inf, alias="ms")
-    max_streams_per_resolution: int = Field(default=3, alias="mspr")
+    max_streams_per_resolution: int = Field(default=10, alias="mspr")
     show_full_torrent_name: bool = Field(default=True, alias="sftn")
     torrent_sorting_priority: list[str] = Field(
         default=const.TORRENT_SORTING_PRIORITY, alias="tsp"
