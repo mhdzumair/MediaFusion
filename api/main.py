@@ -77,8 +77,12 @@ async def lifespan(fastapi_app: FastAPI):
 
     # Shutdown logic
     if scheduler:
-        scheduler.shutdown(wait=False)
-        await release_scheduler_lock(scheduler_lock)
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception as e:
+            logging.exception("Error shutting down scheduler")
+        finally:
+            await release_scheduler_lock(scheduler_lock)
 
     await REDIS_ASYNC_CLIENT.aclose()
 
