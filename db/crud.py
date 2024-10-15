@@ -342,6 +342,8 @@ async def get_movie_streams(
             background_tasks.add_task(
                 store_new_torrent_streams, new_streams, redis_lock=redis_lock
             )
+        else:
+            await release_redis_lock(redis_lock)
     else:
         all_streams = cached_streams
 
@@ -390,6 +392,8 @@ async def get_series_streams(
             background_tasks.add_task(
                 store_new_torrent_streams, new_streams, redis_lock
             )
+        else:
+            await release_redis_lock(redis_lock)
     else:
         all_streams = cached_streams
 
