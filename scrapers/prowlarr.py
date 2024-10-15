@@ -308,7 +308,7 @@ class ProwlarrScraper(BaseScraper):
                 f"Stream processing cancelled after reaching max process limit of {max_process}"
             )
         except Exception as e:
-            self.logger.error(f"An error occurred during stream processing: {e}")
+            self.logger.exception(f"An error occurred during stream processing: {e}")
         self.logger.info(
             f"Finished processing {streams_processed} streams from "
             f"{len(stream_generators)} generators"
