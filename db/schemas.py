@@ -144,6 +144,7 @@ class StreamingProvider(BaseModel):
     enable_watchlist_catalogs: bool = Field(default=True, alias="ewc")
     qbittorrent_config: QBittorrentConfig | None = Field(default=None, alias="qbc")
     download_via_browser: bool = Field(default=False, alias="dvb")
+    only_show_cached_streams: bool = Field(default=False, alias="oscs")
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":

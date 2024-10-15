@@ -303,6 +303,7 @@ function getUserData() {
         if (document.getElementById('download_via_browser')) {
             streamingProviderData.download_via_browser = document.getElementById('download_via_browser').checked;
         }
+        streamingProviderData.only_show_cached_streams = document.getElementById('only_show_cached_streams').checked;
     } else {
         streamingProviderData = null;
     }
