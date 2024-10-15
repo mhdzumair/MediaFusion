@@ -42,12 +42,13 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
     async def custom_log(request: Request, response: Response):
         ip = get_client_ip(request)
         url_path = str(request.url)
+        process_time = response.headers.get("X-Process-Time", "")
         if request.path_params.get("secret_str"):
             url_path = url_path.replace(
-                request.path_params.get("secret_str"), "***MASKED***"
+                request.path_params.get("secret_str"), "*MASKED*"
             )
         logging.info(
-            f'{ip} - "{request.method} {url_path} HTTP/1.1" {response.status_code}'
+            f'{ip} - "{request.method} {url_path} HTTP/1.1" {response.status_code} {process_time}'
         )
 
 
