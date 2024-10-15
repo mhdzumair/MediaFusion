@@ -303,10 +303,16 @@ class ProwlarrScraper(BaseScraper):
                 f"Stream processing timed out after {max_process_time} seconds. "
                 f"Processed {streams_processed} streams"
             )
-        except MaxProcessLimitReached:
-            self.logger.info(
-                f"Stream processing cancelled after reaching max process limit of {max_process}"
-            )
+        except ExceptionGroup as eg:
+            for e in eg.exceptions:
+                if isinstance(e, MaxProcessLimitReached):
+                    self.logger.info(
+                        f"Stream processing cancelled after reaching max process limit of {max_process}"
+                    )
+                else:
+                    self.logger.exception(
+                        f"An error occurred during stream processing: {e}"
+                    )
         except Exception as e:
             self.logger.exception(f"An error occurred during stream processing: {e}")
         self.logger.info(
