@@ -30,6 +30,7 @@ from db.schemas import Stream, TorrentStreamsList
 from scrapers.utils import run_scrapers
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
 from utils import crypto
+from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.parser import (
     fetch_downloaded_info_hashes,
     parse_stream_data,
@@ -319,6 +320,13 @@ async def get_movie_streams(
         return []
 
     cache_key = f"torrent_streams:{video_id}"
+    lock_key = f"{cache_key}_lock" if video_id.startswith("tt") else None
+    redis_lock = None
+
+    # Acquire the lock to prevent multiple scrapers from running at the same time
+    if lock_key:
+        _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
+
     cached_streams = await get_cached_torrent_streams(cache_key, video_id)
 
     if video_id.startswith("tt"):
@@ -331,7 +339,9 @@ async def get_movie_streams(
         if new_streams:
             # reset the cache
             await REDIS_ASYNC_CLIENT.delete(cache_key)
-            background_tasks.add_task(store_new_torrent_streams, new_streams)
+            background_tasks.add_task(
+                store_new_torrent_streams, new_streams, redis_lock=redis_lock
+            )
     else:
         all_streams = cached_streams
 
@@ -354,6 +364,13 @@ async def get_series_streams(
         return []
 
     cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
+    lock_key = f"{cache_key}_lock" if video_id.startswith("tt") else None
+    redis_lock = None
+
+    # Acquire the lock to prevent multiple scrapers from running at the same time
+    if lock_key:
+        _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
+
     cached_streams = await get_cached_torrent_streams(
         cache_key, video_id, season, episode
     )
@@ -370,7 +387,9 @@ async def get_series_streams(
         if new_streams:
             # reset the cache
             await REDIS_ASYNC_CLIENT.delete(cache_key)
-            background_tasks.add_task(store_new_torrent_streams, new_streams)
+            background_tasks.add_task(
+                store_new_torrent_streams, new_streams, redis_lock
+            )
     else:
         all_streams = cached_streams
 
@@ -386,7 +405,7 @@ async def get_series_streams(
 
 
 async def store_new_torrent_streams(
-    streams: list[TorrentStreams] | set[TorrentStreams],
+    streams: list[TorrentStreams] | set[TorrentStreams], redis_lock=None
 ):
     if not streams:
         return
@@ -439,6 +458,8 @@ async def store_new_torrent_streams(
             )
 
     await bulk_writer.commit()
+    if redis_lock:
+        await release_redis_lock(redis_lock)
 
 
 async def get_tv_streams(video_id: str, namespace: str, user_data) -> list[Stream]:

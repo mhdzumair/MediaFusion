@@ -95,6 +95,9 @@ async def filter_and_sort_streams(
                     f"Failed to update cache status for {user_data.streaming_provider.service}: {error}"
                 )
 
+        if user_data.streaming_provider.only_show_cached_streams:
+            filtered_streams = [stream for stream in filtered_streams if stream.cached]
+
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(stream: TorrentStreams) -> tuple:
         def key_value(key: str) -> Any:

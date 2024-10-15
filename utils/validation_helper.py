@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from urllib import parse
 from urllib.parse import urlparse
 
 import httpx
@@ -70,13 +69,13 @@ async def validate_live_stream_url(
 
 async def validate_m3u8_or_mpd_url_with_cache(url: str, behaviour_hint: dict):
     try:
-        cache_key = f"m3u8_url:{parse.urlparse(url).netloc}"
+        cache_key = f"m3u8_url:{url}"
         cache_data = await REDIS_ASYNC_CLIENT.get(cache_key)
         if cache_data:
             return json.loads(cache_data)
 
         is_valid = await validate_live_stream_url(url, behaviour_hint)
-        await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(is_valid), ex=180)
+        await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(is_valid), ex=300)
         return is_valid
     except Exception as e:
         logging.exception(e)

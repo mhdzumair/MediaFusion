@@ -58,32 +58,31 @@ async def lifespan(fastapi_app: FastAPI):
     # Startup logic
     await database.init()
     await torrent.init_best_trackers()
+    scheduler = None
+    scheduler_lock = None
 
     if not settings.disable_all_scheduler:
-        acquired, lock = await acquire_scheduler_lock()
+        acquired, scheduler_lock = await acquire_scheduler_lock()
         if acquired:
             try:
                 scheduler = AsyncIOScheduler()
                 setup_scheduler(scheduler)
                 scheduler.start()
-                fastapi_app.state.scheduler = scheduler
-                fastapi_app.state.scheduler_lock = lock
                 await asyncio.create_task(maintain_heartbeat())
             except Exception as e:
-                await release_scheduler_lock(lock)
+                await release_scheduler_lock(scheduler_lock)
                 raise e
 
     yield
 
     # Shutdown logic
-    if hasattr(fastapi_app.state, "scheduler"):
-        fastapi_app.state.scheduler.shutdown(wait=False)
-
-    if (
-        hasattr(fastapi_app.state, "scheduler_lock")
-        and fastapi_app.state.scheduler_lock
-    ):
-        await release_scheduler_lock(fastapi_app.state.scheduler_lock)
+    if scheduler:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception as e:
+            logging.exception("Error shutting down scheduler")
+        finally:
+            await release_scheduler_lock(scheduler_lock)
 
     await REDIS_ASYNC_CLIENT.aclose()
 
