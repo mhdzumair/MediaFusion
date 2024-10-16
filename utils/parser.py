@@ -1,7 +1,7 @@
 import asyncio
 import functools
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Any
 
 import math
@@ -115,11 +115,13 @@ async def filter_and_sort_streams(
                 case "created_at":
                     created_at = stream.created_at
                     if isinstance(created_at, datetime):
+                        if created_at.tzinfo is None:
+                            created_at = created_at.replace(tzinfo=timezone.utc)
                         return created_at
                     elif isinstance(created_at, (int, float)):
-                        return datetime.fromtimestamp(created_at)
+                        return datetime.fromtimestamp(created_at, tz=timezone.utc)
                     else:
-                        return datetime.min
+                        return datetime.min.replace(tzinfo=timezone.utc)
                 case "language":
                     return -min(
                         (
