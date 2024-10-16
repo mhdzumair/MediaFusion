@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from scrapy import signals
 from scrapy.exceptions import NotConfigured, CloseSpider
@@ -56,7 +56,7 @@ class InactivityMonitor:
             raise CloseSpider(f"Inactivity timeout: {msg}")
 
     def item_scraped(self, item, response, spider):
-        self.last_scraped_time = datetime.now()
+        self.last_scraped_time = time.monotonic()
 
     def spider_closed(self, spider, reason):
         if self.task and self.task.running:
