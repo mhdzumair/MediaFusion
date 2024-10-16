@@ -176,7 +176,7 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
     if mediaflow_config.public_ip:
         return mediaflow_config.public_ip
 
-    parsed_url = urlparse(mediaflow_config.mediaflow_proxy_url)
+    parsed_url = urlparse(mediaflow_config.proxy_url)
     if PRIVATE_CIDR.match(parsed_url.netloc):
         # MediaFlow proxy URL is a private IP address
         return None
