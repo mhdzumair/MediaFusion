@@ -523,8 +523,8 @@ async def generate_manifest(manifest: dict, user_data: UserData) -> dict:
         resources = [
             {
                 "name": "stream",
-                "types": ["movie", "series", "tv"],
-                "idPrefixes": ["tt", "mf"],
+                "types": ["movie", "series", "tv", "events"],
+                "idPrefixes": ["tt", "mf", "dl"],
             }
         ]
 
