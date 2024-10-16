@@ -67,9 +67,18 @@ endif
 
 	@echo "Generate a release note for MediaFusion $(VERSION_NEW) by analyzing the following changes. Organize the release note by importance rather than by commit order. highlight the most significant updates first, and streamline the content to focus on what adds the most value to the user. Ensure to dynamically create sections for New Features & Enhancements, Bug Fixes, and Documentation updates only if relevant based on the types of changes listed. Use emojis relevantly at the start of each item to enhance readability and engagement. Keep the format straightforward & shorter, List down the contributors, and provide a direct link to the detailed list of changes:\n"
 	@echo "## 🚀 MediaFusion $(VERSION_NEW) Released\n"
-	@echo "### Commit Messages:\n"
-	@echo "$$(git log --pretty=format:'- %s' $(VERSION_OLD)..$(VERSION_NEW))\n"
-	@echo "### 🤝 Contributors: $(CONTRIBUTORS)\n"
+	@echo "### Commit Messages and Descriptions:\n"
+	@git log --pretty=format:'%s%n%b' $(VERSION_OLD)..$(VERSION_NEW) | awk 'BEGIN {RS="\n\n"; FS="\n"} { \
+		message = $$1; \
+		description = ""; \
+		for (i=2; i<=NF; i++) { \
+			if ($$i ~ /^\*/) description = description "  " $$i "\n"; \
+			else if ($$i != "") description = description "  " $$i "\n"; \
+		} \
+		if (message != "") print "- " message; \
+		if (description != "") printf "%s", description; \
+	}'
+	@echo "\n### 🤝 Contributors: $(CONTRIBUTORS)\n"
 	@echo "### 📄 Full Changelog:\n- https://github.com/mhdzumair/MediaFusion/compare/$(VERSION_OLD)...$(VERSION_NEW)"
 
 
