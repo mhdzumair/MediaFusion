@@ -41,6 +41,8 @@ async def filter_and_sort_streams(
     # Step 1: Filter streams and add normalized attributes
     filtered_streams = []
     for stream in streams:
+        # Create a copy of the stream model to avoid modifying the original
+        stream = stream.model_copy()
         # Add normalized attributes as dynamic properties
         stream.filtered_resolution = (
             stream.resolution if stream.resolution in valid_resolutions else None
@@ -51,6 +53,7 @@ async def filter_and_sort_streams(
         stream.filtered_languages = [
             lang for lang in stream.languages if lang in valid_languages
         ] or [None]
+        stream.cached = False
 
         # Check if any of the stream's catalogs are in the selected catalogs
         if not any(catalog in selected_catalogs_set for catalog in stream.catalog):
