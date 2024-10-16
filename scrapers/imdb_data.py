@@ -201,7 +201,27 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
 
 @dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
 async def process_imdb_data_background(imdb_ids, metadata_type="movie"):
-    await process_imdb_data(imdb_ids, metadata_type)
+    # Validate imdb_ids from the database
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+    valid_ids = (
+        await MediaFusionMetaData.get_motor_collection()
+        .find(
+            {
+                "_id": {"$in": imdb_ids},
+                "$or": [
+                    {"last_updated_at": {"$lt": seven_days_ago}},
+                    {"last_updated_at": None},
+                ],
+            },
+            {"_id": 1},
+        )
+        .to_list(None)
+    )
+    valid_ids = [doc["_id"] for doc in valid_ids]
+
+    if valid_ids:
+        await process_imdb_data(valid_ids, metadata_type)
 
 
 @dramatiq.actor(
