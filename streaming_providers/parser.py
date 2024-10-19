@@ -5,8 +5,8 @@ import PTT
 
 def select_file_index_from_torrent(
     torrent_info: dict[str, Any],
-    filename: str,
-    file_index: int,
+    filename: Optional[str],
+    file_index: Optional[int],
     episode: Optional[int] = None,
     file_key: str = "files",
     name_key: str = "name",

@@ -1,6 +1,4 @@
-import json
-
-from typing import Any
+from typing import Any, Optional
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -9,36 +7,37 @@ from streaming_providers.exceptions import ProviderException
 class Torbox(DebridClient):
     BASE_URL = "https://api.torbox.app/v1/api"
 
-    def initialize_headers(self):
+    async def initialize_headers(self):
         self.headers = {"Authorization": f"Bearer {self.token}"}
 
-    def __del__(self):
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await super().__aexit__(exc_type, exc_val, exc_tb)
+
+    async def _handle_service_specific_errors(self, error):
         pass
 
-    def _handle_service_specific_errors(self, error):
-        pass
-
-    def _make_request(
-            self,
-            method: str,
-            url: str,
-            data=None,
-            params=None,
-            is_return_none=False,
-            is_expected_to_fail=False,
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[dict | str] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        is_return_none: bool = False,
+        is_expected_to_fail: bool = False,
     ) -> dict:
         params = params or {}
         url = self.BASE_URL + url
-        return super()._make_request(
-            method, url, data, params, is_return_none, is_expected_to_fail
+        return await super()._make_request(
+            method, url, data, json, params, is_return_none, is_expected_to_fail
         )
 
-    def add_magnet_link(self, magnet_link):
-        response_data = self._make_request(
+    async def add_magnet_link(self, magnet_link):
+        response_data = await self._make_request(
             "POST",
             "/torrents/createtorrent",
             data={"magnet": magnet_link},
-            is_expected_to_fail=True
+            is_expected_to_fail=True,
         )
 
         if response_data.get("detail") is False:
@@ -48,33 +47,37 @@ class Torbox(DebridClient):
             )
         return response_data
 
-    def get_user_torrent_list(self):
-        return self._make_request("GET", "/torrents/mylist", params={"bypass_cache": "true"})
+    async def get_user_torrent_list(self):
+        return await self._make_request(
+            "GET", "/torrents/mylist", params={"bypass_cache": "true"}
+        )
 
-    def get_torrent_info(self, magnet_id):
-        response = self.get_user_torrent_list()
+    async def get_torrent_info(self, magnet_id):
+        response = await self.get_user_torrent_list()
         torrent_list = response.get("data", [])
         for torrent in torrent_list:
             if torrent.get("magnet", "") == magnet_id:
                 return torrent
         return {}
 
-    def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        response = self._make_request(
-            "GET", "/torrents/checkcached", params={"hash": torrent_hashes, "format": "object"}
+    async def get_torrent_instant_availability(self, torrent_hashes: list[str]):
+        response = await self._make_request(
+            "GET",
+            "/torrents/checkcached",
+            params={"hash": torrent_hashes, "format": "object"},
         )
-        return response.get("data", {})
+        return response.get("data", [])
 
-    def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
-        response = self.get_user_torrent_list()
+    async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
+        response = await self.get_user_torrent_list()
         torrent_list = response.get("data", [])
         for torrent in torrent_list:
             if torrent.get("hash", "") == info_hash:
                 return torrent
         return {}
 
-    def create_download_link(self, torrent_id, filename):
-        response = self._make_request(
+    async def create_download_link(self, torrent_id, filename):
+        response = await self._make_request(
             "GET",
             "/torrents/requestdl",
             params={"token": self.token, "torrent_id": torrent_id, "file_id": filename},
@@ -87,10 +90,9 @@ class Torbox(DebridClient):
             "transfer_error.mp4",
         )
 
-    def delete_torrent(self, torrent_id):
-        return self._make_request(
+    async def delete_torrent(self, torrent_id):
+        return await self._make_request(
             "POST",
             "/torrents/controltorrent",
-            data=json.dumps({"torrent_id": torrent_id, "operation": "delete"})
+            json={"torrent_id": torrent_id, "operation": "delete"},
         )
-

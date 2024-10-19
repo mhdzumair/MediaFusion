@@ -1,5 +1,5 @@
 from base64 import b64encode, b64decode
-from typing import Any
+from typing import Any, Optional
 
 from binascii import Error as BinasciiError
 
@@ -12,12 +12,12 @@ class RealDebrid(DebridClient):
     OAUTH_URL = "https://api.real-debrid.com/oauth/v2"
     OPENSOURCE_CLIENT_ID = "X245A4XAIBGVM"
 
-    def __init__(self, token: str | None = None, user_ip: str | None = None):
+    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
         self.user_ip = user_ip
         self.is_private_token = False
         super().__init__(token)
 
-    def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error):
         if error.response.status_code == 403:
             error_code = error.response.json().get("error_code")
             match error_code:
@@ -39,23 +39,24 @@ class RealDebrid(DebridClient):
                         "Content marked as infringing", "content_infringing.mp4"
                     )
 
-    def _make_request(
+    async def _make_request(
         self,
         method: str,
         url: str,
-        data=None,
-        params=None,
-        is_return_none=False,
-        is_expected_to_fail=False,
+        data: Optional[dict] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        is_return_none: bool = False,
+        is_expected_to_fail: bool = False,
     ) -> dict:
         if method == "POST" and self.user_ip:
             data = data or {}
             data["ip"] = self.user_ip
-        return super()._make_request(
-            method, url, data, params, is_return_none, is_expected_to_fail
+        return await super()._make_request(
+            method, url, data, json, params, is_return_none, is_expected_to_fail
         )
 
-    def initialize_headers(self):
+    async def initialize_headers(self):
         if self.token:
             token_data = self.decode_token_str(self.token)
             if "private_token" in token_data:
@@ -64,7 +65,7 @@ class RealDebrid(DebridClient):
                 }
                 self.is_private_token = True
             else:
-                access_token_data = self.get_token(
+                access_token_data = await self.get_token(
                     token_data["client_id"],
                     token_data["client_secret"],
                     token_data["code"],
@@ -86,15 +87,15 @@ class RealDebrid(DebridClient):
             return {"private_token": token}
         return {"client_id": client_id, "client_secret": client_secret, "code": code}
 
-    def get_device_code(self):
-        return self._make_request(
+    async def get_device_code(self):
+        return await self._make_request(
             "GET",
             f"{self.OAUTH_URL}/device/code",
             params={"client_id": self.OPENSOURCE_CLIENT_ID, "new_credentials": "yes"},
         )
 
-    def get_token(self, client_id, client_secret, device_code):
-        return self._make_request(
+    async def get_token(self, client_id, client_secret, device_code):
+        return await self._make_request(
             "POST",
             f"{self.OAUTH_URL}/token",
             data={
@@ -105,8 +106,8 @@ class RealDebrid(DebridClient):
             },
         )
 
-    def authorize(self, device_code):
-        response_data = self._make_request(
+    async def authorize(self, device_code):
+        response_data = await self._make_request(
             "GET",
             f"{self.OAUTH_URL}/device/credentials",
             params={"client_id": self.OPENSOURCE_CLIENT_ID, "code": device_code},
@@ -116,7 +117,7 @@ class RealDebrid(DebridClient):
         if "client_secret" not in response_data:
             return response_data
 
-        token_data = self.get_token(
+        token_data = await self.get_token(
             response_data["client_id"], response_data["client_secret"], device_code
         )
 
@@ -130,56 +131,59 @@ class RealDebrid(DebridClient):
         else:
             return token_data
 
-    def add_magnet_link(self, magnet_link):
-        return self._make_request(
+    async def add_magnet_link(self, magnet_link):
+        return await self._make_request(
             "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
         )
 
-    def get_active_torrents(self):
-        return self._make_request("GET", f"{self.BASE_URL}/torrents/activeCount")
+    async def get_active_torrents(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/torrents/activeCount")
 
-    def get_user_torrent_list(self):
-        return self._make_request("GET", f"{self.BASE_URL}/torrents")
+    async def get_user_torrent_list(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/torrents")
 
-    def get_user_downloads(self):
-        return self._make_request("GET", f"{self.BASE_URL}/downloads")
+    async def get_user_downloads(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/downloads")
 
-    def get_torrent_info(self, torrent_id):
-        return self._make_request("GET", f"{self.BASE_URL}/torrents/info/{torrent_id}")
+    async def get_torrent_info(self, torrent_id):
+        return await self._make_request(
+            "GET", f"{self.BASE_URL}/torrents/info/{torrent_id}"
+        )
 
-    def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        return self._make_request(
+    async def get_torrent_instant_availability(self, torrent_hashes: list[str]):
+        return await self._make_request(
             "GET",
             f"{self.BASE_URL}/torrents/instantAvailability/{'/'.join(torrent_hashes)}",
         )
 
-    def disable_access_token(self):
+    async def disable_access_token(self):
         if self.is_private_token:
             return
 
-        return self._make_request(
+        return await self._make_request(
             "GET",
             f"{self.BASE_URL}/disable_access_token",
             is_return_none=True,
             is_expected_to_fail=True,
         )
 
-    def start_torrent_download(self, torrent_id, file_ids="all"):
-        return self._make_request(
+    async def start_torrent_download(self, torrent_id, file_ids="all"):
+        return await self._make_request(
             "POST",
             f"{self.BASE_URL}/torrents/selectFiles/{torrent_id}",
             data={"files": file_ids},
             is_return_none=True,
         )
 
-    def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
-        available_torrents = self.get_user_torrent_list()
+    async def get_available_torrent(self, info_hash) -> Optional[dict[str, Any]]:
+        available_torrents = await self.get_user_torrent_list()
         for torrent in available_torrents:
             if torrent["hash"] == info_hash:
                 return torrent
+        return None
 
-    def create_download_link(self, link):
-        response = self._make_request(
+    async def create_download_link(self, link):
+        response = await self._make_request(
             "POST",
             f"{self.BASE_URL}/unrestrict/link",
             data={"link": link},
@@ -197,8 +201,8 @@ class RealDebrid(DebridClient):
             f"Failed to create download link. response: {response}", "api_error.mp4"
         )
 
-    def delete_torrent(self, torrent_id):
-        return self._make_request(
+    async def delete_torrent(self, torrent_id):
+        return await self._make_request(
             "DELETE",
             f"{self.BASE_URL}/torrents/delete/{torrent_id}",
             is_return_none=True,
