@@ -167,7 +167,7 @@ class BaseScraper(abc.ABC):
         metadata: MediaFusionMetaData,
         catalog_type: str,
         torrent_title: str,
-        expected_ratio: int = 85,
+        expected_ratio: int = 87,
     ) -> bool:
         """
         Validate the title and year of the parsed data against the metadata.

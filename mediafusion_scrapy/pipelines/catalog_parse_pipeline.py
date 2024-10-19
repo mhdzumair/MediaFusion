@@ -4,5 +4,14 @@ class CatalogParsePipeline:
             return item
         video_type = item["video_type"]
         languages = item["languages"]
-        item["catalog"] = [f"{lang.lower()}_{video_type}" for lang in languages]
+        torrent_name = item["torrent_name"].lower()
+        catalogs = []
+        for language in languages:
+            if language.lower() == "english" and "eng" not in torrent_name:
+                # Fix for ESubs torrents
+                continue
+            if video_type == "dubbed" and language.lower() == "english":
+                continue
+            catalogs.append(f"{language.lower()}_{video_type}")
+        item["catalog"] = catalogs
         return item
