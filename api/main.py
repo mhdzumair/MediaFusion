@@ -31,7 +31,7 @@ from scrapers.routes import router as scrapers_router
 from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
-from utils import const, crypto, get_json_data, poster, torrent, wrappers
+from utils import const, crypto, poster, torrent, wrappers
 from utils.lock import (
     acquire_scheduler_lock,
     maintain_heartbeat,
@@ -117,15 +117,14 @@ app.mount("/static", StaticFiles(directory="resources"), name="static")
 
 @app.get("/", tags=["home"])
 async def get_home(request: Request):
-    manifest = get_json_data("resources/manifest.json")
     return TEMPLATES.TemplateResponse(
         "html/home.html",
         {
             "request": request,
             "addon_name": settings.addon_name,
             "logo_url": settings.logo_url,
-            "version": f"{manifest.get('version')}-{settings.git_rev[:7]}",
-            "description": manifest.get("description"),
+            "version": f"{settings.version}-{settings.git_rev[:7]}",
+            "description": settings.description,
         },
     )
 
@@ -209,7 +208,11 @@ async def get_manifest(
     response.headers.update(const.NO_CACHE_HEADERS)
     catalog_types = ["movie", "series", "tv"]
     genre_tasks = [crud.get_genres(catalog_type) for catalog_type in catalog_types]
-    genres_list = await asyncio.gather(*genre_tasks)
+    try:
+        genres_list = await asyncio.gather(*genre_tasks)
+    except Exception as e:
+        logging.exception("Error gathering genres: %s", e)
+        genres_list = [[] for _ in catalog_types]  # Provide default empty list
     genres = dict(zip(catalog_types, genres_list))
 
     return await generate_manifest(user_data, genres)

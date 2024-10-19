@@ -510,6 +510,9 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
 
     manifest_data = {
         "addon_name": settings.addon_name,
+        "version": settings.version,
+        "contact_email": settings.contact_email,
+        "description": settings.description,
         "logo_url": settings.logo_url,
         "streaming_provider_name": streaming_provider_name,
         "streaming_provider_short_name": streaming_provider_short_name,
@@ -521,7 +524,11 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
     }
 
     manifest_json = MANIFEST_TEMPLATE.render(manifest_data)
-    return json.loads(manifest_json)
+    try:
+        return json.loads(manifest_json)
+    except json.JSONDecodeError as e:
+        logging.exception(f"Failed to parse manifest JSON: {e}")
+        return {}
 
 
 @functools.lru_cache(maxsize=1024)

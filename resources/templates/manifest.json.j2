@@ -1,9 +1,9 @@
 {
   "id": "stremio.addons.{{ addon_name | lower | replace(' ', '') }}{% if streaming_provider_name %}.{{ streaming_provider_name }}{% endif %}",
-  "version": "4.0.5",
+  "version": "{{ version }}",
   "name": "{{ addon_name }}{% if streaming_provider_short_name %} {{ streaming_provider_short_name }}{% endif %}",
-  "contactEmail": "mhdzumair@gmail.com",
-  "description": "Universal Stremio Add-on for Movies, Series, Live TV & Sports Events. Source: https://github.com/mhdzumair/MediaFusion",
+  "contactEmail": "{{ contact_email }}",
+  "description": "{{ description }}",
   "logo": "{{ logo_url }}",
   "behaviorHints": {
     "configurable": true,
