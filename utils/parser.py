@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Any
@@ -17,7 +18,7 @@ from utils import const
 from utils.config import config_manager
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
 from utils.network import encode_mediaflow_proxy_url
-from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS
+from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS, MANIFEST_TEMPLATE
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 
@@ -494,74 +495,33 @@ async def fetch_downloaded_info_hashes(
     return []
 
 
-async def generate_manifest(manifest: dict, user_data: UserData) -> dict:
-    from db.crud import get_genres
-
-    resources = manifest.get("resources", [])
-    manifest["name"] = settings.addon_name
-    manifest["id"] += f".{settings.addon_name.lower().replace(' ', '')}"
-    manifest["logo"] = settings.logo_url
-
-    # Ensure catalogs are enabled
-    if user_data.enable_catalogs:
-        # Reorder catalogs based on the user's selection order
-        ordered_catalogs = []
-        for catalog_id in user_data.selected_catalogs:
-            for catalog in manifest.get("catalogs", []):
-                if catalog["id"] == catalog_id:
-                    if catalog_id == "live_tv":
-                        # Add the available genres to the live TV catalog
-                        catalog["extra"][1]["options"] = await get_genres(
-                            catalog_type="tv"
-                        )
-                    ordered_catalogs.append(catalog)
-                    break
-
-        manifest["catalogs"] = ordered_catalogs
-        if not user_data.enable_imdb_metadata:
-            # Remove IMDb metadata if disabled
-            resources[-1]["idPrefixes"].remove("tt")
-    else:
-        # If catalogs are not enabled, clear them from the manifest
-        manifest["catalogs"] = []
-        # Define a default stream resource if catalogs are disabled
-        resources = [
-            {
-                "name": "stream",
-                "types": ["movie", "series", "tv", "events"],
-                "idPrefixes": ["tt", "mf", "dl"],
-            }
-        ]
-
-    # Adjust manifest details based on the selected streaming provider
+async def generate_manifest(user_data: UserData, genres: dict) -> dict:
+    streaming_provider_name = None
+    streaming_provider_short_name = None
+    enable_watchlist_catalogs = False
     if user_data.streaming_provider:
-        provider_name = user_data.streaming_provider.service.title()
-        manifest["name"] += f" {provider_name}"
-        manifest["id"] += f".{provider_name.lower()}"
+        streaming_provider_name = user_data.streaming_provider.service
+        streaming_provider_short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(
+            user_data.streaming_provider.service
+        )
+        enable_watchlist_catalogs = (
+            user_data.streaming_provider.enable_watchlist_catalogs
+        )
 
-        # Include watchlist catalogs if enabled
-        if user_data.streaming_provider.enable_watchlist_catalogs:
-            watchlist_catalogs = [
-                {
-                    "id": f"{provider_name.lower()}_watchlist_movies",
-                    "name": f"{provider_name} Watchlist",
-                    "type": "movie",
-                    "extra": [{"name": "skip", "isRequired": False}],
-                },
-                {
-                    "id": f"{provider_name.lower()}_watchlist_series",
-                    "name": f"{provider_name} Watchlist",
-                    "type": "series",
-                    "extra": [{"name": "skip", "isRequired": False}],
-                },
-            ]
-            # Prepend watchlist catalogs to the sorted user-selected catalogs
-            manifest["catalogs"] = watchlist_catalogs + manifest["catalogs"]
-            resources = manifest["resources"]
+    manifest_data = {
+        "addon_name": settings.addon_name,
+        "logo_url": settings.logo_url,
+        "streaming_provider_name": streaming_provider_name,
+        "streaming_provider_short_name": streaming_provider_short_name,
+        "enable_imdb_metadata": user_data.enable_imdb_metadata,
+        "enable_catalogs": user_data.enable_catalogs,
+        "enable_watchlist_catalogs": enable_watchlist_catalogs,
+        "selected_catalogs": user_data.selected_catalogs,
+        "genres": genres,
+    }
 
-    # Ensure the resource list is updated accordingly
-    manifest["resources"] = resources
-    return manifest
+    manifest_json = MANIFEST_TEMPLATE.render(manifest_data)
+    return json.loads(manifest_json)
 
 
 @functools.lru_cache(maxsize=1024)

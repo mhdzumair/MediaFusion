@@ -54,7 +54,7 @@ logging.basicConfig(
 
 
 @asynccontextmanager
-async def lifespan(fastapi_app: FastAPI):
+async def lifespan(_: FastAPI):
     # Startup logic
     await database.init()
     await torrent.init_best_trackers()
@@ -80,7 +80,7 @@ async def lifespan(fastapi_app: FastAPI):
         try:
             scheduler.shutdown(wait=False)
         except Exception as e:
-            logging.exception("Error shutting down scheduler")
+            logging.exception("Error shutting down scheduler, %s", e)
         finally:
             await release_scheduler_lock(scheduler_lock)
 
@@ -207,9 +207,12 @@ async def get_manifest(
     user_data: schemas.UserData = Depends(get_user_data),
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
+    catalog_types = ["movie", "series", "tv"]
+    genre_tasks = [crud.get_genres(catalog_type) for catalog_type in catalog_types]
+    genres_list = await asyncio.gather(*genre_tasks)
+    genres = dict(zip(catalog_types, genres_list))
 
-    manifest = get_json_data("resources/manifest.json")
-    return await generate_manifest(manifest, user_data)
+    return await generate_manifest(user_data, genres)
 
 
 @app.get(

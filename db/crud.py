@@ -1172,18 +1172,13 @@ async def get_event_streams(meta_id: str, user_data) -> list[Stream]:
 
 
 async def get_genres(catalog_type: str) -> list[str]:
-    if catalog_type == "movie":
-        meta_class = MediaFusionMovieMetaData
-    elif catalog_type == "tv":
-        meta_class = MediaFusionTVMetaData
-    else:
-        meta_class = MediaFusionSeriesMetaData
-
     genres = await REDIS_ASYNC_CLIENT.get(f"{catalog_type}_genres")
     if genres:
         return json.loads(genres)
 
-    genres = await meta_class.distinct("genres", {"genres": {"$ne": ""}})
+    genres = await MediaFusionMetaData.distinct(
+        "genres", {"type": catalog_type, "genres": {"$nin": ["", None]}}
+    )
 
     # cache the genres for 30 minutes
     await REDIS_ASYNC_CLIENT.set(f"{catalog_type}_genres", json.dumps(genres), ex=1800)
