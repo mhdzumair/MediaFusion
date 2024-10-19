@@ -1,8 +1,8 @@
 import asyncio
+import logging
 import time
 
 import httpx
-from sqlalchemy.testing.plugin.plugin_base import logging
 
 from db import schemas
 from utils.runtime_const import REDIS_ASYNC_CLIENT

@@ -6,7 +6,6 @@ from io import BytesIO
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError, ImageStat
 from imdb import Cinemagoer
-from redis.asyncio import Redis
 
 from db.models import MediaFusionMetaData
 from scrapers.imdb_data import get_imdb_rating

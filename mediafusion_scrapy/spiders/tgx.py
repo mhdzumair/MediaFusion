@@ -24,7 +24,7 @@ class TgxSpider(scrapy.Spider):
     keyword_patterns: re.Pattern
     scraped_info_hash_key: str
 
-    def __init__(self, scrape_all: str = "True", *args, **kwargs):
+    def __init__(self, scrape_all: str = "False", *args, **kwargs):
         super(TgxSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
         self.redis = REDIS_ASYNC_CLIENT
