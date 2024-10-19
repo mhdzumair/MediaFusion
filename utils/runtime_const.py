@@ -20,6 +20,7 @@ PRIVATE_CIDR = re.compile(
 )
 
 TEMPLATES = Jinja2Templates(directory="resources")
+MANIFEST_TEMPLATE = TEMPLATES.get_template("templates/manifest.json.j2")
 
 DELETE_ALL_META = schemas.Meta(
     **const.DELETE_ALL_WATCHLIST_META,
