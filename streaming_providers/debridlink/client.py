@@ -1,5 +1,5 @@
 from base64 import b64encode, b64decode
-from typing import Any
+from typing import Any, Optional
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -10,7 +10,7 @@ class DebridLink(DebridClient):
     OAUTH_URL = "https://debrid-link.com/api/oauth"
     OPENSOURCE_CLIENT_ID = "RyrV22FOg30DsxjYPziRKA"
 
-    def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error):
         if (
             error.response.status_code == 400
             and error.response.json().get("error") == "freeServerOverload"
@@ -19,10 +19,10 @@ class DebridLink(DebridClient):
                 "Debrid-Link free servers are overloaded", "need_premium.mp4"
             )
 
-    def initialize_headers(self):
+    async def initialize_headers(self):
         if self.token:
             token_data = self.decode_token_str(self.token)
-            access_token_data = self.refresh_token(
+            access_token_data = await self.refresh_token(
                 token_data["client_id"], token_data["code"]
             )
             self.headers = {
@@ -42,8 +42,8 @@ class DebridLink(DebridClient):
             raise ProviderException("Invalid token", "invalid_token.mp4")
         return {"client_id": client_id, "code": code}
 
-    def get_device_code(self):
-        return self._make_request(
+    async def get_device_code(self):
+        return await self._make_request(
             "POST",
             f"{self.OAUTH_URL}/device/code",
             data={
@@ -52,8 +52,8 @@ class DebridLink(DebridClient):
             },
         )
 
-    def get_token(self, client_id, device_code):
-        return self._make_request(
+    async def get_token(self, client_id, device_code):
+        return await self._make_request(
             "POST",
             f"{self.OAUTH_URL}/token",
             data={
@@ -64,8 +64,8 @@ class DebridLink(DebridClient):
             is_expected_to_fail=True,
         )
 
-    def refresh_token(self, client_id, refresh_token):
-        return self._make_request(
+    async def refresh_token(self, client_id, refresh_token):
+        return await self._make_request(
             "POST",
             f"{self.OAUTH_URL}/token",
             data={
@@ -75,8 +75,8 @@ class DebridLink(DebridClient):
             },
         )
 
-    def authorize(self, device_code):
-        token_data = self.get_token(self.OPENSOURCE_CLIENT_ID, device_code)
+    async def authorize(self, device_code):
+        token_data = await self.get_token(self.OPENSOURCE_CLIENT_ID, device_code)
 
         if "error" in token_data:
             return token_data
@@ -89,8 +89,8 @@ class DebridLink(DebridClient):
         else:
             return token_data
 
-    def add_magnet_link(self, magnet_link):
-        response = self._make_request(
+    async def add_magnet_link(self, magnet_link):
+        response = await self._make_request(
             "POST",
             f"{self.BASE_URL}/seedbox/add",
             data={"url": magnet_link},
@@ -103,11 +103,11 @@ class DebridLink(DebridClient):
             )
         return response.get("value", {})
 
-    def get_user_torrent_list(self):
-        return self._make_request("GET", f"{self.BASE_URL}/seedbox/list")
+    async def get_user_torrent_list(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/seedbox/list")
 
-    def get_torrent_info(self, torrent_id):
-        response = self._make_request(
+    async def get_torrent_info(self, torrent_id):
+        response = await self._make_request(
             "GET", f"{self.BASE_URL}/seedbox/list", params={"ids": torrent_id}
         )
         if response.get("value"):
@@ -116,29 +116,31 @@ class DebridLink(DebridClient):
             "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
         )
 
-    def get_torrent_files_list(self, torrent_id):
-        return self._make_request("GET", f"{self.BASE_URL}/files/{torrent_id}/list")
+    async def get_torrent_files_list(self, torrent_id):
+        return await self._make_request(
+            "GET", f"{self.BASE_URL}/files/{torrent_id}/list"
+        )
 
-    def get_torrent_instant_availability(self, torrent_hash):
-        return self._make_request(
+    async def get_torrent_instant_availability(self, torrent_hash):
+        return await self._make_request(
             "GET", f"{self.BASE_URL}/seedbox/cached", params={"url": torrent_hash}
         )
 
-    def delete_torrent(self, torrent_id):
-        return self._make_request(
+    async def delete_torrent(self, torrent_id):
+        return await self._make_request(
             "DELETE", f"{self.BASE_URL}/seedbox/{torrent_id}/delete"
         )
 
-    def disable_access_token(self):
-        return self._make_request(
+    async def disable_access_token(self):
+        return await self._make_request(
             "GET",
             f"{self.OAUTH_URL}/revoke",
             is_return_none=True,
             is_expected_to_fail=True,
         )
 
-    def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
-        torrent_list_response = self.get_user_torrent_list()
+    async def get_available_torrent(self, info_hash: str) -> Optional[dict[str, Any]]:
+        torrent_list_response = await self.get_user_torrent_list()
         if "error" in torrent_list_response:
             raise ProviderException(
                 "Failed to get torrent info from Debrid-Link", "transfer_error.mp4"
@@ -148,3 +150,4 @@ class DebridLink(DebridClient):
         for torrent in available_torrents:
             if torrent["hashString"] == info_hash:
                 return torrent
+        return None

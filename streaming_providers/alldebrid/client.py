@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -8,35 +8,36 @@ class AllDebrid(DebridClient):
     BASE_URL = "https://api.alldebrid.com/v4"
     AGENT = "mediafusion"
 
-    def __init__(self, token: str, user_ip: str | None = None):
+    def __init__(self, token: str, user_ip: Optional[str] = None):
         self.user_ip = user_ip
         super().__init__(token)
 
-    def initialize_headers(self):
+    async def initialize_headers(self):
         self.headers = {"Authorization": f"Bearer {self.token}"}
 
-    def __del__(self):
+    async def disable_access_token(self):
         pass
 
-    def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error):
         pass
 
-    def _make_request(
+    async def _make_request(
         self,
         method: str,
         url: str,
-        data=None,
-        params=None,
-        is_return_none=False,
-        is_expected_to_fail=False,
+        data: Optional[dict] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        is_return_none: bool = False,
+        is_expected_to_fail: bool = False,
     ) -> dict:
         params = params or {}
         params["agent"] = self.AGENT
         if self.user_ip:
             params["ip"] = self.user_ip
         url = self.BASE_URL + url
-        return super()._make_request(
-            method, url, data, params, is_return_none, is_expected_to_fail
+        return await super()._make_request(
+            method, url, data, json, params, is_return_none, is_expected_to_fail
         )
 
     @staticmethod
@@ -46,7 +47,7 @@ class AllDebrid(DebridClient):
             match error_code:
                 case "AUTH_BAD_APIKEY":
                     raise ProviderException(
-                        f"Invalid AllDebrid API key", "invalid_token.mp4"
+                        "Invalid AllDebrid API key", "invalid_token.mp4"
                     )
                 case "NO_SERVER":
                     raise ProviderException(
@@ -55,15 +56,15 @@ class AllDebrid(DebridClient):
                     )
                 case "AUTH_BLOCKED":
                     raise ProviderException(
-                        f"API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"
+                        "API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"
                     )
                 case "MAGNET_MUST_BE_PREMIUM":
                     raise ProviderException(
-                        f"Torrent must be premium on AllDebrid", "need_premium.mp4"
+                        "Torrent must be premium on AllDebrid", "need_premium.mp4"
                     )
                 case "MAGNET_TOO_MANY_ACTIVE":
                     raise ProviderException(
-                        f"Too many active torrents on AllDebrid", "torrent_limit.mp4"
+                        "Too many active torrents on AllDebrid", "torrent_limit.mp4"
                     )
                 case _:
                     raise ProviderException(
@@ -71,37 +72,40 @@ class AllDebrid(DebridClient):
                         "transfer_error.mp4",
                     )
 
-    def add_magnet_link(self, magnet_link):
-        response_data = self._make_request(
-            "POST", f"/magnet/upload", data={"magnets[]": magnet_link}
+    async def add_magnet_link(self, magnet_link):
+        response_data = await self._make_request(
+            "POST", "/magnet/upload", data={"magnets[]": magnet_link}
         )
         self._validate_error_response(response_data)
         return response_data
 
-    def get_user_torrent_list(self):
-        return self._make_request("GET", "/magnet/status")
+    async def get_user_torrent_list(self):
+        return await self._make_request("GET", "/magnet/status")
 
-    def get_torrent_info(self, magnet_id):
-        response = self._make_request("GET", "/magnet/status", params={"id": magnet_id})
+    async def get_torrent_info(self, magnet_id):
+        response = await self._make_request(
+            "GET", "/magnet/status", params={"id": magnet_id}
+        )
         return response.get("data", {}).get("magnets")
 
-    def get_torrent_instant_availability(self, magnet_links: list[str]):
-        response = self._make_request(
+    async def get_torrent_instant_availability(self, magnet_links: list[str]):
+        response = await self._make_request(
             "POST", "/magnet/instant", data={"magnets[]": magnet_links}
         )
         return response.get("data", {}).get("magnets", [])
 
-    def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
-        available_torrents = self.get_user_torrent_list()
+    async def get_available_torrent(self, info_hash) -> Optional[dict[str, Any]]:
+        available_torrents = await self.get_user_torrent_list()
         self._validate_error_response(available_torrents)
         if not available_torrents.get("data"):
             return None
         for torrent in available_torrents["data"]["magnets"]:
             if torrent["hash"] == info_hash:
                 return torrent
+        return None
 
-    def create_download_link(self, link):
-        response = self._make_request(
+    async def create_download_link(self, link):
+        response = await self._make_request(
             "GET",
             "/link/unlock",
             params={"link": link},
@@ -114,5 +118,7 @@ class AllDebrid(DebridClient):
             "transfer_error.mp4",
         )
 
-    def delete_torrent(self, magnet_id):
-        return self._make_request("GET", "/magnet/delete", params={"id": magnet_id})
+    async def delete_torrent(self, magnet_id):
+        return await self._make_request(
+            "GET", "/magnet/delete", params={"id": magnet_id}
+        )

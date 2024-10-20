@@ -17,10 +17,10 @@ class Premiumize(DebridClient):
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
 
-    def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error):
         pass
 
-    def initialize_headers(self):
+    async def initialize_headers(self):
         if self.token:
             token_data = self.decode_token_str(self.token)
             self.headers = {"Authorization": f"Bearer {token_data['access_token']}"}
@@ -44,8 +44,8 @@ class Premiumize(DebridClient):
         state = uuid4().hex
         return f"{self.OAUTH_URL}?client_id={self.OAUTH_CLIENT_ID}&response_type=code&redirect_uri={quote_plus(self.REDIRECT_URI)}&state={state}"
 
-    def get_token(self, code):
-        return self._make_request(
+    async def get_token(self, code):
+        return await self._make_request(
             "POST",
             self.OAUTH_TOKEN_URL,
             data={
@@ -57,25 +57,25 @@ class Premiumize(DebridClient):
             },
         )
 
-    def add_magnet_link(self, magnet_link: str, folder_id: str = None):
-        return self._make_request(
+    async def add_magnet_link(self, magnet_link: str, folder_id: str = None):
+        return await self._make_request(
             "POST",
             f"{self.BASE_URL}/transfer/create",
             data={"src": magnet_link, "folder_id": folder_id},
         )
 
-    def create_folder(self, name, parent_id=None):
-        return self._make_request(
+    async def create_folder(self, name, parent_id=None):
+        return await self._make_request(
             "POST",
             f"{self.BASE_URL}/folder/create",
             data={"name": name, "parent_id": parent_id},
         )
 
-    def get_transfer_list(self):
-        return self._make_request("GET", f"{self.BASE_URL}/transfer/list")
+    async def get_transfer_list(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/transfer/list")
 
-    def get_torrent_info(self, torrent_id):
-        transfer_list = self.get_transfer_list()
+    async def get_torrent_info(self, torrent_id):
+        transfer_list = await self.get_transfer_list()
         torrent_info = next(
             (
                 torrent
@@ -86,25 +86,25 @@ class Premiumize(DebridClient):
         )
         return torrent_info
 
-    def get_folder_list(self, folder_id: str = None):
-        return self._make_request(
+    async def get_folder_list(self, folder_id: str = None):
+        return await self._make_request(
             "GET",
             f"{self.BASE_URL}/folder/list",
             params={"id": folder_id} if folder_id else None,
         )
 
-    def delete_folder(self, folder_id: str):
-        return self._make_request(
+    async def delete_folder(self, folder_id: str):
+        return await self._make_request(
             "POST", f"{self.BASE_URL}/folder/delete", data={"id": folder_id}
         )
 
-    def delete_torrent(self, torrent_id):
-        return self._make_request(
+    async def delete_torrent(self, torrent_id):
+        return await self._make_request(
             "POST", f"{self.BASE_URL}/transfer/delete", data={"id": torrent_id}
         )
 
-    def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        results = self._make_request(
+    async def get_torrent_instant_availability(self, torrent_hashes: list[str]):
+        results = await self._make_request(
             "GET", f"{self.BASE_URL}/cache/check", params={"items[]": torrent_hashes}
         )
         if results.get("status") != "success":
@@ -114,13 +114,13 @@ class Premiumize(DebridClient):
             )
         return results
 
-    def disable_access_token(self):
+    async def disable_access_token(self):
         pass
 
-    def get_available_torrent(
+    async def get_available_torrent(
         self, info_hash: str, torrent_name
     ) -> dict[str, Any] | None:
-        torrent_list_response = self.get_transfer_list()
+        torrent_list_response = await self.get_transfer_list()
         if torrent_list_response.get("status") != "success":
             if torrent_list_response.get("message") == "Not logged in.":
                 raise ProviderException(
