@@ -1,5 +1,6 @@
 import asyncio
 import traceback
+from abc import abstractmethod
 from typing import Optional
 
 import httpx
@@ -81,6 +82,7 @@ class DebridClient:
             "api_error.mp4",
         )
 
+    @abstractmethod
     async def _handle_service_specific_errors(self, error: httpx.HTTPStatusError):
         """
         Service specific errors on api requests.
@@ -99,9 +101,11 @@ class DebridClient:
                 "api_error.mp4",
             )
 
+    @abstractmethod
     async def initialize_headers(self):
         raise NotImplementedError
 
+    @abstractmethod
     async def disable_access_token(self):
         raise NotImplementedError
 
@@ -123,5 +127,6 @@ class DebridClient:
             "torrent_not_downloaded.mp4",
         )
 
+    @abstractmethod
     async def get_torrent_info(self, torrent_id):
         raise NotImplementedError

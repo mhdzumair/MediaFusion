@@ -14,7 +14,7 @@ async def get_torrent_info(ad_client, info_hash):
     elif torrent_info and torrent_info["statusCode"] == 7:
         await ad_client.delete_torrent(torrent_info.get("id"))
         raise ProviderException(
-            "Not enough seeders available for parse magnet link",
+            "Not enough seeders available to parse magnet link",
             "transfer_error.mp4",
         )
     return None
@@ -93,9 +93,9 @@ async def update_ad_cache_status(
             )
             for stream in streams:
                 stream.cached = any(
-                    torrent["instant"]
+                    torrent.get("instant", False)
                     for torrent in instant_availability_data
-                    if torrent["hash"] == stream.id
+                    if torrent.get("hash") == stream.id
                 )
 
     except ProviderException:

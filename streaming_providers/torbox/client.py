@@ -10,6 +10,9 @@ class Torbox(DebridClient):
     async def initialize_headers(self):
         self.headers = {"Authorization": f"Bearer {self.token}"}
 
+    async def disable_access_token(self):
+        pass
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 

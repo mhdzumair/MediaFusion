@@ -1,13 +1,12 @@
 import asyncio
+from os import path
 from typing import Optional, List
 
-import PTT
 import httpx
-from thefuzz import fuzz
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
-from utils.validation_helper import is_video_file
+from streaming_providers.parser import select_file_index_from_torrent
 
 
 class OffCloud(DebridClient):
@@ -15,6 +14,9 @@ class OffCloud(DebridClient):
     DELETE_URL = "https://offcloud.com"
 
     async def initialize_headers(self):
+        pass
+
+    async def disable_access_token(self):
         pass
 
     async def _handle_service_specific_errors(self, error: httpx.HTTPStatusError):
@@ -89,53 +91,38 @@ class OffCloud(DebridClient):
     async def explore_folder_links(self, request_id: str) -> List[str]:
         return await self._make_request("GET", f"/cloud/explore/{request_id}")
 
+    @staticmethod
+    async def get_file_sizes(files_data: list[dict]) -> list[dict]:
+        async with httpx.AsyncClient() as client:
+            file_sizes = await asyncio.gather(
+                *[client.head(file_data["link"]) for file_data in files_data]
+            )
+        return [
+            {**file_data, "size": int(response.headers["Content-Length"])}
+            for file_data, response in zip(files_data, file_sizes)
+        ]
+
     async def create_download_link(
-        self, request_id: str, torrent_info: dict, filename: str, episode: Optional[int]
+        self,
+        request_id: str,
+        torrent_info: dict,
+        filename: Optional[str],
+        episode: Optional[int],
     ) -> str:
         if not torrent_info["isDirectory"]:
             return f"https://{torrent_info['server']}.offcloud.com/cloud/download/{request_id}/{torrent_info['fileName']}"
 
         links = await self.explore_folder_links(request_id)
+        files_data = [{"name": path.basename(link), "link": link} for link in links]
 
-        if filename:
-            exact_match = next((link for link in links if filename in link), None)
-            if exact_match:
-                return exact_match
-
-        # Fuzzy matching as a fallback
-        fuzzy_matches = [(link, fuzz.ratio(filename, link)) for link in links]
-        selected_file, fuzzy_ratio = max(fuzzy_matches, key=lambda x: x[1])
-
-        if fuzzy_ratio < 50:
-            # If the fuzzy ratio is less than 50, then select the largest file
-            async with httpx.AsyncClient() as client:
-                file_sizes = await asyncio.gather(
-                    *[client.head(link) for link in links]
-                )
-                selected_file = max(
-                    zip(links, file_sizes),
-                    key=lambda x: int(x[1].headers.get("Content-Length", 0)),
-                )[0]
-
-        if episode:
-            # Select the file with the matching episode number
-            episode_match = next(
-                (
-                    link
-                    for link in links
-                    if episode in PTT.parse_title(link).get("episodes", [])
-                ),
-                None,
-            )
-            if episode_match:
-                return episode_match
-
-        if not is_video_file(selected_file):
-            raise ProviderException(
-                "No matching video file available for this torrent",
-                "no_matching_file.mp4",
-            )
-
+        file_index = select_file_index_from_torrent(
+            {"files": files_data},
+            filename=filename,
+            file_index=None,  # File index is not equal to OC file index
+            episode=episode,
+            file_size_callback=self.get_file_sizes,
+        )
+        selected_file = links[file_index]
         return selected_file
 
     async def delete_torrent(self, request_id: str) -> dict:

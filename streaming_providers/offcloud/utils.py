@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import List, Optional
 
 from db.models import TorrentStreams
 from db.schemas import UserData
@@ -11,10 +11,10 @@ async def get_video_url_from_offcloud(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    filename: str,
+    filename: Optional[str] = None,
+    episode: Optional[int] = None,
     max_retries: int = 5,
     retry_interval: int = 5,
-    episode: int = None,
     **kwargs,
 ) -> str:
     async with OffCloud(token=user_data.streaming_provider.token) as oc_client:
@@ -71,7 +71,7 @@ async def fetch_downloaded_info_hashes_from_oc(
         async with OffCloud(token=user_data.streaming_provider.token) as oc_client:
             available_torrents = await oc_client.get_user_torrent_list()
             return [
-                torrent.split("btih:")[1].split("&")[0]
+                torrent["originalLink"].split("btih:")[1].split("&")[0]
                 for torrent in available_torrents
                 if "btih:" in torrent["originalLink"]
             ]
