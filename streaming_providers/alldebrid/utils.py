@@ -31,7 +31,7 @@ async def wait_for_download_and_get_link(
     torrent_info = await ad_client.wait_for_status(
         torrent_id, "Ready", max_retries, retry_interval
     )
-    file_index = select_file_index_from_torrent(
+    file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
         episode,

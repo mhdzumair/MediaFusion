@@ -11,7 +11,7 @@ from streaming_providers.parser import select_file_index_from_torrent
 async def get_download_link(
     torrent_info: dict, filename: str, episode: Optional[int]
 ) -> str:
-    file_index = select_file_index_from_torrent(torrent_info, filename, episode)
+    file_index = await select_file_index_from_torrent(torrent_info, filename, episode)
     if torrent_info["files"][file_index]["downloadPercent"] != 100:
         raise ProviderException(
             "Torrent not downloaded yet.", "torrent_not_downloaded.mp4"

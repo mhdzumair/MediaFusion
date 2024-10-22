@@ -135,7 +135,9 @@ async def find_file_in_folder_tree(
     else:
         files = await get_files_from_folder(pikpak, torrent_file["id"])
 
-    file_index = select_file_index_from_torrent({"files": files}, filename, episode)
+    file_index = await select_file_index_from_torrent(
+        {"files": files}, filename, episode
+    )
     return files[file_index]
 
 

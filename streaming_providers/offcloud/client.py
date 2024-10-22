@@ -96,15 +96,13 @@ class OffCloud(DebridClient):
         return await self._make_request("GET", f"/cloud/explore/{request_id}")
 
     @staticmethod
-    async def get_file_sizes(files_data: list[dict]) -> list[dict]:
+    async def update_file_sizes(files_data: list[dict]):
         async with httpx.AsyncClient() as client:
             file_sizes = await asyncio.gather(
                 *[client.head(file_data["link"]) for file_data in files_data]
             )
-        return [
-            {**file_data, "size": int(response.headers["Content-Length"])}
-            for file_data, response in zip(files_data, file_sizes)
-        ]
+        for file_data, file_size in zip(files_data, file_sizes):
+            file_data["size"] = int(file_size.headers.get("Content-Length", 0))
 
     async def create_download_link(
         self,
@@ -122,16 +120,16 @@ class OffCloud(DebridClient):
         links = await self.explore_folder_links(request_id)
         files_data = [{"name": path.basename(link), "link": link} for link in links]
 
-        file_index = select_file_index_from_torrent(
+        file_index = await select_file_index_from_torrent(
             {"files": files_data},
             filename=filename,
             episode=episode,
-            file_size_callback=self.get_file_sizes,
+            file_size_callback=self.update_file_sizes,
         )
 
         if filename is None:
             if "size" not in files_data[0]:
-                files_data = await self.get_file_sizes(files_data)
+                await self.update_file_sizes(files_data)
             background_tasks.add_task(
                 update_torrent_streams_metadata,
                 torrent_stream=stream,

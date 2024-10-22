@@ -25,7 +25,9 @@ async def get_video_url_from_torbox(
                 torrent_info["download_finished"] is True
                 and torrent_info["download_present"] is True
             ):
-                file_id = select_file_id_from_torrent(torrent_info, filename, episode)
+                file_id = await select_file_id_from_torrent(
+                    torrent_info, filename, episode
+                )
                 response = await torbox_client.create_download_link(
                     torrent_info.get("id", ""),
                     file_id,
@@ -39,7 +41,7 @@ async def get_video_url_from_torbox(
             if "Found Cached" in response.get("detail", ""):
                 torrent_info = await torbox_client.get_available_torrent(info_hash)
                 if torrent_info:
-                    file_id = select_file_id_from_torrent(
+                    file_id = await select_file_id_from_torrent(
                         torrent_info, filename, episode
                     )
                     response = await torbox_client.create_download_link(
@@ -105,11 +107,11 @@ async def fetch_downloaded_info_hashes_from_torbox(
         return []
 
 
-def select_file_id_from_torrent(
+async def select_file_id_from_torrent(
     torrent_info: Dict[str, Any], filename: str, episode: Optional[int]
 ) -> int:
     """Select the file id from the torrent info."""
-    file_index = select_file_index_from_torrent(
+    file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
         episode,
