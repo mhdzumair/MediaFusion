@@ -112,7 +112,6 @@ def select_file_id_from_torrent(
     file_index = select_file_index_from_torrent(
         torrent_info,
         filename,
-        None,
         episode,
         name_key="short_name",
     )

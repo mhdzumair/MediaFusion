@@ -26,7 +26,7 @@ async def add_new_torrent(ad_client, magnet_link):
 
 
 async def wait_for_download_and_get_link(
-    ad_client, torrent_id, filename, file_index, episode, max_retries, retry_interval
+    ad_client, torrent_id, filename, episode, max_retries, retry_interval
 ):
     torrent_info = await ad_client.wait_for_status(
         torrent_id, "Ready", max_retries, retry_interval
@@ -34,7 +34,6 @@ async def wait_for_download_and_get_link(
     file_index = select_file_index_from_torrent(
         torrent_info,
         filename,
-        file_index,
         episode,
         file_key="links",
         name_key="filename",
@@ -51,7 +50,6 @@ async def get_video_url_from_alldebrid(
     user_data: UserData,
     filename: str,
     user_ip: str,
-    file_index: int,
     episode: int = None,
     max_retries=5,
     retry_interval=5,
@@ -70,7 +68,6 @@ async def get_video_url_from_alldebrid(
             ad_client,
             torrent_id,
             filename,
-            file_index,
             episode,
             max_retries,
             retry_interval,

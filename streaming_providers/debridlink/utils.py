@@ -9,11 +9,9 @@ from streaming_providers.parser import select_file_index_from_torrent
 
 
 async def get_download_link(
-    torrent_info: dict, filename: str, file_index: int, episode: Optional[int]
+    torrent_info: dict, filename: str, episode: Optional[int]
 ) -> str:
-    file_index = select_file_index_from_torrent(
-        torrent_info, filename, file_index, episode
-    )
+    file_index = select_file_index_from_torrent(torrent_info, filename, episode)
     if torrent_info["files"][file_index]["downloadPercent"] != 100:
         raise ProviderException(
             "Torrent not downloaded yet.", "torrent_not_downloaded.mp4"
@@ -26,7 +24,6 @@ async def get_video_url_from_debridlink(
     magnet_link: str,
     user_data: UserData,
     filename: str,
-    file_index: int,
     episode: Optional[int],
     max_retries=5,
     retry_interval=5,
@@ -56,7 +53,7 @@ async def get_video_url_from_debridlink(
             torrent_id, 100, max_retries, retry_interval
         )
 
-        return await get_download_link(torrent_info, filename, file_index, episode)
+        return await get_download_link(torrent_info, filename, episode)
 
 
 async def update_dl_cache_status(

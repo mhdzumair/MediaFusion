@@ -122,7 +122,6 @@ async def find_file_in_folder_tree(
     my_pack_folder_id: str,
     info_hash: str,
     filename: str,
-    file_index: int,
     episode: int | None,
 ) -> dict | None:
     torrent_file = await get_torrent_file_by_info_hash(
@@ -136,9 +135,7 @@ async def find_file_in_folder_tree(
     else:
         files = await get_files_from_folder(pikpak, torrent_file["id"])
 
-    file_index = select_file_index_from_torrent(
-        {"files": files}, filename, file_index, episode
-    )
+    file_index = select_file_index_from_torrent({"files": files}, filename, episode)
     return files[file_index]
 
 
@@ -266,7 +263,7 @@ async def retrieve_or_download_file(
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        pikpak, my_pack_folder_id, info_hash, filename, stream.file_index, episode
+        pikpak, my_pack_folder_id, info_hash, filename, episode
     )
     if not selected_file:
         await free_up_space(pikpak, stream.size)
@@ -275,7 +272,7 @@ async def retrieve_or_download_file(
             pikpak, info_hash, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            pikpak, my_pack_folder_id, info_hash, filename, stream.file_index, episode
+            pikpak, my_pack_folder_id, info_hash, filename, episode
         )
         if selected_file is None:
             raise ProviderException(
