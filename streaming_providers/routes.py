@@ -96,6 +96,7 @@ async def get_or_create_video_url(
     )
     episode_data = stream.get_episode(season, episode)
     filename = episode_data.filename if episode_data else stream.filename
+    file_index = episode_data.file_index if episode_data else stream.file_index
 
     get_video_url = mapper.GET_VIDEO_URL_FUNCTIONS.get(
         user_data.streaming_provider.service
@@ -105,7 +106,7 @@ async def get_or_create_video_url(
         magnet_link=magnet_link,
         user_data=user_data,
         filename=filename,
-        file_index=stream.file_index,
+        file_index=file_index,
         user_ip=user_ip,
         season=season,
         episode=episode,

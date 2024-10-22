@@ -9,7 +9,7 @@ from streaming_providers.exceptions import ProviderException
 from utils.validation_helper import is_video_file
 
 
-def select_file_index_from_torrent(
+async def select_file_index_from_torrent(
     torrent_info: dict[str, Any],
     filename: Optional[str],
     episode: Optional[int] = None,
@@ -41,7 +41,7 @@ def select_file_index_from_torrent(
 
     if file_size_callback:
         # Get the file sizes
-        files = file_size_callback(files)
+        await file_size_callback(files)
 
     # If no file index is provided, select the largest file
     largest_file = max(files, key=lambda file: file[size_key])

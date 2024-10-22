@@ -1,6 +1,8 @@
 import asyncio
 from typing import Optional
 
+from fastapi import BackgroundTasks
+
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -16,6 +18,7 @@ async def create_download_link(
     magnet_link: str,
     torrent_info: dict,
     filename: Optional[str],
+    file_index: Optional[int],
     episode: Optional[int],
     season: Optional[int],
     stream: TorrentStreams,
@@ -23,7 +26,7 @@ async def create_download_link(
     max_retries: int,
     retry_interval: int,
 ) -> str:
-    file_index = select_file_index_from_torrent(
+    selected_file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
         episode,
@@ -38,16 +41,16 @@ async def create_download_link(
             update_torrent_streams_metadata,
             torrent_stream=stream,
             torrent_info=torrent_info,
-            file_index=file_index,
+            file_index=selected_file_index,
             season=season,
             file_key="files",
             name_key="path",
             size_key="bytes",
-            add_leading_slash=True,
+            remove_leading_slash=True,
             is_index_trustable=True,
         )
 
-    relevant_file = torrent_info["files"][file_index]
+    relevant_file = torrent_info["files"][selected_file_index]
     selected_files = [file for file in torrent_info["files"] if file["selected"] == 1]
 
     if relevant_file not in selected_files or len(selected_files) != len(
@@ -60,7 +63,7 @@ async def create_download_link(
         )
         await rd_client.start_torrent_download(
             torrent_info["id"],
-            file_ids=torrent_info["files"][file_index]["id"],
+            file_ids=torrent_info["files"][selected_file_index]["id"],
         )
         torrent_info = await rd_client.wait_for_status(
             torrent_id, "downloaded", max_retries, retry_interval
@@ -85,14 +88,15 @@ async def get_video_url_from_realdebrid(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    filename: str,
+    user_ip: str,
+    filename: Optional[str],
+    file_index: Optional[int],
     stream: TorrentStreams,
-    background_tasks,
+    background_tasks: BackgroundTasks,
     max_retries=5,
     retry_interval=5,
-    user_ip: str = None,
-    episode: int = None,
-    season: int = None,
+    episode: Optional[int] = None,
+    season: Optional[int] = None,
     **kwargs,
 ) -> str:
     async with RealDebrid(
@@ -141,6 +145,7 @@ async def get_video_url_from_realdebrid(
             magnet_link,
             torrent_info,
             filename,
+            file_index,
             episode,
             season,
             stream,
