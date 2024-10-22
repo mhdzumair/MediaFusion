@@ -110,7 +110,7 @@ async def update_torrent_streams_metadata(
             episodes=episodes,
         )
         total_size = sum(file["size"] for file in parsed_data if file["size"])
-        if total_size:
+        if total_size > torrent_stream.size:
             torrent_stream.size = total_size
         torrent_stream.updated_at = datetime.now()
         await torrent_stream.save()

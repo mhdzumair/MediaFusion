@@ -1,6 +1,8 @@
 import asyncio
 from typing import List, Optional
 
+from fastapi import BackgroundTasks
+
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -11,7 +13,10 @@ async def get_video_url_from_offcloud(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
+    stream: TorrentStreams,
+    background_tasks: BackgroundTasks,
     filename: Optional[str] = None,
+    season: Optional[int] = None,
     episode: Optional[int] = None,
     max_retries: int = 5,
     retry_interval: int = 5,
@@ -25,7 +30,13 @@ async def get_video_url_from_offcloud(
             torrent_info = await oc_client.get_torrent_info(request_id)
             if torrent_info["status"] == "downloaded":
                 return await oc_client.create_download_link(
-                    request_id, torrent_info, filename, episode
+                    request_id,
+                    torrent_info,
+                    stream,
+                    filename,
+                    season,
+                    episode,
+                    background_tasks,
                 )
             if torrent_info["status"] == "error":
                 raise ProviderException(
@@ -42,7 +53,13 @@ async def get_video_url_from_offcloud(
             request_id, "downloaded", max_retries, retry_interval
         )
         return await oc_client.create_download_link(
-            request_id, torrent_info, filename, episode
+            request_id,
+            torrent_info,
+            stream,
+            filename,
+            season,
+            episode,
+            background_tasks,
         )
 
 

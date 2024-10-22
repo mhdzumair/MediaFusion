@@ -4,9 +4,13 @@ from typing import Optional, List
 
 import httpx
 
+from db.models import TorrentStreams
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
-from streaming_providers.parser import select_file_index_from_torrent
+from streaming_providers.parser import (
+    select_file_index_from_torrent,
+    update_torrent_streams_metadata,
+)
 
 
 class OffCloud(DebridClient):
@@ -106,8 +110,11 @@ class OffCloud(DebridClient):
         self,
         request_id: str,
         torrent_info: dict,
+        stream: TorrentStreams,
         filename: Optional[str],
+        season: Optional[int],
         episode: Optional[int],
+        background_tasks,
     ) -> str:
         if not torrent_info["isDirectory"]:
             return f"https://{torrent_info['server']}.offcloud.com/cloud/download/{request_id}/{torrent_info['fileName']}"
@@ -121,8 +128,20 @@ class OffCloud(DebridClient):
             episode=episode,
             file_size_callback=self.get_file_sizes,
         )
-        selected_file = links[file_index]
-        return selected_file
+
+        if filename is None:
+            if "size" not in files_data[0]:
+                files_data = await self.get_file_sizes(files_data)
+            background_tasks.add_task(
+                update_torrent_streams_metadata,
+                torrent_stream=stream,
+                torrent_info={"files": files_data},
+                file_index=file_index,
+                season=season,
+                is_index_trustable=False,
+            )
+        selected_file_url = links[file_index]
+        return selected_file_url
 
     async def delete_torrent(self, request_id: str) -> dict:
         return await self._make_request(
