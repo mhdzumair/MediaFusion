@@ -53,7 +53,7 @@ class DebridClient:
     async def _handle_request_error(error: Exception, is_expected_to_fail: bool):
         if isinstance(error, httpx.TimeoutException):
             raise ProviderException("Request timed out.", "torrent_not_downloaded.mp4")
-        elif isinstance(error, httpx.NetworkError):
+        elif isinstance(error, httpx.TransportError):
             raise ProviderException(
                 "Failed to connect to Debrid service.", "debrid_service_down_error.mp4"
             )
@@ -115,8 +115,14 @@ class DebridClient:
         target_status: str | int,
         max_retries: int,
         retry_interval: int,
+        torrent_info: dict | None = None,
     ):
         """Wait for the torrent to reach a particular status."""
+        # if torrent_info is available, check the status from it
+        if torrent_info:
+            if torrent_info["status"] == target_status:
+                return torrent_info
+
         for _ in range(max_retries):
             torrent_info = await self.get_torrent_info(torrent_id)
             if torrent_info["status"] == target_status:

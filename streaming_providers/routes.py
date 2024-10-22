@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from os import path
+from typing import Annotated
 
 from fastapi import (
     Request,
@@ -8,6 +9,7 @@ from fastapi import (
     HTTPException,
     APIRouter,
     Depends,
+    BackgroundTasks,
 )
 from fastapi.responses import RedirectResponse
 
@@ -84,7 +86,7 @@ async def fetch_stream_or_404(info_hash):
 
 
 async def get_or_create_video_url(
-    stream, user_data, info_hash, season, episode, user_ip
+    stream, user_data, info_hash, season, episode, user_ip, background_tasks
 ):
     """
     Retrieves or generates the video URL based on stream data and user info.
@@ -105,11 +107,13 @@ async def get_or_create_video_url(
         filename=filename,
         file_index=stream.file_index,
         user_ip=user_ip,
+        season=season,
         episode=episode,
         max_retries=1,
         retry_interval=0,
         stream=stream,
         torrent_name=stream.torrent_name,
+        background_tasks=background_tasks,
     )
 
     if asyncio.iscoroutinefunction(get_video_url):
@@ -187,9 +191,10 @@ async def streaming_provider_endpoint(
     info_hash: str,
     response: Response,
     request: Request,
+    user_data: Annotated[schemas.UserData, Depends(get_user_data)],
+    background_tasks: BackgroundTasks,
     season: int = None,
     episode: int = None,
-    user_data: schemas.UserData = Depends(get_user_data),
 ):
     """
     Handles streaming provider requests, using caching for performance and
@@ -227,7 +232,7 @@ async def streaming_provider_endpoint(
 
     try:
         video_url = await get_or_create_video_url(
-            stream, user_data, info_hash, season, episode, user_ip
+            stream, user_data, info_hash, season, episode, user_ip, background_tasks
         )
         await cache_stream_url(cached_stream_url_key, video_url)
         video_url = apply_mediaflow_proxy_if_needed(video_url, user_data)
