@@ -1,30 +1,57 @@
 import asyncio
 from typing import Optional
 
+from fastapi import BackgroundTasks
+
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.debridlink.client import DebridLink
 from streaming_providers.exceptions import ProviderException
-from streaming_providers.parser import select_file_index_from_torrent
+from streaming_providers.parser import (
+    select_file_index_from_torrent,
+    update_torrent_streams_metadata,
+)
 
 
 async def get_download_link(
-    torrent_info: dict, filename: str, episode: Optional[int]
+    torrent_info: dict,
+    stream: TorrentStreams,
+    background_tasks,
+    filename: Optional[str],
+    file_index: Optional[int],
+    episode: Optional[int],
+    season: Optional[int],
 ) -> str:
-    file_index = await select_file_index_from_torrent(torrent_info, filename, episode)
-    if torrent_info["files"][file_index]["downloadPercent"] != 100:
+    selected_file_index = await select_file_index_from_torrent(
+        torrent_info, filename, episode
+    )
+    if filename is None or file_index is None:
+        background_tasks.add_task(
+            update_torrent_streams_metadata,
+            torrent_stream=stream,
+            torrent_info=torrent_info,
+            file_index=selected_file_index,
+            season=season,
+            is_index_trustable=True,
+        )
+
+    if torrent_info["files"][selected_file_index]["downloadPercent"] != 100:
         raise ProviderException(
             "Torrent not downloaded yet.", "torrent_not_downloaded.mp4"
         )
-    return torrent_info["files"][file_index]["downloadUrl"]
+    return torrent_info["files"][selected_file_index]["downloadUrl"]
 
 
 async def get_video_url_from_debridlink(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    filename: str,
+    filename: Optional[str],
+    file_index: Optional[int],
+    stream: TorrentStreams,
+    background_tasks: BackgroundTasks,
     episode: Optional[int],
+    season: Optional[int] = None,
     max_retries=5,
     retry_interval=5,
     **kwargs,
@@ -32,11 +59,9 @@ async def get_video_url_from_debridlink(
     async with DebridLink(token=user_data.streaming_provider.token) as dl_client:
         torrent_info = await dl_client.get_available_torrent(info_hash)
         if not torrent_info:
-            torrent_id = (await dl_client.add_magnet_link(magnet_link)).get("id")
-            torrent_info = await dl_client.get_torrent_info(torrent_id)
-        else:
-            torrent_id = torrent_info.get("id")
+            torrent_info = await dl_client.add_magnet_link(magnet_link)
 
+        torrent_id = torrent_info.get("id")
         if not torrent_id:
             raise ProviderException(
                 "Failed to add magnet link to DebridLink", "transfer_error.mp4"
@@ -50,10 +75,18 @@ async def get_video_url_from_debridlink(
             )
 
         torrent_info = await dl_client.wait_for_status(
-            torrent_id, 100, max_retries, retry_interval
+            torrent_id, 100, max_retries, retry_interval, torrent_info
         )
 
-        return await get_download_link(torrent_info, filename, episode)
+        return await get_download_link(
+            torrent_info,
+            stream,
+            background_tasks,
+            filename,
+            file_index,
+            episode,
+            season,
+        )
 
 
 async def update_dl_cache_status(
@@ -68,6 +101,9 @@ async def update_dl_cache_status(
                     ",".join([stream.id for stream in streams])
                 )
             )
+            if "error" in instant_availability_response:
+                return
+
             for stream in streams:
                 stream.cached = bool(
                     stream.id in instant_availability_response["value"]

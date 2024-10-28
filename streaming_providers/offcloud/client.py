@@ -95,14 +95,19 @@ class OffCloud(DebridClient):
     async def explore_folder_links(self, request_id: str) -> List[str]:
         return await self._make_request("GET", f"/cloud/explore/{request_id}")
 
-    @staticmethod
-    async def update_file_sizes(files_data: list[dict]):
-        async with httpx.AsyncClient() as client:
-            file_sizes = await asyncio.gather(
-                *[client.head(file_data["link"]) for file_data in files_data]
-            )
-        for file_data, file_size in zip(files_data, file_sizes):
-            file_data["size"] = int(file_size.headers.get("Content-Length", 0))
+    async def update_file_sizes(self, files_data: list[dict]):
+        responses = await asyncio.gather(
+            *[
+                self.client.head(file_data["link"], timeout=5)
+                for file_data in files_data
+            ],
+            return_exceptions=True,
+        )
+        for file_data, response in zip(files_data, responses):
+            if isinstance(response, Exception):
+                continue
+            if response.status_code == 200:
+                file_data["size"] = int(response.headers.get("Content-Length", 0))
 
     async def create_download_link(
         self,

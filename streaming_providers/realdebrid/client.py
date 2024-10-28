@@ -1,5 +1,5 @@
 from base64 import b64encode, b64decode
-from typing import Any, Optional
+from typing import Any, Optional, override, overload
 
 from binascii import Error as BinasciiError
 
@@ -14,11 +14,10 @@ class RealDebrid(DebridClient):
 
     def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
         self.user_ip = user_ip
-        self.is_private_token = False
         super().__init__(token)
 
     async def _handle_service_specific_errors(self, error):
-        if error.response.status_code == 403:
+        if error.response.headers.get("content-type") == "application/json":
             error_code = error.response.json().get("error_code")
             match error_code:
                 case 9:
@@ -75,7 +74,9 @@ class RealDebrid(DebridClient):
                 }
 
     @staticmethod
-    def encode_token_data(client_id: str, client_secret: str, code: str):
+    def encode_token_data(
+        code: str, client_id: str = None, client_secret: str = None, *args, **kwargs
+    ):
         token = f"{client_id}:{client_secret}:{code}"
         return b64encode(str(token).encode()).decode()
 
@@ -157,9 +158,6 @@ class RealDebrid(DebridClient):
         )
 
     async def disable_access_token(self):
-        if self.is_private_token:
-            return
-
         return await self._make_request(
             "GET",
             f"{self.BASE_URL}/disable_access_token",

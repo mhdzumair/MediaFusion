@@ -1,16 +1,16 @@
-from typing import Any
-
-from thefuzz import fuzz
+import asyncio
+from typing import Any, Optional
 
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.parser import select_file_index_from_torrent
 from streaming_providers.premiumize.client import Premiumize
 
 
 async def create_or_get_folder_id(pm_client: Premiumize, info_hash: str):
     folder_data = await pm_client.get_folder_list()
-    for folder in folder_data["content"]:
+    for folder in folder_data.get("content", []):
         if folder["name"] == info_hash:
             return folder["id"]
 
@@ -26,15 +26,15 @@ async def get_video_url_from_premiumize(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    torrent_name: str,
-    filename: str,
+    filename: Optional[str],
+    episode: Optional[int],
     max_retries=5,
     retry_interval=5,
     **kwargs,
 ) -> str:
     async with Premiumize(token=user_data.streaming_provider.token) as pm_client:
         # Check if the torrent already exists
-        torrent_info = await pm_client.get_available_torrent(info_hash, torrent_name)
+        torrent_info = await pm_client.get_available_torrent(info_hash)
         if torrent_info:
             torrent_id = torrent_info.get("id")
             if torrent_info["status"] == "error":
@@ -49,7 +49,7 @@ async def get_video_url_from_premiumize(
             response_data = await pm_client.add_magnet_link(magnet_link, folder_id)
             if "id" not in response_data:
                 raise ProviderException(
-                    "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"
+                    "Failed to add magnet link to Premiumize", "transfer_error.mp4"
                 )
             torrent_id = response_data["id"]
 
@@ -57,11 +57,17 @@ async def get_video_url_from_premiumize(
         torrent_info = await pm_client.wait_for_status(
             torrent_id, "finished", max_retries, retry_interval
         )
-        return await get_stream_link(pm_client, torrent_info, filename, info_hash)
+        return await get_stream_link(
+            pm_client, torrent_info, filename, info_hash, episode
+        )
 
 
 async def get_stream_link(
-    pm_client: Premiumize, torrent_info: dict[str, Any], filename: str, info_hash: str
+    pm_client: Premiumize,
+    torrent_info: dict[str, Any],
+    filename: Optional[str],
+    info_hash: str,
+    episode: Optional[int] = None,
 ) -> str:
     """Get the stream link from the torrent info."""
     if torrent_info["folder_id"] is None:
@@ -70,28 +76,18 @@ async def get_stream_link(
         )
     else:
         torrent_folder_data = await pm_client.get_folder_list(torrent_info["folder_id"])
-    exact_match = next(
-        (f for f in torrent_folder_data["content"] if f["name"] == filename), None
+
+    torrent_info = {
+        "files": file_data
+        for file_data in torrent_folder_data["content"]
+        if "video" in file_data["mime_type"]
+    }
+    selected_file_index = select_file_index_from_torrent(
+        torrent_info,
+        filename,
+        episode,
     )
-    if exact_match:
-        return exact_match["link"]
-
-    # Fuzzy matching as a fallback
-    for file in torrent_folder_data["content"]:
-        file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    selected_file = max(torrent_folder_data["content"], key=lambda x: x["fuzzy_ratio"])
-
-    # If the fuzzy ratio is less than 50, then select the largest file
-    if selected_file["fuzzy_ratio"] < 50:
-        selected_file = max(
-            torrent_folder_data["content"], key=lambda x: x.get("size", 0)
-        )
-
-    if "video" not in selected_file["mime_type"]:
-        raise ProviderException(
-            "No matching file available for this torrent", "no_matching_file.mp4"
-        )
-
+    selected_file = torrent_info["files"][selected_file_index]
     return selected_file["link"]
 
 
@@ -123,6 +119,8 @@ async def fetch_downloaded_info_hashes_from_premiumize(
     try:
         async with Premiumize(token=user_data.streaming_provider.token) as pm_client:
             available_folders = await pm_client.get_folder_list()
+            if "content" not in available_folders:
+                return []
             return [
                 folder["name"]
                 for folder in available_folders["content"]
@@ -137,5 +135,7 @@ async def delete_all_torrents_from_pm(user_data: UserData, **kwargs):
     """Deletes all torrents from the Premiumize account."""
     async with Premiumize(token=user_data.streaming_provider.token) as pm_client:
         folders = await pm_client.get_folder_list()
-        for folder in folders["content"]:
-            await pm_client.delete_folder(folder["id"])
+        delete_tasks = [
+            pm_client.delete_folder(folder["id"]) for folder in folders["content"]
+        ]
+        await asyncio.gather(*delete_tasks)

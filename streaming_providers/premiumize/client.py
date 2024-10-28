@@ -1,5 +1,5 @@
 from base64 import b64encode, b64decode
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote_plus
 from uuid import uuid4
 
@@ -20,25 +20,30 @@ class Premiumize(DebridClient):
     async def _handle_service_specific_errors(self, error):
         pass
 
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[dict | str] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        is_return_none: bool = False,
+        is_expected_to_fail: bool = False,
+    ) -> dict | list:
+        params = params or {}
+        if self.is_private_token:
+            params["apikey"] = self.token
+        return await super()._make_request(
+            method, url, data, json, params, is_return_none, is_expected_to_fail
+        )
+
     async def initialize_headers(self):
         if self.token:
-            token_data = self.decode_token_str(self.token)
-            self.headers = {"Authorization": f"Bearer {token_data['access_token']}"}
-
-    @staticmethod
-    def encode_token_data(access_token: str):
-        """
-        Premiumize support grant_type device_code which has 10years of token expiration.
-        """
-        return b64encode(str(access_token).encode()).decode()
-
-    @staticmethod
-    def decode_token_str(token: str) -> dict[str, str]:
-        try:
-            access_token = b64decode(token).decode()
-        except ValueError:
-            raise ProviderException("Invalid token", "invalid_token.mp4")
-        return {"access_token": access_token}
+            access_token = self.decode_token_str(self.token)
+            if access_token:
+                self.headers = {"Authorization": f"Bearer {access_token}"}
+            else:
+                self.is_private_token = True
 
     def get_authorization_url(self) -> str:
         state = uuid4().hex
@@ -117,9 +122,7 @@ class Premiumize(DebridClient):
     async def disable_access_token(self):
         pass
 
-    async def get_available_torrent(
-        self, info_hash: str, torrent_name
-    ) -> dict[str, Any] | None:
+    async def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
         torrent_list_response = await self.get_transfer_list()
         if torrent_list_response.get("status") != "success":
             if torrent_list_response.get("message") == "Not logged in.":
@@ -133,9 +136,13 @@ class Premiumize(DebridClient):
         available_torrents = torrent_list_response["transfers"]
         for torrent in available_torrents:
             src = torrent.get("src")
-            if (
-                (src and info_hash in src)
-                or info_hash == torrent["name"]
-                or torrent_name == torrent["name"]
-            ):
+            response = await self.client.head(src)
+            if response.status_code != 200:
+                continue
+
+            magnet_link_content = response.headers.get("Content-Disposition")
+            if info_hash in magnet_link_content:
                 return torrent
+
+    async def get_account_info(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/account/info")

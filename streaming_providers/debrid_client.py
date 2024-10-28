@@ -1,6 +1,7 @@
 import asyncio
 import traceback
 from abc import abstractmethod
+from base64 import b64encode, b64decode
 from typing import Optional
 
 import httpx
@@ -11,15 +12,18 @@ from streaming_providers.exceptions import ProviderException
 class DebridClient:
     def __init__(self, token: Optional[str] = None):
         self.token = token
+        self.is_private_token = False
         self.headers = {}
-        self.client = httpx.AsyncClient(timeout=18.0)  # Stremio timeout is 20s
+        self.client: httpx.AsyncClient = httpx.AsyncClient(
+            timeout=18.0
+        )  # Stremio timeout is 20s
 
     async def __aenter__(self):
         await self.initialize_headers()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.token:
+        if self.token and not self.is_private_token:
             try:
                 await self.disable_access_token()
             except ProviderException:
@@ -45,7 +49,7 @@ class DebridClient:
         except httpx.RequestError as error:
             await self._handle_request_error(error, is_expected_to_fail)
         except httpx.HTTPStatusError as error:
-            await self._handle_http_error(error, is_expected_to_fail)
+            return await self._handle_http_error(error, is_expected_to_fail)
         except Exception as error:
             await self._handle_request_error(error, is_expected_to_fail)
 
@@ -69,7 +73,11 @@ class DebridClient:
             )
 
         if is_expected_to_fail:
-            return
+            return (
+                error.response.json()
+                if error.response.headers.get("Content-Type") == "application/json"
+                else error.response.text
+            )
 
         await self._handle_service_specific_errors(error)
 
@@ -136,3 +144,17 @@ class DebridClient:
     @abstractmethod
     async def get_torrent_info(self, torrent_id):
         raise NotImplementedError
+
+    @staticmethod
+    def encode_token_data(code: str, *args, **kwargs) -> str:
+        token = f"code:{code}"
+        return b64encode(token.encode()).decode()
+
+    @staticmethod
+    def decode_token_str(token: str) -> str | None:
+        try:
+            _, code = b64decode(token).decode().split(":")
+        except (ValueError, UnicodeDecodeError):
+            # Assume as private token
+            return
+        return code
