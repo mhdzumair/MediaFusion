@@ -1987,12 +1987,12 @@
         },
         "python-multipart": {
             "hashes": [
-                "sha256:045e1f98d719c1ce085ed7f7e1ef9d8ccc8c02ba02b5566d5f7521410ced58cb",
-                "sha256:43dcf96cf65888a9cd3423544dd0d75ac10f7aa0c3c28a175bbcd00c9ce1aebf"
+                "sha256:8dee37b88dab9b59922ca173c35acb627cc12ec74019f5cd4578369c6df36554",
+                "sha256:c2759b7b976ef3937214dfb592446b59dfaa5f04682a076f78b117c94776d87a"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.0.12"
+            "version": "==0.0.16"
         },
         "pytz": {
             "hashes": [
