@@ -205,6 +205,7 @@ class UserData(BaseModel):
     )
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
+    live_search_streams: bool = Field(default=False, alias="lss")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):

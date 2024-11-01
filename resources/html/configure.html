@@ -490,6 +490,20 @@
                             </label>
                         </div>
                     </div>
+
+                    <!-- Enable / Disable live_search_streams -->
+                    <div class="mb-3">
+                        <h6>Live Search Streams: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                              title="Opt-in to enable live search based on searching timeout period. Otherwise, the stream result will be based on the cached data."></span>
+                        </h6>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="live_search_streams" id="live_search_streams"
+                                   {% if user_data.live_search_streams %}checked{% endif %}>
+                            <label class="form-check-label" for="live_search_streams">
+                                Enable Live Search Streams
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="section-container">
