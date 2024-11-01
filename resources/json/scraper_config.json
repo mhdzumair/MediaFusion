@@ -1,8 +1,8 @@
 {
   "start_urls": {
-	"nowsports": "https://nowmesport.com/",
-    "nowmetv": "https://nowmelive.com/",
-	"tamilultra": "https://tamilultra.tv/",
+	"nowsports": "https://nowmesports.org/",
+    "nowmetv": "https://nowmeplay.com/",
+	"tamilultra": "https://tamilultratv.co.in/",
 	"tamilbulb": "https://tamilbulb.tv/",
 	"tgx": ["torrentgalaxy.to", "tgx.rs", "torrentgalaxy.mx"]
   },
