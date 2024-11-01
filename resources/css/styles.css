@@ -41,7 +41,7 @@ body, html {
     align-items: center;
     gap: 0.5rem;
     font-size: 1rem;
-    min-width: 100px;
+    min-width: 120px; /* Increased for i18n support */
     justify-content: center;
     flex: 1; /* Allow buttons to grow */
     white-space: nowrap; /* Prevent text from wrapping inside button */
@@ -51,7 +51,16 @@ body, html {
     background: rgba(74, 71, 163, 0.4);
     transform: translateY(-2px);
 }
-
+.mode-btn:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+.mode-btn[aria-pressed="true"] {
+    background: #4a47a3;
+    color: white;
+    border-color: #4a47a3;
+    box-shadow: 0 4px 12px rgba(74, 71, 163, 0.3);
+}
 .mode-btn.active {
     background: #4a47a3;
     color: white;
@@ -111,12 +120,18 @@ body, html {
 }
 
 /* Style for sections that are toggleable */
+
 .pro-mode-section {
     opacity: 0;
     transform: translateY(-10px);
     transition: all 0.3s ease-in-out;
 }
-
+@media (prefers-reduced-motion: reduce) {
+    .pro-mode-section {
+        transform: none;
+        transition: opacity 0.3s ease-in-out;
+    }
+}
 .pro-mode-section[style*="display: block"] {
     opacity: 1;
     transform: translateY(0);

@@ -425,8 +425,12 @@ function setConfigMode(mode) {
         });
     }
 
-    // Save preference
-    localStorage.setItem('configMode', mode);
+    // Save preference with error handling
+    try {
+        localStorage.setItem('configMode', mode);
+    } catch (e) {
+        console.warn('Failed to save config mode preference:', e);
+    }
 }
 
 
@@ -635,7 +639,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Add event listeners for mode switching
 document.addEventListener('DOMContentLoaded', function() {
-    const storedMode = localStorage.getItem('configMode') || 'newbie';
+    let storedMode = 'newbie';
+    try {
+        const savedMode = localStorage.getItem('configMode');
+        if (savedMode) {
+            storedMode = savedMode;
+        }
+    } catch (e) {
+        console.warn('Failed to read config mode preference:', e);
+    }
     setConfigMode(storedMode);
 });
 
