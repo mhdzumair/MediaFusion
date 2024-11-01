@@ -11,8 +11,6 @@ from tqdm import tqdm
 from db import database
 from db.models import (
     TorrentStreams,
-    MediaFusionSeriesMetaData,
-    MediaFusionMovieMetaData,
     MediaFusionMetaData,
 )
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
@@ -102,9 +100,7 @@ async def process_torrent(
     async with lock:
         metrics["total"] += 1
 
-    meta_data = await MediaFusionMetaData.get_motor_collection().find_one(
-        {"_id": torrent.meta_id}
-    )
+    meta_data = await MediaFusionMetaData.find_one({"_id": torrent.meta_id})
 
     if not meta_data:
         await torrent.delete(bulk_writer=torrent_bulk_writer)
@@ -116,11 +112,9 @@ async def process_torrent(
         )
         return "removed"
 
-    if meta_data["type"] == "movie":
-        meta_data = MediaFusionMovieMetaData(**meta_data)
+    if meta_data.type == "movie":
         meta_data_bulk_writer = movies_bulk_writer
     else:
-        meta_data = MediaFusionSeriesMetaData(**meta_data)
         meta_data_bulk_writer = series_bulk_writer
 
     if (
@@ -154,7 +148,7 @@ async def process_torrent(
     max_ratio = calculate_max_similarity_ratio(
         parsed_data.get("title", ""), meta_data.title, meta_data.aka_titles
     )
-    expected_ratio = 70 if torrent.source in ["TamilMV", "TamilBlasters"] else 85
+    expected_ratio = 70 if torrent.source in ["TamilMV", "TamilBlasters"] else 87
     if (
         max_ratio < expected_ratio
         and torrent.meta_id.startswith("tt")
@@ -212,6 +206,49 @@ async def process_torrent(
     torrent.updated_at = datetime.now(tz=timezone.utc)
     await torrent.save(bulk_writer=torrent_bulk_writer)
     return "updated"
+
+
+async def fix_torrent_catalogs():
+    torrents = TorrentStreams.find(
+        {
+            "source": {"$in": ["TamilMV", "TamilBlasters"]},
+        }
+    )
+    supported_categories = ["hdrip", "tcrip", "series", "dubbed", "old"]
+    async for torrent in torrents:
+        existing_catalogs = torrent.catalog
+        parsed_data = PTT.parse_title(torrent.torrent_name, True)
+        category = existing_catalogs[0].split("_")[1] if existing_catalogs else None
+        if category not in supported_categories:
+            if parsed_data.get("seasons"):
+                category = "series"
+            elif "dubbed" in torrent.torrent_name.lower():
+                category = "dubbed"
+            elif (
+                "pre" in torrent.torrent_name.lower()
+                or "cam" in torrent.torrent_name.lower()
+            ):
+                category = "tcrip"
+            else:
+                category = "hdrip"
+        new_catalogs = []
+        for language in parsed_data.get("languages"):
+            if language == "English" and "eng" not in torrent.torrent_name.lower():
+                continue
+            if category == "dubbed" and language == "English":
+                continue
+            new_catalogs.append(f"{language.lower()}_{category}")
+        if not new_catalogs:
+            continue
+        if "user_upload" in existing_catalogs:
+            new_catalogs.append("user_upload")
+        if set(existing_catalogs) == set(new_catalogs):
+            continue
+        logger.info(
+            f"Updating catalog for {torrent.id} Existing: {existing_catalogs} -> New: {new_catalogs}, {torrent.torrent_name}"
+        )
+        torrent.catalog = new_catalogs
+        await torrent.save()
 
 
 # Initialize the database connection and start the cleanup process
