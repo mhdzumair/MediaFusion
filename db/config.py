@@ -46,10 +46,12 @@ class Settings(BaseSettings):
     prowlarr_feed_scrape_interval_hour: int = 3
 
     # Torrentio Settings
+    is_scrap_from_torrentio: bool = False
     torrentio_search_interval_days: int = 3
     torrentio_url: str = "https://torrentio.strem.fun"
 
     # Zilean Settings
+    is_scrap_from_zilean: bool = False
     zilean_search_interval_hour: int = 24
     zilean_url: str = "http://zilean.zilean:8181"
 
@@ -64,8 +66,6 @@ class Settings(BaseSettings):
     local_config_path: str = "resources/json/scraper_config.json"
 
     # Feature Toggles
-    is_scrap_from_torrentio: bool = False
-    is_scrap_from_zilean: bool = False
     enable_rate_limit: bool = False
     validate_m3u8_urls_liveness: bool = True
     disable_download_via_browser: bool = False

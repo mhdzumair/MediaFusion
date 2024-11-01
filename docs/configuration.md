@@ -7,6 +7,9 @@ This guide describes the environment variables available in MediaFusion for conf
 These settings define the basic configuration and identity of your MediaFusion instance.
 
 - **addon_name** (default: `"MediaFusion"`): The name of the MediaFusion addon. You can customize this value to identify the addon.
+- **version** : The version of the MediaFusion addon.
+- **description** : A brief description of the MediaFusion addon to show on stremio Addon page.
+- **contact_email** : The contact email for the MediaFusion addon to show on stremio Addon page.
 - **host_url** (required): The URL where MediaFusion is hosted.
 - **secret_key** (required): A 32-character secret key for securely signing the session. Must be exactly 32 characters long.
 - **api_password** (required): The password for accessing the API endpoints.
@@ -30,9 +33,11 @@ These URLs define the locations of various external services used by MediaFusion
 - **poster_host_url** (default: Use the Host URL value): The URL where poster images are served from. Use the same value as `host_url` if posters are served from the same location.
 - **scraper_proxy_url**: The proxy URL for the scraper, if any.
 - **torrentio_url** (default: `"https://torrentio.strem.fun"`): The Torrentio / KightCrawler URL.
-- **zilean_url** (default: `"http://zilean.zilean:8181"`): The URL for the Zilean service.
 - **playwright_cdp_url** (default: `"ws://browserless:3000?blockAds=true&stealth=true"`): The URL for the Playwright CDP (Chrome DevTools Protocol) service.
 - **flaresolverr_url** (default: `"http://flaresolverr:8191/v1"`): The URL for the FlareSolverr service.
+
+## External Service API Keys
+- **scrapeops_api_key** (Optional): The API key for the ScrapeOps monitoring service.
 
 ## Prowlarr Settings
 
@@ -54,6 +59,10 @@ OAuth settings for Premiumize integration.
 
 - **premiumize_oauth_client_id**: The OAuth client ID for Premiumize.
 - **premiumize_oauth_client_secret**: The OAuth client secret for Premiumize.
+
+## Zilean Settings
+- **zilean_url** (default: `"http://zilean-service:9696"`): The Zilean service URL.
+- **zilean_search_interval_hour** (default: 24): How often Zilean searches are initiated, in hours.
 
 ## Configuration Sources
 
