@@ -2,7 +2,8 @@ import asyncio
 from os import path
 from typing import Optional, List
 
-import httpx
+import aiohttp
+
 
 from db.models import TorrentStreams
 from streaming_providers.debrid_client import DebridClient
@@ -23,10 +24,10 @@ class OffCloud(DebridClient):
     async def disable_access_token(self):
         pass
 
-    async def _handle_service_specific_errors(self, error: httpx.HTTPStatusError):
-        if error.response.status_code == 403:
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
+        if status_code == 403:
             raise ProviderException("Invalid OffCloud API key", "invalid_token.mp4")
-        if error.response.status_code == 429:
+        if status_code == 429:
             raise ProviderException(
                 "OffCloud rate limit exceeded", "too_many_requests.mp4"
             )
@@ -40,6 +41,7 @@ class OffCloud(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        retry_count: int = 0,
         delete: bool = False,
     ) -> dict | list:
         params = params or {}
@@ -87,7 +89,7 @@ class OffCloud(DebridClient):
             (
                 torrent
                 for torrent in available_torrents
-                if info_hash.casefold() in torrent["originalLink"].casefold()
+                if info_hash.casefold() in torrent.get("originalLink", "").casefold()
             ),
             None,
         )
@@ -96,18 +98,38 @@ class OffCloud(DebridClient):
         return await self._make_request("GET", f"/cloud/explore/{request_id}")
 
     async def update_file_sizes(self, files_data: list[dict]):
-        responses = await asyncio.gather(
-            *[
-                self.client.head(file_data["link"], timeout=5)
-                for file_data in files_data
-            ],
-            return_exceptions=True,
-        )
-        for file_data, response in zip(files_data, responses):
-            if isinstance(response, Exception):
-                continue
-            if response.status_code == 200:
-                file_data["size"] = int(response.headers.get("Content-Length", 0))
+        """
+        Update file sizes for a list of files by making HEAD requests.
+
+        Args:
+            files_data (list[dict]): List of file data dictionaries containing 'link' keys
+
+        Note:
+            This method modifies the input files_data list in-place, adding 'size' keys
+            where the HEAD request was successful.
+        """
+
+        async def get_file_size(file_data: dict) -> tuple[dict, Optional[int]]:
+            """Helper function to get file size for a single file."""
+            try:
+                async with self.session.head(
+                    file_data["link"],
+                    timeout=aiohttp.ClientTimeout(total=5),
+                    allow_redirects=True,
+                ) as response:
+                    if response.status == 200:
+                        return file_data, int(response.headers.get("Content-Length", 0))
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                pass
+            return file_data, 0
+
+        # Gather all HEAD requests with proper concurrency
+        tasks = [get_file_size(file_data) for file_data in files_data]
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+
+        # Update file sizes in the original data
+        for file_data, size in results:
+            file_data["size"] = size
 
     async def create_download_link(
         self,

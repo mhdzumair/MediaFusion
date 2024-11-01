@@ -1,4 +1,3 @@
-from base64 import b64encode, b64decode
 from typing import Any, Optional
 from urllib.parse import quote_plus
 from uuid import uuid4
@@ -17,7 +16,7 @@ class Premiumize(DebridClient):
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
 
-    async def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
     async def _make_request(
@@ -29,6 +28,7 @@ class Premiumize(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        retry_count: int = 0,
     ) -> dict | list:
         params = params or {}
         if self.is_private_token:
@@ -135,14 +135,14 @@ class Premiumize(DebridClient):
 
         available_torrents = torrent_list_response["transfers"]
         for torrent in available_torrents:
-            src = torrent.get("src")
-            response = await self.client.head(src)
-            if response.status_code != 200:
-                continue
+            src = torrent["src"]
+            async with self.session.head(src) as response:
+                if response.status != 200:
+                    continue
 
-            magnet_link_content = response.headers.get("Content-Disposition")
-            if info_hash in magnet_link_content:
-                return torrent
+                magnet_link_content = response.headers.get("Content-Disposition")
+                if info_hash in magnet_link_content:
+                    return torrent
 
     async def get_account_info(self):
         return await self._make_request("GET", f"{self.BASE_URL}/account/info")

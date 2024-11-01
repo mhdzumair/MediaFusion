@@ -16,27 +16,22 @@ class RealDebrid(DebridClient):
         self.user_ip = user_ip
         super().__init__(token)
 
-    async def _handle_service_specific_errors(self, error):
-        if error.response.headers.get("content-type") == "application/json":
-            error_code = error.response.json().get("error_code")
-            match error_code:
-                case 9:
-                    raise ProviderException(
-                        "Real-Debrid Permission denied for free account",
-                        "need_premium.mp4",
-                    )
-                case 22:
-                    raise ProviderException(
-                        "IP address not allowed", "ip_not_allowed.mp4"
-                    )
-                case 34:
-                    raise ProviderException(
-                        "Too many requests", "too_many_requests.mp4"
-                    )
-                case 35:
-                    raise ProviderException(
-                        "Content marked as infringing", "content_infringing.mp4"
-                    )
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
+        error_code = error_data.get("error_code")
+        match error_code:
+            case 9:
+                raise ProviderException(
+                    "Real-Debrid Permission denied for free account",
+                    "need_premium.mp4",
+                )
+            case 22:
+                raise ProviderException("IP address not allowed", "ip_not_allowed.mp4")
+            case 34:
+                raise ProviderException("Too many requests", "too_many_requests.mp4")
+            case 35:
+                raise ProviderException(
+                    "Content marked as infringing", "content_infringing.mp4"
+                )
 
     async def _make_request(
         self,
@@ -47,6 +42,7 @@ class RealDebrid(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        retry_count: int = 0,
     ) -> dict:
         if method == "POST" and self.user_ip:
             data = data or {}

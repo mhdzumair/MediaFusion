@@ -124,7 +124,7 @@ async def fetch_downloaded_info_hashes_from_premiumize(
             return [
                 folder["name"]
                 for folder in available_folders["content"]
-                if folder["name"] and folder["type"] == "folder"
+                if folder["name"] and len(folder["name"]) in (40, 32)
             ]
 
     except ProviderException:

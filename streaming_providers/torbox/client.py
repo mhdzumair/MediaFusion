@@ -16,7 +16,7 @@ class Torbox(DebridClient):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
-    async def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
     async def _make_request(
@@ -28,6 +28,7 @@ class Torbox(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        retry_count: int = 0,
     ) -> dict:
         params = params or {}
         url = self.BASE_URL + url

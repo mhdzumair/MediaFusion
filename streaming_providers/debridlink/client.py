@@ -1,4 +1,3 @@
-from base64 import b64encode, b64decode
 from typing import Any, Optional
 
 from streaming_providers.debrid_client import DebridClient
@@ -33,10 +32,8 @@ class DebridLink(DebridClient):
                     "ip_not_allowed.mp4",
                 )
 
-    async def _handle_service_specific_errors(self, error):
-        if error.response.headers.get("content-type") == "application/json":
-            error_message = error.response.json().get("error")
-            self._handle_error_message(error_message)
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
+        self._handle_error_message(error_data.get("error"))
 
     async def initialize_headers(self):
         if self.token:
@@ -106,7 +103,7 @@ class DebridLink(DebridClient):
             is_expected_to_fail=True,
         )
         if response.get("error"):
-            await self._handle_error_message(response.get("error"))
+            self._handle_error_message(response.get("error"))
             raise ProviderException(
                 f"Failed to add magnet link to Debrid-Link: {response.get('error')}",
                 "transfer_error.mp4",

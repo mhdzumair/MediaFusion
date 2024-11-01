@@ -101,5 +101,6 @@ async def delete_all_torrents_from_oc(user_data: UserData, **kwargs):
     async with OffCloud(token=user_data.streaming_provider.token) as oc_client:
         torrents = await oc_client.get_user_torrent_list()
         await asyncio.gather(
-            *[oc_client.delete_torrent(torrent["requestId"]) for torrent in torrents]
+            *[oc_client.delete_torrent(torrent["requestId"]) for torrent in torrents],
+            return_exceptions=True,
         )

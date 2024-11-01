@@ -18,7 +18,7 @@ class AllDebrid(DebridClient):
     async def disable_access_token(self):
         pass
 
-    async def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
     async def _make_request(
@@ -30,6 +30,7 @@ class AllDebrid(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        retry_count: int = 0,
     ) -> dict:
         params = params or {}
         params["agent"] = self.AGENT
