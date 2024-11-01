@@ -382,7 +382,8 @@ function getUserData() {
         api_password: apiPassword,
         mediaflow_config: mediaflowConfig,
         rpdb_config: rpdbConfig,
-        live_search_streams: document.getElementById('live_search_streams').checked,
+        live_search_streams: document.getElementById('liveSearchStreams').checked,
+        contribution_streams: document.getElementById('contributionStreams').checked,
     };
 }
 
@@ -394,6 +395,44 @@ function displayFallbackUrl(url) {
     container.style.display = 'block'; // Make the container visible
     textarea.focus();
 }
+
+// Configuration Mode Handling
+function setConfigMode(mode) {
+    // Update button states
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(mode + '_mode').classList.add('active');
+
+    // Update description
+    const description = document.querySelector('.mode-description');
+    description.textContent = mode === 'pro'
+        ? 'Pro Mode: Access to all advanced configuration options'
+        : 'Newbie Mode: Quick setup with essential options for new users';
+
+    // Toggle visibility of pro sections
+    const proSections = document.querySelectorAll('.pro-mode-section');
+    proSections.forEach(section => {
+        section.style.display = mode === 'pro' ? 'block' : 'none';
+    });
+
+    // Handle specific settings visibility
+    const streamingSection = document.querySelector('.streaming-preferences');
+    if (streamingSection) {
+        const advancedOptions = streamingSection.querySelectorAll('.advanced-option');
+        advancedOptions.forEach(option => {
+            option.style.display = mode === 'pro' ? 'block' : 'none';
+        });
+    }
+
+    // Save preference with error handling
+    try {
+        localStorage.setItem('configMode', mode);
+    } catch (e) {
+        console.warn('Failed to save config mode preference:', e);
+    }
+}
+
 
 function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
     document.getElementById(toggleButtonId).addEventListener('click', function (_) {
@@ -595,6 +634,21 @@ document.addEventListener('DOMContentLoaded', function () {
         filter: '.form-check-input',
         preventOnFilter: false,
     });
+});
+
+
+// Add event listeners for mode switching
+document.addEventListener('DOMContentLoaded', function() {
+    let storedMode = 'newbie';
+    try {
+        const savedMode = localStorage.getItem('configMode');
+        if (savedMode) {
+            storedMode = savedMode;
+        }
+    } catch (e) {
+        console.warn('Failed to read config mode preference:', e);
+    }
+    setConfigMode(storedMode);
 });
 
 

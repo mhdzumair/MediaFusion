@@ -11,6 +11,83 @@ body, html {
     background-position: center center;
     background-repeat: no-repeat;
 }
+.mode-switch {
+    background: rgba(20, 20, 35, 0.7);
+    padding: 1.5rem;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(74, 71, 163, 0.2);
+    width: 100%;
+}
+
+.mode-buttons {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    position: relative;
+    flex-wrap: wrap; /* Allow buttons to wrap on small screens */
+}
+
+.mode-btn {
+    background: rgba(74, 71, 163, 0.2);
+    color: #E0E0E0;
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+    min-width: 120px; /* Increased for i18n support */
+    justify-content: center;
+    flex: 1; /* Allow buttons to grow */
+    white-space: nowrap; /* Prevent text from wrapping inside button */
+}
+
+.mode-btn:hover {
+    background: rgba(74, 71, 163, 0.4);
+    transform: translateY(-2px);
+}
+.mode-btn:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+.mode-btn[aria-pressed="true"] {
+    background: #4a47a3;
+    color: white;
+    border-color: #4a47a3;
+    box-shadow: 0 4px 12px rgba(74, 71, 163, 0.3);
+}
+.mode-btn.active {
+    background: #4a47a3;
+    color: white;
+    border-color: #4a47a3;
+    box-shadow: 0 4px 12px rgba(74, 71, 163, 0.3);
+}
+
+.mode-help {
+    color: #E0E0E0;
+    cursor: help;
+    font-size: 1.2rem;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+    margin-left: 0.5rem;
+}
+
+.mode-help:hover {
+    opacity: 1;
+}
+
+.mode-description {
+    color: #9f9f9f;
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+    padding-left: 0.5rem;
+    border-left: 3px solid rgba(74, 71, 163, 0.5);
+}
 
 .config-container {
     margin: 2% auto;
@@ -40,6 +117,24 @@ body, html {
     height: 2px;
     background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(74, 71, 163, 0.75), rgba(0, 0, 0, 0));
     margin-bottom: 1rem;
+}
+
+/* Style for sections that are toggleable */
+
+.pro-mode-section {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+    .pro-mode-section {
+        transform: none;
+        transition: opacity 0.3s ease-in-out;
+    }
+}
+.pro-mode-section[style*="display: block"] {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .btn, button {

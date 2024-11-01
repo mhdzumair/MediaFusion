@@ -168,13 +168,7 @@ class StreamingProvider(BaseModel):
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
     selected_catalogs: list[str] = Field(
-        default=[
-            "prowlarr_streams",
-            "torrentio_streams",
-            "zilean_dmm_streams",
-            "english_hdrip",
-            "english_series",
-        ],
+        default=["english_hdrip", "english_series"],
         alias="sc",
     )
     selected_resolutions: list[str | None] = Field(
@@ -198,7 +192,7 @@ class UserData(BaseModel):
     ] = Field(default=["Adults"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")
     language_sorting: list[str | None] = Field(
-        default=list(const.SUPPORTED_LANGUAGES), alias="ls"
+        default=const.LANGUAGES_FILTERS, alias="ls"
     )
     quality_filter: list[str] = Field(
         default=list(const.QUALITY_GROUPS.keys()), alias="qf"
@@ -206,6 +200,7 @@ class UserData(BaseModel):
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
     live_search_streams: bool = Field(default=False, alias="lss")
+    contribution_streams: bool = Field(default=False, alias="cs")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):

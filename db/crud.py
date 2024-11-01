@@ -329,11 +329,7 @@ async def get_movie_streams(
     cached_streams = await get_cached_torrent_streams(cache_key, video_id)
 
     if live_search_streams:
-        new_streams = await run_scrapers(
-            movie_metadata,
-            "movie",
-            user_data,
-        )
+        new_streams = await run_scrapers(movie_metadata, "movie")
         all_streams = set(cached_streams).union(new_streams)
         if new_streams:
             # reset the cache
@@ -378,13 +374,7 @@ async def get_series_streams(
     )
 
     if live_search_streams:
-        new_streams = await run_scrapers(
-            series_metadata,
-            "series",
-            user_data,
-            season,
-            episode,
-        )
+        new_streams = await run_scrapers(series_metadata, "series", season, episode)
         all_streams = set(cached_streams).union(new_streams)
         if new_streams:
             # reset the cache

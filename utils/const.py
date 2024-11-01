@@ -34,7 +34,6 @@ CATALOG_DATA = {
     "other_sports": "Other Sports",
     "prowlarr_movies": "Prowlarr Scraped Movies",
     "prowlarr_series": "Prowlarr Scraped Series",
-    "prowlarr_streams": "Prowlarr Streams",
     "rugby": "Rugby/AFL",
     "tamil_dubbed": "Tamil Dubbed Movies",
     "tamil_hdrip": "Tamil HD Movies",
@@ -46,9 +45,6 @@ CATALOG_DATA = {
     "telugu_old": "Telugu Old Movies",
     "telugu_series": "Telugu Series",
     "telugu_tcrip": "Telugu TCRip Movies",
-    "torrentio_streams": "Torrentio Streams",
-    "zilean_dmm_streams": "Zilean DMM Streams",
-    "contribution_streams": "Contribution Streams",
     "fighting": "Fighting (WWE, UFC)",
 }
 
@@ -120,6 +116,7 @@ NO_CACHE_HEADERS = {
 }
 
 TORRENT_SORTING_PRIORITY = [
+    "language",
     "cached",
     "resolution",
     "quality",
@@ -127,7 +124,7 @@ TORRENT_SORTING_PRIORITY = [
     "seeders",
     "created_at",
 ]
-TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY + ["language"]
+TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY
 
 STREAMING_SERVICE_REQUIREMENTS = {
     "pikpak": ["email", "password"],
@@ -243,7 +240,7 @@ CERTIFICATION_MAPPING = {
     ],
 }
 
-SUPPORTED_LANGUAGES = {
+LANGUAGES_FILTERS = [
     "English",
     "Tamil",
     "Hindi",
@@ -273,7 +270,9 @@ SUPPORTED_LANGUAGES = {
     "Turkish",
     "Greek",
     None,
-}
+]
+
+SUPPORTED_LANGUAGES = set(LANGUAGES_FILTERS)
 
 QUALITY_GROUPS = {
     "BluRay/UHD": ["BluRay", "BluRay REMUX", "BRRip", "BDRip", "UHDRip"],

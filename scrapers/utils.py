@@ -19,31 +19,24 @@ from utils.runtime_const import (
 async def run_scrapers(
     metadata: MediaFusionMetaData,
     catalog_type: str,
-    user_data,
     season: int = None,
     episode: int = None,
 ) -> set[TorrentStreams]:
     scraper_tasks = []
 
-    if settings.prowlarr_api_key and "prowlarr_streams" in user_data.selected_catalogs:
+    if settings.prowlarr_api_key:
         prowlarr_scraper = ProwlarrScraper()
         scraper_tasks.append(
             prowlarr_scraper.scrape_and_parse(metadata, catalog_type, season, episode)
         )
 
-    if (
-        settings.is_scrap_from_zilean
-        and "zilean_dmm_streams" in user_data.selected_catalogs
-    ):
+    if settings.is_scrap_from_zilean:
         zilean_scraper = ZileanScraper()
         scraper_tasks.append(
             zilean_scraper.scrape_and_parse(metadata, catalog_type, season, episode)
         )
 
-    if (
-        settings.is_scrap_from_torrentio
-        and "torrentio_streams" in user_data.selected_catalogs
-    ):
+    if settings.is_scrap_from_torrentio:
         torrentio_scraper = TorrentioScraper()
         scraper_tasks.append(
             torrentio_scraper.scrape_and_parse(metadata, catalog_type, season, episode)
