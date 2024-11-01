@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from os import path
+from typing import Optional
 from urllib.parse import urljoin, urlparse, quote
 
 from aiohttp import ClientConnectorError, ClientSession, CookieJar
@@ -10,11 +11,11 @@ from aioqbt.client import create_client, APIClient
 from aioqbt.exc import LoginError, AddTorrentError, NotFoundError
 from aiowebdav.client import Client as WebDavClient
 from aiowebdav.exceptions import RemoteResourceNotFound, NoConnection
-from thefuzz import fuzz
 
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.parser import select_file_index_from_torrent
 
 
 async def check_torrent_status(
@@ -104,7 +105,11 @@ async def get_files_from_folder(
 
 
 async def find_file_in_folder_tree(
-    webdav: WebDavClient, user_data: UserData, info_hash: str, filename: str
+    webdav: WebDavClient,
+    user_data: UserData,
+    info_hash: str,
+    filename: Optional[str],
+    episode: Optional[int],
 ) -> dict | None:
     base_url_path = urlparse(
         user_data.streaming_provider.qbittorrent_config.webdav_url
@@ -119,30 +124,16 @@ async def find_file_in_folder_tree(
     if not files:
         return None
 
-    exact_match = next((file for file in files if file["name"] == filename), None)
-    if exact_match:
-        return exact_match
-
-    # Fuzzy matching as a fallback
-    for file in files:
-        file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    selected_file = max(files, key=lambda x: x["fuzzy_ratio"])
-
-    # If the fuzzy ratio is less than 50, then select the largest file
-    if selected_file["fuzzy_ratio"] < 50:
-        selected_file = max(files, key=lambda x: x["size"])
-
-    if "video" not in selected_file["content_type"]:
-        raise ProviderException(
-            "No matching file available for this torrent", "no_matching_file.mp4"
-        )
-
+    selected_file_index = await select_file_index_from_torrent(
+        {"files": files}, filename, episode
+    )
+    selected_file = files[selected_file_index]
     return selected_file
 
 
 @asynccontextmanager
 async def initialize_qbittorrent(user_data: UserData) -> APIClient:
-    async with ClientSession(cookie_jar=CookieJar(unsafe=True)) as session:
+    async with ClientSession(cookie_jar=CookieJar(unsafe=True), timeout=18) as session:
         try:
             qbittorrent = await create_client(
                 user_data.streaming_provider.qbittorrent_config.qbittorrent_url.rstrip(
@@ -215,32 +206,45 @@ async def handle_torrent_status(
     return torrent
 
 
+async def set_qbittorrent_preferences(qbittorrent, indexer_type):
+    if indexer_type == "private":
+        await qbittorrent.app.set_preferences(
+            {"dht": False, "pex": False, "lsd": False}
+        )
+    # else:
+    #    # Enable DHT, PEX, and LSD for public trackers
+    #     await qbittorrent.app.set_preferences({"dht": True, "pex": True, "lsd": True})
+
+
 async def retrieve_or_download_file(
     qbittorrent: APIClient,
     webdav: WebDavClient,
     user_data: UserData,
     play_video_after: int,
-    filename: str,
     magnet_link: str,
     info_hash: str,
+    indexer_type: str,
+    filename: Optional[str],
+    episode: Optional[int],
     max_retries: int,
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        webdav, user_data, info_hash, filename
+        webdav, user_data, info_hash, filename, episode
     )
     if not selected_file:
+        await set_qbittorrent_preferences(qbittorrent, indexer_type)
         await add_magnet(qbittorrent, magnet_link, info_hash, user_data)
         await wait_for_torrent_to_complete(
             qbittorrent, info_hash, play_video_after, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            webdav, user_data, info_hash, filename
+            webdav, user_data, info_hash, filename, episode
         )
-    if selected_file is None:
-        raise ProviderException(
-            "No matching file available for this torrent", "no_matching_file.mp4"
-        )
+        if not selected_file:
+            raise ProviderException(
+                "No matching file available for this torrent", "no_matching_file.mp4"
+            )
     return selected_file
 
 
@@ -270,8 +274,9 @@ async def get_video_url_from_qbittorrent(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
-    filename: str,
+    indexer_type: str,
+    filename: Optional[str],
+    episode: Optional[int],
     max_retries=5,
     retry_interval=5,
     **kwargs,
@@ -294,9 +299,11 @@ async def get_video_url_from_qbittorrent(
             webdav,
             user_data,
             play_video_after,
-            filename or stream.torrent_name,
             magnet_link,
             info_hash,
+            indexer_type,
+            filename,
+            episode,
             max_retries,
             retry_interval,
         )
