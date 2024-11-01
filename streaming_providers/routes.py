@@ -77,11 +77,6 @@ async def fetch_stream_or_404(info_hash):
     if stream:
         return stream
 
-    # TODO: added for backwards compatibility, remove in the future
-    stream = await crud.get_stream_by_info_hash(info_hash.upper())
-    if stream:
-        return stream
-
     raise HTTPException(status_code=400, detail="Stream not found.")
 
 
@@ -115,6 +110,9 @@ async def get_or_create_video_url(
         stream=stream,
         torrent_name=stream.torrent_name,
         background_tasks=background_tasks,
+        indexer_type=(
+            "public" if stream.indexer_flags in [[], ["freeleech"]] else "private"
+        ),
     )
 
     if asyncio.iscoroutinefunction(get_video_url):
