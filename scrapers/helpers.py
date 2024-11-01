@@ -76,6 +76,9 @@ async def update_torrent_series_streams_metadata(
                 for file in stream_metadata["file_data"]
                 if file["episodes"]
             ]
+            if not episodes:
+                continue
+
             torrent_stream.season = Season(
                 season_number=stream_metadata["seasons"][0],
                 episodes=episodes,

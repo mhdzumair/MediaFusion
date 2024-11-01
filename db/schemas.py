@@ -264,6 +264,7 @@ class AuthorizeData(BaseModel):
 
 class MetaIdProjection(BaseModel):
     id: str = Field(alias="_id")
+    type: str
 
 
 class TVMetaProjection(BaseModel):

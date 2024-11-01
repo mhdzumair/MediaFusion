@@ -15,6 +15,7 @@ from typedload.exceptions import TypedloadValueError
 from db.models import (
     MediaFusionMetaData,
 )
+from db.schemas import MetaIdProjection
 from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 
@@ -177,8 +178,7 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
         )
 
         # Update database entries with the new data
-        await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": movie_id},
+        await MediaFusionMetaData.find_one({"_id": movie_id}).update(
             {
                 "$set": {
                     "genres": result.genres,
@@ -204,21 +204,18 @@ async def process_imdb_data_background(imdb_ids, metadata_type="movie"):
     # Validate imdb_ids from the database
     now = datetime.now()
     seven_days_ago = now - timedelta(days=7)
-    valid_ids = (
-        await MediaFusionMetaData.get_motor_collection()
-        .find(
-            {
-                "_id": {"$in": imdb_ids},
-                "$or": [
-                    {"last_updated_at": {"$lt": seven_days_ago}},
-                    {"last_updated_at": None},
-                ],
-            },
-            {"_id": 1},
-        )
-        .to_list(None)
-    )
-    valid_ids = [doc["_id"] for doc in valid_ids]
+    valid_ids = await MediaFusionMetaData.find(
+        {
+            "_id": {"$in": imdb_ids},
+            "$or": [
+                {"last_updated_at": {"$lt": seven_days_ago}},
+                {"last_updated_at": None},
+            ],
+        },
+        projection_model=MetaIdProjection,
+        with_children=True,
+    ).to_list()
+    valid_ids = [doc.id for doc in valid_ids]
 
     if valid_ids:
         await process_imdb_data(valid_ids, metadata_type)
@@ -232,27 +229,25 @@ async def fetch_movie_ids_to_update(*args, **kwargs):
     seven_days_ago = now - timedelta(days=7)
 
     # Fetch only the IDs of movies that need updating
-    movie_documents = (
-        await MediaFusionMetaData.get_motor_collection()
-        .find(
-            {
-                "_id": {"$regex": r"tt\d+"},
-                "$or": [
-                    {"last_updated_at": {"$lt": seven_days_ago}},
-                    {"last_updated_at": None},
-                ],
-            },
-            {"_id": 1, "type": 1},
-        )
-        .to_list(None)
-    )
+    documents = await MediaFusionMetaData.find(
+        {
+            "_id": {"$regex": r"tt\d+"},
+            "type": {"$in": ["movie", "series"]},
+            "$or": [
+                {"last_updated_at": {"$lt": seven_days_ago}},
+                {"last_updated_at": None},
+            ],
+        },
+        projection_model=MetaIdProjection,
+        with_children=True,
+    ).to_list()
     movie_ids = []
     series_ids = []
-    for movie in movie_documents:
-        if movie["type"] == "movie":
-            movie_ids.append(movie["_id"])
-        elif movie["type"] == "series":
-            series_ids.append(movie["_id"])
+    for document in documents:
+        if document.type == "movie":
+            movie_ids.append(document.id)
+        else:
+            series_ids.append(document.id)
     logging.info(
         f"Fetched {len(movie_ids)} movie and {len(series_ids)} series IDs for updating"
     )
