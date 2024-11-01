@@ -132,7 +132,18 @@ async def get_home(request: Request):
 @app.get("/health", tags=["health"])
 @wrappers.exclude_rate_limit
 async def health():
-    return {"status": "healthy"}
+    start_time = asyncio.get_event_loop().time()
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.head("https://www.google.com", timeout=10) as response:
+                return {
+                    "status": "healthy",
+                    "status_code": response.status,
+                    "time": asyncio.get_event_loop().time() - start_time,
+                }
+        except Exception as e:
+            logging.error("Health check failed: %s", e)
+            raise HTTPException(status_code=503, detail="Health check failed.")
 
 
 @app.get("/favicon.ico")
