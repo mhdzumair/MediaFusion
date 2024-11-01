@@ -541,7 +541,8 @@ class ProwlarrScraper(BaseScraper):
             elif episodes := parsed_data.get("episodes"):
                 episode_data = [Episode(episode_number=ep) for ep in episodes]
             elif season and season_number == season:
-                episode_data = [Episode(episode_number=episode)]
+                # Some pack contains few episodes. We can't determine exact episode number
+                episode_data = [Episode(episode_number=1)]
             elif parsed_data.get("date"):
                 # search with date for episode
                 episode_date = datetime.strptime(parsed_data["date"], "%Y-%m-%d").date()

@@ -172,7 +172,8 @@ class ZileanScraper(BaseScraper):
                         for episode_number in episodes
                     ]
                 elif season in seasons:
-                    episode_data = [Episode(episode_number=episode)]
+                    # Some pack contains few episodes. We can't determine exact episode number
+                    episode_data = [Episode(episode_number=1)]
                 else:
                     return None
 
