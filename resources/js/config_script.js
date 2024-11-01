@@ -195,12 +195,16 @@ function updateProviderFields(isChangeEvent = false) {
             setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('streaming_provider_options', 'block');
+        setElementDisplay('catalog_configs', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
     } else {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
         setElementDisplay('streaming_provider_options', 'none');
         setElementDisplay('qbittorrent_config', 'none');
+        if (localStorage.getItem('configMode') === 'newbie') {
+            setElementDisplay('catalog_configs', 'none');
+        }
     }
 
     // Reset the fields only if this is triggered by an onchange event
@@ -394,6 +398,49 @@ function displayFallbackUrl(url) {
     container.style.display = 'block'; // Make the container visible
     textarea.focus();
 }
+
+// Configuration Mode Handling
+function setConfigMode(mode) {
+    // Update button states
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(mode + '_mode').classList.add('active');
+
+    // Update description
+    const description = document.querySelector('.mode-description');
+    description.textContent = mode === 'pro'
+        ? 'Pro Mode: Access to all advanced configuration options'
+        : 'Newbie Mode: Quick setup with essential options for new users';
+
+    // Toggle visibility of pro sections
+    const proSections = document.querySelectorAll('.pro-mode-section');
+    proSections.forEach(section => {
+        section.style.display = mode === 'pro' ? 'block' : 'none';
+    });
+
+    // Handle specific settings visibility
+    const streamingSection = document.querySelector('.streaming-preferences');
+    if (streamingSection) {
+        const advancedOptions = streamingSection.querySelectorAll('.advanced-option');
+        advancedOptions.forEach(option => {
+            option.style.display = mode === 'pro' ? 'block' : 'none';
+        });
+    }
+
+    const provider = document.getElementById('provider_service').value;
+    if (provider) {
+        setElementDisplay('catalog_configs', 'block');
+    } else if (mode === 'pro') {
+        setElementDisplay('catalog_configs', 'block');
+    } else {
+        setElementDisplay('catalog_configs', 'none');
+    }
+
+    // Save preference
+    localStorage.setItem('configMode', mode);
+}
+
 
 function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
     document.getElementById(toggleButtonId).addEventListener('click', function (_) {
@@ -595,6 +642,13 @@ document.addEventListener('DOMContentLoaded', function () {
         filter: '.form-check-input',
         preventOnFilter: false,
     });
+});
+
+
+// Add event listeners for mode switching
+document.addEventListener('DOMContentLoaded', function() {
+    const storedMode = localStorage.getItem('configMode') || 'newbie';
+    setConfigMode(storedMode);
 });
 
 

@@ -22,6 +22,29 @@
 
             <!-- Configuration Form -->
             <form id="configForm" class="mx-5 mx-lg-1 mx-md-3 mx-sm-4">
+
+                <!-- Configuration Mode Switch -->
+                <div class="section-container">
+                    <h4 class="section-header">Configuration Mode</h4>
+                    <hr class="section-divider">
+
+                    <div class="mode-switch">
+                        <div class="mode-buttons">
+                            <button type="button" class="mode-btn active" id="newbie_mode" onclick="setConfigMode('newbie')">
+                                <i class="bi bi-person-heart"></i>
+                                Newbie User
+                            </button>
+                            <button type="button" class="mode-btn" id="pro_mode" onclick="setConfigMode('pro')">
+                                <i class="bi bi-person-gear"></i>
+                                Pro User
+                            </button>
+                        </div>
+                        <p class="mode-description">
+                            Newbie Mode: Quick setup with essential options for new users
+                        </p>
+                    </div>
+                </div>
+
                 <!-- Streaming Provider -->
                 <div class="section-container">
                     <h4 class="section-header">Streaming Provider Configuration</h4>
@@ -185,11 +208,11 @@
                 </div>
 
                 <!-- Catalog Configuration -->
-                <div class="section-container">
+                <div class="section-container" id="catalog_configs" style="display: none;">
                     <h4 class="section-header">Catalog Configuration</h4>
                     <hr class="section-divider">
 
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <h6>Select & Arrange Catalogs: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                              title="Select and arrange the catalogs that you want to display in Stremio."></span></h6>
                         <div id="catalogs" class="row">
@@ -217,17 +240,15 @@
                                 Enable Watchlist Catalogs
                             </label>
                         </div>
-                        {% if not disable_download_via_browser %}
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" name="download_via_browser"
-                                       id="download_via_browser" {% if user_data.streaming_provider and user_data.streaming_provider.download_via_browser %}checked{% endif %}>
-                                <label class="form-check-label" for="download_via_browser">
-                                    Enable Download via Browser <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                   title="Show a download option in Stremio & Kodi to access torrent streams via web browser."></i>
-                                </label>
-                            </div>
-                        {% endif %}
-                        <div class="form-check mb-2">
+                        <div class="form-check mb-2 pro-mode-section" style="display: none;">
+                            <input class="form-check-input" type="checkbox" name="download_via_browser"
+                                   id="download_via_browser" {% if user_data.streaming_provider and user_data.streaming_provider.download_via_browser %}checked{% endif %}>
+                            <label class="form-check-label" for="download_via_browser">
+                                Enable Download via Browser <i class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                                               title="Show a download option in Stremio & Kodi to access torrent streams via web browser."></i>
+                            </label>
+                        </div>
+                        <div class="form-check mb-2 pro-mode-section" style="display: none;">
                             <input class="form-check-input" type="checkbox" name="only_show_cached_streams"
                                    id="only_show_cached_streams" {% if user_data.streaming_provider and user_data.streaming_provider.only_show_cached_streams %}checked{% endif %}>
                             <label class="form-check-label" for="only_show_cached_streams">
@@ -237,7 +258,7 @@
                     </div>
 
                     <!-- Enable Catalogs Checkbox -->
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <h6>Enable Catalogs:</h6>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="enable_catalogs"
@@ -249,7 +270,7 @@
                         </div>
                     </div>
                     <!-- Enable MetaData Response Checkbox -->
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <h6>Enable IMDb Title Meta Data Response:</h6>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="enable_imdb_metadata"
@@ -265,7 +286,7 @@
                 </div>
 
                 <!-- Parental Guides Configuration -->
-                <div class="section-container">
+                <div class="section-container pro-mode-section" style="display: none;">
                     <h4 class="section-header">Parental Guides</h4>
                     <hr class="section-divider">
 
@@ -421,7 +442,7 @@
                     </div>
 
                     <!-- Stream Sorting Priority -->
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <h6>Select & Arrange Sorting Priority: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                      title="Select and arrange the sorting options that you want to display in Stremio."></span></h6>
 
@@ -462,7 +483,7 @@
                     </div>
 
                     <!-- Maximum Streams Result per Resolution Configuration -->
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <label for="maxStreamsPerResolution">Max Streams Per Resolution: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                                                title="Enter the maximum number of streams per resolution to display in Stremio."></span></label>
                         <input type="number" class="form-control" id="maxStreamsPerResolution" name="maxStreamsPerResolution" min="1" placeholder="Enter maximum streams per resolution"
@@ -473,7 +494,7 @@
                     </div>
 
                     <!-- Torrent Information Display Configuration -->
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <h6>Torrent Stream Display option: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                  title="Choose how you want to display the torrent information in Stremio."></span></h6>
                         <div class="form-check">
@@ -492,9 +513,9 @@
                     </div>
 
                     <!-- Enable / Disable live_search_streams -->
-                    <div class="mb-3">
+                    <div class="mb-3 pro-mode-section" style="display: none;">
                         <h6>Live Search Streams: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                              title="Opt-in to enable live search based on searching timeout period. Otherwise, the stream result will be based on the cached data."></span>
+                                                       title="Opt-in to enable live search based on searching timeout period. Otherwise, the stream result will be based on the cached data."></span>
                         </h6>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="live_search_streams" id="live_search_streams"
@@ -506,7 +527,7 @@
                     </div>
                 </div>
 
-                <div class="section-container">
+                <div class="section-container pro-mode-section" style="display: none;">
                     <h4 class="section-header">External Services Configuration</h4>
                     <hr>
 
