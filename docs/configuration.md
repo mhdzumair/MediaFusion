@@ -36,9 +36,6 @@ These URLs define the locations of various external services used by MediaFusion
 - **playwright_cdp_url** (default: `"ws://browserless:3000?blockAds=true&stealth=true"`): The URL for the Playwright CDP (Chrome DevTools Protocol) service.
 - **flaresolverr_url** (default: `"http://flaresolverr:8191/v1"`): The URL for the FlareSolverr service.
 
-## External Service API Keys
-- **scrapeops_api_key** (Optional): The API key for the ScrapeOps monitoring service.
-
 ## Prowlarr Settings
 
 These settings are specific to the Prowlarr integration.

@@ -46,8 +46,6 @@ parsett = "*"
 tenacity = "*"
 ratelimit = "*"
 qrcode = "*"
-scrapeops-scrapy = "*"
-scrapeops-python-requests = "*"
 aioseedrcc = "*"
 
 [dev-packages]

@@ -5,7 +5,6 @@ from typing import List, Dict, Any
 import PTT
 from httpx import Response
 from tenacity import RetryError
-from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper, ScraperError
@@ -36,14 +35,6 @@ class ZileanScraper(BaseScraper):
         job_name = f"{metadata.title}:{metadata.id}"
         if catalog_type == "series":
             job_name += f":{season}:{episode}"
-
-        scrapeops_logger = None
-        if settings.scrapeops_api_key:
-            scrapeops_logger = ScrapeOpsRequests(
-                scrapeops_api_key=settings.scrapeops_api_key,
-                spider_name="Zilean Scraper",
-                job_name=job_name,
-            )
 
         search_task = asyncio.create_task(
             self.make_request(
@@ -80,16 +71,13 @@ class ZileanScraper(BaseScraper):
         )
 
         stream_data = []
-        response = None
         if isinstance(search_response, Response):
-            response = search_response
             stream_data.extend(search_response.json())
         else:
             self.logger.error(
                 f"Error occurred while search {metadata.title}: {search_response}"
             )
         if isinstance(filtered_response, Response):
-            response = filtered_response
             stream_data.extend(filtered_response.json())
         else:
             self.logger.error(
@@ -98,20 +86,12 @@ class ZileanScraper(BaseScraper):
 
         if not self.validate_response(stream_data):
             self.logger.error(f"No valid streams found for {metadata.title}")
-            if scrapeops_logger:
-                scrapeops_logger.logger.close_sdk()
             return []
 
         try:
             streams = await self.parse_response(
                 stream_data, metadata, catalog_type, season, episode
             )
-            if scrapeops_logger:
-                for stream in streams:
-                    scrapeops_logger.item_scraped(
-                        item=stream.model_dump(include={"id"}),
-                        response=response,
-                    )
             return streams
         except (ScraperError, RetryError):
             return []
@@ -120,9 +100,6 @@ class ZileanScraper(BaseScraper):
                 f"Error occurred while fetching {metadata.title}: {e}"
             )
             return []
-        finally:
-            if scrapeops_logger:
-                scrapeops_logger.logger.close_sdk()
 
     async def parse_response(
         self,

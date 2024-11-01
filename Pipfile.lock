@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "60522a8f5bb55e1ea28080bf09231118086caab9be5a91e6a4b15335f57142d0"
+            "sha256": "1bfd1eeb0ef28abd4907e5b1e1046ab6912f9b37f4b1b66001a91d41d2f2a115"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1065,14 +1065,6 @@
             ],
             "markers": "python_version >= '3.7'",
             "version": "==1.0.1"
-        },
-        "json5": {
-            "hashes": [
-                "sha256:34ed7d834b1341a86987ed52f3f76cd8ee184394906b6e22a1e0deb9ab294e8f",
-                "sha256:548e41b9be043f9426776f05df8635a00fe06104ea51ed24b67f908856e151ae"
-            ],
-            "markers": "python_version >= '3.8'",
-            "version": "==0.9.25"
         },
         "jsonschema": {
             "hashes": [
@@ -2456,29 +2448,6 @@
             "markers": "python_version >= '3.8'",
             "version": "==0.20.1"
         },
-        "scrapeops-python-logger": {
-            "hashes": [
-                "sha256:faf58d35a6f043e90cd9680c070046f6617ceff725528ab66a98657c7cdef8f3"
-            ],
-            "markers": "python_version >= '3.6'",
-            "version": "==0.4.7"
-        },
-        "scrapeops-python-requests": {
-            "hashes": [
-                "sha256:2c7b6e2ecd7690efff1f0b0f506df1f189f07534bf9f9eb6f5b8e8cf604e5198"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '3.6'",
-            "version": "==0.4.7"
-        },
-        "scrapeops-scrapy": {
-            "hashes": [
-                "sha256:42a78c2e48c395895a2145d57ee912dbdf14c675738187fa08c191fb637f6a2a"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==0.5.6"
-        },
         "scrapy": {
             "hashes": [
                 "sha256:4be353d6abbb942a9f7e7614ca8b5f3d9037381176ac8d8859c8cac676e74fa0",
@@ -2625,14 +2594,6 @@
             "index": "pypi",
             "markers": "python_version >= '3.8'",
             "version": "==0.22.1"
-        },
-        "tld": {
-            "hashes": [
-                "sha256:93dde5e1c04bdf1844976eae440706379d21f4ab235b73c05d7483e074fb5629",
-                "sha256:f75b2be080f767ed17c2338a339eaa4fab5792586319ca819119da252f9f3749"
-            ],
-            "markers": "python_version >= '3.7' and python_version < '4'",
-            "version": "==0.13"
         },
         "tldextract": {
             "hashes": [

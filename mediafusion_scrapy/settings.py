@@ -62,20 +62,6 @@ EXTENSIONS = {
     "mediafusion_scrapy.extensions.InactivityMonitor": 100,
 }
 
-if settings.scrapeops_api_key:
-    SCRAPEOPS_API_KEY = settings.scrapeops_api_key
-    DOWNLOADER_MIDDLEWARES.update(
-        {
-            "scrapeops_scrapy.middleware.retry.RetryMiddleware": 550,
-            "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,
-        }
-    )
-    EXTENSIONS.update(
-        {
-            "scrapeops_scrapy.extension.ScrapeOpsMonitor": 500,  # ScrapeOps Monitor
-        }
-    )
-
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 # ITEM_PIPELINES = {

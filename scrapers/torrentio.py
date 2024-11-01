@@ -5,7 +5,6 @@ from os import path
 from typing import List, Dict, Any
 
 import PTT
-from scrapeops_python_requests.scrapeops_requests import ScrapeOpsRequests
 from tenacity import RetryError
 
 from db.config import settings
@@ -44,14 +43,6 @@ class TorrentioScraper(BaseScraper):
             url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
             job_name += f":{season}:{episode}"
 
-        scrapeops_logger = None
-        if settings.scrapeops_api_key:
-            scrapeops_logger = ScrapeOpsRequests(
-                scrapeops_api_key=settings.scrapeops_api_key,
-                spider_name="Torrentio Scraper",
-                job_name=job_name,
-            )
-
         try:
             response = await self.make_request(url)
             response.raise_for_status()
@@ -61,23 +52,14 @@ class TorrentioScraper(BaseScraper):
                 self.logger.warning(f"Invalid response received for {url}")
                 return []
 
-            stream_data = await self.parse_response(
+            return await self.parse_response(
                 data, metadata, catalog_type, season, episode
             )
-            for stream in stream_data:
-                if scrapeops_logger:
-                    scrapeops_logger.item_scraped(
-                        item=stream.model_dump(include={"id"}), response=response
-                    )
-            return stream_data
         except (ScraperError, RetryError):
             return []
         except Exception as e:
             self.logger.exception(f"Error occurred while fetching {url}: {e}")
             return []
-        finally:
-            if scrapeops_logger:
-                scrapeops_logger.logger.close_sdk()
 
     def validate_response(self, response: Dict[str, Any]) -> bool:
         return "streams" in response and isinstance(response["streams"], list)

@@ -31,9 +31,6 @@ class Settings(BaseSettings):
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
     flaresolverr_url: str = "http://flaresolverr:8191/v1"
 
-    # External Service API Keys
-    scrapeops_api_key: str | None = None
-
     # Prowlarr Settings
     prowlarr_url: str = "http://prowlarr-service:9696"
     prowlarr_api_key: str | None = None
