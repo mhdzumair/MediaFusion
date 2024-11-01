@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 import pymongo
 import pytz
-from beanie import Document, Link
+from beanie import Document
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
@@ -147,7 +147,6 @@ class MediaFusionMetaData(Document):
     is_poster_working: Optional[bool] = True
     is_add_title_to_poster: Optional[bool] = False
     background: Optional[str] = None
-    streams: list[Link[TorrentStreams]]
     type: str
     description: Optional[str] = None
     runtime: Optional[str] = None
@@ -191,7 +190,6 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     country: str | None = None
     tv_language: str | None = None
     logo: Optional[str] = None
-    streams: list[Link[TVStreams]]
 
 
 class MediaFusionEventsMetaData(MediaFusionMetaData):

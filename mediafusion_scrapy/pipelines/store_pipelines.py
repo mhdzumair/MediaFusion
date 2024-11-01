@@ -69,36 +69,29 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
             logging.warning(f"title not found in item: {item}")
             raise DropItem(f"title not found in item: {item}")
 
-        series = await MediaFusionSeriesMetaData.find_one(
-            {"title": item["title"]}, fetch_links=True
-        )
+        series = await MediaFusionSeriesMetaData.find_one({"title": item["title"]})
 
         if not series:
             meta_id = f"mf{uuid4().fields[-1]}"
-            poster = item.get("poster")
-            background = item.get("background")
 
             # Create an initial entry for the series
             series = MediaFusionSeriesMetaData(
                 id=meta_id,
                 title=item["title"],
                 year=item["year"],
-                poster=poster,
-                background=background,
-                streams=[],
-                is_poster_working=bool(poster),
+                poster=item.get("poster"),
+                background=item.get("background"),
+                is_poster_working=bool(item.get("poster")),
                 is_add_title_to_poster=item.get("is_add_title_to_poster", False),
             )
             await series.insert()
             logging.info("Added series %s", series.title)
 
-        meta_id = series.id
-
-        stream = next((s for s in series.streams if s.id == item["info_hash"]), None)
-        if stream is None:
-            # Create the stream
-            stream = TorrentStreams(
+        torrent_stream = await TorrentStreams.find_one({"_id": item["info_hash"]})
+        if not torrent_stream:
+            torrent_stream = TorrentStreams(
                 id=item["info_hash"],
+                meta_id=series.id,
                 torrent_name=item["torrent_name"],
                 announce_list=item["announce_list"],
                 size=item["total_size"],
@@ -111,35 +104,32 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
                 catalog=item["catalog"],
                 created_at=item["created_at"],
                 season=Season(season_number=1, episodes=item["episodes"]),
-                meta_id=meta_id,
                 seeders=item["seeders"],
             )
-            # Add the stream to the series
-            series.streams.append(stream)
+            await torrent_stream.insert()
             logging.info(
-                "Added stream %s to series %s", stream.torrent_name, series.title
+                "Added torrent stream %s for series %s",
+                torrent_stream.torrent_name,
+                series.title,
             )
 
-        self.organize_episodes(series)
-
-        await series.save(link_rule=WriteRules.WRITE)
-        logging.info("Updated series %s", series.title)
+        await self.organize_episodes(series.id)
         await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
 
         return item
 
-    def organize_episodes(self, series):
+    async def organize_episodes(self, series_id):
+        # Fetch all torrent streams for this series
+        torrent_streams = await TorrentStreams.find({"meta_id": series_id}).to_list()
+
         # Flatten all episodes from all streams and sort by release date
         all_episodes = sorted(
             (
                 episode
-                for stream in series.streams
+                for stream in torrent_streams
                 for episode in stream.season.episodes
             ),
-            key=lambda e: (
-                e.released.date(),
-                e.filename,
-            ),  # Sort primarily by released date, then by filename
+            key=lambda e: (e.released.date(), e.filename),
         )
 
         # Assign episode numbers, ensuring the same title across different qualities gets the same number
@@ -148,16 +138,16 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
         for episode in all_episodes:
             if episode.title != last_title:
                 if last_title:
-                    episode_number = episode_number + 1
+                    episode_number += 1
                 last_title = episode.title
-
             episode.episode_number = episode_number
 
-        # Now distribute episodes back to their respective streams, ensuring they are in the correct order
-        for stream in series.streams:
-            stream.season.episodes.sort(
-                key=lambda e: e.episode_number
-            )  # Ensure episodes are ordered by episode number
+        # Update episodes in each torrent stream
+        for stream in torrent_streams:
+            stream.season.episodes.sort(key=lambda e: e.episode_number)
+            await stream.save()
+
+        logging.info(f"Organized episodes for series {series_id}")
 
 
 class TVStorePipeline(QueueBasedPipeline):
