@@ -1,186 +1,89 @@
-import math
+import asyncio
 import re
-import time
+from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Optional, Dict, List, Any, Tuple
+from enum import Enum
+import math
+import logging
 
-from seedrcc import Seedr
-from thefuzz import fuzz
+from aioseedrcc import Seedr
 
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
+from streaming_providers.parser import select_file_index_from_torrent
 
 
-def get_info_hash_folder_id(seedr, info_hash: str):
-    """Gets the folder_id of a folder with a given info_hash."""
-    folder_content = seedr.listContents()
-    info_hash_folder = next(
-        (f for f in folder_content["folders"] if f["name"] == info_hash), None
-    )
-    if info_hash_folder:
-        return info_hash_folder["id"]
+class TorrentStatus(Enum):
+    DOWNLOADING = "downloading"
+    COMPLETED = "completed"
+    NOT_FOUND = "not_found"
 
 
-def get_folder_content(seedr, info_hash: str, sub_content_key: str):
-    """Gets the folder content based on the info_hash and sub_content_key."""
-    if info_hash_folder_id := get_info_hash_folder_id(seedr, info_hash):
-        sub_folder_content = seedr.listContents(info_hash_folder_id)
-        if sub_folder_content[sub_content_key]:
-            return sub_folder_content[sub_content_key][0]
+def clean_filename(name: Optional[str], replace: str = "") -> str:
+    """Clean filename of special characters."""
+    if not name:
+        return ""
+    return re.sub(r"[^a-zA-Z0-9 .,;:_~\-()]", replace, name)
 
 
-def check_torrent_status(seedr, info_hash: str):
-    """Checks if a torrent with a given info_hash is currently downloading."""
-    return get_folder_content(seedr, info_hash, "torrents")
-
-
-def check_folder_status(seedr, info_hash: str) -> dict | None:
-    """Checks if a torrent with a given folder_name has completed downloading."""
-    return get_folder_content(seedr, info_hash, "folders")
-
-
-def add_magnet_and_get_torrent(seedr, magnet_link: str, info_hash: str) -> None:
-    """Adds a magnet link to Seedr and returns the corresponding torrent."""
-    seedr.addFolder(info_hash)
-    info_hash_folder_id = get_info_hash_folder_id(seedr, info_hash)
-    transfer = seedr.addTorrent(magnet_link, folderId=info_hash_folder_id)
-
-    if transfer["result"] is True:
-        return
-    elif transfer["result"] in (
-        "not_enough_space_added_to_wishlist",
-        "not_enough_space_wishlist_full",
-    ):
-        raise ProviderException(
-            "Not enough space in Seedr account to add this torrent",
-            "not_enough_space.mp4",
-        )
-    elif transfer["result"] == "queue_full_added_to_wishlist":
-        raise ProviderException(
-            "Seedr queue is full, remove queued torrents and try again",
-            "queue_full.mp4",
-        )
-
-    raise ProviderException(
-        "Error transferring magnet link to Seedr", "transfer_error.mp4"
-    )
-
-
-def wait_for_torrent_to_complete(
-    seedr, info_hash: str, max_retries: int, retry_interval: int
-):
-    """Waits for a torrent with the given info_hash to complete downloading."""
-    retries = 0
-    while retries < max_retries:
-        torrent = check_torrent_status(seedr, info_hash)
-        if torrent is None:
-            return  # Torrent was already downloaded
-        if torrent and torrent.get("progress") == "100":
-            return
-        time.sleep(retry_interval)
-        retries += 1
-
-    raise ProviderException("Torrent not downloaded yet.", "torrent_not_downloaded.mp4")
-
-
-def get_file_details_from_folder(seedr, folder_id: int, filename: str):
-    """Gets the details of the file in a given folder."""
-    folder_content = seedr.listContents(folder_id)
-    exact_match = [f for f in folder_content["files"] if f["name"] == filename]
-    if exact_match:
-        return exact_match[0]
-
-    # If the file is not found with exact match, try to find it by fuzzy ratio
-    for file in folder_content["files"]:
-        file["fuzzy_ratio"] = fuzz.ratio(filename, file["name"])
-    selected_file = max(folder_content["files"], key=lambda x: x["fuzzy_ratio"])
-
-    # If the fuzzy ratio is less than 50, then select the largest file
-    if selected_file["fuzzy_ratio"] < 50:
-        selected_file = max(folder_content["files"], key=lambda x: x["size"])
-
-    if selected_file["play_video"] is False:
-        raise ProviderException(
-            "No matching file available for this torrent", "no_matching_file.mp4"
-        )
-    return selected_file
-
-
-def seedr_clean_name(name: str, replace: str = "") -> str:
-    # Only allow alphanumeric characters, spaces, and `.,;:_~-()`
-    cleaned_name = re.sub(r"[^a-zA-Z0-9 .,;:_~\-()]", replace, name)
-    return cleaned_name
-
-
-def get_seedr_client(user_data: UserData) -> Seedr:
-    """Returns a Seedr client with the user's token."""
+@asynccontextmanager
+async def get_seedr_client(user_data: UserData) -> Seedr:
+    """Context manager that provides a Seedr client instance."""
     try:
-        seedr = Seedr(token=user_data.streaming_provider.token)
-    except Exception:
-        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
-    response = seedr.testToken()
-    if "error" in response:
-        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
-    return seedr
+        async with Seedr(token=user_data.streaming_provider.token) as seedr:
+            response = await seedr.test_token()
+            if "error" in response:
+                raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+            yield seedr
+    except ProviderException as error:
+        raise error
+    except Exception as error:
+        logging.exception(error)
+        raise error
 
 
-def rename_seedr_files(seedr, folder_id):
-    """rename filenames to fix stremio android client bug."""
-    folder_content = seedr.listContents(folder_id)
-    for file in folder_content["files"]:
-        # rename file to remove any special characters
-        if file["name"] != seedr_clean_name(file["name"]):
-            seedr.renameFile(file["folder_file_id"], seedr_clean_name(file["name"]))
+async def get_folder_by_info_hash(
+    seedr: Seedr, info_hash: str
+) -> Optional[Dict[str, Any]]:
+    """Find a folder by info_hash."""
+    contents = await seedr.list_contents()
+    return next((f for f in contents["folders"] if f["name"] == info_hash), None)
 
 
-async def get_video_url_from_seedr(
-    info_hash: str,
-    magnet_link: str,
-    user_data: UserData,
-    stream: TorrentStreams,
-    filename: str,
-    max_retries=5,
-    retry_interval=5,
-    **kwargs,
-) -> str:
-    """Gets a direct download link from Seedr using a magnet link and token."""
-    seedr = get_seedr_client(user_data)
-
-    # Check for existing torrent or folder
-    torrent = check_torrent_status(seedr, info_hash)
-    if torrent:
-        wait_for_torrent_to_complete(seedr, info_hash, max_retries, retry_interval)
-    folder = check_folder_status(seedr, info_hash)
-
-    # Handle the torrent based on its status or if it's already in a folder
+async def check_torrent_status(
+    seedr: Seedr, info_hash: str
+) -> Tuple[TorrentStatus, Optional[Dict]]:
+    """Check the current status of a torrent."""
+    folder = await get_folder_by_info_hash(seedr, info_hash)
     if not folder:
-        free_up_space(seedr, stream.size)
-        add_magnet_and_get_torrent(seedr, magnet_link, info_hash)
-        wait_for_torrent_to_complete(seedr, info_hash, max_retries, retry_interval)
-        folder = check_folder_status(seedr, info_hash)
-    folder_id = folder["id"]
+        return TorrentStatus.NOT_FOUND, None
 
-    # rename filenames to fix stremio android client bug.
-    rename_seedr_files(seedr, folder_id)
+    folder_content = await seedr.list_contents(folder["id"])
 
-    selected_file = get_file_details_from_folder(
-        seedr,
-        folder_id,
-        seedr_clean_name(filename or stream.torrent_name),
-    )
-    video_link = seedr.fetchFile(selected_file["folder_file_id"])["url"]
+    if folder_content["torrents"]:
+        return TorrentStatus.DOWNLOADING, folder_content["torrents"][0]
+    elif folder_content["folders"]:
+        return TorrentStatus.COMPLETED, folder_content["folders"][0]
 
-    return video_link
+    return TorrentStatus.NOT_FOUND, None
 
 
-def free_up_space(seedr, required_space):
-    """Frees up space in the Seedr account by deleting folders until the required space is available."""
-    contents = seedr.listContents()
+async def ensure_space_available(seedr: Seedr, required_space: int | float) -> None:
+    """Ensure enough space is available, deleting old content if necessary."""
+    contents = await seedr.list_contents()
+    if required_space != math.inf and required_space > contents["space_max"]:
+        raise ProviderException(
+            "Not enough space in Seedr account", "not_enough_space.mp4"
+        )
+
     available_space = contents["space_max"] - contents["space_used"]
 
     if available_space >= required_space:
-        return  # There's enough space, no need to delete anything
+        return
 
+    # Sort folders by size (descending) and last update time
     folders = sorted(
         contents["folders"],
         key=lambda x: (
@@ -192,51 +95,167 @@ def free_up_space(seedr, required_space):
     for folder in folders:
         if available_space >= required_space:
             break
-        # delete sub folder torrents and folders
-        sub_folder_content = seedr.listContents(folder["id"])
-        for sub_folder_torrent in sub_folder_content["torrents"]:
-            seedr.deleteTorrent(sub_folder_torrent["id"])
-        for sub_folder in sub_folder_content["folders"]:
-            seedr.deleteFolder(sub_folder["id"])
-        seedr.deleteFolder(folder["id"])
+
+        # Delete folder contents first
+        sub_content = await seedr.list_contents(folder["id"])
+        for torrent in sub_content["torrents"]:
+            await seedr.delete_item(torrent["id"], "torrent")
+        for subfolder in sub_content["folders"]:
+            await seedr.delete_item(subfolder["id"], "folder")
+
+        await seedr.delete_item(folder["id"], "folder")
         available_space += folder["size"]
 
 
-def update_seedr_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, **kwargs
-):
-    """Updates the cache status of the streams based on the user's Seedr account."""
+async def add_torrent(seedr: Seedr, magnet_link: str, info_hash: str) -> None:
+    """Add a new torrent to Seedr."""
+    await seedr.add_folder(info_hash)
+    folder = await get_folder_by_info_hash(seedr, info_hash)
+    if not folder:
+        raise ProviderException("Failed to create folder", "folder_creation_error.mp4")
+
+    transfer = await seedr.add_torrent(magnet_link=magnet_link, folder_id=folder["id"])
+
+    if transfer["result"] is True:
+        return
+
+    error_messages = {
+        "not_enough_space_added_to_wishlist": (
+            "Not enough space in Seedr account",
+            "not_enough_space.mp4",
+        ),
+        "not_enough_space_wishlist_full": (
+            "Not enough space in Seedr account",
+            "not_enough_space.mp4",
+        ),
+        "queue_full_added_to_wishlist": ("Seedr queue is full", "queue_full.mp4"),
+    }
+
+    if transfer["result"] in error_messages:
+        msg, video = error_messages[transfer["result"]]
+        raise ProviderException(msg, video)
+
+    raise ProviderException(
+        "Error transferring magnet link to Seedr", "transfer_error.mp4"
+    )
+
+
+async def wait_for_completion(
+    seedr: Seedr, info_hash: str, max_retries: int = 1, retry_interval: int = 1
+) -> None:
+    """Wait for torrent to complete downloading."""
+    for _ in range(max_retries):
+        status, data = await check_torrent_status(seedr, info_hash)
+
+        if status == TorrentStatus.COMPLETED:
+            return
+        elif status == TorrentStatus.DOWNLOADING and data.get("progress") == "100":
+            return
+
+        await asyncio.sleep(retry_interval)
+
+    raise ProviderException("Torrent not downloaded yet.", "torrent_not_downloaded.mp4")
+
+
+async def clean_names(seedr: Seedr, folder_id: str) -> None:
+    """Clean special characters from all file and folder names."""
+    content = await seedr.list_contents(folder_id)
+
+    for file in content["files"]:
+        clean_name = clean_filename(file["name"])
+        if file["name"] != clean_name:
+            await seedr.rename_item(file["folder_file_id"], clean_name, "file")
+
+
+async def get_video_url_from_seedr(
+    info_hash: str,
+    magnet_link: str,
+    user_data: UserData,
+    stream: TorrentStreams,
+    filename: Optional[str] = None,
+    episode: Optional[int] = None,
+    **kwargs
+) -> str:
+    """Main function to get video URL from Seedr."""
+    async with get_seedr_client(user_data) as seedr:
+        # Check existing torrent status
+        status, data = await check_torrent_status(seedr, info_hash)
+
+        if status == TorrentStatus.NOT_FOUND:
+            await ensure_space_available(seedr, stream.size)
+            await add_torrent(seedr, magnet_link, info_hash)
+            await wait_for_completion(seedr, info_hash)
+            status, data = await check_torrent_status(seedr, info_hash)
+
+        if status != TorrentStatus.COMPLETED or not data:
+            raise ProviderException(
+                "Failed to get completed torrent", "torrent_error.mp4"
+            )
+
+        # Clean filenames for compatibility
+        await clean_names(seedr, data["id"])
+
+        # Get file details
+        folder_content = await seedr.list_contents(data["id"])
+        file_index = await select_file_index_from_torrent(
+            folder_content, clean_filename(filename), episode
+        )
+
+        selected_file = folder_content["files"][file_index]
+        if not selected_file["play_video"]:
+            raise ProviderException(
+                "No matching file available", "no_matching_file.mp4"
+            )
+
+        video_data = await seedr.fetch_file(selected_file["folder_file_id"])
+        return video_data["url"]
+
+
+async def update_seedr_cache_status(
+    streams: List[TorrentStreams], user_data: UserData, **kwargs
+) -> None:
+    """Update cache status for multiple streams."""
     try:
-        seedr = get_seedr_client(user_data)
+        async with get_seedr_client(user_data) as seedr:
+            contents = await seedr.list_contents()
+
+            # Create lookup of valid info hash folders
+            folder_map = {
+                folder["name"]: folder["id"]
+                for folder in contents["folders"]
+                if len(folder["name"]) in (40, 32)
+            }
+
+            if not folder_map:
+                return
+
+            # Update stream cache status
+            for stream in streams:
+                if stream.id in folder_map:
+                    folder_content = await seedr.list_contents(folder_map[stream.id])
+                    if folder_content["folders"]:
+                        stream.cached = True
     except ProviderException:
         return
 
-    folder_content = {
-        folder["name"]: folder["id"] for folder in seedr.listContents()["folders"]
-    }
 
-    for stream in streams:
-        if stream.id in folder_content:
-            # check if folder is not empty
-            sub_folder_content = seedr.listContents(folder_content[stream.id])
-            if sub_folder_content["folders"]:
-                stream.cached = True
-                continue
-        stream.cached = False
-
-
-def fetch_downloaded_info_hashes_from_seedr(user_data: UserData, **kwargs) -> list[str]:
-    """Fetches the info_hashes of all the torrents downloaded in the user's Seedr account."""
+async def fetch_downloaded_info_hashes_from_seedr(
+    user_data: UserData, **kwargs
+) -> List[str]:
+    """Fetch the info_hashes of all downloaded torrents in the user's account."""
     try:
-        seedr = get_seedr_client(user_data)
+        async with get_seedr_client(user_data) as seedr:
+            contents = await seedr.list_contents()
+            return [
+                folder["name"]
+                for folder in contents["folders"]
+                if len(folder["name"]) in (40, 32)
+            ]
     except ProviderException:
         return []
 
-    return [folder["name"] for folder in seedr.listContents()["folders"]]
 
-
-def delete_all_torrents_from_seedr(user_data: UserData, **kwargs):
-    """Deletes all torrents from the user's Seedr account."""
-    seedr = get_seedr_client(user_data)
-
-    free_up_space(seedr, math.inf)
+async def delete_all_torrents_from_seedr(user_data: UserData, **kwargs) -> None:
+    """Delete all torrents from the user's account."""
+    async with get_seedr_client(user_data) as seedr:
+        await ensure_space_available(seedr, math.inf)
