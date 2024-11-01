@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-import motor.motor_asyncio
+from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
 from db.config import settings
@@ -21,7 +21,7 @@ async def init():
     for i in range(retries):
         try:
             # Create a Motor client with maxPoolSize
-            client = motor.motor_asyncio.AsyncIOMotorClient(
+            client = AsyncIOMotorClient(
                 settings.mongo_uri, maxPoolSize=settings.db_max_connections
             )
             # Init beanie with the Product document class
@@ -30,9 +30,9 @@ async def init():
                 document_models=[
                     MediaFusionMovieMetaData,
                     MediaFusionSeriesMetaData,
+                    MediaFusionTVMetaData,
                     TorrentStreams,
                     TVStreams,
-                    MediaFusionTVMetaData,
                 ],
                 multiprocessing_mode=True,
             )
@@ -41,7 +41,7 @@ async def init():
         except Exception as e:
             if i < retries - 1:  # i is zero indexed
                 wait_time = 2**i  # exponential backoff
-                logging.warning(
+                logging.exception(
                     f"Error initializing database: {e}, retrying in {wait_time} seconds..."
                 )
                 await asyncio.sleep(wait_time)
