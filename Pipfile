@@ -20,7 +20,6 @@ python-dateutil = "*"
 bencodepy = "*"
 pydantic-settings = "*"
 pycryptodome = "*"
-seedrcc = "*"
 pillow = "*"
 httpx = "*"
 uvloop = {  markers = "sys_platform != 'win32'" }
@@ -49,6 +48,7 @@ ratelimit = "*"
 qrcode = "*"
 scrapeops-scrapy = "*"
 scrapeops-python-requests = "*"
+aioseedrcc = "*"
 
 [dev-packages]
 pysocks = "*"

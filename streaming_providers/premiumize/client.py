@@ -1,5 +1,4 @@
-from base64 import b64encode, b64decode
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote_plus
 from uuid import uuid4
 
@@ -17,35 +16,41 @@ class Premiumize(DebridClient):
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
 
-    def _handle_service_specific_errors(self, error):
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
-    def initialize_headers(self):
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[dict | str] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        is_return_none: bool = False,
+        is_expected_to_fail: bool = False,
+        retry_count: int = 0,
+    ) -> dict | list:
+        params = params or {}
+        if self.is_private_token:
+            params["apikey"] = self.token
+        return await super()._make_request(
+            method, url, data, json, params, is_return_none, is_expected_to_fail
+        )
+
+    async def initialize_headers(self):
         if self.token:
-            token_data = self.decode_token_str(self.token)
-            self.headers = {"Authorization": f"Bearer {token_data['access_token']}"}
-
-    @staticmethod
-    def encode_token_data(access_token: str):
-        """
-        Premiumize support grant_type device_code which has 10years of token expiration.
-        """
-        return b64encode(str(access_token).encode()).decode()
-
-    @staticmethod
-    def decode_token_str(token: str) -> dict[str, str]:
-        try:
-            access_token = b64decode(token).decode()
-        except ValueError:
-            raise ProviderException("Invalid token", "invalid_token.mp4")
-        return {"access_token": access_token}
+            access_token = self.decode_token_str(self.token)
+            if access_token:
+                self.headers = {"Authorization": f"Bearer {access_token}"}
+            else:
+                self.is_private_token = True
 
     def get_authorization_url(self) -> str:
         state = uuid4().hex
         return f"{self.OAUTH_URL}?client_id={self.OAUTH_CLIENT_ID}&response_type=code&redirect_uri={quote_plus(self.REDIRECT_URI)}&state={state}"
 
-    def get_token(self, code):
-        return self._make_request(
+    async def get_token(self, code):
+        return await self._make_request(
             "POST",
             self.OAUTH_TOKEN_URL,
             data={
@@ -57,25 +62,25 @@ class Premiumize(DebridClient):
             },
         )
 
-    def add_magnet_link(self, magnet_link: str, folder_id: str = None):
-        return self._make_request(
+    async def add_magnet_link(self, magnet_link: str, folder_id: str = None):
+        return await self._make_request(
             "POST",
             f"{self.BASE_URL}/transfer/create",
             data={"src": magnet_link, "folder_id": folder_id},
         )
 
-    def create_folder(self, name, parent_id=None):
-        return self._make_request(
+    async def create_folder(self, name, parent_id=None):
+        return await self._make_request(
             "POST",
             f"{self.BASE_URL}/folder/create",
             data={"name": name, "parent_id": parent_id},
         )
 
-    def get_transfer_list(self):
-        return self._make_request("GET", f"{self.BASE_URL}/transfer/list")
+    async def get_transfer_list(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/transfer/list")
 
-    def get_torrent_info(self, torrent_id):
-        transfer_list = self.get_transfer_list()
+    async def get_torrent_info(self, torrent_id):
+        transfer_list = await self.get_transfer_list()
         torrent_info = next(
             (
                 torrent
@@ -86,25 +91,25 @@ class Premiumize(DebridClient):
         )
         return torrent_info
 
-    def get_folder_list(self, folder_id: str = None):
-        return self._make_request(
+    async def get_folder_list(self, folder_id: str = None):
+        return await self._make_request(
             "GET",
             f"{self.BASE_URL}/folder/list",
             params={"id": folder_id} if folder_id else None,
         )
 
-    def delete_folder(self, folder_id: str):
-        return self._make_request(
+    async def delete_folder(self, folder_id: str):
+        return await self._make_request(
             "POST", f"{self.BASE_URL}/folder/delete", data={"id": folder_id}
         )
 
-    def delete_torrent(self, torrent_id):
-        return self._make_request(
+    async def delete_torrent(self, torrent_id):
+        return await self._make_request(
             "POST", f"{self.BASE_URL}/transfer/delete", data={"id": torrent_id}
         )
 
-    def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        results = self._make_request(
+    async def get_torrent_instant_availability(self, torrent_hashes: list[str]):
+        results = await self._make_request(
             "GET", f"{self.BASE_URL}/cache/check", params={"items[]": torrent_hashes}
         )
         if results.get("status") != "success":
@@ -114,13 +119,11 @@ class Premiumize(DebridClient):
             )
         return results
 
-    def disable_access_token(self):
+    async def disable_access_token(self):
         pass
 
-    def get_available_torrent(
-        self, info_hash: str, torrent_name
-    ) -> dict[str, Any] | None:
-        torrent_list_response = self.get_transfer_list()
+    async def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
+        torrent_list_response = await self.get_transfer_list()
         if torrent_list_response.get("status") != "success":
             if torrent_list_response.get("message") == "Not logged in.":
                 raise ProviderException(
@@ -132,10 +135,14 @@ class Premiumize(DebridClient):
 
         available_torrents = torrent_list_response["transfers"]
         for torrent in available_torrents:
-            src = torrent.get("src")
-            if (
-                (src and info_hash in src)
-                or info_hash == torrent["name"]
-                or torrent_name == torrent["name"]
-            ):
-                return torrent
+            src = torrent["src"]
+            async with self.session.head(src) as response:
+                if response.status != 200:
+                    continue
+
+                magnet_link_content = response.headers.get("Content-Disposition")
+                if info_hash in magnet_link_content:
+                    return torrent
+
+    async def get_account_info(self):
+        return await self._make_request("GET", f"{self.BASE_URL}/account/info")

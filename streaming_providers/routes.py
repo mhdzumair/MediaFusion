@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from os import path
+from typing import Annotated
 
 from fastapi import (
     Request,
@@ -8,6 +9,7 @@ from fastapi import (
     HTTPException,
     APIRouter,
     Depends,
+    BackgroundTasks,
 )
 from fastapi.responses import RedirectResponse
 
@@ -75,16 +77,11 @@ async def fetch_stream_or_404(info_hash):
     if stream:
         return stream
 
-    # TODO: added for backwards compatibility, remove in the future
-    stream = await crud.get_stream_by_info_hash(info_hash.upper())
-    if stream:
-        return stream
-
     raise HTTPException(status_code=400, detail="Stream not found.")
 
 
 async def get_or_create_video_url(
-    stream, user_data, info_hash, season, episode, user_ip
+    stream, user_data, info_hash, season, episode, user_ip, background_tasks
 ):
     """
     Retrieves or generates the video URL based on stream data and user info.
@@ -94,6 +91,7 @@ async def get_or_create_video_url(
     )
     episode_data = stream.get_episode(season, episode)
     filename = episode_data.filename if episode_data else stream.filename
+    file_index = episode_data.file_index if episode_data else stream.file_index
 
     get_video_url = mapper.GET_VIDEO_URL_FUNCTIONS.get(
         user_data.streaming_provider.service
@@ -103,13 +101,18 @@ async def get_or_create_video_url(
         magnet_link=magnet_link,
         user_data=user_data,
         filename=filename,
-        file_index=stream.file_index,
+        file_index=file_index,
         user_ip=user_ip,
+        season=season,
         episode=episode,
         max_retries=1,
         retry_interval=0,
         stream=stream,
         torrent_name=stream.torrent_name,
+        background_tasks=background_tasks,
+        indexer_type=(
+            "public" if stream.indexer_flags in [[], ["freeleech"]] else "private"
+        ),
     )
 
     if asyncio.iscoroutinefunction(get_video_url):
@@ -187,9 +190,10 @@ async def streaming_provider_endpoint(
     info_hash: str,
     response: Response,
     request: Request,
+    user_data: Annotated[schemas.UserData, Depends(get_user_data)],
+    background_tasks: BackgroundTasks,
     season: int = None,
     episode: int = None,
-    user_data: schemas.UserData = Depends(get_user_data),
 ):
     """
     Handles streaming provider requests, using caching for performance and
@@ -227,7 +231,7 @@ async def streaming_provider_endpoint(
 
     try:
         video_url = await get_or_create_video_url(
-            stream, user_data, info_hash, season, episode, user_ip
+            stream, user_data, info_hash, season, episode, user_ip, background_tasks
         )
         await cache_stream_url(cached_stream_url_key, video_url)
         video_url = apply_mediaflow_proxy_if_needed(video_url, user_data)

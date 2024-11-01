@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 import aiohttp
@@ -122,7 +123,6 @@ async def find_file_in_folder_tree(
     my_pack_folder_id: str,
     info_hash: str,
     filename: str,
-    file_index: int,
     episode: int | None,
 ) -> dict | None:
     torrent_file = await get_torrent_file_by_info_hash(
@@ -136,12 +136,13 @@ async def find_file_in_folder_tree(
     else:
         files = await get_files_from_folder(pikpak, torrent_file["id"])
 
-    file_index = select_file_index_from_torrent(
-        {"files": files}, filename, file_index, episode
+    file_index = await select_file_index_from_torrent(
+        {"files": files}, filename, episode
     )
     return files[file_index]
 
 
+@asynccontextmanager
 async def initialize_pikpak(user_data: UserData):
     cache_key = f"pikpak:{crypto.get_text_hash(user_data.streaming_provider.email + user_data.streaming_provider.password, full_hash=True)}"
     if pikpak_encrypted_token := await REDIS_ASYNC_CLIENT.get(cache_key):
@@ -157,39 +158,41 @@ async def initialize_pikpak(user_data: UserData):
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"user_data": user_data},
         )
-        return pikpak
+    else:
+        pikpak = PikPakApi(
+            username=user_data.streaming_provider.email,
+            password=user_data.streaming_provider.password,
+            httpx_client_args={
+                "transport": httpx.AsyncHTTPTransport(retries=3),
+                "timeout": 10,
+            },
+            token_refresh_callback=store_pikpak_token_in_cache,
+            token_refresh_callback_kwargs={"user_data": user_data},
+        )
 
-    pikpak = PikPakApi(
-        username=user_data.streaming_provider.email,
-        password=user_data.streaming_provider.password,
-        httpx_client_args={
-            "transport": httpx.AsyncHTTPTransport(retries=3),
-            "timeout": 10,
-        },
-        token_refresh_callback=store_pikpak_token_in_cache,
-        token_refresh_callback_kwargs={"user_data": user_data},
-    )
+        try:
+            await pikpak.login()
+        except PikpakException as error:
+            if "Invalid username or password" == str(error):
+                raise ProviderException(
+                    "Invalid PikPak credentials", "invalid_credentials.mp4"
+                )
+            logging.error(f"Failed to connect to PikPak: {error}")
+            raise ProviderException(
+                "Failed to connect to PikPak. Please try again later.",
+                "debrid_service_down_error.mp4",
+            )
+        except (aiohttp.ClientError, httpx.ReadTimeout):
+            raise ProviderException(
+                "Failed to connect to PikPak. Please try again later.",
+                "debrid_service_down_error.mp4",
+            )
+        await store_pikpak_token_in_cache(pikpak, user_data)
 
     try:
-        await pikpak.login()
-    except PikpakException as error:
-        if "Invalid username or password" == str(error):
-            raise ProviderException(
-                "Invalid PikPak credentials", "invalid_credentials.mp4"
-            )
-        logging.error(f"Failed to connect to PikPak: {error}")
-        raise ProviderException(
-            "Failed to connect to PikPak. Please try again later.",
-            "debrid_service_down_error.mp4",
-        )
-    except (aiohttp.ClientError, httpx.ReadTimeout):
-        raise ProviderException(
-            "Failed to connect to PikPak. Please try again later.",
-            "debrid_service_down_error.mp4",
-        )
-
-    await store_pikpak_token_in_cache(pikpak, user_data)
-    return pikpak
+        yield pikpak
+    finally:
+        await pikpak.httpx_client.aclose()
 
 
 async def store_pikpak_token_in_cache(pikpak: PikPakApi, user_data: UserData):
@@ -199,7 +202,7 @@ async def store_pikpak_token_in_cache(pikpak: PikPakApi, user_data: UserData):
         crypto.encrypt_text(
             pikpak.encoded_token, user_data.streaming_provider.password
         ),
-        ex=7 * 24 * 60 * 60,  # Store for 7 days
+        ex=5 * 60,  # 5 minutes
     )
 
 
@@ -266,7 +269,7 @@ async def retrieve_or_download_file(
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        pikpak, my_pack_folder_id, info_hash, filename, stream.file_index, episode
+        pikpak, my_pack_folder_id, info_hash, filename, episode
     )
     if not selected_file:
         await free_up_space(pikpak, stream.size)
@@ -275,7 +278,7 @@ async def retrieve_or_download_file(
             pikpak, info_hash, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            pikpak, my_pack_folder_id, info_hash, filename, stream.file_index, episode
+            pikpak, my_pack_folder_id, info_hash, filename, episode
         )
         if selected_file is None:
             raise ProviderException(
@@ -328,76 +331,65 @@ async def get_video_url_from_pikpak(
     retry_interval=0,
     **kwargs,
 ) -> str:
-    pikpak = await initialize_pikpak(user_data)
-    await handle_torrent_status(pikpak, info_hash, max_retries, retry_interval)
+    async with initialize_pikpak(user_data) as pikpak:
+        await handle_torrent_status(pikpak, info_hash, max_retries, retry_interval)
 
-    my_pack_folder_id = await get_my_pack_folder_id(pikpak)
-    selected_file = await retrieve_or_download_file(
-        pikpak,
-        my_pack_folder_id,
-        filename,
-        magnet_link,
-        info_hash,
-        stream,
-        episode,
-        max_retries,
-        retry_interval,
-    )
+        my_pack_folder_id = await get_my_pack_folder_id(pikpak)
+        selected_file = await retrieve_or_download_file(
+            pikpak,
+            my_pack_folder_id,
+            filename,
+            magnet_link,
+            info_hash,
+            stream,
+            episode,
+            max_retries,
+            retry_interval,
+        )
 
-    file_data = await pikpak.get_download_url(selected_file["id"])
+        file_data = await pikpak.get_download_url(selected_file["id"])
 
-    # if file_data.get("medias"):
-    #     return file_data["medias"][0]["link"]["url"]
+        if file_data.get("medias"):
+            return file_data["medias"][0]["link"]["url"]
 
-    return file_data["web_content_link"]
+        return file_data["web_content_link"]
 
 
 async def update_pikpak_cache_status(
     streams: list[TorrentStreams], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on PikPak's instant availability."""
-    try:
-        pikpak = await initialize_pikpak(user_data)
-    except ProviderException:
-        return
-    tasks = await pikpak.offline_list(phase=["PHASE_TYPE_COMPLETE"])
-    for stream in streams:
-        stream.cached = any(
-            stream.id in task.get("params", {}).get("url", "")
-            for task in tasks["tasks"]
-        )
+    async with initialize_pikpak(user_data) as pikpak:
+        tasks = await pikpak.offline_list(phase=["PHASE_TYPE_COMPLETE"])
+        for stream in streams:
+            stream.cached = any(
+                stream.id in task.get("params", {}).get("url", "")
+                for task in tasks["tasks"]
+            )
 
 
 async def fetch_downloaded_info_hashes_from_pikpak(
     user_data: UserData, **kwargs
 ) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the PikPak account."""
-    try:
-        pikpak = await initialize_pikpak(user_data)
-    except ProviderException:
-        return []
+    async with initialize_pikpak(user_data) as pikpak:
+        my_pack_folder_id = await get_my_pack_folder_id(pikpak)
+        file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
 
-    my_pack_folder_id = await get_my_pack_folder_id(pikpak)
-    file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
+        def _parse_info_hash_from_magnet(magnet_link: str) -> str:
+            return magnet_link.split(":")[-1]
 
-    def _parse_info_hash_from_magnet(magnet_link: str) -> str:
-        return magnet_link.split(":")[-1]
-
-    return [
-        _parse_info_hash_from_magnet(file.get("params", {}).get("url"))
-        for file in file_list_content["files"]
-        if file.get("params", {}).get("url", "").startswith("magnet:")
-    ]
+        return [
+            _parse_info_hash_from_magnet(file.get("params", {}).get("url"))
+            for file in file_list_content["files"]
+            if file.get("params", {}).get("url", "").startswith("magnet:")
+        ]
 
 
 async def delete_all_torrents_from_pikpak(user_data: UserData, **kwargs):
     """Deletes all torrents from the PikPak account."""
-    try:
-        pikpak = await initialize_pikpak(user_data)
-    except ProviderException:
-        return
-
-    my_pack_folder_id = await get_my_pack_folder_id(pikpak)
-    file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
-    file_ids = [file["id"] for file in file_list_content["files"]]
-    await pikpak.delete_forever(file_ids)
+    async with initialize_pikpak(user_data) as pikpak:
+        my_pack_folder_id = await get_my_pack_folder_id(pikpak)
+        file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
+        file_ids = [file["id"] for file in file_list_content["files"]]
+        await pikpak.delete_forever(file_ids)
