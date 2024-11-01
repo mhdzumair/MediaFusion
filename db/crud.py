@@ -317,8 +317,9 @@ async def get_movie_streams(
     if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
         return []
 
+    live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
     cache_key = f"torrent_streams:{video_id}"
-    lock_key = f"{cache_key}_lock" if video_id.startswith("tt") else None
+    lock_key = f"{cache_key}_lock" if live_search_streams else None
     redis_lock = None
 
     # Acquire the lock to prevent multiple scrapers from running at the same time
@@ -327,7 +328,7 @@ async def get_movie_streams(
 
     cached_streams = await get_cached_torrent_streams(cache_key, video_id)
 
-    if video_id.startswith("tt"):
+    if live_search_streams:
         new_streams = await run_scrapers(
             movie_metadata,
             "movie",
@@ -363,8 +364,9 @@ async def get_series_streams(
     ):
         return []
 
+    live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
     cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
-    lock_key = f"{cache_key}_lock" if video_id.startswith("tt") else None
+    lock_key = f"{cache_key}_lock" if live_search_streams else None
     redis_lock = None
 
     # Acquire the lock to prevent multiple scrapers from running at the same time
@@ -375,7 +377,7 @@ async def get_series_streams(
         cache_key, video_id, season, episode
     )
 
-    if video_id.startswith("tt"):
+    if live_search_streams:
         new_streams = await run_scrapers(
             series_metadata,
             "series",

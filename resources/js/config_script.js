@@ -382,6 +382,7 @@ function getUserData() {
         api_password: apiPassword,
         mediaflow_config: mediaflowConfig,
         rpdb_config: rpdbConfig,
+        live_search_streams: document.getElementById('live_search_streams').checked,
     };
 }
 
