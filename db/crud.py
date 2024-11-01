@@ -173,7 +173,6 @@ async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaDa
             year=movie.year,
             poster=movie.primary_image,
             background=movie.primary_image,
-            streams=[],
             description=movie.plot.get("en-US"),
             genres=movie.genres,
             imdb_rating=movie.rating,
@@ -221,7 +220,6 @@ async def get_series_data_by_id(
             end_year=series.end_year if hasattr(series, "end_year") else None,
             poster=series.primary_image,
             background=series.primary_image,
-            streams=[],
             description=series.plot.get("en-US"),
             genres=series.genres,
             imdb_rating=series.rating,
@@ -710,7 +708,6 @@ def create_metadata_object(metadata, imdb_data, model):
         end_year=end_year,
         poster=poster,
         background=background,
-        streams=[],
         description=metadata.get("description"),
         runtime=metadata.get("runtime"),
         website=metadata.get("website"),
@@ -871,9 +868,7 @@ async def process_search_query(
     ]
 
     # Execute the aggregation pipeline
-    search_results = (
-        await MediaFusionMetaData.get_motor_collection().aggregate(pipeline).to_list(50)
-    )
+    search_results = await MediaFusionMetaData.aggregate(pipeline).to_list(50)
 
     return {"metas": search_results}
 
@@ -925,9 +920,7 @@ async def process_tv_search_query(search_query: str, namespace: str) -> dict:
     ]
 
     # Execute the aggregation pipeline
-    search_results = (
-        await MediaFusionMetaData.get_motor_collection().aggregate(pipeline).to_list(50)
-    )
+    search_results = await MediaFusionMetaData.aggregate(pipeline).to_list(50)
 
     return {"metas": search_results}
 
@@ -985,7 +978,6 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
                 logo=tv_metadata.logo,
                 genres=genres,
                 type="tv",
-                streams=[],
             )
             await channel_data.create()
     except DuplicateKeyError:
