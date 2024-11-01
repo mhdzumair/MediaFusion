@@ -198,7 +198,7 @@ class UserData(BaseModel):
     ] = Field(default=["Adults"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")
     language_sorting: list[str | None] = Field(
-        default=list(const.SUPPORTED_LANGUAGES), alias="ls"
+        default=const.LANGUAGES_FILTERS, alias="ls"
     )
     quality_filter: list[str] = Field(
         default=list(const.QUALITY_GROUPS.keys()), alias="qf"

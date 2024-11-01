@@ -120,6 +120,7 @@ NO_CACHE_HEADERS = {
 }
 
 TORRENT_SORTING_PRIORITY = [
+    "language",
     "cached",
     "resolution",
     "quality",
@@ -127,7 +128,7 @@ TORRENT_SORTING_PRIORITY = [
     "seeders",
     "created_at",
 ]
-TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY + ["language"]
+TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY
 
 STREAMING_SERVICE_REQUIREMENTS = {
     "pikpak": ["email", "password"],
@@ -243,7 +244,7 @@ CERTIFICATION_MAPPING = {
     ],
 }
 
-SUPPORTED_LANGUAGES = {
+LANGUAGES_FILTERS = [
     "English",
     "Tamil",
     "Hindi",
@@ -273,7 +274,9 @@ SUPPORTED_LANGUAGES = {
     "Turkish",
     "Greek",
     None,
-}
+]
+
+SUPPORTED_LANGUAGES = set(LANGUAGES_FILTERS)
 
 QUALITY_GROUPS = {
     "BluRay/UHD": ["BluRay", "BluRay REMUX", "BRRip", "BDRip", "UHDRip"],
