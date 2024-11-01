@@ -41,7 +41,7 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
 
         for idx, file in enumerate(files):
             filename = (
-                file[b"path"][0].decode()
+                "/".join([p.decode() for p in file[b"path"]])
                 if b"files" in info
                 else file[b"name"].decode()
             )
