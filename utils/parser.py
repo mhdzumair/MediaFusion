@@ -26,7 +26,6 @@ async def filter_and_sort_streams(
     streams: list[TorrentStreams], user_data: UserData, user_ip: str | None = None
 ) -> list[TorrentStreams]:
     # Convert to sets for faster lookups
-    selected_catalogs_set = set(user_data.selected_catalogs)
     selected_resolutions_set = set(user_data.selected_resolutions)
     quality_filter_set = set(
         quality
@@ -55,10 +54,6 @@ async def filter_and_sort_streams(
             lang for lang in stream.languages if lang in valid_languages
         ] or [None]
         stream.cached = False
-
-        # Check if any of the stream's catalogs are in the selected catalogs
-        if not any(catalog in selected_catalogs_set for catalog in stream.catalog):
-            continue
 
         if stream.filtered_resolution not in selected_resolutions_set:
             continue
@@ -103,21 +98,23 @@ async def filter_and_sort_streams(
             filtered_streams = [stream for stream in filtered_streams if stream.cached]
 
     # Step 3: Dynamically sort streams based on user preferences
-    def dynamic_sort_key(stream: TorrentStreams) -> tuple:
+    def dynamic_sort_key(torrent_stream: TorrentStreams) -> tuple:
         def key_value(key: str) -> Any:
             match key:
                 case "cached":
-                    return stream.cached or False
+                    return torrent_stream.cached or False
                 case "resolution":
-                    return const.RESOLUTION_RANKING.get(stream.filtered_resolution, 0)
+                    return const.RESOLUTION_RANKING.get(
+                        torrent_stream.filtered_resolution, 0
+                    )
                 case "quality":
-                    return const.QUALITY_RANKING.get(stream.filtered_quality, 0)
+                    return const.QUALITY_RANKING.get(torrent_stream.filtered_quality, 0)
                 case "size":
-                    return stream.size
+                    return torrent_stream.size
                 case "seeders":
-                    return stream.seeders or 0
+                    return torrent_stream.seeders or 0
                 case "created_at":
-                    created_at = stream.created_at
+                    created_at = torrent_stream.created_at
                     if isinstance(created_at, datetime):
                         if created_at.tzinfo is None:
                             created_at = created_at.replace(tzinfo=timezone.utc)
@@ -130,13 +127,13 @@ async def filter_and_sort_streams(
                     return -min(
                         (
                             user_data.language_sorting.index(lang)
-                            for lang in stream.filtered_languages
+                            for lang in torrent_stream.filtered_languages
                             if lang in language_filter_set
                         ),
                         default=len(user_data.language_sorting),
                     )
-                case _ if key in stream.model_fields_set:
-                    return getattr(stream, key, 0)
+                case _ if key in torrent_stream.model_fields_set:
+                    return getattr(torrent_stream, key, 0)
                 case _:
                     return 0
 

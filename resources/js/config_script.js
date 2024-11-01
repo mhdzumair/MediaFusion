@@ -195,16 +195,12 @@ function updateProviderFields(isChangeEvent = false) {
             setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('streaming_provider_options', 'block');
-        setElementDisplay('catalog_configs', 'block');
         watchlistLabel.textContent = `Enable ${provider.charAt(0).toUpperCase() + provider.slice(1)} Watchlist`;
     } else {
         setElementDisplay('credentials', 'none');
         setElementDisplay('token_input', 'none');
         setElementDisplay('streaming_provider_options', 'none');
         setElementDisplay('qbittorrent_config', 'none');
-        if (localStorage.getItem('configMode') === 'newbie') {
-            setElementDisplay('catalog_configs', 'none');
-        }
     }
 
     // Reset the fields only if this is triggered by an onchange event
@@ -386,7 +382,8 @@ function getUserData() {
         api_password: apiPassword,
         mediaflow_config: mediaflowConfig,
         rpdb_config: rpdbConfig,
-        live_search_streams: document.getElementById('live_search_streams').checked,
+        live_search_streams: document.getElementById('liveSearchStreams').checked,
+        contribution_streams: document.getElementById('contributionStreams').checked,
     };
 }
 
@@ -426,15 +423,6 @@ function setConfigMode(mode) {
         advancedOptions.forEach(option => {
             option.style.display = mode === 'pro' ? 'block' : 'none';
         });
-    }
-
-    const provider = document.getElementById('provider_service').value;
-    if (provider) {
-        setElementDisplay('catalog_configs', 'block');
-    } else if (mode === 'pro') {
-        setElementDisplay('catalog_configs', 'block');
-    } else {
-        setElementDisplay('catalog_configs', 'none');
     }
 
     // Save preference
