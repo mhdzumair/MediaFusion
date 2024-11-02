@@ -142,5 +142,5 @@ async def validate_torbox_credentials(
     except ProviderException as error:
         return {
             "status": "error",
-            "message": f"Failed to validate Seedr credentials: {error.message}",
+            "message": f"Failed to validate TorBox credentials: {error.message}",
         }

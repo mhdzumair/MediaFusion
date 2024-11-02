@@ -400,5 +400,5 @@ async def validate_pikpak_credentials(user_data: UserData, **kwargs) -> dict:
     try:
         async with initialize_pikpak(user_data):
             return {"status": "success"}
-    except ProviderException as error:
-        return {"status": "error", "message": str(error)}
+    except ProviderException:
+        return {"status": "error", "message": "Invalid PikPak credentials"}

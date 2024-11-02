@@ -12,8 +12,6 @@ class DebridLink(DebridClient):
     @staticmethod
     def _handle_error_message(error_message):
         match error_message:
-            case "badToken":
-                raise ProviderException("Invalid token", "invalid_token.mp4")
             case "freeServerOverload":
                 raise ProviderException(
                     "Debrid-Link free servers are overloaded", "need_premium.mp4"

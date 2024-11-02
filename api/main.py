@@ -606,9 +606,8 @@ async def get_streams(
 @app.post("/encrypt-user-data", tags=["user_data"])
 @wrappers.rate_limit(30, 60 * 5, "user_data")
 async def encrypt_user_data(user_data: schemas.UserData, request: Request):
-    if not settings.is_public_instance:
-        # validate API Password
-        if (
+    async def _validate_all_config() -> dict:
+        if not settings.is_public_instance and (
             not user_data.api_password
             or user_data.api_password != settings.api_password
         ):
@@ -616,18 +615,34 @@ async def encrypt_user_data(user_data: schemas.UserData, request: Request):
                 "status": "error",
                 "message": "Invalid MediaFusion API Password. Make sure to enter the correct password which is configured in environment variables.",
             }
+        try:
+            validation_tasks = [
+                validate_provider_credentials(request, user_data),
+                validate_mediaflow_proxy_credentials(user_data),
+                validate_rpdb_token(user_data),
+            ]
 
-    validation_tasks = [
-        validate_provider_credentials(request, user_data),
-        validate_mediaflow_proxy_credentials(user_data),
-        validate_rpdb_token(user_data),
-    ]
+            results = await asyncio.gather(*validation_tasks, return_exceptions=True)
 
-    results = await asyncio.gather(*validation_tasks)
+            for result in results:
+                if isinstance(result, Exception):
+                    return {
+                        "status": "error",
+                        "message": f"Validation failed: {str(result)}",
+                    }
+                if isinstance(result, dict) and result["status"] == "error":
+                    return result
 
-    for result in results:
-        if result["status"] == "error":
-            return result
+            return {"status": "success"}
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Unexpected error during validation: {str(e)}",
+            }
+
+    validation_result = await _validate_all_config()
+    if validation_result["status"] == "error":
+        return validation_result
 
     encrypted_str = crypto.encrypt_user_data(user_data)
     return {"status": "success", "encrypted_str": encrypted_str}

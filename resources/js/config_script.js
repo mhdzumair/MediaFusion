@@ -217,7 +217,6 @@ function updateProviderFields(isChangeEvent = false) {
 
 // Function to show loading widget
 function showLoadingWidget(message = "Processing your configuration...") {
-    console.log('Showing loading widget');
     const loadingWidget = document.getElementById('loadingWidget');
     const loadingMessage = document.getElementById('loadingMessage');
 
@@ -234,7 +233,6 @@ function showLoadingWidget(message = "Processing your configuration...") {
 
 // Function to hide loading widget
 function hideLoadingWidget() {
-    console.log('Hiding loading widget');
     const loadingWidget = document.getElementById('loadingWidget');
     if (loadingWidget) {
         loadingWidget.style.display = 'none';
