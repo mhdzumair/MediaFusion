@@ -163,3 +163,24 @@ async def delete_all_torrents_from_ad(user_data: UserData, user_ip: str, **kwarg
                 for torrent in torrents["data"]["magnets"]
             ]
         )
+
+
+async def validate_alldebrid_credentials(user_data: UserData, user_ip: str) -> dict:
+    """Validates the AllDebrid credentials."""
+    try:
+        async with AllDebrid(
+            token=user_data.streaming_provider.token, user_ip=user_ip
+        ) as ad_client:
+            response = await ad_client.get_user_info()
+            if response.get("status") == "success":
+                return {"status": "success"}
+
+            return {
+                "status": "error",
+                "message": "Invalid AllDebrid credentials.",
+            }
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to verify AllDebrid credential, error: {error.message}",
+        }

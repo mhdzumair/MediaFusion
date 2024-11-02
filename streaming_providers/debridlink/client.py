@@ -158,3 +158,6 @@ class DebridLink(DebridClient):
             if torrent["hashString"] == info_hash:
                 return torrent
         return None
+
+    async def get_user_info(self) -> dict[str, Any]:
+        return await self._make_request("GET", f"{self.BASE_URL}/account/infos")

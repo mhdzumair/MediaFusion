@@ -135,3 +135,15 @@ async def delete_all_torrents_from_dl(user_data: UserData, **kwargs):
         await asyncio.gather(
             *[dl_client.delete_torrent(torrent["id"]) for torrent in torrents["value"]]
         )
+
+
+async def validate_debridlink_credentials(user_data: UserData, **kwargs) -> dict:
+    try:
+        async with DebridLink(token=user_data.streaming_provider.token) as dl_client:
+            await dl_client.get_user_info()
+            return {"status": "success"}
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to verify DebridLink credential, error: {error.message}",
+        }

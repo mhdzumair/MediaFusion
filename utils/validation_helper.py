@@ -1,13 +1,13 @@
 import asyncio
 import json
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 import httpx
 
 from db import schemas
 from utils import const
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from utils.runtime_const import REDIS_ASYNC_CLIENT, PRIVATE_CIDR
 
 
 def is_valid_url(url: str) -> bool:
@@ -200,3 +200,77 @@ def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
         return False
 
     return True
+
+
+async def validate_service(
+    url: str,
+    params: dict = None,
+    success_message: str = None,
+    invalid_creds_message: str = None,
+) -> dict:
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            return {
+                "status": "success",
+                "message": success_message or "Validation successful.",
+            }
+        except httpx.HTTPStatusError as err:
+            if err.response.status_code == 403 and invalid_creds_message:
+                return {"status": "error", "message": invalid_creds_message}
+            return {
+                "status": "error",
+                "message": f"HTTPStatusError: Failed to validate service at {url}: {err}",
+            }
+        except httpx.RequestError as err:
+            logging.error("Validation error for service at %s: %s", url, err)
+            return {
+                "status": "error",
+                "message": f"RequestError: Failed to validate service at {url}: {err}",
+            }
+        except Exception as err:
+            logging.error("Validation error for service at %s: %s", url, err)
+            return {
+                "status": "error",
+                "message": f"Failed to validate service at {url}: {err}",
+            }
+
+
+async def validate_mediaflow_proxy_credentials(user_data: schemas.UserData) -> dict:
+    if not user_data.mediaflow_config:
+        return {"status": "success", "message": "Mediaflow Proxy is not set."}
+
+    validation_url = urljoin(user_data.mediaflow_config.proxy_url, "/proxy/ip")
+    params = {"api_password": user_data.mediaflow_config.api_password}
+    results = await validate_service(
+        url=validation_url,
+        params=params,
+        invalid_creds_message="Invalid Mediaflow Proxy API Password. Please check your Mediaflow Proxy API Password.",
+    )
+    if results["status"] == "success":
+        return results
+
+    if results["message"].startswith("RequestError"):
+        parsed_url = urlparse(user_data.mediaflow_config.proxy_url)
+        if PRIVATE_CIDR.match(parsed_url.netloc):
+            # MediaFlow proxy URL is a private IP address
+            return {
+                "status": "success",
+                "message": "Mediaflow Proxy URL is a private IP address.",
+            }
+
+    return results
+
+
+async def validate_rpdb_token(user_data: schemas.UserData) -> dict:
+    if not user_data.rpdb_config:
+        return {"status": "success", "message": "RPDB is not enabled."}
+
+    validation_url = (
+        f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/isValid"
+    )
+    return await validate_service(
+        url=validation_url,
+        invalid_creds_message="Invalid RPDB API Key. Please check your RPDB API Key.",
+    )

@@ -195,9 +195,12 @@ class RealDebrid(DebridClient):
             f"Failed to create download link. response: {response}", "api_error.mp4"
         )
 
-    async def delete_torrent(self, torrent_id):
+    async def delete_torrent(self, torrent_id) -> dict:
         return await self._make_request(
             "DELETE",
             f"{self.BASE_URL}/torrents/delete/{torrent_id}",
             is_return_none=True,
         )
+
+    async def get_user_info(self) -> dict:
+        return await self._make_request("GET", f"{self.BASE_URL}/user")

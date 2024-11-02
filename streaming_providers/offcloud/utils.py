@@ -104,3 +104,16 @@ async def delete_all_torrents_from_oc(user_data: UserData, **kwargs):
             *[oc_client.delete_torrent(torrent["requestId"]) for torrent in torrents],
             return_exceptions=True,
         )
+
+
+async def validate_offcloud_credentials(user_data: UserData, **kwargs) -> dict:
+    """Validates the OffCloud credentials."""
+    try:
+        async with OffCloud(token=user_data.streaming_provider.token) as oc_client:
+            await oc_client.get_user_torrent_list()
+            return {"status": "success"}
+    except ProviderException:
+        return {
+            "status": "error",
+            "message": "OffCloud API key is invalid or has expired",
+        }

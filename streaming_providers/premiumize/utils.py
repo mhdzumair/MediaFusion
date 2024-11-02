@@ -139,3 +139,19 @@ async def delete_all_torrents_from_pm(user_data: UserData, **kwargs):
             pm_client.delete_folder(folder["id"]) for folder in folders["content"]
         ]
         await asyncio.gather(*delete_tasks)
+
+
+async def validate_premiumize_credentials(user_data: UserData, **kwargs) -> dict:
+    """Validates the Premiumize credentials."""
+    try:
+        async with Premiumize(token=user_data.streaming_provider.token) as pm_client:
+            response = await pm_client.get_account_info()
+            if response["status"] == "success":
+                return {"status": "success"}
+            return {"status": "error", "message": "Premiumize token is invalid"}
+
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to verify Premiumize credential, error: {error.message}",
+        }

@@ -85,10 +85,7 @@ async def filter_and_sort_streams(
         kwargs = dict(streams=filtered_streams, user_data=user_data, user_ip=user_ip)
         if cache_update_function:
             try:
-                if asyncio.iscoroutinefunction(cache_update_function):
-                    await cache_update_function(**kwargs)
-                else:
-                    await asyncio.to_thread(cache_update_function, **kwargs)
+                await cache_update_function(**kwargs)
             except Exception as error:
                 logging.exception(
                     f"Failed to update cache status for {user_data.streaming_provider.service}: {error}"
@@ -473,15 +470,9 @@ async def fetch_downloaded_info_hashes(
         user_data.streaming_provider.service
     ):
         try:
-            if asyncio.iscoroutinefunction(fetch_downloaded_info_hashes_function):
-                downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
-                    **kwargs
-                )
-            else:
-                downloaded_info_hashes = await asyncio.to_thread(
-                    fetch_downloaded_info_hashes_function, **kwargs
-                )
-
+            downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
+                **kwargs
+            )
             return downloaded_info_hashes
         except Exception as error:
             logging.exception(

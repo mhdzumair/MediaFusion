@@ -222,3 +222,18 @@ async def delete_all_watchlist_rd(user_data: UserData, user_ip: str, **kwargs):
         await asyncio.gather(
             *[rd_client.delete_torrent(torrent["id"]) for torrent in torrents]
         )
+
+
+async def validate_realdebrid_credentials(user_data: UserData, user_ip: str) -> dict:
+    """Validates the RealDebrid credentials."""
+    try:
+        async with RealDebrid(
+            token=user_data.streaming_provider.token, user_ip=user_ip
+        ) as rd_client:
+            await rd_client.get_user_info()
+            return {"status": "success"}
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to verify RealDebrid credential, error: {error.message}",
+        }

@@ -5,7 +5,13 @@ from os import path
 from typing import Optional
 from urllib.parse import urljoin, urlparse, quote
 
-from aiohttp import ClientConnectorError, ClientSession, CookieJar
+from aiohttp import (
+    ClientConnectorError,
+    ClientSession,
+    CookieJar,
+    ClientTimeout,
+    ClientResponseError,
+)
 from aioqbt.api import AddFormBuilder, TorrentInfo, InfoFilter
 from aioqbt.client import create_client, APIClient
 from aioqbt.exc import LoginError, AddTorrentError, NotFoundError
@@ -133,7 +139,9 @@ async def find_file_in_folder_tree(
 
 @asynccontextmanager
 async def initialize_qbittorrent(user_data: UserData) -> APIClient:
-    async with ClientSession(cookie_jar=CookieJar(unsafe=True), timeout=18) as session:
+    async with ClientSession(
+        cookie_jar=CookieJar(unsafe=True), timeout=ClientTimeout(total=15)
+    ) as session:
         try:
             qbittorrent = await create_client(
                 user_data.streaming_provider.qbittorrent_config.qbittorrent_url.rstrip(
@@ -147,6 +155,15 @@ async def initialize_qbittorrent(user_data: UserData) -> APIClient:
         except LoginError:
             raise ProviderException(
                 "Invalid qBittorrent credentials", "invalid_credentials.mp4"
+            )
+        except ClientResponseError as err:
+            if err.status == 403:
+                raise ProviderException(
+                    "Invalid qBittorrent credentials", "invalid_credentials.mp4"
+                )
+            raise ProviderException(
+                f"An error occurred while connecting to qBittorrent: {err}",
+                "qbittorrent_error.mp4",
             )
         except (ClientConnectorError, NotFoundError):
             raise ProviderException(
@@ -355,3 +372,24 @@ async def delete_all_torrents_from_qbittorrent(user_data: UserData, **kwargs):
         await qbittorrent.torrents.delete(
             hashes=[torrent.hash for torrent in torrents], delete_files=True
         )
+
+
+async def validate_qbittorrent_credentials(user_data: UserData, **kwargs) -> dict:
+    """Validates the qBittorrent credentials."""
+    try:
+        async with initialize_qbittorrent(user_data):
+            pass
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to verify QBittorrent, error: {error.message}",
+        }
+
+    try:
+        async with initialize_webdav(user_data):
+            return {"status": "success"}
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to verify WebDAV, error: {error.message}",
+        }
