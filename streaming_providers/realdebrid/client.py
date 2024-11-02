@@ -21,8 +21,7 @@ class RealDebrid(DebridClient):
         match error_code:
             case 9:
                 raise ProviderException(
-                    "Real-Debrid Permission denied for free account",
-                    "need_premium.mp4",
+                    "Real-Debrid Permission denied", "invalid_token.mp4"
                 )
             case 22:
                 raise ProviderException("IP address not allowed", "ip_not_allowed.mp4")
@@ -120,9 +119,9 @@ class RealDebrid(DebridClient):
 
         if "access_token" in token_data:
             token = self.encode_token_data(
-                response_data["client_id"],
-                response_data["client_secret"],
-                token_data["refresh_token"],
+                client_id=response_data["client_id"],
+                client_secret=response_data["client_secret"],
+                code=token_data["refresh_token"],
             )
             return {"token": token}
         else:

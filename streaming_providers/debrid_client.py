@@ -29,7 +29,13 @@ class DebridClient(AsyncContextDecorator):
         return self._session
 
     async def __aenter__(self):
-        await self.initialize_headers()
+        try:
+            await self.initialize_headers()
+        except ProviderException as error:
+            if self._session:
+                await self._session.close()
+                self._session = None
+            raise error
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
