@@ -24,10 +24,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Get short SHA
-        id: short_sha
-        run: echo "GIT_REV=$(echo ${GITHUB_SHA::7})" >> $GITHUB_ENV
-
       - name: Build and push
         id: docker_build
         uses: docker/build-push-action@v5
@@ -36,7 +32,7 @@ jobs:
           file: ./deployment/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: GIT_REV=${{ env.GIT_REV }}
+          build-args: VERSION=${{ github.ref_name }}
           tags: |
             mhdzumair/mediafusion:v${{ github.ref_name }}
             mhdzumair/mediafusion:latest
@@ -63,10 +59,6 @@ jobs:
 
       - name: Install zip
         run: sudo apt-get install -y zip
-
-      - name: Get short SHA
-        id: short_sha
-        run: echo "GIT_REV=$(echo ${GITHUB_SHA::7})" >> $GITHUB_ENV
 
       - name: Build addon
         run: make -C kodi

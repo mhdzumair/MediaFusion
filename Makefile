@@ -3,9 +3,6 @@
 # Image version
 VERSION ?= latest
 
-# Last commit ID
-GIT_REV ?= $(shell git rev-parse --short HEAD)
-
 # Builder name
 BUILDER_NAME ?= mediafusion-builder
 
@@ -33,7 +30,7 @@ CONTRIBUTORS ?=
 .PHONY: build tag push prompt
 
 build:
-	docker build --build-arg GIT_REV=$(GIT_REV) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
+	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
 
 build-multi:
 	@if ! docker buildx ls | grep -q $(BUILDER_NAME); then \
@@ -44,9 +41,9 @@ build-multi:
 		docker buildx use $(BUILDER_NAME); \
 	fi
 	docker buildx inspect --bootstrap
-	docker buildx build --platform $(PLATFORMS) --build-arg GIT_REV=$(GIT_REV) -t $(DOCKER_IMAGE) -f deployment/Dockerfile . --push
+	docker buildx build --platform $(PLATFORMS) --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile . --push
 	if [ "$(VERSION)" != "beta" ]; then \
-		docker buildx build --platform $(PLATFORMS) --build-arg GIT_REV=$(GIT_REV) -t $(DOCKER_REPO)/$(IMAGE_NAME):latest -f deployment/Dockerfile . --push; \
+		docker buildx build --platform $(PLATFORMS) --build-arg VERSION=$(VERSION) -t $(DOCKER_REPO)/$(IMAGE_NAME):latest -f deployment/Dockerfile . --push; \
 	fi
 push:
 	docker push $(DOCKER_IMAGE)

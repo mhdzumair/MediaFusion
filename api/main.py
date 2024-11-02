@@ -123,8 +123,9 @@ async def get_home(request: Request):
             "request": request,
             "addon_name": settings.addon_name,
             "logo_url": settings.logo_url,
-            "version": f"{settings.version}-{settings.git_rev[:7]}",
+            "version": f"{settings.version}",
             "description": settings.description,
+            "branding_description": settings.branding_description,
         },
     )
 

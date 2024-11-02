@@ -13,7 +13,6 @@ These settings define the basic configuration and identity of your MediaFusion i
 - **host_url** (required): The URL where MediaFusion is hosted.
 - **secret_key** (required): A 32-character secret key for securely signing the session. Must be exactly 32 characters long.
 - **api_password** (required): The password for accessing the API endpoints.
-- **git_rev** (default: `"stable"`): The Git revision or version of the application.
 - **logging_level** (default: `"INFO"`): The logging level of the application. Valid options are typically DEBUG, INFO, WARNING, ERROR, and CRITICAL.
 - **logo_url** (default: GitHub RAW Addon URL): The URL of the MediaFusion logo.
 - **is_public_instance** (default: `False`): Set to `True` for community instances that do not require authentication to access the data but protect the `/scraper` endpoint and uploading live TV data endpoints.

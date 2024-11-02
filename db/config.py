@@ -5,15 +5,15 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Core Application Settings
     addon_name: str = "MediaFusion"
-    version: str = "4.0.5"
+    version: str = "1.0.0"
     description: str = (
         "Universal Stremio Add-on for Movies, Series, Live TV & Sports Events. Source: https://github.com/mhdzumair/MediaFusion"
     )
+    branding_description: str = ""
     contact_email: str = "mhdzumair@gmail.com"
     host_url: str
     secret_key: str = Field(..., max_length=32, min_length=32)
     api_password: str
-    git_rev: str = "stable"
     logging_level: str = "INFO"
     logo_url: str = (
         "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
