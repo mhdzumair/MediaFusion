@@ -41,7 +41,7 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
     @staticmethod
     async def custom_log(request: Request, response: Response):
         ip = get_client_ip(request)
-        url_path = str(request.url)
+        url_path = request.url.path
         process_time = response.headers.get("X-Process-Time", "")
         if request.path_params.get("secret_str"):
             url_path = url_path.replace(
@@ -72,12 +72,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         # Attach UserData to request state for access in endpoints
         request.scope["user"] = user_data
 
-        try:
-            return await call_next(request)
-        except RuntimeError as exc:
-            if str(exc) == "No response returned." and await request.is_disconnected():
-                return Response(status_code=204)
-            raise
+        return await call_next(request)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -87,17 +82,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable):
         # Skip rate limiting for exempt paths
         if not settings.enable_rate_limit:
-            try:
-                return await call_next(request)
-            except RuntimeError:
-                return Response(status_code=204)
-            except Exception as e:
-                logging.exception(f"Internal Server Error: {e}")
-                return Response(
-                    content=f"Internal Server Error. Check the server log & Create GitHub Issue",
-                    status_code=500,
-                    headers=const.NO_CACHE_HEADERS,
-                )
+            return await call_next(request)
 
         # Retrieve the endpoint function from the request
         endpoint = request.scope.get("endpoint")
@@ -290,7 +275,25 @@ class TaskManager(dramatiq.Middleware):
 class TimingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except RuntimeError as exc:
+            if str(exc) == "No response returned." and await request.is_disconnected():
+                response = Response(status_code=204)
+            else:
+                logging.exception(f"Internal Server Error: {exc}")
+                response = Response(
+                    status_code=500,
+                    content="Internal Server Error. Check the server log & Create GitHub Issue",
+                    headers=const.NO_CACHE_HEADERS,
+                )
+        except Exception as e:
+            logging.exception(f"Internal Server Error: {e}")
+            response = Response(
+                content="Internal Server Error. Check the server log & Create GitHub Issue",
+                status_code=500,
+                headers=const.NO_CACHE_HEADERS,
+            )
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = f"{process_time:.4f} seconds"
         return response

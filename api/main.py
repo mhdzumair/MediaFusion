@@ -113,9 +113,9 @@ async def add_cors_header(request: Request, call_next):
 
 
 app.add_middleware(middleware.RateLimitMiddleware)
+app.add_middleware(middleware.UserDataMiddleware)
 app.add_middleware(middleware.TimingMiddleware)
 app.add_middleware(middleware.SecureLoggingMiddleware)
-app.add_middleware(middleware.UserDataMiddleware)
 
 app.mount("/static", StaticFiles(directory="resources"), name="static")
 
