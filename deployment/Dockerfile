@@ -26,6 +26,8 @@ RUN pip install --user pipenv && \
 
 FROM python:3.12-slim-bookworm
 
+ARG VERSION
+
 WORKDIR /mediafusion
 
 # Copy the Python environment and other necessary files from the builder stage
@@ -33,6 +35,8 @@ COPY --from=builder /home/mediafusion/.local /home/mediafusion/.local
 COPY --from=builder /etc/group /etc/passwd /etc/
 
 ENV PATH="/home/mediafusion/.local/bin:$PATH"
+
+ENV VERSION=${VERSION}
 
 COPY . .
 
