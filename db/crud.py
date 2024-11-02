@@ -860,7 +860,9 @@ async def process_search_query(
     ]
 
     # Execute the aggregation pipeline
-    search_results = await MediaFusionMetaData.aggregate(pipeline).to_list(50)
+    search_results = (
+        await MediaFusionMetaData.get_motor_collection().aggregate(pipeline).to_list(50)
+    )
 
     return {"metas": search_results}
 
@@ -912,7 +914,9 @@ async def process_tv_search_query(search_query: str, namespace: str) -> dict:
     ]
 
     # Execute the aggregation pipeline
-    search_results = await MediaFusionMetaData.aggregate(pipeline).to_list(50)
+    search_results = (
+        await MediaFusionMetaData.get_motor_collection().aggregate(pipeline).to_list(50)
+    )
 
     return {"metas": search_results}
 
