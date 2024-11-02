@@ -31,6 +31,7 @@ from scrapers.routes import router as scrapers_router
 from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
+from streaming_providers.validator import validate_provider_credentials
 from utils import const, crypto, poster, torrent, wrappers
 from utils.lock import (
     acquire_scheduler_lock,
@@ -45,9 +46,13 @@ from utils.runtime_const import (
     TEMPLATES,
     REDIS_ASYNC_CLIENT,
 )
+from utils.validation_helper import (
+    validate_mediaflow_proxy_credentials,
+    validate_rpdb_token,
+)
 
 logging.basicConfig(
-    format="%(levelname)s::%(asctime)s::%(filename)s::%(lineno)d - %(message)s",
+    format="%(levelname)s::%(asctime)s::%(pathname)s::%(lineno)d - %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
     level=settings.logging_level,
 )
@@ -600,9 +605,32 @@ async def get_streams(
 
 @app.post("/encrypt-user-data", tags=["user_data"])
 @wrappers.rate_limit(30, 60 * 5, "user_data")
-async def encrypt_user_data(user_data: schemas.UserData):
+async def encrypt_user_data(user_data: schemas.UserData, request: Request):
+    if not settings.is_public_instance:
+        # validate API Password
+        if (
+            not user_data.api_password
+            or user_data.api_password != settings.api_password
+        ):
+            return {
+                "status": "error",
+                "message": "Invalid MediaFusion API Password. Make sure to enter the correct password which is configured in environment variables.",
+            }
+
+    validation_tasks = [
+        validate_provider_credentials(request, user_data),
+        validate_mediaflow_proxy_credentials(user_data),
+        validate_rpdb_token(user_data),
+    ]
+
+    results = await asyncio.gather(*validation_tasks)
+
+    for result in results:
+        if result["status"] == "error":
+            return result
+
     encrypted_str = crypto.encrypt_user_data(user_data)
-    return {"encrypted_str": encrypted_str}
+    return {"status": "success", "encrypted_str": encrypted_str}
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])

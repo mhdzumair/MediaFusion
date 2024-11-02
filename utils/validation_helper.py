@@ -1,13 +1,13 @@
 import asyncio
 import json
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 import httpx
 
 from db import schemas
 from utils import const
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from utils.runtime_const import REDIS_ASYNC_CLIENT, PRIVATE_CIDR
 
 
 def is_valid_url(url: str) -> bool:
@@ -200,3 +200,79 @@ def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
         return False
 
     return True
+
+
+async def validate_mediaflow_proxy_credentials(user_data: schemas.UserData) -> dict:
+    if not user_data.mediaflow_config:
+        return {"status": "success", "message": "Mediaflow Proxy is not set."}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                urljoin(user_data.mediaflow_config.proxy_url, "/proxy/ip"),
+                params={"api_password": user_data.mediaflow_config.api_password},
+                timeout=10,
+            )
+            response.raise_for_status()
+            return {"status": "success"}
+
+        except httpx.HTTPStatusError as err:
+            if err.response.status_code == 403:
+                return {
+                    "status": "error",
+                    "message": "Invalid Mediaflow Proxy API Password. Please check your Mediaflow Proxy API Password.",
+                }
+            return {
+                "status": "error",
+                "message": f"Failed to validate Mediaflow Proxy: {user_data.mediaflow_config.proxy_url}, Error: {err}",
+            }
+        except httpx.RequestError as err:
+            parsed_url = urlparse(user_data.mediaflow_config.proxy_url)
+            if PRIVATE_CIDR.match(parsed_url.netloc):
+                # MediaFlow proxy URL is a private IP address
+                return {
+                    "status": "success",
+                    "message": "Mediaflow Proxy is a private IP not accessible from the internet.",
+                }
+            return {
+                "status": "error",
+                "message": f"Failed to validate Mediaflow Proxy: {user_data.mediaflow_config.proxy_url}, Error: {err}",
+            }
+        except Exception as err:
+            logging.error(
+                "Mediaflow Proxy: %s, Status: %s", user_data.mediaflow_proxy, err
+            )
+            return {
+                "status": "error",
+                "message": f"Failed to validate Mediaflow Proxy: {user_data.mediaflow_config.proxy_url}, Error: {err}",
+            }
+
+
+async def validate_rpdb_token(user_data: schemas.UserData) -> dict:
+    if not user_data.rpdb_config:
+        return {"status": "success", "message": "RPDB is not enabled."}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/isValid",
+                timeout=10,
+            )
+            response.raise_for_status()
+            return {"status": "success"}
+        except httpx.HTTPStatusError as err:
+            if err.response.status_code == 403:
+                return {
+                    "status": "error",
+                    "message": "Invalid RPDB API Key. Please check your RPDB API Key.",
+                }
+            return {
+                "status": "error",
+                "message": f"Failed to validate RPDB Token: {err}",
+            }
+        except Exception as err:
+            logging.error("RPDB Token: %s, Status: %s", user_data.rpdb_token, err)
+            return {
+                "status": "error",
+                "message": f"Failed to validate RPDB Token: {err}",
+            }

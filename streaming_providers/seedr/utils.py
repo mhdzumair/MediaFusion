@@ -37,6 +37,8 @@ async def get_seedr_client(user_data: UserData) -> Seedr:
             if "error" in response:
                 raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
             yield seedr
+    except SyntaxError:
+        raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
     except ProviderException as error:
         raise error
     except Exception as error:
@@ -174,7 +176,7 @@ async def get_video_url_from_seedr(
     stream: TorrentStreams,
     filename: Optional[str] = None,
     episode: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """Main function to get video URL from Seedr."""
     async with get_seedr_client(user_data) as seedr:
@@ -259,3 +261,20 @@ async def delete_all_torrents_from_seedr(user_data: UserData, **kwargs) -> None:
     """Delete all torrents from the user's account."""
     async with get_seedr_client(user_data) as seedr:
         await ensure_space_available(seedr, math.inf)
+
+
+async def validate_seedr_credentials(user_data: UserData, **kwargs) -> dict:
+    """Validate the Seedr credentials."""
+    try:
+        async with get_seedr_client(user_data):
+            return {"status": "success"}
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to validate Seedr credentials: {error.message}",
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Failed to validate Seedr credentials: {error}",
+        }

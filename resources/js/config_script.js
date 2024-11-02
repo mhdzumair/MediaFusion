@@ -215,20 +215,52 @@ function updateProviderFields(isChangeEvent = false) {
     adjustOAuthSectionDisplay();
 }
 
+// Function to show loading widget
+function showLoadingWidget(message = "Processing your configuration...") {
+    console.log('Showing loading widget');
+    const loadingWidget = document.getElementById('loadingWidget');
+    const loadingMessage = document.getElementById('loadingMessage');
+
+    if (loadingMessage) {
+        loadingMessage.textContent = message;
+    }
+
+    if (loadingWidget) {
+        loadingWidget.style.display = 'flex';
+        // Prevent background scrolling while loading
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+// Function to hide loading widget
+function hideLoadingWidget() {
+    console.log('Hiding loading widget');
+    const loadingWidget = document.getElementById('loadingWidget');
+    if (loadingWidget) {
+        loadingWidget.style.display = 'none';
+        // Restore background scrolling
+        document.body.style.overflow = '';
+    }
+}
+
+
 // Function to get installation URL
 async function getInstallationUrl(isRedirect = false) {
-    const userData = getUserData();
-    let urlPrefix = window.location.protocol + "//";
-    if (isRedirect) {
-        urlPrefix = "stremio://";
-    }
-
-    if (!userData) {
-        showNotification('Validation failed. Please check your input.', 'error');
-        return null;
-    }
-
     try {
+        showLoadingWidget();
+
+        const userData = getUserData();
+        let urlPrefix = window.location.protocol + "//";
+        if (isRedirect) {
+            urlPrefix = "stremio://";
+        }
+
+        if (!userData) {
+            hideLoadingWidget();
+            showNotification('Validation failed. Please check your input.', 'error');
+            return null;
+        }
+
         const response = await fetch('/encrypt-user-data', {
             method: 'POST',
             headers: {
@@ -236,13 +268,27 @@ async function getInstallationUrl(isRedirect = false) {
             },
             body: JSON.stringify(userData)
         });
+
         const data = await response.json();
+
+        if (data.status === 'error') {
+            hideLoadingWidget();
+            showNotification(data.message, 'error');
+            return null;
+        }
+
         if (!data.encrypted_str) {
+            hideLoadingWidget();
             showNotification('An error occurred while encrypting user data', 'error');
             return null;
         }
-        return urlPrefix + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+
+        const installationUrl = urlPrefix + window.location.host + "/" + data.encrypted_str + "/manifest.json";
+        hideLoadingWidget();
+        return installationUrl;
+
     } catch (error) {
+        hideLoadingWidget();
         showNotification('An error occurred while encrypting user data', 'error');
         console.error('Error encrypting user data:', error);
         return null;
@@ -466,9 +512,11 @@ async function submitKodiCodeAndSetup() {
 }
 
 async function setupKodiAddon(kodiCode) {
+    showLoadingWidget('Preparing Kodi setup...')
     const installationUrl = await getInstallationUrl();
 
     if (installationUrl) {
+        showLoadingWidget('Setting up Kodi addon...')
         try {
             const response = await fetch('/kodi/associate_manifest', {
                 method: 'POST',
@@ -490,6 +538,8 @@ async function setupKodiAddon(kodiCode) {
         } catch (error) {
             console.error('Error setting up Kodi addon:', error);
             showNotification('An error occurred while setting up the Kodi addon.', 'error');
+        } finally {
+            hideLoadingWidget();
         }
     }
 }
@@ -531,7 +581,7 @@ oAuthBtn.addEventListener('click', async function () {
 
 document.getElementById('configForm').addEventListener('submit', async function (event) {
     event.preventDefault();
-
+    showLoadingWidget('Preparing Stremio installation...');
     const installationUrl = await getInstallationUrl(true);
     if (installationUrl) {
         window.location.href = installationUrl;
@@ -540,6 +590,7 @@ document.getElementById('configForm').addEventListener('submit', async function 
 
 document.getElementById('shareBtn').addEventListener('click', async function (event) {
     event.preventDefault();
+    showLoadingWidget('Preparing share URL...');
     const manifestUrl = await getInstallationUrl();
     if (manifestUrl) {
         try {
@@ -557,6 +608,7 @@ document.getElementById('shareBtn').addEventListener('click', async function (ev
 
 document.getElementById('copyBtn').addEventListener('click', async function (event) {
     event.preventDefault();
+    showLoadingWidget('Generating installation URL...');
     const manifestUrl = await getInstallationUrl();
     if (manifestUrl) {
         try {
@@ -638,7 +690,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
 // Add event listeners for mode switching
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     let storedMode = 'newbie';
     try {
         const savedMode = localStorage.getItem('configMode');

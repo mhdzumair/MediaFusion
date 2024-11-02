@@ -128,3 +128,19 @@ async def delete_all_torrents_from_torbox(user_data: UserData, **kwargs: Any) ->
             return
         for torrent in torrents:
             await torbox_client.delete_torrent(torrent.get("id", ""))
+
+
+async def validate_torbox_credentials(
+    user_data: UserData, **kwargs: Any
+) -> Dict[str, str]:
+    """Validates the Torbox credentials."""
+    try:
+        async with Torbox(token=user_data.streaming_provider.token) as torbox_client:
+            await torbox_client.get_user_info()
+            return {"status": "success"}
+
+    except ProviderException as error:
+        return {
+            "status": "error",
+            "message": f"Failed to validate Seedr credentials: {error.message}",
+        }

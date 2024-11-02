@@ -17,7 +17,28 @@ class Torbox(DebridClient):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
-        pass
+        error_code = error_data.get("error")
+        match error_code:
+            case "BAD_TOKEN" | "AUTH_ERROR" | "OAUTH_VERIFICATION_ERROR":
+                raise ProviderException(
+                    "Invalid Torbox token",
+                    "invalid_token.mp4",
+                )
+            case "DOWNLOAD_TOO_LARGE":
+                raise ProviderException(
+                    "Download size too large for the user plan",
+                    "not_enough_space.mp4",
+                )
+            case "ACTIVE_LIMIT" | "MONTHLY_LIMIT":
+                raise ProviderException(
+                    "Download limit exceeded",
+                    "daily_download_limit.mp4",
+                )
+            case "DOWNLOAD_SERVER_ERROR" | "DATABASE_ERROR":
+                raise ProviderException(
+                    "Torbox server error",
+                    "debrid_service_down_error.mp4",
+                )
 
     async def _make_request(
         self,
@@ -99,4 +120,9 @@ class Torbox(DebridClient):
             "POST",
             "/torrents/controltorrent",
             json={"torrent_id": torrent_id, "operation": "delete"},
+        )
+
+    async def get_user_info(self, get_settings: bool = False):
+        return await self._make_request(
+            "GET", "/user/me", params={"settings": "true" if get_settings else "false"}
         )

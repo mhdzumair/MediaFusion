@@ -12,6 +12,8 @@ class DebridLink(DebridClient):
     @staticmethod
     def _handle_error_message(error_message):
         match error_message:
+            case "badToken":
+                raise ProviderException("Invalid token", "invalid_token.mp4")
             case "freeServerOverload":
                 raise ProviderException(
                     "Debrid-Link free servers are overloaded", "need_premium.mp4"
@@ -158,3 +160,6 @@ class DebridLink(DebridClient):
             if torrent["hashString"] == info_hash:
                 return torrent
         return None
+
+    async def get_user_info(self) -> dict[str, Any]:
+        return await self._make_request("GET", f"{self.BASE_URL}/account/infos")

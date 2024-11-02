@@ -2,6 +2,7 @@ import asyncio
 import traceback
 from abc import abstractmethod
 from base64 import b64encode, b64decode
+from contextlib import AsyncContextDecorator
 from typing import Optional, Dict, Union
 
 import aiohttp
@@ -10,7 +11,7 @@ from aiohttp import ClientResponse, ClientTimeout, ContentTypeError
 from streaming_providers.exceptions import ProviderException
 
 
-class DebridClient:
+class DebridClient(AsyncContextDecorator):
     def __init__(self, token: Optional[str] = None):
         self.token = token
         self.is_private_token = False
@@ -32,6 +33,9 @@ class DebridClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
+    async def close(self):
         if self.token and not self.is_private_token:
             try:
                 await self.disable_access_token()
@@ -62,6 +66,8 @@ class DebridClient:
                     response, is_return_none, is_expected_to_fail
                 )
 
+        except ProviderException as error:
+            raise error
         except aiohttp.ClientConnectorError as error:
             if retry_count < 1:  # Try one more time
                 return await self._make_request(

@@ -393,3 +393,12 @@ async def delete_all_torrents_from_pikpak(user_data: UserData, **kwargs):
         file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
         file_ids = [file["id"] for file in file_list_content["files"]]
         await pikpak.delete_forever(file_ids)
+
+
+async def validate_pikpak_credentials(user_data: UserData, **kwargs) -> dict:
+    """Validates the PikPak credentials."""
+    try:
+        async with initialize_pikpak(user_data):
+            return {"status": "success"}
+    except ProviderException as error:
+        return {"status": "error", "message": str(error)}

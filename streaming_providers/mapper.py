@@ -3,54 +3,63 @@ from streaming_providers.alldebrid.utils import (
     fetch_downloaded_info_hashes_from_ad,
     delete_all_torrents_from_ad,
     get_video_url_from_alldebrid,
+    validate_alldebrid_credentials,
 )
 from streaming_providers.debridlink.utils import (
     update_dl_cache_status,
     fetch_downloaded_info_hashes_from_dl,
     delete_all_torrents_from_dl,
     get_video_url_from_debridlink,
+    validate_debridlink_credentials,
 )
 from streaming_providers.offcloud.utils import (
     update_oc_cache_status,
     fetch_downloaded_info_hashes_from_oc,
     delete_all_torrents_from_oc,
     get_video_url_from_offcloud,
+    validate_offcloud_credentials,
 )
 from streaming_providers.pikpak.utils import (
     update_pikpak_cache_status,
     fetch_downloaded_info_hashes_from_pikpak,
     delete_all_torrents_from_pikpak,
     get_video_url_from_pikpak,
+    validate_pikpak_credentials,
 )
 from streaming_providers.premiumize.utils import (
     update_pm_cache_status,
     fetch_downloaded_info_hashes_from_premiumize,
     delete_all_torrents_from_pm,
     get_video_url_from_premiumize,
+    validate_premiumize_credentials,
 )
 from streaming_providers.qbittorrent.utils import (
     update_qbittorrent_cache_status,
     fetch_info_hashes_from_webdav,
     delete_all_torrents_from_qbittorrent,
     get_video_url_from_qbittorrent,
+    validate_qbittorrent_credentials,
 )
 from streaming_providers.realdebrid.utils import (
     update_rd_cache_status,
     fetch_downloaded_info_hashes_from_rd,
     delete_all_watchlist_rd,
     get_video_url_from_realdebrid,
+    validate_realdebrid_credentials,
 )
 from streaming_providers.seedr.utils import (
     update_seedr_cache_status,
     fetch_downloaded_info_hashes_from_seedr,
     delete_all_torrents_from_seedr,
     get_video_url_from_seedr,
+    validate_seedr_credentials,
 )
 from streaming_providers.torbox.utils import (
     update_torbox_cache_status,
     fetch_downloaded_info_hashes_from_torbox,
     delete_all_torrents_from_torbox,
     get_video_url_from_torbox,
+    validate_torbox_credentials,
 )
 
 # Define provider-specific cache update functions
@@ -103,4 +112,17 @@ GET_VIDEO_URL_FUNCTIONS = {
     "realdebrid": get_video_url_from_realdebrid,
     "seedr": get_video_url_from_seedr,
     "torbox": get_video_url_from_torbox,
+}
+
+
+VALIDATE_CREDENTIALS_FUNCTIONS = {
+    "alldebrid": validate_alldebrid_credentials,
+    "debridlink": validate_debridlink_credentials,
+    "offcloud": validate_offcloud_credentials,
+    "pikpak": validate_pikpak_credentials,
+    "premiumize": validate_premiumize_credentials,
+    "qbittorrent": validate_qbittorrent_credentials,
+    "realdebrid": validate_realdebrid_credentials,
+    "seedr": validate_seedr_credentials,
+    "torbox": validate_torbox_credentials,
 }

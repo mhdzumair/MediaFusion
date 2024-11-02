@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from os import path
 from typing import Annotated
@@ -115,10 +114,7 @@ async def get_or_create_video_url(
         ),
     )
 
-    if asyncio.iscoroutinefunction(get_video_url):
-        return await get_video_url(**kwargs)
-    else:
-        return await asyncio.to_thread(get_video_url, **kwargs)
+    return await get_video_url(**kwargs)
 
 
 async def cache_stream_url(cached_stream_url_key, video_url):
@@ -278,11 +274,7 @@ async def delete_all_watchlist(
         )
 
     try:
-        # Call the appropriate delete function asynchronously
-        if asyncio.iscoroutinefunction(delete_all_watchlist_function):
-            await delete_all_watchlist_function(**kwargs)
-        else:
-            await asyncio.to_thread(delete_all_watchlist_function, **kwargs)
+        await delete_all_watchlist_function(**kwargs)
         video_url = f"{settings.host_url}/static/exceptions/watchlist_deleted.mp4"
 
     except ProviderException as error:

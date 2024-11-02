@@ -123,3 +123,6 @@ class AllDebrid(DebridClient):
         return await self._make_request(
             "GET", "/magnet/delete", params={"id": magnet_id}
         )
+
+    async def get_user_info(self):
+        return await self._make_request("GET", "/user")

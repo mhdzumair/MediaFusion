@@ -433,6 +433,51 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     margin-bottom: 10px;
 }
 
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.loading-content {
+    background: rgba(20, 20, 35, 0.7);
+    padding: 2rem;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid rgba(74, 71, 163, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 250px;
+    transition: all 0.3s ease;
+}
+
+.loading-content .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    color: #4a47a3;
+}
+
+.loading-content h5 {
+    color: #E0E0E0;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.loading-content p {
+    color: #9f9f9f;
+    font-size: 0.9rem;
+    margin-bottom: 0;
+}
 
 
 /* Responsive Design */
