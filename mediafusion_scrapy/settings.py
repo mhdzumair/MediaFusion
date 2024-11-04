@@ -59,7 +59,7 @@ DOWNLOADER_MIDDLEWARES = {
 }
 
 EXTENSIONS = {
-    "mediafusion_scrapy.extensions.InactivityMonitor": 100,
+    "scrapy.extensions.closespider.CloseSpider": 100,
 }
 
 # Configure item pipelines
@@ -115,4 +115,4 @@ RETRY_TIMES = 5
 
 FLARESOLVERR_URL = settings.flaresolverr_url
 
-INACTIVITY_TIMEOUT_MINUTES = 15
+CLOSESPIDER_TIMEOUT_NO_ITEM = 600  # 10 minutes
