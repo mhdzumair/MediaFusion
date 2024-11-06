@@ -24,14 +24,12 @@ jobs:
             echo "Error: Failed to extract previous version from release body"
             exit 1
           fi
-          VERSION="${GITHUB_REF#refs/tags/v}"
           echo "PREVIOUS_VERSION=${PREVIOUS_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Update version numbers
         if: "!github.event.release.prerelease"
         run: |
-          make update-version VERSION_NEW=${{ steps.extract_versions.outputs.VERSION }}
+          make update-version VERSION_NEW=${{  github.ref_name }}
 
       - name: Commit and push version updates
         if: "!github.event.release.prerelease"
@@ -39,7 +37,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git commit -m "chore: update version to ${{ steps.extract_versions.outputs.VERSION }}"
+          git commit -m "chore: update version to ${{  github.ref_name }}"
           git push origin HEAD:main
 
   mediafusion_docker_build:
