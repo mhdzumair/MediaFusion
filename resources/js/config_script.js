@@ -2,6 +2,7 @@
 const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
 const servicesRequiringCredentials = ['pikpak',];
+const servicesRequiringUrl = ['stremthru'];
 const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
@@ -168,9 +169,15 @@ function adjustOAuthSectionDisplay() {
 
 function updateProviderFields(isChangeEvent = false) {
     const provider = document.getElementById('provider_service').value;
+    const serviceUrlInput = document.getElementById('service_url');
     const tokenInput = document.getElementById('provider_token');
     const watchlistLabel = document.getElementById('watchlist_label');
 
+    if (servicesRequiringUrl.includes(provider)) {
+        setElementDisplay('service_url_section', 'block');
+    } else {
+        setElementDisplay('service_url_section', 'none');
+    }
 
     if (provider in providerSignupLinks) {
         document.getElementById('signup_link').href = providerSignupLinks[provider];
@@ -205,6 +212,7 @@ function updateProviderFields(isChangeEvent = false) {
 
     // Reset the fields only if this is triggered by an onchange event
     if (isChangeEvent) {
+        serviceUrlInput.value = '';
         tokenInput.value = '';
         tokenInput.disabled = false;
         currentAuthorizationToken = null;
@@ -313,6 +321,28 @@ function getUserData() {
 
     // Validate and collect streaming provider data
     if (provider) {
+        if (servicesRequiringUrl.includes(provider)) {
+            const serviceUrl =  document.getElementById('service_url').value.trim();
+            if (!serviceUrl) {
+                validateInput('service_url', false);
+                streamingProviderData.url = '';
+                return;
+            }
+            let isValidUrl = false;
+            try {
+                const url = new URL(serviceUrl);
+                const hostname = url.hostname.toLowerCase();
+                // Prevent localhost and internal IPs
+                isValidUrl = url.protocol === 'https:' &&
+                    !hostname.includes('localhost') &&
+                    !hostname.match(/^127\.|^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./);
+            } catch (_) {
+                isValidUrl = false;
+            }
+            validateInput('service_url', isValidUrl);
+            // Basic URL sanitization
+            streamingProviderData.url = isValidUrl ? serviceUrl : '';
+        }
         if (servicesRequiringCredentials.includes(provider)) {
             validateInput('email', document.getElementById('email').value);
             validateInput('password', document.getElementById('password').value);

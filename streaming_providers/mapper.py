@@ -61,6 +61,13 @@ from streaming_providers.torbox.utils import (
     get_video_url_from_torbox,
     validate_torbox_credentials,
 )
+from streaming_providers.stremthru.utils import (
+    update_st_cache_status,
+    fetch_downloaded_info_hashes_from_st,
+    delete_all_torrents_from_st,
+    get_video_url_from_stremthru,
+    validate_stremthru_credentials,
+)
 
 # Define provider-specific cache update functions
 CACHE_UPDATE_FUNCTIONS = {
@@ -73,6 +80,7 @@ CACHE_UPDATE_FUNCTIONS = {
     "torbox": update_torbox_cache_status,
     "premiumize": update_pm_cache_status,
     "qbittorrent": update_qbittorrent_cache_status,
+    "stremthru": update_st_cache_status,
 }
 
 # Define provider-specific downloaded info hashes fetch functions
@@ -86,6 +94,7 @@ FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS = {
     "torbox": fetch_downloaded_info_hashes_from_torbox,
     "premiumize": fetch_downloaded_info_hashes_from_premiumize,
     "qbittorrent": fetch_info_hashes_from_webdav,
+    "stremthru": fetch_downloaded_info_hashes_from_st,
 }
 
 
@@ -99,6 +108,7 @@ DELETE_ALL_WATCHLIST_FUNCTIONS = {
     "seedr": delete_all_torrents_from_seedr,
     "offcloud": delete_all_torrents_from_oc,
     "torbox": delete_all_torrents_from_torbox,
+    "stremthru": delete_all_torrents_from_st,
 }
 
 
@@ -112,6 +122,7 @@ GET_VIDEO_URL_FUNCTIONS = {
     "realdebrid": get_video_url_from_realdebrid,
     "seedr": get_video_url_from_seedr,
     "torbox": get_video_url_from_torbox,
+    "stremthru": get_video_url_from_stremthru,
 }
 
 
@@ -125,4 +136,5 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
     "realdebrid": validate_realdebrid_credentials,
     "seedr": validate_seedr_credentials,
     "torbox": validate_torbox_credentials,
+    "stremthru": validate_stremthru_credentials,
 }
