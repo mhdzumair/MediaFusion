@@ -6,28 +6,36 @@ on:
 
 jobs:
   update_version:
-    if: "!github.event.release.prerelease"  # Only run for stable releases
     runs-on: ubuntu-latest
+    outputs:
+      previous_version: ${{ steps.extract_versions.outputs.PREVIOUS_VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for version comparison
+          fetch-depth: 0
 
-      - name: Extract version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Extract versions
+        id: extract_versions
+        run: |
+          # Extract current version from release body
+          BODY="${{ github.event.release.body }}"
+          PREVIOUS_VERSION=$(echo "$BODY" | grep -o '/compare/.*\.\.\.' | sed 's/\/compare\///' | sed 's/\.\.\.//')
+          echo "PREVIOUS_VERSION=$PREVIOUS_VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Update version numbers
+        if: "!github.event.release.prerelease"
         run: |
-          make update-version VERSION_NEW=${{ steps.version.outputs.VERSION }}
+          make update-version VERSION_NEW=${{ steps.extract_versions.outputs.VERSION }}
 
       - name: Commit and push version updates
+        if: "!github.event.release.prerelease"
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git commit -m "chore: update version to ${{ steps.version.outputs.VERSION }}"
+          git commit -m "chore: update version to ${{ steps.extract_versions.outputs.VERSION }}"
           git push origin HEAD:main
 
   mediafusion_docker_build:
@@ -114,8 +122,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   generate_release_notes:
-    needs: [mediafusion_docker_build, kodi_build]
-    if: "!github.event.release.prerelease"
+    needs: update_version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -123,14 +130,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get previous tag
-        id: previoustag
-        run: |
-          echo "PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1)" >> $GITHUB_OUTPUT
+      - name: Install jq
+        run: sudo apt-get install -y jq
 
       - name: Generate Release Notes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          make prompt VERSION_OLD=${{ steps.previoustag.outputs.PREVIOUS_TAG }} VERSION_NEW=${{ github.ref_name }} > release_notes.md
+          make generate-notes VERSION_OLD=${{ needs.update_version.outputs.previous_version }} VERSION_NEW=${{ github.ref_name }} > release_notes.md
 
       - name: Update Release Notes
         uses: softprops/action-gh-release@v2
