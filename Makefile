@@ -32,7 +32,7 @@ CLAUDE_MODEL ?= claude-3-5-sonnet-20241022
 MAX_TOKENS ?= 1024
 ANTHROPIC_VERSION ?= 2023-06-01
 
-.PHONY: build tag push prompt update-version
+.PHONY: build tag push prompt update-version generate-notes
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .

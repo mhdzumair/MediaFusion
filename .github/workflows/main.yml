@@ -20,9 +20,13 @@ jobs:
         run: |
           # Extract current version from release body
           BODY="${{ github.event.release.body }}"
-          PREVIOUS_VERSION=$(echo "$BODY" | grep -o '/compare/.*\.\.\.' | sed 's/\/compare\///' | sed 's/\.\.\.//')
-          echo "PREVIOUS_VERSION=$PREVIOUS_VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          if ! PREVIOUS_VERSION=$(echo "$BODY" | grep -o '/compare/.*\.\.\.' | sed 's/\/compare\///' | sed 's/\.\.\.//' || true); then
+            echo "Error: Failed to extract previous version from release body"
+            exit 1
+          fi
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "PREVIOUS_VERSION=${PREVIOUS_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Update version numbers
         if: "!github.event.release.prerelease"
