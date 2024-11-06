@@ -107,15 +107,18 @@ ifndef ANTHROPIC_API_KEY
 	@echo "Error: ANTHROPIC_API_KEY is not set"
 	@exit 1
 endif
-	@PROMPT_CONTENT=`make prompt VERSION_OLD=$(VERSION_OLD) VERSION_NEW=$(VERSION_NEW) | tr '\n' ' ' | sed 's/"/\\\\"/g'`; \
-	echo "prompt: $$PROMPT_CONTENT"; \
+	@PROMPT_CONTENT=$$(make prompt VERSION_OLD=$(VERSION_OLD) VERSION_NEW=$(VERSION_NEW) | jq -sRr @json); \
+	if [ -z "$$PROMPT_CONTENT" ]; then \
+	    echo "Failed to generate release notes using Claude AI, prompt content is empty"; \
+	    exit 1; \
+	fi; \
 	temp_file=$$(mktemp); \
 	curl -s https://api.anthropic.com/v1/messages \
 		--header "x-api-key: $(ANTHROPIC_API_KEY)" \
 		--header "anthropic-version: $(ANTHROPIC_VERSION)" \
 		--header "content-type: application/json" \
-		--data "{\"model\":\"$(CLAUDE_MODEL)\",\"max_tokens\":$(MAX_TOKENS),\"messages\":[{\"role\":\"user\",\"content\":\"$$PROMPT_CONTENT\"}]}" > $$temp_file; \
-	cat $$temp_file
-
+		--data "{\"model\":\"$(CLAUDE_MODEL)\",\"max_tokens\":$(MAX_TOKENS),\"messages\":[{\"role\":\"user\",\"content\":$$PROMPT_CONTENT}]}" > $$temp_file; \
+	jq -r '.content[] | select(.type=="text") | .text' $$temp_file || { echo "Failed to generate release notes using Claude AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
+	rm $$temp_file
 
 all: build-multi
