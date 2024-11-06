@@ -5,12 +5,53 @@ on:
     types: [ created ]
 
 jobs:
+  update_version:
+    runs-on: ubuntu-latest
+    outputs:
+      previous_version: ${{ steps.extract_versions.outputs.PREVIOUS_VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract versions
+        id: extract_versions
+        run: |
+          # Extract current version from release body
+          BODY="${{ github.event.release.body }}"
+          if ! PREVIOUS_VERSION=$(echo "$BODY" | grep -o '/compare/.*\.\.\.' | sed 's/\/compare\///' | sed 's/\.\.\.//' || true); then
+            echo "Error: Failed to extract previous version from release body"
+            exit 1
+          fi
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "PREVIOUS_VERSION=${PREVIOUS_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Update version numbers
+        if: "!github.event.release.prerelease"
+        run: |
+          make update-version VERSION_NEW=${{ steps.extract_versions.outputs.VERSION }}
+
+      - name: Commit and push version updates
+        if: "!github.event.release.prerelease"
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git commit -m "chore: update version to ${{ steps.extract_versions.outputs.VERSION }}"
+          git push origin HEAD:main
+
   mediafusion_docker_build:
+    needs: update_version
+    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main  # Use main branch with updated versions
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -34,18 +75,22 @@ jobs:
           push: true
           build-args: VERSION=${{ github.ref_name }}
           tags: |
-            mhdzumair/mediafusion:v${{ github.ref_name }}
+            mhdzumair/mediafusion:${{ github.ref_name }}
             mhdzumair/mediafusion:latest
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   kodi_build:
+    needs: update_version
+    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main  # Use main branch with updated versions
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -57,16 +102,59 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Install zip
-        run: sudo apt-get install -y zip
+      - name: Install required packages
+        run: sudo apt-get install -y zip xmlstarlet
 
-      - name: Build addon
-        run: make -C kodi
+      - name: Build addon and repository
+        run: |
+          make -C kodi
+          # Validate build artifacts
+          for file in kodi/plugin.video.mediafusion-*.zip kodi/repository.mediafusion-*.zip; do
+            if [ ! -f "$file" ]; then
+              echo "Error: Build artifact $file not found"
+              exit 1
+            fi
+          done
 
-      - name: List build directory
-        run: ls -la kodi
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: kodi/dist
+          destination_dir: kodi/dist
+          keep_files: true
+          enable_jekyll: false
+          force_orphan: true
 
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: kodi/plugin.video.mediafusion-*.zip
+          files: |
+            kodi/plugin.video.mediafusion-*.zip
+            kodi/repository.mediafusion-*.zip
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  generate_release_notes:
+    needs: update_version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Generate Release Notes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          make generate-notes VERSION_OLD=${{ needs.update_version.outputs.previous_version }} VERSION_NEW=${{ github.ref_name }} > release_notes.md
+
+      - name: Update Release Notes
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          token: ${{ secrets.GITHUB_TOKEN }}

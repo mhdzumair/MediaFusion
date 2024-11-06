@@ -27,10 +27,32 @@ VERSION_OLD ?=
 VERSION_NEW ?=
 CONTRIBUTORS ?=
 
-.PHONY: build tag push prompt
+# Claude API settings
+CLAUDE_MODEL ?= claude-3-5-sonnet-20241022
+MAX_TOKENS ?= 1024
+ANTHROPIC_VERSION ?= 2023-06-01
+
+.PHONY: build tag push prompt update-version generate-notes
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
+
+update-version:
+ifndef VERSION_NEW
+	@echo "Error: VERSION_NEW is not set. Please set it like: make update-version VERSION_NEW=4.1.0"
+	@exit 1
+endif
+	@echo "Updating version to $(VERSION_NEW)..."
+	# Update main addon.xml
+	@sed -i -e "/<addon\s*id=\"plugin\.video\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/plugin.video.mediafusion/addon.xml
+	# Update repository addon.xml
+	@sed -i -e "/<addon\s*id=\"repository\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/repository.mediafusion/addon.xml
+	# Update docker-compose.yml
+	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):v[0-9.]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):v$(VERSION_NEW)|g' deployment/docker-compose/docker-compose.yml
+	# Update k8s deployment
+	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):v[0-9.]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):v$(VERSION_NEW)|g' deployment/k8s/local-deployment.yaml
+	@echo "Version updated to $(VERSION_NEW) in all files"
+
 
 build-multi:
 	@if ! docker buildx ls | grep -q $(BUILDER_NAME); then \
@@ -49,7 +71,6 @@ push:
 	docker push $(DOCKER_IMAGE)
 
 prompt:
-# Check if necessary variables are set and generate prompt
 ifndef VERSION_OLD
 	@echo "Error: VERSION_OLD is not set. Please set it like: make prompt VERSION_OLD=x.x.x VERSION_NEW=y.y.y CONTRIBUTORS='@user1, @user2'"
 	@exit 1
@@ -58,11 +79,7 @@ ifndef VERSION_NEW
 	@echo "Error: VERSION_NEW is not set. Please set it like: make prompt VERSION_OLD=x.x.x VERSION_NEW=y.y.y CONTRIBUTORS='@user1, @user2'"
 	@exit 1
 endif
-ifndef CONTRIBUTORS
-	@echo "Warning: CONTRIBUTORS not set. Continuing without contributors."
-endif
-
-	@echo "Generate a release note for MediaFusion $(VERSION_NEW) by analyzing the following changes. Organize the release note by importance rather than by commit order. highlight the most significant updates first, and streamline the content to focus on what adds the most value to the user. Ensure to dynamically create sections for New Features & Enhancements, Bug Fixes, and Documentation updates only if relevant based on the types of changes listed. Use emojis relevantly at the start of each item to enhance readability and engagement. Keep the format straightforward & shorter, List down the contributors, and provide a direct link to the detailed list of changes:\n"
+	@echo "Generate a release note for MediaFusion $(VERSION_NEW) by analyzing the following changes. Organize the release note by importance rather than by commit order. highlight the most significant updates first, and streamline the content to focus on what adds the most value to the user. Ensure to dynamically create sections for New Features & Enhancements, Bug Fixes, and Documentation updates only if relevant based on the types of changes listed. Use emojis relevantly at the start of each item to enhance readability and engagement. Keep the format straightforward & shorter, provide a direct link to the detailed list of changes:\n"
 	@echo "## 🚀 MediaFusion $(VERSION_NEW) Released\n"
 	@echo "### Commit Messages and Descriptions:\n"
 	@git log --pretty=format:'%s%n%b' $(VERSION_OLD)..$(VERSION_NEW) | awk 'BEGIN {RS="\n\n"; FS="\n"} { \
@@ -75,8 +92,30 @@ endif
 		if (message != "") print "- " message; \
 		if (description != "") printf "%s", description; \
 	}'
-	@echo "\n### 🤝 Contributors: $(CONTRIBUTORS)\n"
-	@echo "### 📄 Full Changelog:\n- https://github.com/mhdzumair/MediaFusion/compare/$(VERSION_OLD)...$(VERSION_NEW)"
+	@echo "--- \n### 🤝 Contributors: $(CONTRIBUTORS)\n\n### 📄 Full Changelog:\nhttps://github.com/mhdzumair/MediaFusion/compare/$(VERSION_OLD)...$(VERSION_NEW)";
 
+generate-notes:
+ifndef VERSION_OLD
+	@echo "Error: VERSION_OLD is not set"
+	@exit 1
+endif
+ifndef VERSION_NEW
+	@echo "Error: VERSION_NEW is not set"
+	@exit 1
+endif
+ifndef CONTRIBUTORS
+	@echo "Warning: CONTRIBUTORS not set. Continuing without contributors."
+endif
+ifndef ANTHROPIC_API_KEY
+	@echo "Error: ANTHROPIC_API_KEY is not set"
+	@exit 1
+endif
+	@PROMPT_CONTENT=`make prompt VERSION_OLD=$(VERSION_OLD) VERSION_NEW=$(VERSION_NEW) | tr '\n' ' ' | sed 's/"/\\\\"/g'`; \
+	curl -s https://api.anthropic.com/v1/messages \
+		--header "x-api-key: $(ANTHROPIC_API_KEY)" \
+		--header "anthropic-version: $(ANTHROPIC_VERSION)" \
+		--header "content-type: application/json" \
+		--data "{\"model\":\"$(CLAUDE_MODEL)\",\"max_tokens\":$(MAX_TOKENS),\"messages\":[{\"role\":\"user\",\"content\":\"$$PROMPT_CONTENT\"}]}" \
+		| jq -r '.content[] | select(.type=="text") | .text';
 
 all: build-multi
