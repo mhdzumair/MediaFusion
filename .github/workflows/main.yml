@@ -102,7 +102,15 @@ jobs:
         run: sudo apt-get install -y zip xmlstarlet
 
       - name: Build addon and repository
-        run: make -C kodi
+        run: |
+          make -C kodi
+          # Validate build artifacts
+          for file in kodi/plugin.video.mediafusion-*.zip kodi/repository.mediafusion-*.zip; do
+            if [ ! -f "$file" ]; then
+              echo "Error: Build artifact $file not found"
+              exit 1
+            fi
+          done
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
@@ -111,6 +119,8 @@ jobs:
           publish_dir: kodi/dist
           destination_dir: kodi/dist
           keep_files: true
+          enable_jekyll: false
+          force_orphan: true
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
