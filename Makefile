@@ -25,7 +25,7 @@ HTTPS_PROXY = http://172.17.0.1:1081
 # Variables to hold version tags and contributor names
 VERSION_OLD ?=
 VERSION_NEW ?=
-CONTRIBUTORS ?=
+CONTRIBUTORS ?= $(shell git log --pretty=format:'%an' $(VERSION_OLD)..$(VERSION_NEW) | sort | uniq)
 
 # Claude API settings
 CLAUDE_MODEL ?= claude-3-5-sonnet-20241022
@@ -102,9 +102,6 @@ endif
 ifndef VERSION_NEW
 	@echo "Error: VERSION_NEW is not set"
 	@exit 1
-endif
-ifndef CONTRIBUTORS
-	@echo "Warning: CONTRIBUTORS not set. Continuing without contributors."
 endif
 ifndef ANTHROPIC_API_KEY
 	@echo "Error: ANTHROPIC_API_KEY is not set"
