@@ -5,12 +5,41 @@ on:
     types: [ created ]
 
 jobs:
+  update_version:
+    if: "!github.event.release.prerelease"  # Only run for stable releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for version comparison
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update version numbers
+        run: |
+          make update-version VERSION_NEW=${{ steps.version.outputs.VERSION }}
+
+      - name: Commit and push version updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git commit -m "chore: update version to ${{ steps.version.outputs.VERSION }}"
+          git push origin HEAD:main
+
   mediafusion_docker_build:
+    needs: update_version
+    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main  # Use main branch with updated versions
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -34,18 +63,22 @@ jobs:
           push: true
           build-args: VERSION=${{ github.ref_name }}
           tags: |
-            mhdzumair/mediafusion:v${{ github.ref_name }}
+            mhdzumair/mediafusion:${{ github.ref_name }}
             mhdzumair/mediafusion:latest
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   kodi_build:
+    needs: update_version
+    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main  # Use main branch with updated versions
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -57,16 +90,50 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Install zip
-        run: sudo apt-get install -y zip
+      - name: Install required packages
+        run: sudo apt-get install -y zip xmlstarlet
 
-      - name: Build addon
+      - name: Build addon and repository
         run: make -C kodi
 
-      - name: List build directory
-        run: ls -la kodi
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: kodi/dist
+          destination_dir: kodi/dist
+          keep_files: true
 
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: kodi/plugin.video.mediafusion-*.zip
+          files: |
+            kodi/plugin.video.mediafusion-*.zip
+            kodi/repository.mediafusion-*.zip
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  generate_release_notes:
+    needs: [mediafusion_docker_build, kodi_build]
+    if: "!github.event.release.prerelease"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get previous tag
+        id: previoustag
+        run: |
+          echo "PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1)" >> $GITHUB_OUTPUT
+
+      - name: Generate Release Notes
+        run: |
+          make prompt VERSION_OLD=${{ steps.previoustag.outputs.PREVIOUS_TAG }} VERSION_NEW=${{ github.ref_name }} > release_notes.md
+
+      - name: Update Release Notes
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          token: ${{ secrets.GITHUB_TOKEN }}

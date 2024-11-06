@@ -27,10 +27,27 @@ VERSION_OLD ?=
 VERSION_NEW ?=
 CONTRIBUTORS ?=
 
-.PHONY: build tag push prompt
+.PHONY: build tag push prompt update-version
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
+
+update-version:
+ifndef VERSION_NEW
+	@echo "Error: VERSION_NEW is not set. Please set it like: make update-version VERSION_NEW=4.1.0"
+	@exit 1
+endif
+	@echo "Updating version to $(VERSION_NEW)..."
+	# Update main addon.xml
+	@sed -i -e "/<addon\s*id=\"plugin\.video\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/plugin.video.mediafusion/addon.xml
+	# Update repository addon.xml
+	@sed -i -e "/<addon\s*id=\"repository\.mediafusion\"/s/version=\"[^\"]*\"/version=\"$(VERSION_NEW)\"/" kodi/repository.mediafusion/addon.xml
+	# Update docker-compose.yml
+	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):v[0-9.]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):v$(VERSION_NEW)|g' deployment/docker-compose/docker-compose.yml
+	# Update k8s deployment
+	@sed -i 's|image: $(DOCKER_REPO)/$(IMAGE_NAME):v[0-9.]*|image: $(DOCKER_REPO)/$(IMAGE_NAME):v$(VERSION_NEW)|g' deployment/k8s/local-deployment.yaml
+	@echo "Version updated to $(VERSION_NEW) in all files"
+
 
 build-multi:
 	@if ! docker buildx ls | grep -q $(BUILDER_NAME); then \
