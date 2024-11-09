@@ -45,6 +45,10 @@ repository: $(ZIP_FILE)
 	@cp $(REPO_ZIP_FILE) $(DIST_DIR)/zips/$(REPO_DIR)/
 	@cp $(REPO_DIR)/addon.xml $(DIST_DIR)/zips/$(REPO_DIR)/
 
+	# Create index.html
+	@echo "<!DOCTYPE html>" > $(DIST_DIR)/index.html
+	@echo "<a href=\"/kodi/dist/zips/repository.mediafusion/$(REPO_ZIP_FILE)\">$(REPO_ZIP_FILE)</a>" >> $(DIST_DIR)/index.html
+
 	# Generate repository files
 	@python3 generate_repository.py
 
