@@ -107,7 +107,7 @@ jobs:
         run: |
           make -C kodi
           # Validate build artifacts
-          for file in kodi/plugin.video.mediafusion-*.zip kodi/repository.mediafusion-*.zip; do
+          for file in kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip kodi/dist/repository.mediafusion/repository.mediafusion-*.zip; do
             if [ ! -f "$file" ]; then
               echo "Error: Build artifact $file not found"
               exit 1
