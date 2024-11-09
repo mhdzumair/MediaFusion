@@ -64,13 +64,43 @@
 ### Stremio Add-on Installation
 
 1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads).
-2. **MediaFusion Community Instance (Non-Affiliated)**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button.
+2. **MediaFusion Community Instance**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button.
 
 ### Kodi Add-on Installation
-1. **Kodi**: Install Kodi from [here](https://kodi.tv/download).
-2. **MediaFusion Kodi Zip**: Download the [plugin.video.mediafusion.zip](https://github.com/mhdzumair/MediaFusion/releases) file.
-3. Install the zip file in Kodi by navigating to `Add-ons` > `Install from zip file`.
-4. Configure the add-on by navigating to `Add-ons` > `My add-ons` > `Video add-ons` > `MediaFusion` > `Configure` and follow the instructions.
+
+#### Method 1: Install via Repository (Recommended)
+1. Launch Kodi
+2. Go to Settings (⚙️ gear icon) → File manager
+3. Click on "Add source"
+4. In the "Add file source" dialog, click `<None>` and enter exactly:
+   ```
+   https://mhdzumair.github.io/MediaFusion
+   ```
+5. In the "Enter a name for this media source" field, enter `MediaFusion` and click "OK"
+6. Go back to Kodi home screen
+7. Click Add-ons
+8. Click the Add-on browser (box icon) 
+9. Click "Install from zip file"
+10. Click "MediaFusion"
+11. Select the repository zip file (e.g., `repository.mediafusion-4.1.1.zip`)
+12. Wait for the "MediaFusion Repository add-on installed" notification
+13. Click "Install from repository"
+14. Select "MediaFusion Repository"
+15. Go to "Video add-ons"
+16. Select "MediaFusion"
+17. Click "Install"
+18. Configure the add-on by going to Add-ons → My add-ons → Video add-ons → MediaFusion → Configure
+
+#### Method 2: Manual Installation
+1. **Kodi**: Install Kodi from [here](https://kodi.tv/download)
+2. **MediaFusion Zip**: Download the latest [plugin.video.mediafusion.zip](https://github.com/mhdzumair/MediaFusion/releases) from releases
+3. Launch Kodi
+4. Go to Add-ons → Add-on browser (box icon) → Install from zip file
+5. Navigate to the downloaded zip file and select it
+6. Wait for the "MediaFusion add-on installed" notification
+7. Configure the add-on by going to Add-ons → My add-ons → Video add-ons → MediaFusion → Configure
+
+> **Note**: Installing via repository (Method 1) is recommended as it enables automatic updates when new versions are released.
 
 ## 🚀 Local Add-on Deployment
 
