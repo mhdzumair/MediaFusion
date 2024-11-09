@@ -29,8 +29,8 @@ prepare_build: clean
 	@echo "Preparing build directory..."
 	@mkdir -p $(BUILD_DIR)/$(ADDON_DIR)
 	@mkdir -p $(BUILD_DIR)/$(REPO_DIR)
-	@mkdir -p $(DIST_DIR)/zips/$(ADDON_DIR)
-	@mkdir -p $(DIST_DIR)/zips/$(REPO_DIR)
+	@mkdir -p $(DIST_DIR)/$(ADDON_DIR)
+	@mkdir -p $(DIST_DIR)/$(REPO_DIR)
 	@cp -r $(ADDON_DIR)/* $(BUILD_DIR)/$(ADDON_DIR)
 
 # Repository setup
@@ -40,14 +40,16 @@ repository: $(ZIP_FILE)
 	@cd $(BUILD_DIR) && zip -r ../$(REPO_ZIP_FILE) $(REPO_DIR)
 
 	# Copy files to dist structure
-	@cp $(ZIP_FILE) $(DIST_DIR)/zips/$(ADDON_DIR)/
-	@cp $(ADDON_DIR)/addon.xml $(DIST_DIR)/zips/$(ADDON_DIR)/
-	@cp $(REPO_ZIP_FILE) $(DIST_DIR)/zips/$(REPO_DIR)/
-	@cp $(REPO_DIR)/addon.xml $(DIST_DIR)/zips/$(REPO_DIR)/
+	@cp $(ZIP_FILE) $(DIST_DIR)/$(ADDON_DIR)/
+	@cp $(ADDON_DIR)/addon.xml $(DIST_DIR)/$(ADDON_DIR)/
+	@cp $(REPO_ZIP_FILE) $(DIST_DIR)/$(REPO_DIR)/
+	@cp $(REPO_DIR)/addon.xml $(DIST_DIR)/$(REPO_DIR)/
+	@cp $(REPO_ZIP_FILE) $(DIST_DIR)/
+	@rm -rf $(BUILD_DIR) $(ZIP_FILE) $(REPO_ZIP_FILE)
 
 	# Create index.html
 	@echo "<!DOCTYPE html>" > $(DIST_DIR)/index.html
-	@echo "<a href=\"/kodi/dist/zips/repository.mediafusion/$(REPO_ZIP_FILE)\">$(REPO_ZIP_FILE)</a>" >> $(DIST_DIR)/index.html
+	@echo "<a href=\"$(REPO_ZIP_FILE)\">$(REPO_ZIP_FILE)</a>" >> $(DIST_DIR)/index.html
 
 	# Generate repository files
 	@python3 generate_repository.py

@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 DIST_DIR = Path("dist")
-ZIPS_DIR = DIST_DIR / "zips"
 
 
 def generate_md5(file_path):
@@ -21,7 +20,7 @@ def generate_addons_xml():
     addon_xmls = []
     errors = []
     # Get all addon.xml files from the zips directory
-    for addon_dir in ZIPS_DIR.iterdir():
+    for addon_dir in DIST_DIR.iterdir():
         if addon_dir.is_dir():
             addon_xml_path = addon_dir / "addon.xml"
             if addon_xml_path.exists():
@@ -45,11 +44,11 @@ def generate_addons_xml():
     # Use proper XML declaration with encoding
     xml_str = ET.tostring(xml_root, encoding="utf-8", xml_declaration=True)
     # Save addons.xml
-    addons_xml_path = ZIPS_DIR / "addons.xml"
+    addons_xml_path = DIST_DIR / "addons.xml"
     with open(addons_xml_path, "wb") as f:
         f.write(xml_str)
     # Generate MD5
-    md5_path = ZIPS_DIR / "addons.xml.md5"
+    md5_path = DIST_DIR / "addons.xml.md5"
     with open(md5_path, "w") as f:
         f.write(generate_md5(addons_xml_path))
 
