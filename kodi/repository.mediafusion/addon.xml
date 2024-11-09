@@ -2,9 +2,9 @@
 <addon id="repository.mediafusion" version="4.1.2" name="MediaFusion Repository" provider-name="Mohamed Zumair">
     <extension point="xbmc.addon.repository" name="MediaFusion Repository">
         <dir>
-            <info compressed="false">https://mhdzumair.github.io/MediaFusion/kodi/dist/zips/addons.xml</info>
-            <checksum>https://mhdzumair.github.io/MediaFusion/kodi/dist/zips/addons.xml.md5</checksum>
-            <datadir zip="true">https://mhdzumair.github.io/MediaFusion/kodi/dist/zips/</datadir>
+            <info compressed="false">https://mhdzumair.github.io/MediaFusion/addons.xml</info>
+            <checksum>https://mhdzumair.github.io/MediaFusion/addons.xml.md5</checksum>
+            <datadir zip="true">https://mhdzumair.github.io/MediaFusion/</datadir>
         </dir>
     </extension>
     <extension point="xbmc.addon.metadata">
