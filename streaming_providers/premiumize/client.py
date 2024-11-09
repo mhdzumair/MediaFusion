@@ -136,13 +136,17 @@ class Premiumize(DebridClient):
         available_torrents = torrent_list_response["transfers"]
         for torrent in available_torrents:
             src = torrent["src"]
-            async with self.session.head(src) as response:
-                if response.status != 200:
-                    continue
-
-                magnet_link_content = response.headers.get("Content-Disposition")
-                if info_hash in magnet_link_content:
-                    return torrent
+            if "https" in src:
+                async with self.session.head(src) as response:
+                    if response.status != 200:
+                        continue
+                    magnet_link = response.headers.get("Content-Disposition")
+            elif "magnet" in src:
+                magnet_link = src
+            else:
+                continue
+            if info_hash in magnet_link:
+                return torrent
 
     async def get_account_info(self):
         return await self._make_request("GET", f"{self.BASE_URL}/account/info")
