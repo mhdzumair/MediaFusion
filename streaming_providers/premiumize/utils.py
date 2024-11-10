@@ -16,6 +16,8 @@ async def create_or_get_folder_id(pm_client: Premiumize, info_hash: str):
 
     folder_data = await pm_client.create_folder(info_hash)
     if folder_data.get("status") != "success":
+        if folder_data.get("message") == "This folder already exists.":
+            return await create_or_get_folder_id(pm_client, info_hash)
         raise ProviderException(
             "Folder already created in meanwhile", "torrent_not_downloaded.mp4"
         )
@@ -78,11 +80,13 @@ async def get_stream_link(
         torrent_folder_data = await pm_client.get_folder_list(torrent_info["folder_id"])
 
     torrent_info = {
-        "files": file_data
-        for file_data in torrent_folder_data["content"]
-        if "video" in file_data["mime_type"]
+        "files": [
+            file_data
+            for file_data in torrent_folder_data["content"]
+            if "video" in file_data.get("mime_type", "")
+        ]
     }
-    selected_file_index = select_file_index_from_torrent(
+    selected_file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
         episode,

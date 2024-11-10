@@ -70,10 +70,13 @@ class Premiumize(DebridClient):
         )
 
     async def create_folder(self, name, parent_id=None):
+        data = {"name": name}
+        if parent_id:
+            data["parent_id"] = parent_id
         return await self._make_request(
             "POST",
             f"{self.BASE_URL}/folder/create",
-            data={"name": name, "parent_id": parent_id},
+            data=data,
         )
 
     async def get_transfer_list(self):
