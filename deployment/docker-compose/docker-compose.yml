@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   mediafusion:
-    image: mhdzumair/mediafusion:v4.1.3
+    image: mhdzumair/mediafusion:v4.1.4
     ports:
       - "8000:8000"
     env_file:
@@ -41,7 +41,7 @@ services:
       - "6379:6379"
 
   dramatiq-worker:
-    image: mhdzumair/mediafusion:v4.1.3
+    image: mhdzumair/mediafusion:v4.1.4
     command: ["pipenv", "run", "dramatiq", "api.task", "-p", "1", "-t", "1", "--queues", "scrapy"]
     env_file:
       - .env
