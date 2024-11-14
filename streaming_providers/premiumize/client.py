@@ -139,7 +139,7 @@ class Premiumize(DebridClient):
         available_torrents = torrent_list_response["transfers"]
         for torrent in available_torrents:
             src = torrent["src"]
-            if "https" in src:
+            if src.startswith("http"):
                 async with self.session.head(src) as response:
                     if response.status != 200:
                         continue
