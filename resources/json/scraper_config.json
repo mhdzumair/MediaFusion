@@ -263,6 +263,7 @@
     "image_url_template": "/images/poster/{batch_id_1}/{batch_id_2}.webp",
     "m3u8_base_url": "https://{domain}/{source}/js/{id}/{stream_no}/playlist.m3u8",
     "mediafusion_referer": "https://mediafusion.addon/",
+	"session_url": "https://secure.bigcoolersonline.top/init-session",
     "category_mapping": {
       "afl": "Afl",
       "american-football": "American Football",

@@ -2,7 +2,7 @@ import json
 import random
 import re
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import pytz
 import scrapy
@@ -23,6 +23,7 @@ class StreamedSpider(scrapy.Spider):
     m3u8_base_url = config_manager.get_scraper_config(name, "m3u8_base_url")
     mediafusion_referer = config_manager.get_scraper_config(name, "mediafusion_referer")
     category_mapping = config_manager.get_scraper_config(name, "category_mapping")
+    session_url = config_manager.get_scraper_config(name, "session_url")
 
     domains = None
     domain_host = None
@@ -91,7 +92,7 @@ class StreamedSpider(scrapy.Spider):
 
         for stream_data in stream_data_list:
             if self.domains and self.domain_host:
-                yield self.create_stream_item(stream_data, item)
+                yield from self.parse_stream_data(stream_data, item)
             else:
                 yield scrapy.Request(
                     stream_data["embedUrl"],
@@ -108,7 +109,7 @@ class StreamedSpider(scrapy.Spider):
             self.extract_domain_info(response)
 
         if self.domains and self.domain_host:
-            yield self.create_stream_item(stream_data, item)
+            yield from self.parse_stream_data(stream_data, item)
         else:
             self.logger.error(
                 f"Failed to extract domain information for stream: {stream_data['id']}"
@@ -120,7 +121,7 @@ class StreamedSpider(scrapy.Spider):
         ).get()
         if script_content:
             vars_match = re.search(
-                r'var k="(\w+)",i="([^"]+)",s="(\d+)",l=(\[.+?\]),h="([^"]+)";',
+                r'var k="(\w+)",i="([^"]+)",s="(\d+)",l=(\[.+?]),h="([^"]+)";',
                 script_content,
             )
             if vars_match:
@@ -136,7 +137,7 @@ class StreamedSpider(scrapy.Spider):
                 "Failed to find script content with domain variables in response."
             )
 
-    def create_stream_item(self, stream_data, item):
+    def parse_stream_data(self, stream_data, item):
         m3u8_url = self.m3u8_base_url.format(
             domain=f"{random.choice(self.domains)}.{self.domain_host}",
             source=stream_data["source"],
@@ -144,14 +145,35 @@ class StreamedSpider(scrapy.Spider):
             stream_no=stream_data["streamNo"],
         )
 
-        stream_item = item.copy()
+        yield scrapy.Request(
+            self.session_url,
+            self.parse_session,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"path": urlparse(m3u8_url).path}),
+            meta={"item": item, "stream_data": stream_data, "m3u8_url": m3u8_url},
+        )
+
+    def parse_session(self, response):
+        session_data = response.json()
+        session_id = session_data.get("id")
+        if not session_id:
+            self.logger.error("Failed to get session ID for stream.")
+            return
+
+        stream_data = response.meta["stream_data"].copy()
+        m3u8_url = response.meta["m3u8_url"]
+        stream_item = response.meta["item"].copy()
+
+        m3u8_url = f"{m3u8_url}?id={session_id}"
+
         stream_item.update(
             {
                 "stream_name": f"{'HD' if stream_data['hd'] else 'SD'} - 🌐 {stream_data['language']}\n"
                 f"🔗 {stream_data['source'].title()} Stream {stream_data['streamNo']}",
                 "stream_url": m3u8_url,
                 "referer": self.mediafusion_referer,
-                "description": f"{item['title']} - {datetime.fromtimestamp(item['event_start_timestamp'], tz=self.gmt).strftime('%I:%M%p GMT')}",
+                "description": f"{stream_item['title']} - {datetime.fromtimestamp(stream_item['event_start_timestamp'], tz=self.gmt).strftime('%I:%M%p GMT')}",
             }
         )
 
