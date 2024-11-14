@@ -33,20 +33,29 @@ def generate_addons_xml():
                     addon_xmls.append(root)
                 except (ET.ParseError, ValueError) as e:
                     errors.append(f"Error processing {addon_xml_path}: {e}")
+
     if errors:
         raise ValueError("\n".join(errors))
+
     # Sort addons by ID for consistent output
     addon_xmls.sort(key=lambda x: x.get("id", ""))
+
     # Create addons.xml
     xml_root = ET.Element("addons")
     for addon in addon_xmls:
+        if addon.get("id").startswith("repository."):
+            # append repository twice
+            xml_root.insert(0, addon)
         xml_root.append(addon)
+
     # Use proper XML declaration with encoding
     xml_str = ET.tostring(xml_root, encoding="utf-8", xml_declaration=True)
+
     # Save addons.xml
     addons_xml_path = DIST_DIR / "addons.xml"
     with open(addons_xml_path, "wb") as f:
         f.write(xml_str)
+
     # Generate MD5
     md5_path = DIST_DIR / "addons.xml.md5"
     with open(md5_path, "w") as f:
