@@ -63,7 +63,7 @@ class AllDebrid(DebridClient):
                     raise ProviderException(
                         "Torrent must be premium on AllDebrid", "need_premium.mp4"
                     )
-                case "MAGNET_TOO_MANY_ACTIVE":
+                case "MAGNET_TOO_MANY_ACTIVE" | "MAGNET_TOO_MANY":
                     raise ProviderException(
                         "Too many active torrents on AllDebrid", "torrent_limit.mp4"
                     )
