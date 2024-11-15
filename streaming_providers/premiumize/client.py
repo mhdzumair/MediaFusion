@@ -148,7 +148,7 @@ class Premiumize(DebridClient):
                 magnet_link = src
             else:
                 continue
-            if info_hash in magnet_link:
+            if magnet_link and info_hash in magnet_link:
                 return torrent
 
     async def get_account_info(self):
