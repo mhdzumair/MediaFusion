@@ -50,6 +50,7 @@ repository: $(ZIP_FILE)
 	# Create index.html
 	@echo "<!DOCTYPE html>" > $(DIST_DIR)/index.html
 	@echo "<a href=\"$(REPO_ZIP_FILE)\">$(REPO_ZIP_FILE)</a>" >> $(DIST_DIR)/index.html
+	@echo "<a href=\"$(REPO_DIR)/$(REPO_ZIP_FILE)\">$(REPO_DIR)/$(REPO_ZIP_FILE)</a>" >> $(DIST_DIR)/index.html
 
 	# Generate repository files
 	@python3 generate_repository.py
