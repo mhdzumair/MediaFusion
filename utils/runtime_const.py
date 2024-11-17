@@ -51,6 +51,9 @@ PROWLARR_SEARCH_TTL = int(
 TORRENTIO_SEARCH_TTL = int(
     timedelta(days=settings.torrentio_search_interval_days).total_seconds()
 )
+MEDIAFUSION_SEARCH_TTL = int(
+    timedelta(days=settings.mediafusion_search_interval_days).total_seconds()
+)
 ZILEAN_SEARCH_TTL = int(
     timedelta(hours=settings.zilean_search_interval_hour).total_seconds()
 )
