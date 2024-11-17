@@ -385,7 +385,7 @@ class LiveTVSpider(scrapy.Spider):
             )
             return
 
-        for index, stream_data in enumerate(streams_data, 1):
+        for stream_data in streams_data:
             url = stream_data["url"]
             full_url = urljoin(response.url, url)
             # Instead of appending to streams_info, initiate validation request
@@ -395,7 +395,6 @@ class LiveTVSpider(scrapy.Spider):
                 callback=self.validate_m3u8_or_mpd_url,
                 errback=self.handle_m3u8_or_mpd_failure,
                 meta={
-                    "index": index if len(streams_data) > 1 else None,
                     "stream_title": stream_title,
                     "drm_key_id": stream_data.get("drm_key_id"),
                     "drm_key": stream_data.get("drm_key"),
@@ -414,11 +413,7 @@ class LiveTVSpider(scrapy.Spider):
         if response.status == 200 and content_type in const.IPTV_VALID_CONTENT_TYPES:
             # Content type is valid, proceed with adding the stream
             stream_info = {
-                "name": (
-                    f"{meta['stream_title']} - {meta['index']}"
-                    if meta["index"]
-                    else meta["stream_title"]
-                ),
+                "name": meta["stream_title"],
                 "url": meta["full_url"],
                 "drm_key_id": meta["drm_key_id"],
                 "drm_key": meta["drm_key"],
