@@ -228,6 +228,8 @@ async def add_torrent(
 
     if meta_type == "movie":
         movie_data = await get_movie_data_by_id(meta_id)
+        if not movie_data:
+            raise_error(f"Movie with ID {meta_id} not found.")
         title = movie_data.title
 
         max_similarity_ratio = calculate_max_similarity_ratio(
@@ -254,6 +256,8 @@ async def add_torrent(
 
     else:
         series_data = await get_series_data_by_id(meta_id)
+        if not series_data:
+            raise_error(f"Series with ID {meta_id} not found.")
         title = series_data.title
 
         max_similarity_ratio = calculate_max_similarity_ratio(
