@@ -302,14 +302,16 @@ class ProwlarrScraper(BaseScraper):
             f"{len(stream_generators)} generators"
         )
 
-    async def fetch_stream_data(self, params: dict) -> List[Dict[str, Any]]:
+    async def fetch_stream_data(
+        self, params: dict, timeout: int = settings.prowlarr_search_query_timeout
+    ) -> List[Dict[str, Any]]:
         async with httpx.AsyncClient(
             headers={"X-Api-Key": settings.prowlarr_api_key}
         ) as client:
             response = await client.get(
                 self.base_url,
                 params=params,
-                timeout=settings.prowlarr_search_query_timeout,
+                timeout=timeout,
             )
             response.raise_for_status()
             return response.json()

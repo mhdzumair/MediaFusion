@@ -46,9 +46,12 @@ async def scrape_prowlarr_feed():
         "offset": 0,
         "limit": 100,
     }
+    logger.info("Scraping Prowlarr feed")
 
     try:
-        results = await scraper.fetch_stream_data(params)
+        results = await scraper.fetch_stream_data(
+            params, timeout=settings.prowlarr_search_query_timeout * 3
+        )
         logger.info(f"Scraped {len(results)} items from Prowlarr feed")
 
         circuit_breaker = CircuitBreaker(
@@ -144,11 +147,7 @@ async def search_and_create_metadata(metadata: dict, media_type: str):
 
 @minimum_run_interval(hours=settings.prowlarr_feed_scrape_interval_hour)
 @dramatiq.actor(
-    time_limit=60 * 60 * 1000,  # 60 minutes
-    max_retries=3,
-    min_backoff=60000,
-    max_backoff=3600000,
-    priority=50,
+    time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy"  # 60 minutes
 )
 async def run_prowlarr_feed_scraper(**kwargs):
     logger.info("Running Prowlarr feed scraper")
