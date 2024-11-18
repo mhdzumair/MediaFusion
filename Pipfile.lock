@@ -2422,12 +2422,12 @@
         },
         "scrapy": {
             "hashes": [
-                "sha256:4be353d6abbb942a9f7e7614ca8b5f3d9037381176ac8d8859c8cac676e74fa0",
-                "sha256:dfbd565384fc3fffeba121f5a3a2d0899ac1f756d41432ca0879933fbfb3401d"
+                "sha256:c33e2dc7da42e727390bacb32dd9938a54ac210fa71972b5c392754f478669cd",
+                "sha256:d66d6e76009b12447604196875a463b61d10721140032a8084a0a52df7f4788f"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==2.11.2"
+            "markers": "python_version >= '3.9'",
+            "version": "==2.12.0"
         },
         "scrapy-playwright": {
             "hashes": [
