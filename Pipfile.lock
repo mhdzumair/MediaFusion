@@ -1419,12 +1419,12 @@
         },
         "parsett": {
             "hashes": [
-                "sha256:50b17e1091171b6960c1621bdce9cbb42e1d2a749b24a6923898a765135f399f",
-                "sha256:dfcad77a07b1ef6221b220e0d8fd88a40f41f6d14aa18ec5afbb689cd0e3be74"
+                "sha256:2c53a757d81ca1de52042c4d320dae05b1013814a8950d7a63d81abf28a2e6dc",
+                "sha256:fb7d37b3697a51f3483096cb121b4598968b8f1ee6478880b3886386d938c7c4"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.11' and python_version < '4.0'",
-            "version": "==1.4.1"
+            "version": "==1.5.0"
         },
         "pikpakapi": {
             "git": "git+https://github.com/mhdzumair/PikPakAPI.git",
