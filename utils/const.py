@@ -129,6 +129,7 @@ TORRENT_SORTING_PRIORITY_OPTIONS = TORRENT_SORTING_PRIORITY
 STREAMING_SERVICE_REQUIREMENTS = {
     "pikpak": ["email", "password"],
     "qbittorrent": ["qbittorrent_config"],
+    "stremthru": ["url", "token"],
     "default": ["token"],
 }
 

@@ -372,7 +372,7 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     font-size: 1rem;
 }
 
-#signup_section, #oauth_section, #token_input {
+#service_url_section, #signup_section, #oauth_section, #token_input {
     margin-top: 1rem;
 }
 
