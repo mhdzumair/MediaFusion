@@ -101,6 +101,7 @@ class TVStreams(Document):
     source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     country: str | None = None
     is_working: Optional[bool] = True
     test_failure_count: int = 0
@@ -152,6 +153,7 @@ class MediaFusionMetaData(Document):
     runtime: Optional[str] = None
     website: Optional[str] = None
     genres: Optional[list[str]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.now)
     last_updated_at: datetime = Field(default_factory=datetime.now)
 
     class Settings:
@@ -171,7 +173,7 @@ class MediaFusionMetaData(Document):
 class MediaFusionMovieMetaData(MediaFusionMetaData):
     type: str = "movie"
     imdb_rating: Optional[float] = None
-    parent_guide_nudity_status: Optional[str] = "None"
+    parent_guide_nudity_status: Optional[str] = "Unknown"
     parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
     stars: Optional[list[str]] = Field(default_factory=list)
 

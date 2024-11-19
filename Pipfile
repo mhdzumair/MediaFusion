@@ -47,6 +47,9 @@ tenacity = "*"
 ratelimit = "*"
 qrcode = "*"
 aioseedrcc = "*"
+typer = "*"
+sqlmodel = "*"
+asyncpg = "*"
 
 [dev-packages]
 pysocks = "*"
