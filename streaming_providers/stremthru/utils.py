@@ -27,7 +27,7 @@ async def add_new_torrent(st_client, magnet_link):
 
 
 async def wait_for_download_and_get_link(
-    st_client, torrent_id, filename, file_index, episode, max_retries, retry_interval
+    st_client, torrent_id, filename, episode, max_retries, retry_interval
 ):
     torrent_info = await st_client.wait_for_status(
         torrent_id, "downloaded", max_retries, retry_interval
@@ -44,12 +44,9 @@ async def wait_for_download_and_get_link(
 
 
 async def get_video_url_from_stremthru(
-    info_hash: str,
     magnet_link: str,
     user_data: UserData,
     filename: str,
-    user_ip: str,
-    file_index: int,
     episode: int = None,
     max_retries=5,
     retry_interval=5,
@@ -62,7 +59,6 @@ async def get_video_url_from_stremthru(
             st_client,
             torrent_id,
             filename,
-            file_index,
             episode,
             max_retries,
             retry_interval,
@@ -70,7 +66,7 @@ async def get_video_url_from_stremthru(
 
 
 async def update_st_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, user_ip: str, **kwargs
+    streams: list[TorrentStreams], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on StremThru's instant availability."""
 
@@ -93,7 +89,7 @@ async def update_st_cache_status(
 
 
 async def fetch_downloaded_info_hashes_from_st(
-    user_data: UserData, user_ip: str, **kwargs
+    user_data: UserData, **kwargs
 ) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the StremThru account."""
     try:
@@ -105,7 +101,7 @@ async def fetch_downloaded_info_hashes_from_st(
         return []
 
 
-async def delete_all_torrents_from_st(user_data: UserData, user_ip: str, **kwargs):
+async def delete_all_torrents_from_st(user_data: UserData, **kwargs):
     """Deletes all torrents from the StremThru account."""
     async with _get_client(user_data) as st_client:
         torrents = await st_client.get_user_torrent_list()
@@ -114,7 +110,7 @@ async def delete_all_torrents_from_st(user_data: UserData, user_ip: str, **kwarg
         )
 
 
-async def validate_stremthru_credentials(user_data: UserData, user_ip: str) -> dict:
+async def validate_stremthru_credentials(user_data: UserData, **kwargs) -> dict:
     """Validates the StremThru credentials."""
     try:
         async with _get_client(user_data) as client:

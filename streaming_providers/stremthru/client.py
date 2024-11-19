@@ -31,6 +31,9 @@ class StremThru(DebridClient):
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
+    async def disable_access_token(self):
+        pass
+
     async def _make_request(
         self,
         method: str,
@@ -44,7 +47,7 @@ class StremThru(DebridClient):
     ) -> dict[str, Any]:
         params = params or {}
         url = self.BASE_URL + url
-        res = await super()._make_request(
+        response = await super()._make_request(
             method,
             url,
             data,
@@ -54,12 +57,12 @@ class StremThru(DebridClient):
             is_expected_to_fail,
             retry_count,
         )
-        if res.get("error", None):
+        if response.get("error"):
             if is_expected_to_fail:
-                return res
-            error_message = res.get("error", "unknown error")
-            raise ProviderException(str(error_message), "api_error.mp4")
-        return res.get("data")
+                return response
+            error_message = response.get("error", "unknown error")
+            raise ProviderException(error_message, "api_error.mp4")
+        return response.get("data")
 
     @staticmethod
     def _validate_error_response(response_data: dict):
@@ -91,7 +94,7 @@ class StremThru(DebridClient):
     async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = await self.get_user_torrent_list()
         self._validate_error_response(available_torrents)
-        if not available_torrents.get("data", None):
+        if not available_torrents.get("data"):
             return None
         for torrent in available_torrents["data"]["items"]:
             if torrent["hash"] == info_hash:
@@ -104,7 +107,7 @@ class StremThru(DebridClient):
             data={"link": link},
             is_expected_to_fail=True,
         )
-        if response.get("data", None):
+        if response.get("data"):
             return response["data"]
         error_message = response.get("error", "unknown error")
         raise ProviderException(
