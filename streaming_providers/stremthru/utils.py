@@ -9,7 +9,7 @@ from streaming_providers.stremthru.client import StremThru
 
 def _get_client(user_data: UserData) -> StremThru:
     return StremThru(
-        url=user_data.streaming_provider.url,
+        url=str(user_data.streaming_provider.url),
         token=user_data.streaming_provider.token,
     )
 
