@@ -63,7 +63,18 @@
                         <option value="premiumize" {% if user_data.streaming_provider.service=='premiumize' %}selected{% endif %}>Premiumize (Premium)</option>
                         <option value="alldebrid" {% if user_data.streaming_provider.service=='alldebrid' %}selected{% endif %}>AllDebrid (Premium)</option>
                         <option value="qbittorrent" {% if user_data.streaming_provider.service=='qbittorrent' %}selected{% endif %}>qBittorrent - WebDav (Free/Premium)</option>
+                        <option value="stremthru" {% if user_data.streaming_provider.service=='stremthru' %}selected{% endif %}>StremThru (Interface)</option>
                     </select>
+
+                    <!-- Service URL -->
+                    <div id="service_url_section" style="display:none" class="mb-4">
+                        <label for="service_url">Service URL:</label>
+                        <input class="form-control" type="text" id="service_url" name="service_url" placeholder="https://" aria-label="Service URL"
+                               value="{{ user_data.streaming_provider.url if user_data.streaming_provider.url else '' }}">
+                        <div class="invalid-feedback">
+                            Service URL should be valid.
+                        </div>
+                    </div>
 
                     <!-- Affiliate Signup Links -->
                     <div id="signup_section" style="display:none" class="mb-4">

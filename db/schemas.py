@@ -137,7 +137,9 @@ class StreamingProvider(BaseModel):
         "torbox",
         "premiumize",
         "qbittorrent",
+        "stremthru",
     ] = Field(alias="sv")
+    url: HttpUrl | None = Field(default=None, alias="u")
     token: str | None = Field(default=None, alias="tk")
     email: str | None = Field(default=None, alias="em")
     password: str | None = Field(default=None, alias="pw")
