@@ -1061,7 +1061,7 @@ def migrate(
             await migration.initialize_resources()
 
             # Migrate data
-            # await migration.migrate_metadata()
+            await migration.migrate_metadata()
             await migration.migrate_torrent_streams()
             await migration.migrate_tv_streams()
 
