@@ -70,7 +70,7 @@ class StremThru(DebridClient):
 
     async def add_magnet_link(self, magnet_link):
         response_data = await self._make_request(
-            "POST", "/v0/store/magnets", data={"magnet": magnet_link}
+            "POST", "/v0/store/magnets", json={"magnet": magnet_link}
         )
         return response_data
 
@@ -96,7 +96,7 @@ class StremThru(DebridClient):
         response = await self._make_request(
             "POST",
             "/v0/store/link/generate",
-            data={"link": link},
+            json={"link": link},
             is_expected_to_fail=True,
         )
         if response.get("data"):
