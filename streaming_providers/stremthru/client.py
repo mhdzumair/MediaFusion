@@ -58,9 +58,9 @@ class StremThru(DebridClient):
             is_expected_to_fail,
             retry_count,
         )
+        if is_expected_to_fail:
+            return response
         if response.get("error"):
-            if is_expected_to_fail:
-                return response
             error_message = response.get("error", "unknown error")
             raise ProviderException(
                 f"Failed request to StremThru: {str(error_message)}",
@@ -103,7 +103,7 @@ class StremThru(DebridClient):
             return response["data"]
         error_message = response.get("error", "unknown error")
         raise ProviderException(
-            f"Failed to create download link from StremThru {error_message}",
+            f"Failed to create download link from StremThru {str(error_message)}",
             "transfer_error.mp4",
         )
 
