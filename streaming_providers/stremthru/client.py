@@ -61,30 +61,24 @@ class StremThru(DebridClient):
             if is_expected_to_fail:
                 return response
             error_message = response.get("error", "unknown error")
-            raise ProviderException(error_message, "api_error.mp4")
-        return response.get("data")
-
-    @staticmethod
-    def _validate_error_response(response_data: dict):
-        if response_data.get("error", None):
             raise ProviderException(
-                f"Failed request to StremThru {response_data['error']}",
-                "transfer_error.mp4",
+                f"Failed request to StremThru: {str(error_message)}",
+                "api_error.mp4",
             )
+        return response.get("data")
 
     async def add_magnet_link(self, magnet_link):
         response_data = await self._make_request(
             "POST", "/v0/store/magnets", data={"magnet": magnet_link}
         )
-        self._validate_error_response(response_data)
-        return response_data["data"]
+        return response_data
 
     async def get_user_torrent_list(self):
         return await self._make_request("GET", "/v0/store/magnets")
 
     async def get_torrent_info(self, torrent_id):
         response = await self._make_request("GET", "/v0/store/magnets/" + torrent_id)
-        return response.get("data", {})
+        return response
 
     async def get_torrent_instant_availability(self, magnet_links: list[str]):
         return await self._make_request(
@@ -93,10 +87,7 @@ class StremThru(DebridClient):
 
     async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = await self.get_user_torrent_list()
-        self._validate_error_response(available_torrents)
-        if not available_torrents.get("data"):
-            return None
-        for torrent in available_torrents["data"]["items"]:
+        for torrent in available_torrents["items"]:
             if torrent["hash"] == info_hash:
                 return torrent
 
