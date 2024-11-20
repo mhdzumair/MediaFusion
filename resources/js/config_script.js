@@ -13,6 +13,7 @@ const providerSignupLinks = {
     torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
+    stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#stremthru',
 };
 
 // ---- OAuth-related Functions ----
@@ -323,25 +324,8 @@ function getUserData() {
     if (provider) {
         if (servicesRequiringUrl.includes(provider)) {
             const serviceUrl =  document.getElementById('service_url').value.trim();
-            if (!serviceUrl) {
-                validateInput('service_url', false);
-                streamingProviderData.url = '';
-                return;
-            }
-            let isValidUrl = false;
-            try {
-                const url = new URL(serviceUrl);
-                const hostname = url.hostname.toLowerCase();
-                // Prevent localhost and internal IPs
-                isValidUrl = url.protocol === 'https:' &&
-                    !hostname.includes('localhost') &&
-                    !hostname.match(/^127\.|^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./);
-            } catch (_) {
-                isValidUrl = false;
-            }
-            validateInput('service_url', isValidUrl);
-            // Basic URL sanitization
-            streamingProviderData.url = isValidUrl ? serviceUrl : '';
+            validateInput('service_url', validateUrl(serviceUrl));
+            streamingProviderData.url = serviceUrl;
         }
         if (servicesRequiringCredentials.includes(provider)) {
             validateInput('email', document.getElementById('email').value);

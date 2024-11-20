@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from urllib.parse import urljoin
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -46,7 +47,7 @@ class StremThru(DebridClient):
         retry_count: int = 0,
     ) -> dict[str, Any]:
         params = params or {}
-        url = self.BASE_URL + url
+        url = urljoin(self.BASE_URL, url)
         response = await super()._make_request(
             method,
             url,
@@ -69,7 +70,7 @@ class StremThru(DebridClient):
 
     async def add_magnet_link(self, magnet_link):
         response_data = await self._make_request(
-            "POST", "/v0/store/magnets", data={"magnet": magnet_link}
+            "POST", "/v0/store/magnets", json={"magnet": magnet_link}
         )
         return response_data
 
@@ -95,7 +96,7 @@ class StremThru(DebridClient):
         response = await self._make_request(
             "POST",
             "/v0/store/link/generate",
-            data={"link": link},
+            json={"link": link},
             is_expected_to_fail=True,
         )
         if response.get("data"):
