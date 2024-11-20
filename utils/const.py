@@ -181,6 +181,7 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
     "realdebrid": "RD",
     "seedr": "SDR",
     "torbox": "TRB",
+    "stremthru": "ST",
 }
 
 CERTIFICATION_MAPPING = {

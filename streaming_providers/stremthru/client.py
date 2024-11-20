@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from urllib.parse import urljoin
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -46,7 +47,7 @@ class StremThru(DebridClient):
         retry_count: int = 0,
     ) -> dict[str, Any]:
         params = params or {}
-        url = self.BASE_URL + url
+        url = urljoin(self.BASE_URL, url)
         response = await super()._make_request(
             method,
             url,
