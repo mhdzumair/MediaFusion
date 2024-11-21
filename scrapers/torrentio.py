@@ -22,15 +22,13 @@ class TorrentioScraper(BaseScraper):
     cache_key_prefix = "torrentio"
 
     def __init__(self):
-        super().__init__(
-            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
-        )
+        super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
         self.base_url = settings.torrentio_url
         self.semaphore = asyncio.Semaphore(10)
 
     @BaseScraper.cache(ttl=TORRENTIO_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
-    async def scrape_and_parse(
+    async def _scrape_and_parse(
         self,
         metadata: MediaFusionMetaData,
         catalog_type: str,
@@ -49,15 +47,20 @@ class TorrentioScraper(BaseScraper):
             data = response.json()
 
             if not self.validate_response(data):
+                self.metrics.record_error("invalid_response")
                 self.logger.warning(f"Invalid response received for {url}")
                 return []
 
+            self.metrics.record_found_items(len(data.get("streams", [])))
             return await self.parse_response(
                 data, metadata, catalog_type, season, episode
             )
+
         except (ScraperError, RetryError):
+            self.metrics.record_error("request_failed")
             return []
         except Exception as e:
+            self.metrics.record_error("unexpected_error")
             self.logger.exception(f"Error occurred while fetching {url}: {e}")
             return []
 
@@ -90,6 +93,7 @@ class TorrentioScraper(BaseScraper):
         async with self.semaphore:
             try:
                 if is_contain_18_plus_keywords(stream_data["title"]):
+                    self.metrics.record_skip("Adult Content")
                     self.logger.warning(
                         f"Stream contains 18+ keywords: {stream_data['title']}"
                     )
@@ -138,7 +142,7 @@ class TorrentioScraper(BaseScraper):
                         if len(seasons) == 1:
                             season_number = seasons[0]
                         else:
-                            # Skip This Stream due to multiple seasons in one torrent.
+                            self.metrics.record_skip("Multiple Seasons torrent")
                             return None
                     else:
                         season_number = season
@@ -169,29 +173,42 @@ class TorrentioScraper(BaseScraper):
                     )
                     stream.filename = None
 
+                # Record metrics for successful processing
+                self.metrics.record_processed_item()
+                self.metrics.record_quality(stream.quality)
+                self.metrics.record_source(source)
+
                 return stream
+
             except Exception as e:
+                self.metrics.record_error("stream_processing_error")
                 self.logger.exception(f"Error processing stream: {e}")
                 return None
 
     def parse_stream_title(self, stream: dict) -> dict:
-        torrent_name, file_name = stream["title"].splitlines()[:2]
-        metadata = PTT.parse_title(torrent_name, True)
+        try:
+            torrent_name, file_name = stream["title"].splitlines()[:2]
+            metadata = PTT.parse_title(torrent_name, True)
 
-        return {
-            "torrent_name": torrent_name,
-            "title": metadata.get("title"),
-            "size": convert_size_to_bytes(self.extract_size_string(stream["title"])),
-            "seeders": self.extract_seeders(stream["title"]),
-            "languages": self.extract_languages(metadata, stream["title"]),
-            "metadata": metadata,
-            "file_name": (
-                stream.get("behaviorHints", {}).get("filename")
-                or path.basename(file_name)
-                if is_video_file(file_name)
-                else None
-            ),
-        }
+            return {
+                "torrent_name": torrent_name,
+                "title": metadata.get("title"),
+                "size": convert_size_to_bytes(
+                    self.extract_size_string(stream["title"])
+                ),
+                "seeders": self.extract_seeders(stream["title"]),
+                "languages": self.extract_languages(metadata, stream["title"]),
+                "metadata": metadata,
+                "file_name": (
+                    stream.get("behaviorHints", {}).get("filename")
+                    or path.basename(file_name)
+                    if is_video_file(file_name)
+                    else None
+                ),
+            }
+        except Exception as e:
+            self.metrics.record_error("title_parsing_error")
+            raise e
 
     @staticmethod
     def extract_seeders(details: str) -> int:

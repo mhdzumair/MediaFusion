@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from typing import List, Dict, Any, AsyncGenerator, Literal, AsyncIterable
 
 import PTT
@@ -65,16 +65,113 @@ class ProwlarrScraper(BaseScraper):
         "{title}",  # Title-only fallback
     ]
     cache_key_prefix = "prowlarr"
+    headers = {"X-Api-Key": settings.prowlarr_api_key}
+    base_url = settings.prowlarr_url
+    search_url = f"{base_url}/api/v1/search"
 
     def __init__(self):
-        super().__init__(
-            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
-        )
-        self.base_url = f"{settings.prowlarr_url}/api/v1/search"
+        super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
+        self.indexer_status = {}
+        self.indexer_circuit_breakers = {}
+
+    async def get_healthy_indexers(self) -> List[int]:
+        """Fetch and return list of healthy indexer IDs with detailed health checks"""
+        try:
+            # Fetch both indexer configurations and their current status
+            indexers_future = asyncio.create_task(self.fetch_indexers())
+            statuses_future = asyncio.create_task(self.fetch_indexer_statuses())
+
+            indexers, status_data = await asyncio.gather(
+                indexers_future, statuses_future
+            )
+
+            current_time = datetime.now(timezone.utc)
+            healthy_indexers = []
+
+            for indexer in indexers:
+                indexer_id = indexer.get("id")
+                if not indexer_id:
+                    continue
+
+                # Get status information for this indexer
+                status_info = status_data.get(indexer_id, {})
+                disabled_till = status_info.get("disabled_till")
+
+                # Convert disabled_till to datetime if it exists
+                if disabled_till:
+                    try:
+                        disabled_till = datetime.fromisoformat(
+                            disabled_till.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        disabled_till = None
+
+                # Check if indexer is healthy
+                is_healthy = all(
+                    [
+                        indexer.get("enable", False),  # Indexer is enabled
+                        not disabled_till
+                        or disabled_till < current_time,  # Not temporarily disabled
+                    ]
+                )
+
+                self.indexer_status[indexer_id] = {
+                    "is_healthy": is_healthy,
+                    "name": indexer.get("name", "Unknown"),
+                    "disabled_till": disabled_till,
+                    "most_recent_failure": status_info.get("most_recent_failure"),
+                    "initial_failure": status_info.get("initial_failure"),
+                }
+
+                if is_healthy:
+                    healthy_indexers.append(indexer_id)
+                    # Initialize or reset circuit breaker for healthy indexer
+                    self.indexer_circuit_breakers[indexer_id] = CircuitBreaker(
+                        failure_threshold=3,
+                        recovery_timeout=300,  # 5 minutes
+                        half_open_attempts=1,
+                    )
+
+            self.logger.info(
+                f"Found {len(healthy_indexers)} healthy indexers out of {len(indexers)} total"
+            )
+            return healthy_indexers
+
+        except Exception as e:
+            self.logger.error(f"Failed to determine healthy indexers: {e}")
+            return []
+
+    def get_circuit_breaker(self, indexer_id: int) -> CircuitBreaker:
+        """Get or create a circuit breaker for an indexer"""
+        if indexer_id not in self.indexer_circuit_breakers:
+            self.indexer_circuit_breakers[indexer_id] = CircuitBreaker(
+                failure_threshold=3,
+                recovery_timeout=300,  # 5 minutes
+                half_open_attempts=1,
+            )
+        return self.indexer_circuit_breakers[indexer_id]
+
+    async def log_indexer_status(self):
+        """Log the current status of all indexers and their circuit breakers"""
+        status_lines = ["Current Indexer Status:"]
+
+        for indexer_id, status in self.indexer_status.items():
+            circuit_breaker = self.indexer_circuit_breakers.get(indexer_id)
+            if circuit_breaker:
+                cb_status = circuit_breaker.get_status()
+                status_lines.append(
+                    f"Indexer {status.get('name', f'ID:{indexer_id}')}:\n"
+                    f"  Health: {'Healthy' if status.get('is_healthy') else 'Unhealthy'}\n"
+                    f"  Circuit Breaker: {cb_status['state']}\n"
+                    f"  Failures: {cb_status['failures']}\n"
+                    f"  Accepting Requests: {cb_status['is_accepting_requests']}"
+                )
+
+        self.logger.info("\n".join(status_lines))
 
     @BaseScraper.cache(ttl=PROWLARR_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
-    async def scrape_and_parse(
+    async def _scrape_and_parse(
         self,
         metadata: MediaFusionMetaData,
         catalog_type: str,
@@ -83,13 +180,24 @@ class ProwlarrScraper(BaseScraper):
     ) -> List[TorrentStreams]:
         results = []
         processed_info_hashes: set[str] = set()
-        job_name = f"{metadata.title}:{metadata.id}"
-        if catalog_type == "series":
-            job_name += f":{season}:{episode}"
+
+        # Get list of healthy indexers
+        healthy_indexers = await self.get_healthy_indexers()
+        if not healthy_indexers:
+            self.metrics.record_error("No healthy indexers")
+            self.logger.warning("No healthy indexers available")
+            return results
+
+        # Split indexers into chunks of 3
+        indexer_chunks = list(self.split_indexers_into_chunks(healthy_indexers, 3))
+        self.logger.info(
+            f"Processing {len(healthy_indexers)} indexers in {len(indexer_chunks)} chunks"
+        )
 
         try:
-            async for stream in self._scrape_and_parse(
+            async for stream in self.__scrape_and_parse(
                 processed_info_hashes,
+                indexer_chunks,
                 metadata,
                 catalog_type,
                 season,
@@ -97,12 +205,15 @@ class ProwlarrScraper(BaseScraper):
             ):
                 results.append(stream)
         except httpx.ReadTimeout:
+            self.metrics.record_error("timeout")
             self.logger.warning("Timeout while fetching search results")
         except httpx.HTTPStatusError as e:
+            self.metrics.record_error("http_error")
             self.logger.error(
                 f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
             )
         except Exception as e:
+            self.metrics.record_error("unexpected_error")
             self.logger.exception(f"An error occurred during scraping: {str(e)}")
 
         self.logger.info(
@@ -110,23 +221,23 @@ class ProwlarrScraper(BaseScraper):
         )
         return results
 
-    async def _scrape_and_parse(
+    async def __scrape_and_parse(
         self,
         processed_info_hashes: set[str],
+        indexer_chunks: List[List[int]],
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
     ) -> AsyncGenerator[TorrentStreams, None]:
         if catalog_type == "movie":
-            async for stream in self.scrape_movie(processed_info_hashes, metadata):
+            async for stream in self.scrape_movie(
+                processed_info_hashes, metadata, indexer_chunks
+            ):
                 yield stream
         elif catalog_type == "series":
             async for stream in self.scrape_series(
-                processed_info_hashes,
-                metadata,
-                season,
-                episode,
+                processed_info_hashes, metadata, season, episode, indexer_chunks
             ):
                 yield stream
         else:
@@ -136,25 +247,35 @@ class ProwlarrScraper(BaseScraper):
         self,
         processed_info_hashes: set[str],
         metadata: MediaFusionMetaData,
+        indexer_chunks: List[List[int]],
     ) -> AsyncGenerator[TorrentStreams, None]:
-        imdb_streams_generator = self.scrape_movie_by_imdb(
-            processed_info_hashes, metadata
-        )
-        title_streams_generators = []
+        search_generators = []
 
-        if settings.prowlarr_live_title_search:
-            title_streams_generators.extend(
-                self.scrape_movie_by_title(
-                    processed_info_hashes,
-                    metadata,
-                    search_query=query.format(title=metadata.title, year=metadata.year),
+        # Add IMDB search for each chunk
+        for chunk in indexer_chunks:
+            search_generators.append(
+                self.scrape_movie_by_imdb(
+                    processed_info_hashes, metadata, indexer_ids=chunk
                 )
-                for query in self.MOVIE_SEARCH_QUERY_TEMPLATES
             )
 
+        if settings.prowlarr_live_title_search:
+            for chunk in indexer_chunks:
+                for query_template in self.MOVIE_SEARCH_QUERY_TEMPLATES:
+                    search_query = query_template.format(
+                        title=metadata.title, year=metadata.year
+                    )
+                    search_generators.append(
+                        self.scrape_movie_by_title(
+                            processed_info_hashes,
+                            metadata,
+                            search_query=search_query,
+                            indexer_ids=chunk,
+                        )
+                    )
+
         async for stream in self.process_streams(
-            imdb_streams_generator,
-            *title_streams_generators,
+            *search_generators,
             max_process=settings.prowlarr_immediate_max_process,
             max_process_time=settings.prowlarr_immediate_max_process_time,
         ):
@@ -171,31 +292,38 @@ class ProwlarrScraper(BaseScraper):
         metadata: MediaFusionMetaData,
         season: int,
         episode: int,
+        indexer_chunks: List[List[int]],
     ) -> AsyncGenerator[TorrentStreams, None]:
-        imdb_streams_generator = self.scrape_series_by_imdb(
-            processed_info_hashes, metadata, season, episode
-        )
-        title_streams_generators = []
+        search_generators = []
 
-        if settings.prowlarr_live_title_search:
-            title_streams_generators.extend(
-                self.scrape_series_by_title(
-                    processed_info_hashes,
-                    metadata,
-                    season,
-                    episode,
-                    search_query=query.format(
-                        title=metadata.title,
-                        season=season,
-                        episode=episode,
-                    ),
+        # Add IMDB search for each chunk
+        for chunk in indexer_chunks:
+            search_generators.append(
+                self.scrape_series_by_imdb(
+                    processed_info_hashes, metadata, season, episode, indexer_ids=chunk
                 )
-                for query in self.SERIES_SEARCH_QUERY_TEMPLATES
             )
 
+        # Add title-based searches if enabled
+        if settings.prowlarr_live_title_search:
+            for chunk in indexer_chunks:
+                for query_template in self.SERIES_SEARCH_QUERY_TEMPLATES:
+                    search_query = query_template.format(
+                        title=metadata.title, season=season, episode=episode
+                    )
+                    search_generators.append(
+                        self.scrape_series_by_title(
+                            processed_info_hashes,
+                            metadata,
+                            season,
+                            episode,
+                            search_query=search_query,
+                            indexer_ids=chunk,
+                        )
+                    )
+
         async for stream in self.process_streams(
-            imdb_streams_generator,
-            *title_streams_generators,
+            *search_generators,
             max_process=settings.prowlarr_immediate_max_process,
             max_process_time=settings.prowlarr_immediate_max_process_time,
             catalog_type="series",
@@ -232,12 +360,12 @@ class ProwlarrScraper(BaseScraper):
             try:
                 async for stream_item in gen:
                     await queue.put((stream_item, generator_id))
-                    self.logger.debug(f"Generator {generator_id} produced a stream")
+                    self.logger.debug("Generator % produced a stream", generator_id)
             except Exception as err:
                 self.logger.exception(f"Error in generator {generator_id}: {err}")
             finally:
                 await queue.put(("DONE", generator_id))
-                self.logger.debug(f"Generator {generator_id} finished")
+                self.logger.debug("Generator %s finished", generator_id)
 
         async def queue_processor():
             nonlocal active_generators, streams_processed
@@ -247,7 +375,9 @@ class ProwlarrScraper(BaseScraper):
                 if item == "DONE":
                     active_generators -= 1
                     self.logger.debug(
-                        f"Generator {gen_id} completed. {active_generators} generators remaining"
+                        "Generator %s completed. %s generators remaining",
+                        gen_id,
+                        active_generators,
                     )
                 elif (
                     isinstance(item, TorrentStreams)
@@ -285,36 +415,88 @@ class ProwlarrScraper(BaseScraper):
                 f"Stream processing timed out after {max_process_time} seconds. "
                 f"Processed {streams_processed} streams"
             )
+            self.metrics.record_skip("Max process time")
         except ExceptionGroup as eg:
             for e in eg.exceptions:
                 if isinstance(e, MaxProcessLimitReached):
                     self.logger.info(
                         f"Stream processing cancelled after reaching max process limit of {max_process}"
                     )
+                    self.metrics.record_skip("Max process limit")
                 else:
                     self.logger.exception(
                         f"An error occurred during stream processing: {e}"
                     )
+                    self.metrics.record_error(f"unexpected_stream_processing_error {e}")
         except Exception as e:
             self.logger.exception(f"An error occurred during stream processing: {e}")
+            self.metrics.record_error(f"unexpected_stream_processing_error {e}")
         self.logger.info(
             f"Finished processing {streams_processed} streams from "
             f"{len(stream_generators)} generators"
         )
 
-    async def fetch_stream_data(
-        self, params: dict, timeout: int = settings.prowlarr_search_query_timeout
+    async def fetch_search_results(
+        self,
+        params: dict,
+        indexer_ids: List[int],
+        timeout: int = settings.prowlarr_search_query_timeout,
     ) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient(
-            headers={"X-Api-Key": settings.prowlarr_api_key}
-        ) as client:
-            response = await client.get(
-                self.base_url,
-                params=params,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            return response.json()
+        """Fetch search results for specific indexers with enhanced circuit breaker handling"""
+        results = []
+
+        for indexer_id in indexer_ids:
+            indexer_status = self.indexer_status.get(indexer_id, {})
+            if not indexer_status.get("is_healthy", False):
+                continue
+
+            circuit_breaker = self.get_circuit_breaker(indexer_id)
+            indexer_name = indexer_status.get("name", f"ID:{indexer_id}")
+
+            if circuit_breaker.is_closed():
+                try:
+                    search_params = {**params, "indexerIds": [indexer_id]}
+                    async with httpx.AsyncClient(headers=self.headers) as client:
+                        response = await client.get(
+                            self.search_url,
+                            params=search_params,
+                            timeout=timeout,
+                        )
+                        response.raise_for_status()
+                        indexer_results = response.json()
+
+                        # Record success
+                        circuit_breaker.record_success()
+                        self.metrics.record_indexer_success(
+                            indexer_name, len(indexer_results)
+                        )
+                        results.extend(indexer_results)
+
+                except Exception as e:
+                    error_msg = f"Error searching indexer {indexer_name}: {str(e)}"
+                    self.logger.error(error_msg)
+
+                    # Record failure
+                    circuit_breaker.record_failure()
+                    self.metrics.record_indexer_error(indexer_name, str(e))
+
+                    # Update status if circuit breaker opens
+                    if not circuit_breaker.is_closed():
+                        self.logger.warning(
+                            f"Circuit breaker opened for indexer {indexer_name}. "
+                            f"Status: {circuit_breaker.get_status()}"
+                        )
+                        indexer_status["is_healthy"] = False
+                        self.indexer_status[indexer_id] = indexer_status
+            else:
+                self.logger.debug(
+                    f"Skipping indexer {indexer_name} - circuit breaker is {circuit_breaker.state}"
+                )
+                self.metrics.record_indexer_error(
+                    indexer_name, f"Circuit breaker {circuit_breaker.state}"
+                )
+
+        return results
 
     @staticmethod
     async def build_search_params(
@@ -336,6 +518,7 @@ class ProwlarrScraper(BaseScraper):
         self,
         processed_info_hashes: set[str],
         metadata: MediaFusionMetaData,
+        indexer_ids: List[int],
     ) -> AsyncGenerator[TorrentStreams, None]:
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -343,6 +526,7 @@ class ProwlarrScraper(BaseScraper):
             search_type="movie",
             categories=[2000],
             catalog_type="movie",
+            indexer_ids=indexer_ids,
         ):
             yield stream
 
@@ -351,6 +535,7 @@ class ProwlarrScraper(BaseScraper):
         processed_info_hashes: set[str],
         metadata: MediaFusionMetaData,
         search_query: str,
+        indexer_ids: List[int],
     ) -> AsyncGenerator[TorrentStreams, None]:
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -359,6 +544,7 @@ class ProwlarrScraper(BaseScraper):
             categories=[2000, 8000],
             catalog_type="movie",
             search_query=search_query,
+            indexer_ids=indexer_ids,
         ):
             yield stream
 
@@ -368,6 +554,7 @@ class ProwlarrScraper(BaseScraper):
         metadata: MediaFusionMetaData,
         season: int,
         episode: int,
+        indexer_ids: List[int],
     ) -> AsyncGenerator[TorrentStreams, None]:
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -377,6 +564,7 @@ class ProwlarrScraper(BaseScraper):
             catalog_type="series",
             season=season,
             episode=episode,
+            indexer_ids=indexer_ids,
         ):
             yield stream
 
@@ -387,6 +575,7 @@ class ProwlarrScraper(BaseScraper):
         season: int,
         episode: int,
         search_query: str,
+        indexer_ids: List[int],
     ) -> AsyncGenerator[TorrentStreams, None]:
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -397,6 +586,7 @@ class ProwlarrScraper(BaseScraper):
             season=season,
             episode=episode,
             search_query=search_query,
+            indexer_ids=indexer_ids,
         ):
             yield stream
 
@@ -407,6 +597,7 @@ class ProwlarrScraper(BaseScraper):
         search_type: Literal["search", "tvsearch", "movie"],
         categories: list[int],
         catalog_type: str,
+        indexer_ids: List[int],
         season: int = None,
         episode: int = None,
         search_query: str = None,
@@ -417,7 +608,10 @@ class ProwlarrScraper(BaseScraper):
             categories,
             search_query,
         )
-        search_results = await self.fetch_stream_data(params)
+        search_results = await self.fetch_search_results(
+            params, indexer_ids=indexer_ids
+        )
+        self.metrics.record_found_items(len(search_results))
         self.logger.info(
             f"Found {len(search_results)} streams for {metadata.title} ({metadata.year}) with {search_type} Search, params: {params}"
         )
@@ -470,12 +664,14 @@ class ProwlarrScraper(BaseScraper):
         episode: int = None,
     ) -> TorrentStreams | None:
         if is_contain_18_plus_keywords(stream_data.get("title")):
+            self.metrics.record_skip("Adult content")
             self.logger.warning(
                 f"Stream contains 18+ keywords: {stream_data.get('title')}"
             )
             return None
 
         if not self.validate_category_with_title(stream_data):
+            self.metrics.record_skip("Invalid category")
             self.logger.warning(
                 f"Unable to validate Other category item title: {stream_data.get('title')}"
             )
@@ -495,12 +691,14 @@ class ProwlarrScraper(BaseScraper):
             self.logger.warning(
                 f"Series has multiple seasons: {parsed_data.get('title')} ({parsed_data.get('year')}) ({metadata.id}) : {parsed_data.get('seasons')}"
             )
+            self.metrics.record_skip("Multiple seasons torrent")
             return None
 
         parsed_data = await self.parse_prowlarr_data(
             stream_data, catalog_type, parsed_data
         )
         if not parsed_data or parsed_data["info_hash"] in processed_info_hashes:
+            self.metrics.record_skip("Duplicated info_hash")
             return None
 
         torrent_stream = TorrentStreams(
@@ -575,10 +773,15 @@ class ProwlarrScraper(BaseScraper):
                     season_number=season_number, episodes=episode_data
                 )
             else:
+                self.metrics.record_skip("Missing episode info")
                 self.logger.warning(
                     f"Episode not found in stream: '{stream_data.get('title')}' Scraping for: S{season}E{episode}"
                 )
                 return None
+
+        self.metrics.record_processed_item()
+        self.metrics.record_quality(torrent_stream.quality)
+        self.metrics.record_source(torrent_stream.source)
 
         processed_info_hashes.add(parsed_data["info_hash"])
         self.logger.info(
@@ -653,6 +856,48 @@ class ProwlarrScraper(BaseScraper):
             )
 
         return magnet_url or download_url
+
+    async def fetch_indexers(self):
+        try:
+            async with httpx.AsyncClient(headers=self.headers) as client:
+                response = await client.get(
+                    self.base_url + "/api/v1/indexer", timeout=10
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            self.logger.exception(f"Failed to fetch indexers: {e}")
+            return []
+
+    async def fetch_indexer_statuses(self) -> Dict[int, Dict]:
+        """Fetch current status information for all indexers"""
+        try:
+            async with httpx.AsyncClient(headers=self.headers) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/v1/indexerstatus", timeout=10
+                )
+                response.raise_for_status()
+
+                # Create a mapping of indexerId to status info
+                status_data = {}
+                for status in response.json():
+                    indexer_id = status.get("indexerId")
+                    if indexer_id:
+                        status_data[indexer_id] = {
+                            "disabled_till": status.get("disabledTill"),
+                            "most_recent_failure": status.get("mostRecentFailure"),
+                            "initial_failure": status.get("initialFailure"),
+                        }
+
+                return status_data
+        except Exception as e:
+            self.logger.error(f"Failed to fetch indexer statuses: {e}")
+            return {}
+
+    @staticmethod
+    def split_indexers_into_chunks(indexers, chunk_size):
+        for i in range(0, len(indexers), chunk_size):
+            yield indexers[i : i + chunk_size]
 
     async def get_torrent_data(
         self, download_url: str, indexer: str
@@ -735,37 +980,77 @@ async def background_movie_title_search(
     processed_info_hashes: set[str] = set()
     metadata = await MediaFusionMovieMetaData.get(metadata_id)
     if not metadata:
+        scraper.logger.warning(f"Movie metadata not found for ID: {metadata_id}")
         return
 
-    title_streams_generators = [
-        scraper.scrape_movie_by_title(
-            processed_info_hashes,
-            metadata,
-            search_query=query.format(title=metadata.title, year=metadata.year),
-        )
-        for query in scraper.MOVIE_SEARCH_QUERY_TEMPLATES
-    ]
+    # Get healthy indexers and split into chunks
+    healthy_indexers = await scraper.get_healthy_indexers()
+    if not healthy_indexers:
+        scraper.logger.warning("No healthy indexers available for background search")
+        return
+
+    indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
+    scraper.logger.info(
+        f"Starting background movie search with {len(healthy_indexers)} indexers "
+        f"in {len(indexer_chunks)} chunks"
+    )
+
+    scraper.metrics.start()
+    scraper.metrics.meta_data = metadata
+
+    # Create generators for each chunk and template combination
+    title_streams_generators = []
+    for chunk in indexer_chunks:
+        for query_template in scraper.MOVIE_SEARCH_QUERY_TEMPLATES:
+            search_query = query_template.format(
+                title=metadata.title, year=metadata.year
+            )
+            title_streams_generators.append(
+                scraper.scrape_movie_by_title(
+                    processed_info_hashes,
+                    metadata,
+                    search_query=search_query,
+                    indexer_ids=chunk,
+                )
+            )
 
     try:
-        async for stream in scraper.process_streams(*title_streams_generators):
+        async for stream in scraper.process_streams(
+            *title_streams_generators,
+        ):
             await scraper.store_streams([stream])
+
     except httpx.ReadTimeout:
         scraper.logger.warning(
-            f"Timeout while fetching search results for movie {metadata.title} ({metadata.year}), retrying later"
+            f"Timeout while fetching background results for movie "
+            f"{metadata.title} ({metadata.year}), retrying later"
         )
         task_cache_key = f"background_tasks:background_movie_title_search:{metadata_id}"
         await REDIS_ASYNC_CLIENT.delete(task_cache_key)
         background_movie_title_search.send_with_options(
             kwargs={"metadata_id": metadata_id}, delay=timedelta(minutes=5)
         )
-    except httpx.HTTPStatusError as e:
-        scraper.logger.error(
-            f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
-        )
 
-    scraper.logger.info(
-        f"Background title search completed for {metadata.title} ({metadata.year})"
-    )
+    except httpx.HTTPStatusError as e:
+        scraper.metrics.record_error("http_error")
+        scraper.logger.error(
+            f"Error fetching background results: {e.response.text}, "
+            f"status code: {e.response.status_code}"
+        )
+    except Exception as e:
+        scraper.metrics.record_error("unexpected_error")
+        scraper.logger.exception(
+            f"Unexpected error during background movie search: {str(e)}"
+        )
+    finally:
+        # Log final metrics and indexer status
+        scraper.metrics.stop()
+        scraper.metrics.log_summary(scraper.logger)
+        await scraper.log_indexer_status()
+
+        scraper.logger.info(
+            f"Background title search completed for {metadata.title} ({metadata.year})"
+        )
 
 
 @minimum_run_interval(hours=settings.prowlarr_search_interval_hour)
@@ -784,39 +1069,82 @@ async def background_series_title_search(
     processed_info_hashes: set[str] = set()
     metadata = await MediaFusionSeriesMetaData.get(metadata_id)
     if not metadata:
+        scraper.logger.warning(f"Series metadata not found for ID: {metadata_id}")
         return
 
-    title_streams_generators = [
-        scraper.scrape_series_by_title(
-            processed_info_hashes,
-            metadata,
-            season,
-            episode,
-            search_query=query.format(
+    # Get healthy indexers and split into chunks
+    healthy_indexers = await scraper.get_healthy_indexers()
+    if not healthy_indexers:
+        scraper.logger.warning("No healthy indexers available for background search")
+        return
+
+    indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
+    scraper.logger.info(
+        f"Starting background series search with {len(healthy_indexers)} indexers "
+        f"in {len(indexer_chunks)} chunks"
+    )
+
+    scraper.metrics.start()
+    scraper.metrics.meta_data = metadata
+    scraper.metrics.season = season
+    scraper.metrics.episode = episode
+
+    # Create generators for each chunk and template combination
+    title_streams_generators = []
+    for chunk in indexer_chunks:
+        for query_template in scraper.SERIES_SEARCH_QUERY_TEMPLATES:
+            search_query = query_template.format(
                 title=metadata.title, season=season, episode=episode
-            ),
-        )
-        for query in scraper.SERIES_SEARCH_QUERY_TEMPLATES
-    ]
+            )
+            title_streams_generators.append(
+                scraper.scrape_series_by_title(
+                    processed_info_hashes,
+                    metadata,
+                    season,
+                    episode,
+                    search_query=search_query,
+                    indexer_ids=chunk,
+                )
+            )
 
     try:
-        async for stream in scraper.process_streams(*title_streams_generators):
+        async for stream in scraper.process_streams(
+            *title_streams_generators,
+        ):
             await scraper.store_streams([stream])
+
     except httpx.ReadTimeout:
         scraper.logger.warning(
-            f"Timeout while fetching search results for {metadata.title} S{season}E{episode}, retrying later"
+            f"Timeout while fetching background results for "
+            f"{metadata.title} S{season}E{episode}, retrying later"
         )
-        task_cache_key = f"background_tasks:background_series_title_search:metadata_id={metadata_id}_season={season}_episode={episode}"
+        task_cache_key = (
+            f"background_tasks:background_series_title_search:"
+            f"metadata_id={metadata_id}_season={season}_episode={episode}"
+        )
         await REDIS_ASYNC_CLIENT.delete(task_cache_key)
         background_series_title_search.send_with_options(
             kwargs={"metadata_id": metadata_id, "season": season, "episode": episode},
             delay=timedelta(minutes=5),
         )
-    except httpx.HTTPStatusError as e:
-        scraper.logger.error(
-            f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
-        )
 
-    scraper.logger.info(
-        f"Background title search completed for {metadata.title} S{season}E{episode}"
-    )
+    except httpx.HTTPStatusError as e:
+        scraper.metrics.record_error("http_error")
+        scraper.logger.error(
+            f"Error fetching background results: {e.response.text}, "
+            f"status code: {e.response.status_code}"
+        )
+    except Exception as e:
+        scraper.metrics.record_error("unexpected_error")
+        scraper.logger.exception(
+            f"Unexpected error during background series search: {str(e)}"
+        )
+    finally:
+        # Log final metrics and indexer status
+        scraper.metrics.stop()
+        scraper.metrics.log_summary(scraper.logger)
+        await scraper.log_indexer_status()
+
+        scraper.logger.info(
+            f"Background title search completed for {metadata.title} S{season}E{episode}"
+        )
