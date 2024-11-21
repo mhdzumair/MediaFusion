@@ -21,22 +21,35 @@ class CircuitBreakerOpenException(Exception):
 
 class CircuitBreaker:
     """
-    A circuit breaker implementation that can be used to wrap around network calls
-    to prevent cascading failures. It has three states: CLOSED, OPEN, and HALF-OPEN.
+    A specialized circuit breaker implementation optimized for web scraping scenarios.
+    It implements a more gradual recovery mechanism to handle intermittent failures
+    and ensure stable recovery.
+
+    States:
+    - CLOSED: Normal operation, all requests allowed
+    - OPEN: Failure threshold exceeded, no requests allowed
+    - HALF-OPEN: Testing recovery with controlled number of requests
     """
 
     def __init__(
-        self, failure_threshold: int, recovery_timeout: int, half_open_attempts: int
+        self,
+        failure_threshold: int,  # Number of failures before opening circuit
+        recovery_timeout: int,  # Time in seconds before attempting recovery
+        half_open_attempts: int,  # Number of successful attempts needed for recovery
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_attempts = half_open_attempts
         self.state = "CLOSED"
         self.failures = 0
+        self.successful_attempts = 0  # Track successful attempts in HALF-OPEN
         self.last_failure_time = None
 
     def is_closed(self) -> bool:
-        """Check if the circuit breaker is in CLOSED state or ready to try requests"""
+        """
+        Check if requests should be allowed through.
+        In HALF-OPEN state, allows controlled testing of the service.
+        """
         current_time = asyncio.get_event_loop().time()
 
         if self.state == "CLOSED":
@@ -50,6 +63,9 @@ class CircuitBreaker:
         ):
             self.state = "HALF-OPEN"
             self.failures = 0
+            self.successful_attempts = (
+                0  # Reset success counter when entering HALF-OPEN
+            )
             return True
 
         return False
@@ -58,24 +74,35 @@ class CircuitBreaker:
         """Reset the circuit breaker to its initial state"""
         self.state = "CLOSED"
         self.failures = 0
+        self.successful_attempts = 0
         self.last_failure_time = None
 
     def record_failure(self):
-        """Record a failure and update the circuit breaker state"""
+        """
+        Record a failure and update circuit breaker state.
+        In HALF-OPEN, failures don't immediately trigger OPEN state
+        to account for intermittent failures during recovery.
+        """
         self.failures += 1
         self.last_failure_time = asyncio.get_event_loop().time()
+        self.successful_attempts = 0  # Reset success counter on any failure
 
         if self.failures >= self.failure_threshold:
             self.state = "OPEN"
 
     def record_success(self):
-        """Record a success and update the circuit breaker state"""
+        """
+        Record a success and update circuit breaker state.
+        In HALF-OPEN, requires multiple successive successes to close,
+        ensuring stable recovery.
+        """
         if self.state == "HALF-OPEN":
-            self.failures += 1
-            if self.failures >= self.half_open_attempts:
-                self.reset()
+            self.successful_attempts += 1
+            if self.successful_attempts >= self.half_open_attempts:
+                self.reset()  # Only reset after proving stability
         elif self.state == "CLOSED":
             self.failures = 0
+            self.successful_attempts = 0
 
     async def call(self, func: Callable, item: Any, *args, **kwargs) -> Tuple[Any, Any]:
         """
@@ -84,7 +111,8 @@ class CircuitBreaker:
         """
         if not self.is_closed():
             return item, CircuitBreakerOpenException(
-                "Circuit breaker is open; calls are temporarily halted"
+                f"Circuit breaker is OPEN. Failures: {self.failures}, "
+                f"Last failure: {self.last_failure_time}"
             )
 
         try:
@@ -96,10 +124,11 @@ class CircuitBreaker:
             return item, e
 
     def get_status(self) -> Dict[str, Any]:
-        """Get the current status of the circuit breaker"""
+        """Get detailed current status of the circuit breaker"""
         return {
             "state": self.state,
             "failures": self.failures,
+            "successful_attempts": self.successful_attempts,
             "last_failure_time": self.last_failure_time,
             "is_accepting_requests": self.is_closed(),
         }
