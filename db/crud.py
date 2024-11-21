@@ -523,167 +523,85 @@ async def get_movie_meta(meta_id: str, user_data: schemas.UserData):
 
 
 async def get_series_meta(meta_id: str, user_data: schemas.UserData):
-    # Initialize the match filter
-    match_filter = {
-        "_id": meta_id,
-    }
+    # First fetch basic series data and validate
+    series = await get_series_data_by_id(meta_id)
 
-    if "Disable" not in user_data.nudity_filter:
-        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+    if not (series and validate_parent_guide_nudity(series, user_data)):
+        return {}
 
-    if "Disable" not in user_data.certification_filter:
-        match_filter["parent_guide_certificates"] = {
-            "$nin": get_filter_certification_values(user_data)
-        }
-
-    poster_path = f"{settings.poster_host_url}/poster/series/{meta_id}.jpg"
-
-    # Define the aggregation pipeline
+    # Simplified pipeline to get unique season/episode combinations
     pipeline = [
-        {"$match": match_filter},
-        {
-            "$lookup": {
-                "from": "TorrentStreams",
-                "localField": "_id",
-                "foreignField": "meta_id",
-                "as": "streams",
-            }
-        },
-        {"$unwind": "$streams"},
-        {
-            "$group": {
-                "_id": "$_id",
-                "series_title": {"$first": "$title"},  # Store series title separately
-                "poster": {"$first": "$poster"},
-                "background": {"$first": "$background"},
-                "streams": {"$push": "$streams"},
-            }
-        },
-        {
-            "$addFields": {
-                "videos": {
-                    "$reduce": {
-                        "input": "$streams",
-                        "initialValue": [],
-                        "in": {
-                            "$concatArrays": [
-                                "$$value",
-                                {
-                                    "$map": {
-                                        "input": {
-                                            "$filter": {
-                                                "input": "$$this.season.episodes",
-                                                "as": "episode",
-                                                "cond": {"$ne": ["$$episode", None]},
-                                            }
-                                        },
-                                        "as": "episode",
-                                        "in": {
-                                            "id": {
-                                                "$concat": [
-                                                    {"$toString": "$_id"},
-                                                    ":",
-                                                    {
-                                                        "$toString": "$$this.season.season_number"
-                                                    },
-                                                    ":",
-                                                    {
-                                                        "$toString": "$$episode.episode_number"
-                                                    },
-                                                ]
-                                            },
-                                            "title": {
-                                                "$ifNull": [
-                                                    "$$episode.title",
-                                                    {
-                                                        "$concat": [
-                                                            "S",
-                                                            {
-                                                                "$toString": "$$this.season.season_number"
-                                                            },
-                                                            " EP",
-                                                            {
-                                                                "$toString": "$$episode.episode_number"
-                                                            },
-                                                        ]
-                                                    },
-                                                ]
-                                            },
-                                            "season": "$$this.season.season_number",
-                                            "episode": "$$episode.episode_number",
-                                            "released": {
-                                                "$dateToString": {
-                                                    "format": "%Y-%m-%dT%H:%M:%S.000Z",
-                                                    "date": {
-                                                        "$ifNull": [
-                                                            "$$episode.released",
-                                                            "$$this.created_at",
-                                                        ]
-                                                    },
-                                                }
-                                            },
-                                        },
-                                    }
-                                },
-                            ]
-                        },
-                    }
-                }
-            }
-        },
-        {"$unwind": "$videos"},
+        {"$match": {"meta_id": meta_id}},
+        {"$unwind": "$season.episodes"},
         {
             "$group": {
                 "_id": {
-                    "id": "$videos.id",
-                    "meta_id": "$_id",
-                    "series_title": "$series_title",  # Store series title
-                    "background": "$background",
+                    "season": "$season.season_number",
+                    "episode": "$season.episodes.episode_number",
                 },
-                "video": {"$first": "$videos"},
-            }
-        },
-        {
-            "$replaceRoot": {
-                "newRoot": {
-                    "id": "$_id.id",
-                    "season": "$video.season",
-                    "episode": "$video.episode",
-                    "meta_id": "$_id.meta_id",
-                    "series_title": "$_id.series_title",
-                    "background": "$_id.background",
-                    "video": "$video",
-                }
-            }
-        },
-        {"$sort": {"season": 1, "episode": 1}},
-        {
-            "$group": {
-                "_id": "$meta_id",
-                "title": {"$first": "$series_title"},
-                "background": {"$first": "$background"},
-                "videos": {"$push": "$video"},
+                "title": {"$first": "$season.episodes.title"},
+                "released": {
+                    "$first": {"$ifNull": ["$season.episodes.released", "$created_at"]}
+                },
             }
         },
         {
             "$project": {
                 "_id": 0,
-                "meta": {
-                    "_id": "$_id",
-                    "type": {"$literal": "series"},
-                    "title": "$title",
-                    "poster": {"$literal": poster_path},
-                    "background": {"$ifNull": ["$background", "$poster"]},
-                    "videos": "$videos",
+                "id": {
+                    "$concat": [
+                        meta_id,
+                        ":",
+                        {"$toString": "$_id.season"},
+                        ":",
+                        {"$toString": "$_id.episode"},
+                    ]
+                },
+                "title": {
+                    "$ifNull": [
+                        "$title",
+                        {
+                            "$concat": [
+                                "S",
+                                {"$toString": "$_id.season"},
+                                " EP",
+                                {"$toString": "$_id.episode"},
+                            ]
+                        },
+                    ]
+                },
+                "season": "$_id.season",
+                "episode": "$_id.episode",
+                "released": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.000Z",
+                        "date": "$released",
+                    }
                 },
             }
         },
+        {"$sort": {"season": 1, "episode": 1}},
     ]
 
-    # Execute the aggregation pipeline
-    series_data = await MediaFusionSeriesMetaData.aggregate(pipeline).to_list()
+    # Execute the aggregation pipeline on TorrentStreams
+    streams_data = await TorrentStreams.aggregate(pipeline).to_list()
 
-    return series_data[0] if series_data else {}
+    if not streams_data:
+        return {}
+
+    # Construct the final response
+    poster_path = f"{settings.poster_host_url}/poster/series/{meta_id}.jpg"
+
+    return {
+        "meta": {
+            "_id": meta_id,
+            "type": "series",
+            "title": series.title,
+            "poster": poster_path,
+            "background": series.background or series.poster,
+            "videos": streams_data,
+        }
+    }
 
 
 async def get_tv_meta(meta_id: str):
