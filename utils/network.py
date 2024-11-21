@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable, AsyncGenerator, Any, Tuple
+from typing import Callable, AsyncGenerator, Any, Tuple, Dict
 from urllib import parse
 from urllib.parse import urlencode, urlparse
 
@@ -35,33 +35,74 @@ class CircuitBreaker:
         self.failures = 0
         self.last_failure_time = None
 
-    async def call(self, func: Callable, item: Any, *args, **kwargs) -> Tuple[Any, Any]:
-        if (
+    def is_closed(self) -> bool:
+        """Check if the circuit breaker is in CLOSED state or ready to try requests"""
+        current_time = asyncio.get_event_loop().time()
+
+        if self.state == "CLOSED":
+            return True
+        elif self.state == "HALF-OPEN":
+            return True
+        elif (
             self.state == "OPEN"
-            and (asyncio.get_event_loop().time() - self.last_failure_time)
-            < self.recovery_timeout
+            and self.last_failure_time
+            and (current_time - self.last_failure_time) >= self.recovery_timeout
         ):
+            self.state = "HALF-OPEN"
+            self.failures = 0
+            return True
+
+        return False
+
+    def reset(self):
+        """Reset the circuit breaker to its initial state"""
+        self.state = "CLOSED"
+        self.failures = 0
+        self.last_failure_time = None
+
+    def record_failure(self):
+        """Record a failure and update the circuit breaker state"""
+        self.failures += 1
+        self.last_failure_time = asyncio.get_event_loop().time()
+
+        if self.failures >= self.failure_threshold:
+            self.state = "OPEN"
+
+    def record_success(self):
+        """Record a success and update the circuit breaker state"""
+        if self.state == "HALF-OPEN":
+            self.failures += 1
+            if self.failures >= self.half_open_attempts:
+                self.reset()
+        elif self.state == "CLOSED":
+            self.failures = 0
+
+    async def call(self, func: Callable, item: Any, *args, **kwargs) -> Tuple[Any, Any]:
+        """
+        Execute the given function with circuit breaker protection.
+        Returns a tuple of (item, result/exception).
+        """
+        if not self.is_closed():
             return item, CircuitBreakerOpenException(
                 "Circuit breaker is open; calls are temporarily halted"
             )
-        elif self.state == "OPEN":
-            self.state = "HALF-OPEN"
-            self.failures = 0  # Reset failures in half-open state
 
         try:
             result = await func(item, *args, **kwargs)
-            if self.state == "HALF-OPEN":
-                self.failures += 1
-                if self.failures >= self.half_open_attempts:
-                    self.state = "CLOSED"
-                    self.failures = 0
+            self.record_success()
             return item, result
         except Exception as e:
-            self.failures += 1
-            self.last_failure_time = asyncio.get_event_loop().time()
-            if self.failures >= self.failure_threshold:
-                self.state = "OPEN"
+            self.record_failure()
             return item, e
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get the current status of the circuit breaker"""
+        return {
+            "state": self.state,
+            "failures": self.failures,
+            "last_failure_time": self.last_failure_time,
+            "is_accepting_requests": self.is_closed(),
+        }
 
 
 async def batch_process_with_circuit_breaker(
@@ -109,7 +150,8 @@ async def batch_process_with_circuit_breaker(
                             )
                         else:
                             logging.exception(
-                                f"Unexpected error during batch processing for item {item}: {result}"
+                                f"Unexpected error during batch processing {result}",
+                                exc_info=result,
                             )
                     else:
                         processed_count += 1
