@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 import PTT
 from httpx import Response
 from tenacity import RetryError
+
 from db.config import settings
 from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper, ScraperError
@@ -18,24 +19,18 @@ class ZileanScraper(BaseScraper):
     cache_key_prefix = "zilean"
 
     def __init__(self):
-        super().__init__(
-            cache_key_prefix=self.cache_key_prefix, logger_name=self.__class__.__name__
-        )
+        super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
         self.semaphore = asyncio.Semaphore(10)
 
     @BaseScraper.cache(ttl=ZILEAN_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
-    async def scrape_and_parse(
+    async def _scrape_and_parse(
         self,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
-        job_name = f"{metadata.title}:{metadata.id}"
-        if catalog_type == "series":
-            job_name += f":{season}:{episode}"
-
         search_task = asyncio.create_task(
             self.make_request(
                 f"{settings.zilean_url}/dmm/search",
@@ -74,17 +69,22 @@ class ZileanScraper(BaseScraper):
         if isinstance(search_response, Response):
             stream_data.extend(search_response.json())
         else:
+            self.metrics.record_error("search_request_failed")
             self.logger.error(
                 f"Error occurred while search {metadata.title}: {search_response}"
             )
         if isinstance(filtered_response, Response):
             stream_data.extend(filtered_response.json())
         else:
+            self.metrics.record_error("filtered_request_failed")
             self.logger.error(
                 f"Error occurred while filtering {metadata.title}: {filtered_response}"
             )
 
+        self.metrics.record_fetched_item(len(stream_data))
+
         if not self.validate_response(stream_data):
+            self.metrics.record_error("no_valid_streams")
             self.logger.error(f"No valid streams found for {metadata.title}")
             return []
 
@@ -94,12 +94,13 @@ class ZileanScraper(BaseScraper):
             )
             return streams
         except (ScraperError, RetryError):
-            return []
+            self.metrics.record_error("parsing_failed")
         except Exception as e:
+            self.metrics.record_error("unexpected_error")
             self.logger.exception(
                 f"Error occurred while fetching {metadata.title}: {e}"
             )
-            return []
+        return []
 
     async def parse_response(
         self,
@@ -125,64 +126,78 @@ class ZileanScraper(BaseScraper):
         episode: int = None,
     ) -> TorrentStreams | None:
         async with self.semaphore:
-            if is_contain_18_plus_keywords(stream["raw_title"]):
-                self.logger.warning(
-                    f"Stream contains 18+ keywords: {stream['raw_title']}"
+            try:
+                if is_contain_18_plus_keywords(stream["raw_title"]):
+                    self.metrics.record_skip("Adult content")
+                    self.logger.warning(
+                        f"Stream contains 18+ keywords: {stream['raw_title']}"
+                    )
+                    return None
+
+                torrent_data = PTT.parse_title(stream["raw_title"], True)
+                if not self.validate_title_and_year(
+                    torrent_data,
+                    metadata,
+                    catalog_type,
+                    stream["raw_title"],
+                ):
+                    return None
+
+                torrent_stream = TorrentStreams(
+                    id=stream["info_hash"],
+                    meta_id=metadata.id,
+                    torrent_name=stream["raw_title"],
+                    announce_list=[],
+                    size=stream["size"],
+                    languages=torrent_data["languages"],
+                    resolution=torrent_data.get("resolution"),
+                    codec=torrent_data.get("codec"),
+                    quality=torrent_data.get("quality"),
+                    audio=torrent_data.get("audio"),
+                    source="Zilean DMM",
+                    catalog=["zilean_dmm_streams"],
                 )
-                return None
 
-            torrent_data = PTT.parse_title(stream["raw_title"], True)
-            if not self.validate_title_and_year(
-                torrent_data,
-                metadata,
-                catalog_type,
-                stream["raw_title"],
-            ):
-                return None
-
-            torrent_stream = TorrentStreams(
-                id=stream["info_hash"],
-                meta_id=metadata.id,
-                torrent_name=stream["raw_title"],
-                announce_list=[],
-                size=stream["size"],
-                languages=torrent_data["languages"],
-                resolution=torrent_data.get("resolution"),
-                codec=torrent_data.get("codec"),
-                quality=torrent_data.get("quality"),
-                audio=torrent_data.get("audio"),
-                source="Zilean DMM",
-                catalog=["zilean_dmm_streams"],
-            )
-
-            if catalog_type == "movie":
-                torrent_stream.catalog.append("zilean_dmm_movies")
-            elif catalog_type == "series":
-                torrent_stream.catalog.append("zilean_dmm_series")
-                if seasons := torrent_data.get("seasons"):
-                    if len(seasons) != 1:
+                if catalog_type == "movie":
+                    torrent_stream.catalog.append("zilean_dmm_movies")
+                elif catalog_type == "series":
+                    torrent_stream.catalog.append("zilean_dmm_series")
+                    if seasons := torrent_data.get("seasons"):
+                        if len(seasons) != 1:
+                            self.metrics.record_skip("Multiple Seasons torrent")
+                            return None
+                        season_number = seasons[0]
+                    else:
+                        self.metrics.record_skip("Missing season info")
                         return None
-                    season_number = seasons[0]
-                else:
-                    return None
 
-                if episodes := torrent_data.get("episodes"):
-                    episode_data = [
-                        Episode(episode_number=episode_number)
-                        for episode_number in episodes
-                    ]
-                elif season in seasons:
-                    # Some pack contains few episodes. We can't determine exact episode number
-                    episode_data = [Episode(episode_number=1)]
-                else:
-                    return None
+                    if episodes := torrent_data.get("episodes"):
+                        episode_data = [
+                            Episode(episode_number=episode_number)
+                            for episode_number in episodes
+                        ]
+                    elif season in seasons:
+                        episode_data = [Episode(episode_number=1)]
+                    else:
+                        self.metrics.record_skip("Missing episode info")
+                        return None
 
-                torrent_stream.season = Season(
-                    season_number=season_number,
-                    episodes=episode_data,
-                )
+                    torrent_stream.season = Season(
+                        season_number=season_number,
+                        episodes=episode_data,
+                    )
 
-            return torrent_stream
+                # Record metrics for successful processing
+                self.metrics.record_processed_item()
+                self.metrics.record_quality(torrent_stream.quality)
+                self.metrics.record_source(torrent_stream.source)
+
+                return torrent_stream
+
+            except Exception as e:
+                self.metrics.record_error("stream_processing_error")
+                self.logger.exception(f"Error processing stream: {e}")
+                return None
 
     def validate_response(self, response: List[Dict[str, Any]]) -> bool:
         return isinstance(response, list) and len(response) > 0

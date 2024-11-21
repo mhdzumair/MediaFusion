@@ -74,7 +74,7 @@ class ProwlarrScraper(BaseScraper):
 
     @BaseScraper.cache(ttl=PROWLARR_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
-    async def scrape_and_parse(
+    async def _scrape_and_parse(
         self,
         metadata: MediaFusionMetaData,
         catalog_type: str,
@@ -97,12 +97,15 @@ class ProwlarrScraper(BaseScraper):
             ):
                 results.append(stream)
         except httpx.ReadTimeout:
+            self.metrics.record_error("timeout")
             self.logger.warning("Timeout while fetching search results")
         except httpx.HTTPStatusError as e:
+            self.metrics.record_error("http_error")
             self.logger.error(
                 f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
             )
         except Exception as e:
+            self.metrics.record_error("unexpected_error")
             self.logger.exception(f"An error occurred during scraping: {str(e)}")
 
         self.logger.info(
@@ -285,18 +288,22 @@ class ProwlarrScraper(BaseScraper):
                 f"Stream processing timed out after {max_process_time} seconds. "
                 f"Processed {streams_processed} streams"
             )
+            self.metrics.record_skip("Max process time")
         except ExceptionGroup as eg:
             for e in eg.exceptions:
                 if isinstance(e, MaxProcessLimitReached):
                     self.logger.info(
                         f"Stream processing cancelled after reaching max process limit of {max_process}"
                     )
+                    self.metrics.record_skip("Max process limit")
                 else:
                     self.logger.exception(
                         f"An error occurred during stream processing: {e}"
                     )
+                    self.metrics.record_error(f"unexpected_stream_processing_error {e}")
         except Exception as e:
             self.logger.exception(f"An error occurred during stream processing: {e}")
+            self.metrics.record_error(f"unexpected_stream_processing_error {e}")
         self.logger.info(
             f"Finished processing {streams_processed} streams from "
             f"{len(stream_generators)} generators"
@@ -470,12 +477,14 @@ class ProwlarrScraper(BaseScraper):
         episode: int = None,
     ) -> TorrentStreams | None:
         if is_contain_18_plus_keywords(stream_data.get("title")):
+            self.metrics.record_skip("Adult content")
             self.logger.warning(
                 f"Stream contains 18+ keywords: {stream_data.get('title')}"
             )
             return None
 
         if not self.validate_category_with_title(stream_data):
+            self.metrics.record_skip("Invalid category")
             self.logger.warning(
                 f"Unable to validate Other category item title: {stream_data.get('title')}"
             )
@@ -495,12 +504,14 @@ class ProwlarrScraper(BaseScraper):
             self.logger.warning(
                 f"Series has multiple seasons: {parsed_data.get('title')} ({parsed_data.get('year')}) ({metadata.id}) : {parsed_data.get('seasons')}"
             )
+            self.metrics.record_skip("Multiple seasons torrent")
             return None
 
         parsed_data = await self.parse_prowlarr_data(
             stream_data, catalog_type, parsed_data
         )
         if not parsed_data or parsed_data["info_hash"] in processed_info_hashes:
+            self.metrics.record_skip("Duplicated info_hash")
             return None
 
         torrent_stream = TorrentStreams(
@@ -575,10 +586,15 @@ class ProwlarrScraper(BaseScraper):
                     season_number=season_number, episodes=episode_data
                 )
             else:
+                self.metrics.record_skip("Missing episode info")
                 self.logger.warning(
                     f"Episode not found in stream: '{stream_data.get('title')}' Scraping for: S{season}E{episode}"
                 )
                 return None
+
+        self.metrics.record_processed_item()
+        self.metrics.record_quality(torrent_stream.quality)
+        self.metrics.record_source(torrent_stream.source)
 
         processed_info_hashes.add(parsed_data["info_hash"])
         self.logger.info(
