@@ -186,7 +186,24 @@ async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaDa
         try:
             await movie_data.create()
             logging.info("Added metadata for movie %s", movie_data.title)
-        except (RevisionIdWasChanged, DuplicateKeyError):
+        except DuplicateKeyError as error:
+            # Drop custom id and try to save again
+            existing_movie = await MediaFusionMovieMetaData.find_one(
+                {"title": movie_data.title, "year": movie_data.year}
+            )
+            if not existing_movie:
+                logging.error("Error occurred while adding metadata: %s", error)
+            if existing_movie.id != movie_data.id:
+                # update TorrentStreams meta_id with new id if exist
+                await TorrentStreams.find({"meta_id": existing_movie.id}).update(
+                    Set({"meta_id": movie_data.id})
+                )
+                await existing_movie.delete()
+                await movie_data.create()
+                logging.info(
+                    "Replace meta id %s with %s", existing_movie.id, movie_data.id
+                )
+        except RevisionIdWasChanged:
             # Wait for a moment before re-fetching to mitigate rapid retry issues
             await asyncio.sleep(1)
             movie_data = await MediaFusionMovieMetaData.get(movie_id)
@@ -233,7 +250,24 @@ async def get_series_data_by_id(
         try:
             await series_data.create()
             logging.info("Added metadata for series %s", series_data.title)
-        except (RevisionIdWasChanged, DuplicateKeyError):
+        except DuplicateKeyError as error:
+            # Drop custom id and try to save again
+            existing_series = await MediaFusionSeriesMetaData.find_one(
+                {"title": series_data.title, "year": series_data.year}
+            )
+            if not existing_series:
+                logging.error("Error occurred while adding metadata: %s", error)
+            if existing_series.id != series_data.id:
+                # update TorrentStreams meta_id with new id if exist
+                await TorrentStreams.find({"meta_id": existing_series.id}).update(
+                    Set({"meta_id": series_data.id})
+                )
+                await existing_series.delete()
+                await series_data.create()
+                logging.info(
+                    "Replace meta id %s with %s", existing_series.id, series_data.id
+                )
+        except RevisionIdWasChanged:
             # Wait for a moment before re-fetching to mitigate rapid retry issues
             await asyncio.sleep(1)
             series_data = await MediaFusionMovieMetaData.get(series_id)
