@@ -73,6 +73,7 @@ class Settings(BaseSettings):
         r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|bigass|bigtits?|blowjob|hardfuck|onlyfans?|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer|RiffTrax|zipx)"
         r"(\b|\s|$|[\]._-])"
     )
+    adult_content_filter_in_torrent_title: bool = True
 
     # Time-related Settings
     meta_cache_ttl: int = 1800  # 30 minutes in seconds

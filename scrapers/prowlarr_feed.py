@@ -136,7 +136,10 @@ async def process_feed_item(item: dict, scraper: ProwlarrScraper) -> Optional[st
         category_ids = [category["id"] for category in item["categories"]]
         parsed_title_data = scraper.parse_title_data(item["title"])
 
-        if is_contain_18_plus_keywords(item["title"]):
+        if is_contain_18_plus_keywords(item["title"]) or (
+            settings.adult_content_filter_in_torrent_title
+            and parsed_title_data.get("adult")
+        ):
             scraper.metrics.record_skip("Adult Content")
             logger.warning(f"Item {item['title']} contains black listed keywords")
             return item_id

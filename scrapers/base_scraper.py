@@ -459,25 +459,28 @@ class BaseScraper(abc.ABC):
                 )
                 return False
 
+        parsed_year = parsed_data.get("year")
         if (
             catalog_type == "series"
-            and parsed_data.get("year")
+            and parsed_year
             and (
                 (
                     metadata.end_year
-                    and not (
-                        metadata.year <= parsed_data.get("year") <= metadata.end_year
-                    )
+                    and metadata.year
+                    and not (metadata.year <= parsed_year <= metadata.end_year)
                 )
-                or (not metadata.end_year and parsed_data.get("year") < metadata.year)
+                or (
+                    metadata.year
+                    and not metadata.end_year
+                    and parsed_year < metadata.year
+                )
             )
         ):
             self.metrics.record_skip("Year mismatch")
             self.logger.debug(
-                f"Year mismatch for series: {parsed_data['title']} ({parsed_data.get('year')}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
+                f"Year mismatch for series: {parsed_data['title']} ({parsed_year}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
             )
             return False
-
         return True
 
     @staticmethod
