@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     prowlarr_api_key: str | None = None
     prowlarr_live_title_search: bool = False
     prowlarr_background_title_search: bool = True
-    prowlarr_search_query_timeout: int = 120
+    prowlarr_search_query_timeout: int = 15
     prowlarr_search_interval_hour: int = 24
     prowlarr_immediate_max_process: int = 10
     prowlarr_immediate_max_process_time: int = 15
