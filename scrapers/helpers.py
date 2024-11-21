@@ -100,8 +100,12 @@ def get_country_name(country_code):
 
 
 async def get_page_bs4(url: str):
-    async with AsyncSession(proxies=PROXIES) as session:
-        response = await session.get(url, impersonate="chrome", timeout=30)
-        if response.status_code != 200:
-            return None
-        return BeautifulSoup(response.text, "html.parser")
+    try:
+        async with AsyncSession(proxies=PROXIES) as session:
+            response = await session.get(url, impersonate="chrome", timeout=30)
+            if response.status_code != 200:
+                return None
+            return BeautifulSoup(response.text, "html.parser")
+    except Exception as e:
+        logging.error(f"Error fetching page: {url}, error: {e}")
+        return None
