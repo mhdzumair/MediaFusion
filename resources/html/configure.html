@@ -612,7 +612,7 @@
                                        title="Enable to proxy live streams through MediaFlow."></i>
                                 </label>
                             </div>
-                            <div class="form-check mb-2">
+                            <div id="proxy_debrid_streams_section" class="form-check mb-2">
                                 <input class="form-check-input" type="checkbox" id="proxy_debrid_streams" name="proxy_debrid_streams"
                                        {% if user_data.mediaflow_config and user_data.mediaflow_config.proxy_debrid_streams %}checked{% endif %}>
                                 <label class="form-check-label" for="proxy_debrid_streams">

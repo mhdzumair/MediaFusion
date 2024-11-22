@@ -3,6 +3,7 @@ const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
 const servicesRequiringCredentials = ['pikpak',];
 const servicesRequiringUrl = ['stremthru'];
+const servicesNotNeedingDebridProxy = ['stremthru'];
 const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
@@ -186,6 +187,12 @@ function updateProviderFields(isChangeEvent = false) {
         setElementDisplay('service_url_section', 'block');
     } else {
         setElementDisplay('service_url_section', 'none');
+    }
+
+    if (servicesNotNeedingDebridProxy.includes(provider)) {
+        setElementDisplay('proxy_debrid_streams_section', 'none');
+    } else {
+        setElementDisplay('proxy_debrid_streams_section', 'block');
     }
 
     if (provider in providerSignupLinks) {
@@ -385,6 +392,9 @@ function getUserData() {
             proxy_live_streams: document.getElementById('proxy_live_streams').checked,
             proxy_debrid_streams: document.getElementById('proxy_debrid_streams').checked
         };
+        if (servicesNotNeedingDebridProxy.includes(provider)) {
+            mediaflowConfig.proxy_debrid_streams = false;
+        }
         validateInput('mediaflow_proxy_url', validateUrl(mediaflowConfig.proxy_url));
         validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
