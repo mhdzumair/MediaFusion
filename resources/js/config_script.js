@@ -3,6 +3,7 @@ const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
 const servicesRequiringCredentials = ['pikpak',];
 const servicesRequiringUrl = ['stremthru'];
+const servicesNotNeedingDebridProxy = ['stremthru'];
 const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
@@ -13,7 +14,11 @@ const providerSignupLinks = {
     torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
-    stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#stremthru',
+    stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#configuration',
+};
+const providerTokenTooltip = {
+    '*': `Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token.`,
+    stremthru: `Enter the Credential configured using 'STREMTHRU_PROXY_AUTH' config.`,
 };
 
 // ---- OAuth-related Functions ----
@@ -126,6 +131,10 @@ function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
 }
 
+function changeTooltipContent(elementId, text) {
+    document.getElementById(elementId).dataset.bsOriginalTitle = text;
+}
+
 function validateUrl(url) {
     // This regex supports domain names, IPv4, and IPv6 addresses
     const urlPattern = /^(https?:\/\/)?(([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}|localhost|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\])(:?\d+)?(\/[-a-z\d%_.~+]*)*(\?[;&a-z\d%_.~+=-]*)?(\#[-a-z\d_]*)?$/i;
@@ -180,6 +189,12 @@ function updateProviderFields(isChangeEvent = false) {
         setElementDisplay('service_url_section', 'none');
     }
 
+    if (servicesNotNeedingDebridProxy.includes(provider)) {
+        setElementDisplay('proxy_debrid_streams_section', 'none');
+    } else {
+        setElementDisplay('proxy_debrid_streams_section', 'block');
+    }
+
     if (provider in providerSignupLinks) {
         document.getElementById('signup_link').href = providerSignupLinks[provider];
         setElementDisplay('signup_section', 'block');
@@ -200,6 +215,7 @@ function updateProviderFields(isChangeEvent = false) {
         } else {
             setElementDisplay('credentials', 'none');
             setElementDisplay('token_input', 'block');
+            changeTooltipContent('provider_token_tooltip', providerTokenTooltip[provider] || providerTokenTooltip['*'])
             setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('streaming_provider_options', 'block');
@@ -376,6 +392,9 @@ function getUserData() {
             proxy_live_streams: document.getElementById('proxy_live_streams').checked,
             proxy_debrid_streams: document.getElementById('proxy_debrid_streams').checked
         };
+        if (servicesNotNeedingDebridProxy.includes(provider)) {
+            mediaflowConfig.proxy_debrid_streams = false;
+        }
         validateInput('mediaflow_proxy_url', validateUrl(mediaflowConfig.proxy_url));
         validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
