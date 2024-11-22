@@ -184,15 +184,13 @@ async def update_rd_cache_status(
         async with RealDebrid(
             token=user_data.streaming_provider.token, user_ip=user_ip
         ) as rd_client:
-            instant_availability_data = (
-                await rd_client.get_torrent_instant_availability(
-                    [stream.id for stream in streams]
-                )
-            )
-            if not instant_availability_data:
+            user_torrents = await rd_client.get_user_torrent_list()
+            if not user_torrents:
                 return
             for stream in streams:
-                stream.cached = bool(instant_availability_data.get(stream.id, False))
+                stream.cached = any(
+                    torrent["hash"] == stream.id for torrent in user_torrents
+                )
 
     except ProviderException:
         pass
