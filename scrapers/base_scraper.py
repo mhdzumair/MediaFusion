@@ -210,9 +210,7 @@ class ScraperMetrics:
                 lines.extend(
                     [
                         f"  {indexer_name}:",
-                        f"    ├─ Results     : {stats['results_count']:>6}",
-                        f"    ├─ Successes   : {stats['success_count']:>6}",
-                        f"    └─ Errors      : {stats['error_count']:>6}",
+                        f"    └─ Results :{stats['results_count']:>6}    Successes :{stats['success_count']:>6}    Errors :{stats['error_count']:>6}",
                     ]
                 )
 

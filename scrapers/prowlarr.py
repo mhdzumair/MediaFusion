@@ -151,24 +151,6 @@ class ProwlarrScraper(BaseScraper):
             )
         return self.indexer_circuit_breakers[indexer_id]
 
-    async def log_indexer_status(self):
-        """Log the current status of all indexers and their circuit breakers"""
-        status_lines = ["Current Indexer Status:"]
-
-        for indexer_id, status in self.indexer_status.items():
-            circuit_breaker = self.indexer_circuit_breakers.get(indexer_id)
-            if circuit_breaker:
-                cb_status = circuit_breaker.get_status()
-                status_lines.append(
-                    f"Indexer {status.get('name', f'ID:{indexer_id}')}:\n"
-                    f"  Health: {'Healthy' if status.get('is_healthy') else 'Unhealthy'}\n"
-                    f"  Circuit Breaker: {cb_status['state']}\n"
-                    f"  Failures: {cb_status['failures']}\n"
-                    f"  Accepting Requests: {cb_status['is_accepting_requests']}"
-                )
-
-        self.logger.info("\n".join(status_lines))
-
     @BaseScraper.cache(ttl=PROWLARR_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def _scrape_and_parse(
@@ -1046,7 +1028,6 @@ async def background_movie_title_search(
         # Log final metrics and indexer status
         scraper.metrics.stop()
         scraper.metrics.log_summary(scraper.logger)
-        await scraper.log_indexer_status()
 
         scraper.logger.info(
             f"Background title search completed for {metadata.title} ({metadata.year})"
@@ -1143,7 +1124,6 @@ async def background_series_title_search(
         # Log final metrics and indexer status
         scraper.metrics.stop()
         scraper.metrics.log_summary(scraper.logger)
-        await scraper.log_indexer_status()
 
         scraper.logger.info(
             f"Background title search completed for {metadata.title} S{season}E{episode}"
