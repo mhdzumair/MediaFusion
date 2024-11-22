@@ -23,6 +23,7 @@
   - ✨ **Premiumize** (Premium)
   - 🏠 **AllDebrid** (Premium)
   - 🔒 **qBittorrent** - WebDav (Free/Premium)
+  - 🪄 [**StremThru**](https://github.com/MunifTanjim/stremthru) (Interface)
 
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)
 
