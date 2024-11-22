@@ -126,7 +126,7 @@
 
                     <!-- Token for Providers -->
                     <div id="token_input" class="mb-3" style="display:none">
-                        <label for="provider_token" class="mb-3">Token: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                        <label for="provider_token" class="mb-3">Token: <span id="provider_token_tooltip" class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                               title="Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token."></span></label>
                         <input class="form-control" type="text" name="provider_token" id="provider_token" placeholder="Enter Token"
                                value="{{ user_data.streaming_provider.token if user_data.streaming_provider.token else '' }}">
