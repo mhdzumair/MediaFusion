@@ -118,7 +118,6 @@ async def scrape_prowlarr_feed():
         # Log final metrics and indexer status
         scraper.metrics.stop()
         scraper.metrics.log_summary(logger)
-        await scraper.log_indexer_status()
 
 
 async def process_feed_item(item: dict, scraper: ProwlarrScraper) -> Optional[str]:
