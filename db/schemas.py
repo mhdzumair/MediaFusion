@@ -138,6 +138,7 @@ class StreamingProvider(BaseModel):
         "premiumize",
         "qbittorrent",
         "stremthru",
+        "easydebrid",
     ] = Field(alias="sv")
     url: HttpUrl | None = Field(default=None, alias="u")
     token: str | None = Field(default=None, alias="tk")
