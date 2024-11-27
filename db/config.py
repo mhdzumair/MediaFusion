@@ -55,8 +55,7 @@ class Settings(BaseSettings):
     # Zilean Settings
     is_scrap_from_zilean: bool = False
     zilean_search_interval_hour: int = 24
-    zilean_url: str = "http://zilean.zilean:8181"
-    zilean_cache_check_url: str = "http://zilean.zilean:8181/torrents/checkcached"
+    zilean_url: str = "https://zilean.elfhosted.com"
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None
