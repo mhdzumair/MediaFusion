@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     zilean_search_interval_hour: int = 24
     zilean_url: str = "http://zilean.zilean:8181"
     zilean_cache_check_url: str = "http://zilean.zilean:8181/torrents/checkcached"
-    zilean_cache_check_auth_key: str | None = None
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None

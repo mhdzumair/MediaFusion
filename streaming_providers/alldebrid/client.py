@@ -89,12 +89,6 @@ class AllDebrid(DebridClient):
         )
         return response.get("data", {}).get("magnets")
 
-    async def get_torrent_instant_availability(self, magnet_links: list[str]):
-        response = await self._make_request(
-            "POST", "/magnet/instant", data={"magnets[]": magnet_links}
-        )
-        return response.get("data", {}).get("magnets", [])
-
     async def get_available_torrent(self, info_hash) -> Optional[dict[str, Any]]:
         available_torrents = await self.get_user_torrent_list()
         self._validate_error_response(available_torrents)

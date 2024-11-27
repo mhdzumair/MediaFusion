@@ -113,20 +113,11 @@ async def update_ad_cache_status(
     """Updates the cache status of streams based on AllDebrid's instant availability."""
 
     try:
-        async with AllDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as ad_client:
-            instant_availability_data = (
-                await ad_client.get_torrent_instant_availability(
-                    [stream.id for stream in streams]
-                )
-            )
-            for stream in streams:
-                stream.cached = any(
-                    torrent.get("instant", False)
-                    for torrent in instant_availability_data
-                    if torrent.get("hash") == stream.id
-                )
+        downloaded_hashes = set(
+            await fetch_downloaded_info_hashes_from_ad(user_data, user_ip, **kwargs)
+        )
+        for stream in streams:
+            stream.cached = stream.id in downloaded_hashes
 
     except ProviderException:
         pass

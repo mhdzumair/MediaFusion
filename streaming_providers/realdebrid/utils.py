@@ -1,10 +1,8 @@
 import asyncio
 from typing import Optional
 
-import aiohttp
 from fastapi import BackgroundTasks
 
-from db.config import settings
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -183,42 +181,11 @@ async def update_rd_cache_status(
     """Updates the cache status of streams based on RealDebrid's or Zilean's instant availability."""
 
     try:
-        async with RealDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as rd_client:
-
-            tasks = []
-            if settings.zilean_cache_check_auth_key:
-                tasks.append(
-                    rd_client.session.get(
-                        settings.zilean_cache_check_url,
-                        params={"Hashes": ",".join([stream.id for stream in streams])},
-                        headers={"X-API-KEY": settings.zilean_cache_check_auth_key},
-                    )
-                )
-
-            tasks.append(rd_client.get_user_torrent_list())
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            cached_data = results[0] if settings.zilean_cache_check_auth_key else None
-            user_torrents = results[-1]
-            cached_hashes = set()
-
-            if cached_data and isinstance(cached_data, aiohttp.ClientResponse):
-                if cached_data.status == 200:
-                    cached_data = await cached_data.json()
-                    cached_hashes = {
-                        torrent["info_hash"]
-                        for torrent in cached_data
-                        if torrent["is_cached"]
-                    }
-
-            downloaded_hashes = {torrent["hash"] for torrent in user_torrents}
-            available_hashes = cached_hashes.union(downloaded_hashes)
-
-            for stream in streams:
-                stream.cached = stream.id in available_hashes
+        downloaded_hashes = set(
+            await fetch_downloaded_info_hashes_from_rd(user_data, user_ip, **kwargs)
+        )
+        for stream in streams:
+            stream.cached = stream.id in downloaded_hashes
 
     except ProviderException:
         pass

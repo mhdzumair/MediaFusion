@@ -1,7 +1,6 @@
 from base64 import b64encode, b64decode
-from typing import Any, Optional, override, overload
-
 from binascii import Error as BinasciiError
+from typing import Any, Optional
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -144,12 +143,6 @@ class RealDebrid(DebridClient):
     async def get_torrent_info(self, torrent_id):
         return await self._make_request(
             "GET", f"{self.BASE_URL}/torrents/info/{torrent_id}"
-        )
-
-    async def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        return await self._make_request(
-            "GET",
-            f"{self.BASE_URL}/torrents/instantAvailability/{'/'.join(torrent_hashes)}",
         )
 
     async def disable_access_token(self):
