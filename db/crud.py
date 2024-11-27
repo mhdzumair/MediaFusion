@@ -29,6 +29,7 @@ from db.models import (
 from db.schemas import Stream, TorrentStreamsList
 from scrapers.utils import run_scrapers
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
+from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils import crypto
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.parser import (
@@ -61,6 +62,9 @@ async def get_meta_list(
         downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data, user_ip)
         if not downloaded_info_hashes:
             return []
+        await store_cached_info_hashes(
+            user_data.streaming_provider.service, downloaded_info_hashes
+        )
         query_filters = {"_id": {"$in": downloaded_info_hashes}}
     else:
         query_filters = {"catalog": {"$in": [catalog]}}

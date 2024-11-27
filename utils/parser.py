@@ -14,6 +14,10 @@ from db.config import settings
 from db.models import TorrentStreams, TVStreams
 from db.schemas import Stream, UserData
 from streaming_providers import mapper
+from streaming_providers.cache_helpers import (
+    get_cached_status,
+    store_cached_info_hashes,
+)
 from utils import const
 from utils.config import config_manager
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
@@ -79,17 +83,39 @@ async def filter_and_sort_streams(
 
     # Step 2: Update cache status based on provider
     if user_data.streaming_provider:
-        cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(
-            user_data.streaming_provider.service
-        )
-        kwargs = dict(streams=filtered_streams, user_data=user_data, user_ip=user_ip)
-        if cache_update_function:
-            try:
-                await cache_update_function(**kwargs)
-            except Exception as error:
-                logging.exception(
-                    f"Failed to update cache status for {user_data.streaming_provider.service}: {error}"
-                )
+        service = user_data.streaming_provider.service
+        info_hashes = [stream.id for stream in filtered_streams]
+
+        # First check Redis cache
+        cached_statuses = await get_cached_status(service, info_hashes)
+
+        # Update streams with cached status from Redis
+        uncached_streams = []
+        for stream in filtered_streams:
+            if cached_statuses.get(stream.id, False):
+                stream.cached = True
+            else:
+                stream.cached = False
+                uncached_streams.append(stream)
+
+        # For streams not found in Redis cache, use provider's cache check
+        if uncached_streams:
+            cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(service)
+            if cache_update_function:
+                try:
+                    await cache_update_function(
+                        streams=uncached_streams, user_data=user_data, user_ip=user_ip
+                    )
+                    # Store only the cached ones in Redis
+                    cached_info_hashes = [
+                        stream.id for stream in uncached_streams if stream.cached
+                    ]
+                    if cached_info_hashes:
+                        await store_cached_info_hashes(service, cached_info_hashes)
+                except Exception as error:
+                    logging.exception(
+                        f"Failed to update cache status for {service}: {error}"
+                    )
 
         if user_data.streaming_provider.only_show_cached_streams:
             filtered_streams = [stream for stream in filtered_streams if stream.cached]
