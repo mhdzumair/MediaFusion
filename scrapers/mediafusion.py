@@ -28,7 +28,7 @@ class MediafusionScraper(BaseScraper):
 
     @BaseScraper.cache(ttl=MEDIAFUSION_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
-    async def scrape_and_parse(
+    async def _scrape_and_parse(
         self,
         metadata: MediaFusionMetaData,
         catalog_type: str,
@@ -130,7 +130,7 @@ class MediafusionScraper(BaseScraper):
                     catalog=["mediafusion_streams"],
                     seeders=parsed_data["seeders"],
                     announce_list=[
-                        tracker.lstrip("tracker:")
+                        tracker.removeprefix("tracker:")
                         for tracker in stream_data.get("sources", [])
                         if "tracker:" in tracker
                     ],
