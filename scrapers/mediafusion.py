@@ -47,15 +47,19 @@ class MediafusionScraper(BaseScraper):
             data = response.json()
 
             if not self.validate_response(data):
+                self.metrics.record_error("invalid_response")
                 self.logger.warning(f"Invalid response received for {url}")
                 return []
 
+            self.metrics.record_found_items(len(data.get("streams", [])))
             return await self.parse_response(
                 data, metadata, catalog_type, season, episode
             )
         except (ScraperError, RetryError):
+            self.metrics.record_error("request_failed")
             return []
         except Exception as e:
+            self.metrics.record_error("unexpected_error")
             self.logger.exception(f"Error occurred while fetching {url}: {e}")
             return []
 
@@ -88,6 +92,7 @@ class MediafusionScraper(BaseScraper):
         async with self.semaphore:
             try:
                 if is_contain_18_plus_keywords(stream_data["description"]):
+                    self.metrics.record_skip("Adult Content")
                     self.logger.warning(
                         f"Stream contains 18+ keywords: {stream_data['description']}"
                     )
@@ -136,6 +141,7 @@ class MediafusionScraper(BaseScraper):
                         if len(seasons) == 1:
                             season_number = seasons[0]
                         else:
+                            self.metrics.record_skip("Multiple Seasons torrent")
                             # Skip This Stream due to multiple seasons in one torrent.
                             return None
                     else:
@@ -167,8 +173,14 @@ class MediafusionScraper(BaseScraper):
                     )
                     stream.filename = None
 
+                # Record metrics for successful processing
+                self.metrics.record_processed_item()
+                self.metrics.record_quality(stream.quality)
+                self.metrics.record_source(source)
+
                 return stream
             except Exception as e:
+                self.metrics.record_error("stream_processing_error")
                 self.logger.exception(f"Error processing stream: {e}")
                 return None
 
