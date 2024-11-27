@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     torrentio_search_interval_days: int = 3
     torrentio_url: str = "https://torrentio.strem.fun"
 
+    # Mediafusion Settings
+    is_scrap_from_mediafusion: bool = False
+    mediafusion_search_interval_days: int = 3
+    mediafusion_url: str = "https://mediafusion.elfhosted.com"
+
     # Zilean Settings
     is_scrap_from_zilean: bool = False
     zilean_search_interval_hour: int = 24
