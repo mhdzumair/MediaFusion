@@ -19,25 +19,10 @@ class EasyDebrid(DebridClient):
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         error_code = error_data.get("error")
         match error_code:
-            case "BAD_TOKEN" | "AUTH_ERROR" | "OAUTH_VERIFICATION_ERROR":
+            case "Unsupported link for direct download.":
                 raise ProviderException(
-                    "Invalid EasyDebrid token",
-                    "invalid_token.mp4",
-                )
-            case "DOWNLOAD_TOO_LARGE":
-                raise ProviderException(
-                    "Download size too large for the user plan",
-                    "not_enough_space.mp4",
-                )
-            case "ACTIVE_LIMIT" | "MONTHLY_LIMIT":
-                raise ProviderException(
-                    "Download limit exceeded",
-                    "daily_download_limit.mp4",
-                )
-            case "DOWNLOAD_SERVER_ERROR" | "DATABASE_ERROR":
-                raise ProviderException(
-                    "EasyDebrid server error",
-                    "debrid_service_down_error.mp4",
+                    "Unsupported link for direct download.",
+                    "unsupported_direct_download.mp4",
                 )
 
     async def _make_request(
