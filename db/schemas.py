@@ -317,6 +317,9 @@ class ScraperTask(BaseModel):
         "streambtw",
         "dlhd",
         "motogp_tgx",
+        "arab_torrents",
+        "wwe_tgx",
+        "ufc_tgx",
     ]
     pages: int | None = 1
     start_page: int | None = 1
