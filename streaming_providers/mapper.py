@@ -70,8 +70,6 @@ from streaming_providers.stremthru.utils import (
 )
 from streaming_providers.easydebrid.utils import (
     update_easydebrid_cache_status,
-    fetch_downloaded_info_hashes_from_easydebrid,
-    delete_all_torrents_from_easydebrid,
     get_video_url_from_easydebrid,
     validate_easydebrid_credentials,
 )
@@ -103,7 +101,6 @@ FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS = {
     "premiumize": fetch_downloaded_info_hashes_from_premiumize,
     "qbittorrent": fetch_info_hashes_from_webdav,
     "stremthru": fetch_downloaded_info_hashes_from_st,
-    "easydebrid": fetch_downloaded_info_hashes_from_easydebrid,
 }
 
 
@@ -118,7 +115,6 @@ DELETE_ALL_WATCHLIST_FUNCTIONS = {
     "offcloud": delete_all_torrents_from_oc,
     "torbox": delete_all_torrents_from_torbox,
     "stremthru": delete_all_torrents_from_st,
-    "easydebrid": delete_all_torrents_from_easydebrid,
 }
 
 

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Optional
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -65,22 +65,16 @@ class EasyDebrid(DebridClient):
         )
         return response.get("cached", [])
 
-    async def create_download_link(self, magnet, filename):
+    async def create_download_link(self, magnet):
         response = await self._make_request(
             "POST",
             "/link/generate",
             json={"url": magnet},
         )
-        return response.get("files", [])
-
-
-    async def delete_torrent(self, torrent_id):
-        pass
+        return response
 
     async def get_torrent_info(self, torrent_id: str) -> dict:
         pass
 
     async def get_user_info(self):
-        return await self._make_request(
-            "GET", "/user/details"
-        )
+        return await self._make_request("GET", "/user/details")
