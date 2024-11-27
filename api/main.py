@@ -210,7 +210,6 @@ async def configure(
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
-            "disable_download_via_browser": settings.disable_download_via_browser,
         },
     )
 
@@ -731,7 +730,6 @@ async def download_info(
     if (
         not user_data.streaming_provider
         or not user_data.streaming_provider.download_via_browser
-        or settings.disable_download_via_browser
     ):
         raise HTTPException(
             status_code=403,

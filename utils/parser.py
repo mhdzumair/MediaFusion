@@ -181,9 +181,7 @@ async def parse_stream_data(
     )
     has_streaming_provider = user_data.streaming_provider is not None
     download_via_browser = (
-        has_streaming_provider
-        and user_data.streaming_provider.download_via_browser
-        and not settings.disable_download_via_browser
+        has_streaming_provider and user_data.streaming_provider.download_via_browser
     )
 
     base_proxy_url_template = ""

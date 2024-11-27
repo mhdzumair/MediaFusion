@@ -77,7 +77,6 @@ These boolean flags control various features of MediaFusion.
 - **is_scrap_from_zilean** (default: `False`): Enable or disable scraping from Zilean.
 - **enable_rate_limit** (default: `True`): Enable or disable rate limiting.
 - **validate_m3u8_urls_liveness** (default: `True`): Enable or disable the validation of M3U8 URLs for liveness.
-- **disable_download_via_browser** (default: `False`): If set to `True`, disables downloads through the browser.
 
 ## Content Filtering
 
