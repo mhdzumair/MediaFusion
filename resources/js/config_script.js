@@ -12,6 +12,7 @@ const providerSignupLinks = {
     debridlink: 'https://debrid-link.com/id/kHgZs',
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
     torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
+    easydebrid: 'https://paradise-cloud.com/products/easydebrid',
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
     stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#configuration',
