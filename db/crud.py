@@ -37,7 +37,7 @@ from utils.parser import (
     parse_stream_data,
     parse_tv_stream_data,
 )
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_parent_guide_nudity,
     get_filter_certification_values,

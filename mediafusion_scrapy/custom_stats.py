@@ -4,7 +4,7 @@ import logging
 from scrapy import signals
 from scrapy.statscollectors import StatsCollector
 
-from utils.runtime_const import REDIS_SYNC_CLIENT
+from db.redis_database import REDIS_SYNC_CLIENT
 
 
 class RedisStatsCollector(StatsCollector):

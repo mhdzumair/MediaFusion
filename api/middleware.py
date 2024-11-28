@@ -16,10 +16,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.routing import Match
 
 from db.config import settings
+from db.redis_database import REDIS_SYNC_CLIENT, REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from utils import crypto, const
 from utils.network import get_client_ip
-from utils.runtime_const import REDIS_ASYNC_CLIENT, REDIS_SYNC_CLIENT
 
 
 async def find_route_handler(app, request: Request) -> Optional[Callable]:

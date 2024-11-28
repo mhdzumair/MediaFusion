@@ -20,7 +20,7 @@ from scrapers.prowlarr import (
 from utils.crypto import get_text_hash
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.wrappers import minimum_run_interval
 
 logger = logging.getLogger(__name__)

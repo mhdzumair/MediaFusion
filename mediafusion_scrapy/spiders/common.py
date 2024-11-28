@@ -4,7 +4,7 @@ import re
 import scrapy
 
 from utils.config import config_manager
-from utils.runtime_const import REDIS_SYNC_CLIENT
+from db.redis_database import REDIS_SYNC_CLIENT
 
 
 class CommonTamilSpider(scrapy.Spider):

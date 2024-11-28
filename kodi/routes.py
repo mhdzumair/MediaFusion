@@ -13,7 +13,7 @@ from starlette.responses import StreamingResponse
 from db.config import settings
 from db.schemas import KodiConfig
 from utils import const
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 kodi_router = APIRouter()
 

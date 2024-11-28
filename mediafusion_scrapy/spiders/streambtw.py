@@ -3,7 +3,8 @@ import re
 
 import scrapy
 
-from utils.runtime_const import SPORTS_ARTIFACTS, REDIS_SYNC_CLIENT
+from utils.runtime_const import SPORTS_ARTIFACTS
+from db.redis_database import REDIS_SYNC_CLIENT
 
 
 class StreamBTWSpider(scrapy.Spider):

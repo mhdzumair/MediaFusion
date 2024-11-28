@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from db.config import settings
-from utils.runtime_const import REDIS_SYNC_CLIENT
+from db.redis_database import REDIS_SYNC_CLIENT
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,8 @@ from scrapers.base_scraper import BaseScraper
 from scrapers.imdb_data import get_episode_by_date, get_season_episodes
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
-from utils.runtime_const import REDIS_ASYNC_CLIENT, PROWLARR_SEARCH_TTL
+from utils.runtime_const import PROWLARR_SEARCH_TTL
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.torrent import extract_torrent_metadata
 from utils.wrappers import minimum_run_interval
 

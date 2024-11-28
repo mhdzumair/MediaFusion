@@ -24,7 +24,8 @@ from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio
-from utils.runtime_const import TEMPLATES, REDIS_ASYNC_CLIENT
+from utils.runtime_const import TEMPLATES
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 router = APIRouter()
 

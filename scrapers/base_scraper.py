@@ -15,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from db.models import TorrentStreams, MediaFusionMetaData
 from utils.parser import calculate_max_similarity_ratio
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 @dataclass

@@ -7,7 +7,8 @@ import httpx
 
 from db import schemas
 from utils import const
-from utils.runtime_const import REDIS_ASYNC_CLIENT, PRIVATE_CIDR
+from utils.runtime_const import PRIVATE_CIDR
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 def is_valid_url(url: str) -> bool:

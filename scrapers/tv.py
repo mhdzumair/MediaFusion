@@ -14,7 +14,7 @@ from db import schemas, crud
 from db.models import TVStreams, MediaFusionTVMetaData
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import validate_live_stream_url
 
 

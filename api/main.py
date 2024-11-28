@@ -44,8 +44,8 @@ from utils.runtime_const import (
     DELETE_ALL_META,
     DELETE_ALL_META_ITEM,
     TEMPLATES,
-    REDIS_ASYNC_CLIENT,
 )
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_mediaflow_proxy_credentials,
     validate_rpdb_token,

@@ -24,7 +24,7 @@ from streaming_providers.seedr.api import router as seedr_router
 from utils import crypto, torrent, wrappers, const
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_user_public_ip, get_user_data, encode_mediaflow_proxy_url
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 # Seconds until when the Video URLs are cached
 URL_CACHE_EXP = 3600
