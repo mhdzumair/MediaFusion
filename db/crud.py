@@ -197,6 +197,7 @@ async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaDa
             )
             if not existing_movie:
                 logging.error("Error occurred while adding metadata: %s", error)
+                return None
             if existing_movie.id != movie_data.id:
                 # update TorrentStreams meta_id with new id if exist
                 await TorrentStreams.find({"meta_id": existing_movie.id}).update(
@@ -261,6 +262,7 @@ async def get_series_data_by_id(
             )
             if not existing_series:
                 logging.error("Error occurred while adding metadata: %s", error)
+                return None
             if existing_series.id != series_data.id:
                 # update TorrentStreams meta_id with new id if exist
                 await TorrentStreams.find({"meta_id": existing_series.id}).update(
