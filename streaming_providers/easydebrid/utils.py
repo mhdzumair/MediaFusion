@@ -74,7 +74,7 @@ async def validate_easydebrid_credentials(
     """Validates the EasyDebrid credentials."""
     try:
         async with EasyDebrid(
-            token=user_data.streaming_provider.token, user_ip: str,
+            token=user_data.streaming_provider.token, user_ip=user_ip,
         ) as easydebrid_client:
             await easydebrid_client.get_user_info()
             return {"status": "success"}
