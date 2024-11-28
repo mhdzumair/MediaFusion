@@ -68,6 +68,7 @@ async def get_scraper(
             "catalog_data": const.CATALOG_DATA,
             "supported_series_catalog_ids": const.USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
             "supported_movie_catalog_ids": const.USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
+            "supported_languages": sorted(const.SUPPORTED_LANGUAGES - {None}),
         },
     )
 
@@ -161,38 +162,34 @@ async def update_imdb_data(
 async def add_torrent(
     meta_id: str = Form(...),
     meta_type: Literal["movie", "series"] = Form(...),
-    source: str = Form(...),
-    catalogs: str = Form(...),
+    catalogs: str = Form(None),
+    languages: str = Form(None),
     created_at: date = Form(...),
     season: int | None = Form(None),
     episodes: str | None = Form(None),
     magnet_link: str = Form(None),
     torrent_file: UploadFile = File(None),
+    force_import: bool = Form(False),
 ):
     torrent_data: dict = {}
-    error_msg = None
     info_hash = None
-    catalogs = catalogs.split(",")
 
+    # Basic validation
     if not magnet_link and not torrent_file:
         raise_error("Either magnet link or torrent file must be provided.")
     if not meta_id.startswith("tt") or not meta_id[2:].isdigit():
         raise_error("Invalid IMDb ID. Must start with 'tt'.")
-    if meta_type == "movie":
-        # check if any catalog is not in const.USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS
-        if not set(catalogs).issubset(const.USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS):
-            raise_error("Invalid catalogs selected.")
-    else:
-        # check if any catalog is not in const.USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS
-        if not set(catalogs).issubset(const.USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS):
-            raise_error("Invalid catalogs selected.")
-        if not season or not episodes:
-            raise_error("Season and episode number must be provided.")
-        episodes = [int(ep) for ep in episodes.split(",")]
 
-    if error_msg:
-        raise HTTPException(status_code=200, detail=error_msg)
+    # Convert catalogs string to list if provided
+    catalog_list = catalogs.split(",") if catalogs else []
 
+    # Convert languages string to list if provided
+    language_list = languages.split(",") if languages else []
+
+    if meta_type == "series" and not (season and episodes):
+        raise_error("Season and episode number must be provided for series.")
+
+    # Process magnet link or torrent file
     if magnet_link:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
@@ -219,17 +216,20 @@ async def add_torrent(
                 "status": f"Torrent already exists and attached to meta id: {torrent_stream.meta_id}"
             }
 
-    # if the source is url then only take the domain name
-    if re.match(r"^https?://", source):
-        source = urlparse(source).netloc.replace("www.", "")
-
+    source = "Contribution Stream"
+    languages = set(language_list).union(torrent_data.get("languages", []))
     torrent_data.update(
-        {
-            "source": source,
-            "created_at": created_at,
-        }
+        {"source": source, "created_at": created_at, "languages": languages}
     )
-    catalogs.append("user_upload")
+
+    # Add contribution_stream to catalogs if provided
+    if catalog_list:
+        catalog_list.append("contribution_stream")
+        torrent_data["catalog"] = catalog_list
+    else:
+        torrent_data["catalog"] = ["contribution_stream"]
+
+    validation_errors = []
 
     if meta_type == "movie":
         movie_data = await get_movie_data_by_id(meta_id)
@@ -237,62 +237,98 @@ async def add_torrent(
             raise_error(f"Movie with ID {meta_id} not found.")
         title = movie_data.title
 
+        # Title similarity check
         max_similarity_ratio = calculate_max_similarity_ratio(
             torrent_data.get("title"), movie_data.title, movie_data.aka_titles
         )
-        if max_similarity_ratio < 75:
-            raise_error(
-                f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
+        if max_similarity_ratio < 75 and not force_import:
+            validation_errors.append(
+                {
+                    "type": "title_mismatch",
+                    "message": f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}",
+                }
             )
 
-        if torrent_data.get("year") != movie_data.year:
-            raise_error(
-                f"Year mismatch: '{movie_data.year}' != '{torrent_data.get('year')}'"
+        # Year validation
+        if torrent_data.get("year") != movie_data.year and not force_import:
+            validation_errors.append(
+                {
+                    "type": "year_mismatch",
+                    "message": f"Year mismatch: '{movie_data.year}' != '{torrent_data.get('year')}'",
+                }
             )
 
-        catalogs.extend(
-            ["user_upload_movies", f"{torrent_data.get('source', '').lower()}_movies"]
-        )
-        torrent_data["catalog"] = catalogs
+        if validation_errors and not force_import:
+            return {
+                "status": "validation_failed",
+                "errors": validation_errors,
+                "info_hash": info_hash,
+                "torrent_data": torrent_data,
+            }
 
         torrent_stream = await handle_movie_stream_store(
             info_hash, torrent_data, meta_id
         )
 
-    else:
+    else:  # Series
         series_data = await get_series_data_by_id(meta_id)
         if not series_data:
             raise_error(f"Series with ID {meta_id} not found.")
         title = series_data.title
 
+        # Title similarity check
         max_similarity_ratio = calculate_max_similarity_ratio(
             torrent_data.get("title"), series_data.title, series_data.aka_titles
         )
-        if max_similarity_ratio < 75:
-            raise_error(
-                f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}"
+        if max_similarity_ratio < 75 and not force_import:
+            validation_errors.append(
+                {
+                    "type": "title_mismatch",
+                    "message": f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}",
+                }
             )
 
+        # Episode validation
+        episodes = [int(ep) for ep in episodes.split(",")]
         if torrent_data.get("episodes"):
-            if not set(torrent_data.get("episodes")).issubset(set(episodes)):
-                raise_error(
-                    f"Episode mismatch: '{torrent_data.get('episodes')}' != '{episodes}'"
+            if (
+                not set(torrent_data.get("episodes")).issubset(set(episodes))
+                and not force_import
+            ):
+                validation_errors.append(
+                    {
+                        "type": "episode_mismatch",
+                        "message": f"Episode mismatch: '{torrent_data.get('episodes')}' != '{episodes}'",
+                    }
                 )
         else:
-            raise_error("No episode found in torrent data")
+            validation_errors.append(
+                {
+                    "type": "episodes_not_found",
+                    "message": "No episode found in torrent data",
+                }
+            )
 
+        # Season validation
         if season not in torrent_data.get("seasons", []):
-            if torrent_data.get("season") is None and season == 1:
-                pass  # If torrent doesn't mention season and it's season 1, it's okay
-            else:
-                raise_error(
-                    f"Season mismatch: '{torrent_data.get('season')}' != '{season}'"
+            if (
+                not (torrent_data.get("season") is None and season == 1)
+                and not force_import
+            ):
+                validation_errors.append(
+                    {
+                        "type": "season_mismatch",
+                        "message": f"Season mismatch: '{torrent_data.get('season')}' != '{season}'",
+                    }
                 )
 
-        catalogs.extend(
-            ["user_upload_series", f"{torrent_data.get('source', '').lower()}_series"]
-        )
-        torrent_data["catalog"] = catalogs
+        if validation_errors and not force_import:
+            return {
+                "status": "validation_failed",
+                "errors": validation_errors,
+                "info_hash": info_hash,
+                "torrent_data": torrent_data,
+            }
 
         torrent_stream = await handle_series_stream_store(
             info_hash, torrent_data, meta_id, season
@@ -300,6 +336,7 @@ async def add_torrent(
 
     if not torrent_stream:
         raise_error("Failed to store torrent data. Contact support.")
+
     return {
         "status": f"Successfully added torrent: {torrent_stream.id} for {title}. Thanks for your contribution."
     }

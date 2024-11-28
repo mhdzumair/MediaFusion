@@ -174,6 +174,86 @@ function toggleModeSpecificFields() {
     setElementDisplay('pageScrapingInput', displayPageScraping ? 'block' : 'none');
 }
 
+function showConfirmationDialog(validationErrors, torrentData, infoHash) {
+    return new Promise((resolve) => {
+        // Remove any existing modal
+        const existingModal = document.getElementById('confirmationModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        const errorMessages = validationErrors.map(error => `<li>${error.message}</li>`).join('');
+
+        const modalHtml = `
+            <div class="modal fade" id="confirmationModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Validation Warning</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                <strong>Community Guidelines:</strong>
+                                <ul class="mb-0">
+                                    <li>Do not upload adult or inappropriate content</li>
+                                    <li>Only upload content that matches the IMDb title</li>
+                                    <li>Avoid spamming</li>
+                                </ul>
+                            </div>
+
+                            <p>Validation issues found:</p>
+                            <ul class="text-danger">
+                                ${errorMessages}
+                            </ul>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="confirmGuidelines" required>
+                                <label class="form-check-label" for="confirmGuidelines">
+                                    I confirm this content follows community guidelines and the metadata is correct
+                                </label>
+                            </div>
+
+                            <p>Do you want to proceed with the import?</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="confirmImport" disabled>Confirm Import</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
+        // Add modal to document
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        const modalElement = document.getElementById('confirmationModal');
+        const modal = new bootstrap.Modal(modalElement);
+
+        // Enable/disable confirm button based on checkbox
+        document.getElementById('confirmGuidelines').addEventListener('change', (e) => {
+            document.getElementById('confirmImport').disabled = !e.target.checked;
+        });
+
+        // Handle confirmation button click
+        document.getElementById('confirmImport').addEventListener('click', () => {
+            if (document.getElementById('confirmGuidelines').checked) {
+                modal.hide();
+                resolve(true);
+            }
+        });
+
+        // Handle modal hidden event
+        modalElement.addEventListener('hidden.bs.modal', () => {
+            modal.dispose();
+            modalElement.remove();
+            resolve(false);
+        });
+
+        modal.show();
+    });
+}
+
 function updateMetaType() {
     const metaType = document.getElementById('metaType').value;
     if (metaType === 'movie') {
@@ -308,37 +388,39 @@ function constructTvMetadata() {
 }
 
 
-async function handleAddTorrent(submitBtn, loadingSpinner) {
+async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) {
     let formData = new FormData();
     const imdbId = document.getElementById('torrentImdbId').value;
     const metaType = document.getElementById('metaType').value;
+
+    // Basic validation
     const imdbIdNumeric = parseInt(imdbId.slice(2), 10);
     if (!imdbId.startsWith('tt') || imdbId.length < 3 || imdbId.length > 10 || isNaN(imdbIdNumeric)) {
         showNotification('Invalid IMDb ID', 'error');
         resetButton(submitBtn, loadingSpinner);
         return;
     }
+
     formData.append('meta_id', imdbId);
     formData.append('meta_type', metaType);
-    const source = document.getElementById('source').value;
-    if (!source) {
-        showNotification('Source is required.', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
+
+    // Handle optional catalogs
+    const catalogInputs = metaType === 'movie'
+        ? document.querySelectorAll('#catalogsMovie input[name="catalogs"]:checked')
+        : document.querySelectorAll('#catalogsSeries input[name="catalogs"]:checked');
+
+    const catalogs = Array.from(catalogInputs).map(el => el.value);
+    if (catalogs.length > 0) {
+        formData.append('catalogs', catalogs.join(','));
     }
-    formData.append('source', source);
-    let catalogs;
-    if (metaType === 'movie') {
-        catalogs = Array.from(document.querySelectorAll('#catalogsMovie input[name="catalogs"]:checked')).map(el => el.value);
-    } else {
-        catalogs = Array.from(document.querySelectorAll('#catalogsSeries input[name="catalogs"]:checked')).map(el => el.value);
+
+    // Handle languages
+    const selectedLanguages = Array.from(document.querySelectorAll('#languages input[name="languages"]:checked'))
+        .map(el => el.value);
+    if (selectedLanguages.length > 0) {
+        formData.append('languages', selectedLanguages.join(','));
     }
-    if (catalogs.length === 0) {
-        showNotification('At least one catalog is required.', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
-    }
-    formData.append('catalogs', catalogs.join(','));
+
     const createdAt = document.getElementById('createdAt').value;
     if (!createdAt) {
         showNotification('Created At is required.', 'error');
@@ -380,20 +462,42 @@ async function handleAddTorrent(submitBtn, loadingSpinner) {
         formData.append('torrent_file', torrentFile);
     }
 
+    // Add force import flag if needed
+    if (forceImport) {
+        formData.append('force_import', 'true');
+    }
+
     try {
         const response = await fetch('/scraper/torrent', {
             method: 'POST',
             body: formData
         });
+
         const data = await response.json();
-        if (data.detail) {
+
+        if (data.status === 'validation_failed' && !forceImport) {
+            // Show confirmation dialog
+            const shouldForceImport = await showConfirmationDialog(
+                data.errors,
+                data.torrent_data,
+                data.info_hash
+            );
+
+            if (shouldForceImport) {
+                // Retry with force import
+                submitBtn.disabled = true;
+                loadingSpinner.style.display = 'inline-block';
+                await handleAddTorrent(submitBtn, loadingSpinner, true);
+                return;
+            }
+        } else if (data.detail) {
             showNotification(data.detail, 'error');
         } else {
             showNotification(data.status, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
-        showNotification(`Error submitting scraper form. Error: ${error.stringify()}`, 'error');
+        showNotification(`Error submitting scraper form. Error: ${error.toString()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
     }
