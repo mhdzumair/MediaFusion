@@ -13,11 +13,12 @@ async def get_video_url_from_easydebrid(
     magnet_link: str,
     user_data: UserData,
     filename: str,
+    user_ip: str,
     episode: Optional[int] = None,
     **kwargs: Any,
 ) -> str:
     async with EasyDebrid(
-        token=user_data.streaming_provider.token
+        token=user_data.streaming_provider.token, user_ip=user_ip,
     ) as easydebrid_client:
         torrent_info = await easydebrid_client.create_download_link(magnet_link)
         file_index = await select_file_index_from_torrent(
@@ -54,11 +55,11 @@ async def update_chunk_cache_status(
 
 
 async def update_easydebrid_cache_status(
-    streams: List[TorrentStreams], user_data: UserData, **kwargs: Any
+    streams: List[TorrentStreams], user_data: UserData, user_ip: str, **kwargs: Any
 ) -> None:
     """Updates the cache status of streams based on Easydebrid's instant availability."""
     async with EasyDebrid(
-        token=user_data.streaming_provider.token
+        token=user_data.streaming_provider.token, user_ip=user_ip,
     ) as easydebrid_client:
         chunks = list(divide_chunks(streams, 50))
         update_tasks = [
@@ -68,12 +69,12 @@ async def update_easydebrid_cache_status(
 
 
 async def validate_easydebrid_credentials(
-    user_data: UserData, **kwargs: Any
+    user_data: UserData, user_ip: str, **kwargs: Any
 ) -> Dict[str, str]:
     """Validates the EasyDebrid credentials."""
     try:
         async with EasyDebrid(
-            token=user_data.streaming_provider.token
+            token=user_data.streaming_provider.token, user_ip: str,
         ) as easydebrid_client:
             await easydebrid_client.get_user_info()
             return {"status": "success"}

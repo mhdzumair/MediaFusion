@@ -7,8 +7,14 @@ from streaming_providers.exceptions import ProviderException
 class EasyDebrid(DebridClient):
     BASE_URL = "https://easydebrid.com/api/v1"
 
+    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+        self.user_ip = user_ip
+        super().__init__(token)
+
     async def initialize_headers(self):
         self.headers = {"Authorization": f"Bearer {self.token}"}
+        if self.user_ip:
+            self.headers['X-Forwarded-For'] = self.user_ip
 
     async def disable_access_token(self):
         pass
