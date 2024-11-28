@@ -77,9 +77,9 @@ async def get_torrents_by_sources(response: Response):
 async def get_total_metadata(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
     results = await asyncio.gather(
-        MediaFusionMetaData.find({"type": "movie"}).count(),
-        MediaFusionMetaData.find({"type": "series"}).count(),
-        MediaFusionMetaData.find({"type": "tv"}).count(),
+        MediaFusionMetaData.get_motor_collection().count_documents({"type": "movie"}),
+        MediaFusionMetaData.get_motor_collection().count_documents({"type": "series"}),
+        MediaFusionMetaData.get_motor_collection().count_documents({"type": "tv"}),
     )
     movies_count, series_count, tv_channels_count = results
 
