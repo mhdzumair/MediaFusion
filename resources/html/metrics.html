@@ -55,6 +55,39 @@
                 </div>
             </div>
 
+            <div class="chart-section">
+                <h4 class="text-left">Debrid Cache Statistics</h4>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="card text-white">
+                            <div class="card-body">
+                                <h5 class="card-title">Total Cached Torrents Count (Not Unique)</h5>
+                                <p id="totalCachedTorrentsValue" class="card-text large-number"></p>
+                                <div class="skeleton-loader" id="debridTotalsSkeleton"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="card text-white">
+                            <div class="card-body">
+                                <h5 class="card-title">Total Cache Memory Usage</h5>
+                                <p id="totalCacheMemoryValue" class="card-text large-number"></p>
+                                <div class="skeleton-loader" id="debridMemorySkeleton"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Cache Distribution</h5>
+                        <div class="chart-wrapper">
+                            <canvas id="debridCacheChart"></canvas>
+                            <div class="skeleton-loader" id="debridChartSkeleton"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>

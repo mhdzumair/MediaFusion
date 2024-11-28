@@ -1,5 +1,4 @@
 import asyncio
-from typing import Literal
 
 import humanize
 from fastapi import APIRouter, Request, Response
@@ -11,6 +10,7 @@ from db.models import (
     MediaFusionMetaData,
     TorrentStreams,
 )
+from metrics.redis_metrics import get_redis_metrics, get_debrid_cache_metrics
 from utils import const
 from utils.runtime_const import TEMPLATES
 
@@ -137,3 +137,17 @@ async def prometheus_metrics(request: Request, response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
     await update_metrics(request, response)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@metrics_router.get("/redis")
+async def redis_metrics():
+    return await get_redis_metrics()
+
+
+@metrics_router.get("/debrid-cache")
+async def debrid_cache_metrics():
+    """
+    Get comprehensive metrics about debrid cache usage.
+    Returns statistics about cache size, memory usage, and usage patterns per service.
+    """
+    return await get_debrid_cache_metrics()

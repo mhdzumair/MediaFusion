@@ -214,12 +214,126 @@ document.addEventListener('DOMContentLoaded', function () {
                         }
                     },
                     datalabels: {
-                        anchor: 'start',
-                        align: 'top',
+                        align: 'start',
+                        anchor: 'end',
                         rotation: -90,
                         color: '#fff',
                         formatter: (value, context) => {
                             return value.y.toLocaleString();
+                        },
+                        font: {
+                            weight: 'bold'
+                        },
+                    }
+                }
+            }
+        });
+    };
+
+    const renderDebridCacheMetrics = async () => {
+        const data = await fetchData('/metrics/debrid-cache');
+
+        // Remove loading skeletons
+        removeLoadingElement('debridTotalsSkeleton');
+        removeLoadingElement('debridMemorySkeleton');
+        removeLoadingElement('debridChartSkeleton');
+
+        // Update total values
+        const totalCachedTorrents = document.getElementById('totalCachedTorrentsValue');
+        totalCachedTorrents.textContent = data.total_cached_torrents.toLocaleString();
+
+        const totalMemoryUsage = document.getElementById('totalCacheMemoryValue');
+        totalMemoryUsage.textContent = data.total_memory_usage_human;
+
+        // Create the stacked bar chart for service comparison
+        const ctx = document.getElementById('debridCacheChart').getContext('2d');
+
+        // Prepare data for the chart
+        const services = Object.keys(data.services);
+        const cachedTorrents = services.map(service => data.services[service].cached_torrents);
+        const memoryUsages = services.map(service => data.services[service].memory_usage / (1024 * 1024)); // Convert to MB
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: services,
+                datasets: [
+                    {
+                        label: 'Cached Torrents',
+                        data: cachedTorrents,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Memory Usage (MB)',
+                        data: memoryUsages,
+                        backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#fff'
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: 'Cached Torrents',
+                            color: '#fff'
+                        },
+                        ticks: {
+                            color: '#fff'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Memory Usage (MB)',
+                            color: '#fff'
+                        },
+                        ticks: {
+                            color: '#fff'
+                        },
+                        grid: {
+                            drawOnChartArea: false
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#fff'
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                if (context.datasetIndex === 0) {
+                                    return `Cached Torrents: ${context.raw.toLocaleString()}`;
+                                } else {
+                                    return `Memory Usage: ${context.raw.toFixed(2)} MB`;
+                                }
+                            }
                         }
                     }
                 }
@@ -232,6 +346,7 @@ document.addEventListener('DOMContentLoaded', function () {
         renderMetadataCountsChart();
         renderTotalTorrentsCount();
         renderTorrentSourcesChart();
+        renderDebridCacheMetrics();
     };
 
     Chart.register(ChartDataLabels);
