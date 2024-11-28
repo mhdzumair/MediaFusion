@@ -301,6 +301,12 @@ async function getInstallationUrl(isRedirect = false) {
             return null;
         }
 
+        if (data.detail) {
+            hideLoadingWidget();
+            showNotification(data.detail[0].msg, 'error');
+            return null;
+        }
+
         if (!data.encrypted_str) {
             hideLoadingWidget();
             showNotification('An error occurred while encrypting user data', 'error');

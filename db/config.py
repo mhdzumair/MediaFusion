@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import model_validator, Field
 from pydantic_settings import BaseSettings
 
@@ -20,6 +22,24 @@ class Settings(BaseSettings):
     )
     is_public_instance: bool = False
     poster_host_url: str | None = None
+
+    # Streaming Provider Toggles
+    disabled_providers: list[
+        Literal[
+            "p2p",
+            "realdebrid",
+            "seedr",
+            "debridlink",
+            "alldebrid",
+            "offcloud",
+            "pikpak",
+            "torbox",
+            "premiumize",
+            "qbittorrent",
+            "stremthru",
+            "easydebrid",
+        ]
+    ] = Field(default_factory=list)
 
     # Database and Cache Settings
     mongo_uri: str

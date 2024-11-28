@@ -52,19 +52,85 @@
 
                     <label for="provider_service">Streaming Provider: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                             title="Choose a streaming provider to integrate with the addon. Each has unique features and capabilities."></span></label>
+
+                    {% set providers = [
+                        {
+                            "value": "",
+                            "label": "Direct Torrent (P2P)",
+                            "type": "Free",
+                            "disabled_key": "p2p"
+                        },
+                        {
+                            "value": "pikpak",
+                            "label": "PikPak",
+                            "type": "Free Quota / Premium"
+                        },
+                        {
+                            "value": "seedr",
+                            "label": "Seedr.cc",
+                            "type": "Free Quota / Premium"
+                        },
+                        {
+                            "value": "offcloud",
+                            "label": "OffCloud",
+                            "type": "Free Quota / Premium"
+                        },
+                        {
+                            "value": "torbox",
+                            "label": "Torbox",
+                            "type": "Free Quota / Premium"
+                        },
+                        {
+                            "value": "realdebrid",
+                            "label": "Real-Debrid",
+                            "type": "Premium"
+                        },
+                        {
+                            "value": "debridlink",
+                            "label": "Debrid-Link",
+                            "type": "Premium"
+                        },
+                        {
+                            "value": "premiumize",
+                            "label": "Premiumize",
+                            "type": "Premium"
+                        },
+                        {
+                            "value": "alldebrid",
+                            "label": "AllDebrid",
+                            "type": "Premium"
+                        },
+                        {
+                            "value": "easydebrid",
+                            "label": "EasyDebrid",
+                            "type": "Premium"
+                        },
+                        {
+                            "value": "qbittorrent",
+                            "label": "qBittorrent - WebDav",
+                            "type": "Free/Premium"
+                        },
+                        {
+                            "value": "stremthru",
+                            "label": "StremThru",
+                            "type": "Interface"
+                        }
+                    ] %}
                     <select class="form-control" name="provider_service" id="provider_service" onchange="updateProviderFields(true)">
-                        <option value="" {% if not user_data.streaming_provider.service %}selected{% endif %}>Direct Torrent (Free)</option>
-                        <option value="pikpak" {% if user_data.streaming_provider.service=='pikpak' %}selected{% endif %}>PikPak (Free Quota / Premium)</option>
-                        <option value="seedr" {% if user_data.streaming_provider.service=='seedr' %}selected{% endif %}>Seedr.cc (Free Quota / Premium)</option>
-                        <option value="offcloud" {% if user_data.streaming_provider.service=='offcloud' %}selected{% endif %}>OffCloud (Free Quota / Premium)</option>
-                        <option value="torbox" {% if user_data.streaming_provider.service=='torbox' %}selected{% endif %}>Torbox (Free Quota / Premium)</option>
-                        <option value="realdebrid" {% if user_data.streaming_provider.service=='realdebrid' %}selected{% endif %}>Real-Debrid (Premium)</option>
-                        <option value="debridlink" {% if user_data.streaming_provider.service=='debridlink' %}selected{% endif %}>Debrid-Link (Premium)</option>
-                        <option value="premiumize" {% if user_data.streaming_provider.service=='premiumize' %}selected{% endif %}>Premiumize (Premium)</option>
-                        <option value="alldebrid" {% if user_data.streaming_provider.service=='alldebrid' %}selected{% endif %}>AllDebrid (Premium)</option>
-                        <option value="easydebrid" {% if user_data.streaming_provider.service=='easydebrid' %}selected{% endif %}>EasyDebrid (Premium)</option>
-                        <option value="qbittorrent" {% if user_data.streaming_provider.service=='qbittorrent' %}selected{% endif %}>qBittorrent - WebDav (Free/Premium)</option>
-                        <option value="stremthru" {% if user_data.streaming_provider.service=='stremthru' %}selected{% endif %}>StremThru (Interface)</option>
+                        {% for provider in providers %}
+                            {% set disabled_key = provider.disabled_key or provider.value %}
+                            {% if disabled_key not in disabled_providers %}
+                                <option
+                                        value="{{ provider.value }}"
+                                        {% if (not provider.value and not user_data.streaming_provider.service) or
+                    (provider.value and user_data.streaming_provider.service == provider.value) %}
+                                        selected
+                                        {% endif %}
+                                >
+                                    {{ provider.label }} ({{ provider.type }})
+                                </option>
+                            {% endif %}
+                        {% endfor %}
                     </select>
 
                     <!-- Service URL -->

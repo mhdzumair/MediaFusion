@@ -210,6 +210,7 @@ async def configure(
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
+            "disabled_providers": settings.disabled_providers,
         },
     )
 
@@ -538,6 +539,9 @@ async def get_streams(
     user_data: schemas.UserData = Depends(get_user_data),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
+    if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
+        return {"streams": []}
+
     user_ip = await get_user_public_ip(request, user_data)
     user_feeds = []
     if season is None or episode is None:
@@ -606,6 +610,12 @@ async def get_streams(
 @wrappers.rate_limit(30, 60 * 5, "user_data")
 async def encrypt_user_data(user_data: schemas.UserData, request: Request):
     async def _validate_all_config() -> dict:
+        if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
+            return {
+                "status": "error",
+                "message": "Direct torrent has been disabled by the administrator. You must select a streaming provider.",
+            }
+
         if not settings.is_public_instance and (
             not user_data.api_password
             or user_data.api_password != settings.api_password

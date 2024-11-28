@@ -3,6 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
+from db.config import settings
 from db.models import TorrentStreams
 from utils import const
 
@@ -151,6 +152,11 @@ class StreamingProvider(BaseModel):
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
+        if self.service in settings.disabled_providers:
+            raise ValueError(
+                f"The streaming provider '{self.service}' has been disabled by the administrator"
+            )
+
         # validating the token or (email and password) or qbittorrent_config
         required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
             self.service, const.STREAMING_SERVICE_REQUIREMENTS["default"]

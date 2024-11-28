@@ -12,7 +12,9 @@ from apscheduler.triggers.cron import CronTrigger
 from dramatiq.middleware import Retries as OriginalRetries, Shutdown, SkipMessage
 from fastapi.requests import Request
 from fastapi.responses import Response
+from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from starlette.routing import Match
 
 from db.config import settings
@@ -57,14 +59,25 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         endpoint = await find_route_handler(request.app, request)
         secret_str = request.path_params.get("secret_str")
         # Decrypt and parse the UserData from secret_str
-        user_data = crypto.decrypt_user_data(secret_str)
+        try:
+            user_data = crypto.decrypt_user_data(secret_str)
+        except ValidationError as error:
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "message": error.errors()[0]["msg"],
+                }
+            )
 
         # validate api password if set
         if settings.is_public_instance is False:
             is_auth_required = getattr(endpoint, "auth_required", False)
             if is_auth_required and user_data.api_password != settings.api_password:
-                return Response(
-                    content="Unauthorized",
+                return JSONResponse(
+                    {
+                        "status": "error",
+                        "message": "Unauthorized",
+                    },
                     status_code=401,
                     headers=const.NO_CACHE_HEADERS,
                 )

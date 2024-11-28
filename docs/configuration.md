@@ -17,6 +17,9 @@ These settings define the basic configuration and identity of your MediaFusion i
 - **logo_url** (default: GitHub RAW Addon URL): The URL of the MediaFusion logo.
 - **is_public_instance** (default: `False`): Set to `True` for community instances that do not require authentication to access the data but protect the `/scraper` endpoint and uploading live TV data endpoints.
 
+## Streaming Provider Settings
+- **disabled_providers** (default: `[]`): A list of disabled streaming providers. The providers in this list will not be scraped. e.g. `'["p2p", "pikpak", "easydebrid"]'`
+
 ## Database and Cache Settings
 
 These settings control the database and caching behavior of MediaFusion.

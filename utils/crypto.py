@@ -2,7 +2,6 @@ import base64
 import hashlib
 import json
 import time
-
 import zlib
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 
@@ -54,11 +53,9 @@ def encrypt_user_data(user_data: UserData) -> str:
 def decrypt_user_data(secret_str: str | None = None) -> UserData:
     if not secret_str:
         return UserData()
-    try:
-        decrypted_data = decrypt_text(secret_str, SECRET_KEY)
-        user_data = UserData.model_validate_json(decrypted_data)
-    except Exception:
-        user_data = UserData()
+
+    decrypted_data = decrypt_text(secret_str, SECRET_KEY)
+    user_data = UserData.model_validate_json(decrypted_data)
     return user_data
 
 
