@@ -182,7 +182,6 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
     "seedr": "SDR",
     "torbox": "TRB",
     "stremthru": "ST",
-    "easydebrid": "ED",
 }
 
 CERTIFICATION_MAPPING = {

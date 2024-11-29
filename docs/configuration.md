@@ -18,7 +18,7 @@ These settings define the basic configuration and identity of your MediaFusion i
 - **is_public_instance** (default: `False`): Set to `True` for community instances that do not require authentication to access the data but protect the `/scraper` endpoint and uploading live TV data endpoints.
 
 ## Streaming Provider Settings
-- **disabled_providers** (default: `[]`): A list of disabled streaming providers. The providers in this list will not be scraped. e.g. `'["p2p", "pikpak", "easydebrid"]'`
+- **disabled_providers** (default: `[]`): A list of disabled streaming providers. The providers in this list will not be scraped. e.g. `'["p2p", "pikpak"]'`
 
 ## Database and Cache Settings
 

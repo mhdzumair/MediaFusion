@@ -68,11 +68,6 @@ from streaming_providers.stremthru.utils import (
     get_video_url_from_stremthru,
     validate_stremthru_credentials,
 )
-from streaming_providers.easydebrid.utils import (
-    update_easydebrid_cache_status,
-    get_video_url_from_easydebrid,
-    validate_easydebrid_credentials,
-)
 
 # Define provider-specific cache update functions
 CACHE_UPDATE_FUNCTIONS = {
@@ -86,7 +81,6 @@ CACHE_UPDATE_FUNCTIONS = {
     "premiumize": update_pm_cache_status,
     "qbittorrent": update_qbittorrent_cache_status,
     "stremthru": update_st_cache_status,
-    "easydebrid": update_easydebrid_cache_status,
 }
 
 # Define provider-specific downloaded info hashes fetch functions
@@ -129,7 +123,6 @@ GET_VIDEO_URL_FUNCTIONS = {
     "seedr": get_video_url_from_seedr,
     "torbox": get_video_url_from_torbox,
     "stremthru": get_video_url_from_stremthru,
-    "easydebrid": get_video_url_from_easydebrid,
 }
 
 
@@ -144,5 +137,4 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
     "seedr": validate_seedr_credentials,
     "torbox": validate_torbox_credentials,
     "stremthru": validate_stremthru_credentials,
-    "easydebrid": validate_easydebrid_credentials,
 }
