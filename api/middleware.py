@@ -68,6 +68,13 @@ class UserDataMiddleware(BaseHTTPMiddleware):
                     "message": error.errors()[0]["msg"],
                 }
             )
+        except ValueError:
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "message": "Invalid user data",
+                }
+            )
 
         # validate api password if set
         if settings.is_public_instance is False:
