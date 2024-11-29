@@ -516,25 +516,70 @@
 
                     <!-- Stream Sorting Priority -->
                     <div class="mb-3 pro-mode-section" style="display: none;">
-                        <h6>Select & Arrange Sorting Priority: <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                     title="Select and arrange the sorting options that you want to display in Stremio."></span></h6>
+                        <h6>Select & Arrange Sorting Priority:
+                            <span class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                  title="Select and arrange the sorting options. Click to toggle sort direction."></span>
+                        </h6>
 
-                        <div id="streamSortOrder" class="row">
+                        <div id="streamSortOrder" class="row g-3">
+                            {% set tooltip_text = {
+                                'language': 'Sort by preferred languages first|Sort by least preferred languages first',
+                                'cached': 'Show cached results first|Show uncached results first',
+                                'resolution': 'Highest resolution first|Lowest resolution first',
+                                'quality': 'Best quality first|Lower quality first',
+                                'size': 'Largest size first|Smallest size first',
+                                'seeders': 'Most seeders first|Fewest seeders first',
+                                'created_at': 'Newest first|Oldest first'
+                            } %}
                             {% for sorting_option in sorting_options %}
-                                <div class="col-12 col-md-6 col-lg-4 sortable-list" data-id="{{ sorting_option }}">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="selected_sorting_options"
-                                               value="{{ sorting_option }}"
-                                               id="sorting_{{ sorting_option }}"
-                                               {% if sorting_option in user_data.torrent_sorting_priority %}checked{% endif %}>
-                                        <label class="form-check-label" for="sorting_{{ sorting_option }}">
-                                            {{ sorting_option.replace('_', ' ').title() }}
-                                        </label>
+                                {% set active_sort = namespace(found=false, direction='desc') %}
+                                {% for sort in user_data.torrent_sorting_priority %}
+                                    {% if sort.key == sorting_option.key %}
+                                        {% set active_sort.found = true %}
+                                        {% set active_sort.direction = sort.direction %}
+                                    {% endif %}
+                                {% endfor %}
+
+                                <div class="col-12 col-md-6 col-lg-4 sortable-list" data-id="{{ sorting_option.key }}">
+                                    <div class="d-flex align-items-center border rounded p-3 w-100 sort-item {% if active_sort.found %}active{% endif %}">
+                                        <div class="form-check flex-grow-1">
+                                            <input class="form-check-input" type="checkbox" name="selected_sorting_options"
+                                                   value="{{ sorting_option.key }}"
+                                                   id="sorting_{{ sorting_option.key }}"
+                                                   {% if active_sort.found %}checked{% endif %}>
+                                            <label class="form-check-label" for="sorting_{{ sorting_option.key }}">
+                                                {{ sorting_option.key.replace('_', ' ').title() }}
+                                            </label>
+                                        </div>
+
+                                        <!-- Direction toggle button with more descriptive text -->
+                                        <button type="button"
+                                                class="btn btn-outline-primary sort-direction-toggle px-3"
+                                                data-sort-id="{{ sorting_option.key }}"
+                                                data-bs-toggle="tooltip"
+                                                title="{{ tooltip_text[sorting_option.key].split('|')[1 if active_sort.direction == 'asc' else 0] }}" sorting_info="{{ tooltip_text[sorting_option.key] }}"
+                                                {% if not active_sort.found %}disabled{% endif %}>
+                        <span class="sort-text">
+                            {% if active_sort.direction == 'asc' %}
+                                <i class="bi bi-sort-up-alt"></i>
+                                <span class="d-none d-sm-inline ms-1">{{ tooltip_text[sorting_option.key].split('|')[1] }}</span>
+                            {% else %}
+                                <i class="bi bi-sort-down"></i>
+                                <span class="d-none d-sm-inline ms-1">{{ tooltip_text[sorting_option.key].split('|')[0] }}</span>
+                            {% endif %}
+                        </span>
+                                        </button>
+
+                                        <input type="hidden"
+                                               name="sorting_direction_{{ sorting_option.key }}"
+                                               id="direction_{{ sorting_option.key }}"
+                                               value="{{ active_sort.direction }}">
                                     </div>
                                 </div>
                             {% endfor %}
                         </div>
                     </div>
+
 
                     <!-- Preferred Language Sorting -->
                     <div class="mb-3" id="languageSortSection" style="display:none;">

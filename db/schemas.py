@@ -173,6 +173,11 @@ class StreamingProvider(BaseModel):
         populate_by_name = True
 
 
+class SortingOption(BaseModel):
+    key: str
+    direction: Literal["asc", "desc"] = "desc"
+
+
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
     selected_catalogs: list[str] = Field(
@@ -187,8 +192,11 @@ class UserData(BaseModel):
     max_size: int | str | float = Field(default=math.inf, alias="ms")
     max_streams_per_resolution: int = Field(default=10, alias="mspr")
     show_full_torrent_name: bool = Field(default=True, alias="sftn")
-    torrent_sorting_priority: list[str] = Field(
-        default=const.TORRENT_SORTING_PRIORITY, alias="tsp"
+    torrent_sorting_priority: list[SortingOption] = Field(
+        default_factory=lambda: [
+            SortingOption(key=k) for k in const.TORRENT_SORTING_PRIORITY
+        ],
+        alias="tsp",
     )
     nudity_filter: list[Literal["Disable", "None", "Mild", "Moderate", "Severe"]] = (
         Field(default=["Severe"], alias="nf")
@@ -228,11 +236,21 @@ class UserData(BaseModel):
             return int(v)
         raise ValueError("Invalid max_size")
 
-    @field_validator("torrent_sorting_priority", mode="after")
+    @field_validator("torrent_sorting_priority", mode="before")
     def validate_torrent_sorting_priority(cls, v):
+        # Validate the sorting priority
         for priority in v:
-            if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
-                raise ValueError("Invalid priority")
+            if isinstance(priority, dict):
+                if priority["key"] not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
+                    raise ValueError(f"Invalid priority {priority['key']}")
+            elif isinstance(priority, str):
+                if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
+                    raise ValueError(f"Invalid priority {priority}")
+
+        if isinstance(v, list):
+            # Handle string items (old format)
+            if v and isinstance(v[0], str):
+                return [SortingOption(key=item) for item in v]
         return v
 
     @field_validator("nudity_filter", mode="after")
@@ -256,6 +274,15 @@ class UserData(BaseModel):
             if language not in const.SUPPORTED_LANGUAGES:
                 raise ValueError("Invalid language")
         return v
+
+    def is_sorting_option_present(self, key: str) -> bool:
+        return any(sort.key == key for sort in self.torrent_sorting_priority)
+
+    def get_sorting_direction(self, key: str) -> str:
+        for sort in self.torrent_sorting_priority:
+            if sort.key == key:
+                return sort.direction
+        return "desc"
 
     class Config:
         extra = "ignore"

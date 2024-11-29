@@ -345,7 +345,7 @@ function getUserData() {
     // Validate and collect streaming provider data
     if (provider) {
         if (servicesRequiringUrl.includes(provider)) {
-            const serviceUrl =  document.getElementById('service_url').value.trim();
+            const serviceUrl = document.getElementById('service_url').value.trim();
             validateInput('service_url', validateUrl(serviceUrl));
             streamingProviderData.url = serviceUrl;
         }
@@ -432,8 +432,15 @@ function getUserData() {
         return null; // Return null if validation fails
     }
 
+    // Collect sorting options with their directions
+    const selectedSortingOptions = Array.from(
+        document.querySelectorAll('#streamSortOrder .form-check-input:checked')
+    ).map(el => ({
+        key: el.value,
+        direction: document.getElementById(`direction_${el.value}`).value
+    }));
+
     // Collect and return the rest of the user data
-    const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
     // Collect nudity filter data
@@ -689,6 +696,52 @@ document.addEventListener('DOMContentLoaded', function () {
     setupPasswordToggle('rpdb_api_key', 'toggleRPDBApiKey', 'toggleRPDBApiKeyIcon');
 });
 
+document.addEventListener('DOMContentLoaded', function() {
+
+    // Initialize sort direction toggles
+    const toggleButtons = document.querySelectorAll('.sort-direction-toggle');
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const sortId = this.dataset.sortId;
+            const directionInput = document.getElementById(`direction_${sortId}`);
+            const currentDirection = directionInput.value;
+            const newDirection = currentDirection === 'desc' ? 'asc' : 'desc';
+
+            // Update direction
+            directionInput.value = newDirection;
+
+            // Update button text and icon
+            const iconContainer = this.querySelector('.sort-text');
+            const tooltipTexts = this.attributes['sorting_info'].value.split('|');
+            const newTooltipText = tooltipTexts[newDirection === 'asc' ? 1 : 0];
+
+            this.title = newTooltipText;
+            this.dataset.bsOriginalTitle = newTooltipText;
+
+            iconContainer.innerHTML = `
+                <i class="bi bi-sort-${newDirection === 'asc' ? 'up-alt' : 'down'}"></i>
+                <span class="d-none d-sm-inline ms-1">${newTooltipText}</span>
+            `;
+        });
+    });
+
+    // Enable/disable sort direction buttons based on checkbox state
+    const sortCheckboxes = document.querySelectorAll('[name="selected_sorting_options"]');
+    sortCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const sortId = this.value;
+            const toggleButton = document.querySelector(`[data-sort-id="${sortId}"]`);
+            const sortItem = this.closest('.sort-item');
+
+            toggleButton.disabled = !this.checked;
+            if (this.checked) {
+                sortItem.classList.add('active');
+            } else {
+                sortItem.classList.remove('active');
+            }
+        });
+    });
+});
 
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Sortable on the catalog container

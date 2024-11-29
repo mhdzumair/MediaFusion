@@ -25,6 +25,7 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import crud, database, schemas
 from db.config import settings
+from db.schemas import SortingOption
 from kodi.routes import kodi_router
 from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
@@ -183,9 +184,9 @@ async def configure(
     )
 
     sorted_sorting_options = user_data.torrent_sorting_priority + [
-        option
+        SortingOption(key=option)
         for option in const.TORRENT_SORTING_PRIORITY_OPTIONS
-        if option not in user_data.torrent_sorting_priority
+        if not user_data.is_sorting_option_present(option)
     ]
 
     # Sort languages based on user preference
