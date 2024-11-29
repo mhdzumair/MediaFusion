@@ -12,7 +12,7 @@ from thefuzz import fuzz
 
 from db.config import settings
 from db.models import TorrentStreams, TVStreams
-from db.schemas import Stream, UserData, SortingOption
+from db.schemas import Stream, StreamingProvider, UserData, SortingOption
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import (
     get_cached_status,
@@ -25,6 +25,13 @@ from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS, MANIFEST_TEMPLATE
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
+def get_cache_service_name(streaming_provider: StreamingProvider):
+    """
+    get service name to use for redis cache retrieval
+    """ 
+    if streaming_provider.service == "stremthru" and streaming_provider.stremthru_store_name:
+        return streaming_provider.stremthru_store_name
+    return streaming_provider.service
 
 async def filter_and_sort_streams(
     streams: list[TorrentStreams], user_data: UserData, user_ip: str | None = None
@@ -87,7 +94,8 @@ async def filter_and_sort_streams(
         info_hashes = [stream.id for stream in filtered_streams]
 
         # First check Redis cache
-        cached_statuses = await get_cached_status(service, info_hashes)
+        cache_service = get_cache_service_name(user_data.streaming_provider)
+        cached_statuses = await get_cached_status(cache_service, info_hashes)
 
         # Update streams with cached status from Redis
         uncached_streams = []

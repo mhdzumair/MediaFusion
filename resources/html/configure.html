@@ -138,6 +138,53 @@
                         </div>
                     </div>
 
+                    <!-- StremThru Configuration -->
+                    <div id="stremthru_config" style="display:none" class="mb-4">
+                        <label for="stremthru_store_name">Store Name:</label>
+
+                        {% set stremthru_stores = [
+                            {
+                                "value": "",
+                                "label": "",
+                            },
+                            {
+                                "value": "torbox",
+                                "label": "Torbox",
+                            },
+                            {
+                                "value": "realdebrid",
+                                "label": "Real-Debrid",
+                            },
+                            {
+                                "value": "debridlink",
+                                "label": "Debrid-Link",
+                            },
+                            {
+                                "value": "premiumize",
+                                "label": "Premiumize",
+                            },
+                            {
+                                "value": "alldebrid",
+                                "label": "AllDebrid",
+                            },
+                        ] %}
+                        <select class="form-control" name="stremthru_store_name" id="stremthru_store_name">
+                            {% for store in stremthru_stores %}
+                                {% if store.value not in disabled_providers %}
+                                    <option
+                                            value="{{ store.value }}"
+                                            {% if (not store.value and not user_data.streaming_provider.stremthru_store_name) or
+                        (store.value and user_data.streaming_provider.stremthru_store_name == store.value) %}
+                                            selected
+                                            {% endif %}
+                                    >
+                                        {{ store.label }}
+                                    </option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+
                     <!-- Affiliate Signup Links -->
                     <div id="signup_section" style="display:none" class="mb-4">
                         <h6>Don't have an account?</h6>

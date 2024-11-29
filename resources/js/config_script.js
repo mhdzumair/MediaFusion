@@ -203,6 +203,7 @@ function updateProviderFields(isChangeEvent = false) {
     }
 
     // Toggle visibility of credentials and token input based on provider
+    setElementDisplay('stremthru_config', provider === 'stremthru' ? 'block' : 'none');
     if (provider) {
         if (servicesRequiringCredentials.includes(provider)) {
             setElementDisplay('credentials', 'block');
@@ -348,6 +349,9 @@ function getUserData() {
             const serviceUrl = document.getElementById('service_url').value.trim();
             validateInput('service_url', validateUrl(serviceUrl));
             streamingProviderData.url = serviceUrl;
+        }
+        if (provider === 'stremthru') {
+            streamingProviderData.stremthru_store_name = document.getElementById('stremthru_store_name').value.trim() || null;
         }
         if (servicesRequiringCredentials.includes(provider)) {
             validateInput('email', document.getElementById('email').value);

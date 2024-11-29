@@ -18,7 +18,7 @@ async def store_cached_info_hashes(service: str, info_hashes: List[str]) -> None
         service: The debrid service name (e.g., 'realdebrid', 'alldebrid')
         info_hashes: List of info hashes that are confirmed to be cached
     """
-    if not info_hashes:
+    if not info_hashes or service == "stremthru":
         return
 
     try:
