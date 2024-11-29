@@ -174,8 +174,12 @@ class StreamingProvider(BaseModel):
 
 
 class SortingOption(BaseModel):
-    key: str
-    direction: Literal["asc", "desc"] = "desc"
+    key: str = Field(alias="k")
+    direction: Literal["asc", "desc"] = Field(default="desc", alias="d")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
 
 
 class UserData(BaseModel):
