@@ -1,4 +1,3 @@
-import re
 from datetime import timedelta
 from typing import Dict, Any, List
 
@@ -43,14 +42,7 @@ class TorrentioScraper(StremioScraper):
             descriptions = stream.get("title")
             torrent_name = descriptions.splitlines()[0]
             metadata = PTT.parse_title(torrent_name, True)
-
-            addon_name = stream["name"].split()[0].title()
-            source_match = re.search(r"⚙️.*", descriptions)
-            source = (
-                source_match.group(0).removeprefix("⚙️ ").strip() if source_match else ""
-            )
-            if addon_name not in source:
-                source = f"{addon_name} | {source}"
+            source = stream["name"].split()[0].title()
 
             return {
                 "torrent_name": torrent_name,

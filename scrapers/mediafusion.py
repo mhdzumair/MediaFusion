@@ -39,11 +39,7 @@ class MediafusionScraper(StremioScraper):
         description = stream["description"].splitlines()
         torrent_name = description[0]
         metadata = PTT.parse_title(torrent_name, True)
-
-        addon_name = stream["name"].split()[0].title()
-        source = description[-1].removeprefix("🔗 ")
-        if addon_name not in source:
-            source = f"{addon_name} | {source}"
+        source = stream["name"].split()[0].title()
 
         return {
             "torrent_name": torrent_name,
