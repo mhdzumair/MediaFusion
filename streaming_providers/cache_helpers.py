@@ -36,6 +36,10 @@ async def store_cached_info_hashes(
     if not info_hashes:
         return
 
+    if streaming_provider.service == "stremthru":
+        # Don't cache info hashes for StremThru
+        return
+
     service = get_cache_service_name(streaming_provider)
 
     try:

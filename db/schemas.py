@@ -140,13 +140,16 @@ class StreamingProvider(BaseModel):
         "qbittorrent",
         "stremthru",
     ] = Field(alias="sv")
-    stremthru_store_name: Literal[
-        "realdebrid",
-        "debridlink",
-        "alldebrid",
-        "torbox",
-        "premiumize",
-    ] | None = Field(default=None, alias="stsn")
+    stremthru_store_name: (
+        Literal[
+            "realdebrid",
+            "debridlink",
+            "alldebrid",
+            "torbox",
+            "premiumize",
+        ]
+        | None
+    ) = Field(default=None, alias="stsn")
     url: HttpUrl | None = Field(default=None, alias="u")
     token: str | None = Field(default=None, alias="tk")
     email: str | None = Field(default=None, alias="em")
@@ -252,8 +255,9 @@ class UserData(BaseModel):
         # Validate the sorting priority
         for priority in v:
             if isinstance(priority, dict):
-                if priority["key"] not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
-                    raise ValueError(f"Invalid priority {priority['key']}")
+                key = priority.get("k", priority.get("key"))
+                if key not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
+                    raise ValueError(f"Invalid priority {key}")
             elif isinstance(priority, str):
                 if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
                     raise ValueError(f"Invalid priority {priority}")
