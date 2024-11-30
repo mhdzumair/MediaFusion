@@ -5,7 +5,7 @@ import time
 from redis.asyncio import Redis
 from redis.exceptions import LockNotOwnedError
 
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 scheduler_lock_key = "mediafusion_scheduler_lock"
 heartbeat_key = "mediafusion_scheduler_heartbeat"

@@ -17,6 +17,9 @@ These settings define the basic configuration and identity of your MediaFusion i
 - **logo_url** (default: GitHub RAW Addon URL): The URL of the MediaFusion logo.
 - **is_public_instance** (default: `False`): Set to `True` for community instances that do not require authentication to access the data but protect the `/scraper` endpoint and uploading live TV data endpoints.
 
+## Streaming Provider Settings
+- **disabled_providers** (default: `[]`): A list of disabled streaming providers. The providers in this list will not be scraped. e.g. `'["p2p", "pikpak"]'`
+
 ## Database and Cache Settings
 
 These settings control the database and caching behavior of MediaFusion.
@@ -32,6 +35,7 @@ These URLs define the locations of various external services used by MediaFusion
 - **poster_host_url** (default: Use the Host URL value): The URL where poster images are served from. Use the same value as `host_url` if posters are served from the same location.
 - **scraper_proxy_url**: The proxy URL for the scraper, if any.
 - **torrentio_url** (default: `"https://torrentio.strem.fun"`): The Torrentio / KightCrawler URL.
+- **mediafusion_url** (default: `"https://mediafusion.elfhosted.com"`): The Mediafusion URL.
 - **playwright_cdp_url** (default: `"ws://browserless:3000?blockAds=true&stealth=true"`): The URL for the Playwright CDP (Chrome DevTools Protocol) service.
 - **flaresolverr_url** (default: `"http://flaresolverr:8191/v1"`): The URL for the FlareSolverr service.
 
@@ -72,10 +76,10 @@ These settings define where MediaFusion looks for its configuration files.
 These boolean flags control various features of MediaFusion.
 
 - **is_scrap_from_torrentio** (default: `False`): Enable or disable scraping from Torrentio.
+- **is_scrap_from_mediafusion** (default: `False`): Enable or disable scraping from Mediafusion. Currently supports scraping movies and series only.
 - **is_scrap_from_zilean** (default: `False`): Enable or disable scraping from Zilean.
 - **enable_rate_limit** (default: `True`): Enable or disable rate limiting.
 - **validate_m3u8_urls_liveness** (default: `True`): Enable or disable the validation of M3U8 URLs for liveness.
-- **disable_download_via_browser** (default: `False`): If set to `True`, disables downloads through the browser.
 
 ## Content Filtering
 
@@ -88,6 +92,7 @@ Settings related to content filtering and moderation.
 These settings control various time-based behaviors in the application.
 
 - **torrentio_search_interval_days** (default: 3): How often Torrentio searches are initiated, in days.
+- **mediafusion_search_interval_days** (default: 3): How often Mediafusion searches are initiated, in days.
 - **meta_cache_ttl** (default: 1800): The time-to-live (TTL) for cached metadata, in seconds (30 minutes by default).
 - **worker_max_tasks_per_child** (default: 20): The maximum number of tasks per dramatiq worker child process. This setting helps prevent memory leaks.
 

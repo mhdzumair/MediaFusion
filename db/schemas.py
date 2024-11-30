@@ -3,6 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
+from db.config import settings
 from db.models import TorrentStreams
 from utils import const
 
@@ -139,6 +140,13 @@ class StreamingProvider(BaseModel):
         "qbittorrent",
         "stremthru",
     ] = Field(alias="sv")
+    stremthru_store_name: Literal[
+        "realdebrid",
+        "debridlink",
+        "alldebrid",
+        "torbox",
+        "premiumize",
+    ] | None = Field(default=None, alias="stsn")
     url: HttpUrl | None = Field(default=None, alias="u")
     token: str | None = Field(default=None, alias="tk")
     email: str | None = Field(default=None, alias="em")
@@ -150,6 +158,11 @@ class StreamingProvider(BaseModel):
 
     @model_validator(mode="after")
     def validate_token_or_username_password(self) -> "StreamingProvider":
+        if self.service in settings.disabled_providers:
+            raise ValueError(
+                f"The streaming provider '{self.service}' has been disabled by the administrator"
+            )
+
         # validating the token or (email and password) or qbittorrent_config
         required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
             self.service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
@@ -161,6 +174,15 @@ class StreamingProvider(BaseModel):
                 raise ValueError(f"{field} is required")
 
         return self
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
+class SortingOption(BaseModel):
+    key: str = Field(alias="k")
+    direction: Literal["asc", "desc"] = Field(default="desc", alias="d")
 
     class Config:
         extra = "ignore"
@@ -181,8 +203,11 @@ class UserData(BaseModel):
     max_size: int | str | float = Field(default=math.inf, alias="ms")
     max_streams_per_resolution: int = Field(default=10, alias="mspr")
     show_full_torrent_name: bool = Field(default=True, alias="sftn")
-    torrent_sorting_priority: list[str] = Field(
-        default=const.TORRENT_SORTING_PRIORITY, alias="tsp"
+    torrent_sorting_priority: list[SortingOption] = Field(
+        default_factory=lambda: [
+            SortingOption(key=k) for k in const.TORRENT_SORTING_PRIORITY
+        ],
+        alias="tsp",
     )
     nudity_filter: list[Literal["Disable", "None", "Mild", "Moderate", "Severe"]] = (
         Field(default=["Severe"], alias="nf")
@@ -222,11 +247,21 @@ class UserData(BaseModel):
             return int(v)
         raise ValueError("Invalid max_size")
 
-    @field_validator("torrent_sorting_priority", mode="after")
+    @field_validator("torrent_sorting_priority", mode="before")
     def validate_torrent_sorting_priority(cls, v):
+        # Validate the sorting priority
         for priority in v:
-            if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
-                raise ValueError("Invalid priority")
+            if isinstance(priority, dict):
+                if priority["key"] not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
+                    raise ValueError(f"Invalid priority {priority['key']}")
+            elif isinstance(priority, str):
+                if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
+                    raise ValueError(f"Invalid priority {priority}")
+
+        if isinstance(v, list):
+            # Handle string items (old format)
+            if v and isinstance(v[0], str):
+                return [SortingOption(key=item) for item in v]
         return v
 
     @field_validator("nudity_filter", mode="after")
@@ -250,6 +285,15 @@ class UserData(BaseModel):
             if language not in const.SUPPORTED_LANGUAGES:
                 raise ValueError("Invalid language")
         return v
+
+    def is_sorting_option_present(self, key: str) -> bool:
+        return any(sort.key == key for sort in self.torrent_sorting_priority)
+
+    def get_sorting_direction(self, key: str) -> str:
+        for sort in self.torrent_sorting_priority:
+            if sort.key == key:
+                return sort.direction
+        return "desc"
 
     class Config:
         extra = "ignore"
@@ -316,6 +360,9 @@ class ScraperTask(BaseModel):
         "streambtw",
         "dlhd",
         "motogp_tgx",
+        "arab_torrents",
+        "wwe_tgx",
+        "ufc_tgx",
     ]
     pages: int | None = 1
     start_page: int | None = 1

@@ -12,8 +12,12 @@ from thefuzz import fuzz
 
 from db.config import settings
 from db.models import TorrentStreams, TVStreams
-from db.schemas import Stream, UserData
+from db.schemas import Stream, StreamingProvider, UserData, SortingOption
 from streaming_providers import mapper
+from streaming_providers.cache_helpers import (
+    get_cached_status,
+    store_cached_info_hashes,
+)
 from utils import const
 from utils.config import config_manager
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
@@ -79,49 +83,83 @@ async def filter_and_sort_streams(
 
     # Step 2: Update cache status based on provider
     if user_data.streaming_provider:
-        cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(
-            user_data.streaming_provider.service
+        service = user_data.streaming_provider.service
+        info_hashes = [stream.id for stream in filtered_streams]
+
+        # First check Redis cache
+        cached_statuses = await get_cached_status(
+            user_data.streaming_provider, info_hashes
         )
-        kwargs = dict(streams=filtered_streams, user_data=user_data, user_ip=user_ip)
-        if cache_update_function:
-            try:
-                await cache_update_function(**kwargs)
-            except Exception as error:
-                logging.exception(
-                    f"Failed to update cache status for {user_data.streaming_provider.service}: {error}"
-                )
+
+        # Update streams with cached status from Redis
+        uncached_streams = []
+        for stream in filtered_streams:
+            if cached_statuses.get(stream.id, False):
+                stream.cached = True
+            else:
+                stream.cached = False
+                uncached_streams.append(stream)
+
+        # For streams not found in Redis cache, use provider's cache check
+        if uncached_streams:
+            cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(service)
+            if cache_update_function:
+                try:
+                    await cache_update_function(
+                        streams=uncached_streams, user_data=user_data, user_ip=user_ip
+                    )
+                    # Store only the cached ones in Redis
+                    cached_info_hashes = [
+                        stream.id for stream in uncached_streams if stream.cached
+                    ]
+                    if cached_info_hashes:
+                        await store_cached_info_hashes(
+                            user_data.streaming_provider, cached_info_hashes
+                        )
+                except Exception as error:
+                    logging.exception(
+                        f"Failed to update cache status for {service}: {error}"
+                    )
 
         if user_data.streaming_provider.only_show_cached_streams:
             filtered_streams = [stream for stream in filtered_streams if stream.cached]
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(torrent_stream: TorrentStreams) -> tuple:
-        def key_value(key: str) -> Any:
+        def key_value(sorting_option: SortingOption) -> Any:
+            key = sorting_option.key
+            multiplier = 1 if sorting_option.direction == "asc" else -1
+
             match key:
                 case "cached":
-                    return torrent_stream.cached or False
+                    return multiplier * (1 if torrent_stream.cached else 0)
                 case "resolution":
-                    return const.RESOLUTION_RANKING.get(
+                    return multiplier * const.RESOLUTION_RANKING.get(
                         torrent_stream.filtered_resolution, 0
                     )
                 case "quality":
-                    return const.QUALITY_RANKING.get(torrent_stream.filtered_quality, 0)
+                    return multiplier * const.QUALITY_RANKING.get(
+                        torrent_stream.filtered_quality, 0
+                    )
                 case "size":
-                    return torrent_stream.size
+                    return multiplier * torrent_stream.size
                 case "seeders":
-                    return torrent_stream.seeders or 0
+                    return multiplier * (torrent_stream.seeders or 0)
                 case "created_at":
                     created_at = torrent_stream.created_at
                     if isinstance(created_at, datetime):
                         if created_at.tzinfo is None:
                             created_at = created_at.replace(tzinfo=timezone.utc)
-                        return created_at
+                        return multiplier * created_at.timestamp()
                     elif isinstance(created_at, (int, float)):
-                        return datetime.fromtimestamp(created_at, tz=timezone.utc)
+                        return multiplier * created_at
                     else:
-                        return datetime.min.replace(tzinfo=timezone.utc)
+                        return (
+                            multiplier
+                            * datetime.min.replace(tzinfo=timezone.utc).timestamp()
+                        )
                 case "language":
-                    return -min(
+                    return multiplier * -min(
                         (
                             user_data.language_sorting.index(lang)
                             for lang in torrent_stream.filtered_languages
@@ -130,17 +168,18 @@ async def filter_and_sort_streams(
                         default=len(user_data.language_sorting),
                     )
                 case _ if key in torrent_stream.model_fields_set:
-                    return getattr(torrent_stream, key, 0)
+                    value = getattr(torrent_stream, key, 0)
+                    return multiplier * (value if value is not None else 0)
                 case _:
                     return 0
 
-        return tuple(key_value(key) for key in user_data.torrent_sorting_priority)
+        return tuple(key_value(option) for option in user_data.torrent_sorting_priority)
 
     try:
-        dynamically_sorted_streams = sorted(
-            filtered_streams, key=dynamic_sort_key, reverse=True
-        )
-    except (TypeError, Exception):
+        # Sort streams based on the dynamic key
+        dynamically_sorted_streams = sorted(filtered_streams, key=dynamic_sort_key)
+
+    except Exception:
         logging.exception(
             f"torrent_sorting_priority: {user_data.torrent_sorting_priority}: sort data: {[dynamic_sort_key(stream) for stream in filtered_streams]}"
         )
@@ -181,9 +220,7 @@ async def parse_stream_data(
     )
     has_streaming_provider = user_data.streaming_provider is not None
     download_via_browser = (
-        has_streaming_provider
-        and user_data.streaming_provider.download_via_browser
-        and not settings.disable_download_via_browser
+        has_streaming_provider and user_data.streaming_provider.download_via_browser
     )
 
     base_proxy_url_template = ""

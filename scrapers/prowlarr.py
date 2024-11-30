@@ -21,7 +21,8 @@ from scrapers.base_scraper import BaseScraper
 from scrapers.imdb_data import get_episode_by_date, get_season_episodes
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
-from utils.runtime_const import REDIS_ASYNC_CLIENT, PROWLARR_SEARCH_TTL
+from utils.runtime_const import PROWLARR_SEARCH_TTL
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.torrent import extract_torrent_metadata
 from utils.wrappers import minimum_run_interval
 
@@ -150,24 +151,6 @@ class ProwlarrScraper(BaseScraper):
                 half_open_attempts=1,
             )
         return self.indexer_circuit_breakers[indexer_id]
-
-    async def log_indexer_status(self):
-        """Log the current status of all indexers and their circuit breakers"""
-        status_lines = ["Current Indexer Status:"]
-
-        for indexer_id, status in self.indexer_status.items():
-            circuit_breaker = self.indexer_circuit_breakers.get(indexer_id)
-            if circuit_breaker:
-                cb_status = circuit_breaker.get_status()
-                status_lines.append(
-                    f"Indexer {status.get('name', f'ID:{indexer_id}')}:\n"
-                    f"  Health: {'Healthy' if status.get('is_healthy') else 'Unhealthy'}\n"
-                    f"  Circuit Breaker: {cb_status['state']}\n"
-                    f"  Failures: {cb_status['failures']}\n"
-                    f"  Accepting Requests: {cb_status['is_accepting_requests']}"
-                )
-
-        self.logger.info("\n".join(status_lines))
 
     @BaseScraper.cache(ttl=PROWLARR_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
@@ -1046,7 +1029,6 @@ async def background_movie_title_search(
         # Log final metrics and indexer status
         scraper.metrics.stop()
         scraper.metrics.log_summary(scraper.logger)
-        await scraper.log_indexer_status()
 
         scraper.logger.info(
             f"Background title search completed for {metadata.title} ({metadata.year})"
@@ -1143,7 +1125,6 @@ async def background_series_title_search(
         # Log final metrics and indexer status
         scraper.metrics.stop()
         scraper.metrics.log_summary(scraper.logger)
-        await scraper.log_indexer_status()
 
         scraper.logger.info(
             f"Background title search completed for {metadata.title} S{season}E{episode}"

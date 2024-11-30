@@ -42,72 +42,127 @@
                     <div id="torrentUploadParameters" style="display: none;">
                         <div class="mb-3">
                             <label for="torrentImdbId" class="form-label">IMDb ID</label>
-                            <input type="text" class="form-control" id="torrentImdbId" name="meta_id" maxlength="10" placeholder="Enter IMDb ID (e.g., tt1234567)"
+                            <input type="text" class="form-control" id="torrentImdbId" name="torrentImdbId" maxlength="10" placeholder="Enter IMDb ID (e.g., tt1234567)"
                                    value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
                         </div>
                         <div class="mb-3">
                             <label for="metaType" class="form-label">Meta Type</label>
-                            <select class="form-select" id="metaType" name="meta_type" onchange="updateMetaType()">
+                            <select class="form-select" id="metaType" name="metaType" onchange="updateMetaType()" required>
                                 <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
                                 <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="source" class="form-label">Source</label>
-                            <input type="text" class="form-control" id="source" name="source" placeholder="Enter Source Name Where Torrent was Found or Uploader Name" maxlength="20">
+                            <label for="createdAt" class="form-label">Created At</label>
+                            <input type="date" class="form-control" id="createdAt" name="createdAt" required>
                         </div>
+
+                        <!-- Languages Selection -->
                         <div class="mb-3">
-                            <label class="form-label">Catalogs</label>
+                            <label class="form-label">Languages (Optional)</label>
+                            <div class="alert alert-info" role="alert">
+                                <i class="bi bi-info-circle"></i> Selecting languages helps to filter & sort content but is optional
+                            </div>
                             <div class="row">
-                                <div id="catalogsMovie" style="display: none;">
-                                    <div class="row">
-                                        {% for catalog in supported_movie_catalog_ids %}
-                                            <div class="col-12 col-md-6 col-lg-4">
-                                                <div class="form-check mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="catalogMovie{{ loop.index }}" name="catalogs" value="{{ catalog }}">
-                                                    <label class="form-check-label" for="catalogMovie{{ loop.index }}">{{ catalog_data.get(catalog) }}</label>
-                                                </div>
-                                            </div>
-                                        {% endfor %}
+                                {% for language in supported_languages %}
+                                    <div class="col-md-3 col-sm-6">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="languages" value="{{ language }}" id="lang-{{ language }}">
+                                            <label class="form-check-label" for="lang-{{ language }}">{{ language }}</label>
+                                        </div>
                                     </div>
-                                </div>
-                                <div id="catalogsSeries" style="display: none;">
-                                    <div class="row">
-                                        {% for catalog in supported_series_catalog_ids %}
-                                            <div class="col-12 col-md-6 col-lg-4">
-                                                <div class="form-check mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="catalogSeries{{ loop.index }}" name="catalogs" value="{{ catalog }}">
-                                                    <label class="form-check-label" for="catalogSeries{{ loop.index }}">{{ catalog_data.get(catalog) }}</label>
-                                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">Select the languages available in this torrent</div>
+                        </div>
+
+                        <!-- Catalogs Selection -->
+                        <div class="mb-3">
+                            <label class="form-label">Catalogs (Optional)</label>
+                            <div class="alert alert-info" role="alert">
+                                <i class="bi bi-info-circle"></i> Selecting catalogs helps organize content but is optional
+                            </div>
+
+                            <div id="catalogsMovie" style="display: none;">
+                                <div class="row">
+                                    {% for catalog in supported_movie_catalog_ids %}
+                                        <div class="col-12 col-md-6 col-lg-4">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" name="catalogs" value="{{ catalog }}" id="catalog-{{ catalog }}">
+                                                <label class="form-check-label" for="catalog-{{ catalog }}">
+                                                    {{ catalog_data.get(catalog) }}
+                                                </label>
                                             </div>
-                                        {% endfor %}
-                                    </div>
+                                        </div>
+                                    {% endfor %}
                                 </div>
                             </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="createdAt" class="form-label">Created At</label>
-                            <input type="date" class="form-control" id="createdAt" name="created_at">
-                        </div>
-                        <div class="mb-3" id="seriesParameters" style="display: none;">
-                            <label for="season" class="form-label">Season</label>
-                            <input type="number" class="form-control" id="season" name="season" value="{% if prefill_data.season %}{{ prefill_data.season }}{% endif %}">
-                            <label for="episodes" class="form-label">Episodes</label>
-                            <input type="text" class="form-control" id="episodes" name="episodes" value="{% if prefill_data.episode %}{{ prefill_data.episode }}{% endif %}"
-                                   placeholder="Comma-separated list of episodes or Range of episodes or Single episode number (e.g., 1-5 | 1, 2, 3 | 1)">
-                        </div>
-                        <div class="mb-3">
-                            <label for="magnetLink" class="form-label">Magnet Link</label>
-                            <input type="url" class="form-control" id="magnetLink" name="magnet_link" oninput="toggleInput('torrentFile', this)">
-                        </div>
-                        <div class="mb-3">
-                            <label for="torrentFile" class="form-label">Torrent File</label>
-                            <div class="input-group">
-                                <input type="file" class="form-control" id="torrentFile" name="torrent_file" accept=".torrent" onchange="toggleInput('magnetLink', this)">
-                                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('torrentFile').value=''">Remove</button>
+
+                            <div id="catalogsSeries" style="display: none;">
+                                <div class="row">
+                                    {% for catalog in supported_series_catalog_ids %}
+                                        <div class="col-12 col-md-6 col-lg-4">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" name="catalogs" value="{{ catalog }}" id="catalog-{{ catalog }}">
+                                                <label class="form-check-label" for="catalog-{{ catalog }}">
+                                                    {{ catalog_data.get(catalog) }}
+                                                </label>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
                             </div>
                         </div>
 
+                        <!-- Series Parameters -->
+                        <div id="seriesParameters" class="mb-3" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="season" class="form-label">Season</label>
+                                    <input type="number" class="form-control" id="season" name="season" min="1" value="{% if prefill_data.season %}{{ prefill_data.season }}{% endif %}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="episodes" class="form-label">Episodes</label>
+                                    <input type="text" class="form-control" id="episodes" name="episodes" value="{% if prefill_data.episode %}{{ prefill_data.episode }}{% endif %}"
+                                           placeholder="1,2,3 or 1-10">
+                                    <div class="alert alert-info" role="alert">
+                                        <i class="bi bi-info-circle"></i> Enter episode numbers separated by commas or a range (e.g., 1,2,3 or 1-10)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Upload Methods -->
+                        <div class="mb-4">
+                            <label class="form-label">Upload Method</label>
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-3 text-muted">Recommended: Torrent File Upload</h6>
+                                    <div class="mb-3">
+                                        <label for="torrentFile" class="form-label">Torrent File</label>
+                                        <input type="file" class="form-control" id="torrentFile" name="torrentFile" accept=".torrent"
+                                               onchange="toggleInput('magnetLink', this)">
+                                        <div class="form-text">Upload a .torrent file for better metadata extraction</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Magnet Link (Alternative) -->
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-3 text-muted">Alternative: Magnet Link</h6>
+                                    <div class="mb-3">
+                                        <label for="magnetLink" class="form-label">Magnet Link</label>
+                                        <input type="text" class="form-control" id="magnetLink" name="magnetLink"
+                                               placeholder="magnet:?xt=urn:btih:..." onchange="toggleInput('torrentFile', this)">
+                                        <div class="form-text text-warning">
+                                            <i class="bi bi-exclamation-triangle"></i>
+                                            Note: Magnet links may have limited metadata availability
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <!-- Scrapy Parameters -->
                     <div id="scrapyParameters" style="display: none;">

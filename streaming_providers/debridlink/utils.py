@@ -95,19 +95,11 @@ async def update_dl_cache_status(
     """Updates the cache status of streams based on DebridLink's instant availability."""
 
     try:
-        async with DebridLink(token=user_data.streaming_provider.token) as dl_client:
-            instant_availability_response = (
-                await dl_client.get_torrent_instant_availability(
-                    ",".join([stream.id for stream in streams])
-                )
-            )
-            if "error" in instant_availability_response:
-                return
-
-            for stream in streams:
-                stream.cached = bool(
-                    stream.id in instant_availability_response["value"]
-                )
+        downloaded_hashes = set(
+            await fetch_downloaded_info_hashes_from_dl(user_data, **kwargs)
+        )
+        for stream in streams:
+            stream.cached = stream.id in downloaded_hashes
 
     except ProviderException:
         pass

@@ -20,7 +20,7 @@ from scrapers.prowlarr import (
 from utils.crypto import get_text_hash
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import is_contain_18_plus_keywords
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.wrappers import minimum_run_interval
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,6 @@ async def scrape_prowlarr_feed():
         # Log final metrics and indexer status
         scraper.metrics.stop()
         scraper.metrics.log_summary(logger)
-        await scraper.log_indexer_status()
 
 
 async def process_feed_item(item: dict, scraper: ProwlarrScraper) -> Optional[str]:
@@ -136,7 +135,10 @@ async def process_feed_item(item: dict, scraper: ProwlarrScraper) -> Optional[st
         category_ids = [category["id"] for category in item["categories"]]
         parsed_title_data = scraper.parse_title_data(item["title"])
 
-        if is_contain_18_plus_keywords(item["title"]):
+        if is_contain_18_plus_keywords(item["title"]) or (
+            settings.adult_content_filter_in_torrent_title
+            and parsed_title_data.get("adult")
+        ):
             scraper.metrics.record_skip("Adult Content")
             logger.warning(f"Item {item['title']} contains black listed keywords")
             return item_id

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import model_validator, Field
 from pydantic_settings import BaseSettings
 
@@ -21,10 +23,28 @@ class Settings(BaseSettings):
     is_public_instance: bool = False
     poster_host_url: str | None = None
 
+    # Streaming Provider Toggles
+    disabled_providers: list[
+        Literal[
+            "p2p",
+            "realdebrid",
+            "seedr",
+            "debridlink",
+            "alldebrid",
+            "offcloud",
+            "pikpak",
+            "torbox",
+            "premiumize",
+            "qbittorrent",
+            "stremthru",
+        ]
+    ] = Field(default_factory=list)
+
     # Database and Cache Settings
     mongo_uri: str
     db_max_connections: int = 50
     redis_url: str = "redis://redis-service:6379"
+    redis_max_connections: int = 50
 
     # External Service URLs
     scraper_proxy_url: str | None = None
@@ -47,10 +67,15 @@ class Settings(BaseSettings):
     torrentio_search_interval_days: int = 3
     torrentio_url: str = "https://torrentio.strem.fun"
 
+    # Mediafusion Settings
+    is_scrap_from_mediafusion: bool = False
+    mediafusion_search_interval_days: int = 3
+    mediafusion_url: str = "https://mediafusion.elfhosted.com"
+
     # Zilean Settings
     is_scrap_from_zilean: bool = False
     zilean_search_interval_hour: int = 24
-    zilean_url: str = "http://zilean.zilean:8181"
+    zilean_url: str = "https://zilean.elfhosted.com"
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None
@@ -65,7 +90,6 @@ class Settings(BaseSettings):
     # Feature Toggles
     enable_rate_limit: bool = False
     validate_m3u8_urls_liveness: bool = True
-    disable_download_via_browser: bool = False
 
     # Content Filtering
     adult_content_regex_keywords: str = (
@@ -73,6 +97,7 @@ class Settings(BaseSettings):
         r"(18\s*\+|adults?|porn|sex|xxx|nude|boobs?|pussy|ass|bigass|bigtits?|blowjob|hardfuck|onlyfans?|naked|hot|milf|slut|doggy|anal|threesome|foursome|erotic|sexy|18\s*plus|trailer|RiffTrax|zipx)"
         r"(\b|\s|$|[\]._-])"
     )
+    adult_content_filter_in_torrent_title: bool = True
 
     # Time-related Settings
     meta_cache_ttl: int = 1800  # 30 minutes in seconds

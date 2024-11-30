@@ -480,6 +480,34 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
 }
 
 
+.sort-item {
+    background: rgba(var(--bs-primary-rgb), 0.05);
+    transition: all 0.2s ease;
+}
+
+.sort-item:hover {
+    background: rgba(var(--bs-primary-rgb), 0.1);
+}
+
+.sort-item.active {
+    border-color: var(--bs-primary) !important;
+}
+
+.sort-direction-toggle {
+    min-width: 140px;
+    text-align: left;
+}
+
+.sortable-list {
+    margin-bottom: 0.75rem;
+}
+
+@media (max-width: 576px) {
+    .sort-direction-toggle {
+        min-width: auto;
+    }
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .config-container {

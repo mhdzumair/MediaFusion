@@ -5,7 +5,7 @@ import time
 import httpx
 
 from db import schemas
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 RPDB_SUPPORTED_SET = "rpdb_supported_ids"
 RPDB_UNSUPPORTED_HASH = "rpdb_unsupported_ids"

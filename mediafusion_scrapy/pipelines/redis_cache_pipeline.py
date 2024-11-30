@@ -1,7 +1,7 @@
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 class RedisCacheURLPipeline:

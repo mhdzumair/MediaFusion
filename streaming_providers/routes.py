@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse
 from db import crud, schemas
 from db.config import settings
 from streaming_providers import mapper
+from streaming_providers.cache_helpers import store_cached_info_hashes
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.premiumize.api import router as premiumize_router
@@ -23,7 +24,7 @@ from streaming_providers.seedr.api import router as seedr_router
 from utils import crypto, torrent, wrappers, const
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_user_public_ip, get_user_data, encode_mediaflow_proxy_url
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 # Seconds until when the Video URLs are cached
 URL_CACHE_EXP = 3600
@@ -229,6 +230,7 @@ async def streaming_provider_endpoint(
         video_url = await get_or_create_video_url(
             stream, user_data, info_hash, season, episode, user_ip, background_tasks
         )
+        await store_cached_info_hashes(user_data.streaming_provider, [info_hash])
         await cache_stream_url(cached_stream_url_key, video_url)
         video_url = apply_mediaflow_proxy_if_needed(video_url, user_data)
         redirect_status_code = 302

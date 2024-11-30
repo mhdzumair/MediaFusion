@@ -9,7 +9,8 @@ from db.config import settings
 from db.models import TorrentStreams
 from utils.config import config_manager
 from utils.parser import convert_size_to_bytes
-from utils.runtime_const import SPORTS_ARTIFACTS, REDIS_ASYNC_CLIENT
+from utils.runtime_const import SPORTS_ARTIFACTS
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.torrent import parse_magnet
 
 

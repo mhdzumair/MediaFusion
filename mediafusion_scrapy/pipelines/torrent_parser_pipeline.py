@@ -4,6 +4,7 @@ from scrapy.exceptions import DropItem
 from scrapy.http.request import NO_CALLBACK
 from scrapy.utils.defer import maybe_deferred_to_future
 
+from db.config import settings
 from db.crud import is_torrent_stream_exists
 from utils import torrent
 
@@ -40,6 +41,13 @@ class TorrentDownloadAndParsePipeline:
         torrent_metadata = torrent.extract_torrent_metadata(
             response.body, item.get("is_parse_ptt", True)
         )
+
+        if settings.adult_content_filter_in_torrent_title and torrent_metadata.get(
+            "adult"
+        ):
+            raise DropItem(
+                f"Torrent name contains 18+ keywords: {torrent_metadata['torrent_name']}"
+            )
 
         if not torrent_metadata:
             return item

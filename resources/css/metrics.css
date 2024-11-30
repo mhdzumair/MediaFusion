@@ -23,6 +23,20 @@ body, html {
     transition: padding 0.3s ease;
 }
 
+.torrent-sources-wrapper {
+    position: relative;
+    width: 100%;
+    height: 0;
+    /* Increase padding-bottom for taller chart */
+    padding-bottom: 80%;  /* Increased from 50% to give more vertical space */
+}
+
+.torrent-sources-wrapper canvas {
+    position: absolute;
+    width: 100% !important;
+    height: 100% !important;
+}
+
 .chart-section {
     margin-bottom: 2rem;
 }
@@ -156,6 +170,13 @@ body, html {
     position: relative;
 }
 
+.large-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0;
+}
+
+
 @media (max-width: 768px) {
     .config-container {
         padding: 10px;
@@ -168,6 +189,10 @@ body, html {
 
     h3 {
         font-size: 1.2rem;
+    }
+
+    .torrent-sources-wrapper {
+        padding-bottom: 60%;  /* Slightly smaller for larger screens */
     }
 }
 

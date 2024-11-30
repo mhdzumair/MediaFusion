@@ -20,6 +20,7 @@ from torf import Magnet, MagnetError
 import utils.runtime_const
 from utils.parser import is_contain_18_plus_keywords
 from utils.runtime_const import TRACKERS
+from utils.validation_helper import is_video_file
 
 # remove logging from demagnetize
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
@@ -45,6 +46,8 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
                 if b"files" in info
                 else file[b"name"].decode()
             )
+            if not is_video_file(filename):
+                continue
             parsed_data = PTT.parse_title(filename)
             file_data.append(
                 {

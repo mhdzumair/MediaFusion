@@ -271,6 +271,7 @@ LANGUAGES_FILTERS = [
     "Bengali",
     "Turkish",
     "Greek",
+    "Swedish",
     None,
 ]
 

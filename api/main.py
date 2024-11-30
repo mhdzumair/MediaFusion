@@ -25,6 +25,7 @@ from api import middleware
 from api.scheduler import setup_scheduler
 from db import crud, database, schemas
 from db.config import settings
+from db.schemas import SortingOption
 from kodi.routes import kodi_router
 from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
@@ -44,8 +45,8 @@ from utils.runtime_const import (
     DELETE_ALL_META,
     DELETE_ALL_META_ITEM,
     TEMPLATES,
-    REDIS_ASYNC_CLIENT,
 )
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_mediaflow_proxy_credentials,
     validate_rpdb_token,
@@ -170,6 +171,16 @@ async def configure(
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
         user_data.streaming_provider.password = None
+        user_data.streaming_provider.token = None
+
+        if user_data.streaming_provider.qbittorrent_config:
+            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = None
+            user_data.streaming_provider.qbittorrent_config.webdav_password = None
+
+    # Remove the password from the mediaflow proxy
+    if user_data.mediaflow_config:
+        user_data.mediaflow_config.api_password = None
+
     user_data.api_password = None
 
     # Prepare catalogs based on user preferences or default order
@@ -183,9 +194,9 @@ async def configure(
     )
 
     sorted_sorting_options = user_data.torrent_sorting_priority + [
-        option
+        SortingOption(key=option)
         for option in const.TORRENT_SORTING_PRIORITY_OPTIONS
-        if option not in user_data.torrent_sorting_priority
+        if not user_data.is_sorting_option_present(option)
     ]
 
     # Sort languages based on user preference
@@ -210,7 +221,7 @@ async def configure(
             "authentication_required": settings.api_password is not None
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
-            "disable_download_via_browser": settings.disable_download_via_browser,
+            "disabled_providers": settings.disabled_providers,
         },
     )
 
@@ -539,6 +550,9 @@ async def get_streams(
     user_data: schemas.UserData = Depends(get_user_data),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
+    if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
+        return {"streams": []}
+
     user_ip = await get_user_public_ip(request, user_data)
     user_feeds = []
     if season is None or episode is None:
@@ -607,6 +621,12 @@ async def get_streams(
 @wrappers.rate_limit(30, 60 * 5, "user_data")
 async def encrypt_user_data(user_data: schemas.UserData, request: Request):
     async def _validate_all_config() -> dict:
+        if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
+            return {
+                "status": "error",
+                "message": "Direct torrent has been disabled by the administrator. You must select a streaming provider.",
+            }
+
         if not settings.is_public_instance and (
             not user_data.api_password
             or user_data.api_password != settings.api_password
@@ -731,7 +751,6 @@ async def download_info(
     if (
         not user_data.streaming_provider
         or not user_data.streaming_provider.download_via_browser
-        or settings.disable_download_via_browser
     ):
         raise HTTPException(
             status_code=403,

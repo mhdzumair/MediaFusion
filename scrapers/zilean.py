@@ -81,7 +81,7 @@ class ZileanScraper(BaseScraper):
                 f"Error occurred while filtering {metadata.title}: {filtered_response}"
             )
 
-        self.metrics.record_fetched_item(len(stream_data))
+        self.metrics.record_found_items(len(stream_data))
 
         if not self.validate_response(stream_data):
             self.metrics.record_error("no_valid_streams")

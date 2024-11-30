@@ -10,7 +10,7 @@ from imdb import Cinemagoer
 from db.models import MediaFusionMetaData
 from scrapers.imdb_data import get_imdb_rating
 from utils import const
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 ia = Cinemagoer()
 font_cache = {}

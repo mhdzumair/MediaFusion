@@ -2,7 +2,6 @@ import re
 from datetime import timedelta
 
 from fastapi.templating import Jinja2Templates
-import redis
 
 from db import schemas
 from db.config import settings
@@ -35,21 +34,14 @@ TRACKERS = get_json_data("resources/json/trackers.json")
 
 SECRET_KEY = settings.secret_key.encode("utf-8")
 
-
-REDIS_SYNC_CLIENT: redis.Redis = redis.Redis(
-    connection_pool=redis.ConnectionPool.from_url(settings.redis_url)
-)
-
-REDIS_ASYNC_CLIENT: redis.asyncio.Redis = redis.asyncio.Redis(
-    connection_pool=redis.asyncio.ConnectionPool.from_url(settings.redis_url)
-)
-
-
 PROWLARR_SEARCH_TTL = int(
     timedelta(hours=settings.prowlarr_search_interval_hour).total_seconds()
 )
 TORRENTIO_SEARCH_TTL = int(
     timedelta(days=settings.torrentio_search_interval_days).total_seconds()
+)
+MEDIAFUSION_SEARCH_TTL = int(
+    timedelta(days=settings.mediafusion_search_interval_days).total_seconds()
 )
 ZILEAN_SEARCH_TTL = int(
     timedelta(hours=settings.zilean_search_interval_hour).total_seconds()

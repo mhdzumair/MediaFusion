@@ -178,21 +178,14 @@ async def add_new_torrent(rd_client, magnet_link, info_hash):
 async def update_rd_cache_status(
     streams: list[TorrentStreams], user_data: UserData, user_ip: str, **kwargs
 ):
-    """Updates the cache status of streams based on RealDebrid's instant availability."""
+    """Updates the cache status of streams based on RealDebrid's or Zilean's instant availability."""
 
     try:
-        async with RealDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as rd_client:
-            instant_availability_data = (
-                await rd_client.get_torrent_instant_availability(
-                    [stream.id for stream in streams]
-                )
-            )
-            if not instant_availability_data:
-                return
-            for stream in streams:
-                stream.cached = bool(instant_availability_data.get(stream.id, False))
+        downloaded_hashes = set(
+            await fetch_downloaded_info_hashes_from_rd(user_data, user_ip, **kwargs)
+        )
+        for stream in streams:
+            stream.cached = stream.id in downloaded_hashes
 
     except ProviderException:
         pass

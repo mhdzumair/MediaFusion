@@ -13,7 +13,7 @@ from db.models import (
     MediaFusionSeriesMetaData,
 )
 from db.schemas import TVMetaData
-from utils.runtime_const import REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 class QueueBasedPipeline:

@@ -128,11 +128,6 @@ class DebridLink(DebridClient):
             "GET", f"{self.BASE_URL}/files/{torrent_id}/list"
         )
 
-    async def get_torrent_instant_availability(self, torrent_hash) -> dict[str, Any]:
-        return await self._make_request(
-            "GET", f"{self.BASE_URL}/seedbox/cached", params={"url": torrent_hash}
-        )
-
     async def delete_torrent(self, torrent_id) -> dict[str, Any]:
         return await self._make_request(
             "DELETE", f"{self.BASE_URL}/seedbox/{torrent_id}/delete"

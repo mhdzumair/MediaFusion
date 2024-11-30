@@ -10,7 +10,8 @@ from fastapi.requests import Request
 from db.schemas import UserData
 from utils import crypto
 from utils.crypto import encrypt_data
-from utils.runtime_const import PRIVATE_CIDR, REDIS_ASYNC_CLIENT
+from utils.runtime_const import PRIVATE_CIDR
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 class CircuitBreakerOpenException(Exception):

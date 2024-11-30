@@ -3,6 +3,7 @@ const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
 const servicesRequiringCredentials = ['pikpak',];
 const servicesRequiringUrl = ['stremthru'];
+const servicesNotNeedingDebridProxy = ['stremthru'];
 const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
@@ -13,7 +14,11 @@ const providerSignupLinks = {
     torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
-    stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#stremthru',
+    stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#configuration',
+};
+const providerTokenTooltip = {
+    '*': `Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token.`,
+    stremthru: `Enter the Credential configured using 'STREMTHRU_PROXY_AUTH' config.`,
 };
 
 // ---- OAuth-related Functions ----
@@ -126,6 +131,10 @@ function setElementDisplay(elementId, displayStatus) {
     document.getElementById(elementId).style.display = displayStatus;
 }
 
+function changeTooltipContent(elementId, text) {
+    document.getElementById(elementId).dataset.bsOriginalTitle = text;
+}
+
 function validateUrl(url) {
     // This regex supports domain names, IPv4, and IPv6 addresses
     const urlPattern = /^(https?:\/\/)?(([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}|localhost|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\])(:?\d+)?(\/[-a-z\d%_.~+]*)*(\?[;&a-z\d%_.~+=-]*)?(\#[-a-z\d_]*)?$/i;
@@ -180,6 +189,12 @@ function updateProviderFields(isChangeEvent = false) {
         setElementDisplay('service_url_section', 'none');
     }
 
+    if (servicesNotNeedingDebridProxy.includes(provider)) {
+        setElementDisplay('proxy_debrid_streams_section', 'none');
+    } else {
+        setElementDisplay('proxy_debrid_streams_section', 'block');
+    }
+
     if (provider in providerSignupLinks) {
         document.getElementById('signup_link').href = providerSignupLinks[provider];
         setElementDisplay('signup_section', 'block');
@@ -188,6 +203,7 @@ function updateProviderFields(isChangeEvent = false) {
     }
 
     // Toggle visibility of credentials and token input based on provider
+    setElementDisplay('stremthru_config', provider === 'stremthru' ? 'block' : 'none');
     if (provider) {
         if (servicesRequiringCredentials.includes(provider)) {
             setElementDisplay('credentials', 'block');
@@ -200,6 +216,7 @@ function updateProviderFields(isChangeEvent = false) {
         } else {
             setElementDisplay('credentials', 'none');
             setElementDisplay('token_input', 'block');
+            changeTooltipContent('provider_token_tooltip', providerTokenTooltip[provider] || providerTokenTooltip['*'])
             setElementDisplay('qbittorrent_config', 'none');
         }
         setElementDisplay('streaming_provider_options', 'block');
@@ -284,6 +301,12 @@ async function getInstallationUrl(isRedirect = false) {
             return null;
         }
 
+        if (data.detail) {
+            hideLoadingWidget();
+            showNotification(data.detail[0].msg, 'error');
+            return null;
+        }
+
         if (!data.encrypted_str) {
             hideLoadingWidget();
             showNotification('An error occurred while encrypting user data', 'error');
@@ -323,9 +346,12 @@ function getUserData() {
     // Validate and collect streaming provider data
     if (provider) {
         if (servicesRequiringUrl.includes(provider)) {
-            const serviceUrl =  document.getElementById('service_url').value.trim();
+            const serviceUrl = document.getElementById('service_url').value.trim();
             validateInput('service_url', validateUrl(serviceUrl));
             streamingProviderData.url = serviceUrl;
+        }
+        if (provider === 'stremthru') {
+            streamingProviderData.stremthru_store_name = document.getElementById('stremthru_store_name').value.trim() || null;
         }
         if (servicesRequiringCredentials.includes(provider)) {
             validateInput('email', document.getElementById('email').value);
@@ -376,6 +402,9 @@ function getUserData() {
             proxy_live_streams: document.getElementById('proxy_live_streams').checked,
             proxy_debrid_streams: document.getElementById('proxy_debrid_streams').checked
         };
+        if (servicesNotNeedingDebridProxy.includes(provider)) {
+            mediaflowConfig.proxy_debrid_streams = false;
+        }
         validateInput('mediaflow_proxy_url', validateUrl(mediaflowConfig.proxy_url));
         validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
@@ -407,8 +436,15 @@ function getUserData() {
         return null; // Return null if validation fails
     }
 
+    // Collect sorting options with their directions
+    const selectedSortingOptions = Array.from(
+        document.querySelectorAll('#streamSortOrder .form-check-input:checked')
+    ).map(el => ({
+        key: el.value,
+        direction: document.getElementById(`direction_${el.value}`).value
+    }));
+
     // Collect and return the rest of the user data
-    const selectedSortingOptions = Array.from(document.querySelectorAll('#streamSortOrder .form-check-input:checked')).map(el => el.value);
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
     // Collect nudity filter data
@@ -664,6 +700,52 @@ document.addEventListener('DOMContentLoaded', function () {
     setupPasswordToggle('rpdb_api_key', 'toggleRPDBApiKey', 'toggleRPDBApiKeyIcon');
 });
 
+document.addEventListener('DOMContentLoaded', function() {
+
+    // Initialize sort direction toggles
+    const toggleButtons = document.querySelectorAll('.sort-direction-toggle');
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const sortId = this.dataset.sortId;
+            const directionInput = document.getElementById(`direction_${sortId}`);
+            const currentDirection = directionInput.value;
+            const newDirection = currentDirection === 'desc' ? 'asc' : 'desc';
+
+            // Update direction
+            directionInput.value = newDirection;
+
+            // Update button text and icon
+            const iconContainer = this.querySelector('.sort-text');
+            const tooltipTexts = this.attributes['sorting_info'].value.split('|');
+            const newTooltipText = tooltipTexts[newDirection === 'asc' ? 1 : 0];
+
+            this.title = newTooltipText;
+            this.dataset.bsOriginalTitle = newTooltipText;
+
+            iconContainer.innerHTML = `
+                <i class="bi bi-sort-${newDirection === 'asc' ? 'up-alt' : 'down'}"></i>
+                <span class="d-none d-sm-inline ms-1">${newTooltipText}</span>
+            `;
+        });
+    });
+
+    // Enable/disable sort direction buttons based on checkbox state
+    const sortCheckboxes = document.querySelectorAll('[name="selected_sorting_options"]');
+    sortCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const sortId = this.value;
+            const toggleButton = document.querySelector(`[data-sort-id="${sortId}"]`);
+            const sortItem = this.closest('.sort-item');
+
+            toggleButton.disabled = !this.checked;
+            if (this.checked) {
+                sortItem.classList.add('active');
+            } else {
+                sortItem.classList.remove('active');
+            }
+        });
+    });
+});
 
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Sortable on the catalog container

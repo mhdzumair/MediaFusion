@@ -1,8 +1,8 @@
 import base64
 import hashlib
 import json
+import logging
 import time
-
 import zlib
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 
@@ -12,6 +12,8 @@ from Crypto.Util.Padding import pad
 
 from db.schemas import UserData
 from utils.runtime_const import SECRET_KEY
+
+logger = logging.getLogger(__name__)
 
 
 def encrypt_text(text: str, secret_key: str | bytes) -> str:
@@ -54,11 +56,13 @@ def encrypt_user_data(user_data: UserData) -> str:
 def decrypt_user_data(secret_str: str | None = None) -> UserData:
     if not secret_str:
         return UserData()
+
     try:
         decrypted_data = decrypt_text(secret_str, SECRET_KEY)
-        user_data = UserData.model_validate_json(decrypted_data)
-    except Exception:
-        user_data = UserData()
+    except Exception as e:
+        logger.error(f"Failed to decrypt user data: {e}")
+        raise ValueError("Invalid user data")
+    user_data = UserData.model_validate_json(decrypted_data)
     return user_data
 
 

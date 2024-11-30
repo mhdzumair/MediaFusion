@@ -73,9 +73,15 @@ class Torbox(DebridClient):
         return response_data
 
     async def get_user_torrent_list(self):
-        return await self._make_request(
-            "GET", "/torrents/mylist", params={"bypass_cache": "true"}
+        response = await self._make_request(
+            "GET",
+            "/torrents/mylist",
+            params={"bypass_cache": "true"},
+            is_expected_to_fail=True,
         )
+        if response.get("success"):
+            return response
+        return {"data": []}
 
     async def get_torrent_info(self, magnet_id):
         response = await self.get_user_torrent_list()
