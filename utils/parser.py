@@ -113,7 +113,9 @@ async def filter_and_sort_streams(
                         stream.id for stream in uncached_streams if stream.cached
                     ]
                     if cached_info_hashes:
-                        await store_cached_info_hashes(user_data.streaming_provider, cached_info_hashes)
+                        await store_cached_info_hashes(
+                            user_data.streaming_provider, cached_info_hashes
+                        )
                 except Exception as error:
                     logging.exception(
                         f"Failed to update cache status for {service}: {error}"

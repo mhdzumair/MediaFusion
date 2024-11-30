@@ -70,7 +70,11 @@ async def update_st_cache_status(
 ):
     """Updates the cache status of streams based on StremThru's instant availability."""
 
-    if user_data.streaming_provider.stremthru_store_name in ["realdebrid", "debridlink", "alldebrid"]:
+    if user_data.streaming_provider.stremthru_store_name in [
+        "realdebrid",
+        "debridlink",
+        "alldebrid",
+    ]:
         downloaded_hashes = set(
             await fetch_downloaded_info_hashes_from_st(user_data, **kwargs)
         )

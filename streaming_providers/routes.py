@@ -230,9 +230,7 @@ async def streaming_provider_endpoint(
         video_url = await get_or_create_video_url(
             stream, user_data, info_hash, season, episode, user_ip, background_tasks
         )
-        await store_cached_info_hashes(
-            user_data.streaming_provider, [info_hash]
-        )
+        await store_cached_info_hashes(user_data.streaming_provider, [info_hash])
         await cache_stream_url(cached_stream_url_key, video_url)
         video_url = apply_mediaflow_proxy_if_needed(video_url, user_data)
         redirect_status_code = 302
