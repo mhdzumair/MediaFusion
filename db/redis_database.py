@@ -10,6 +10,7 @@ pool_settings = {
     "health_check_interval": 30,  # Health check every 30 seconds
     "retry_on_timeout": True,
     "decode_responses": False,  # Automatically decode responses to Python strings
+    "retry_on_error": [redis.exceptions.ConnectionError],  # Retry on connection errors
 }
 
 # Create sync client with connection pooling
