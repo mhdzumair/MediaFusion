@@ -171,6 +171,16 @@ async def configure(
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
         user_data.streaming_provider.password = None
+        user_data.streaming_provider.token = None
+
+        if user_data.streaming_provider.qbittorrent_config:
+            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = None
+            user_data.streaming_provider.qbittorrent_config.webdav_password = None
+
+    # Remove the password from the mediaflow proxy
+    if user_data.mediaflow_config:
+        user_data.mediaflow_config.api_password = None
+
     user_data.api_password = None
 
     # Prepare catalogs based on user preferences or default order
