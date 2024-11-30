@@ -35,7 +35,6 @@ class TorrentStreams(Document):
     announce_list: list[str]
     languages: list[str]
     source: str
-    catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
     resolution: Optional[str] = None
@@ -152,6 +151,7 @@ class MediaFusionMetaData(Document):
     description: Optional[str] = None
     runtime: Optional[str] = None
     website: Optional[str] = None
+    catalog: list[str] = Field(default_factory=list)
     genres: Optional[list[str]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.now)
     last_updated_at: datetime = Field(default_factory=datetime.now)

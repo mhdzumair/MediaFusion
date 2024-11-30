@@ -1,9 +1,8 @@
 import asyncio
-import json
 import logging
 from contextlib import asynccontextmanager
 from io import BytesIO
-from typing import Literal, Annotated
+from typing import Literal, Annotated, Optional
 
 import aiohttp
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -19,17 +18,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.responses import HTMLResponse
 
 from api import middleware
 from api.scheduler import setup_scheduler
-from db import crud, database, schemas
+from db import crud, database, schemas, public_schemas, sql_crud
 from db.config import settings
+from db.database import get_async_session
+from db.enums import MediaType
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import SortingOption
+from db.schemas import UserData
 from kodi.routes import kodi_router
 from metrics.routes import metrics_router
 from scrapers.routes import router as scrapers_router
-from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
+from scrapers.rpdb import update_rpdb_posters
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
 from streaming_providers.validator import validate_provider_credentials
@@ -40,13 +44,11 @@ from utils.lock import (
     release_scheduler_lock,
 )
 from utils.network import get_request_namespace, get_user_public_ip, get_user_data
-from utils.parser import generate_manifest
+from utils.parser import generate_manifest, fetch_downloaded_info_hashes
 from utils.runtime_const import (
     DELETE_ALL_META,
-    DELETE_ALL_META_ITEM,
     TEMPLATES,
 )
-from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_mediaflow_proxy_credentials,
     validate_rpdb_token,
@@ -248,42 +250,49 @@ async def get_manifest(
 
 @app.get(
     "/{secret_str}/catalog/{catalog_type}/{catalog_id}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
 )
 @app.get(
     "/catalog/{catalog_type}/{catalog_id}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
 )
 @app.get(
     "/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
 )
 @app.get(
     "/catalog/{catalog_type}/{catalog_id}/skip={skip}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
 )
 @app.get(
     "/{secret_str}/catalog/{catalog_type}/{catalog_id}/genre={genre}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
 )
 @app.get(
     "/catalog/{catalog_type}/{catalog_id}/genre={genre}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}&genre={genre}.json",
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
@@ -293,162 +302,191 @@ async def get_manifest(
 async def get_catalog(
     response: Response,
     request: Request,
-    catalog_type: Literal["movie", "series", "tv", "events"],
+    catalog_type: MediaType,
     catalog_id: str,
     skip: int = 0,
     genre: str = None,
-    user_data: schemas.UserData = Depends(get_user_data),
-):
-    skip, genre = parse_genre_and_skip(genre, skip)
-    cache_key, is_watchlist_catalog = get_cache_key(
-        catalog_type, catalog_id, skip, genre, user_data
+    user_data: UserData = Depends(get_user_data),
+    session: AsyncSession = Depends(get_async_session),
+) -> public_schemas.Metas:
+    """
+    Enhanced catalog endpoint with support for watchlists and external services
+    """
+    is_watchlist_catalog = user_data.streaming_provider and catalog_id.startswith(
+        user_data.streaming_provider.service
     )
 
+    # Handle watchlist info hashes
+    info_hashes = None
+    if is_watchlist_catalog:
+        info_hashes = await fetch_downloaded_info_hashes(
+            user_data, await get_user_public_ip(request, user_data)
+        )
+        if not info_hashes:
+            return public_schemas.Metas(metas=[])
+
+    namespace = get_request_namespace(request)
+    # Cache handling
+    cache_key = get_cache_key(
+        catalog_type,
+        catalog_id,
+        skip,
+        genre,
+        user_data,
+        is_watchlist_catalog,
+        namespace,
+    )
     if cache_key:
         response.headers.update(const.CACHE_HEADERS)
-        if cached_data := await REDIS_ASYNC_CLIENT.get(cache_key):
+        cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+        if cached_data:
             try:
-                metas = schemas.Metas.model_validate_json(cached_data)
+                metas = public_schemas.Metas.model_validate_json(cached_data)
                 return await update_rpdb_posters(metas, user_data, catalog_type)
             except ValidationError:
                 pass
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
 
-    metas = await fetch_metas(
-        catalog_type, catalog_id, genre, skip, user_data, request, is_watchlist_catalog
+    # Get metadata list
+    metas = await sql_crud.get_catalog_meta_list(
+        session=session,
+        catalog_type=catalog_type,
+        catalog_id=catalog_id,
+        user_data=user_data,
+        skip=skip,
+        genre=genre,
+        namespace=namespace,
+        is_watchlist_catalog=is_watchlist_catalog,
+        info_hashes=info_hashes,
     )
 
+    # Handle watchlist special case
+    if (
+        is_watchlist_catalog
+        and catalog_type == MediaType.MOVIE
+        and metas.metas
+        and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(
+            user_data.streaming_provider.service
+        )
+    ):
+        delete_all_meta = DELETE_ALL_META.model_copy()
+        delete_all_meta.id = delete_all_meta.id.format(
+            user_data.streaming_provider.service
+        )
+        metas.metas.insert(0, delete_all_meta)
+
+    # Cache result if applicable
     if cache_key:
         await REDIS_ASYNC_CLIENT.set(
             cache_key,
-            metas.model_dump_json(exclude_none=True, by_alias=True),
+            metas.model_dump_json(exclude_none=True),
             ex=settings.meta_cache_ttl,
         )
 
     return await update_rpdb_posters(metas, user_data, catalog_type)
 
 
-def parse_genre_and_skip(genre: str, skip: int) -> tuple[int, str]:
-    if genre and "&" in genre:
-        genre, skip = genre.split("&")
-        skip = skip.split("=")[1] if "=" in skip else "0"
-        skip = int(skip) if skip and skip.isdigit() else 0
-    return skip, genre
-
-
 def get_cache_key(
-    catalog_type: str,
+    catalog_type: MediaType,
     catalog_id: str,
     skip: int,
-    genre: str,
-    user_data: schemas.UserData,
-) -> tuple[str, bool]:
-    cache_key = f"{catalog_type}_{catalog_id}_{skip}_{genre}_catalog"
-    is_watchlist_catalog = False
+    genre: Optional[str],
+    user_data: UserData,
+    is_watchlist: bool,
+    namespace: str,
+) -> Optional[str]:
+    """Generate cache key for catalog queries"""
+    if is_watchlist or catalog_type == MediaType.EVENTS:
+        return None
 
-    if user_data.streaming_provider and catalog_id.startswith(
-        user_data.streaming_provider.service
-    ):
-        cache_key = None
-        is_watchlist_catalog = True
-    elif catalog_type == "events":
-        cache_key = None
-    elif catalog_type in ["movie", "series"]:
-        cache_key += "_" + "_".join(
-            user_data.nudity_filter + user_data.certification_filter
-        )
+    key_parts = [catalog_type.value, catalog_id, str(skip), genre or ""]
 
-    return cache_key, is_watchlist_catalog
+    if catalog_type in [MediaType.MOVIE, MediaType.SERIES]:
+        key_parts.extend(user_data.nudity_filter + user_data.certification_filter)
+    if catalog_type == MediaType.TV:
+        key_parts.append(namespace)
+
+    return f"catalog:{':'.join(key_parts)}"
 
 
-async def fetch_metas(
-    catalog_type: str,
+async def get_search_cache_key(
+    catalog_type: MediaType,
     catalog_id: str,
-    genre: str,
-    skip: int,
-    user_data: schemas.UserData,
-    request: Request,
-    is_watchlist_catalog: bool,
-) -> schemas.Metas:
-    metas = schemas.Metas()
-
-    if catalog_type == "tv":
-        metas.metas.extend(
-            await crud.get_tv_meta_list(
-                namespace=get_request_namespace(request), genre=genre, skip=skip
-            )
-        )
-    elif catalog_type == "events":
-        metas.metas.extend(await crud.get_events_meta_list(genre, skip))
-    else:
-        user_ip = await get_user_public_ip(request, user_data)
-        metas.metas.extend(
-            await crud.get_meta_list(
-                user_data,
-                catalog_type,
-                catalog_id,
-                is_watchlist_catalog,
-                skip,
-                user_ip=user_ip,
-                genre=genre,
-            )
-        )
-
-        if (
-            is_watchlist_catalog
-            and catalog_type == "movie"
-            and metas.metas
-            and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(
-                user_data.streaming_provider.service
-            )
-        ):
-            delete_all_meta = DELETE_ALL_META.model_copy()
-            delete_all_meta.id = delete_all_meta.id.format(
-                user_data.streaming_provider.service
-            )
-            metas.metas.insert(0, delete_all_meta)
-
-    return metas
+    search_query: str,
+    user_data: UserData,
+    namespace: str,
+) -> str:
+    """Generate cache key for search results"""
+    key_parts = [catalog_type.value, catalog_id, search_query]
+    if catalog_type in [MediaType.MOVIE, MediaType.SERIES]:
+        key_parts.extend(user_data.nudity_filter + user_data.certification_filter)
+    if catalog_type == MediaType.TV:
+        key_parts.append(namespace)
+    return f"search:{':'.join(key_parts)}"
 
 
 @app.get(
     "/{secret_str}/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
     tags=["search"],
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
 )
 @app.get(
     "/catalog/{catalog_type}/{catalog_id}/search={search_query}.json",
     tags=["search"],
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
 )
 @wrappers.auth_required
 async def search_meta(
     request: Request,
-    catalog_type: Literal["movie", "series", "tv"],
-    catalog_id: Literal[
-        "mediafusion_search_movies",
-        "mediafusion_search_series",
-        "mediafusion_search_tv",
-    ],
+    catalog_type: MediaType,
+    catalog_id: str,
     search_query: str,
-    user_data: schemas.UserData = Depends(get_user_data),
-):
-    logging.debug("search for catalog_id: %s", catalog_id)
+    user_data: UserData = Depends(get_user_data),
+    session: AsyncSession = Depends(get_async_session),
+) -> public_schemas.Metas:
+    """
+    Enhanced search endpoint with caching and efficient text search
+    """
+    if not search_query.strip():
+        return public_schemas.Metas(metas=[])
 
-    if catalog_type == "tv":
-        return await crud.process_tv_search_query(
-            search_query, namespace=get_request_namespace(request)
-        )
-
-    metadata = await crud.process_search_query(search_query, catalog_type, user_data)
-    return await update_rpdb_posters(
-        schemas.Metas.model_validate(metadata), user_data, catalog_type
+    namespace = get_request_namespace(request)
+    # Generate cache key
+    cache_key = await get_search_cache_key(
+        catalog_type, catalog_id, search_query, user_data, namespace
     )
+
+    # Try to get from cache
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+    if cached_data:
+        try:
+            metas = public_schemas.Metas.model_validate_json(cached_data)
+            return await update_rpdb_posters(metas, user_data, catalog_type)
+        except ValidationError:
+            pass
+
+    # Perform search
+    metas = await sql_crud.search_metadata(
+        session=session,
+        catalog_type=catalog_type,
+        search_query=search_query,
+        user_data=user_data,
+        namespace=namespace,
+    )
+
+    # Cache the results (5 minutes for search results)
+    await REDIS_ASYNC_CLIENT.set(
+        cache_key,
+        metas.model_dump_json(exclude_none=True),
+        ex=300,  # 5 minutes cache
+    )
+
+    return await update_rpdb_posters(metas, user_data, catalog_type)
 
 
 @app.get(
@@ -467,50 +505,25 @@ async def search_meta(
 )
 @wrappers.auth_required
 async def get_meta(
-    catalog_type: Literal["movie", "series", "tv", "events"],
+    catalog_type: MediaType,
     meta_id: str,
-    user_data: schemas.UserData = Depends(get_user_data),
-):
-    cache_key = f"{catalog_type}_{meta_id}_meta"
+    session: AsyncSession = Depends(get_async_session),
+) -> schemas.MetaItem:
+    metadata = await sql_crud.get_metadata_by_type(session, catalog_type, meta_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Metadata not found")
 
-    if catalog_type in ["movie", "series"]:
-        cache_key += "_" + "_".join(
-            user_data.nudity_filter + user_data.certification_filter
-        )
+    if catalog_type == MediaType.SERIES:
+        # For series, also fetch episodes
+        seasons = await sql_crud.series_metadata.get_episodes_data(session, meta_id)
+        return {
+            "meta": {
+                **metadata.model_dump(),
+                "seasons": [season.model_dump() for season in seasons],
+            }
+        }
 
-    # Try retrieving the cached data
-    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
-    if cached_data:
-        try:
-            meta_data = schemas.MetaItem.model_validate_json(cached_data)
-            return await update_rpdb_poster(meta_data, user_data, catalog_type)
-        except ValidationError:
-            pass
-
-    if catalog_type == "movie":
-        if meta_id.startswith("dl"):
-            delete_all_meta_item = DELETE_ALL_META_ITEM.copy()
-            delete_all_meta_item["meta"]["_id"] = meta_id
-            data = delete_all_meta_item
-        else:
-            data = await crud.get_movie_meta(meta_id, user_data)
-    elif catalog_type == "series":
-        data = await crud.get_series_meta(meta_id, user_data)
-    elif catalog_type == "events":
-        data = await crud.get_event_meta(meta_id)
-    else:
-        data = await crud.get_tv_meta(meta_id)
-
-    # Cache the data with a TTL of 30 minutes
-    # If the data is not found, cached the empty data to avoid db query.
-    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data, default=str), ex=1800)
-
-    if not data:
-        raise HTTPException(status_code=404, detail="Meta ID not found.")
-
-    return await update_rpdb_poster(
-        schemas.MetaItem.model_validate(data), user_data, catalog_type
-    )
+    return {"meta": metadata.model_dump()}
 
 
 @app.get(

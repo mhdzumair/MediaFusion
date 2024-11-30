@@ -10,7 +10,7 @@ from fastapi.requests import Request
 from db.schemas import UserData
 from utils import crypto
 from utils.crypto import encrypt_data
-from utils.runtime_const import PRIVATE_CIDR
+from utils import runtime_const
 from db.redis_database import REDIS_ASYNC_CLIENT
 
 
@@ -249,7 +249,7 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
         return mediaflow_config.public_ip
 
     parsed_url = urlparse(mediaflow_config.proxy_url)
-    if PRIVATE_CIDR.match(parsed_url.netloc):
+    if runtime_const.PRIVATE_CIDR.match(parsed_url.netloc):
         # MediaFlow proxy URL is a private IP address
         return None
 
@@ -296,7 +296,7 @@ async def get_user_public_ip(
     # Get the user's public IP address
     user_ip = get_client_ip(request)
     # check if the user's IP address is a private IP address
-    if PRIVATE_CIDR.match(user_ip):
+    if runtime_const.PRIVATE_CIDR.match(user_ip):
         # Use host public IP address.
         return None
     return user_ip
@@ -306,17 +306,23 @@ def get_request_namespace(request: Request) -> str:
     """
     Extract the namespace from the request URL.
     """
+    if runtime_const.SERVER_NAMESPACE:
+        return runtime_const.SERVER_NAMESPACE
+
     host = request.url.hostname
     if "elfhosted.com" not in host:
+        runtime_const.SERVER_NAMESPACE = "mediafusion"
         return "mediafusion"
 
     subdomain = host.split(".")[0]
     parts = subdomain.rsplit("-mediafusion")
     if len(parts) == 1:
         # public namespace
+        runtime_const.SERVER_NAMESPACE = "mediafusion"
         return "mediafusion"
 
     namespace = f"tenant-{parts[0]}"
+    runtime_const.SERVER_NAMESPACE = namespace
     return namespace
 
 

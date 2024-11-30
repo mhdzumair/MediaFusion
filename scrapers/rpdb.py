@@ -6,6 +6,7 @@ import httpx
 
 from db import schemas
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.enums import MediaType
 
 RPDB_SUPPORTED_SET = "rpdb_supported_ids"
 RPDB_UNSUPPORTED_HASH = "rpdb_unsupported_ids"
@@ -78,9 +79,12 @@ async def update_rpdb_poster(
 
 
 async def update_rpdb_posters(
-    metas: schemas.Metas, user_data: schemas.UserData, catalog_type: str
+    metas: schemas.Metas, user_data: schemas.UserData, catalog_type: MediaType
 ) -> schemas.Metas:
-    if not user_data.rpdb_config or catalog_type not in ["movie", "series"]:
+    if not user_data.rpdb_config or catalog_type not in [
+        MediaType.MOVIE,
+        MediaType.SERIES,
+    ]:
         return metas
 
     rpdb_poster_base = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/"
