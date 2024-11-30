@@ -63,7 +63,7 @@ async def get_meta_list(
         if not downloaded_info_hashes:
             return []
         await store_cached_info_hashes(
-            user_data.streaming_provider.service, downloaded_info_hashes
+            user_data.streaming_provider, downloaded_info_hashes
         )
         query_filters = {"_id": {"$in": downloaded_info_hashes}}
     else:

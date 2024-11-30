@@ -3,23 +3,40 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.schemas import StreamingProvider
 
 # Constants
 CACHE_KEY_PREFIX = "debrid_cache:"
 EXPIRY_DAYS = 7
 
 
-async def store_cached_info_hashes(service: str, info_hashes: List[str]) -> None:
+def get_cache_service_name(streaming_provider: StreamingProvider):
+    """
+    get service name to use for redis cache retrieval
+    """
+    if (
+        streaming_provider.service == "stremthru"
+        and streaming_provider.stremthru_store_name
+    ):
+        return streaming_provider.stremthru_store_name
+    return streaming_provider.service
+
+
+async def store_cached_info_hashes(
+    streaming_provider: StreamingProvider, info_hashes: List[str]
+) -> None:
     """
     Store multiple cached info hashes efficiently.
     Only stores info hashes that are confirmed to be cached.
 
     Args:
-        service: The debrid service name (e.g., 'realdebrid', 'alldebrid')
+        streaming_provider: The streaming provider object
         info_hashes: List of info hashes that are confirmed to be cached
     """
-    if not info_hashes or service == "stremthru":
+    if not info_hashes:
         return
+
+    service = get_cache_service_name(streaming_provider)
 
     try:
         cache_key = f"{CACHE_KEY_PREFIX}{service}"
@@ -36,13 +53,15 @@ async def store_cached_info_hashes(service: str, info_hashes: List[str]) -> None
         logging.error(f"Error storing cached info hashes for {service}: {e}")
 
 
-async def get_cached_status(service: str, info_hashes: List[str]) -> Dict[str, bool]:
+async def get_cached_status(
+    streaming_provider: StreamingProvider, info_hashes: List[str]
+) -> Dict[str, bool]:
     """
     Get cached status for multiple info hashes.
     If a hash isn't found in Redis or is expired, it's considered not cached.
 
     Args:
-        service: The debrid service name
+        streaming_provider: The streaming provider object
         info_hashes: List of info hashes to check
 
     Returns:
@@ -50,6 +69,8 @@ async def get_cached_status(service: str, info_hashes: List[str]) -> Dict[str, b
     """
     if not info_hashes:
         return {}
+
+    service = get_cache_service_name(streaming_provider)
 
     try:
         cache_key = f"{CACHE_KEY_PREFIX}{service}"

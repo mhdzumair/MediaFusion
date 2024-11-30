@@ -25,13 +25,6 @@ from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS, MANIFEST_TEMPLATE
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
-def get_cache_service_name(streaming_provider: StreamingProvider):
-    """
-    get service name to use for redis cache retrieval
-    """ 
-    if streaming_provider.service == "stremthru" and streaming_provider.stremthru_store_name:
-        return streaming_provider.stremthru_store_name
-    return streaming_provider.service
 
 async def filter_and_sort_streams(
     streams: list[TorrentStreams], user_data: UserData, user_ip: str | None = None
@@ -94,8 +87,9 @@ async def filter_and_sort_streams(
         info_hashes = [stream.id for stream in filtered_streams]
 
         # First check Redis cache
-        cache_service = get_cache_service_name(user_data.streaming_provider)
-        cached_statuses = await get_cached_status(cache_service, info_hashes)
+        cached_statuses = await get_cached_status(
+            user_data.streaming_provider, info_hashes
+        )
 
         # Update streams with cached status from Redis
         uncached_streams = []
@@ -119,7 +113,7 @@ async def filter_and_sort_streams(
                         stream.id for stream in uncached_streams if stream.cached
                     ]
                     if cached_info_hashes:
-                        await store_cached_info_hashes(service, cached_info_hashes)
+                        await store_cached_info_hashes(user_data.streaming_provider, cached_info_hashes)
                 except Exception as error:
                     logging.exception(
                         f"Failed to update cache status for {service}: {error}"
