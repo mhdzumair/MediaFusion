@@ -30,6 +30,10 @@ class RealDebrid(DebridClient):
                 raise ProviderException(
                     "Content marked as infringing", "content_infringing.mp4"
                 )
+            case 21:
+                raise ProviderException(
+                    "Active torrents limit reached", "torrent_limit.mp4"
+                )
 
     async def _make_request(
         self,
