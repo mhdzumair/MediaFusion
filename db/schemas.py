@@ -140,6 +140,13 @@ class StreamingProvider(BaseModel):
         "qbittorrent",
         "stremthru",
     ] = Field(alias="sv")
+    stremthru_store_name: Literal[
+        "realdebrid",
+        "debridlink",
+        "alldebrid",
+        "torbox",
+        "premiumize",
+    ] | None = Field(default=None, alias="stsn")
     url: HttpUrl | None = Field(default=None, alias="u")
     token: str | None = Field(default=None, alias="tk")
     email: str | None = Field(default=None, alias="em")
