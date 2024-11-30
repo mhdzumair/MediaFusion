@@ -47,6 +47,7 @@ tenacity = "*"
 ratelimit = "*"
 qrcode = "*"
 aioseedrcc = "*"
+pytz = "*"
 
 [dev-packages]
 pysocks = "*"
