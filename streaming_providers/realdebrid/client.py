@@ -34,6 +34,8 @@ class RealDebrid(DebridClient):
                 raise ProviderException(
                     "Active torrents limit reached", "torrent_limit.mp4"
                 )
+            case 30:
+                raise ProviderException("Invalid magnet link", "transfer_error.mp4")
 
     async def _make_request(
         self,

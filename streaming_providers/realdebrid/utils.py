@@ -178,12 +178,14 @@ async def add_new_torrent(rd_client, magnet_link, info_hash):
 async def update_rd_cache_status(
     streams: list[TorrentStreams], user_data: UserData, user_ip: str, **kwargs
 ):
-    """Updates the cache status of streams based on RealDebrid's or Zilean's instant availability."""
+    """Updates the cache status of streams based on user's downloaded torrents in RealDebrid."""
 
     try:
         downloaded_hashes = set(
             await fetch_downloaded_info_hashes_from_rd(user_data, user_ip, **kwargs)
         )
+        if not downloaded_hashes:
+            return
         for stream in streams:
             stream.cached = stream.id in downloaded_hashes
 
@@ -199,8 +201,12 @@ async def fetch_downloaded_info_hashes_from_rd(
         async with RealDebrid(
             token=user_data.streaming_provider.token, user_ip=user_ip
         ) as rd_client:
-            available_torrents = await rd_client.get_user_torrent_list()
-            return [torrent["hash"] for torrent in available_torrents]
+            available_torrents = await rd_client.get_user_torrent_list(filter_="active")
+            return [
+                torrent["hash"]
+                for torrent in available_torrents
+                if torrent["status"] == "downloaded"
+            ]
 
     except ProviderException:
         return []
@@ -212,8 +218,15 @@ async def delete_all_watchlist_rd(user_data: UserData, user_ip: str, **kwargs):
         token=user_data.streaming_provider.token, user_ip=user_ip
     ) as rd_client:
         torrents = await rd_client.get_user_torrent_list()
+        semaphore = asyncio.Semaphore(3)
+
+        async def delete_torrent(torrent_id):
+            async with semaphore:
+                await rd_client.delete_torrent(torrent_id)
+
         await asyncio.gather(
-            *[rd_client.delete_torrent(torrent["id"]) for torrent in torrents]
+            *[delete_torrent(torrent["id"]) for torrent in torrents],
+            return_exceptions=True,
         )
 
 
