@@ -5,7 +5,7 @@ from streaming_providers.exceptions import ProviderException
 
 
 class AllDebrid(DebridClient):
-    BASE_URL = "https://api.alldebrid.com/v4"
+    BASE_URL = "https://api.alldebrid.com/v4.1"
     AGENT = "mediafusion"
 
     def __init__(self, token: str, user_ip: Optional[str] = None):
@@ -80,14 +80,27 @@ class AllDebrid(DebridClient):
         self._validate_error_response(response_data)
         return response_data
 
-    async def get_user_torrent_list(self):
-        return await self._make_request("GET", "/magnet/status")
+    async def get_user_torrent_list(self, status: str = None):
+        params = {}
+        if status:
+            params["status"] = status
+        return await self._make_request("GET", "/magnet/status", params=params)
 
     async def get_torrent_info(self, magnet_id):
         response = await self._make_request(
-            "GET", "/magnet/status", params={"id": magnet_id}
+            "GET",
+            "/magnet/status",
+            params={"id": magnet_id},
         )
         return response.get("data", {}).get("magnets")
+
+    async def get_torrent_files(self, magnet_id):
+        response = await self._make_request(
+            "GET",
+            "/magnet/files",
+            params={"id[]": [magnet_id]},
+        )
+        return response.get("data", {}).get("files")
 
     async def get_available_torrent(self, info_hash) -> Optional[dict[str, Any]]:
         available_torrents = await self.get_user_torrent_list()
@@ -113,9 +126,11 @@ class AllDebrid(DebridClient):
             "transfer_error.mp4",
         )
 
-    async def delete_torrent(self, magnet_id):
+    async def delete_torrents(self, magnet_ids: list[int]):
         return await self._make_request(
-            "GET", "/magnet/delete", params={"id": magnet_id}
+            "GET",
+            "/magnet/delete",
+            params={"ids[]": magnet_ids},
         )
 
     async def get_user_info(self):
