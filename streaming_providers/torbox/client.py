@@ -107,11 +107,11 @@ class Torbox(DebridClient):
                 return torrent
         return {}
 
-    async def create_download_link(self, torrent_id, filename):
+    async def create_download_link(self, torrent_id, filename, user_ip):
         response = await self._make_request(
             "GET",
             "/torrents/requestdl",
-            params={"token": self.token, "torrent_id": torrent_id, "file_id": filename},
+            params={"token": self.token, "torrent_id": torrent_id, "file_id": filename, "user_ip": user_ip},
             is_expected_to_fail=True,
         )
         if "successfully" in response.get("detail"):
