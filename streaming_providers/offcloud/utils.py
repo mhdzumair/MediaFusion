@@ -74,6 +74,8 @@ async def update_oc_cache_status(
                     [stream.id for stream in streams]
                 )
             )
+            if not instant_availability_data:
+                return
             for stream in streams:
                 stream.cached = stream.id in instant_availability_data
     except ProviderException:

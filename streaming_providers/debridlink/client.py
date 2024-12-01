@@ -31,6 +31,10 @@ class DebridLink(DebridClient):
                     "Debrid-Link Server / VPN are not allowed on this host",
                     "ip_not_allowed.mp4",
                 )
+            case "floodDetected":
+                raise ProviderException(
+                    "Debrid-Link flood detected", "too_many_requests.mp4"
+                )
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         self._handle_error_message(error_data.get("error"))
@@ -99,8 +103,7 @@ class DebridLink(DebridClient):
         response = await self._make_request(
             "POST",
             f"{self.BASE_URL}/seedbox/add",
-            data={"url": magnet_link},
-            is_expected_to_fail=True,
+            json={"url": magnet_link, "async": True},
         )
         if response.get("error"):
             self._handle_error_message(response.get("error"))

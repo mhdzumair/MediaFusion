@@ -18,7 +18,7 @@ async def get_torrent_info(ad_client, info_hash):
     if torrent_info and torrent_info["status"] == "Ready":
         return torrent_info
     elif torrent_info and torrent_info["statusCode"] == 7:
-        await ad_client.delete_torrent(torrent_info.get("id"))
+        await ad_client.delete_torrents([torrent_info.get("id")])
         raise ProviderException(
             "Not enough seeders available to parse magnet link",
             "transfer_error.mp4",
@@ -29,6 +29,45 @@ async def get_torrent_info(ad_client, info_hash):
 async def add_new_torrent(ad_client, magnet_link):
     response_data = await ad_client.add_magnet_link(magnet_link)
     return response_data["data"]["magnets"][0]["id"]
+
+
+def flatten_files(files):
+    """Recursively flattens the nested file structure into a simpler list of dictionaries.
+    Handles both nested groups and single file cases."""
+    flattened = []
+
+    def _flatten(file_group, parent_group=""):
+        # Check if this is a direct file entry (has 'l' for link)
+        if "l" in file_group:
+            flattened.append(
+                {
+                    "name": file_group["n"],
+                    "size": file_group["s"],
+                    "link": file_group["l"],
+                    "group": parent_group.strip("/"),
+                }
+            )
+            return
+
+        # Otherwise, process as a group
+        group_name = f"{parent_group}/{file_group['n']}".strip("/")
+        for file_entry in file_group.get("e", []):
+            if "e" in file_entry:
+                _flatten(file_entry, group_name)
+            else:
+                flattened.append(
+                    {
+                        "name": file_entry["n"],
+                        "size": file_entry["s"],
+                        "link": file_entry["l"],
+                        "group": group_name,
+                    }
+                )
+
+    for file_group in files:
+        _flatten(file_group)
+
+    return flattened
 
 
 async def wait_for_download_and_get_link(
@@ -45,28 +84,26 @@ async def wait_for_download_and_get_link(
     torrent_info = await ad_client.wait_for_status(
         torrent_id, "Ready", max_retries, retry_interval
     )
+    files_data = {"files": flatten_files(torrent_info["files"])}
+
     file_index = await select_file_index_from_torrent(
-        torrent_info,
+        files_data,
         filename,
         episode,
-        file_key="links",
-        name_key="filename",
     )
 
     if filename is None:
         background_tasks.add_task(
             update_torrent_streams_metadata,
             torrent_stream=stream,
-            torrent_info=torrent_info,
+            torrent_info=files_data,
             file_index=file_index,
             season=season,
-            file_key="links",
-            name_key="filename",
             is_index_trustable=False,
         )
 
     response = await ad_client.create_download_link(
-        torrent_info["links"][file_index]["link"]
+        files_data["files"][file_index]["link"]
     )
     return response["data"]["link"]
 
@@ -116,6 +153,9 @@ async def update_ad_cache_status(
         downloaded_hashes = set(
             await fetch_downloaded_info_hashes_from_ad(user_data, user_ip, **kwargs)
         )
+        if not downloaded_hashes:
+            return
+
         for stream in streams:
             stream.cached = stream.id in downloaded_hashes
 
@@ -131,12 +171,13 @@ async def fetch_downloaded_info_hashes_from_ad(
         async with AllDebrid(
             token=user_data.streaming_provider.token, user_ip=user_ip
         ) as ad_client:
-            available_torrents = await ad_client.get_user_torrent_list()
+            available_torrents = await ad_client.get_user_torrent_list(status="ready")
             if not available_torrents.get("data"):
                 return []
-            return [
-                torrent["hash"] for torrent in available_torrents["data"]["magnets"]
-            ]
+            magnets = available_torrents["data"]["magnets"]
+            if isinstance(magnets, dict):
+                return [magnet["hash"] for magnet in magnets.values()]
+            return [magnet["hash"] for magnet in magnets]
 
     except ProviderException:
         return []
@@ -148,12 +189,15 @@ async def delete_all_torrents_from_ad(user_data: UserData, user_ip: str, **kwarg
         token=user_data.streaming_provider.token, user_ip=user_ip
     ) as ad_client:
         torrents = await ad_client.get_user_torrent_list()
-        await asyncio.gather(
-            *[
-                ad_client.delete_torrent(torrent["id"])
-                for torrent in torrents["data"]["magnets"]
-            ]
-        )
+        magnet_ids = [torrent["id"] for torrent in torrents["data"]["magnets"]]
+        if not magnet_ids:
+            return
+        response = await ad_client.delete_torrents(magnet_ids)
+        if response.get("status") != "success":
+            raise ProviderException(
+                f"Failed to delete torrents from AllDebrid {response}",
+                "api_error.mp4",
+            )
 
 
 async def validate_alldebrid_credentials(user_data: UserData, user_ip: str) -> dict:

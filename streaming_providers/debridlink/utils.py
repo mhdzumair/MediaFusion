@@ -98,6 +98,8 @@ async def update_dl_cache_status(
         downloaded_hashes = set(
             await fetch_downloaded_info_hashes_from_dl(user_data, **kwargs)
         )
+        if not downloaded_hashes:
+            return
         for stream in streams:
             stream.cached = stream.id in downloaded_hashes
 
@@ -114,7 +116,11 @@ async def fetch_downloaded_info_hashes_from_dl(
             available_torrents = await dl_client.get_user_torrent_list()
             if "error" in available_torrents:
                 return []
-            return [torrent["hashString"] for torrent in available_torrents["value"]]
+            return [
+                torrent["hashString"]
+                for torrent in available_torrents["value"]
+                if torrent["downloadPercent"] == 100
+            ]
 
     except ProviderException:
         return []

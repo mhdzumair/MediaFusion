@@ -14,6 +14,7 @@ async def get_video_url_from_torbox(
     magnet_link: str,
     user_data: UserData,
     filename: str,
+    user_ip: str,
     episode: Optional[int] = None,
     **kwargs: Any,
 ) -> str:
@@ -31,6 +32,7 @@ async def get_video_url_from_torbox(
                 response = await torbox_client.create_download_link(
                     torrent_info.get("id", ""),
                     file_id,
+                    user_ip,
                 )
                 return response["data"]
         else:
@@ -47,6 +49,7 @@ async def get_video_url_from_torbox(
                     response = await torbox_client.create_download_link(
                         torrent_info.get("id", ""),
                         file_id,
+                        user_ip,
                     )
                     return response["data"]
 
@@ -73,6 +76,8 @@ async def update_chunk_cache_status(
             )
             or []
         )
+        if not instant_availability_data:
+            return
         for stream in streams_chunk:
             stream.cached = bool(stream.id in instant_availability_data)
     except ProviderException as e:
