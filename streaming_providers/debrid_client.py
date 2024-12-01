@@ -99,10 +99,6 @@ class DebridClient(AsyncContextDecorator):
         try:
             response.raise_for_status()
         except aiohttp.ClientResponseError as error:
-            if error.status in [502, 503, 504]:
-                raise ProviderException(
-                    "Debrid service is down.", "debrid_service_down_error.mp4"
-                )
             if is_expected_to_fail:
                 return
 
@@ -114,6 +110,11 @@ class DebridClient(AsyncContextDecorator):
 
             if error.status == 401:
                 raise ProviderException("Invalid token", "invalid_token.mp4")
+
+            if error.status in [502, 503, 504]:
+                raise ProviderException(
+                    "Debrid service is down.", "debrid_service_down_error.mp4"
+                )
 
             formatted_traceback = "".join(traceback.format_exception(error))
             raise ProviderException(

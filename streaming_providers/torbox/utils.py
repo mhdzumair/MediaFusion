@@ -73,6 +73,8 @@ async def update_chunk_cache_status(
             )
             or []
         )
+        if not instant_availability_data:
+            return
         for stream in streams_chunk:
             stream.cached = bool(stream.id in instant_availability_data)
     except ProviderException as e:
