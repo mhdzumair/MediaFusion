@@ -201,7 +201,7 @@ async def fetch_downloaded_info_hashes_from_rd(
         async with RealDebrid(
             token=user_data.streaming_provider.token, user_ip=user_ip
         ) as rd_client:
-            available_torrents = await rd_client.get_user_torrent_list(filter_="active")
+            available_torrents = await rd_client.get_user_torrent_list()
             return [
                 torrent["hash"]
                 for torrent in available_torrents
