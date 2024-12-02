@@ -105,7 +105,7 @@ async def filter_and_sort_streams(
             cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(service)
             if cache_update_function:
                 try:
-                    await cache_update_function(
+                    service_name = await cache_update_function(
                         streams=uncached_streams, user_data=user_data, user_ip=user_ip
                     )
                     # Store only the cached ones in Redis
@@ -114,7 +114,8 @@ async def filter_and_sort_streams(
                     ]
                     if cached_info_hashes:
                         await store_cached_info_hashes(
-                            user_data.streaming_provider, cached_info_hashes
+                            user_data.streaming_provider, cached_info_hashes,
+                            service_name
                         )
                 except Exception as error:
                     logging.exception(

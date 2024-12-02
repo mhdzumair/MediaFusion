@@ -111,9 +111,14 @@ class StremThru(DebridClient):
         response = await self._make_request("GET", "/v0/store/magnets/" + torrent_id)
         return response
 
-    async def get_torrent_instant_availability(self, magnet_links: list[str]):
+    async def get_torrent_instant_availability(
+        self, magnet_links: list[str], is_http_response: bool = False
+    ):
         return await self._make_request(
-            "GET", "/v0/store/magnets/check", params={"magnet": ",".join(magnet_links)}
+            "GET",
+            "/v0/store/magnets/check",
+            params={"magnet": ",".join(magnet_links)},
+            is_http_response=is_http_response,
         )
 
     async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:

@@ -67,35 +67,23 @@ async def get_video_url_from_stremthru(
 
 async def update_st_cache_status(
     streams: list[TorrentStreams], user_data: UserData, **kwargs
-):
+) -> str | None:
     """Updates the cache status of streams based on StremThru's instant availability."""
-
-    if user_data.streaming_provider.stremthru_store_name in [
-        "realdebrid",
-        "debridlink",
-        "alldebrid",
-    ]:
-        downloaded_hashes = set(
-            await fetch_downloaded_info_hashes_from_st(user_data, **kwargs)
-        )
-        for stream in streams:
-            stream.cached = stream.id in downloaded_hashes
-        return
 
     try:
         async with _get_client(user_data) as st_client:
-            instant_availability_data = (
-                await st_client.get_torrent_instant_availability(
-                    [stream.id for stream in streams]
-                )
+            res = await st_client.get_torrent_instant_availability(
+                [stream.id for stream in streams], is_http_response=True
             )
+            instant_items = res.body.get("data", {}).get("items", [])
             for stream in streams:
                 stream.cached = any(
                     torrent["status"] == "cached"
-                    for torrent in instant_availability_data["items"]
+                    for torrent in instant_items
                     if torrent.get("hash") == stream.id
                 )
-
+            store_name = res.headers.get("X-StremThru-Store-Name", None)
+            return store_name
     except ProviderException:
         pass
 

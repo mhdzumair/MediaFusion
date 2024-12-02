@@ -23,7 +23,7 @@ def get_cache_service_name(streaming_provider: StreamingProvider):
 
 
 async def store_cached_info_hashes(
-    streaming_provider: StreamingProvider, info_hashes: List[str]
+    streaming_provider: StreamingProvider, info_hashes: List[str], service_override: str | None = None
 ) -> None:
     """
     Store multiple cached info hashes efficiently.
@@ -40,7 +40,7 @@ async def store_cached_info_hashes(
         # Don't cache info hashes for StremThru
         return
 
-    service = get_cache_service_name(streaming_provider)
+    service = service_override or get_cache_service_name(streaming_provider)
 
     try:
         cache_key = f"{CACHE_KEY_PREFIX}{service}"
