@@ -62,6 +62,7 @@ class DebridClient(AsyncContextDecorator):
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
         retry_count: int = 0,
+        is_http_response: bool = False,
     ) -> dict | list | str:
         try:
             async with self.session.request(
@@ -69,7 +70,7 @@ class DebridClient(AsyncContextDecorator):
             ) as response:
                 await self._check_response_status(response, is_expected_to_fail)
                 return await self._parse_response(
-                    response, is_return_none, is_expected_to_fail
+                    response, is_return_none, is_expected_to_fail, is_http_response
                 )
 
         except ProviderException as error:
@@ -140,14 +141,20 @@ class DebridClient(AsyncContextDecorator):
 
     @staticmethod
     async def _parse_response(
-        response: ClientResponse, is_return_none: bool, is_expected_to_fail: bool
+        response: ClientResponse, is_return_none: bool, is_expected_to_fail: bool, is_http_response: bool = False
     ) -> Union[dict, list, str]:
         if is_return_none:
             return {}
         try:
+            if is_http_response:
+                response.body = await response.json()
+                return response
             return await response.json()
         except (ValueError, ContentTypeError) as error:
             response_text = await response.text()
+            if is_http_response:
+                response.body = await response_text
+                return response
             if is_expected_to_fail:
                 return response_text
             raise ProviderException(
