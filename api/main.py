@@ -576,6 +576,7 @@ async def get_streams(
                 externalUrl=upload_url,
             ),
         ]
+        response.headers.update(const.NO_CACHE_HEADERS)
 
     if catalog_type == "movie":
         if video_id.startswith("dl"):
