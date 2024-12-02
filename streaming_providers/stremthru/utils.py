@@ -126,8 +126,17 @@ async def validate_stremthru_credentials(user_data: UserData, **kwargs) -> dict:
     """Validates the StremThru credentials."""
     try:
         async with _get_client(user_data) as client:
-            response = await client.get_user_info()
+            response = await client.get_user_info(is_http_response=True)
             if response:
+                if (
+                    user_data.streaming_provider.stremthru_store_name
+                    and user_data.streaming_provider.stremthru_store_name
+                    != response.headers.get("X-StremThru-Store-Name")
+                ):
+                    return {
+                        "status": "error",
+                        "message": "Configured wrong StremThru Store Name.",
+                    }
                 return {"status": "success"}
             return {
                 "status": "error",

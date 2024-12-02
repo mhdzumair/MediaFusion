@@ -77,6 +77,7 @@ class StremThru(DebridClient):
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
         retry_count: int = 0,
+        is_http_response: bool = False,
     ) -> dict[str, Any]:
         params = params or {}
         url = urljoin(self.BASE_URL, url)
@@ -89,7 +90,10 @@ class StremThru(DebridClient):
             is_return_none,
             is_expected_to_fail,
             retry_count,
+            is_http_response,
         )
+        if is_http_response:
+            return response
         if is_expected_to_fail:
             return response
         return response.get("data")
@@ -139,5 +143,7 @@ class StremThru(DebridClient):
             "/v0/store/magnets/" + magnet_id,
         )
 
-    async def get_user_info(self):
-        return await self._make_request("GET", "/v0/store/user")
+    async def get_user_info(self, is_http_response: bool = False):
+        return await self._make_request(
+            "GET", "/v0/store/user", is_http_response=is_http_response
+        )
