@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 
+from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import StreamingProvider
 
@@ -36,7 +37,7 @@ async def store_cached_info_hashes(
     if not info_hashes:
         return
 
-    if streaming_provider.service == "stremthru":
+    if streaming_provider.service == "stremthru" and not settings.store_stremthru_magnet_cache:
         # Don't cache info hashes for StremThru
         return
 

@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     # Feature Toggles
     enable_rate_limit: bool = False
     validate_m3u8_urls_liveness: bool = True
+    store_stremthru_magnet_cache: bool = False
 
     # Content Filtering
     adult_content_regex_keywords: str = (
