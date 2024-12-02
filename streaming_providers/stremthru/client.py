@@ -30,7 +30,39 @@ class StremThru(DebridClient):
         pass
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
-        pass
+        if error_data.get("error"):
+            error = error_data.get(
+                "error", {"message": "unknown error", "code": "UNKNOWN"}
+            )
+            error_code = error.get("code")
+            match error_code:
+                case "FORBIDDEN" | "UNAUTHORIZED":
+                    raise ProviderException(
+                        "Invalid Token / Permission Denied", "invalid_token.mp4"
+                    )
+                case "PAYMENT_REQUIRED":
+                    raise ProviderException("Need to upgrade plan", "need_premium.mp4")
+                case "TOO_MANY_REQUESTS":
+                    raise ProviderException(
+                        "Too many requests", "too_many_requests.mp4"
+                    )
+                case "UNAVAILABLE_FOR_LEGAL_REASONS":
+                    raise ProviderException(
+                        "Content marked as infringing", "content_infringing.mp4"
+                    )
+                case "STORE_LIMIT_EXCEEDED":
+                    raise ProviderException(
+                        "Hit max limit", "exceed_remote_traffic_limit.mp4"
+                    )
+                case _:
+                    raise ProviderException(
+                        f"StremThru Error: {str(error)}",
+                        "api_error.mp4",
+                    )
+        raise ProviderException(
+            f"StremThru Error: {str(error_data)}",
+            "api_error.mp4",
+        )
 
     async def disable_access_token(self):
         pass
@@ -60,12 +92,6 @@ class StremThru(DebridClient):
         )
         if is_expected_to_fail:
             return response
-        if response.get("error"):
-            error_message = response.get("error", "unknown error")
-            raise ProviderException(
-                f"Failed request to StremThru: {str(error_message)}",
-                "api_error.mp4",
-            )
         return response.get("data")
 
     async def add_magnet_link(self, magnet_link):
