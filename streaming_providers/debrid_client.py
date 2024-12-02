@@ -153,7 +153,7 @@ class DebridClient(AsyncContextDecorator):
         except (ValueError, ContentTypeError) as error:
             response_text = await response.text()
             if is_http_response:
-                response.body = await response_text
+                response.body = response_text
                 return response
             if is_expected_to_fail:
                 return response_text
