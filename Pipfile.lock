@@ -2033,12 +2033,12 @@
         },
         "python-multipart": {
             "hashes": [
-                "sha256:7a68db60c8bfb82e460637fa4750727b45af1d5e2ed215593f917f64694d34fe",
-                "sha256:efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996"
+                "sha256:905502ef39050557b7a6af411f454bc19526529ca46ae6831508438890ce12cc",
+                "sha256:f8d5b0b9c618575bf9df01c684ded1d94a338839bdd8223838afacfb4bb2082d"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.0.18"
+            "version": "==0.0.19"
         },
         "pytz": {
             "hashes": [
