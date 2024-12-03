@@ -415,7 +415,7 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
     }
 
     // Handle languages
-    const selectedLanguages = Array.from(document.querySelectorAll('#languages input[name="languages"]:checked'))
+    const selectedLanguages = Array.from(document.querySelectorAll('input[name="languages"]:checked'))
         .map(el => el.value);
     if (selectedLanguages.length > 0) {
         formData.append('languages', selectedLanguages.join(','));

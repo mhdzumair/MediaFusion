@@ -1,8 +1,6 @@
 import logging
-import re
 from datetime import date, datetime
 from typing import Literal
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, File, Form, APIRouter, BackgroundTasks
@@ -18,6 +16,7 @@ from db.crud import (
     store_new_torrent_streams,
 )
 from db.models import TorrentStreams, Episode, Season
+from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
 from scrapers import imdb_data
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
@@ -25,7 +24,6 @@ from utils import const, torrent
 from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio
 from utils.runtime_const import TEMPLATES
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 router = APIRouter()
 
@@ -258,7 +256,7 @@ async def add_torrent(
                 }
             )
 
-        if validation_errors and not force_import:
+        if validation_errors:
             return {
                 "status": "validation_failed",
                 "errors": validation_errors,
@@ -321,8 +319,10 @@ async def add_torrent(
                         "message": f"Season mismatch: '{torrent_data.get('season')}' != '{season}'",
                     }
                 )
+            if not torrent_data.get("seasons"):
+                torrent_data["seasons"] = [season]
 
-        if validation_errors and not force_import:
+        if validation_errors:
             return {
                 "status": "validation_failed",
                 "errors": validation_errors,
@@ -336,6 +336,9 @@ async def add_torrent(
 
     if not torrent_stream:
         raise_error("Failed to store torrent data. Contact support.")
+
+    # Cleanup redis caching for quick access
+    await REDIS_ASYNC_CLIENT.delete(f"torrent_streams:{meta_id}")
 
     return {
         "status": f"Successfully added torrent: {torrent_stream.id} for {title}. Thanks for your contribution."
