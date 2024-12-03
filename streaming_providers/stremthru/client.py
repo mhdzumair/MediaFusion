@@ -15,16 +15,27 @@ class StremThruError(Exception):
 
 class StremThru(DebridClient):
     AGENT = "mediafusion"
+    auth: str | dict
 
     def __init__(self, url: str, token: str, **kwargs):
         self.BASE_URL = url
+        if ":" in token:
+            parts = token.split(":")
+            self.auth = {
+                "store": parts[0],
+                "token": parts[1],
+            }
+        else:
+            self.auth = token
         super().__init__(token)
 
     async def initialize_headers(self):
-        self.headers = {
-            "Proxy-Authorization": f"Basic {self.token}",
-            "User-Agent": self.AGENT,
-        }
+        self.headers["User-Agent"] = self.AGENT
+        if isinstance(self.auth, str):
+            self.headers["Proxy-Authorization"] = f"Basic {self.auth}"
+        elif isinstance(self.auth, dict):
+            self.headers["X-StremThru-Store-Name"] = self.auth["store"]
+            self.headers["X-StremThru-Store-Token"] = self.auth["token"]
 
     def __del__(self):
         pass
