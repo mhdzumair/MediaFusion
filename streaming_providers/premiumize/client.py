@@ -16,6 +16,10 @@ class Premiumize(DebridClient):
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
 
+    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+        self.user_ip = user_ip
+        super().__init__(token)
+
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
@@ -38,12 +42,15 @@ class Premiumize(DebridClient):
         )
 
     async def initialize_headers(self):
+        self.headers = {}
         if self.token:
             access_token = self.decode_token_str(self.token)
             if access_token:
-                self.headers = {"Authorization": f"Bearer {access_token}"}
+                self.headers["Authorization"] = f"Bearer {access_token}"
             else:
                 self.is_private_token = True
+        if self.user_ip:
+            self.headers['X-Forwarded-For'] = self.user_ip
 
     def get_authorization_url(self) -> str:
         state = uuid4().hex

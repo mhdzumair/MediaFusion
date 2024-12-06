@@ -28,13 +28,14 @@ async def get_video_url_from_premiumize(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
+    user_ip: str,
     filename: Optional[str],
     episode: Optional[int],
     max_retries=5,
     retry_interval=5,
     **kwargs,
 ) -> str:
-    async with Premiumize(token=user_data.streaming_provider.token) as pm_client:
+    async with Premiumize(token=user_data.streaming_provider.token, user_ip=user_ip) as pm_client:
         # Check if the torrent already exists
         torrent_info = await pm_client.get_available_torrent(info_hash)
         if torrent_info:
