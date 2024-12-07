@@ -18,7 +18,7 @@ const providerSignupLinks = {
 };
 const providerTokenTooltip = {
     '*': `Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token.`,
-    stremthru: `Enter the Credential configured using 'STREMTHRU_PROXY_AUTH' config.`,
+    stremthru: `Enter Credential ('store_name:store_token' or base64 encoded basic token from 'STREMTHRU_PROXY_AUTH' config)`,
 };
 
 // ---- OAuth-related Functions ----
