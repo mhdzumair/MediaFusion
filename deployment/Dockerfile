@@ -30,6 +30,13 @@ ARG VERSION
 
 WORKDIR /mediafusion
 
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy the Python environment and other necessary files from the builder stage
 COPY --from=builder /home/mediafusion/.local /home/mediafusion/.local
 COPY --from=builder /etc/group /etc/passwd /etc/
