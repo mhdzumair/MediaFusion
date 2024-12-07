@@ -2,6 +2,9 @@
 
 This guide outlines the steps for deploying MediaFusion locally using Docker Compose. It is an alternative to Kubernetes-based deployment for users who prefer a simpler setup or have constraints running Kubernetes on their machines.
 
+### Local Deployment Video Tutorial 📹
+[![Watch the video](https://video.elfhosted.com/w/rgRFCmdgWW2HDES4QSD6Kb)](https://video.elfhosted.com/w/rgRFCmdgWW2HDES4QSD6Kb)
+
 ## Clone the Repository 📋
 
 ```bash
