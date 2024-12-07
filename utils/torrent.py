@@ -147,10 +147,11 @@ async def info_hashes_to_torrent_metadata(
 
     demagnetizer = Demagnetizer()
     async with acollect(
-        [
+        coros=[
             demagnetizer.demagnetize(Magnet(xt=info_hash, tr=trackers or TRACKERS))
             for info_hash in info_hashes
         ],
+        limit=CapacityLimiter(10),
         timeout=60,
     ) as async_iterator:
         async for torrent_result in async_iterator:
