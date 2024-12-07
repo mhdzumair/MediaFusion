@@ -1,12 +1,13 @@
 import logging
 
 from sqlalchemy import func
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload, subqueryload
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select
 
-from db import data_models, public_schemas
+from db import data_models, public_schemas, sql_models
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from db.sql_models import (
     BaseMetadata,
@@ -26,7 +27,6 @@ from db.sql_models import (
     AkaTitle,
     TorrentStream,
 )
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 logger = logging.getLogger(__name__)
 
@@ -318,26 +318,36 @@ class MetadataRetriever(Generic[T, M]):
         except Exception as e:
             logger.error(f"Error caching data for {media_id}: {e}")
 
-    async def _fetch_metadata(
+    async def _fetch_base_metadata(
         self, session: AsyncSession, media_id: str
-    ) -> Optional[M]:
-        """Fetch type-specific metadata"""
+    ) -> Optional[BaseMetadata]:
+        """Fetch base metadata for a media item"""
         query = (
-            select(self.sql_model)
-            .where(self.sql_model.id == media_id)
+            select(BaseMetadata)
+            .where(BaseMetadata.id == media_id)
             .options(
-                joinedload(self.sql_model.base_metadata).options(
-                    selectinload(BaseMetadata.genres),
-                    selectinload(BaseMetadata.catalogs),
-                    selectinload(BaseMetadata.aka_titles),
-                )
+                selectinload(BaseMetadata.genres),
+                selectinload(BaseMetadata.catalogs),
+                selectinload(BaseMetadata.aka_titles),
             )
         )
 
+        result = await session.exec(query)
+        return result.one_or_none()
+
+    async def _fetch_media_type_metadata(
+        self, session: AsyncSession, media_id: str
+    ) -> Optional[M]:
+        """Fetch type-specific metadata"""
+
         if self.media_type in [MediaType.MOVIE, MediaType.SERIES]:
-            query = query.options(
-                selectinload(self.sql_model.parental_certificates),
-                selectinload(self.sql_model.stars),
+            query = (
+                select(self.sql_model)
+                .where(self.sql_model.id == media_id)
+                .options(
+                    selectinload(self.sql_model.parental_certificates),
+                    selectinload(self.sql_model.stars),
+                )
             )
 
         result = await session.exec(query)
@@ -352,15 +362,20 @@ class MetadataRetriever(Generic[T, M]):
             if cached_data:
                 return cached_data
 
-        metadata = await self._fetch_metadata(session, media_id)
-        if not metadata:
+        # Fetch base metadata
+        base_metadata = await self._fetch_base_metadata(session, media_id)
+        if not base_metadata:
+            return None
+
+        media_metadata = await self._fetch_media_type_metadata(session, media_id)
+        if not media_metadata:
             return None
 
         # Construct the full metadata object
-        metadata = self.data_model.model_validate(metadata)
+        model_metadata = self.data_model.model_validate(media_metadata)
 
-        await self._set_cache(media_id, metadata)
-        return metadata
+        await self._set_cache(media_id, model_metadata)
+        return model_metadata
 
 
 class SeriesMetadataRetriever(
@@ -368,23 +383,70 @@ class SeriesMetadataRetriever(
 ):
     """Series-specific metadata retriever with episode information"""
 
-    async def get_metadata(
-        self, session: AsyncSession, media_id: str, bypass_cache: bool = False
-    ) -> Optional[data_models.SeriesData]:
-        """Fetch series metadata with episodes"""
-        metadata = await super().get_metadata(session, media_id, bypass_cache)
-        if not metadata:
-            return None
+    async def _fetch_media_type_metadata(self, session: AsyncSession, media_id: str):
+        """Fetch type-specific metadata with seasons and episodes"""
+        query = (
+            select(self.sql_model)
+            .where(self.sql_model.id == media_id)
+            .options(
+                selectinload(self.sql_model.parental_certificates),
+                selectinload(self.sql_model.stars),
+                subqueryload(self.sql_model.seasons).options(
+                    subqueryload(sql_models.SeriesSeason.episodes)
+                ),
+            )
+        )
 
-        # Fetch episode data
-        season_data = await self.get_season_data(session, media_id)
-        metadata.seasons = season_data
-        return metadata
+        result = await session.exec(query)
+        return result.one_or_none()
 
-    async def get_season_data(self, session: AsyncSession, series_id: str) -> list:
-        """Fetch season data for series"""
-        # TODO: Implement season data retrieval
-        return []
+    async def _fetch_seasons_with_episodes(
+        self, session: AsyncSession, series_id: str
+    ) -> List[data_models.SeriesSeasonData]:
+        """Fetch all seasons and episodes for a series with stream counts"""
+        # First, get all seasons with their episodes
+        season_query = (
+            select(sql_models.SeriesSeason)
+            .where(sql_models.SeriesSeason.series_id == series_id)
+            .options(selectinload(sql_models.SeriesSeason.episodes))
+            .order_by(
+                sql_models.SeriesSeason.season_number,
+            )
+        )
+
+        result = await session.exec(season_query)
+        return result.all()
+
+    async def get_episode_streams(
+        self,
+        session: AsyncSession,
+        series_id: str,
+        season_number: int,
+        episode_number: int,
+    ) -> List[dict]:
+        """Get available streams for a specific episode"""
+        query = (
+            select(TorrentStream)
+            .where(
+                TorrentStream.meta_id == series_id, TorrentStream.is_blocked == False
+            )
+            .join(sql_models.EpisodeFile)
+            .where(
+                sql_models.EpisodeFile.season_number == season_number,
+                sql_models.EpisodeFile.episode_number == episode_number,
+            )
+            .options(
+                selectinload(TorrentStream.languages),
+                selectinload(TorrentStream.episode_files).where(
+                    sql_models.EpisodeFile.season_number == season_number,
+                    sql_models.EpisodeFile.episode_number == episode_number,
+                ),
+            )
+        )
+
+        result = await session.exec(query)
+        streams = result.unique().all()
+        return [stream.to_dict() for stream in streams]
 
 
 # Initialize retrievers
@@ -404,7 +466,7 @@ async def get_metadata_by_type(
     media_type: MediaType,
     media_id: str,
     bypass_cache: bool = False,
-) -> Optional[Any]:
+) -> data_models.MovieData | data_models.SeriesData | data_models.TVData | None:
     """Factory function to get metadata based on media type"""
     retrievers = {
         MediaType.MOVIE: movie_metadata,

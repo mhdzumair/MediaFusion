@@ -14,7 +14,9 @@ class Catalog(BaseModel):
 class Video(BaseModel):
     id: str
     title: str
-    released: str
+    released: str | None = None
+    description: str | None = None
+    thumbnail: str | None = None
     season: int | None = None
     episode: int | None = None
 

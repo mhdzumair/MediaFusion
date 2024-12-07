@@ -133,7 +133,10 @@ class SeriesSeason(SQLModel, table=True):
 
     # Relationships
     series: "SeriesMetadata" = Relationship(back_populates="seasons")
-    episodes: List["SeriesEpisode"] = Relationship(back_populates="season")
+    episodes: List["SeriesEpisode"] = Relationship(
+        back_populates="season",
+        sa_relationship_kwargs={"order_by": "SeriesEpisode.episode_number"},
+    )
 
 
 class SeriesEpisode(SQLModel, table=True):
@@ -146,12 +149,10 @@ class SeriesEpisode(SQLModel, table=True):
     season_id: int = Field(foreign_key="series_season.id", index=True)
     episode_number: int = Field(index=True)
     title: str
-    plot: Optional[str] = None
-    runtime: Optional[int] = None
-    air_date: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
+    overview: Optional[str] = None
+    released: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
     imdb_rating: Optional[float] = None
-    poster: Optional[str] = None
-    is_poster_working: bool = Field(default=True)
+    thumbnail: Optional[str] = None
 
     # Relationships
     season: SeriesSeason = Relationship(back_populates="episodes")
@@ -274,7 +275,10 @@ class SeriesMetadata(TimestampMixin, table=True):
     base_metadata: BaseMetadata = Relationship(
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete"}
     )
-    seasons: List[SeriesSeason] = Relationship(back_populates="series")
+    seasons: List[SeriesSeason] = Relationship(
+        back_populates="series",
+        sa_relationship_kwargs={"order_by": "SeriesSeason.season_number"},
+    )
     parental_certificates: List["ParentalCertificate"] = Relationship(
         link_model=MediaParentalCertificateLink,
         sa_relationship_kwargs={

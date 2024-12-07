@@ -492,14 +492,14 @@ async def search_meta(
 @app.get(
     "/{secret_str}/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
-    response_model=schemas.MetaItem,
+    response_model=public_schemas.MetaItem,
     response_model_exclude_none=True,
     response_model_by_alias=False,
 )
 @app.get(
     "/meta/{catalog_type}/{meta_id}.json",
     tags=["meta"],
-    response_model=schemas.MetaItem,
+    response_model=public_schemas.MetaItem,
     response_model_exclude_none=True,
     response_model_by_alias=False,
 )
@@ -514,16 +514,40 @@ async def get_meta(
         raise HTTPException(status_code=404, detail="Metadata not found")
 
     if catalog_type == MediaType.SERIES:
-        # For series, also fetch episodes
-        seasons = await sql_crud.series_metadata.get_episodes_data(session, meta_id)
-        return {
-            "meta": {
-                **metadata.model_dump(),
-                "seasons": [season.model_dump() for season in seasons],
-            }
-        }
+        # For series, parse episodes and seasons
+        episodes = [
+            public_schemas.Video(
+                id=f"{meta_id}:{season.season_number}:{episode.episode_number}",
+                title=episode.title,
+                released=str(episode.released) if episode.released else None,
+                description=episode.overview,
+                thumbnail=episode.thumbnail,
+                season=season.season_number,
+                episode=episode.episode_number,
+            )
+            for season in metadata.seasons
+            for episode in season.episodes
+        ]
+        metadata = public_schemas.Meta(
+            imdbRating=metadata.imdb_rating,
+            end_year=metadata.end_year,
+            videos=episodes,
+            **metadata.base_metadata.model_dump(),
+        )
+    elif catalog_type == MediaType.TV:
+        metadata = public_schemas.Meta(
+            language=metadata.tv_language,
+            country=metadata.country,
+            logo=metadata.logo,
+            **metadata.base_metadata.model_dump(),
+        )
+    elif catalog_type == MediaType.MOVIE:
+        metadata = public_schemas.Meta(
+            imdbRating=metadata.imdb_rating,
+            **metadata.base_metadata.model_dump(),
+        )
 
-    return {"meta": metadata.model_dump()}
+    return public_schemas.MetaItem(meta=metadata)
 
 
 @app.get(

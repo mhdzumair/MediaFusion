@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional, Callable, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from db.enums import MediaType, NudityStatus, IndexerType
 
@@ -48,7 +48,11 @@ def create_string_list_validator(attribute_name: str = "name") -> Callable:
     return validator
 
 
-class BaseMediaData(BaseModel):
+class BasePydanticModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BaseMediaData(BasePydanticModel):
     """Base model for common metadata fields"""
 
     id: str
@@ -81,11 +85,8 @@ class BaseMediaData(BaseModel):
         create_string_list_validator("title")
     )
 
-    class Config:
-        from_attributes = True
 
-
-class MovieData(BaseModel):
+class MovieData(BasePydanticModel):
     """Movie metadata data model"""
 
     id: str
@@ -103,11 +104,26 @@ class MovieData(BaseModel):
         create_string_list_validator()
     )
 
-    class Config:
-        from_attributes = True
+
+class SeriesEpisodeData(BasePydanticModel):
+    """Series episode data model"""
+
+    episode_number: int
+    title: str
+    overview: Optional[str] = None
+    released: Optional[datetime] = None
+    imdb_rating: Optional[float] = None
+    thumbnail: Optional[str] = None
 
 
-class SeriesData(BaseModel):
+class SeriesSeasonData(BasePydanticModel):
+    """Series season data model"""
+
+    season_number: int
+    episodes: List[SeriesEpisodeData] = []
+
+
+class SeriesData(BasePydanticModel):
     """Series metadata data model"""
 
     id: str
@@ -119,6 +135,8 @@ class SeriesData(BaseModel):
     stars: List[str] = Field(default_factory=list)
     parental_certificates: List[str] = Field(default_factory=list)
 
+    seasons: List[SeriesSeasonData] = []
+
     # Validators using the helper function
     _validate_stars = field_validator("stars", mode="before")(
         create_string_list_validator()
@@ -127,11 +145,8 @@ class SeriesData(BaseModel):
         create_string_list_validator()
     )
 
-    class Config:
-        from_attributes = True
 
-
-class TVData(BaseModel):
+class TVData(BasePydanticModel):
     """TV metadata data model"""
 
     id: str
@@ -141,11 +156,18 @@ class TVData(BaseModel):
     tv_language: Optional[str] = None
     logo: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+
+class EpisodeFileData(BasePydanticModel):
+    """Episode file data model"""
+
+    season_number: int
+    episode_number: int
+    file_index: Optional[int] = None
+    filename: Optional[str] = None
+    size: Optional[int] = None
 
 
-class TorrentStreamData(BaseModel):
+class TorrentStreamData(BasePydanticModel):
     """Torrent stream data model"""
 
     id: str
@@ -164,11 +186,10 @@ class TorrentStreamData(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    episode_files: List[EpisodeFileData] = []
 
 
-class TVStreamData(BaseModel):
+class TVStreamData(BasePydanticModel):
     """TV stream data model"""
 
     id: int
