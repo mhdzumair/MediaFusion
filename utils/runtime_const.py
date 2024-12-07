@@ -46,3 +46,5 @@ MEDIAFUSION_SEARCH_TTL = int(
 ZILEAN_SEARCH_TTL = int(
     timedelta(hours=settings.zilean_search_interval_hour).total_seconds()
 )
+
+SERVER_NAMESPACE = None
