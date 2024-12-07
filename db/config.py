@@ -124,10 +124,6 @@ class Settings(BaseSettings):
     disable_validate_tv_streams_in_db: bool = False
     sport_video_scheduler_crontab: str = "*/20 * * * *"
     disable_sport_video_scheduler: bool = False
-    streamed_scheduler_crontab: str = "*/30 * * * *"
-    disable_streamed_scheduler: bool = False
-    streambtw_scheduler_crontab: str = "*/15 * * * *"
-    disable_streambtw_scheduler: bool = True
     dlhd_scheduler_crontab: str = "25 * * * *"
     disable_dlhd_scheduler: bool = False
     update_imdb_data_crontab: str = "0 2 * * *"

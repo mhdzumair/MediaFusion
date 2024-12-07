@@ -256,32 +256,6 @@
 	  }
 	}
   },
-  "streamed": {
-    "api_base_url": "https://streamed.su/api",
-    "live_matches_endpoint": "/matches/live",
-    "stream_url_template": "/stream/{source}/{id}",
-    "image_url_template": "/images/poster/{batch_id_1}/{batch_id_2}.webp",
-    "m3u8_base_url": "https://{domain}/{source}/js/{id}/{stream_no}/playlist.m3u8",
-    "mediafusion_referer": "https://mediafusion.addon/",
-	"session_url": "https://secure.bigcoolersonline.top/init-session",
-    "category_mapping": {
-      "afl": "Afl",
-      "american-football": "American Football",
-      "baseball": "Baseball",
-      "basketball": "Basketball",
-      "billiards": "Billiards",
-      "cricket": "Cricket",
-      "darts": "Dart",
-      "fight": "Fighting",
-      "football": "Football",
-      "golf": "Golf",
-      "hockey": "Hockey",
-      "motor-sports": "Motor Sport",
-      "other": "Other Sports",
-      "rugby": "Rugby",
-      "tennis": "Tennis"
-    }
-  },
   "dlhd": {
 	"schedule_url": "https://dlhd.so/schedule/schedule-generated.json",
 	"m3u8_base_url": "https://xyzdddd.mizhls.ru/lb/premium{channel_id}/index.m3u8",

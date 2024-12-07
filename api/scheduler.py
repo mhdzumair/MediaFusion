@@ -109,30 +109,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    # Schedule streamed scraper
-    if not settings.disable_streamed_scheduler:
-        scheduler.add_job(
-            run_spider.send,
-            CronTrigger.from_crontab(settings.streamed_scheduler_crontab),
-            name="streamed",
-            kwargs={
-                "spider_name": "streamed",
-                "crontab_expression": settings.streamed_scheduler_crontab,
-            },
-        )
-
-    # Schedule streambtw scraper
-    if not settings.disable_streambtw_scheduler:
-        scheduler.add_job(
-            run_spider.send,
-            CronTrigger.from_crontab(settings.streambtw_scheduler_crontab),
-            name="streambtw",
-            kwargs={
-                "spider_name": "streambtw",
-                "crontab_expression": settings.streambtw_scheduler_crontab,
-            },
-        )
-
     # Schedule dlhd scraper
     if not settings.disable_dlhd_scheduler:
         scheduler.add_job(
