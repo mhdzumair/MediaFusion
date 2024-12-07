@@ -313,6 +313,7 @@ function updateFormFields() {
             break;
         case 'update_imdb_data':
             setElementDisplay("imdbDataParameters", "block");
+            authRequired = false;
             break;
         case 'block_torrent':
             setElementDisplay("blockTorrentParameters", "block");
@@ -579,9 +580,10 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
         resetButton(submitBtn, loadingSpinner);
         return;
     }
+    const imdbType = document.getElementById('imdbType').value;
 
     try {
-        const response = await fetch(`/scraper/imdb_data?meta_id=${imdbId}`, {
+        const response = await fetch(`/scraper/imdb_data?meta_id=${imdbId}&media_type=${imdbType}`, {
             method: 'GET',
             headers: {'Content-Type': 'application/json'}
         });

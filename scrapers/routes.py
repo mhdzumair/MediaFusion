@@ -146,6 +146,15 @@ async def update_imdb_data(
     if not (meta_id.startswith("tt") and meta_id[2:].isdigit()):
         raise_error("Invalid IMDb ID. Must start with 'tt'.")
 
+    if media_type == "series":
+        series = await get_series_data_by_id(meta_id)
+        if not series:
+            raise_error(f"Series with ID {meta_id} not found.")
+    else:
+        movie = await get_movie_data_by_id(meta_id)
+        if not movie:
+            raise_error(f"Movie with ID {meta_id} not found.")
+
     await imdb_data.process_imdb_data([meta_id], media_type)
 
     if redirect_video:
