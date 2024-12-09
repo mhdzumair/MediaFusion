@@ -505,20 +505,20 @@
         },
         "curl-cffi": {
             "hashes": [
-                "sha256:39e195a13b95bd7e4a1e8eb7804807b4504c462f6886fde01dfe4b7552fd965e",
-                "sha256:3f9373ce27b20e65fb1e6cbea6e4411edca1f3b4440be68090b262eece728544",
-                "sha256:43367efb8d48e9997cf7591084ed7529409ad98bb67e284ae152f2a15e4ee68e",
-                "sha256:890f1b0e1454977ff6bd388d29eb1eafb76bb8ef63d3c8b7539aafd4808a6cec",
-                "sha256:901012e21af899bdf1278fd9fcee5aad6931ed56e1f5a620ffa90220c9e79f10",
-                "sha256:9a90bfd0bcc7bf0f30ef6de6f4e612ea1bdc238a48928845532109a0273f6275",
-                "sha256:a357d3da6aa8ccd41f1e6e422b9ff09ad4cc99b23b8f6299998cbfee6e690f01",
-                "sha256:b5520bcf6284417e66c82728512e344b50bc0e9d8bd7949923b30558746b49a3",
-                "sha256:ec6718bc5151b3e0ecc35aaf40078a39cc239405182c63fc95933eb7bff572dd",
-                "sha256:fe01be42c27667353028ee06802cc32e3936496e645a39175db4cf7bea45bb10"
+                "sha256:31a80d5ab1bc0f9d4bc0f98d91dc1a3ed4aa08566f21b76ecfde23ece08e0fa9",
+                "sha256:37a2c8ec77b9914b0c14c74f604991751948d9d5def58fcddcbe73e3b62111c1",
+                "sha256:3f8c19b5ca979e806fcf4de24f606eff745c85b43e9e88956d1db3c07516cc4b",
+                "sha256:417f5264fa746d2680ebb20fbfbcfe5d77fa11a735548d9db6734e839a238e22",
+                "sha256:4593b120c8101b327e4e2d2c278652c5ef58c42dd39dc4586c2789e42a8bc8b1",
+                "sha256:8e9019cf6996bf508e4a51751d7217f22d5902405878679a3ac4757159251741",
+                "sha256:9957464013b1f76b0e9259ab846fa60faef7ff08e96e7a1764dd63c83005b836",
+                "sha256:bb9db59b164f2b6be65be62add5896a6fe125c52572aca3046caffbd7eb38f46",
+                "sha256:c4b5685fab3984aae559e6590a6434a7e34f5d615c562c29c1554a90fffbf0bd",
+                "sha256:fb76b654fcf9f3e0400cf13be949e4fc525aeb0f9e2e90e61ae48d5bd8557d25"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.7.3"
+            "version": "==0.7.4"
         },
         "defusedxml": {
             "hashes": [
