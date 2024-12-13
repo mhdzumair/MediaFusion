@@ -33,7 +33,7 @@ These settings control the database and caching behavior of MediaFusion.
 These URLs define the locations of various external services used by MediaFusion.
 
 - **poster_host_url** (default: Use the Host URL value): The URL where poster images are served from. Use the same value as `host_url` if posters are served from the same location.
-- **scraper_proxy_url**: The proxy URL for the scraper, if any.
+- **requests_proxy_url**: The URL for forwarding requests through a proxy. This setting is optional.
 - **torrentio_url** (default: `"https://torrentio.strem.fun"`): The Torrentio / KightCrawler URL.
 - **mediafusion_url** (default: `"https://mediafusion.elfhosted.com"`): The Mediafusion URL.
 - **playwright_cdp_url** (default: `"ws://browserless:3000?blockAds=true&stealth=true"`): The URL for the Playwright CDP (Chrome DevTools Protocol) service.

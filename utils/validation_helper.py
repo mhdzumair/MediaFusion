@@ -6,6 +6,7 @@ from urllib.parse import urlparse, urljoin
 import httpx
 
 from db import schemas
+from db.config import settings
 from utils import const
 from utils.runtime_const import PRIVATE_CIDR
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -17,7 +18,7 @@ def is_valid_url(url: str) -> bool:
 
 
 async def does_url_exist(url: str) -> bool:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
         try:
             response = await client.head(
                 url, timeout=10, headers=const.UA_HEADER, follow_redirects=True
@@ -43,7 +44,7 @@ async def validate_live_stream_url(
         return False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
         try:
             response = await client.head(
                 url, timeout=10, headers=headers, follow_redirects=True

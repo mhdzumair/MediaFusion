@@ -6,6 +6,7 @@ from io import BytesIO
 from typing import Literal, Annotated
 
 import aiohttp
+import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import (
     Depends,
@@ -140,7 +141,7 @@ async def get_home(request: Request):
 @wrappers.exclude_rate_limit
 async def health():
     start_time = asyncio.get_event_loop().time()
-    async with aiohttp.ClientSession() as session:
+    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as session:
         try:
             async with session.head("https://www.google.com", timeout=10) as response:
                 return {

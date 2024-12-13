@@ -7,7 +7,9 @@ from typing import Optional, Dict, Union
 
 import aiohttp
 from aiohttp import ClientResponse, ClientTimeout, ContentTypeError
+from aiohttp_socks import ProxyConnector
 
+from db.config import settings
 from streaming_providers.exceptions import ProviderException
 
 
@@ -22,9 +24,11 @@ class DebridClient(AsyncContextDecorator):
     @property
     def session(self) -> aiohttp.ClientSession:
         if self._session is None:
+            connector = aiohttp.TCPConnector(ttl_dns_cache=300)
+            if settings.requests_proxy_url:
+                connector = ProxyConnector.from_url(settings.requests_proxy_url)
             self._session = aiohttp.ClientSession(
-                timeout=self._timeout,
-                connector=aiohttp.TCPConnector(ttl_dns_cache=300),
+                timeout=self._timeout, connector=connector
             )
         return self._session
 

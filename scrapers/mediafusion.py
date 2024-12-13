@@ -2,6 +2,7 @@ from datetime import timedelta
 from typing import Dict, Any, Optional, List
 
 import PTT
+import httpx
 
 from db.config import settings
 from db.models import MediaFusionMetaData, TorrentStreams
@@ -11,11 +12,16 @@ from utils.runtime_const import MEDIAFUSION_SEARCH_TTL
 
 
 class MediafusionScraper(StremioScraper):
+    cache_key_prefix = "mediafusion"
+
     def __init__(self):
         super().__init__(
-            cache_key_prefix="mediafusion",
+            cache_key_prefix=self.cache_key_prefix,
             base_url=settings.mediafusion_url,
             logger_name=__name__,
+        )
+        self.http_client = httpx.AsyncClient(
+            timeout=30, proxy=settings.requests_proxy_url
         )
 
     @StremioScraper.cache(ttl=MEDIAFUSION_SEARCH_TTL)

@@ -4,7 +4,7 @@ from datetime import datetime
 
 import dramatiq
 from bs4 import BeautifulSoup
-from curl_cffi.requests import AsyncSession
+import httpx
 
 from db.config import settings
 from db.models import TorrentStreams, Episode, Season
@@ -12,16 +12,6 @@ from utils.torrent import info_hashes_to_torrent_metadata
 
 # set httpx logging level
 logging.getLogger("httpx").setLevel(logging.WARNING)
-
-
-PROXIES = (
-    {
-        "http": settings.scraper_proxy_url,
-        "https": settings.scraper_proxy_url,
-    }
-    if settings.scraper_proxy_url
-    else None
-)
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=10)
@@ -101,8 +91,8 @@ def get_country_name(country_code):
 
 async def get_page_bs4(url: str):
     try:
-        async with AsyncSession(proxies=PROXIES) as session:
-            response = await session.get(url, impersonate="chrome", timeout=30)
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as session:
+            response = await session.get(url, timeout=10)
             if response.status_code != 200:
                 return None
             return BeautifulSoup(response.text, "html.parser")

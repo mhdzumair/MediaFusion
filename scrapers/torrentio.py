@@ -2,6 +2,7 @@ from datetime import timedelta
 from typing import Dict, Any, List
 
 import PTT
+import httpx
 
 from db.config import settings
 from db.models import MediaFusionMetaData, TorrentStreams
@@ -13,11 +14,16 @@ from utils.runtime_const import TORRENTIO_SEARCH_TTL
 
 
 class TorrentioScraper(StremioScraper):
+    cache_key_prefix = "torrentio"
+
     def __init__(self):
         super().__init__(
-            cache_key_prefix="torrentio",
+            cache_key_prefix=self.cache_key_prefix,
             base_url=settings.torrentio_url,
             logger_name=__name__,
+        )
+        self.http_client = httpx.AsyncClient(
+            timeout=30, proxy=settings.requests_proxy_url
         )
 
     @StremioScraper.cache(ttl=TORRENTIO_SEARCH_TTL)

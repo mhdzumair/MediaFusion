@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     redis_max_connections: int = 100
 
     # External Service URLs
-    scraper_proxy_url: str | None = None
+    requests_proxy_url: str | None = None
     playwright_cdp_url: str = "ws://browserless:3000?blockAds=true&stealth=true"
     flaresolverr_url: str = "http://flaresolverr:8191/v1"
 

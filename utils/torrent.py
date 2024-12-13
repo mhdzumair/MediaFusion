@@ -18,6 +18,7 @@ from demagnetize.core import Demagnetizer
 from torf import Magnet, MagnetError
 
 import utils.runtime_const
+from db.config import settings
 from utils.parser import is_contain_18_plus_keywords
 from utils.runtime_const import TRACKERS
 from utils.validation_helper import is_video_file
@@ -172,7 +173,7 @@ async def init_best_trackers():
     # get the best trackers from https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
             response = await client.get(
                 "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt",
                 timeout=30,

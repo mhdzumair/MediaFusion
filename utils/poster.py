@@ -5,14 +5,14 @@ from io import BytesIO
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError, ImageStat
-from imdb import Cinemagoer
+from aiohttp_socks import ProxyConnector
 
+from db.config import settings
 from db.models import MediaFusionMetaData
 from scrapers.imdb_data import get_imdb_rating
 from utils import const
 from db.redis_database import REDIS_ASYNC_CLIENT
 
-ia = Cinemagoer()
 font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
@@ -24,7 +24,10 @@ async def fetch_poster_image(url: str) -> bytes:
         logging.info(f"Using cached image for URL: {url}")
         return cached_image
 
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector()
+    if settings.requests_proxy_url:
+        connector = ProxyConnector.from_url(settings.requests_proxy_url)
+    async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(url, timeout=10, headers=const.UA_HEADER) as response:
             response.raise_for_status()
             if not response.headers["Content-Type"].lower().startswith("image/"):

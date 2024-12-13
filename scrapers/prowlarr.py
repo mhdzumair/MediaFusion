@@ -74,6 +74,7 @@ class ProwlarrScraper(BaseScraper):
         super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
         self.indexer_status = {}
         self.indexer_circuit_breakers = {}
+        self.http_client = httpx.AsyncClient(timeout=30, headers=self.headers)
 
     async def get_healthy_indexers(self) -> List[int]:
         """Fetch and return list of healthy indexer IDs with detailed health checks"""
@@ -439,21 +440,20 @@ class ProwlarrScraper(BaseScraper):
             if circuit_breaker.is_closed():
                 try:
                     search_params = {**params, "indexerIds": [indexer_id]}
-                    async with httpx.AsyncClient(headers=self.headers) as client:
-                        response = await client.get(
-                            self.search_url,
-                            params=search_params,
-                            timeout=timeout,
-                        )
-                        response.raise_for_status()
-                        indexer_results = response.json()
+                    response = await self.http_client.get(
+                        self.search_url,
+                        params=search_params,
+                        timeout=timeout,
+                    )
+                    response.raise_for_status()
+                    indexer_results = response.json()
 
-                        # Record success
-                        circuit_breaker.record_success()
-                        self.metrics.record_indexer_success(
-                            indexer_name, len(indexer_results)
-                        )
-                        results.extend(indexer_results)
+                    # Record success
+                    circuit_breaker.record_success()
+                    self.metrics.record_indexer_success(
+                        indexer_name, len(indexer_results)
+                    )
+                    results.extend(indexer_results)
 
                 except Exception as e:
                     error_msg = f"Error searching indexer {indexer_name}: {str(e)}"
@@ -842,12 +842,11 @@ class ProwlarrScraper(BaseScraper):
 
     async def fetch_indexers(self):
         try:
-            async with httpx.AsyncClient(headers=self.headers) as client:
-                response = await client.get(
-                    self.base_url + "/api/v1/indexer", timeout=10
-                )
-                response.raise_for_status()
-                return response.json()
+            response = await self.http_client.get(
+                self.base_url + "/api/v1/indexer", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             self.logger.exception(f"Failed to fetch indexers: {e}")
             return []
@@ -855,22 +854,21 @@ class ProwlarrScraper(BaseScraper):
     async def fetch_indexer_statuses(self) -> Dict[int, Dict]:
         """Fetch current status information for all indexers"""
         try:
-            async with httpx.AsyncClient(headers=self.headers) as client:
-                response = await client.get(
-                    f"{self.base_url}/api/v1/indexerstatus", timeout=10
-                )
-                response.raise_for_status()
+            response = await self.http_client.get(
+                f"{self.base_url}/api/v1/indexerstatus", timeout=10
+            )
+            response.raise_for_status()
 
-                # Create a mapping of indexerId to status info
-                status_data = {}
-                for status in response.json():
-                    indexer_id = status.get("indexerId")
-                    if indexer_id:
-                        status_data[indexer_id] = {
-                            "disabled_till": status.get("disabledTill"),
-                            "most_recent_failure": status.get("mostRecentFailure"),
-                            "initial_failure": status.get("initialFailure"),
-                        }
+            # Create a mapping of indexerId to status info
+            status_data = {}
+            for status in response.json():
+                indexer_id = status.get("indexerId")
+                if indexer_id:
+                    status_data[indexer_id] = {
+                        "disabled_till": status.get("disabledTill"),
+                        "most_recent_failure": status.get("mostRecentFailure"),
+                        "initial_failure": status.get("initialFailure"),
+                    }
 
                 return status_data
         except Exception as e:
@@ -892,22 +890,21 @@ class ProwlarrScraper(BaseScraper):
                 return {}, False
             return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, False
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                download_url,
-                follow_redirects=False,
-                timeout=settings.prowlarr_search_query_timeout,
+        response = await self.http_client.get(
+            download_url,
+            follow_redirects=False,
+            timeout=settings.prowlarr_search_query_timeout,
+        )
+        if response.status_code in [301, 302, 303, 307, 308]:
+            redirect_url = response.headers.get("Location")
+            return await self.get_torrent_data(redirect_url, indexer)
+        response.raise_for_status()
+        if response.headers.get("Content-Type") == "application/x-bittorrent":
+            return (
+                extract_torrent_metadata(response.content, is_parse_ptt=False),
+                True,
             )
-            if response.status_code in [301, 302, 303, 307, 308]:
-                redirect_url = response.headers.get("Location")
-                return await self.get_torrent_data(redirect_url, indexer)
-            response.raise_for_status()
-            if response.headers.get("Content-Type") == "application/x-bittorrent":
-                return (
-                    extract_torrent_metadata(response.content, is_parse_ptt=False),
-                    True,
-                )
-            return {}, False
+        return {}, False
 
     @staticmethod
     def parse_title_data(title: str) -> dict:

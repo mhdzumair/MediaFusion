@@ -5,6 +5,7 @@ import time
 import httpx
 
 from db import schemas
+from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 
 RPDB_SUPPORTED_SET = "rpdb_supported_ids"
@@ -14,7 +15,9 @@ RPDB_UNSUPPORTED_EXPIRY = 60 * 60 * 24 * 7  # 7 days in seconds
 
 async def check_rpdb_poster_availability(rpdb_poster_url: str) -> bool:
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            timeout=10.0, proxy=settings.requests_proxy_url
+        ) as client:
             response = await client.head(rpdb_poster_url)
             return response.status_code == 200
     except httpx.HTTPError as exc:

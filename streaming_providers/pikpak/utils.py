@@ -3,10 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-import aiohttp
 import httpx
 from pikpakapi import PikPakApi, PikpakException
 
+from db.config import settings
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -154,6 +154,7 @@ async def initialize_pikpak(user_data: UserData):
             httpx_client_args={
                 "transport": httpx.AsyncHTTPTransport(retries=3),
                 "timeout": 10,
+                "proxy": settings.requests_proxy_url,
             },
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"user_data": user_data},
@@ -165,6 +166,7 @@ async def initialize_pikpak(user_data: UserData):
             httpx_client_args={
                 "transport": httpx.AsyncHTTPTransport(retries=3),
                 "timeout": 10,
+                "proxy": settings.requests_proxy_url,
             },
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"user_data": user_data},
@@ -182,7 +184,7 @@ async def initialize_pikpak(user_data: UserData):
                 "Failed to connect to PikPak. Please try again later.",
                 "debrid_service_down_error.mp4",
             )
-        except (aiohttp.ClientError, httpx.ReadTimeout):
+        except httpx.ReadTimeout:
             raise ProviderException(
                 "Failed to connect to PikPak. Please try again later.",
                 "debrid_service_down_error.mp4",

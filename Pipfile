@@ -36,7 +36,6 @@ aiowebdav = "*"
 m3u-ipytv = "*"
 python-multipart = "*"
 prometheus-client = "*"
-curl-cffi = "*"
 pyasynctracker = "*"
 humanize = {git = "git+https://github.com/python-humanize/humanize.git"}
 scrapy-playwright = "*"
@@ -48,6 +47,8 @@ ratelimit = "*"
 qrcode = "*"
 aioseedrcc = "*"
 pytz = "*"
+aiohttp-socks = "*"
+socksio = "*"
 
 [dev-packages]
 pysocks = "*"

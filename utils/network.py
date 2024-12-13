@@ -7,6 +7,7 @@ from urllib.parse import urlencode, urlparse
 import httpx
 from fastapi.requests import Request
 
+from db.config import settings
 from db.schemas import UserData
 from utils import crypto
 from utils.crypto import encrypt_data
@@ -217,7 +218,7 @@ async def get_redirector_url(url: str, headers: dict) -> str | None:
     Get the final URL after following all redirects.
     """
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
             response = await client.head(url, headers=headers, follow_redirects=True)
             return str(response.url)
     except httpx.HTTPError as e:
