@@ -65,7 +65,7 @@ def search_imdb(
     def get_poster_urls(imdb_id: str) -> tuple:
         poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
         try:
-            async with httpx.Client(proxy=settings.requests_proxy_url) as client:
+            with httpx.Client(proxy=settings.requests_proxy_url) as client:
                 response = client.head(poster, timeout=10)
                 if response.status_code == 200:
                     return poster, poster
