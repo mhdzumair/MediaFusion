@@ -82,30 +82,17 @@ class StremThru(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict] = None,
-        json: Optional[dict] = None,
         params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
         is_http_response: bool = False,
+        is_expected_to_fail: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
         params = params or {}
-        url = urljoin(self.BASE_URL, url)
+        full_url = urljoin(self.BASE_URL, url)
         response = await super()._make_request(
-            method,
-            url,
-            data,
-            json,
-            params,
-            is_return_none,
-            is_expected_to_fail,
-            retry_count,
-            is_http_response,
+            method=method, url=full_url, params=params, **kwargs
         )
-        if is_http_response:
-            return response
-        if is_expected_to_fail:
+        if is_http_response or is_expected_to_fail:
             return response
         return response.get("data")
 

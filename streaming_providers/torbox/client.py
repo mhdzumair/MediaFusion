@@ -44,17 +44,13 @@ class Torbox(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str] = None,
-        json: Optional[dict] = None,
         params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        **kwargs,
     ) -> dict:
         params = params or {}
-        url = self.BASE_URL + url
+        full_url = self.BASE_URL + url
         return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=full_url, params=params, **kwargs
         )
 
     async def add_magnet_link(self, magnet_link):
@@ -111,7 +107,12 @@ class Torbox(DebridClient):
         response = await self._make_request(
             "GET",
             "/torrents/requestdl",
-            params={"token": self.token, "torrent_id": torrent_id, "file_id": filename, "user_ip": user_ip},
+            params={
+                "token": self.token,
+                "torrent_id": torrent_id,
+                "file_id": filename,
+                "user_ip": user_ip,
+            },
             is_expected_to_fail=True,
         )
         if "successfully" in response.get("detail"):

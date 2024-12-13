@@ -65,8 +65,8 @@ class DebridClient(AsyncContextDecorator):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
-        retry_count: int = 0,
         is_http_response: bool = False,
+        retry_count: int = 0,
     ) -> dict | list | str:
         try:
             async with self.session.request(
@@ -89,6 +89,7 @@ class DebridClient(AsyncContextDecorator):
                     params=params,
                     is_return_none=is_return_none,
                     is_expected_to_fail=is_expected_to_fail,
+                    is_http_response=is_http_response,
                     retry_count=retry_count + 1,
                 )
             await self._handle_request_error(error)
@@ -146,7 +147,10 @@ class DebridClient(AsyncContextDecorator):
 
     @staticmethod
     async def _parse_response(
-        response: ClientResponse, is_return_none: bool, is_expected_to_fail: bool, is_http_response: bool = False
+        response: ClientResponse,
+        is_return_none: bool,
+        is_expected_to_fail: bool,
+        is_http_response: bool = False,
     ) -> Union[dict, list, str]:
         if is_return_none:
             return {}

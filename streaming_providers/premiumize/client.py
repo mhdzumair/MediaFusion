@@ -24,21 +24,13 @@ class Premiumize(DebridClient):
         pass
 
     async def _make_request(
-        self,
-        method: str,
-        url: str,
-        data: Optional[dict | str] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        self, method: str, url: str, params: Optional[dict] = None, **kwargs
     ) -> dict | list:
         params = params or {}
         if self.is_private_token:
             params["apikey"] = self.token
         return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=url, params=params, **kwargs
         )
 
     async def initialize_headers(self):
@@ -50,7 +42,7 @@ class Premiumize(DebridClient):
             else:
                 self.is_private_token = True
         if self.user_ip:
-            self.headers['X-Forwarded-For'] = self.user_ip
+            self.headers["X-Forwarded-For"] = self.user_ip
 
     def get_authorization_url(self) -> str:
         state = uuid4().hex

@@ -36,19 +36,15 @@ class OffCloud(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str] = None,
-        json: Optional[dict] = None,
         params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
         delete: bool = False,
+        **kwargs,
     ) -> dict | list:
         params = params or {}
         params["key"] = self.token
         full_url = (self.DELETE_URL if delete else self.BASE_URL) + url
         return await super()._make_request(
-            method, full_url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=full_url, params=params, **kwargs
         )
 
     async def add_magnet_link(self, magnet_link: str) -> dict:

@@ -22,23 +22,15 @@ class AllDebrid(DebridClient):
         pass
 
     async def _make_request(
-        self,
-        method: str,
-        url: str,
-        data: Optional[dict] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        self, method: str, url: str, params: Optional[dict] = None, **kwargs
     ) -> dict:
         params = params or {}
         params["agent"] = self.AGENT
         if self.user_ip:
             params["ip"] = self.user_ip
-        url = self.BASE_URL + url
+        full_url = self.BASE_URL + url
         return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=full_url, params=params, **kwargs
         )
 
     @staticmethod

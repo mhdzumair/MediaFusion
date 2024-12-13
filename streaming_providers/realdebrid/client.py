@@ -42,18 +42,12 @@ class RealDebrid(DebridClient):
         method: str,
         url: str,
         data: Optional[dict] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        **kwargs,
     ) -> dict:
         if method == "POST" and self.user_ip:
             data = data or {}
             data["ip"] = self.user_ip
-        return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
-        )
+        return await super()._make_request(method=method, url=url, data=data, **kwargs)
 
     async def initialize_headers(self):
         if self.token:
