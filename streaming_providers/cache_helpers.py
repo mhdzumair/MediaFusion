@@ -2,6 +2,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 
+import dramatiq
+
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import StreamingProvider
@@ -24,7 +26,9 @@ def get_cache_service_name(streaming_provider: StreamingProvider):
 
 
 async def store_cached_info_hashes(
-    streaming_provider: StreamingProvider, info_hashes: List[str], service_override: str | None = None
+    streaming_provider: StreamingProvider,
+    info_hashes: List[str],
+    service_override: str | None = None,
 ) -> None:
     """
     Store multiple cached info hashes efficiently.
@@ -33,11 +37,15 @@ async def store_cached_info_hashes(
     Args:
         streaming_provider: The streaming provider object
         info_hashes: List of info hashes that are confirmed to be cached
+        service_override: Optional service name override
     """
     if not info_hashes:
         return
 
-    if streaming_provider.service == "stremthru" and not settings.store_stremthru_magnet_cache:
+    if (
+        streaming_provider.service == "stremthru"
+        and not settings.store_stremthru_magnet_cache
+    ):
         # Don't cache info hashes for StremThru
         return
 
@@ -156,3 +164,21 @@ async def cleanup_service_cache(service: str) -> None:
 
     except Exception as e:
         logging.error(f"Error during cache cleanup for {service}: {e}")
+
+
+@dramatiq.actor(
+    time_limit=5 * 60 * 1000,  # 5 minutes
+    priority=2,
+)
+async def cleanup_expired_cache(**kwargs):
+    """
+    Cleanup expired entries for all services.
+    """
+    try:
+        services = await REDIS_ASYNC_CLIENT.keys(f"{CACHE_KEY_PREFIX}*")
+        for service in services:
+            service_name = service.decode("utf-8").replace(CACHE_KEY_PREFIX, "")
+            logging.info(f"Cleaning up cache for {service_name}")
+            await cleanup_service_cache(service_name)
+    except Exception as e:
+        logging.error(f"Error during cache cleanup: {e}")

@@ -8,6 +8,7 @@ from scrapers.prowlarr_feed import run_prowlarr_feed_scraper
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
 from scrapers.utils import cleanup_expired_scraper_task
+from streaming_providers.cache_helpers import cleanup_expired_cache
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -203,5 +204,14 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         name="cleanup_expired_scraper_task",
         kwargs={
             "crontab_expression": settings.cleanup_expired_scraper_task_crontab,
+        },
+    )
+
+    scheduler.add_job(
+        cleanup_expired_cache.send,
+        CronTrigger.from_crontab(settings.cleanup_expired_cache_task_crontab),
+        name="cleanup_expired_cache_task",
+        kwargs={
+            "crontab_expression": settings.cleanup_expired_cache_task_crontab,
         },
     )

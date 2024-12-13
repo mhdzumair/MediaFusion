@@ -139,6 +139,7 @@ class Settings(BaseSettings):
     prowlarr_feed_scraper_crontab: str = "0 */3 * * *"
     disable_prowlarr_feed_scraper: bool = False
     cleanup_expired_scraper_task_crontab: str = "0 * * * *"
+    cleanup_expired_cache_task_crontab: str = "0 0 * * *"
 
     @model_validator(mode="after")
     def default_poster_host_url(self) -> "Settings":
