@@ -1,17 +1,16 @@
 import logging
+import math
 from datetime import datetime, timedelta, date
 from typing import Optional
 
 import dramatiq
 import httpx
-import math
 from cinemagoerng import model, web, piculet
-from cinemagoerng.model import TVSeries
-from curl_cffi import requests
-from imdb import Cinemagoer, IMDbDataAccessError
+from cinemagoerng.model import TVSeries, SearchFilters, RangeFilter
 from thefuzz import fuzz
 from typedload.exceptions import TypedloadValueError
 
+from db.config import settings
 from db.models import (
     MediaFusionMetaData,
 )
@@ -19,12 +18,12 @@ from db.schemas import MetaIdProjection
 from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 
-ia = Cinemagoer()
-
 
 async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.Title]:
     try:
-        title = web.get_title(imdb_id, page="main")
+        title = await web.get_title_async(
+            imdb_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
+        )
     except Exception:
         title = await get_imdb_data_via_cinemeta(imdb_id, media_type)
 
@@ -33,9 +32,17 @@ async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.T
 
     try:
         web.update_title(
-            title, page="parental_guide", keys=["certification", "advisories"]
+            title,
+            page="parental_guide",
+            keys=["certification", "advisories"],
+            httpx_kwargs={"proxy": settings.requests_proxy_url},
         )
-        web.update_title(title, page="akas", keys=["akas"])
+        web.update_title(
+            title,
+            page="akas",
+            keys=["akas"],
+            httpx_kwargs={"proxy": settings.requests_proxy_url},
+        )
     except Exception:
         pass
 
@@ -44,7 +51,9 @@ async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.T
 
 def get_imdb_rating(movie_id: str) -> Optional[float]:
     try:
-        movie = web.get_title(movie_id, page="main")
+        movie = web.get_title(
+            movie_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
+        )
     except Exception:
         return None
     return movie.rating
@@ -56,25 +65,16 @@ def search_imdb(
     def get_poster_urls(imdb_id: str) -> tuple:
         poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
         try:
-            response = requests.head(poster, timeout=10)
-            if response.status_code == 200:
-                return (
-                    poster,
-                    poster,
-                )
-        except requests.RequestsError:
+            async with httpx.Client(proxy=settings.requests_proxy_url) as client:
+                response = client.head(poster, timeout=10)
+                if response.status_code == 200:
+                    return poster, poster
+        except httpx.RequestError:
             pass
         return None, None
 
-    def process_movie(movie, year: int) -> dict:
+    def process_movie(imdb_title: model.Movie | model.TVSeries) -> dict:
         try:
-            try:
-                imdb_title = web.get_title(f"tt{movie.movieID}", page="main")
-            except TypedloadValueError:
-                return {}
-            if not imdb_title:
-                return {}
-
             if (imdb_title.type_id != "tvSeries" and imdb_title.year != year) or (
                 imdb_title.type_id == "tvSeries"
                 and year is not None
@@ -108,37 +108,43 @@ def search_imdb(
                 "type_id": imdb_title.type_id,
                 "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
                 "parent_guide_certificates": list(
-                    set(
-                        cert.certificate
-                        for cert in imdb_title.certification.certificates
-                    )
+                    set(cert.ratings for cert in imdb_title.certification.certificates)
                 ),
                 "runtime": imdb_title.runtime,
             }
-        except (IMDbDataAccessError, AttributeError, Exception) as e:
-            logging.error(f"IMDB search: Error processing movie: {e}")
+        except (AttributeError, Exception) as err:
+            logging.error(f"IMDB search: Error processing movie: {err}")
             return {}
 
+    title_types = ["movie", "tvSeries"]
     if media_type:
-        media_type = "movie" if media_type == "movie" else "tv series"
+        title_types = ["movie"] if media_type == "movie" else ["tvSeries"]
     for attempt in range(max_retries):
         try:
-            results = ia.search_movie(title)
+            results = web.search_titles(
+                title,
+                filters=SearchFilters(
+                    title_types=title_types,
+                    release_date=(
+                        RangeFilter(min_value=year, max_value=year)
+                        if media_type == "movie"
+                        else RangeFilter(max_value=year)
+                    ),
+                ),
+                count=5,
+            )
 
-            for movie in results:
-                if media_type and movie.get("kind", "") != media_type:
+            for imdb_data in results:
+                if fuzz.ratio(imdb_data.title.lower(), title.lower()) < 85:
                     continue
 
-                if fuzz.ratio(movie.get("title", "").lower(), title.lower()) < 85:
-                    continue
-
-                movie_data = process_movie(movie, year)
-                if movie_data:
-                    return movie_data
+                imdb_title_data = process_movie(imdb_data)
+                if imdb_title_data:
+                    return imdb_title_data
 
             return {}  # No matching movie found
 
-        except (IMDbDataAccessError, Exception) as e:
+        except Exception as e:
             logging.debug(f"Error in attempt {attempt + 1}: {e}")
             if attempt == max_retries - 1:
                 logging.warning(
@@ -163,7 +169,6 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
         5,
         rate_limit_delay=3,
         cb=circuit_breaker,
-        retry_exceptions=[IMDbDataAccessError],
         media_type=metadata_type,
     ):
         if not result:
@@ -307,7 +312,7 @@ async def get_imdb_data_via_cinemeta(
 ) -> Optional[model.Title]:
     url = f"https://v3-cinemeta.strem.io/meta/{media_type}/{title_id}.json"
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
             response = await client.get(
                 url, timeout=10, headers=UA_HEADER, follow_redirects=True
             )

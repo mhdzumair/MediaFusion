@@ -9,10 +9,9 @@ uvicorn = { extras = ["standard"]  }
 pydantic = "*"
 requests = "*"
 beautifulsoup4 = "*"
-cinemagoer = {editable = true, git = "https://github.com/cinemagoer/cinemagoer"}
 beanie = "*"
 motor = "*"
-pymongo = { extras = ["srv"]  }
+pymongo = "*"
 dnspython = "*"
 jinja2 = "*"
 apscheduler = "*"
