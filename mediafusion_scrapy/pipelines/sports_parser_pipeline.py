@@ -5,6 +5,8 @@ from datetime import datetime
 
 from scrapers.imdb_data import search_imdb
 from scrapy.exceptions import DropItem
+
+from scrapers.tmdb_data import search_tmdb
 from utils.parser import convert_size_to_bytes
 from utils.runtime_const import SPORTS_ARTIFACTS
 
@@ -79,9 +81,11 @@ class BaseParserPipeline:
                     {
                         "title": f"{event_title} {date_str}".strip(),
                         "date": date,
-                        "resolution": data.get("Resolution").replace("i", "p")
-                        if data.get("Resolution")
-                        else None,
+                        "resolution": (
+                            data.get("Resolution").replace("i", "p")
+                            if data.get("Resolution")
+                            else None
+                        ),
                         "event": event_title,
                         "year": date.year,
                     }
@@ -177,7 +181,6 @@ class BaseParserPipeline:
             return
         episode = filtered_episode[0]
 
-        torrent_data["id"] = episode.imdb_id
         torrent_data.update(
             dict(
                 poster=episode.primary_image,
@@ -211,21 +214,20 @@ class UFCParserPipeline(BaseParserPipeline):
         super().__init__("ufc")
 
     def update_imdb_data(self, torrent_data: dict):
-        imdb_id = torrent_data.get("imd_id")
-        if not imdb_id:
+        year = torrent_data.get("date").year
+        title = torrent_data.get("event")
+        tmdb_data = search_tmdb(title, year)
+        if not tmdb_data:
             if not torrent_data["poster"]:
                 torrent_data["poster"] = random.choice(
                     SPORTS_ARTIFACTS[self.event_name.upper()]["poster"]
                 )
             return
-        imdb_title = web.get_title(imdb_id=imdb_id, page="main")
         torrent_data.update(
             dict(
-                id=imdb_id,
-                poster=imdb_title.primary_image,
-                background=imdb_title.primary_image,
-                runtime=imdb_title.runtime,
-                imdb_rating=imdb_title.rating,
-                description=imdb_title.plot.get("en-US"),
+                poster=tmdb_data["poster"],
+                background=tmdb_data["background"],
+                imdb_rating=tmdb_data["tmdb_rating"],
+                description=tmdb_data["description"],
             )
         )
