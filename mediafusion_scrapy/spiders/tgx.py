@@ -46,13 +46,13 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
-                    "playwright_page_methods": [
-                        PageMethod(
-                            "wait_for_selector",
-                            "#smallguestnav",
-                            timeout=60000,
-                        ),
-                    ],
+                    # "playwright_page_methods": [
+                    #     PageMethod(
+                    #         "wait_for_selector",
+                    #         "#smallguestnav",
+                    #         timeout=60000,
+                    #     ),
+                    # ],
                     "is_search_query": False,
                     "parse_url": parse_url,
                 },
@@ -68,13 +68,13 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
-                    "playwright_page_methods": [
-                        PageMethod(
-                            "wait_for_selector",
-                            "#smallguestnav",
-                            timeout=60000,
-                        ),
-                    ],
+                    # "playwright_page_methods": [
+                    #     PageMethod(
+                    #         "wait_for_selector",
+                    #         "#smallguestnav",
+                    #         timeout=60000,
+                    #     ),
+                    # ],
                     "is_search_query": True,
                     "parse_url": parse_url,
                 },
@@ -200,13 +200,13 @@ class TgxSpider(scrapy.Spider):
                             "referer": response.url,
                             "timeout": 60000,
                         },
-                        "playwright_page_methods": [
-                            PageMethod(
-                                "wait_for_selector",
-                                "#smallguestnav",
-                                timeout=60000,
-                            ),
-                        ],
+                        # "playwright_page_methods": [
+                        #     PageMethod(
+                        #         "wait_for_selector",
+                        #         "#smallguestnav",
+                        #         timeout=60000,
+                        #     ),
+                        # ],
                         "torrent_data": torrent_data,
                     },
                 )
@@ -300,13 +300,13 @@ class TgxSpider(scrapy.Spider):
                         "referer": request.url,
                         "timeout": 60000,
                     },
-                    "playwright_page_methods": [
-                        PageMethod(
-                            "wait_for_selector",
-                            "#smallguestnav",
-                            timeout=60000,
-                        ),
-                    ],
+                    # "playwright_page_methods": [
+                    #     PageMethod(
+                    #         "wait_for_selector",
+                    #         "#smallguestnav",
+                    #         timeout=60000,
+                    #     ),
+                    # ],
                     "torrent_data": request.meta["torrent_data"],
                     "retry_count": retry_count + 1,
                 },
