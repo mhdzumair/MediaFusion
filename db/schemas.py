@@ -58,7 +58,7 @@ class MetaItem(BaseModel):
 
 
 class Metas(BaseModel):
-    metas: list[Meta] = []
+    metas: list[Meta] = Field(default_factory=list)
 
 
 class StreamBehaviorHints(BaseModel):
@@ -82,7 +82,7 @@ class Stream(BaseModel):
 
 
 class Streams(BaseModel):
-    streams: Optional[list[Stream]] = []
+    streams: Optional[list[Stream]] = Field(default_factory=list)
 
 
 class QBittorrentConfig(BaseModel):
@@ -342,7 +342,7 @@ class TVMetaData(BaseModel):
     country: str | None = None
     tv_language: str | None = None
     logo: Optional[str] = None
-    genres: list[str] = []
+    genres: list[str] = Field(default_factory=list)
     streams: list[TVStreams]
     namespace: str = Field(default="mediafusion")
 

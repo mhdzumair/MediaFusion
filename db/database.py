@@ -1,8 +1,10 @@
 import asyncio
 import logging
 
-from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
+from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
 from db.models import (
@@ -48,3 +50,13 @@ async def init():
             else:
                 logging.error("Failed to initialize database after several attempts.")
                 raise e
+
+
+ASYNC_ENGINE = create_async_engine(
+    settings.postgres_uri, echo=True, pool_size=20, max_overflow=30
+)
+
+
+async def get_async_session():
+    async with AsyncSession(ASYNC_ENGINE, expire_on_commit=False) as session:
+        yield session

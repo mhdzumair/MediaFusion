@@ -48,6 +48,9 @@ ratelimit = "*"
 qrcode = "*"
 aioseedrcc = "*"
 pytz = "*"
+typer = "*"
+sqlmodel = "*"
+asyncpg = "*"
 
 [dev-packages]
 pysocks = "*"
