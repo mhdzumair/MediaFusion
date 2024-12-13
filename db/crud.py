@@ -182,7 +182,11 @@ async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaDa
             imdb_rating=movie.rating,
             parent_guide_nudity_status=movie.advisories.nudity.status,
             parent_guide_certificates=list(
-                set(cert.certificate for cert in movie.certification.certificates)
+                set(
+                    rating
+                    for cert in movie.certification.certificates
+                    for rating in cert.ratings
+                )
             ),
             aka_titles=list(set(aka.title for aka in movie.akas)),
             stars=list(set(star.name for star in movie.cast))[10:],
@@ -247,7 +251,11 @@ async def get_series_data_by_id(
             imdb_rating=series.rating,
             parent_guide_nudity_status=series.advisories.nudity.status,
             parent_guide_certificates=list(
-                set(cert.certificate for cert in series.certification.certificates)
+                set(
+                    rating
+                    for cert in series.certification.certificates
+                    for rating in cert.ratings
+                )
             ),
             aka_titles=list(set(aka.title for aka in series.akas))[10:],
             stars=list(set(star.name for star in series.cast))[10:],

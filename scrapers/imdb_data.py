@@ -108,7 +108,11 @@ def search_imdb(
                 "type_id": imdb_title.type_id,
                 "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
                 "parent_guide_certificates": list(
-                    set(cert.ratings for cert in imdb_title.certification.certificates)
+                    set(
+                        rating
+                        for cert in imdb_title.certification.certificates
+                        for rating in cert.ratings
+                    )
                 ),
                 "runtime": imdb_title.runtime,
             }
