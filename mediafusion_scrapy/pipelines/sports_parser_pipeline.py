@@ -40,7 +40,7 @@ class BaseParserPipeline:
         self.static_poster = static_poster or {}
 
     def process_item(self, item, spider):
-        title = re.sub(r"\.\.+", ".", item["torrent_name"])
+        title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.parse_title(title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -108,13 +108,17 @@ class BaseParserPipeline:
             torrent_data["resolution"] = resolution_match.group(1) + "p"
 
         largest_file = max(
-            torrent_data["file_details"],
-            key=lambda x: convert_size_to_bytes(x["file_size"]),
+            torrent_data["file_data"],
+            key=lambda x: (
+                convert_size_to_bytes(x["size"])
+                if isinstance(x["size"], str)
+                else x["size"]
+            ),
         )
-        largest_file_index = torrent_data["file_details"].index(largest_file)
+        largest_file_index = torrent_data["file_data"].index(largest_file)
         torrent_data["largest_file"] = {
             "index": largest_file_index,
-            "filename": largest_file["file_name"],
+            "filename": largest_file["filename"],
         }
 
     def update_imdb_data(self, torrent_data: dict):
@@ -227,6 +231,7 @@ class UFCParserPipeline(BaseParserPipeline):
             dict(
                 poster=tmdb_data["poster"],
                 background=tmdb_data["background"],
+                is_add_title_to_poster=False,
                 imdb_rating=tmdb_data["tmdb_rating"],
                 description=tmdb_data["description"],
             )

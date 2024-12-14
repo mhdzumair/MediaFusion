@@ -52,7 +52,7 @@ class MotoGPParserPipeline:
 
     def process_item(self, item, spider):
         uploader = item["uploader"]
-        title = re.sub(r"\.\.+", ".", item["torrent_name"])
+        title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.title_parser_functions[uploader](title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -117,15 +117,20 @@ class MotoGPParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         episodes = []
-        for index, file_detail in enumerate(torrent_data.get("file_details", [])):
-            file_name = file_detail.get("file_name")
-            file_size = file_detail.get("file_size")
+        for index, file_detail in enumerate(torrent_data.get("file_data", [])):
+            file_name = file_detail.get("filename")
+            file_size = file_detail.get("size")
+            size = (
+                convert_size_to_bytes(file_size)
+                if isinstance(file_size, str)
+                else file_size
+            )
 
             episodes.append(
                 Episode(
                     episode_number=index + 1,
                     filename=file_name,
-                    size=convert_size_to_bytes(file_size),
+                    size=size,
                     file_index=index,
                     title=" ".join(file_name.split(".")[1:-1]),
                     released=torrent_data.get("created_at"),

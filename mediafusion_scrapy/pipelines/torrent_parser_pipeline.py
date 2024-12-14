@@ -58,8 +58,10 @@ class TorrentDownloadAndParsePipeline:
 
 class MagnetDownloadAndParsePipeline:
     async def process_item(self, item, spider):
-        adapter = ItemAdapter(item)
-        magnet_link = adapter.get("magnet_link")
+        if item.get("file_data"):
+            return item
+
+        magnet_link = item.get("magnet_link")
 
         if not magnet_link:
             raise DropItem(f"No magnet link found in item: {item}")

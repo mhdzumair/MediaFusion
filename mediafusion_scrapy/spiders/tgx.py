@@ -46,13 +46,6 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
-                    # "playwright_page_methods": [
-                    #     PageMethod(
-                    #         "wait_for_selector",
-                    #         "#smallguestnav",
-                    #         timeout=60000,
-                    #     ),
-                    # ],
                     "is_search_query": False,
                     "parse_url": parse_url,
                 },
@@ -68,13 +61,6 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
-                    # "playwright_page_methods": [
-                    #     PageMethod(
-                    #         "wait_for_selector",
-                    #         "#smallguestnav",
-                    #         timeout=60000,
-                    #     ),
-                    # ],
                     "is_search_query": True,
                     "parse_url": parse_url,
                 },
@@ -168,13 +154,14 @@ class TgxSpider(scrapy.Spider):
 
             torrent_data = {
                 "info_hash": info_hash,
+                "torrent_title": torrent_name,
                 "torrent_name": torrent_name,
                 "torrent_link": torrent_link,
                 "magnet_link": magnet_link,
                 "background": self.background_image,
                 "logo": self.logo_image,
                 "seeders": seeders,
-                "torrent_page_link": torrent_page_link,
+                "website": torrent_page_link,
                 "unique_id": tgx_unique_id,
                 "source": "TorrentGalaxy",
                 "uploader": uploader_profile_name,
@@ -200,35 +187,34 @@ class TgxSpider(scrapy.Spider):
                             "referer": response.url,
                             "timeout": 60000,
                         },
-                        # "playwright_page_methods": [
-                        #     PageMethod(
-                        #         "wait_for_selector",
-                        #         "#smallguestnav",
-                        #         timeout=60000,
-                        #     ),
-                        # ],
                         "torrent_data": torrent_data,
                     },
                 )
 
     def parse_torrent_details(self, response):
-        torrent_data = response.meta["torrent_data"]
+        torrent_data = response.meta["torrent_data"].copy()
 
-        # Extracting file details and sizes
-        file_details = []
-        for row in response.xpath('//table[contains(@class, "table-striped")]//tr'):
-            file_name = row.xpath('td[@class="table_col1"]/text()').get()
-            file_size = row.xpath('td[@class="table_col2"]/text()').get()
-            if file_name and file_size:
-                file_details.append({"file_name": file_name, "file_size": file_size})
-        if not file_details:
+        if response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]"):
             self.logger.warning(
-                f"File details not found for {torrent_data['torrent_name']}. Retrying"
+                f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
             )
             yield self.retry_request(response)
             return
 
-        torrent_data["file_details"] = file_details
+        # Extracting file details and sizes if available
+        file_data = []
+        file_list = response.xpath(
+            '//button[contains(@class, "flist")]//em/text()'
+        ).get()
+        file_count = int(file_list.strip("()")) if file_list else 0
+        for row in response.xpath('//table[contains(@class, "table-striped")]//tr'):
+            file_name = row.xpath('td[@class="table_col1"]/text()').get()
+            file_size = row.xpath('td[@class="table_col2"]/text()').get()
+            if file_name and file_size:
+                file_data.append({"filename": file_name, "size": file_size})
+
+        if file_count == len(file_data):
+            torrent_data["file_data"] = file_data
 
         cover_image_url = response.xpath(
             "//div[contains(@class, 'container-fluid')]/center//img[contains(@class, 'img-responsive')]/@data-src"
@@ -300,13 +286,6 @@ class TgxSpider(scrapy.Spider):
                         "referer": request.url,
                         "timeout": 60000,
                     },
-                    # "playwright_page_methods": [
-                    #     PageMethod(
-                    #         "wait_for_selector",
-                    #         "#smallguestnav",
-                    #         timeout=60000,
-                    #     ),
-                    # ],
                     "torrent_data": request.meta["torrent_data"],
                     "retry_count": retry_count + 1,
                 },
@@ -332,7 +311,7 @@ class FormulaTgxSpider(TgxSpider):
 
     custom_settings = {
         "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
             "mediafusion_scrapy.pipelines.FormulaParserPipeline": 200,
             "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
         },
@@ -361,7 +340,7 @@ class MotoGPTgxSpider(TgxSpider):
 
     custom_settings = {
         "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
             "mediafusion_scrapy.pipelines.MotoGPParserPipeline": 200,
             "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
         },
@@ -381,7 +360,7 @@ class BaseEventSpider(TgxSpider):
     def get_custom_settings(pipeline):
         return {
             "ITEM_PIPELINES": {
-                "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+                "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
                 f"mediafusion_scrapy.pipelines.{pipeline}": 200,
                 "mediafusion_scrapy.pipelines.MovieStorePipeline": 300,
             },
