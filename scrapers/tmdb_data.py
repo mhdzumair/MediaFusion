@@ -39,7 +39,6 @@ async def get_tmdb_data(tmdb_id: str, media_type: str) -> Optional[Dict[str, Any
                 headers=UA_HEADER,
                 timeout=10,
             )
-            logging.info(f"TMDB API response: {response.status_code}, {response.url}")
             response.raise_for_status()
             data = response.json()
 
@@ -106,7 +105,7 @@ async def get_tmdb_data(tmdb_id: str, media_type: str) -> Optional[Dict[str, Any
             return formatted_data
 
     except Exception as e:
-        logging.exception(f"Error fetching TMDB data for ID {tmdb_id}: {e}")
+        logging.error(f"Error fetching TMDB data for ID {tmdb_id}: {e}")
         return None
 
 

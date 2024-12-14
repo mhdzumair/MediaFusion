@@ -7,7 +7,6 @@ from scrapers.imdb_data import search_imdb
 from scrapy.exceptions import DropItem
 
 from scrapers.tmdb_data import search_tmdb
-from utils.parser import convert_size_to_bytes
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 from cinemagoerng import web
@@ -109,11 +108,7 @@ class BaseParserPipeline:
 
         largest_file = max(
             torrent_data["file_data"],
-            key=lambda x: (
-                convert_size_to_bytes(x["size"])
-                if isinstance(x["size"], str)
-                else x["size"]
-            ),
+            key=lambda x: x["size"],
         )
         largest_file_index = torrent_data["file_data"].index(largest_file)
         torrent_data["largest_file"] = {

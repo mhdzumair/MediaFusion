@@ -7,7 +7,6 @@ from scrapy.exceptions import DropItem
 from db.models import (
     Episode,
 )
-from utils.parser import convert_size_to_bytes
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
@@ -119,18 +118,12 @@ class MotoGPParserPipeline:
         episodes = []
         for index, file_detail in enumerate(torrent_data.get("file_data", [])):
             file_name = file_detail.get("filename")
-            file_size = file_detail.get("size")
-            size = (
-                convert_size_to_bytes(file_size)
-                if isinstance(file_size, str)
-                else file_size
-            )
 
             episodes.append(
                 Episode(
                     episode_number=index + 1,
                     filename=file_name,
-                    size=size,
+                    size=file_detail.get("size"),
                     file_index=index,
                     title=" ".join(file_name.split(".")[1:-1]),
                     released=torrent_data.get("created_at"),
