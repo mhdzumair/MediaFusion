@@ -19,7 +19,7 @@ from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 
 
-async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.Title]:
+async def get_imdb_title(imdb_id: str, media_type: str) -> Optional[model.Title]:
     try:
         title = await web.get_title_async(
             imdb_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
@@ -49,6 +49,42 @@ async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.T
     return title
 
 
+async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
+    imdb_title = await get_imdb_title(imdb_id, media_type)
+    if not imdb_title:
+        return None
+
+    poster_image, background_image = await get_poster_urls(imdb_title.imdb_id)
+    if not poster_image:
+        poster_image = imdb_title.primary_image
+        background_image = poster_image
+
+    end_year = imdb_title.end_year if imdb_title.type_id == "tvSeries" else None
+
+    return {
+        "imdb_id": imdb_title.imdb_id,
+        "poster": poster_image,
+        "background": background_image,
+        "title": imdb_title.title,
+        "year": imdb_title.year,
+        "end_year": end_year,
+        "description": imdb_title.plot.get("en-US"),
+        "genres": imdb_title.genres,
+        "imdb_rating": imdb_title.rating,
+        "aka_titles": list(set(aka.title for aka in imdb_title.akas)),
+        "type_id": imdb_title.type_id,
+        "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
+        "parent_guide_certificates": list(
+            set(
+                rating
+                for cert in imdb_title.certification.certificates
+                for rating in cert.ratings
+            )
+        ),
+        "runtime": imdb_title.runtime,
+    }
+
+
 async def get_imdb_rating(movie_id: str) -> Optional[float]:
     try:
         movie = await web.get_title_async(
@@ -59,20 +95,21 @@ async def get_imdb_rating(movie_id: str) -> Optional[float]:
     return movie.rating
 
 
+async def get_poster_urls(imdb_id: str) -> tuple:
+    poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
+    try:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
+            response = await client.head(poster, timeout=10)
+            if response.status_code == 200:
+                return poster, poster
+    except httpx.RequestError:
+        pass
+    return None, None
+
+
 async def search_imdb(
     title: str, year: int, media_type: str = None, max_retries: int = 3
 ) -> dict:
-    async def get_poster_urls(imdb_id: str) -> tuple:
-        poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
-        try:
-            async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
-                response = await client.head(poster, timeout=10)
-                if response.status_code == 200:
-                    return poster, poster
-        except httpx.RequestError:
-            pass
-        return None, None
-
     async def process_movie(imdb_title: model.Movie | model.TVSeries) -> dict:
         try:
             if (imdb_title.type_id != "tvSeries" and imdb_title.year != year) or (
@@ -168,7 +205,7 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
     )
 
     async for result in batch_process_with_circuit_breaker(
-        get_imdb_movie_data,
+        get_imdb_title,
         imdb_ids,
         5,
         rate_limit_delay=3,

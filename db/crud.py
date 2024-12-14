@@ -29,7 +29,7 @@ from db.models import (
 from db.schemas import Stream, TorrentStreamsList
 from scrapers.tmdb_data import search_tmdb
 from scrapers.utils import run_scrapers
-from scrapers.imdb_data import get_imdb_movie_data, search_imdb
+from scrapers.imdb_data import get_imdb_title, search_imdb
 from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils import crypto
 from utils.lock import acquire_redis_lock, release_redis_lock
@@ -168,7 +168,7 @@ async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaDa
     movie_data = await MediaFusionMovieMetaData.get(movie_id)
     # store it in the db for feature reference.
     if not movie_data and movie_id.startswith("tt"):
-        movie = await get_imdb_movie_data(movie_id, "movie")
+        movie = await get_imdb_title(movie_id, "movie")
         if not movie:
             return None
 
@@ -236,7 +236,7 @@ async def get_series_data_by_id(
     )
 
     if not series_data and series_id.startswith("tt"):
-        series = await get_imdb_movie_data(series_id, "series")
+        series = await get_imdb_title(series_id, "series")
         if not series:
             return None
 

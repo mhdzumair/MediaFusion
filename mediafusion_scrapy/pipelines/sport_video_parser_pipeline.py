@@ -51,7 +51,7 @@ class SportVideoParserPipeline:
                 "created_at": date_obj.strftime("%Y-%m-%d"),
                 "year": date_obj.year,
                 "languages": [re.sub(r"[ .]", "", item["language"])],
-                "is_imdb": False,
+                "is_search_imdb_title": False,
                 "resolution": resolution,
             }
         )

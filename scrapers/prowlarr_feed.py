@@ -214,7 +214,9 @@ async def get_metadata_by_id(imdb_id: str, media_type: str):
 
 
 async def search_and_create_metadata(metadata: dict, media_type: str):
-    metadata = await get_or_create_metadata(metadata, media_type, is_imdb=True)
+    metadata = await get_or_create_metadata(
+        metadata, media_type, is_search_imdb_title=True
+    )
     if not metadata["id"].startswith("tt"):
         # Only create metadata for IMDb movies and series
         return None

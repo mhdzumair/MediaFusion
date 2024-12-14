@@ -46,7 +46,7 @@ class BaseParserPipeline:
         item.update(
             dict(
                 type="movie",
-                is_imdb=False,
+                is_search_imdb_title=False,
                 genres=[self.event_name.upper()],
                 is_add_title_to_poster=True,
             )
@@ -212,10 +212,10 @@ class UFCParserPipeline(BaseParserPipeline):
     def __init__(self):
         super().__init__("ufc")
 
-    def update_imdb_data(self, torrent_data: dict):
+    async def update_imdb_data(self, torrent_data: dict):
         year = torrent_data.get("date").year
         title = torrent_data.get("event")
-        tmdb_data = search_tmdb(title, year)
+        tmdb_data = await search_tmdb(title, year)
         if not tmdb_data:
             if not torrent_data["poster"]:
                 torrent_data["poster"] = random.choice(
