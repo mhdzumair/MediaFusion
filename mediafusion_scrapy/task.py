@@ -9,7 +9,10 @@ def run_spider_in_process(spider_name, *args, **kwargs):
     """
     Function to start a scrapy spider in a new process.
     """
-    process = CrawlerProcess(get_project_settings())
+    # Load the scrapy settings
+    settings = get_project_settings()
+    settings.set("LOG_LEVEL", "INFO")
+    process = CrawlerProcess(settings)
     process.crawl(spider_name, *args, **kwargs)
     process.start()
 
@@ -25,4 +28,4 @@ def run_spider(spider_name: str, *args, **kwargs):
 
 
 if __name__ == "__main__":
-    run_spider_in_process("sport_video")
+    run_spider_in_process("movies_tv_tgx", scrape_all="true", total_pages=5)
