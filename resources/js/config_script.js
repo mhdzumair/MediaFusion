@@ -8,7 +8,7 @@ const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
     offcloud: 'https://offcloud.com/?=9932cd9f',
-    realdebrid: 'http://real-debrid.com/?id=9490816',
+    realdebrid: ['http://real-debrid.com/?id=9490816', 'http://real-debrid.com/?id=3351376'],
     debridlink: 'https://debrid-link.com/id/kHgZs',
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
     torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
@@ -196,7 +196,12 @@ function updateProviderFields(isChangeEvent = false) {
     }
 
     if (provider in providerSignupLinks) {
-        document.getElementById('signup_link').href = providerSignupLinks[provider];
+        // if providerSignupLinks[provider] is an array, randomly select one of the links
+        if (Array.isArray(providerSignupLinks[provider])) {
+            document.getElementById('signup_link').href = providerSignupLinks[provider][Math.floor(Math.random() * providerSignupLinks[provider].length)];
+        } else {
+            document.getElementById('signup_link').href = providerSignupLinks[provider];
+        }
         setElementDisplay('signup_section', 'block');
     } else {
         setElementDisplay('signup_section', 'none');

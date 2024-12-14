@@ -194,15 +194,12 @@ class SortingOption(BaseModel):
 
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
-    selected_catalogs: list[str] = Field(
-        default=["english_hdrip", "english_series"],
-        alias="sc",
-    )
+    selected_catalogs: list[str] = Field(alias="sc", default_factory=list)
     selected_resolutions: list[str | None] = Field(
         default=const.RESOLUTIONS, alias="sr"
     )
     enable_catalogs: bool = Field(default=True, alias="ec")
-    enable_imdb_metadata: bool = Field(default=True, alias="eim")
+    enable_imdb_metadata: bool = Field(default=False, alias="eim")
     max_size: int | str | float = Field(default=math.inf, alias="ms")
     max_streams_per_resolution: int = Field(default=10, alias="mspr")
     show_full_torrent_name: bool = Field(default=True, alias="sftn")
