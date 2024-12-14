@@ -7,7 +7,6 @@ from scrapy.exceptions import DropItem
 from db.models import (
     Episode,
 )
-from utils.parser import convert_size_to_bytes
 
 
 class FormulaParserPipeline:
@@ -345,16 +344,11 @@ class FormulaParserPipeline:
                 data = self.episode_name_parser_egortech(
                     event, torrent_data["created_at"]
                 )
-                size = (
-                    convert_size_to_bytes(file_detail.get("size"))
-                    if isinstance(file_detail.get("size"), str)
-                    else file_detail.get("size")
-                )
                 episodes.append(
                     Episode(
                         episode_number=index + 1,
                         filename=file_detail.get("filename"),
-                        size=size,
+                        size=file_detail["size"],
                         file_index=index,
                         title=data["title"],
                         released=data["date"],
@@ -364,21 +358,15 @@ class FormulaParserPipeline:
             # logic to parse episode details directly from file details when description does not contain "Contains:"
             for index, file_detail in enumerate(file_data):
                 file_name = file_detail.get("filename")
-                file_size = file_detail.get("size")
                 data = self.episode_name_parser_egortech(
                     file_name, torrent_data["created_at"]
-                )
-                size = (
-                    convert_size_to_bytes(file_size)
-                    if isinstance(file_size, str)
-                    else file_size
                 )
 
                 episodes.append(
                     Episode(
                         episode_number=index + 1,
                         filename=file_name,
-                        size=size,
+                        size=file_detail.get("size"),
                         file_index=index,
                         title=data["title"],
                         released=data["date"],
@@ -445,18 +433,12 @@ class FormulaParserPipeline:
         episodes = []
         for index, file_detail in enumerate(file_data):
             file_name = file_detail.get("filename")
-            file_size = file_detail.get("size")
-            size = (
-                convert_size_to_bytes(file_size)
-                if isinstance(file_size, str)
-                else file_size
-            )
 
             episodes.append(
                 Episode(
                     episode_number=index + 1,
                     filename=file_name,
-                    size=size,
+                    size=file_detail.get("size"),
                     file_index=index,
                     title=" ".join(file_name.split(".")[1:-1]),
                     released=torrent_data.get("created_at"),
