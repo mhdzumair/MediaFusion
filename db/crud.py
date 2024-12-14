@@ -42,6 +42,7 @@ from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_parent_guide_nudity,
     get_filter_certification_values,
+    is_video_file,
 )
 
 
@@ -655,25 +656,25 @@ async def get_existing_metadata(metadata, model):
 
 def create_metadata_object(metadata, imdb_data, model):
     poster = imdb_data.get("poster") or metadata.get("poster")
-    background = imdb_data.get("background", metadata.get("background", poster))
-    year = imdb_data.get("year", metadata.get("year"))
-    end_year = imdb_data.get("end_year", metadata.get("end_year"))
+    background = imdb_data.get("background") or metadata.get("background", poster)
+    year = imdb_data.get("year") or metadata.get("year")
+    end_year = imdb_data.get("end_year") or metadata.get("end_year")
     if isinstance(year, str) and "-" in year:
         year, end_year = year.split("-")
     return model(
         id=metadata["id"],
-        title=imdb_data.get("title", metadata["title"]),
+        title=imdb_data.get("title") or metadata["title"],
         year=year,
         end_year=end_year,
         poster=poster,
         background=background,
-        description=metadata.get("description"),
-        runtime=metadata.get("runtime"),
-        website=metadata.get("website"),
+        description=imdb_data.get("description") or metadata.get("description"),
+        runtime=imdb_data.get("runtime") or metadata.get("runtime"),
+        website=imdb_data.get("website") or metadata.get("website"),
         is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
-        stars=metadata.get("stars"),
-        aka_titles=imdb_data.get("aka_titles", metadata.get("aka_titles")),
-        genres=imdb_data.get("genres", metadata.get("genres")),
+        stars=imdb_data.get("stars") or metadata.get("stars"),
+        aka_titles=imdb_data.get("aka_titles") or metadata.get("aka_titles"),
+        genres=imdb_data.get("genres") or metadata.get("genres"),
     )
 
 
@@ -695,17 +696,18 @@ def create_stream_object(metadata, is_movie: bool = False):
         catalog=[catalog] if isinstance(catalog, str) else catalog,
         created_at=metadata["created_at"],
         meta_id=metadata["id"],
+        seeders=metadata.get("seeders"),
     )
 
 
-async def get_or_create_metadata(metadata, media_type, is_imdb):
+async def get_or_create_metadata(metadata, media_type, is_search_imdb_title):
     metadata_class = (
         MediaFusionMovieMetaData if media_type == "movie" else MediaFusionSeriesMetaData
     )
     existing_data = await get_existing_metadata(metadata, metadata_class)
     if not existing_data:
         imdb_data = {}
-        if is_imdb:
+        if is_search_imdb_title:
             imdb_data = await search_imdb(
                 metadata["title"], metadata.get("year"), media_type
             )
@@ -732,27 +734,70 @@ async def get_or_create_metadata(metadata, media_type, is_imdb):
     return metadata
 
 
-async def save_metadata(metadata: dict, media_type: str, is_imdb: bool = True):
+async def organize_episodes(series_id):
+    # Fetch all torrent streams for this series
+    torrent_streams = await TorrentStreams.find({"meta_id": series_id}).to_list()
+
+    # Flatten all episodes from all streams and sort by release date
+    all_episodes = sorted(
+        (episode for stream in torrent_streams for episode in stream.season.episodes),
+        key=lambda e: (e.released.date(), e.filename),
+    )
+
+    # Assign episode numbers, ensuring the same title across different qualities gets the same number
+    episode_number = 1
+    last_title = None
+    for episode in all_episodes:
+        if episode.title != last_title:
+            if last_title:
+                episode_number += 1
+            last_title = episode.title
+        episode.episode_number = episode_number
+
+    # Update episodes in each torrent stream
+    for stream in torrent_streams:
+        stream.season.episodes.sort(key=lambda e: e.episode_number)
+        await stream.save()
+
+    logging.info(f"Organized episodes for series {series_id}")
+
+
+async def save_metadata(
+    metadata: dict, media_type: str, is_search_imdb_title: bool = True
+):
     if await is_torrent_stream_exists(metadata["info_hash"]):
         logging.info("Stream already exists for %s %s", media_type, metadata["title"])
         return
-    metadata = await get_or_create_metadata(metadata, media_type, is_imdb)
+    metadata = await get_or_create_metadata(metadata, media_type, is_search_imdb_title)
 
     new_stream = create_stream_object(metadata, media_type == "movie")
+    should_organize_episodes = False
     if media_type == "series":
         if metadata.get("episodes") and isinstance(metadata["episodes"][0], Episode):
             episodes = metadata["episodes"]
         else:
-            episodes = [
-                Episode(
-                    episode_number=file["episodes"][0],
-                    filename=file["filename"],
-                    size=file["size"],
-                    file_index=file["index"],
+            episodes = []
+            for file_data in metadata["file_data"]:
+                if file_data["filename"] and not is_video_file(file_data["filename"]):
+                    continue
+                if not file_data["episodes"]:
+                    if metadata["id"].startswith("mf"):
+                        episode_number = len(episodes) + 1
+                        should_organize_episodes = True
+                    else:
+                        continue
+                else:
+                    episode_number = file_data["episodes"][0]
+
+                episodes.append(
+                    Episode(
+                        episode_number=episode_number,
+                        filename=file_data["filename"],
+                        size=file_data["size"],
+                        file_index=file_data["index"],
+                        title=file_data.get("title"),
+                    )
                 )
-                for file in metadata["file_data"]
-                if file["episodes"]
-            ]
 
         if not episodes:
             logging.warning("No episodes found for series %s", metadata["title"])
@@ -763,20 +808,23 @@ async def save_metadata(metadata: dict, media_type: str, is_imdb: bool = True):
         )
 
     await new_stream.create()
+    if should_organize_episodes:
+        await organize_episodes(metadata["id"])
     logging.info(
-        "Added stream for %s %s, info_hash: %s",
+        "Added stream for %s %s (%s), info_hash: %s",
         media_type,
         metadata["title"],
+        metadata["id"],
         metadata["info_hash"],
     )
 
 
-async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
-    await save_metadata(metadata, "movie", is_imdb)
+async def save_movie_metadata(metadata: dict, is_search_imdb_title: bool = True):
+    await save_metadata(metadata, "movie", is_search_imdb_title)
 
 
-async def save_series_metadata(metadata: dict, is_imdb: bool = True):
-    await save_metadata(metadata, "series", is_imdb)
+async def save_series_metadata(metadata: dict, is_search_imdb_title: bool = True):
+    await save_metadata(metadata, "series", is_search_imdb_title)
 
 
 async def process_search_query(

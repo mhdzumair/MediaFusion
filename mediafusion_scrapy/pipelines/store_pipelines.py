@@ -2,18 +2,18 @@ import asyncio
 import logging
 from uuid import uuid4
 
-from beanie import WriteRules
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
 from db import crud
+from db.crud import organize_episodes
 from db.models import (
     TorrentStreams,
     Season,
     MediaFusionSeriesMetaData,
 )
-from db.schemas import TVMetaData
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.schemas import TVMetaData
 
 
 class QueueBasedPipeline:
@@ -113,41 +113,10 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
                 series.title,
             )
 
-        await self.organize_episodes(series.id)
+        await organize_episodes(series.id)
         await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
 
         return item
-
-    async def organize_episodes(self, series_id):
-        # Fetch all torrent streams for this series
-        torrent_streams = await TorrentStreams.find({"meta_id": series_id}).to_list()
-
-        # Flatten all episodes from all streams and sort by release date
-        all_episodes = sorted(
-            (
-                episode
-                for stream in torrent_streams
-                for episode in stream.season.episodes
-            ),
-            key=lambda e: (e.released.date(), e.filename),
-        )
-
-        # Assign episode numbers, ensuring the same title across different qualities gets the same number
-        episode_number = 1
-        last_title = None
-        for episode in all_episodes:
-            if episode.title != last_title:
-                if last_title:
-                    episode_number += 1
-                last_title = episode.title
-            episode.episode_number = episode_number
-
-        # Update episodes in each torrent stream
-        for stream in torrent_streams:
-            stream.season.episodes.sort(key=lambda e: e.episode_number)
-            await stream.save()
-
-        logging.info(f"Organized episodes for series {series_id}")
 
 
 class TVStorePipeline(QueueBasedPipeline):
@@ -162,6 +131,14 @@ class TVStorePipeline(QueueBasedPipeline):
 
 
 class MovieStorePipeline(QueueBasedPipeline):
+    def __init__(self):
+        super().__init__()
+        self.redis = REDIS_ASYNC_CLIENT
+
+    async def close(self):
+        await super().close()
+        await self.redis.aclose()
+
     async def parse_item(self, item, spider):
         if "title" not in item:
             return item
@@ -169,11 +146,19 @@ class MovieStorePipeline(QueueBasedPipeline):
         if item.get("type") != "movie":
             return item
 
-        await crud.save_movie_metadata(item, item.get("is_imdb", True))
+        await crud.save_movie_metadata(item, item.get("is_search_imdb_title", True))
         return item
 
 
 class SeriesStorePipeline(QueueBasedPipeline):
+    def __init__(self):
+        super().__init__()
+        self.redis = REDIS_ASYNC_CLIENT
+
+    async def close(self):
+        await super().close()
+        await self.redis.aclose()
+
     async def parse_item(self, item, spider):
         if "title" not in item:
             return item
@@ -181,6 +166,8 @@ class SeriesStorePipeline(QueueBasedPipeline):
         if item.get("type") != "series":
             return item
         await crud.save_series_metadata(item)
+        if "scraped_info_hash_key" in item:
+            await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
         return item
 
 
@@ -198,4 +185,6 @@ class LiveEventStorePipeline(QueueBasedPipeline):
             raise DropItem(f"name not found in item: {item}")
 
         await crud.save_events_data(item)
+        if "scraped_info_hash_key" in item:
+            await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
         return item
