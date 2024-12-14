@@ -27,6 +27,7 @@ from db.models import (
     TVStreams,
 )
 from db.schemas import Stream, TorrentStreamsList
+from scrapers.tmdb_data import search_tmdb
 from scrapers.utils import run_scrapers
 from scrapers.imdb_data import get_imdb_movie_data, search_imdb
 from streaming_providers.cache_helpers import store_cached_info_hashes
@@ -705,10 +706,16 @@ async def get_or_create_metadata(metadata, media_type, is_imdb):
     if not existing_data:
         imdb_data = {}
         if is_imdb:
-            imdb_data = search_imdb(metadata["title"], metadata.get("year"), media_type)
+            imdb_data = await search_imdb(
+                metadata["title"], metadata.get("year"), media_type
+            )
+            if not imdb_data:
+                imdb_data = await search_tmdb(
+                    metadata["title"], metadata.get("year"), media_type
+                )
 
-        metadata["id"] = imdb_data.get(
-            "imdb_id", metadata.get("id", f"mf{uuid4().fields[-1]}")
+        metadata["id"] = (
+            imdb_data.get("imdb_id") or metadata.get("id") or f"mf{uuid4().fields[-1]}"
         )
         is_exist_db = await metadata_class.find_one({"_id": metadata["id"]}).project(
             schemas.MetaIdProjection

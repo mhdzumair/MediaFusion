@@ -22,6 +22,9 @@ async def get_tmdb_data(tmdb_id: str, media_type: str) -> Optional[Dict[str, Any
     """
     Fetch detailed information about a movie or TV show from TMDB using its TMDB ID.
     """
+    if TMDB_API_KEY is None:
+        logging.error("TMDB API key is not set")
+        return {}
     endpoint = f'{"movie" if media_type == "movie" else "tv"}/{tmdb_id}'
     params = {
         "api_key": TMDB_API_KEY,
@@ -39,6 +42,13 @@ async def get_tmdb_data(tmdb_id: str, media_type: str) -> Optional[Dict[str, Any
             logging.info(f"TMDB API response: {response.status_code}, {response.url}")
             response.raise_for_status()
             data = response.json()
+
+            if media_type == "tv":
+                aka_titles = data.get("alternative_titles", {}).get("results", [])
+            else:
+                aka_titles = data.get("alternative_titles", {}).get("titles", [])
+
+            stars = data.get("credits", {}).get("cast", [])
 
             # Process and format the data
             formatted_data = {
@@ -73,15 +83,12 @@ async def get_tmdb_data(tmdb_id: str, media_type: str) -> Optional[Dict[str, Any
                     if media_type == "movie"
                     else data.get("episode_run_time", [None])[0]
                 ),
-                "aka_titles": (
-                    [title["title"] for title in data["alternative_titles"]["results"]]
-                    if "alternative_titles" in data
-                    else []
-                ),
+                "aka_titles": [title["title"] for title in aka_titles],
+                "stars": [star["name"] for star in stars],
             }
 
             # Add TV series specific data
-            if media_type == "series":
+            if media_type in ["series", "tv"]:
                 formatted_data.update(
                     {
                         "end_year": (
@@ -109,6 +116,9 @@ async def get_tmdb_data_by_imdb(
     """
     Fetch TMDB data using an IMDB ID.
     """
+    if TMDB_API_KEY is None:
+        logging.error("TMDB API key is not set")
+        return {}
     endpoint = "find/" + imdb_id
     params = {"api_key": TMDB_API_KEY, "external_source": "imdb_id"}
 
@@ -140,11 +150,18 @@ async def get_tmdb_data_by_imdb(
         return None
 
 
-def search_tmdb(title: str, year: int, media_type: str = None) -> Dict[str, Any]:
+async def search_tmdb(title: str, year: int, media_type: str = None) -> Dict[str, Any]:
     """
     Search for a movie or TV show on TMDB.
     """
-    endpoint = "search/multi" if not media_type else f"search/{media_type}"
+    if TMDB_API_KEY is None:
+        logging.error("TMDB API key is not set")
+        return {}
+    if media_type:
+        media_type = "movie" if media_type == "movie" else "tv"
+        endpoint = f"search/{media_type}"
+    else:
+        endpoint = "search/multi"
     params = {
         "api_key": TMDB_API_KEY,
         "query": title,
@@ -153,8 +170,8 @@ def search_tmdb(title: str, year: int, media_type: str = None) -> Dict[str, Any]
     }
 
     try:
-        with httpx.Client(proxy=settings.requests_proxy_url) as client:
-            response = client.get(
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
+            response = await client.get(
                 urljoin(TMDB_BASE_URL, endpoint),
                 params=params,
                 headers=UA_HEADER,
@@ -181,27 +198,7 @@ def search_tmdb(title: str, year: int, media_type: str = None) -> Dict[str, Any]
                 if year and result_year != year:
                     continue
 
-                # Format the result
-                formatted_result = {
-                    "tmdb_id": str(result["id"]),
-                    "title": result.get("title") or result.get("name"),
-                    "year": result_year,
-                    "poster": (
-                        f"{TMDB_IMAGE_BASE_URL}w500{result['poster_path']}"
-                        if result.get("poster_path")
-                        else None
-                    ),
-                    "background": (
-                        f"{TMDB_IMAGE_BASE_URL}original{result['backdrop_path']}"
-                        if result.get("backdrop_path")
-                        else None
-                    ),
-                    "description": result.get("overview"),
-                    "tmdb_rating": result.get("vote_average"),
-                    "type": "movie" if result_type == "movie" else "series",
-                }
-
-                return formatted_result
+                return await get_tmdb_data(str(result["id"]), result_type)
 
             return {}
 
