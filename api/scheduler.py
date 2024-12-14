@@ -187,6 +187,18 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
+    if not settings.disable_movies_tv_tgx_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.movies_tv_tgx_scheduler_crontab),
+            name="movies_tv_tgx",
+            kwargs={
+                "spider_name": "movies_tv_tgx",
+                "crontab_expression": settings.movies_tv_tgx_scheduler_crontab,
+                "scrape_all": "false",
+            },
+        )
+
     # Schedule the feed scraper
     if not settings.disable_prowlarr_feed_scraper:
         scheduler.add_job(

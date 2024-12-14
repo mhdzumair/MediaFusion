@@ -1,9 +1,10 @@
 import random
 import re
+from copy import deepcopy
 from datetime import datetime
 
+import PTT
 import scrapy
-from scrapy_playwright.page import PageMethod
 
 from db.config import settings
 from db.models import TorrentStreams
@@ -25,9 +26,12 @@ class TgxSpider(scrapy.Spider):
     keyword_patterns: re.Pattern
     scraped_info_hash_key: str
 
-    def __init__(self, scrape_all: str = "False", *args, **kwargs):
+    def __init__(
+        self, scrape_all: str = "False", total_pages: int = None, *args, **kwargs
+    ):
         super(TgxSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
+        self.total_pages = total_pages
         self.redis = REDIS_ASYNC_CLIENT
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -46,6 +50,7 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
+                    "playwright_include_page": True,
                     "is_search_query": False,
                     "parse_url": parse_url,
                 },
@@ -61,19 +66,40 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
+                    "playwright_include_page": True,
                     "is_search_query": True,
                     "parse_url": parse_url,
                 },
             )
 
     async def parse(self, response, **kwargs):
-        if "galaxyfence.php" in response.url:
-            self.logger.warning("Encountered galaxyfence.php. Retrying")
-            parse_url = response.meta.get("parse_url")
-            yield scrapy.Request(
-                parse_url, self.parse, meta=response.meta, dont_filter=True, priority=10
-            )
-            return
+        # First try waiting for the content to load
+        page = response.meta["playwright_page"]
+        if not response.css("div.tgxtablerow.txlight"):
+            try:
+                await page.wait_for_selector("div.tgxtablerow.txlight", timeout=10000)
+                # Get the updated content after waiting
+                content = await page.content()
+                await page.close()
+                response = response.replace(body=content)
+            except Exception:
+                # If timeout occurs, check for galaxyfence
+                await page.close()
+                if "galaxyfence.php" in response.url:
+                    self.logger.warning("Encountered galaxyfence.php. Retrying")
+                    parse_url = response.meta.get("parse_url")
+                    yield scrapy.Request(
+                        parse_url,
+                        self.parse,
+                        meta=response.meta,
+                        dont_filter=True,
+                        priority=10,
+                    )
+                    return
+                else:
+                    self.logger.warning(f"Content not loaded for URL: {response.url}")
+                    return
+        await page.close()
 
         uploader_profile_name = response.meta.get("uploader_profile")
         is_search_query = response.meta.get("is_search_query")
@@ -87,6 +113,9 @@ class TgxSpider(scrapy.Spider):
                 last_page_number = (
                     int(last_page_number) if last_page_number.isdigit() else 0
                 )
+
+                if self.total_pages:
+                    last_page_number = min(last_page_number, self.total_pages)
 
                 # Generate requests for all pages
                 for page_number in range(1, last_page_number + 1):
@@ -103,6 +132,9 @@ class TgxSpider(scrapy.Spider):
                 last_page_number = (
                     int(last_page_number) if last_page_number.isdigit() else 0
                 )
+
+                if self.total_pages:
+                    last_page_number = min(last_page_number, self.total_pages)
 
                 # Generate requests for all pages
                 for page_number in range(1, last_page_number + 1):
@@ -164,6 +196,7 @@ class TgxSpider(scrapy.Spider):
                 "website": torrent_page_link,
                 "unique_id": tgx_unique_id,
                 "source": "TorrentGalaxy",
+                "catalog_source": "tgx",
                 "uploader": uploader_profile_name,
                 "announce_list": announce_list,
                 "catalog": self.catalog,
@@ -187,19 +220,39 @@ class TgxSpider(scrapy.Spider):
                             "referer": response.url,
                             "timeout": 60000,
                         },
+                        "playwright_include_page": True,
                         "torrent_data": torrent_data,
+                        "torrent_page_link": torrent_page_link,
                     },
                 )
 
-    def parse_torrent_details(self, response):
-        torrent_data = response.meta["torrent_data"].copy()
+    async def parse_torrent_details(self, response):
+        # First try waiting for the content to load
+        page = response.meta["playwright_page"]
+        if not response.xpath('//button[contains(@class, "flist")]//em/text()'):
+            try:
+                await page.wait_for_selector("button.flist em", timeout=10000)
+                # Get the updated content after waiting
+                content = await page.content()
+                response = response.replace(body=content)
+            except Exception:
+                # If timeout occurs, check for galaxyfence
+                await page.close()
+                if (
+                    response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]")
+                    or "galaxyfence.php" in response.url
+                ):
+                    self.logger.warning(
+                        f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
+                    )
+                    yield self.retry_request(response)
+                    return
+                else:
+                    self.logger.warning(f"Content not loaded for URL: {response.url}")
+                    return
+        await page.close()
 
-        if response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]"):
-            self.logger.warning(
-                f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
-            )
-            yield self.retry_request(response)
-            return
+        torrent_data = deepcopy(response.meta["torrent_data"])
 
         # Extracting file details and sizes if available
         file_data = []
@@ -211,7 +264,17 @@ class TgxSpider(scrapy.Spider):
             file_name = row.xpath('td[@class="table_col1"]/text()').get()
             file_size = row.xpath('td[@class="table_col2"]/text()').get()
             if file_name and file_size:
-                file_data.append({"filename": file_name, "size": file_size})
+                parsed_data = PTT.parse_title(file_name)
+                file_data.append(
+                    {
+                        "filename": file_name,
+                        "size": convert_size_to_bytes(file_size),
+                        "index": len(file_data) + 1,
+                        "seasons": parsed_data.get("seasons"),
+                        "episodes": parsed_data.get("episodes"),
+                        "title": parsed_data.get("title"),
+                    }
+                )
 
         if file_count == len(file_data):
             torrent_data["file_data"] = file_data
@@ -262,6 +325,14 @@ class TgxSpider(scrapy.Spider):
         if language:
             torrent_data["languages"] = [language.strip()]
 
+        # Extracting type
+        title_type = response.xpath(
+            "//div[b='Category:']/following-sibling::div/a/text()"
+        ).get()
+        if title_type:
+            title_type = title_type.strip().lower()
+            torrent_data["type"] = "series" if title_type == "tv" else "movie"
+
         yield torrent_data
 
     def handle_failure(self, failure):
@@ -270,8 +341,9 @@ class TgxSpider(scrapy.Spider):
 
     def retry_request(self, request):
         retry_count = request.meta.get("retry_count", 0)
+        torrent_page_link = request.meta.get("torrent_page_link")
         if retry_count < 3:  # Set your retry limit
-            new_url = request.url.replace(
+            new_url = torrent_page_link.replace(
                 request.url.split("/")[2], random.choice(self.allowed_domains)
             )
             self.logger.info(f"Retrying with new URL: {new_url}")
@@ -286,8 +358,10 @@ class TgxSpider(scrapy.Spider):
                         "referer": request.url,
                         "timeout": 60000,
                     },
+                    "playwright_include_page": True,
                     "torrent_data": request.meta["torrent_data"],
                     "retry_count": retry_count + 1,
+                    "torrent_page_link": torrent_page_link,
                 },
             )
         else:
@@ -299,7 +373,6 @@ class FormulaTgxSpider(TgxSpider):
     name = "formula_tgx"
     uploader_profiles = [
         "egortech",
-        "F1Carreras",
         "smcgill1969",
     ]
     catalog = ["formula_racing"]
@@ -426,3 +499,42 @@ class UFCTGXSpider(BaseEventSpider):
             *args,
             **kwargs,
         )
+
+
+class MoviesTVTgxSpider(TgxSpider):
+    name = "movies_tv_tgx"
+    search_queries = [
+        # Movies
+        # "c3=1&c46=1&c45=1&c42=1&c4=1&c1=1&search=&lang=0&nox=2&nox=1&page=0",
+        # # TV Series
+        # "c41=1&c5=1&c11=1&c6=1&search=&lang=0&nox=2&nox=1&page=0",
+        "c3=1&c46=1&c45=1&c42=1&c4=1&c1=1&search=&lang=8&nox=2&page=0"
+    ]
+    catalog = []
+    background_image = None  # Will be fetched from TMDB/IMDB
+    logo_image = None
+
+    # Pattern to exclude unwanted content
+    keyword_patterns = re.compile(
+        r"^(?!.*(?:WWE|UFC|Formula|MotoGP)).*$",  # Excludes sports content
+        re.IGNORECASE,
+    )
+    scraped_info_hash_key = "movies_tv_tgx_scraped_info_hash"
+
+    custom_settings = {
+        "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
+            "mediafusion_scrapy.pipelines.MovieTVParserPipeline": 200,
+            "mediafusion_scrapy.pipelines.CatalogParsePipeline": 300,
+            "mediafusion_scrapy.pipelines.MovieStorePipeline": 400,
+            "mediafusion_scrapy.pipelines.SeriesStorePipeline": 500,
+        },
+        "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+        "PLAYWRIGHT_CDP_URL": settings.playwright_cdp_url,
+        "DOWNLOAD_HANDLERS": {
+            "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+            "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+        },
+        "PLAYWRIGHT_MAX_CONTEXTS": 2,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 3,
+    }

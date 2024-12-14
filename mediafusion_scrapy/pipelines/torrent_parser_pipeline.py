@@ -58,9 +58,6 @@ class TorrentDownloadAndParsePipeline:
 
 class MagnetDownloadAndParsePipeline:
     async def process_item(self, item, spider):
-        if item.get("file_data"):
-            return item
-
         magnet_link = item.get("magnet_link")
 
         if not magnet_link:
@@ -77,6 +74,8 @@ class MagnetDownloadAndParsePipeline:
         )
 
         if not torrent_metadata:
+            if item.get("file_data"):
+                return item
             raise DropItem(f"Failed to extract torrent metadata: {item}")
 
         item.update(torrent_metadata[0])

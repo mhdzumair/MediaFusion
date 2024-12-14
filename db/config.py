@@ -139,6 +139,8 @@ class Settings(BaseSettings):
     disable_wwe_tgx_scheduler: bool = False
     ufc_tgx_scheduler_crontab: str = "30 */3 * * *"
     disable_ufc_tgx_scheduler: bool = False
+    movies_tv_tgx_scheduler_crontab: str = "0 * * * *"
+    disable_movies_tv_tgx_scheduler: bool = False
     prowlarr_feed_scraper_crontab: str = "0 */3 * * *"
     disable_prowlarr_feed_scraper: bool = False
     cleanup_expired_scraper_task_crontab: str = "0 * * * *"

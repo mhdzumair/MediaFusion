@@ -46,6 +46,8 @@ CATALOG_DATA = {
     "telugu_series": "Telugu Series",
     "telugu_tcrip": "Telugu TCRip Movies",
     "fighting": "Fighting (WWE, UFC)",
+    "tgx_movie": "TGx Movies",
+    "tgx_series": "TGx Series",
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
