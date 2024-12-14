@@ -166,21 +166,33 @@ async def configure(
     request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
     kodi_code: str = None,
+    secret_str: str = None,
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
+    configured_fields = []
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
-        user_data.streaming_provider.password = None
-        user_data.streaming_provider.token = None
+        user_data.streaming_provider.password = "••••••••"
+        user_data.streaming_provider.token = "••••••••"
+        configured_fields.extend(["provider_token", "password"])
 
         if user_data.streaming_provider.qbittorrent_config:
-            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = None
-            user_data.streaming_provider.qbittorrent_config.webdav_password = None
+            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = (
+                "••••••••"
+            )
+            user_data.streaming_provider.qbittorrent_config.webdav_password = "••••••••"
+            configured_fields.extend(["qbittorrent_password", "webdav_password"])
 
     # Remove the password from the mediaflow proxy
     if user_data.mediaflow_config:
-        user_data.mediaflow_config.api_password = None
+        user_data.mediaflow_config.api_password = "••••••••"
+        configured_fields.append("mediaflow_api_password")
+
+    # Check RPDB configuration
+    if user_data.rpdb_config:
+        user_data.rpdb_config.api_key = "••••••••"
+        configured_fields.append("rpdb_api_key")
 
     user_data.api_password = None
 
@@ -223,6 +235,8 @@ async def configure(
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
             "disabled_providers": settings.disabled_providers,
+            "configured_fields": configured_fields,
+            "secret_str": secret_str,
         },
     )
 
@@ -620,8 +634,13 @@ async def get_streams(
 
 
 @app.post("/encrypt-user-data", tags=["user_data"])
+@app.post("/encrypt-user-data/{existing_secret_str}", tags=["user_data"])
 @wrappers.rate_limit(30, 60 * 5, "user_data")
-async def encrypt_user_data(user_data: schemas.UserData, request: Request):
+async def encrypt_user_data(
+    user_data: schemas.UserData,
+    request: Request,
+    existing_secret_str: str | None = None,
+):
     async def _validate_all_config() -> dict:
         if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
             return {
@@ -661,6 +680,48 @@ async def encrypt_user_data(user_data: schemas.UserData, request: Request):
                 "status": "error",
                 "message": f"Unexpected error during validation: {str(e)}",
             }
+
+    if existing_secret_str:
+        try:
+            existing_config = crypto.decrypt_user_data(existing_secret_str)
+        except ValueError:
+            existing_config = schemas.UserData()
+
+        if user_data.streaming_provider and existing_config.streaming_provider:
+            if user_data.streaming_provider.password == "••••••••":
+                user_data.streaming_provider.password = (
+                    existing_config.streaming_provider.password
+                )
+            if user_data.streaming_provider.token == "••••••••":
+                user_data.streaming_provider.token = (
+                    existing_config.streaming_provider.token
+                )
+
+            if user_data.streaming_provider.qbittorrent_config:
+                if (
+                    user_data.streaming_provider.qbittorrent_config.qbittorrent_password
+                    == "••••••••"
+                ):
+                    user_data.streaming_provider.qbittorrent_config.qbittorrent_password = (
+                        existing_config.streaming_provider.qbittorrent_config.qbittorrent_password
+                    )
+                if (
+                    user_data.streaming_provider.qbittorrent_config.webdav_password
+                    == "••••••••"
+                ):
+                    user_data.streaming_provider.qbittorrent_config.webdav_password = (
+                        existing_config.streaming_provider.qbittorrent_config.webdav_password
+                    )
+
+        if user_data.mediaflow_config and existing_config.mediaflow_config:
+            if user_data.mediaflow_config.api_password == "••••••••":
+                user_data.mediaflow_config.api_password = (
+                    existing_config.mediaflow_config.api_password
+                )
+
+        if user_data.rpdb_config and existing_config.rpdb_config:
+            if user_data.rpdb_config.api_key == "••••••••":
+                user_data.rpdb_config.api_key = existing_config.rpdb_config.api_key
 
     validation_result = await _validate_all_config()
     if validation_result["status"] == "error":

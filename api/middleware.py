@@ -49,6 +49,10 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
             url_path = url_path.replace(
                 request.path_params.get("secret_str"), "*MASKED*"
             )
+        if request.path_params.get("existing_secret_str"):
+            url_path = url_path.replace(
+                request.path_params.get("existing_secret_str"), "*MASKED*"
+            )
         logging.info(
             f'{ip} - "{request.method} {url_path} HTTP/1.1" {response.status_code} {process_time}'
         )

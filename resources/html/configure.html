@@ -237,10 +237,12 @@
                     <div id="token_input" class="mb-3" style="display:none">
                         <label for="provider_token" class="mb-3">Token: <span id="provider_token_tooltip" class="bi bi-question-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                                                               title="Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token."></span></label>
-                        <input class="form-control" type="text" name="provider_token" id="provider_token" placeholder="Enter Token"
-                               value="{{ user_data.streaming_provider.token if user_data.streaming_provider.token else '' }}">
-                        <div class="invalid-feedback">
-                            Token is required.
+                        <div class="input-group">
+                            <input class="form-control" type="text" name="provider_token" id="provider_token" placeholder="Enter Token"
+                                   value="{{ user_data.streaming_provider.token if user_data.streaming_provider.token else '' }}">
+                            <div class="invalid-feedback">
+                                Token is required.
+                            </div>
                         </div>
                     </div>
 
@@ -893,6 +895,9 @@
         <p id="loadingMessage">Processing your configuration...</p>
     </div>
 </div>
+
+<input type="hidden" id="configured_fields" value='{{ configured_fields|tojson|safe }}'>
+<input type="hidden" id="existing_config" value="{{ secret_str if secret_str else '' }}">
 
 <!-- JS for Bootstrap and form validation -->
 <script src="/static/js/jquery-3.6.0.min.js"></script>

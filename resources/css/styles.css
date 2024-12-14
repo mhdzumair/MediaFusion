@@ -479,6 +479,18 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
     margin-bottom: 0;
 }
 
+.configured-field {
+  background-color: #f8f9fa;
+}
+
+.reset-config-btn {
+  margin-left: 0.5rem;
+}
+
+.input-group .reset-config-btn {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
 
 .sort-item {
     background: rgba(var(--bs-primary-rgb), 0.05);

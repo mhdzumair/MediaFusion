@@ -274,6 +274,7 @@ async function getInstallationUrl(isRedirect = false) {
         showLoadingWidget();
 
         const userData = getUserData();
+        const existingConfig = document.getElementById('existing_config').value;
         let urlPrefix = window.location.protocol + "//";
         if (isRedirect) {
             urlPrefix = "stremio://";
@@ -284,8 +285,9 @@ async function getInstallationUrl(isRedirect = false) {
             showNotification('Validation failed. Please check your input.', 'error');
             return null;
         }
+        const encryptUrl = '/encrypt-user-data' + (existingConfig ? `/${existingConfig}` : '');
 
-        const response = await fetch('/encrypt-user-data', {
+        const response = await fetch(encryptUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -542,6 +544,52 @@ function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
     });
 }
 
+// Function to handle configured credential fields
+function handleConfiguredFields(field, isConfigured = false) {
+    const inputField = document.getElementById(field);
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'btn btn-outline-secondary reset-config-btn';
+    resetBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
+    resetBtn.title = 'Reset Configuration';
+
+    if (isConfigured) {
+        inputField.setAttribute('readonly', true);
+        inputField.classList.add('configured-field');
+
+        // Add reset button next to the field
+        if (!inputField.nextElementSibling?.classList.contains('reset-config-btn')) {
+            inputField.parentElement.appendChild(resetBtn);
+        }
+
+        // Handle reset button click
+        resetBtn.onclick = () => {
+            inputField.value = '';
+            inputField.removeAttribute('readonly');
+            inputField.classList.remove('configured-field');
+            resetBtn.remove();
+        };
+    }
+}
+
+// Function to initialize configured fields
+function initConfiguredFields(configuredFields) {
+    const sensitiveFields = [
+        'provider_token',
+        'password',
+        'qbittorrent_password',
+        'webdav_password',
+        'mediaflow_api_password',
+        'rpdb_api_key'
+    ];
+
+    sensitiveFields.forEach(field => {
+        if (configuredFields.includes(field)) {
+            handleConfiguredFields(field, true);
+        }
+    });
+}
+
 async function initiateKodiSetup() {
     // Show modal to input Kodi code
     const kodiCodeModal = new bootstrap.Modal(document.getElementById('kodiCodeModal'));
@@ -700,12 +748,12 @@ document.addEventListener('DOMContentLoaded', function () {
     setupPasswordToggle('rpdb_api_key', 'toggleRPDBApiKey', 'toggleRPDBApiKeyIcon');
 });
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
 
     // Initialize sort direction toggles
     const toggleButtons = document.querySelectorAll('.sort-direction-toggle');
     toggleButtons.forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', function () {
             const sortId = this.dataset.sortId;
             const directionInput = document.getElementById(`direction_${sortId}`);
             const currentDirection = directionInput.value;
@@ -732,7 +780,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Enable/disable sort direction buttons based on checkbox state
     const sortCheckboxes = document.querySelectorAll('[name="selected_sorting_options"]');
     sortCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
+        checkbox.addEventListener('change', function () {
             const sortId = this.value;
             const toggleButton = document.querySelector(`[data-sort-id="${sortId}"]`);
             const sortItem = this.closest('.sort-item');
@@ -811,6 +859,10 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Initialize configured fields if they exist
+    const configuredFields = JSON.parse(document.getElementById('configured_fields')?.value || '[]');
+    initConfiguredFields(configuredFields);
+
     // Show or hide the language sort section based on the sorting options
     document.querySelectorAll('input[name="selected_sorting_options"]').forEach(checkbox => {
         checkbox.addEventListener('change', function () {
