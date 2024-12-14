@@ -50,9 +50,6 @@ def process_poster_image(
         image = Image.open(BytesIO(content)).convert("RGB")
         image = image.resize((300, 450))
         imdb_rating = None
-        if mediafusion_data.id.startswith("tt"):
-            if (imdb_rating := mediafusion_data.imdb_rating) is None:
-                imdb_rating = get_imdb_rating(mediafusion_data.id)
 
         # The add_elements_to_poster function would be synchronous
         image = add_elements_to_poster(image, imdb_rating)
@@ -73,6 +70,10 @@ def process_poster_image(
 
 async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
     content = await fetch_poster_image(mediafusion_data.poster)
+    if mediafusion_data.id.startswith("tt") and mediafusion_data.imdb_rating is None:
+        imdb_rating = await get_imdb_rating(mediafusion_data.id)
+        mediafusion_data.imdb_rating = imdb_rating
+        mediafusion_data.save()
 
     loop = asyncio.get_event_loop()
     byte_io = await asyncio.wait_for(

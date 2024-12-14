@@ -49,9 +49,9 @@ async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.T
     return title
 
 
-def get_imdb_rating(movie_id: str) -> Optional[float]:
+async def get_imdb_rating(movie_id: str) -> Optional[float]:
     try:
-        movie = web.get_title(
+        movie = await web.get_title_async(
             movie_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
         )
     except Exception:
@@ -59,21 +59,21 @@ def get_imdb_rating(movie_id: str) -> Optional[float]:
     return movie.rating
 
 
-def search_imdb(
+async def search_imdb(
     title: str, year: int, media_type: str = None, max_retries: int = 3
 ) -> dict:
-    def get_poster_urls(imdb_id: str) -> tuple:
+    async def get_poster_urls(imdb_id: str) -> tuple:
         poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
         try:
-            with httpx.Client(proxy=settings.requests_proxy_url) as client:
-                response = client.head(poster, timeout=10)
+            async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
+                response = await client.head(poster, timeout=10)
                 if response.status_code == 200:
                     return poster, poster
         except httpx.RequestError:
             pass
         return None, None
 
-    def process_movie(imdb_title: model.Movie | model.TVSeries) -> dict:
+    async def process_movie(imdb_title: model.Movie | model.TVSeries) -> dict:
         try:
             if (imdb_title.type_id != "tvSeries" and imdb_title.year != year) or (
                 imdb_title.type_id == "tvSeries"
@@ -82,12 +82,12 @@ def search_imdb(
             ):
                 return {}
 
-            web.update_title(
+            await web.update_title_async(
                 imdb_title, page="parental_guide", keys=["certification", "advisories"]
             )
-            web.update_title(imdb_title, page="akas", keys=["akas"])
+            await web.update_title_async(imdb_title, page="akas", keys=["akas"])
 
-            poster_image, background_image = get_poster_urls(imdb_title.imdb_id)
+            poster_image, background_image = await get_poster_urls(imdb_title.imdb_id)
             if not poster_image:
                 poster_image = imdb_title.primary_image
                 background_image = poster_image
@@ -125,7 +125,7 @@ def search_imdb(
         title_types = ["movie"] if media_type == "movie" else ["tvSeries"]
     for attempt in range(max_retries):
         try:
-            results = web.search_titles(
+            results = await web.search_titles_async(
                 title,
                 filters=SearchFilters(
                     title_types=title_types,
@@ -142,7 +142,7 @@ def search_imdb(
                 if fuzz.ratio(imdb_data.title.lower(), title.lower()) < 85:
                     continue
 
-                imdb_title_data = process_movie(imdb_data)
+                imdb_title_data = await process_movie(imdb_data)
                 if imdb_title_data:
                     return imdb_title_data
 

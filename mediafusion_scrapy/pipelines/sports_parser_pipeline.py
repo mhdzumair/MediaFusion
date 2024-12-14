@@ -39,7 +39,7 @@ class BaseParserPipeline:
         self.known_imdb_ids = known_imdb_ids or {}
         self.static_poster = static_poster or {}
 
-    def process_item(self, item, spider):
+    async def process_item(self, item, spider):
         title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.parse_title(title, item)
         if not item.get("title"):
@@ -53,7 +53,7 @@ class BaseParserPipeline:
             )
         )
         self.parse_description(item)
-        self.update_imdb_data(item)
+        await self.update_imdb_data(item)
         return item
 
     def parse_title(self, title, torrent_data: dict):
@@ -121,14 +121,14 @@ class BaseParserPipeline:
             "filename": largest_file["filename"],
         }
 
-    def update_imdb_data(self, torrent_data: dict):
+    async def update_imdb_data(self, torrent_data: dict):
         year = torrent_data.get("date").year
         title = torrent_data.get("event")
         imdb_id = self.known_imdb_ids.get(title.lower())
         if not imdb_id:
             result = self.imdb_cache.get(f"{title}_{year}")
             if not result:
-                result = search_imdb(title, year)
+                result = await search_imdb(title, year)
             if not result:
                 logging.warning(f"Failed to find IMDb title for {title}")
                 if not torrent_data["poster"]:
