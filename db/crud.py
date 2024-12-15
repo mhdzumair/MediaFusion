@@ -72,20 +72,60 @@ async def get_meta_list(
         query_filters = {"catalog": {"$in": [catalog]}}
 
     query_filters["is_blocked"] = {"$ne": True}
-    match_filter = {
-        "type": catalog_type,
-    }
 
+    # Initialize base match filter and conditions array
+    match_filter = {"type": catalog_type}
+    filter_conditions = []
+
+    # Add genre filter if specified
     if genre:
         match_filter["genres"] = {"$in": [genre]}
 
+    # Handle nudity filter
     if "Disable" not in user_data.nudity_filter:
-        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+        nudity_conditions = []
+        if user_data.nudity_filter:
+            nudity_conditions.append(
+                {"parent_guide_nudity_status": {"$nin": user_data.nudity_filter}}
+            )
+        if "Unknown" in user_data.nudity_filter:
+            nudity_conditions.append({"parent_guide_nudity_status": {"$exists": True}})
 
+        if len(nudity_conditions) > 1:
+            filter_conditions.append({"$and": nudity_conditions})
+        elif nudity_conditions:
+            filter_conditions.append(nudity_conditions[0])
+
+    # Handle certification filter
     if "Disable" not in user_data.certification_filter:
-        match_filter["parent_guide_certificates"] = {
-            "$nin": get_filter_certification_values(user_data)
-        }
+        cert_conditions = []
+        filter_values = get_filter_certification_values(user_data)
+
+        if filter_values:
+            cert_conditions.append(
+                {"parent_guide_certificates": {"$nin": filter_values}}
+            )
+        if "Unknown" in user_data.certification_filter:
+            cert_conditions.append(
+                {
+                    "$nor": [
+                        {"parent_guide_certificates": {"$exists": False}},
+                        {"parent_guide_certificates": {"$size": 0}},
+                    ]
+                }
+            )
+
+        if len(cert_conditions) > 1:
+            filter_conditions.append({"$and": cert_conditions})
+        elif cert_conditions:
+            filter_conditions.append(cert_conditions[0])
+
+    # Combine all filter conditions
+    if filter_conditions:
+        if len(filter_conditions) > 1:
+            match_filter["$and"] = filter_conditions
+        else:
+            match_filter.update(filter_conditions[0])
 
     # Define the pipeline for aggregation
     pipeline = [
@@ -830,20 +870,58 @@ async def save_series_metadata(metadata: dict, is_search_imdb_title: bool = True
 async def process_search_query(
     search_query: str, catalog_type: str, user_data: schemas.UserData
 ) -> dict:
-    # Get user's certification filter values
-    certification_values = get_filter_certification_values(user_data)
-
-    # Initialize the match filter
+    # Initialize base match filter and conditions array
     match_filter = {
         "$text": {"$search": search_query},  # Perform the text search
         "type": catalog_type,
     }
+    filter_conditions = []
 
+    # Handle nudity filter
     if "Disable" not in user_data.nudity_filter:
-        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+        nudity_conditions = []
+        if user_data.nudity_filter:
+            nudity_conditions.append(
+                {"parent_guide_nudity_status": {"$nin": user_data.nudity_filter}}
+            )
+        if "Unknown" in user_data.nudity_filter:
+            nudity_conditions.append({"parent_guide_nudity_status": {"$exists": True}})
 
+        if len(nudity_conditions) > 1:
+            filter_conditions.append({"$and": nudity_conditions})
+        elif nudity_conditions:
+            filter_conditions.append(nudity_conditions[0])
+
+    # Handle certification filter
     if "Disable" not in user_data.certification_filter:
-        match_filter["parent_guide_certificates"] = {"$nin": certification_values}
+        cert_conditions = []
+        filter_values = get_filter_certification_values(user_data)
+
+        if filter_values:
+            cert_conditions.append(
+                {"parent_guide_certificates": {"$nin": filter_values}}
+            )
+        if "Unknown" in user_data.certification_filter:
+            cert_conditions.append(
+                {
+                    "$nor": [
+                        {"parent_guide_certificates": {"$exists": False}},
+                        {"parent_guide_certificates": {"$size": 0}},
+                    ]
+                }
+            )
+
+        if len(cert_conditions) > 1:
+            filter_conditions.append({"$and": cert_conditions})
+        elif cert_conditions:
+            filter_conditions.append(cert_conditions[0])
+
+    # Combine all filter conditions with the base match filter
+    if filter_conditions:
+        if len(filter_conditions) > 1:
+            match_filter["$and"] = filter_conditions
+        else:
+            match_filter.update(filter_conditions[0])
 
     # Define the aggregation pipeline
     pipeline = [

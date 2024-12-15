@@ -425,6 +425,13 @@
                             </div>
                             <div class="col-12 col-md-6 col-lg-4">
                                 <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Unknown" id="certification_unknown"
+                                           {% if "Unknown" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_unknown">Unknown</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
                                     <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="All Ages" id="certification_all_ages"
                                            {% if "All Ages" in user_data.certification_filter %}checked{% endif %}>
                                     <label class="form-check-label" for="certification_all_ages">All Ages</label>
@@ -470,6 +477,13 @@
                                     <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="Disable" id="nudity_disable"
                                            {% if "Disable" in user_data.nudity_filter %}checked{% endif %}>
                                     <label class="form-check-label" for="nudity_disable">Disable</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="nudity_filter" value="Unknown" id="nudity_unknown"
+                                           {% if "Unknown" in user_data.nudity_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="nudity_unknown">Unknown</label>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6 col-lg-4">

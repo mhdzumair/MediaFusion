@@ -209,12 +209,18 @@ class UserData(BaseModel):
         ],
         alias="tsp",
     )
-    nudity_filter: list[Literal["Disable", "None", "Mild", "Moderate", "Severe"]] = (
-        Field(default=["Severe"], alias="nf")
-    )
+    nudity_filter: list[
+        Literal["Disable", "Unknown", "None", "Mild", "Moderate", "Severe"]
+    ] = Field(default=["Severe"], alias="nf")
     certification_filter: list[
         Literal[
-            "Disable", "All Ages", "Children", "Parental Guidance", "Teens", "Adults"
+            "Disable",
+            "Unknown",
+            "All Ages",
+            "Children",
+            "Parental Guidance",
+            "Teens",
+            "Adults",
         ]
     ] = Field(default=["Adults"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")

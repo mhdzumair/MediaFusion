@@ -241,20 +241,35 @@ def get_filter_certification_values(user_data: schemas.UserData) -> list[str]:
 
 def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
     """
-    Validate if the metadata has adult content based on the parent guide nudity status or if status is not available, based on certificates.
+    Validate if the metadata has adult content based on parent guide nudity status and certifications.
+    Returns False if the content should be filtered out based on user preferences.
     """
-    filter_certification_values = get_filter_certification_values(user_data)
+    # Skip validation if filters are disabled
     if (
-        metadata.parent_guide_nudity_status
-        and metadata.parent_guide_nudity_status in user_data.nudity_filter
+        "Disable" in user_data.nudity_filter
+        and "Disable" in user_data.certification_filter
     ):
-        return False
+        return True
 
-    if metadata.parent_guide_certificates and any(
-        certificate in filter_certification_values
-        for certificate in metadata.parent_guide_certificates
-    ):
-        return False
+    # Check nudity status filter
+    if "Disable" not in user_data.nudity_filter:
+        if metadata.parent_guide_nudity_status in user_data.nudity_filter:
+            return False
+
+    # Check certification filter
+    if "Disable" not in user_data.certification_filter:
+        filter_certification_values = get_filter_certification_values(user_data)
+
+        if "Unknown" in user_data.certification_filter:
+            # Filter out if certifications list is empty or doesn't exist
+            if not metadata.parent_guide_certificates:
+                return False
+
+        if metadata.parent_guide_certificates and any(
+            certificate in filter_certification_values
+            for certificate in metadata.parent_guide_certificates
+        ):
+            return False
 
     return True
 
