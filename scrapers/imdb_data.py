@@ -232,8 +232,9 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
                     "parent_guide_nudity_status": result.advisories.nudity.status,
                     "parent_guide_certificates": list(
                         set(
-                            cert.certificate
+                            rating
                             for cert in result.certification.certificates
+                            for rating in cert.ratings
                         )
                     ),
                     "aka_titles": list(set(aka.title for aka in result.akas)),
