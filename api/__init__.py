@@ -9,7 +9,10 @@ from dramatiq.middleware import (
     Callbacks,
     Pipelines,
     Prometheus,
+    CurrentMessage,
 )
+from dramatiq_abort import Abortable
+from dramatiq_abort.backends import RedisBackend
 
 from api.middleware import MaxTasksPerChild, Retries, TaskManager
 from db.config import settings
@@ -27,5 +30,7 @@ redis_broker.middleware = [
     AsyncIO(),
     MaxTasksPerChild(settings.worker_max_tasks_per_child),
     TaskManager(),
+    CurrentMessage(),
+    Abortable(backend=RedisBackend.from_url(settings.redis_url)),
 ]
 dramatiq.set_broker(redis_broker)

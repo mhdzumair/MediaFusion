@@ -59,7 +59,7 @@ DOWNLOADER_MIDDLEWARES = {
 }
 
 EXTENSIONS = {
-    "scrapy.extensions.closespider.CloseSpider": 100,
+    "mediafusion_scrapy.extensions.CloseSpiderExtended": 100,
 }
 
 # Configure item pipelines
@@ -92,8 +92,6 @@ HTTPCACHE_IGNORE_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408, 429]
 HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 # HTTPCACHE_POLICY = "scrapy.extensions.httpcache.RFC2616Policy"
 
-# Set settings whose default value is deprecated to a future-proof value
-REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.12"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
 LOG_LEVEL = "INFO"

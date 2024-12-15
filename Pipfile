@@ -48,6 +48,7 @@ aioseedrcc = "*"
 pytz = "*"
 aiohttp-socks = "*"
 socksio = "*"
+dramatiq-abort = "*"
 
 [dev-packages]
 pysocks = "*"
