@@ -952,6 +952,7 @@ class ProwlarrScraper(BaseScraper):
 @dramatiq.actor(
     time_limit=30 * 60 * 1000,  # 30 minutes
     priority=100,
+    max_age=259200000,  # 3 days
 )
 async def background_movie_title_search(
     metadata_id: str,
@@ -1036,6 +1037,7 @@ async def background_movie_title_search(
 @dramatiq.actor(
     time_limit=30 * 60 * 1000,  # 30 minutes
     priority=100,
+    max_age=259200000,  # 3 days
 )
 async def background_series_title_search(
     metadata_id: str,
