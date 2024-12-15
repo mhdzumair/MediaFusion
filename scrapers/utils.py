@@ -9,12 +9,14 @@ from scrapers.base_scraper import BaseScraper
 from scrapers.prowlarr import ProwlarrScraper
 from scrapers.torrentio import TorrentioScraper
 from scrapers.mediafusion import MediafusionScraper
+from scrapers.yts import YTSScraper
 from scrapers.zilean import ZileanScraper
 from utils.runtime_const import (
     ZILEAN_SEARCH_TTL,
     TORRENTIO_SEARCH_TTL,
     PROWLARR_SEARCH_TTL,
-    MEDIAFUSION_SEARCH_TTL
+    MEDIAFUSION_SEARCH_TTL,
+    YTS_SEARCH_TTL,
 )
 
 
@@ -47,7 +49,15 @@ async def run_scrapers(
     if settings.is_scrap_from_mediafusion:
         mediafusion_scraper = MediafusionScraper()
         scraper_tasks.append(
-            mediafusion_scraper.scrape_and_parse(metadata, catalog_type, season, episode)
+            mediafusion_scraper.scrape_and_parse(
+                metadata, catalog_type, season, episode
+            )
+        )
+
+    if settings.is_scrap_from_yts:
+        yts_scraper = YTSScraper()
+        scraper_tasks.append(
+            yts_scraper.scrape_and_parse(metadata, catalog_type, season, episode)
         )
 
     scraped_streams = await asyncio.gather(*scraper_tasks)
@@ -74,3 +84,4 @@ async def cleanup_expired_scraper_task(**kwargs):
     await BaseScraper.remove_expired_items(
         MediafusionScraper.cache_key_prefix, MEDIAFUSION_SEARCH_TTL
     )
+    await BaseScraper.remove_expired_items(YTSScraper.cache_key_prefix, YTS_SEARCH_TTL)

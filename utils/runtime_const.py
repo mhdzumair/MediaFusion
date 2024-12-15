@@ -46,3 +46,4 @@ MEDIAFUSION_SEARCH_TTL = int(
 ZILEAN_SEARCH_TTL = int(
     timedelta(hours=settings.zilean_search_interval_hour).total_seconds()
 )
+YTS_SEARCH_TTL = 259200  # 3 days in seconds
