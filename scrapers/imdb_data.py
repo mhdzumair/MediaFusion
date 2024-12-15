@@ -92,7 +92,7 @@ async def get_imdb_rating(movie_id: str) -> Optional[float]:
         )
     except Exception:
         return None
-    return movie.rating
+    return float(movie.rating)
 
 
 async def get_poster_urls(imdb_id: str) -> tuple:
