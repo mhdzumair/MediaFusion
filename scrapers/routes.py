@@ -80,6 +80,7 @@ async def run_scraper_task(task: schemas.ScraperTask):
         search_keyword=task.search_keyword,
         scrape_all=str(task.scrape_all),
         scrap_catalog_id=task.scrap_catalog_id,
+        total_pages=task.total_pages,
     )
 
     return {"status": f"Scraping {task.spider_name} task has been scheduled."}

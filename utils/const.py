@@ -168,6 +168,7 @@ SCRAPY_SPIDERS = {
     "arab_torrents": "Arab Torrents",
     "wwe_tgx": "WWE TGX",
     "ufc_tgx": "UFC TGX",
+    "movies_tv_tgx": "Movies TV TGX",
 }
 
 

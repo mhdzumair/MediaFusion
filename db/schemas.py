@@ -368,6 +368,7 @@ class ScraperTask(BaseModel):
         "arab_torrents",
         "wwe_tgx",
         "ufc_tgx",
+        "movies_tv_tgx",
     ]
     pages: int | None = 1
     start_page: int | None = 1
@@ -398,6 +399,7 @@ class ScraperTask(BaseModel):
         "english_hdrip",
         "english_series",
     ] = "all"
+    total_pages: int | None = None
     api_password: str = None
 
 

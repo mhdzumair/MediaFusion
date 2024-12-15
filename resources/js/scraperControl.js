@@ -147,6 +147,7 @@ function toggleSpiderSpecificFields() {
     document.getElementById('keyword').value = '';
     document.getElementById('pages').value = '1';
     document.getElementById('startPage').value = '1';
+    document.getElementById('totalPages').value = '1';
     document.getElementById('scrape_all').checked = false;
 }
 
