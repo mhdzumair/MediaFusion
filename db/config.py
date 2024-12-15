@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     flaresolverr_url: str = "http://flaresolverr:8191/v1"
 
     # External Service API Keys
-    tmdb_api_key: str
+    tmdb_api_key: str | None = None
 
     # Prowlarr Settings
     prowlarr_url: str = "http://prowlarr-service:9696"
