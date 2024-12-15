@@ -35,7 +35,9 @@ class StremThru(DebridClient):
             self.headers["Proxy-Authorization"] = f"Basic {self.auth}"
         elif isinstance(self.auth, dict):
             self.headers["X-StremThru-Store-Name"] = self.auth["store"]
-            self.headers["X-StremThru-Store-Token"] = self.auth["token"]
+            self.headers["X-StremThru-Store-Authorization"] = (
+                f"Bearer {self.auth["token"]}"
+            )
 
     def __del__(self):
         pass
