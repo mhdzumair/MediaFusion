@@ -72,8 +72,9 @@ async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
     content = await fetch_poster_image(mediafusion_data.poster)
     if mediafusion_data.id.startswith("tt") and mediafusion_data.imdb_rating is None:
         imdb_rating = await get_imdb_rating(mediafusion_data.id)
-        mediafusion_data.imdb_rating = imdb_rating
-        mediafusion_data.save()
+        if imdb_rating:
+            mediafusion_data.imdb_rating = imdb_rating
+            await mediafusion_data.save()
 
     loop = asyncio.get_event_loop()
     byte_io = await asyncio.wait_for(
