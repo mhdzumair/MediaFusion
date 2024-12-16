@@ -138,7 +138,7 @@ class BT4GScraper(BaseScraper):
         try:
             # Get first page
             first_page_url = self._get_search_url(search_query, page=1)
-            response = await self.make_request(first_page_url)
+            response = await self.make_request(first_page_url, is_expected_to_fail=True)
 
             # Parse first page
             first_page_results, total_results = await self.parse_first_page(
@@ -179,7 +179,7 @@ class BT4GScraper(BaseScraper):
                 for page in range(2, total_pages + 1):
                     page_url = self._get_search_url(search_query, page)
                     # Fetch all pages concurrently
-                    tasks.append(self.make_request(page_url))
+                    tasks.append(self.make_request(page_url, is_expected_to_fail=True))
 
                 # Process all additional pages
                 try:
@@ -216,7 +216,7 @@ class BT4GScraper(BaseScraper):
     ) -> AsyncGenerator[TorrentStreams, None]:
         """Fetch and process a single page of results"""
         try:
-            response = await self.make_request(page_url)
+            response = await self.make_request(page_url, is_expected_to_fail=True)
 
             soup = BeautifulSoup(response.text, "html.parser")
             results = soup.find_all("div", class_="result-item")
@@ -323,7 +323,9 @@ class BT4GScraper(BaseScraper):
 
             # Add page URL to the processed set to avoid duplicates scraping the same page
             processed_unique_data.add(page_url)
-            response = await self.make_request(settings.bt4g_url + page_url)
+            response = await self.make_request(
+                settings.bt4g_url + page_url, is_expected_to_fail=True
+            )
             soup = BeautifulSoup(response.text, "html.parser")
 
             magnet_element = soup.find("a", {"class": "btn-info"})

@@ -346,21 +346,18 @@ class BaseScraper(abc.ABC):
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
     )
     async def make_request(
-        self, url: str, method: str = "GET", **kwargs
+        self, url: str, method: str = "GET", is_expected_to_fail: bool = False, **kwargs
     ) -> httpx.Response:
         """
         Make an HTTP request with retry logic.
-        :param url: URL to request
-        :param method: HTTP method (GET, POST, etc.)
-        :param kwargs: Additional arguments to pass to the request
-        :return: Response object
-        :raises ScraperError: If an error occurs while making the request
         """
         try:
             response = await self.http_client.request(method, url, **kwargs)
             response.raise_for_status()
             return response
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404 and is_expected_to_fail:
+                return e.response
             self.logger.error(f"HTTP error occurred: {e}")
             raise ScraperError(f"HTTP error occurred: {e}")
         except httpx.RequestError as e:
