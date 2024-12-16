@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     )
     is_public_instance: bool = False
     poster_host_url: str | None = None
+    min_scraping_video_size: int = 26214400  # 25 MB in bytes
 
     # Streaming Provider Toggles
     disabled_providers: list[
@@ -79,6 +80,14 @@ class Settings(BaseSettings):
     is_scrap_from_zilean: bool = False
     zilean_search_interval_hour: int = 24
     zilean_url: str = "https://zilean.elfhosted.com"
+
+    # BT4G Settings
+    is_scrap_from_bt4g: bool = True
+    bt4g_url: str = "https://bt4gprx.com"
+    bt4g_search_interval_hour: int = 24
+    bt4g_search_timeout: int = 15
+    bt4g_immediate_max_process: int = 30
+    bt4g_immediate_max_process_time: int = 150000
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None

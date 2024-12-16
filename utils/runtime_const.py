@@ -47,3 +47,6 @@ ZILEAN_SEARCH_TTL = int(
     timedelta(hours=settings.zilean_search_interval_hour).total_seconds()
 )
 YTS_SEARCH_TTL = 259200  # 3 days in seconds
+BT4G_SEARCH_TTL = int(
+    timedelta(hours=settings.bt4g_search_interval_hour).total_seconds()
+)

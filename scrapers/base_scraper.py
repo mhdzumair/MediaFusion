@@ -13,6 +13,7 @@ import httpx
 from ratelimit import limits, sleep_and_retry
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from db.config import settings
 from db.models import TorrentStreams, MediaFusionMetaData
 from utils.parser import calculate_max_similarity_ratio
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -429,6 +430,13 @@ class BaseScraper(abc.ABC):
 
         :return: True if valid, False otherwise
         """
+        if settings.adult_content_filter_in_torrent_title and parsed_data.get("adult"):
+            self.metrics.record_skip("Adult content")
+            self.logger.debug(
+                f"Torrent title contains adult content: '{torrent_title}'"
+            )
+            return False
+
         # Check similarity ratios
         max_similarity_ratio = calculate_max_similarity_ratio(
             parsed_data["title"], metadata.title, metadata.aka_titles
