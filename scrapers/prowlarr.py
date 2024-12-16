@@ -689,7 +689,11 @@ class ProwlarrScraper(BaseScraper):
             meta_id=metadata.id,
             torrent_name=parsed_data["torrent_name"],
             size=parsed_data["total_size"],
-            filename=parsed_data.get("largest_file", {}).get("file_name"),
+            filename=(
+                parsed_data.get("largest_file", {}).get("file_name")
+                if catalog_type == "movie"
+                else None
+            ),
             file_index=parsed_data.get("largest_file", {}).get("index"),
             languages=parsed_data.get("languages"),
             resolution=parsed_data.get("resolution"),
