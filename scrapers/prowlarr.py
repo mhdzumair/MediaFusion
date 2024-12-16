@@ -874,7 +874,7 @@ class ProwlarrScraper(BaseScraper):
                         "initial_failure": status.get("initialFailure"),
                     }
 
-                return status_data
+            return status_data
         except Exception as e:
             self.logger.error(f"Failed to fetch indexer statuses: {e}")
             return {}
