@@ -86,10 +86,10 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
         }
         if is_parse_ptt:
             metadata.update(PTT.parse_title(torrent_name, True))
-        if not metadata["seasons"]:
-            metadata["seasons"] = list(seasons)
-        if not metadata["episodes"]:
-            metadata["episodes"] = list(episodes)
+            if not metadata["seasons"]:
+                metadata["seasons"] = list(seasons)
+            if not metadata["episodes"]:
+                metadata["episodes"] = list(episodes)
         return metadata
     except Exception as e:
         logging.exception(f"Error occurred: {e}")
