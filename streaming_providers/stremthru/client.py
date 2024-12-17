@@ -92,7 +92,12 @@ class StremThru(DebridClient):
         params = params or {}
         full_url = urljoin(self.BASE_URL, url)
         response = await super()._make_request(
-            method=method, url=full_url, params=params, **kwargs
+            method=method,
+            url=full_url,
+            params=params,
+            is_http_response=is_http_response,
+            is_expected_to_fail=is_expected_to_fail,
+            **kwargs,
         )
         if is_http_response or is_expected_to_fail:
             return response
