@@ -211,7 +211,12 @@ async def add_torrent(
             raise_error("Failed to fetch torrent metadata.")
         torrent_data = data[0]
     elif torrent_file:
-        torrent_data = torrent.extract_torrent_metadata(await torrent_file.read())
+        try:
+            torrent_data = torrent.extract_torrent_metadata(
+                await torrent_file.read(), is_raise_error=True
+            )
+        except ValueError as e:
+            raise_error(str(e))
         if not torrent_data:
             raise_error("Failed to extract torrent metadata.")
         if settings.adult_content_filter_in_torrent_title and torrent_data.get("adult"):

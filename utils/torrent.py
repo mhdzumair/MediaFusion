@@ -27,7 +27,9 @@ from utils.validation_helper import is_video_file
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 
-def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
+def extract_torrent_metadata(
+    content: bytes, is_parse_ptt: bool = True, is_raise_error: bool = False
+) -> dict:
     try:
         torrent_data = bencodepy.decode(content)
         info = torrent_data[b"info"]
@@ -63,6 +65,11 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
                     "episodes": parsed_data.get("episodes"),
                 }
             )
+        if not file_data:
+            logging.warning("No video files found in torrent. Skipping")
+            if is_raise_error:
+                raise ValueError("No video files found in torrent")
+            return {}
 
         announce_list = [
             tracker[0].decode() for tracker in torrent_data.get(b"announce-list", [])
@@ -72,6 +79,8 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
             logging.warning(
                 f"Torrent name contains 18+ keywords: {torrent_name}. Skipping"
             )
+            if is_raise_error:
+                raise ValueError("Torrent name contains 18+ keywords")
             return {}
 
         largest_file = max(file_data, key=lambda x: x["size"])
@@ -93,6 +102,8 @@ def extract_torrent_metadata(content: bytes, is_parse_ptt: bool = True) -> dict:
         return metadata
     except Exception as e:
         logging.exception(f"Error occurred: {e}")
+        if is_raise_error:
+            raise ValueError(f"Failed to extract torrent metadata from torrent: {e}")
         return {}
 
 
