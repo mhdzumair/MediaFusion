@@ -5,6 +5,7 @@ from datetime import datetime
 
 import PTT
 import scrapy
+from scrapy_playwright.page import PageMethod
 
 from db.config import settings
 from db.models import TorrentStreams
@@ -50,7 +51,13 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
-                    "playwright_include_page": True,
+                    "playwright_page_methods": [
+                        PageMethod(
+                            "wait_for_selector",
+                            "#smallguestnav",
+                            timeout=60000,
+                        ),
+                    ],
                     "is_search_query": False,
                     "parse_url": parse_url,
                 },
@@ -66,40 +73,26 @@ class TgxSpider(scrapy.Spider):
                         "wait_until": "domcontentloaded",
                         "timeout": 60000,
                     },
-                    "playwright_include_page": True,
+                    "playwright_page_methods": [
+                        PageMethod(
+                            "wait_for_selector",
+                            "#smallguestnav",
+                            timeout=60000,
+                        ),
+                    ],
                     "is_search_query": True,
                     "parse_url": parse_url,
                 },
             )
 
     async def parse(self, response, **kwargs):
-        # First try waiting for the content to load
-        page = response.meta["playwright_page"]
-        if not response.css("div.tgxtablerow.txlight"):
-            try:
-                await page.wait_for_selector("div.tgxtablerow.txlight", timeout=10000)
-                # Get the updated content after waiting
-                content = await page.content()
-                await page.close()
-                response = response.replace(body=content)
-            except Exception:
-                # If timeout occurs, check for galaxyfence
-                await page.close()
-                if "galaxyfence.php" in response.url:
-                    self.logger.warning("Encountered galaxyfence.php. Retrying")
-                    parse_url = response.meta.get("parse_url")
-                    yield scrapy.Request(
-                        parse_url,
-                        self.parse,
-                        meta=response.meta,
-                        dont_filter=True,
-                        priority=10,
-                    )
-                    return
-                else:
-                    self.logger.warning(f"Content not loaded for URL: {response.url}")
-                    return
-        await page.close()
+        if "galaxyfence.php" in response.url:
+            self.logger.warning("Encountered galaxyfence.php. Retrying")
+            parse_url = response.meta.get("parse_url")
+            yield scrapy.Request(
+                parse_url, self.parse, meta=response.meta, dont_filter=True, priority=10
+            )
+            return
 
         uploader_profile_name = response.meta.get("uploader_profile")
         is_search_query = response.meta.get("is_search_query")
@@ -220,37 +213,28 @@ class TgxSpider(scrapy.Spider):
                             "referer": response.url,
                             "timeout": 60000,
                         },
-                        "playwright_include_page": True,
+                        "playwright_page_methods": [
+                            PageMethod(
+                                "wait_for_selector",
+                                "#smallguestnav",
+                                timeout=60000,
+                            ),
+                        ],
                         "torrent_data": torrent_data,
                         "torrent_page_link": torrent_page_link,
                     },
                 )
 
     async def parse_torrent_details(self, response):
-        # First try waiting for the content to load
-        page = response.meta["playwright_page"]
-        if not response.xpath('//button[contains(@class, "flist")]//em/text()'):
-            try:
-                await page.wait_for_selector("button.flist em", timeout=10000)
-                # Get the updated content after waiting
-                content = await page.content()
-                response = response.replace(body=content)
-            except Exception:
-                # If timeout occurs, check for galaxyfence
-                await page.close()
-                if (
-                    response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]")
-                    or "galaxyfence.php" in response.url
-                ):
-                    self.logger.warning(
-                        f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
-                    )
-                    yield self.retry_request(response)
-                    return
-                else:
-                    self.logger.warning(f"Content not loaded for URL: {response.url}")
-                    return
-        await page.close()
+        if (
+            response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]")
+            or "galaxyfence.php" in response.url
+        ):
+            self.logger.warning(
+                f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
+            )
+            yield self.retry_request(response)
+            return
 
         torrent_data = deepcopy(response.meta["torrent_data"])
 
@@ -358,7 +342,13 @@ class TgxSpider(scrapy.Spider):
                         "referer": request.url,
                         "timeout": 60000,
                     },
-                    "playwright_include_page": True,
+                    "playwright_page_methods": [
+                        PageMethod(
+                            "wait_for_selector",
+                            "#smallguestnav",
+                            timeout=60000,
+                        ),
+                    ],
                     "torrent_data": request.meta["torrent_data"],
                     "retry_count": retry_count + 1,
                     "torrent_page_link": torrent_page_link,
