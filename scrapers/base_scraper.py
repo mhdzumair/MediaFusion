@@ -616,3 +616,868 @@ class BaseScraper(abc.ABC):
         """
         current_time = int(time.time())
         await REDIS_ASYNC_CLIENT.zremrangebyscore(scraper_prefix, 0, current_time - ttl)
+
+
+class BackgroundScraperManager:
+    def __init__(self):
+        self.movie_hash_key = "background_search:movies"
+        self.series_hash_key = "background_search:series"
+        self.processing_set_key = "background_search:processing"
+        self.batch_size = 10  # Number of items to process in each batch
+
+    async def add_movie_to_queue(self, meta_id: str) -> None:
+        """Add a movie to the background search queue"""
+        await REDIS_ASYNC_CLIENT.hset(
+            self.movie_hash_key,
+            meta_id,
+            json.dumps({"last_scrape": None, "added_at": datetime.now().timestamp()}),
+        )
+
+    async def add_series_to_queue(
+        self, meta_id: str, season: int, episode: int
+    ) -> None:
+        """Add a series episode to the background search queue"""
+        key = f"{meta_id}:{season}:{episode}"
+        await REDIS_ASYNC_CLIENT.hset(
+            self.series_hash_key,
+            key,
+            json.dumps({"last_scrape": None, "added_at": datetime.now().timestamp()}),
+        )
+
+    async def get_pending_items(self, item_type: str) -> List[Dict]:
+        """Get items that need to be scraped"""
+        hash_key = self.movie_hash_key if item_type == "movie" else self.series_hash_key
+        cutoff_time = datetime.now() - timedelta(
+            hours=settings.background_search_interval_hours
+        )
+
+        # Get all items
+        all_items = await REDIS_ASYNC_CLIENT.hgetall(hash_key)
+        pending_items = []
+
+        for item_key, item_data in all_items.items():
+            data = json.loads(item_data)
+            last_scrape = data.get("last_scrape")
+
+            # Check if item needs scraping
+            if not last_scrape or datetime.fromtimestamp(last_scrape) < cutoff_time:
+
+                # Check if not currently processing
+                if not await REDIS_ASYNC_CLIENT.sismember(
+                    self.processing_set_key, item_key
+                ):
+                    pending_items.append(
+                        {"key": item_key.decode("utf-8"), "data": data}
+                    )
+
+        return pending_items[: self.batch_size]
+
+    async def mark_as_processing(self, item_key: str) -> None:
+        """Mark an item as currently being processed"""
+        await REDIS_ASYNC_CLIENT.sadd(self.processing_set_key, item_key)
+
+    async def mark_as_completed(self, item_key: str, hash_key: str) -> None:
+        """Mark an item as completed and update last scrape time"""
+        # Update last scrape time
+        item_data = await REDIS_ASYNC_CLIENT.hget(hash_key, item_key)
+        if item_data:
+            data = json.loads(item_data)
+            data["last_scrape"] = datetime.now().timestamp()
+            await REDIS_ASYNC_CLIENT.hset(hash_key, item_key, json.dumps(data))
+
+        # Remove from processing set
+        await REDIS_ASYNC_CLIENT.srem(self.processing_set_key, item_key)
+
+    async def cleanup_stale_processing(self, max_processing_time: int = 3600) -> None:
+        """Clean up items stuck in processing state"""
+        processing_items = await REDIS_ASYNC_CLIENT.smembers(self.processing_set_key)
+        for item_key in processing_items:
+            await REDIS_ASYNC_CLIENT.srem(self.processing_set_key, item_key)
+
+
+class MaxProcessLimitReached(Exception):
+    pass
+
+
+class IndexerBaseScraper(BaseScraper, abc.ABC):
+    """Base class for indexer-based scrapers (Prowlarr, Jackett)"""
+
+    # Blocklist & Allowlist of keywords to identify non-video files
+    # fmt: off
+    blocklist_keywords = [
+        ".exe", ".zip", ".rar", ".iso", ".bin", ".tar", ".7z", ".pdf", ".xyz",
+        ".epub", ".mobi", ".azw3", ".doc", ".docx", ".txt", ".rtf",
+        "setup", "install", "crack", "patch", "trainer", "readme",
+        "manual", "keygen", "license", "tutorial", "ebook", "software", "epub", "book",
+    ]
+
+    allowlist_keywords = [
+        "mkv", "mp4", "avi", ".webm", ".mov", ".flv", "webdl", "web-dl", "webrip", "bluray",
+        "brrip", "bdrip", "dvdrip", "hdtv", "hdcam", "hdrip", "1080p", "720p", "480p", "360p",
+        "2160p", "4k", "x264", "x265", "hevc", "h264", "h265", "aac", "xvid", "movie", "series", "season",
+    ]
+
+    # fmt: on
+
+    MOVIE_SEARCH_QUERY_TEMPLATES = [
+        "{title} ({year})",  # Exact match with year
+        "{title} {year}",  # Title with year (without parentheses)
+        "{title}",  # Title-only fallback
+    ]
+
+    SERIES_SEARCH_QUERY_TEMPLATES = [
+        "{title} S{season:02d}E{episode:02d}",  # Standard SXXEYY format
+        "{title} Season {season} Episode {episode}",  # Verbose format
+        "{title} {season}x{episode}",  # Alternate XXxYY format
+        "{title} S{season:02d}",  # Season search
+        "{title}",  # Title-only fallback
+    ]
+
+    MOVIE_CATEGORY_IDS = [
+        2000,
+        2010,
+        2020,
+        2030,
+        2040,
+        2045,
+        2050,
+        2060,
+        2070,
+        2080,
+        2090,
+    ]
+    SERIES_CATEGORY_IDS = [
+        5000,
+        5010,
+        5020,
+        5030,
+        5040,
+        5045,
+        5050,
+        5060,
+        5070,
+        5080,
+        5090,
+    ]
+    OTHER_CATEGORY_IDS = [8000, 8010, 8020]
+
+    def __init__(self, cache_key_prefix: str, base_url: str):
+        super().__init__(cache_key_prefix=cache_key_prefix, logger_name=__name__)
+        self.base_url = base_url
+        self.indexer_status = {}
+        self.indexer_circuit_breakers = {}
+        self.background_scraper_manager = BackgroundScraperManager()
+
+    async def _scrape_and_parse(
+        self,
+        metadata: MediaFusionMetaData,
+        catalog_type: str,
+        season: int = None,
+        episode: int = None,
+    ) -> List[TorrentStreams]:
+        results = []
+        processed_info_hashes: set[str] = set()
+
+        # Get list of healthy indexers
+        healthy_indexers = await self.get_healthy_indexers()
+        if not healthy_indexers:
+            self.metrics.record_error("No healthy indexers")
+            self.logger.warning("No healthy indexers available")
+            return results
+
+        # Split indexers into chunks of 3
+        indexer_chunks = list(self.split_indexers_into_chunks(healthy_indexers, 3))
+        self.logger.info(
+            f"Processing {len(healthy_indexers)} indexers in {len(indexer_chunks)} chunks"
+        )
+
+        try:
+            if catalog_type == "movie":
+                async for stream in self.scrape_movie(
+                    processed_info_hashes, metadata, indexer_chunks
+                ):
+                    results.append(stream)
+            elif catalog_type == "series":
+                async for stream in self.scrape_series(
+                    processed_info_hashes, metadata, season, episode, indexer_chunks
+                ):
+                    results.append(stream)
+
+        except httpx.ReadTimeout:
+            self.metrics.record_error("timeout")
+            self.logger.warning("Timeout while fetching search results")
+        except httpx.HTTPStatusError as e:
+            self.metrics.record_error("http_error")
+            self.logger.error(
+                f"Error fetching search results: {e.response.text}, status code: {e.response.status_code}"
+            )
+        except Exception as e:
+            self.metrics.record_error("unexpected_error")
+            self.logger.exception(f"An error occurred during scraping: {str(e)}")
+
+        self.logger.info(
+            f"Returning {len(results)} scraped streams for {metadata.title}"
+        )
+        return results
+
+    async def scrape_movie(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        indexer_chunks: List[List[dict]],
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Common movie scraping logic"""
+        search_generators = []
+
+        # Add IMDB search for each chunk
+        for chunk in indexer_chunks:
+            search_generators.append(
+                self.scrape_movie_by_imdb(processed_info_hashes, metadata, chunk)
+            )
+
+        # Add title-based searches if enabled
+        if self.live_title_search_enabled:
+            for chunk in indexer_chunks:
+                for query_template in self.MOVIE_SEARCH_QUERY_TEMPLATES:
+                    search_query = query_template.format(
+                        title=metadata.title, year=metadata.year
+                    )
+                    search_generators.append(
+                        self.scrape_movie_by_title(
+                            processed_info_hashes,
+                            metadata,
+                            search_query=search_query,
+                            indexers=chunk,
+                        )
+                    )
+
+        async for stream in self.process_streams(
+            *search_generators,
+            max_process=self.immediate_max_process,
+            max_process_time=self.immediate_max_process_time,
+        ):
+            yield stream
+
+        if self.background_title_search_enabled:
+            await self.background_scraper_manager.add_movie_to_queue(metadata.id)
+
+    async def scrape_series(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        season: int,
+        episode: int,
+        indexer_chunks: List[List[dict]],
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Common series scraping logic"""
+        search_generators = []
+
+        # Add IMDB search for each chunk
+        for chunk in indexer_chunks:
+            search_generators.append(
+                self.scrape_series_by_imdb(
+                    processed_info_hashes, metadata, season, episode, chunk
+                )
+            )
+
+        # Add title-based searches if enabled
+        if self.live_title_search_enabled:
+            for chunk in indexer_chunks:
+                for query_template in self.SERIES_SEARCH_QUERY_TEMPLATES:
+                    search_query = query_template.format(
+                        title=metadata.title, season=season, episode=episode
+                    )
+                    search_generators.append(
+                        self.scrape_series_by_title(
+                            processed_info_hashes,
+                            metadata,
+                            season,
+                            episode,
+                            search_query=search_query,
+                            indexers=chunk,
+                        )
+                    )
+
+        async for stream in self.process_streams(
+            *search_generators,
+            max_process=self.immediate_max_process,
+            max_process_time=self.immediate_max_process_time,
+            catalog_type="series",
+            season=season,
+            episode=episode,
+        ):
+            yield stream
+
+        if self.background_title_search_enabled:
+            await self.background_scraper_manager.add_series_to_queue(
+                metadata.id, season, episode
+            )
+
+    @abc.abstractmethod
+    async def get_healthy_indexers(self) -> List[dict]:
+        """Get list of healthy indexer IDs"""
+        pass
+
+    @abc.abstractmethod
+    async def fetch_search_results(
+        self, params: dict, indexer_ids: List[int], timeout: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch search results from the indexer"""
+        pass
+
+    @abc.abstractmethod
+    async def build_search_params(
+        self,
+        video_id: str,
+        search_type: Literal["search", "tvsearch", "movie"],
+        categories: list[int],
+        search_query: str = None,
+    ) -> dict:
+        """Build search parameters for the indexer"""
+        pass
+
+    @abc.abstractmethod
+    async def parse_indexer_data(
+        self, indexer_data: dict, catalog_type: str, parsed_data: dict
+    ) -> dict:
+        """Parse indexer-specific data"""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def live_title_search_enabled(self) -> bool:
+        """Whether live title search is enabled"""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def background_title_search_enabled(self) -> bool:
+        """Whether background title search is enabled"""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def immediate_max_process(self) -> int:
+        """Maximum number of items to process immediately"""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def immediate_max_process_time(self) -> int:
+        """Maximum time to spend processing items immediately"""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def search_query_timeout(self) -> int:
+        """Timeout for search queries"""
+        pass
+
+    @abc.abstractmethod
+    def get_info_hash(self, item: dict) -> str:
+        pass
+
+    @abc.abstractmethod
+    def get_guid(self, item: dict) -> str:
+        pass
+
+    @abc.abstractmethod
+    def get_title(self, item: dict) -> str:
+        pass
+
+    @abc.abstractmethod
+    def get_imdb_id(self, item: dict) -> str | None:
+        pass
+
+    @abc.abstractmethod
+    def get_category_ids(self, item: dict) -> List[int]:
+        pass
+
+    @abc.abstractmethod
+    def get_magent_link(self, item: dict) -> str:
+        pass
+
+    @abc.abstractmethod
+    def get_download_link(self, item: dict) -> str:
+        pass
+
+    @abc.abstractmethod
+    def get_info_url(self, item: dict) -> str:
+        pass
+
+    @abc.abstractmethod
+    def get_indexer(self, item: dict) -> str:
+        pass
+
+    async def scrape_movie_by_imdb(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        indexers: List[dict],
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Scrape movie using IMDB ID"""
+        async for stream in self.run_scrape_and_parse(
+            processed_info_hashes=processed_info_hashes,
+            metadata=metadata,
+            search_type="movie",
+            categories=self.MOVIE_CATEGORY_IDS,
+            catalog_type="movie",
+            indexers=indexers,
+            requires_imdb=True,
+        ):
+            yield stream
+
+    async def scrape_movie_by_title(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        search_query: str,
+        indexers: List[dict],
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Scrape movie using title search"""
+        async for stream in self.run_scrape_and_parse(
+            processed_info_hashes=processed_info_hashes,
+            metadata=metadata,
+            search_type="search",
+            categories=self.MOVIE_CATEGORY_IDS + self.OTHER_CATEGORY_IDS,
+            catalog_type="movie",
+            search_query=search_query,
+            indexers=indexers,
+            requires_imdb=False,
+        ):
+            yield stream
+
+    async def scrape_series_by_imdb(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        season: int,
+        episode: int,
+        indexers: List[dict],
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Scrape series using IMDB ID"""
+        async for stream in self.run_scrape_and_parse(
+            processed_info_hashes=processed_info_hashes,
+            metadata=metadata,
+            search_type="tvsearch",
+            categories=self.SERIES_CATEGORY_IDS,
+            catalog_type="series",
+            season=season,
+            episode=episode,
+            indexers=indexers,
+            requires_imdb=True,
+        ):
+            yield stream
+
+    async def scrape_series_by_title(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        season: int,
+        episode: int,
+        search_query: str,
+        indexers: List[dict],
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Scrape series using title search"""
+        async for stream in self.run_scrape_and_parse(
+            processed_info_hashes=processed_info_hashes,
+            metadata=metadata,
+            search_type="search",
+            categories=self.SERIES_CATEGORY_IDS + self.OTHER_CATEGORY_IDS,
+            catalog_type="series",
+            season=season,
+            episode=episode,
+            search_query=search_query,
+            indexers=indexers,
+            requires_imdb=False,
+        ):
+            yield stream
+
+    def filter_indexers_by_capability(
+        self,
+        indexers: List[dict],
+        search_type: Literal["search", "tvsearch", "movie"],
+        categories: list[int],
+        requires_imdb: bool = False,
+    ) -> List[dict]:
+        """Filter indexers based on their capabilities"""
+        filtered_indexers = []
+
+        # Map our search types to indexer search types
+        search_type_map = {
+            "search": "search",
+            "tvsearch": "tv-search",
+            "movie": "movie-search",
+        }
+        indexer_search_type = search_type_map[search_type]
+
+        for indexer in indexers:
+            # Check if indexer supports the required search type
+            search_caps = indexer["search_capabilities"]
+            if indexer_search_type not in search_caps:
+                continue
+
+            # If we need IMDB support, check if it's available
+            if requires_imdb and "imdbid" not in search_caps[indexer_search_type]:
+                continue
+
+            # Check if indexer supports any of the required categories
+            if not any(cat in indexer["categories"] for cat in categories):
+                continue
+
+            filtered_indexers.append(indexer)
+
+        return filtered_indexers
+
+    async def run_scrape_and_parse(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        search_type: Literal["search", "tvsearch", "movie"],
+        categories: list[int],
+        catalog_type: str,
+        indexers: List[dict],
+        season: int = None,
+        episode: int = None,
+        search_query: str = None,
+        requires_imdb: bool = False,
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Common method to run scraping and parsing process"""
+        # Filter indexers based on capabilities
+        filtered_indexers = self.filter_indexers_by_capability(
+            indexers, search_type, categories, requires_imdb
+        )
+
+        if not filtered_indexers:
+            self.logger.warning(
+                f"No indexers support {search_type} search with required capabilities, Requires IMDB: {requires_imdb}"
+            )
+            return
+
+        self.logger.info(
+            f"Found {len(filtered_indexers)} indexers supporting {search_type}."
+        )
+
+        params = await self.build_search_params(
+            metadata.id,
+            search_type,
+            categories,
+            search_query,
+        )
+
+        # Use only the IDs from filtered indexers
+        indexer_ids = [indexer["id"] for indexer in filtered_indexers]
+        search_results = await self.fetch_search_results(
+            params, indexer_ids=indexer_ids, timeout=self.search_query_timeout
+        )
+
+        self.metrics.record_found_items(len(search_results))
+        self.logger.info(
+            f"Found {len(search_results)} streams for {metadata.title} ({metadata.year}) "
+            f"with {search_type} Search, params: {params}"
+        )
+
+        async for stream in self.parse_streams(
+            processed_info_hashes,
+            metadata,
+            search_results,
+            catalog_type,
+            season,
+            episode,
+        ):
+            yield stream
+
+    async def parse_streams(
+        self,
+        processed_info_hashes: set[str],
+        metadata: MediaFusionMetaData,
+        search_results: List[Dict[str, Any]],
+        catalog_type: str,
+        season: int = None,
+        episode: int = None,
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """Parse stream results with circuit breaker"""
+        circuit_breaker = CircuitBreaker(
+            failure_threshold=2, recovery_timeout=10, half_open_attempts=3
+        )
+
+        async for result in batch_process_with_circuit_breaker(
+            self.process_stream,
+            search_results,
+            5,  # batch_size
+            3,  # max_concurrent_batches
+            circuit_breaker,
+            5,  # max_retries
+            metadata=metadata,
+            catalog_type=catalog_type,
+            season=season,
+            episode=episode,
+            processed_info_hashes=processed_info_hashes,
+        ):
+            if result is not None:
+                yield result
+
+    async def process_stream(
+        self,
+        stream_data: Dict[str, Any],
+        metadata: MediaFusionMetaData,
+        catalog_type: str,
+        processed_info_hashes: set[str],
+        season: int = None,
+        episode: int = None,
+    ) -> Optional[TorrentStreams]:
+        """Common process stream implementation for all indexers"""
+        try:
+            torrent_title = self.get_title(stream_data)
+            if not torrent_title:
+                return None
+
+            if is_contain_18_plus_keywords(torrent_title):
+                self.logger.warning(
+                    f"Adult content found in torrent title: {torrent_title}"
+                )
+                self.metrics.record_skip("Adult content")
+                return None
+
+            parsed_data = self.parse_title_data(torrent_title)
+            if not self.validate_title_and_year(
+                parsed_data,
+                metadata,
+                catalog_type,
+                torrent_title,
+            ):
+                return None
+
+            if catalog_type == "series" and len(parsed_data.get("seasons", [])) > 1:
+                self.logger.warning(
+                    f"Series has multiple seasons: {torrent_title} ({parsed_data.get('year')}) "
+                    f"({metadata.id}) : {parsed_data.get('seasons')}"
+                )
+                self.metrics.record_skip("Multiple seasons torrent")
+                return None
+
+            # Get indexer-specific parsed data
+            parsed_data = await self.parse_indexer_data(
+                stream_data, catalog_type, parsed_data
+            )
+            if not parsed_data or parsed_data["info_hash"] in processed_info_hashes:
+                self.metrics.record_skip("Duplicated info_hash")
+                return None
+
+            torrent_stream = TorrentStreams(
+                id=parsed_data["info_hash"],
+                meta_id=metadata.id,
+                torrent_name=parsed_data["torrent_name"],
+                size=parsed_data["total_size"],
+                filename=(
+                    parsed_data.get("largest_file", {}).get("file_name")
+                    if catalog_type == "movie"
+                    else None
+                ),
+                file_index=(
+                    parsed_data.get("largest_file", {}).get("index")
+                    if catalog_type == "movie"
+                    else None
+                ),
+                languages=parsed_data.get("languages"),
+                resolution=parsed_data.get("resolution"),
+                codec=parsed_data.get("codec"),
+                quality=parsed_data.get("quality"),
+                audio=parsed_data.get("audio"),
+                source=parsed_data["source"],
+                catalog=parsed_data["catalog"],
+                seeders=parsed_data["seeders"],
+                created_at=parsed_data["created_at"],
+                announce_list=parsed_data["announce_list"],
+                indexer_flags=stream_data.get("indexerFlags", []),
+            )
+
+            if catalog_type == "series":
+                season_number = (
+                    parsed_data["seasons"][0] if parsed_data.get("seasons") else None
+                )
+                episode_data = []
+                if parsed_data.get("file_data"):
+                    episode_data = [
+                        Episode(
+                            episode_number=(
+                                file["episodes"][0]
+                                if file.get("episodes")
+                                else parsed_data["episodes"][0]
+                            ),
+                            filename=file.get("filename"),
+                            size=file.get("size"),
+                            file_index=file.get("index"),
+                        )
+                        for file in parsed_data["file_data"]
+                        if file.get("episodes")
+                        or (
+                            len(parsed_data["file_data"]) == 1
+                            and parsed_data.get("episodes")
+                        )
+                    ]
+                elif episodes := parsed_data.get("episodes"):
+                    episode_data = [Episode(episode_number=ep) for ep in episodes]
+                elif parsed_data.get("date"):
+                    # search with date for episode
+                    episode_date = datetime.strptime(
+                        parsed_data["date"], "%Y-%m-%d"
+                    ).date()
+                    imdb_episode = await get_episode_by_date(
+                        metadata.id,
+                        parsed_data["title"],
+                        episode_date,
+                    )
+                    if imdb_episode and imdb_episode.season and imdb_episode.episode:
+                        self.logger.info(
+                            f"Episode found by {episode_date} date for {parsed_data.get('title')} ({metadata.id})"
+                        )
+                        season_number = int(imdb_episode.season)
+                        episode_data = [
+                            Episode(episode_number=int(imdb_episode.episode))
+                        ]
+                else:
+                    # if no episode data found, then try to get torrent metadata from trackers
+                    torrent_data = await info_hashes_to_torrent_metadata(
+                        [parsed_data["info_hash"]], parsed_data["announce_list"]
+                    )
+                    if torrent_data:
+                        torrent_file_metadata = torrent_data[0]
+                        episode_data = [
+                            Episode(
+                                episode_number=file["episodes"][0],
+                                filename=file.get("filename"),
+                                size=file.get("size"),
+                                file_index=file.get("index"),
+                            )
+                            for file in torrent_file_metadata.get("file_data", [])
+                            if file.get("episodes")
+                        ]
+                    elif season_number:
+                        # Some pack contains few episodes. We can't determine exact episode number
+                        episode_data = [Episode(episode_number=1)]
+
+                if episode_data and season_number:
+                    torrent_stream.season = Season(
+                        season_number=season_number,
+                        episodes=episode_data,
+                    )
+                else:
+                    self.metrics.record_skip("Missing episode info")
+                    self.logger.warning(
+                        f"Episode not found in stream: '{torrent_title}' "
+                        f"Scraping for: S{season}E{episode}"
+                    )
+                    return None
+
+            self.metrics.record_processed_item()
+            self.metrics.record_quality(torrent_stream.quality)
+            self.metrics.record_source(torrent_stream.source)
+
+            processed_info_hashes.add(parsed_data["info_hash"])
+            self.logger.info(
+                f"Successfully parsed stream: {parsed_data.get('title')} "
+                f"({parsed_data.get('year')}) ({metadata.id}) "
+                f"info_hash: {parsed_data.get('info_hash')}"
+            )
+            return torrent_stream
+
+        except httpx.ReadTimeout:
+            self.metrics.record_error("timeout")
+            self.logger.warning("Timeout while processing search result")
+            return None
+        except Exception as e:
+            self.metrics.record_error("result_processing_error")
+            self.logger.exception(f"Error processing search result: {e}")
+            return None
+
+    async def get_download_url(self, indexer_data):
+        """Get download URL from Jackett indexer data"""
+        guid = self.get_guid(indexer_data) or ""
+        magnet_url = self.get_magent_link(indexer_data) or ""
+        download_url = self.get_download_link(indexer_data) or ""
+
+        if guid and guid.startswith("magnet:"):
+            return guid
+
+        if not magnet_url.startswith("magnet:") and not download_url.startswith(
+            "magnet:"
+        ):
+            torrent_info_data = await torrent_info.get_torrent_info(
+                self.get_info_url(indexer_data), self.get_indexer(indexer_data)
+            )
+            return (
+                torrent_info_data.get("magnetUrl")
+                or torrent_info_data.get("downloadUrl")
+                or magnet_url
+                or download_url
+            )
+
+        return magnet_url or download_url
+
+    async def get_torrent_data(
+        self, download_url: str, indexer: str, parsed_data: dict
+    ) -> tuple[dict, bool]:
+        """Common method to get torrent data from magnet or URL"""
+        if download_url.startswith("magnet:"):
+            try:
+                magnet = Magnet.from_string(download_url)
+            except MagnetError:
+                return {}, False
+            return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, False
+
+        response = await self.http_client.get(
+            download_url,
+            follow_redirects=False,
+            timeout=self.search_query_timeout,
+        )
+        if response.status_code in [301, 302, 303, 307, 308]:
+            redirect_url = response.headers.get("Location")
+            return await self.get_torrent_data(redirect_url, indexer, parsed_data)
+        response.raise_for_status()
+        if response.headers.get("Content-Type") == "application/x-bittorrent":
+            return extract_torrent_metadata(response.content, parsed_data), True
+        return {}, False
+
+    @staticmethod
+    def parse_title_data(title: str) -> dict:
+        """Parse torrent title using PTT"""
+        parsed = PTT.parse_title(title, True)
+        return {"torrent_name": title, **parsed}
+
+    def validate_category_with_title(
+        self,
+        indexer_data: dict,
+        category_ids: list = None,
+        is_filter_with_blocklist: bool = True,
+    ) -> bool:
+        """Validate category against title"""
+        category_ids = (
+            [category["id"] for category in indexer_data.get("categories", [])]
+            if not category_ids
+            else category_ids
+        )
+
+        if any(
+            [
+                category_id in category_ids
+                for category_id in IndexerBaseScraper.OTHER_CATEGORY_IDS
+            ]
+        ):
+            title = self.get_title(indexer_data).lower()
+
+            if is_filter_with_blocklist:
+                return not any(keyword in title for keyword in self.blocklist_keywords)
+            else:
+                return any(keyword in title for keyword in self.allowlist_keywords)
+
+        return True
+
+    @staticmethod
+    def split_indexers_into_chunks(
+        indexers: List[dict], chunk_size: int
+    ) -> List[List[dict]]:
+        """Split indexers into chunks of specified size"""
+        return [
+            indexers[i : i + chunk_size] for i in range(0, len(indexers), chunk_size)
+        ]

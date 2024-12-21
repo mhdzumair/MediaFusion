@@ -85,10 +85,6 @@ class Settings(BaseSettings):
     # BT4G Settings
     is_scrap_from_bt4g: bool = True
     bt4g_url: str = "https://bt4gprx.com"
-    bt4g_search_interval_hour: int = 24
-    bt4g_search_timeout: int = 15
-    bt4g_immediate_max_process: int = 30
-    bt4g_immediate_max_process_time: int = 150000
     bt4g_search_interval_hour: int = 72
     bt4g_search_timeout: int = 10
     bt4g_immediate_max_process: int = 15
@@ -106,6 +102,7 @@ class Settings(BaseSettings):
     jackett_background_title_search: bool = True
     jackett_feed_scrape_interval_hour: int = 3
 
+    background_search_interval_hours: int = 72
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None

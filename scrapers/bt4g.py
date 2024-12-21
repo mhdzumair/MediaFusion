@@ -90,6 +90,9 @@ class BT4GScraper(BaseScraper):
                 *search_generators,
                 max_process=settings.bt4g_immediate_max_process,
                 max_process_time=settings.bt4g_immediate_max_process_time,
+                catalog_type=catalog_type,
+                season=season,
+                episode=episode,
             ):
                 results.append(stream)
         except Exception as e:
@@ -453,69 +456,3 @@ class BT4GScraper(BaseScraper):
             episodes=episode_data,
         )
         return True
-
-    async def process_streams(
-        self,
-        *stream_generators: AsyncGenerator[TorrentStreams, None],
-        max_process: int = None,
-        max_process_time: int = None,
-    ) -> AsyncGenerator[TorrentStreams, None]:
-        """Process streams from multiple generators with timeout and limits"""
-        queue = asyncio.Queue()
-        streams_processed = 0
-        active_generators = len(stream_generators)
-        processed_unique_data = set()
-
-        async def producer(gen: AsyncGenerator, generator_id: int):
-            try:
-                async for stream_item in gen:
-                    await queue.put((stream_item, generator_id))
-            except Exception as err:
-                self.logger.exception(f"Error in generator {generator_id}: {err}")
-            finally:
-                await queue.put(("DONE", generator_id))
-
-        async def queue_processor():
-            nonlocal active_generators, streams_processed
-            while active_generators > 0:
-                try:
-                    item, gen_id = await queue.get()
-
-                    if item == "DONE":
-                        active_generators -= 1
-                        continue
-
-                    if (
-                        isinstance(item, TorrentStreams)
-                        and item.id not in processed_unique_data
-                    ):
-                        processed_unique_data.add(item.id)
-                        streams_processed += 1
-                        yield item
-
-                    if max_process and streams_processed >= max_process:
-                        self.logger.info(f"Reached max process limit of {max_process}")
-                        return
-
-                except Exception as e:
-                    self.logger.error(f"Error processing queue item: {e}")
-                    continue
-
-        try:
-            async with asyncio.timeout(max_process_time):
-                async with asyncio.TaskGroup() as tg:
-                    [
-                        tg.create_task(producer(gen, i))
-                        for i, gen in enumerate(stream_generators)
-                    ]
-                    async for stream in queue_processor():
-                        yield stream
-
-        except asyncio.TimeoutError:
-            self.logger.warning(
-                f"Stream processing timed out after {max_process_time} seconds"
-            )
-            self.metrics.record_skip("Max process time")
-        except Exception as e:
-            self.logger.error(f"Error during stream processing: {e}")
-            self.metrics.record_error("stream_processing_error")
