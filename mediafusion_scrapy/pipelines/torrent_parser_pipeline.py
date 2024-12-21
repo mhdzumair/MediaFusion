@@ -39,7 +39,7 @@ class TorrentDownloadAndParsePipeline:
             return item
 
         torrent_metadata = torrent.extract_torrent_metadata(
-            response.body, item.get("is_parse_ptt", True)
+            response.body, item.get("parsed_data")
         )
 
         if settings.adult_content_filter_in_torrent_title and torrent_metadata.get(

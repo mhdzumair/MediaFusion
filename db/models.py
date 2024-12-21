@@ -157,7 +157,10 @@ class MediaFusionMetaData(Document):
     class Settings:
         is_root = True
         indexes = [
-            IndexModel([("title", ASCENDING), ("year", ASCENDING)], unique=True),
+            IndexModel(
+                [("title", ASCENDING), ("year", ASCENDING), ("type", ASCENDING)],
+                unique=True,
+            ),
             IndexModel([("title", pymongo.TEXT)]),
         ]
 

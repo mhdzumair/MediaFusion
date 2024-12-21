@@ -28,7 +28,7 @@ logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 
 def extract_torrent_metadata(
-    content: bytes, is_parse_ptt: bool = True, is_raise_error: bool = False
+    content: bytes, parsed_data: dict = None, is_raise_error: bool = False
 ) -> dict:
     try:
         torrent_data = bencodepy.decode(content)
@@ -93,12 +93,26 @@ def extract_torrent_metadata(
             "torrent_name": torrent_name,
             "largest_file": largest_file,
         }
-        if is_parse_ptt:
+        if parsed_data:
+            metadata.update(parsed_data)
+        else:
             metadata.update(PTT.parse_title(torrent_name, True))
-            if not metadata["seasons"]:
-                metadata["seasons"] = list(seasons)
-            if not metadata["episodes"]:
-                metadata["episodes"] = list(episodes)
+
+        if not metadata["seasons"]:
+            metadata["seasons"] = list(seasons)
+        if not metadata["episodes"]:
+            metadata["episodes"] = list(episodes)
+        if (
+            metadata["seasons"]
+            and metadata["episodes"]
+            and not seasons
+            and not episodes
+            and len(file_data) == 1
+        ):
+            # Special case where torrent title contains season and episode but inside filename not contain season and episode info
+            metadata["file_data"][0]["seasons"] = metadata["seasons"]
+            metadata["file_data"][0]["episodes"] = metadata["episodes"]
+
         return metadata
     except Exception as e:
         logging.exception(f"Error occurred: {e}")
@@ -107,7 +121,7 @@ def extract_torrent_metadata(
         return {}
 
 
-async def convert_info_hash_to_magnet(info_hash: str, trackers: list[str]) -> str:
+def convert_info_hash_to_magnet(info_hash: str, trackers: list[str]) -> str:
     magnet_link = f"magnet:?xt=urn:btih:{info_hash}"
     for tracker in set(trackers) or TRACKERS:
         encoded_tracker = quote(tracker, safe="")

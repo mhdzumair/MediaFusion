@@ -677,16 +677,17 @@ async def get_tv_meta(meta_id: str):
 
 async def get_existing_metadata(metadata, model):
     filters = {"title": metadata["title"]}
-    year_filter = metadata.get("year", 0)
+    year_filter = metadata.get("year")
 
-    if issubclass(model, MediaFusionMovieMetaData):
-        filters["year"] = year_filter
-    else:
-        filters["year"] = {"$gte": year_filter}
-        filters["$or"] = [
-            {"end_year": {"$lte": year_filter}},
-            {"end_year": None},
-        ]
+    if year_filter:
+        if issubclass(model, MediaFusionMovieMetaData):
+            filters["year"] = year_filter
+        else:
+            filters["year"] = {"$gte": year_filter}
+            filters["$or"] = [
+                {"end_year": {"$lte": year_filter}},
+                {"end_year": None},
+            ]
 
     return await model.find_one(
         filters,
@@ -740,7 +741,12 @@ def create_stream_object(metadata, is_movie: bool = False):
     )
 
 
-async def get_or_create_metadata(metadata, media_type, is_search_imdb_title):
+async def get_or_create_metadata(
+    metadata: dict,
+    media_type: str,
+    is_search_imdb_title: bool,
+    is_imdb_only: bool = False,
+):
     metadata_class = (
         MediaFusionMovieMetaData if media_type == "movie" else MediaFusionSeriesMetaData
     )
@@ -755,6 +761,8 @@ async def get_or_create_metadata(metadata, media_type, is_search_imdb_title):
                 imdb_data = await search_tmdb(
                     metadata["title"], metadata.get("year"), media_type
                 )
+        if not imdb_data and is_imdb_only:
+            return
 
         metadata["id"] = (
             imdb_data.get("imdb_id") or metadata.get("id") or f"mf{uuid4().fields[-1]}"

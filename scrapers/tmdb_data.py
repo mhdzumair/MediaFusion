@@ -77,11 +77,7 @@ async def get_tmdb_data(tmdb_id: str, media_type: str) -> Optional[Dict[str, Any
                 "description": data["overview"],
                 "genres": [genre["name"] for genre in data["genres"]],
                 "tmdb_rating": data["vote_average"],
-                "runtime": (
-                    data["runtime"]
-                    if media_type == "movie"
-                    else data.get("episode_run_time", [None])[0]
-                ),
+                "runtime": data.get("runtime"),
                 "aka_titles": [title["title"] for title in aka_titles],
                 "stars": [star["name"] for star in stars],
             }

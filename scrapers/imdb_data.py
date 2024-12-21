@@ -92,7 +92,7 @@ async def get_imdb_rating(movie_id: str) -> Optional[float]:
         )
     except Exception:
         return None
-    return float(movie.rating)
+    return float(movie.rating) if movie.rating is not None else None
 
 
 async def get_poster_urls(imdb_id: str) -> tuple:
@@ -108,7 +108,7 @@ async def get_poster_urls(imdb_id: str) -> tuple:
 
 
 async def search_imdb(
-    title: str, year: int, media_type: str = None, max_retries: int = 3
+    title: str, year: int | None, media_type: str = None, max_retries: int = 3
 ) -> dict:
     async def process_movie(imdb_title: model.Movie | model.TVSeries) -> dict:
         try:
@@ -153,6 +153,9 @@ async def search_imdb(
                 ),
                 "runtime": imdb_title.runtime,
             }
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            logging.debug(f"IMDB search: Error processing movie: {e}")
+            return await process_movie(imdb_title)
         except (AttributeError, Exception) as err:
             logging.error(f"IMDB search: Error processing movie: {err}")
             return {}
