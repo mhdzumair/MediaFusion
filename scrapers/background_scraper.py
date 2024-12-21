@@ -185,7 +185,7 @@ class BackgroundSearchWorker:
     min_backoff=timedelta(minutes=10),
     max_backoff=timedelta(hours=1),
 )
-async def run_background_search():
+async def run_background_search(**kwargs):
     """Scheduled task to run background searches"""
     from db import database
 

@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     jackett_feed_scrape_interval_hour: int = 3
 
     background_search_interval_hours: int = 72
+    background_search_crontab: str = "*/5 * * * *"
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None
