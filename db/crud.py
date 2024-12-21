@@ -28,7 +28,7 @@ from db.models import (
 )
 from db.schemas import Stream, TorrentStreamsList
 from scrapers.tmdb_data import search_tmdb
-from scrapers.utils import run_scrapers
+from scrapers.scraper_tasks import run_scrapers
 from scrapers.imdb_data import get_imdb_title, search_imdb
 from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils import crypto

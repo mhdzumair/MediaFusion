@@ -56,12 +56,13 @@ class Settings(BaseSettings):
     tmdb_api_key: str | None = None
 
     # Prowlarr Settings
+    is_scrap_from_prowlarr: bool = True
     prowlarr_url: str = "http://prowlarr-service:9696"
     prowlarr_api_key: str | None = None
-    prowlarr_live_title_search: bool = False
+    prowlarr_live_title_search: bool = True
     prowlarr_background_title_search: bool = True
-    prowlarr_search_query_timeout: int = 15
-    prowlarr_search_interval_hour: int = 24
+    prowlarr_search_query_timeout: int = 30
+    prowlarr_search_interval_hour: int = 72
     prowlarr_immediate_max_process: int = 10
     prowlarr_immediate_max_process_time: int = 15
     prowlarr_feed_scrape_interval_hour: int = 3
@@ -88,6 +89,23 @@ class Settings(BaseSettings):
     bt4g_search_timeout: int = 15
     bt4g_immediate_max_process: int = 30
     bt4g_immediate_max_process_time: int = 150000
+    bt4g_search_interval_hour: int = 72
+    bt4g_search_timeout: int = 10
+    bt4g_immediate_max_process: int = 15
+    bt4g_immediate_max_process_time: int = 15
+
+    # Jackett Settings
+    is_scrap_from_jackett: bool = True
+    jackett_url: str = "http://jackett-service:9117"
+    jackett_api_key: str | None = None
+    jackett_search_interval_hour: int = 72
+    jackett_search_query_timeout: int = 30
+    jackett_immediate_max_process: int = 10
+    jackett_immediate_max_process_time: int = 15
+    jackett_live_title_search: bool = True
+    jackett_background_title_search: bool = True
+    jackett_feed_scrape_interval_hour: int = 3
+
 
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None

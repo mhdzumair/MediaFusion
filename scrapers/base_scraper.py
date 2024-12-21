@@ -1,4 +1,6 @@
 import abc
+import asyncio
+import json
 import logging
 import time
 from collections import Counter
@@ -6,17 +8,31 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from datetime import timedelta
 from functools import wraps
-from typing import Any
-from typing import Dict, List, Optional
+from typing import Any, Literal, AsyncGenerator, AsyncIterable
+from typing import Dict
+from typing import List
+from typing import Optional
 
+import PTT
 import httpx
 from ratelimit import limits, sleep_and_retry
 from tenacity import retry, stop_after_attempt, wait_exponential
+from torf import Magnet, MagnetError
 
 from db.config import settings
-from db.models import TorrentStreams, MediaFusionMetaData
-from utils.parser import calculate_max_similarity_ratio
+from db.models import MediaFusionMovieMetaData, MediaFusionSeriesMetaData
+from db.models import (
+    TorrentStreams,
+    MediaFusionMetaData,
+    Episode,
+    Season,
+)
 from db.redis_database import REDIS_ASYNC_CLIENT
+from scrapers import torrent_info
+from scrapers.imdb_data import get_episode_by_date
+from utils.network import batch_process_with_circuit_breaker, CircuitBreaker
+from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
+from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
 
 
 @dataclass
@@ -280,6 +296,103 @@ class BaseScraper(abc.ABC):
             self.metrics.stop()
             self.metrics.log_summary(self.logger)
 
+    async def process_streams(
+        self,
+        *stream_generators: AsyncGenerator[TorrentStreams, None],
+        max_process: int = None,
+        max_process_time: int = None,
+        catalog_type: str = None,
+        season: int = None,
+        episode: int = None,
+    ) -> AsyncGenerator[TorrentStreams, None]:
+        """
+        Process streams from multiple generators and yield them as they become available.
+        """
+        queue = asyncio.Queue()
+        streams_processed = 0
+        active_generators = len(stream_generators)
+        processed_info_hashes = set()
+
+        async def producer(gen: AsyncIterable, generator_id: int):
+            try:
+                async for stream_item in gen:
+                    await queue.put((stream_item, generator_id))
+                    self.logger.debug("Generator % produced a stream", generator_id)
+            except Exception as err:
+                self.logger.exception(f"Error in generator {generator_id}: {err}")
+            finally:
+                await queue.put(("DONE", generator_id))
+                self.logger.debug("Generator %s finished", generator_id)
+
+        async def queue_processor():
+            nonlocal active_generators, streams_processed
+            while active_generators > 0:
+                item, gen_id = await queue.get()
+
+                if item == "DONE":
+                    active_generators -= 1
+                    self.logger.debug(
+                        "Generator %s completed. %s generators remaining",
+                        gen_id,
+                        active_generators,
+                    )
+                elif (
+                    isinstance(item, TorrentStreams)
+                    and item.id not in processed_info_hashes
+                ):
+                    processed_info_hashes.add(item.id)
+                    if (
+                        catalog_type != "series"
+                        or item.get_episode(season, episode) is not None
+                    ):
+                        streams_processed += 1
+                    self.logger.debug(
+                        f"Processed stream from generator {gen_id}. Total streams processed: {streams_processed}"
+                    )
+                    yield item
+
+                if max_process and streams_processed >= max_process:
+                    self.logger.info(f"Reached max process limit of {max_process}")
+                    raise MaxProcessLimitReached("Max process limit reached")
+
+        try:
+            async with asyncio.timeout(max_process_time):
+                async with asyncio.TaskGroup() as tg:
+                    # Create tasks for each stream generator
+                    [
+                        tg.create_task(producer(gen, i))
+                        for i, gen in enumerate(stream_generators)
+                    ]
+
+                    # Yield items as they become available
+                    async for stream in queue_processor():
+                        yield stream
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"Stream processing timed out after {max_process_time} seconds. "
+                f"Processed {streams_processed} streams"
+            )
+            self.metrics.record_skip("Max process time")
+        except ExceptionGroup as eg:
+            for e in eg.exceptions:
+                if isinstance(e, MaxProcessLimitReached):
+                    self.logger.info(
+                        f"Stream processing cancelled after reaching max process limit of {max_process}"
+                    )
+                    self.metrics.record_skip("Max process limit")
+                else:
+                    self.logger.exception(
+                        f"An error occurred during stream processing: {e}"
+                    )
+                    self.metrics.record_error(f"unexpected_stream_processing_error {e}")
+        except Exception as e:
+            self.logger.exception(f"An error occurred during stream processing: {e}")
+            self.metrics.record_error(f"unexpected_stream_processing_error {e}")
+        self.logger.info(
+            f"Finished processing {streams_processed} streams from "
+            f"{len(stream_generators)} generators"
+        )
+
     @abc.abstractmethod
     async def _scrape_and_parse(self, *args, **kwargs) -> List[TorrentStreams]:
         """
@@ -412,7 +525,7 @@ class BaseScraper(abc.ABC):
     def validate_title_and_year(
         self,
         parsed_data: dict,
-        metadata: MediaFusionMetaData,
+        metadata: MediaFusionMovieMetaData | MediaFusionSeriesMetaData,
         catalog_type: str,
         torrent_title: str,
         expected_ratio: int = 87,
