@@ -11,7 +11,7 @@ const providerSignupLinks = {
     realdebrid: ['http://real-debrid.com/?id=9490816', 'http://real-debrid.com/?id=3351376'],
     debridlink: 'https://debrid-link.com/id/kHgZs',
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
-    torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
+    torbox: ['https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c', 'https://torbox.app/subscription?referral=e2a28977-99ed-43cd-ba2c-e90dc398c49c', 'https://torbox.app/subscription?referral=38f1c266-8a6c-40b2-a6d2-2148e77dafc9'],
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
     stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#configuration',
