@@ -99,9 +99,9 @@ def extract_torrent_metadata(
         else:
             metadata.update(PTT.parse_title(torrent_name, True))
 
-        if not metadata["seasons"]:
+        if not metadata.get("seasons"):
             metadata["seasons"] = list(seasons)
-        if not metadata["episodes"]:
+        if not metadata.get("episodes"):
             metadata["episodes"] = list(episodes)
         if (
             metadata["seasons"]
