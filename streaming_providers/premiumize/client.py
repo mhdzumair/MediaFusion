@@ -1,6 +1,8 @@
-from typing import Any, Optional
+from typing import Optional
 from urllib.parse import quote_plus
 from uuid import uuid4
+
+import aiohttp
 
 from db.config import settings
 from streaming_providers.debrid_client import DebridClient
@@ -68,6 +70,12 @@ class Premiumize(DebridClient):
             data={"src": magnet_link, "folder_id": folder_id},
         )
 
+
+    async def create_direct_download(self, magnet_link: str):
+        return await self._make_request(
+            "POST", f"{self.BASE_URL}/transfer/directdl", data={"src": magnet_link}
+        )
+
     async def create_folder(self, name, parent_id=None):
         data = {"name": name}
         if parent_id:
@@ -123,32 +131,6 @@ class Premiumize(DebridClient):
 
     async def disable_access_token(self):
         pass
-
-    async def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
-        torrent_list_response = await self.get_transfer_list()
-        if torrent_list_response.get("status") != "success":
-            if torrent_list_response.get("message") == "Not logged in.":
-                raise ProviderException(
-                    "Premiumize is not logged in.", "invalid_token.mp4"
-                )
-            raise ProviderException(
-                "Failed to get torrent info from Premiumize", "transfer_error.mp4"
-            )
-
-        available_torrents = torrent_list_response["transfers"]
-        for torrent in available_torrents:
-            src = torrent["src"]
-            if src.startswith("http"):
-                async with self.session.head(src) as response:
-                    if response.status != 200:
-                        continue
-                    magnet_link = response.headers.get("Content-Disposition")
-            elif "magnet" in src:
-                magnet_link = src
-            else:
-                continue
-            if magnet_link and info_hash in magnet_link:
-                return torrent
 
     async def get_account_info(self):
         return await self._make_request("GET", f"{self.BASE_URL}/account/info")
