@@ -7,7 +7,16 @@ from utils import torrent
 # import background actors
 # noqa: F401
 from mediafusion_scrapy import task
-from scrapers import tv, imdb_data, trackers, helpers, prowlarr, feed_scraper, background_scraper, scraper_tasks
+from scrapers import (
+    tv,
+    imdb_data,
+    trackers,
+    helpers,
+    prowlarr,
+    feed_scraper,
+    background_scraper,
+    scraper_tasks,
+)
 from streaming_providers import cache_helpers
 from utils import validation_helper
 
