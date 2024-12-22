@@ -100,8 +100,11 @@ async def ensure_space_available(seedr: Seedr, required_space: int | float) -> N
 
         # Delete folder contents first
         sub_content = await seedr.list_contents(folder["id"])
-        for torrent in sub_content["torrents"]:
-            await seedr.delete_item(torrent["id"], "torrent")
+        if sub_content["torrents"]:
+            # Raise exception if torrent is still downloading.
+            raise ProviderException(
+                "An existing torrent is being downloaded", "torrent_downloading.mp4"
+            )
         for subfolder in sub_content["folders"]:
             await seedr.delete_item(subfolder["id"], "folder")
 
