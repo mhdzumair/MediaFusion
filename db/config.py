@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     bt4g_immediate_max_process_time: int = 15
 
     # Jackett Settings
-    is_scrap_from_jackett: bool = True
+    is_scrap_from_jackett: bool = False
     jackett_url: str = "http://jackett-service:9117"
     jackett_api_key: str | None = None
     jackett_search_interval_hour: int = 72
