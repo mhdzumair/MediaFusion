@@ -108,9 +108,6 @@ async def get_or_create_video_url(
         stream=stream,
         torrent_name=stream.torrent_name,
         background_tasks=background_tasks,
-        indexer_type=(
-            "public" if stream.indexer_flags in [[], ["freeleech"]] else "private"
-        ),
     )
 
     return await get_video_url(**kwargs)

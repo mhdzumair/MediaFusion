@@ -18,6 +18,7 @@ from aioqbt.exc import LoginError, AddTorrentError, NotFoundError
 from aiowebdav.client import Client as WebDavClient
 from aiowebdav.exceptions import RemoteResourceNotFound, NoConnection
 
+from db.enums import TorrentType
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -32,15 +33,26 @@ async def check_torrent_status(
     return available_torrents[0] if available_torrents else None
 
 
-async def add_magnet(
-    qbittorrent: APIClient, magnet_link: str, info_hash: str, user_data: UserData
+async def add_torrent_or_magnet(
+    qbittorrent: APIClient,
+    magnet_link: str,
+    info_hash: str,
+    user_data: UserData,
+    stream: TorrentStreams,
 ):
     """Adds a magnet link to the qbittorrent server."""
     try:
-        await qbittorrent.torrents.add(
-            AddFormBuilder.with_client(qbittorrent)
-            .include_url(magnet_link)
-            .savepath(info_hash)
+        torrent_form = AddFormBuilder.with_client(qbittorrent)
+        if stream.torrent_type != TorrentType.PUBLIC and stream.torrent_file:
+            torrent_form = torrent_form.include_file(
+                stream.torrent_file, stream.torrent_name
+            )
+        else:
+            torrent_form = torrent_form.include_url(magnet_link)
+
+        torrent_form = (
+            torrent_form.savepath(info_hash)
+            .sequential_download(True)
             .seeding_time_limit(
                 timedelta(
                     minutes=user_data.streaming_provider.qbittorrent_config.seeding_time_limit
@@ -52,6 +64,7 @@ async def add_magnet(
             .category(user_data.streaming_provider.qbittorrent_config.category)
             .build()
         )
+        await qbittorrent.torrents.add(torrent_form)
     except AddTorrentError:
         raise ProviderException(
             "Failed to add the torrent to qBittorrent", "add_torrent_failed.mp4"
@@ -223,8 +236,8 @@ async def handle_torrent_status(
     return torrent
 
 
-async def set_qbittorrent_preferences(qbittorrent, indexer_type):
-    if indexer_type == "private":
+async def set_qbittorrent_preferences(qbittorrent, torrent_type):
+    if torrent_type == "private":
         await qbittorrent.app.set_preferences(
             {"dht": False, "pex": False, "lsd": False}
         )
@@ -240,7 +253,7 @@ async def retrieve_or_download_file(
     play_video_after: int,
     magnet_link: str,
     info_hash: str,
-    indexer_type: str,
+    stream: TorrentStreams,
     filename: Optional[str],
     episode: Optional[int],
     max_retries: int,
@@ -250,8 +263,10 @@ async def retrieve_or_download_file(
         webdav, user_data, info_hash, filename, episode
     )
     if not selected_file:
-        await set_qbittorrent_preferences(qbittorrent, indexer_type)
-        await add_magnet(qbittorrent, magnet_link, info_hash, user_data)
+        await set_qbittorrent_preferences(qbittorrent, stream.torrent_type)
+        await add_torrent_or_magnet(
+            qbittorrent, magnet_link, info_hash, user_data, stream
+        )
         await wait_for_torrent_to_complete(
             qbittorrent, info_hash, play_video_after, max_retries, retry_interval
         )
@@ -291,7 +306,7 @@ async def get_video_url_from_qbittorrent(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    indexer_type: str,
+    stream: TorrentStreams,
     filename: Optional[str],
     episode: Optional[int],
     max_retries=5,
@@ -318,7 +333,7 @@ async def get_video_url_from_qbittorrent(
             play_video_after,
             magnet_link,
             info_hash,
-            indexer_type,
+            stream,
             filename,
             episode,
             max_retries,

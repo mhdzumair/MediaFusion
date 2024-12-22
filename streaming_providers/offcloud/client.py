@@ -15,8 +15,7 @@ from streaming_providers.parser import (
 
 
 class OffCloud(DebridClient):
-    BASE_URL = "https://offcloud.com/api"
-    DELETE_URL = "https://offcloud.com"
+    BASE_URL = "https://offcloud.com"
 
     async def initialize_headers(self):
         pass
@@ -37,19 +36,18 @@ class OffCloud(DebridClient):
         method: str,
         url: str,
         params: Optional[dict] = None,
-        delete: bool = False,
         **kwargs,
     ) -> dict | list:
         params = params or {}
         params["key"] = self.token
-        full_url = (self.DELETE_URL if delete else self.BASE_URL) + url
+        full_url = self.BASE_URL + url
         return await super()._make_request(
             method=method, url=full_url, params=params, **kwargs
         )
 
     async def add_magnet_link(self, magnet_link: str) -> dict:
         response_data = await self._make_request(
-            "POST", "/cloud", data={"url": magnet_link}
+            "POST", "/api/cloud", data={"url": magnet_link}
         )
 
         if "requestId" not in response_data:
@@ -64,18 +62,36 @@ class OffCloud(DebridClient):
             )
         return response_data
 
+    async def add_torrent_file(
+        self, torrent_file: bytes, torrent_name: Optional[str]
+    ) -> dict:
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        response_data = await self._make_request("POST", "/torrent/upload", data=data)
+        if response_data.get("success") is False:
+            raise ProviderException(
+                f"Failed to add torrent file to OffCloud {response_data}",
+                "transfer_error.mp4",
+            )
+        return await self.add_magnet_link(response_data["url"])
+
     async def get_user_torrent_list(self) -> List[dict]:
-        return await self._make_request("GET", "/cloud/history")
+        return await self._make_request("GET", "/api/cloud/history")
 
     async def get_torrent_info(self, request_id: str) -> dict:
         response = await self._make_request(
-            "POST", "/cloud/status", data={"requestIds": [request_id]}
+            "POST", "/api/cloud/status", data={"requestIds": [request_id]}
         )
         return response.get("requests", [{}])[0]
 
     async def get_torrent_instant_availability(self, magnet_links: List[str]) -> dict:
         response = await self._make_request(
-            "POST", "/cache", data={"hashes": magnet_links}
+            "POST", "/api/cache", data={"hashes": magnet_links}
         )
         return response.get("cachedItems", {})
 
@@ -91,7 +107,7 @@ class OffCloud(DebridClient):
         )
 
     async def explore_folder_links(self, request_id: str) -> List[str]:
-        return await self._make_request("GET", f"/cloud/explore/{request_id}")
+        return await self._make_request("GET", f"/api/cloud/explore/{request_id}")
 
     async def update_file_sizes(self, files_data: list[dict]):
         """
@@ -165,6 +181,4 @@ class OffCloud(DebridClient):
         return selected_file_url
 
     async def delete_torrent(self, request_id: str) -> dict:
-        return await self._make_request(
-            "GET", f"/cloud/remove/{request_id}", delete=True
-        )
+        return await self._make_request("GET", f"/cloud/remove/{request_id}")

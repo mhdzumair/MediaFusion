@@ -59,7 +59,12 @@ async def get_video_url_from_debridlink(
     async with DebridLink(token=user_data.streaming_provider.token) as dl_client:
         torrent_info = await dl_client.get_available_torrent(info_hash)
         if not torrent_info:
-            torrent_info = await dl_client.add_magnet_link(magnet_link)
+            if stream.torrent_file:
+                torrent_info = await dl_client.add_torrent_file(
+                    stream.torrent_file, stream.torrent_name
+                )
+            else:
+                torrent_info = await dl_client.add_magnet_link(magnet_link)
 
         torrent_id = torrent_info.get("id")
         if not torrent_id:
@@ -67,7 +72,7 @@ async def get_video_url_from_debridlink(
                 "Failed to add magnet link to DebridLink", "transfer_error.mp4"
             )
 
-        if torrent_info.get("error"):
+        if torrent_info.get("errorString"):
             await dl_client.delete_torrent(torrent_id)
             raise ProviderException(
                 f"Torrent cannot be downloaded due to error: {torrent_info.get('errorString')}",

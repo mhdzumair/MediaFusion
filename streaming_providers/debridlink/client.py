@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+import aiohttp
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -109,6 +111,27 @@ class DebridLink(DebridClient):
             self._handle_error_message(response.get("error"))
             raise ProviderException(
                 f"Failed to add magnet link to Debrid-Link: {response.get('error')}",
+                "transfer_error.mp4",
+            )
+        return response.get("value", {})
+
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: Optional[str]):
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        response = await self._make_request(
+            "POST",
+            f"{self.BASE_URL}/seedbox/add",
+            data={"file": torrent_file},
+        )
+        if response.get("error"):
+            self._handle_error_message(response.get("error"))
+            raise ProviderException(
+                f"Failed to add torrent file to Debrid-Link: {response.get('error')}",
                 "transfer_error.mp4",
             )
         return response.get("value", {})

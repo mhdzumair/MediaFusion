@@ -15,6 +15,7 @@ from db.crud import (
     get_stream_by_info_hash,
     store_new_torrent_streams,
 )
+from db.enums import TorrentType
 from db.models import TorrentStreams, Episode, Season
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
@@ -175,6 +176,7 @@ async def add_torrent(
     created_at: date = Form(...),
     season: int | None = Form(None),
     episodes: str | None = Form(None),
+    torrent_type: TorrentType = Form(TorrentType.PUBLIC),
     magnet_link: str = Form(None),
     torrent_file: UploadFile = File(None),
     force_import: bool = Form(False),
@@ -185,6 +187,8 @@ async def add_torrent(
     # Basic validation
     if not magnet_link and not torrent_file:
         raise_error("Either magnet link or torrent file must be provided.")
+    if torrent_type != TorrentType.PUBLIC and not torrent_file:
+        raise_error(f"Torrent file must be provided for {torrent_type} torrents.")
     if not meta_id.startswith("tt") or not meta_id[2:].isdigit():
         raise_error("Invalid IMDb ID. Must start with 'tt'.")
 
@@ -232,8 +236,15 @@ async def add_torrent(
     source = "Contribution Stream"
     languages = set(language_list).union(torrent_data.get("languages", []))
     torrent_data.update(
-        {"source": source, "created_at": created_at, "languages": languages}
+        {
+            "source": source,
+            "created_at": created_at,
+            "languages": languages,
+            "torrent_type": torrent_type,
+        }
     )
+    if torrent_type == TorrentType.PUBLIC:
+        torrent_data.pop("torrent_file", None)
 
     # Add contribution_stream to catalogs if provided
     if catalog_list:
@@ -383,6 +394,8 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         seeders=parsed_data.get("seeders"),
         created_at=parsed_data.get("created_at"),
         meta_id=video_id,
+        torrent_type=parsed_data.get("torrent_type"),
+        torrent_file=parsed_data.get("torrent_file"),
     )
 
     await store_new_torrent_streams([torrent_stream])
@@ -440,6 +453,8 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
         created_at=parsed_data.get("created_at"),
         meta_id=video_id,
         season=Season(season_number=season_number, episodes=episode_data),
+        torrent_type=parsed_data.get("torrent_type"),
+        torrent_file=parsed_data.get("torrent_file"),
     )
     await store_new_torrent_streams([torrent_stream])
 

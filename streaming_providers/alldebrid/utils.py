@@ -14,20 +14,26 @@ from streaming_providers.parser import (
 
 async def get_torrent_info(ad_client, info_hash):
     torrent_info = await ad_client.get_available_torrent(info_hash)
-    if torrent_info and torrent_info["status"] == "Ready":
-        return torrent_info
-    elif torrent_info and torrent_info["statusCode"] == 7:
+    if torrent_info and torrent_info["statusCode"] == 7:
         await ad_client.delete_torrents([torrent_info.get("id")])
         raise ProviderException(
             "Not enough seeders available to parse magnet link",
             "transfer_error.mp4",
         )
-    return None
+    return torrent_info
 
 
-async def add_new_torrent(ad_client, magnet_link):
-    response_data = await ad_client.add_magnet_link(magnet_link)
-    return response_data["data"]["magnets"][0]["id"]
+async def add_new_torrent(
+    ad_client: AllDebrid, magnet_link: str, stream: TorrentStreams
+):
+    if stream.torrent_file:
+        response_data = await ad_client.add_torrent_file(
+            stream.torrent_file, stream.torrent_name or "torrent"
+        )
+        return response_data["data"]["files"][0]["id"]
+    else:
+        response_data = await ad_client.add_magnet_link(magnet_link)
+        return response_data["data"]["magnets"][0]["id"]
 
 
 def flatten_files(files):
@@ -126,7 +132,7 @@ async def get_video_url_from_alldebrid(
     ) as ad_client:
         torrent_info = await get_torrent_info(ad_client, info_hash)
         if not torrent_info:
-            torrent_id = await add_new_torrent(ad_client, magnet_link)
+            torrent_id = await add_new_torrent(ad_client, magnet_link, stream)
         else:
             torrent_id = torrent_info.get("id")
 

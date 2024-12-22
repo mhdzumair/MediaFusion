@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+import aiohttp
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -68,6 +70,23 @@ class AllDebrid(DebridClient):
     async def add_magnet_link(self, magnet_link):
         response_data = await self._make_request(
             "POST", "/magnet/upload", data={"magnets[]": magnet_link}
+        )
+        self._validate_error_response(response_data)
+        return response_data
+
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: str):
+        data = aiohttp.FormData()
+        data.add_field(
+            "files[]",
+            torrent_file,
+            filename=(
+                torrent_name
+                if torrent_name.endswith(".torrent")
+                else torrent_name + ".torrent"
+            ),
+        )
+        response_data = await self._make_request(
+            "POST", "/magnet/upload/file", data=data
         )
         self._validate_error_response(response_data)
         return response_data

@@ -2,17 +2,17 @@ import asyncio
 import functools
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional, List, Any
-
 import math
 import re
+from datetime import datetime, timezone
+from typing import Optional, List, Any
 
 from thefuzz import fuzz
 
 from db.config import settings
+from db.enums import TorrentType
 from db.models import TorrentStreams, TVStreams
-from db.schemas import Stream, StreamingProvider, UserData, SortingOption
+from db.schemas import Stream, UserData, SortingOption
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import (
     get_cached_status,
@@ -45,6 +45,16 @@ async def filter_and_sort_streams(
     # Step 1: Filter streams and add normalized attributes
     filtered_streams = []
     for stream in streams:
+        # Skip private torrents if streaming provider is not supported
+        if stream.torrent_type != TorrentType.PUBLIC:
+            if not user_data.streaming_provider:
+                continue
+            if (
+                stream.torrent_type != TorrentType.WEB_SEED
+                and user_data.streaming_provider.service
+                not in const.SUPPORTED_PRIVATE_TRACKER_STREAMING_PROVIDERS
+            ):
+                continue
         # Create a copy of the stream model to avoid modifying the original
         stream = stream.model_copy()
         # Add normalized attributes as dynamic properties

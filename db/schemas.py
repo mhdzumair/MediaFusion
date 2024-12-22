@@ -4,6 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
 from db.config import settings
+from db.enums import NudityStatus
 from db.models import TorrentStreams
 from utils import const
 
@@ -209,9 +210,7 @@ class UserData(BaseModel):
         ],
         alias="tsp",
     )
-    nudity_filter: list[
-        Literal["Disable", "Unknown", "None", "Mild", "Moderate", "Severe"]
-    ] = Field(default=["Severe"], alias="nf")
+    nudity_filter: list[NudityStatus] = Field(default=[NudityStatus.SEVERE], alias="nf")
     certification_filter: list[
         Literal[
             "Disable",

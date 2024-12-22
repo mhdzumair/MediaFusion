@@ -452,11 +452,19 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
 
     const magnetLink = document.getElementById('magnetLink').value;
     const torrentFile = document.getElementById('torrentFile').files[0];
+    const torrentType = document.getElementById('torrentType').value;
     if (!magnetLink && !torrentFile) {
         showNotification('Either Magnet Link or Torrent File is required.', 'error');
         resetButton(submitBtn, loadingSpinner);
         return;
     }
+
+    if (torrentType !== 'public' && !torrentFile) {
+        showNotification(`Torrent File is required for ${torrentType} torrents.`, 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+    formData.append('torrent_type', torrentType);
 
     if (magnetLink) {
         formData.append('magnet_link', magnetLink);

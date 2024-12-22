@@ -5,6 +5,7 @@ from xml.etree import ElementTree
 import httpx
 
 from db.config import settings
+from db.enums import TorrentType
 from db.models import (
     TorrentStreams,
     MediaFusionMetaData,
@@ -70,6 +71,9 @@ class JackettScraper(IndexerBaseScraper):
 
     def get_indexer(self, item: dict) -> str:
         return item.get("Tracker")
+
+    def get_torrent_type(self, item: dict) -> TorrentType:
+        return TorrentType(item.get("TrackerType"))
 
     @IndexerBaseScraper.cache(ttl=JACKETT_SEARCH_TTL)
     @IndexerBaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))

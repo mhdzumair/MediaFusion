@@ -70,6 +70,22 @@ class Premiumize(DebridClient):
             data={"src": magnet_link, "folder_id": folder_id},
         )
 
+    async def add_torrent_file(
+        self, torrent_file: bytes, torrent_name: Optional[str], folder_id: str = None
+    ):
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        data.add_field("folder_id", folder_id)
+        return await self._make_request(
+            "POST",
+            f"{self.BASE_URL}/transfer/create",
+            data={"file": torrent_file, "folder_id": folder_id},
+        )
 
     async def create_direct_download(self, magnet_link: str):
         return await self._make_request(

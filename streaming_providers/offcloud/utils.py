@@ -45,7 +45,12 @@ async def get_video_url_from_offcloud(
                 )
         else:
             # If torrent doesn't exist, add it
-            response_data = await oc_client.add_magnet_link(magnet_link)
+            if stream.torrent_file:
+                response_data = await oc_client.add_torrent_file(
+                    stream.torrent_file, stream.torrent_name
+                )
+            else:
+                response_data = await oc_client.add_magnet_link(magnet_link)
             request_id = response_data["requestId"]
 
         # Wait for download completion and get the direct link

@@ -112,14 +112,25 @@ async def ensure_space_available(seedr: Seedr, required_space: int | float) -> N
         available_space += folder["size"]
 
 
-async def add_torrent(seedr: Seedr, magnet_link: str, info_hash: str) -> None:
+async def add_torrent(
+    seedr: Seedr, magnet_link: str, info_hash: str, stream: TorrentStreams
+) -> None:
     """Add a new torrent to Seedr."""
     await seedr.add_folder(info_hash)
     folder = await get_folder_by_info_hash(seedr, info_hash)
     if not folder:
         raise ProviderException("Failed to create folder", "folder_creation_error.mp4")
 
-    transfer = await seedr.add_torrent(magnet_link=magnet_link, folder_id=folder["id"])
+    if stream.torrent_file:
+        transfer = await seedr.add_torrent(
+            torrent_file_content=stream.torrent_file,
+            folder_id=folder["id"],
+            torrent_file=stream.torrent_name,
+        )
+    else:
+        transfer = await seedr.add_torrent(
+            magnet_link=magnet_link, folder_id=folder["id"]
+        )
 
     if transfer["result"] is True:
         return
@@ -188,7 +199,7 @@ async def get_video_url_from_seedr(
 
         if status == TorrentStatus.NOT_FOUND:
             await ensure_space_available(seedr, stream.size)
-            await add_torrent(seedr, magnet_link, info_hash)
+            await add_torrent(seedr, magnet_link, info_hash, stream)
             await wait_for_completion(seedr, info_hash)
             status, data = await check_torrent_status(seedr, info_hash)
 

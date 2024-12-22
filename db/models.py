@@ -7,6 +7,8 @@ from beanie import Document
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
+from db.enums import TorrentType, NudityStatus
+
 
 class Episode(BaseModel):
     episode_number: int
@@ -43,8 +45,9 @@ class TorrentStreams(Document):
     quality: Optional[str] = None
     audio: Optional[str] = None
     seeders: Optional[int] = None
-    indexer_flags: Optional[list[str]] = Field(default_factory=list)
+    torrent_type: Optional[TorrentType] = TorrentType.PUBLIC
     is_blocked: Optional[bool] = False
+    torrent_file: bytes | None = None
 
     def __eq__(self, other):
         if not isinstance(other, TorrentStreams):
@@ -174,7 +177,7 @@ class MediaFusionMetaData(Document):
 class MediaFusionMovieMetaData(MediaFusionMetaData):
     type: str = "movie"
     imdb_rating: Optional[float] = None
-    parent_guide_nudity_status: Optional[str] = "None"
+    parent_guide_nudity_status: Optional[NudityStatus] = NudityStatus.UNKNOWN
     parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
     stars: Optional[list[str]] = Field(default_factory=list)
 

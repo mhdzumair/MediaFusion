@@ -380,7 +380,11 @@ async def get_cached_torrent_streams(
 
         # Serialize the data and store it in the Redis cache for 30 minutes
         await REDIS_ASYNC_CLIENT.set(
-            cache_key, torrent_streams.model_dump_json(exclude_none=True), ex=1800
+            cache_key,
+            torrent_streams.model_dump_json(
+                exclude_none=True, exclude={"streams": {"__all__": {"torrent_file"}}}
+            ),
+            ex=1800,
         )
 
     return streams

@@ -138,6 +138,16 @@
                             <div class="card mb-3">
                                 <div class="card-body">
                                     <h6 class="card-subtitle mb-3 text-muted">Recommended: Torrent File Upload</h6>
+                                    <!-- Select torrent type public, semi-private, private or web-seed -->
+                                    <div class="mb-3">
+                                        <label for="torrentType" class="form-label">Torrent Type</label>
+                                        <select class="form-select" id="torrentType" name="torrentType">
+                                            <option value="public">Public</option>
+                                            <option value="semi-private">Semi-Private</option>
+                                            <option value="private">Private</option>
+                                            <option value="web-seed">Web-Seed</option>
+                                        </select>
+                                    </div>
                                     <div class="mb-3">
                                         <label for="torrentFile" class="form-label">Torrent File</label>
                                         <input type="file" class="form-control" id="torrentFile" name="torrentFile" accept=".torrent"

@@ -20,6 +20,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from torf import Magnet, MagnetError
 
 from db.config import settings
+from db.enums import TorrentType
 from db.models import MediaFusionMovieMetaData, MediaFusionSeriesMetaData
 from db.models import (
     TorrentStreams,
@@ -1009,6 +1010,10 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     def get_indexer(self, item: dict) -> str:
         pass
 
+    @abc.abstractmethod
+    def get_torrent_type(self, item: dict) -> TorrentType:
+        pass
+
     async def scrape_movie_by_imdb(
         self,
         processed_info_hashes: set[str],
@@ -1264,6 +1269,8 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                 self.metrics.record_skip("Duplicated info_hash")
                 return None
 
+            torrent_type = self.get_torrent_type(stream_data)
+
             torrent_stream = TorrentStreams(
                 id=parsed_data["info_hash"],
                 meta_id=metadata.id,
@@ -1289,7 +1296,12 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                 seeders=parsed_data["seeders"],
                 created_at=parsed_data["created_at"],
                 announce_list=parsed_data["announce_list"],
-                indexer_flags=stream_data.get("indexerFlags", []),
+                torrent_type=torrent_type,
+                torrent_file=(
+                    parsed_data.get("torrent_file")
+                    if torrent_type in [TorrentType.PRIVATE, TorrentType.SEMI_PRIVATE]
+                    else None
+                ),
             )
 
             if catalog_type == "series":
@@ -1396,6 +1408,10 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
         guid = self.get_guid(indexer_data) or ""
         magnet_url = self.get_magent_link(indexer_data) or ""
         download_url = self.get_download_link(indexer_data) or ""
+        torrent_type = self.get_torrent_type(indexer_data)
+
+        if torrent_type in [TorrentType.PRIVATE, TorrentType.SEMI_PRIVATE]:
+            return download_url
 
         if guid and guid.startswith("magnet:"):
             return guid

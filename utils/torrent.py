@@ -53,16 +53,16 @@ def extract_torrent_metadata(
             )
             if not is_video_file(filename):
                 continue
-            parsed_data = PTT.parse_title(filename)
-            seasons.update(parsed_data.get("seasons", []))
-            episodes.update(parsed_data.get("episodes", []))
+            episode_parsed_data = PTT.parse_title(filename)
+            seasons.update(episode_parsed_data.get("seasons", []))
+            episodes.update(episode_parsed_data.get("episodes", []))
             file_data.append(
                 {
                     "filename": filename,
                     "size": file[b"length"],
                     "index": idx,
-                    "seasons": parsed_data.get("seasons"),
-                    "episodes": parsed_data.get("episodes"),
+                    "seasons": episode_parsed_data.get("seasons"),
+                    "episodes": episode_parsed_data.get("episodes"),
                 }
             )
         if not file_data:
@@ -92,6 +92,7 @@ def extract_torrent_metadata(
             "file_data": file_data,
             "torrent_name": torrent_name,
             "largest_file": largest_file,
+            "torrent_file": content,
         }
         if parsed_data:
             metadata.update(parsed_data)

@@ -105,7 +105,9 @@ async def get_video_url_from_realdebrid(
         torrent_info = await rd_client.get_available_torrent(info_hash)
 
         if not torrent_info:
-            torrent_info = await add_new_torrent(rd_client, magnet_link, info_hash)
+            torrent_info = await add_new_torrent(
+                rd_client, magnet_link, info_hash, stream
+            )
 
         torrent_id = torrent_info["id"]
         status = torrent_info["status"]
@@ -155,7 +157,7 @@ async def get_video_url_from_realdebrid(
         )
 
 
-async def add_new_torrent(rd_client, magnet_link, info_hash):
+async def add_new_torrent(rd_client, magnet_link, info_hash, stream):
     response = await rd_client.get_active_torrents()
     if response["limit"] == response["nb"]:
         raise ProviderException(
@@ -166,7 +168,11 @@ async def add_new_torrent(rd_client, magnet_link, info_hash):
             "Torrent is already being downloading", "torrent_not_downloaded.mp4"
         )
 
-    torrent_id = (await rd_client.add_magnet_link(magnet_link)).get("id")
+    if stream.torrent_file:
+        torrent_id = (await rd_client.add_torrent_file(stream.torrent_file)).get("id")
+    else:
+        torrent_id = (await rd_client.add_magnet_link(magnet_link)).get("id")
+
     if not torrent_id:
         raise ProviderException(
             "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"

@@ -6,7 +6,7 @@ from contextlib import AsyncContextDecorator
 from typing import Optional, Dict, Union
 
 import aiohttp
-from aiohttp import ClientResponse, ClientTimeout, ContentTypeError
+from aiohttp import ClientResponse, ClientTimeout, ContentTypeError, FormData
 from aiohttp_socks import ProxyConnector
 
 from db.config import settings
@@ -60,7 +60,7 @@ class DebridClient(AsyncContextDecorator):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str] = None,
+        data: Optional[dict | str | FormData] = None,
         json: Optional[dict] = None,
         params: Optional[dict] = None,
         is_return_none: bool = False,

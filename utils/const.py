@@ -295,3 +295,9 @@ QUALITY_RANKING = {
     for rank, qualities in enumerate(reversed(QUALITY_GROUPS.values()))
     for quality in qualities
 }
+
+SUPPORTED_PRIVATE_TRACKER_STREAMING_PROVIDERS = {
+    "debridlink",
+    "qbittorrent",
+    "torbox",
+}

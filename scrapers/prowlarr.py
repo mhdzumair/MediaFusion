@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Literal
 import httpx
 
 from db.config import settings
+from db.enums import TorrentType
 from db.models import TorrentStreams, MediaFusionMetaData
 from scrapers.base_scraper import IndexerBaseScraper
 from utils.network import CircuitBreaker
@@ -82,6 +83,10 @@ class ProwlarrScraper(IndexerBaseScraper):
 
     def get_indexer(self, item: dict) -> str:
         return item.get("indexer")
+
+    def get_torrent_type(self, item: dict) -> TorrentType:
+        flag = item.get("indexerFlags", ["public"])[0]
+        return TorrentType.PUBLIC if flag == "freeleech" else TorrentType(flag)
 
     async def get_healthy_indexers(self) -> List[dict]:
         """Fetch and return list of healthy Prowlarr indexers with their capabilities"""

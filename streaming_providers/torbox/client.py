@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+import aiohttp
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -61,12 +63,33 @@ class Torbox(DebridClient):
             is_expected_to_fail=True,
         )
 
-        if response_data.get("detail") is False:
+        if response_data.get("error"):
             raise ProviderException(
                 f"Failed to add magnet link to Torbox {response_data}",
                 "transfer_error.mp4",
             )
         return response_data
+
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: Optional[str]):
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        response = await self._make_request(
+            "POST",
+            "/torrents/createtorrent",
+            data=data,
+            is_expected_to_fail=True,
+        )
+        if response.get("error"):
+            raise ProviderException(
+                f"Failed to add torrent file to Torbox {response.get('error')}",
+                "transfer_error.mp4",
+            )
+        return response
 
     async def get_user_torrent_list(self):
         response = await self._make_request(
@@ -99,23 +122,31 @@ class Torbox(DebridClient):
         response = await self.get_user_torrent_list()
         torrent_list = response.get("data", [])
         for torrent in torrent_list:
-            if torrent.get("hash", "") == info_hash:
+            if torrent.get("hash") == info_hash:
                 return torrent
         return {}
 
-    async def create_download_link(self, torrent_id, filename, user_ip):
+    async def get_queued_torrents(self):
+        response = await self._make_request("GET", "/torrents/getqueued")
+        return response
+
+    async def create_download_link(
+        self, torrent_id: int, file_id: int, user_ip: Optional[str]
+    ) -> dict:
+        params = {
+            "token": self.token,
+            "torrent_id": torrent_id,
+            "file_id": file_id,
+        }
+        if user_ip:
+            params["user_ip"] = user_ip
         response = await self._make_request(
             "GET",
             "/torrents/requestdl",
-            params={
-                "token": self.token,
-                "torrent_id": torrent_id,
-                "file_id": filename,
-                "user_ip": user_ip,
-            },
+            params=params,
             is_expected_to_fail=True,
         )
-        if "successfully" in response.get("detail"):
+        if response.get("success"):
             return response
         raise ProviderException(
             f"Failed to create download link from Torbox {response}",
