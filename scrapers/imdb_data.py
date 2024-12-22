@@ -1,9 +1,8 @@
 import logging
 import math
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from typing import Optional
 
-import dramatiq
 import httpx
 from cinemagoerng import model, web, piculet
 from cinemagoerng.model import TVSeries, SearchFilters, RangeFilter
@@ -14,7 +13,6 @@ from db.config import settings
 from db.models import (
     MediaFusionMetaData,
 )
-from db.schemas import MetaIdProjection
 from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 
@@ -231,6 +229,8 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
             {
                 "$set": {
                     "genres": result.genres,
+                    "poster": result.primary_image,
+                    "description": result.plot.get("en-US"),
                     "imdb_rating": imdb_rating,
                     "parent_guide_nudity_status": result.advisories.nudity.status,
                     "parent_guide_certificates": list(
@@ -247,70 +247,6 @@ async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
             },
         )
         logging.info(f"Updating metadata for movie {movie_id}")
-
-
-@dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
-async def process_imdb_data_background(imdb_ids, metadata_type="movie"):
-    # Validate imdb_ids from the database
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-    valid_ids = await MediaFusionMetaData.find(
-        {
-            "_id": {"$in": imdb_ids},
-            "$or": [
-                {"last_updated_at": {"$lt": seven_days_ago}},
-                {"last_updated_at": None},
-            ],
-        },
-        projection_model=MetaIdProjection,
-        with_children=True,
-    ).to_list()
-    valid_ids = [doc.id for doc in valid_ids]
-
-    if valid_ids:
-        await process_imdb_data(valid_ids, metadata_type)
-
-
-@dramatiq.actor(
-    time_limit=60 * 1000, priority=10, max_retries=0, queue_name="scrapy"
-)  # Short time limit as this should be a fast operation
-async def fetch_movie_ids_to_update(*args, **kwargs):
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-
-    # Fetch only the IDs of movies that need updating
-    documents = await MediaFusionMetaData.find(
-        {
-            "_id": {"$regex": r"tt\d+"},
-            "type": {"$in": ["movie", "series"]},
-            "$or": [
-                {"last_updated_at": {"$lt": seven_days_ago}},
-                {"last_updated_at": None},
-            ],
-        },
-        projection_model=MetaIdProjection,
-        with_children=True,
-    ).to_list()
-    movie_ids = []
-    series_ids = []
-    for document in documents:
-        if document.type == "movie":
-            movie_ids.append(document.id)
-        else:
-            series_ids.append(document.id)
-    logging.info(
-        f"Fetched {len(movie_ids)} movie and {len(series_ids)} series IDs for updating"
-    )
-
-    # Divide the IDs into chunks and send them to another actor for processing
-    chunk_size = 25
-    for i in range(0, len(movie_ids), chunk_size):
-        chunk_ids = movie_ids[i : i + chunk_size]
-        process_imdb_data_background.send(chunk_ids, metadata_type="movie")
-
-    for i in range(0, len(series_ids), chunk_size):
-        chunk_ids = series_ids[i : i + chunk_size]
-        process_imdb_data_background.send(chunk_ids, metadata_type="series")
 
 
 async def get_episode_by_date(

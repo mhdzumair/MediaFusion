@@ -155,7 +155,6 @@ class Settings(BaseSettings):
     disable_sport_video_scheduler: bool = False
     dlhd_scheduler_crontab: str = "25 * * * *"
     disable_dlhd_scheduler: bool = False
-    update_imdb_data_crontab: str = "0 2 * * *"
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
     disable_motogp_tgx_scheduler: bool = False
     update_seeders_crontab: str = "0 0 * * *"

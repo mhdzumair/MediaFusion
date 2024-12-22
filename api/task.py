@@ -9,7 +9,6 @@ from utils import torrent
 from mediafusion_scrapy import task
 from scrapers import (
     tv,
-    imdb_data,
     trackers,
     helpers,
     prowlarr,

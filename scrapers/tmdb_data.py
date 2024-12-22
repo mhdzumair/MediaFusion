@@ -1,14 +1,12 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, Any, List
-
-import dramatiq
-import httpx
 from urllib.parse import urljoin
+
+import httpx
 
 from db.config import settings
 from db.models import MediaFusionMetaData
-from db.schemas import MetaIdProjection
 from utils.const import UA_HEADER
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 
@@ -243,77 +241,3 @@ async def process_tmdb_data(tmdb_ids: List[str], metadata_type: str):
             }
         )
         logging.info(f"Updated TMDB metadata for {tmdb_id}")
-
-
-@dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
-async def process_tmdb_data_background(
-    tmdb_ids: List[str], metadata_type: str = "movie"
-):
-    """
-    Background task to process TMDB data updates.
-    """
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-
-    # Validate tmdb_ids from the database
-    valid_ids = await MediaFusionMetaData.find(
-        {
-            "tmdb_id": {"$in": tmdb_ids},
-            "$or": [
-                {"last_updated_at": {"$lt": seven_days_ago}},
-                {"last_updated_at": None},
-            ],
-        },
-        projection_model=MetaIdProjection,
-        with_children=True,
-    ).to_list()
-
-    valid_ids = [doc.tmdb_id for doc in valid_ids]
-
-    if valid_ids:
-        await process_tmdb_data(valid_ids, metadata_type)
-
-
-@dramatiq.actor(time_limit=60 * 1000, priority=10, max_retries=0, queue_name="scrapy")
-async def fetch_tmdb_ids_to_update(*args, **kwargs):
-    """
-    Fetch TMDB IDs that need updating and queue them for processing.
-    """
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-
-    # Fetch IDs needing updates
-    documents = await MediaFusionMetaData.find(
-        {
-            "tmdb_id": {"$exists": True},
-            "type": {"$in": ["movie", "series"]},
-            "$or": [
-                {"last_updated_at": {"$lt": seven_days_ago}},
-                {"last_updated_at": None},
-            ],
-        },
-        projection_model=MetaIdProjection,
-        with_children=True,
-    ).to_list()
-
-    movie_ids = []
-    series_ids = []
-    for document in documents:
-        if document.type == "movie":
-            movie_ids.append(document.tmdb_id)
-        else:
-            series_ids.append(document.tmdb_id)
-
-    logging.info(
-        f"Fetched {len(movie_ids)} movie and {len(series_ids)} series TMDB IDs for updating"
-    )
-
-    # Process in chunks
-    chunk_size = 25
-    for i in range(0, len(movie_ids), chunk_size):
-        chunk_ids = movie_ids[i : i + chunk_size]
-        process_tmdb_data_background.send(chunk_ids, metadata_type="movie")
-
-    for i in range(0, len(series_ids), chunk_size):
-        chunk_ids = series_ids[i : i + chunk_size]
-        process_tmdb_data_background.send(chunk_ids, metadata_type="series")

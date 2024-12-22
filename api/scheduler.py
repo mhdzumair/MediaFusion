@@ -3,7 +3,6 @@ from apscheduler.triggers.cron import CronTrigger
 
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
-from scrapers.imdb_data import fetch_movie_ids_to_update
 from scrapers.background_scraper import run_background_search
 from scrapers.feed_scraper import run_prowlarr_feed_scraper, run_jackett_feed_scraper
 from scrapers.trackers import update_torrent_seeders
@@ -122,15 +121,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.dlhd_scheduler_crontab,
             },
         )
-
-    scheduler.add_job(
-        fetch_movie_ids_to_update.send,
-        CronTrigger.from_crontab(settings.update_imdb_data_crontab),
-        name="update_imdb_data",
-        kwargs={
-            "crontab_expression": settings.update_imdb_data_crontab,
-        },
-    )
 
     if not settings.disable_motogp_tgx_scheduler:
         scheduler.add_job(
