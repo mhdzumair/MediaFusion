@@ -1276,7 +1276,7 @@ async def get_genres(catalog_type: str) -> list[str]:
         return json.loads(genres)
 
     genres = await MediaFusionMetaData.distinct(
-        "genres", {"type": catalog_type, "genres": {"$nin": ["", None]}}
+        "genres", {"type": catalog_type, "genres": {"$nin": ["", None, "Adult"]}}
     )
 
     # cache the genres for 30 minutes
