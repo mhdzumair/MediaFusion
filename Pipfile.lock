@@ -123,12 +123,12 @@
         },
         "aiohttp-socks": {
             "hashes": [
-                "sha256:146d9b0a921b712112a2da3d63633141eb63710b949102ccecc1ab1bb2e2548f",
-                "sha256:d68f30f86e89b3d601bfa87211dc9b616cd360f835a0c80544361b37e8c73610"
+                "sha256:5f60410e748e943d6a6bd50993bb6eafbff74fa68c94abcb7a9b803e0a63410d",
+                "sha256:9275c47cc7dac185c82754b70921f1ea243d093c79c7b21554c2ee6905f42379"
             ],
             "index": "pypi",
             "markers": "python_full_version >= '3.8.0'",
-            "version": "==0.9.2"
+            "version": "==0.10.0"
         },
         "aioqbt": {
             "git": "git+https://github.com/mhdzumair/aioqbt.git",
