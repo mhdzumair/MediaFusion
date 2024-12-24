@@ -85,12 +85,12 @@ async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
 
 async def get_imdb_rating(movie_id: str) -> Optional[float]:
     try:
-        movie = await web.get_title_async(
+        title = await web.get_title_async(
             movie_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
         )
+        return float(title.rating) if title and title.rating else None
     except Exception:
         return None
-    return float(movie.rating) if movie.rating is not None else None
 
 
 async def get_poster_urls(imdb_id: str) -> tuple:
