@@ -293,6 +293,7 @@ async def add_torrent(
         torrent_stream = await handle_movie_stream_store(
             info_hash, torrent_data, meta_id
         )
+        stream_cache_keys = [f"torrent_streams:{meta_id}"]
 
     else:  # Series
         series_data = await get_series_data_by_id(meta_id)
@@ -360,11 +361,16 @@ async def add_torrent(
             info_hash, torrent_data, meta_id, season
         )
 
+        stream_cache_keys = [
+            f"torrent_streams:{meta_id}:{season}:{ep}" for ep in episodes
+        ]
+
     if not torrent_stream:
         raise_error("Failed to store torrent data. Contact support.")
 
     # Cleanup redis caching for quick access
-    await REDIS_ASYNC_CLIENT.delete(f"torrent_streams:{meta_id}")
+    for key in stream_cache_keys:
+        await REDIS_ASYNC_CLIENT.delete(key)
 
     return {
         "status": f"Successfully added torrent: {torrent_stream.id} for {title}. Thanks for your contribution."
