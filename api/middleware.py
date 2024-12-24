@@ -22,7 +22,8 @@ from starlette.routing import Match
 from db.config import settings
 from db.redis_database import REDIS_SYNC_CLIENT, REDIS_ASYNC_CLIENT
 from db.schemas import UserData
-from utils import crypto, const
+from utils import const
+from utils.crypto import crypto_utils
 from utils.network import get_client_ip
 
 
@@ -66,7 +67,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         secret_str = request.path_params.get("secret_str")
         # Decrypt and parse the UserData from secret_str
         try:
-            user_data = crypto.decrypt_user_data(secret_str)
+            user_data = await crypto_utils.decrypt_user_data(secret_str)
         except ValidationError as error:
             return JSONResponse(
                 {

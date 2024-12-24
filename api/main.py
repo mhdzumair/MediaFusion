@@ -34,7 +34,8 @@ from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
 from streaming_providers.validator import validate_provider_credentials
-from utils import const, crypto, poster, torrent, wrappers
+from utils import const, poster, torrent, wrappers
+from utils.crypto import crypto_utils
 from utils.lock import (
     acquire_scheduler_lock,
     maintain_heartbeat,
@@ -683,7 +684,7 @@ async def encrypt_user_data(
 
     if existing_secret_str:
         try:
-            existing_config = crypto.decrypt_user_data(existing_secret_str)
+            existing_config = await crypto_utils.decrypt_user_data(existing_secret_str)
         except ValueError:
             existing_config = schemas.UserData()
 
@@ -727,7 +728,7 @@ async def encrypt_user_data(
     if validation_result["status"] == "error":
         return validation_result
 
-    encrypted_str = crypto.encrypt_user_data(user_data)
+    encrypted_str = await crypto_utils.process_user_data(user_data)
     return {"status": "success", "encrypted_str": encrypted_str}
 
 
