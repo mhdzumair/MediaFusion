@@ -732,6 +732,18 @@ async def encrypt_user_data(
     return {"status": "success", "encrypted_str": encrypted_str}
 
 
+def raise_poster_error(meta_id: str, error_message: str):
+    if meta_id.startswith("tt"):
+        # Fall back to Cinemeta poster
+        return RedirectResponse(
+            f"https://live.metahub.space/poster/small/{meta_id}/img", status_code=302
+        )
+    raise HTTPException(
+        status_code=404,
+        detail=f"Failed to create poster for {meta_id}: {error_message}",
+    )
+
+
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
 @wrappers.exclude_rate_limit
 async def get_poster(
@@ -757,10 +769,10 @@ async def get_poster(
         mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
 
     if not mediafusion_data:
-        raise HTTPException(status_code=404, detail="MediaFusion ID not found.")
+        return raise_poster_error(mediafusion_id, "MediaFusion ID not found.")
 
     if mediafusion_data.is_poster_working is False or not mediafusion_data.poster:
-        raise HTTPException(status_code=404, detail="Poster not found.")
+        return raise_poster_error(mediafusion_id, "Poster not found.")
 
     try:
         image_byte_io = await poster.create_poster(mediafusion_data)
@@ -772,23 +784,20 @@ async def get_poster(
 
         return StreamingResponse(image_byte_io, media_type="image/jpeg")
     except asyncio.TimeoutError:
-        logging.error("Poster generation timeout.")
-        raise HTTPException(status_code=404, detail="Poster generation timeout.")
+        return raise_poster_error(mediafusion_id, "Poster generation timeout.")
     except aiohttp.ClientResponseError as e:
-        logging.error(f"Failed to create poster: {e}, status: {e.status}")
-        if e.status != 404:
-            raise HTTPException(status_code=404, detail="Failed to create poster.")
+        if e.status == 404 and catalog_type != "events":
+            mediafusion_data.is_poster_working = False
+            await mediafusion_data.save()
+        return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
     except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
-        logging.error(f"Failed to create poster: {e}")
+        return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
     except Exception as e:
         logging.error(
             f"Unexpected error while creating poster: {mediafusion_data.poster} {e}",
             exc_info=True,
         )
-    mediafusion_data.is_poster_working = False
-    if catalog_type != "events":
-        await mediafusion_data.save()
-    raise HTTPException(status_code=404, detail="Failed to create poster.")
+        return raise_poster_error(mediafusion_id, f"Unexpected error: {e}")
 
 
 @app.get(
