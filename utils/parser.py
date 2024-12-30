@@ -6,6 +6,7 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Optional, List, Any
+from urllib.parse import quote
 
 from thefuzz import fuzz
 
@@ -242,7 +243,7 @@ async def parse_stream_data(
             streaming_provider_name += " 🕵🏼‍♂️"
 
         base_proxy_url_template = (
-            f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
+            f"{settings.host_url}/streaming_provider/{secret_str}/stream/{{}}"
         )
 
     stream_list = []
@@ -325,9 +326,11 @@ async def parse_stream_data(
         }
 
         if has_streaming_provider:
-            stream_details["url"] = base_proxy_url_template.format(stream_data.id) + (
-                f"&season={season}&episode={episode}" if episode_data else ""
-            )
+            stream_details["url"] = base_proxy_url_template.format(stream_data.id)
+            if episode_data:
+                stream_details["url"] += f"/{season}/{episode}"
+            if file_name:
+                stream_details["url"] += f"/{quote(file_name)}"
             stream_details["behaviorHints"]["notWebReady"] = True
         else:
             stream_details["infoHash"] = stream_data.id
