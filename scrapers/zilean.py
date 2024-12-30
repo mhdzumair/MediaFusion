@@ -159,6 +159,10 @@ class ZileanScraper(BaseScraper):
                 )
 
                 if catalog_type == "movie":
+                    # For the Movies, should not have seasons and episodes
+                    if torrent_data.get("seasons") or torrent_data.get("episodes"):
+                        self.metrics.record_skip("Unexpected season/episode info")
+                        return None
                     torrent_stream.catalog.append("zilean_dmm_movies")
                 else:
                     torrent_stream.catalog.append("zilean_dmm_series")

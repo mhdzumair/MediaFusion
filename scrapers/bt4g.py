@@ -441,9 +441,17 @@ class BT4GScraper(BaseScraper):
                     parsed_data["seasons"] = list(seasons)
                 if not parsed_data["episodes"]:
                     parsed_data["episodes"] = list(episodes)
-                if not self._process_series_data(
-                    stream, parsed_data, file_info, season, episode
+                if not self._process_series_data(stream, parsed_data, file_info):
+                    return None
+            else:
+                # For the Movies, should not have seasons and episodes
+                if (
+                    parsed_data.get("seasons")
+                    or parsed_data.get("episodes")
+                    or seasons
+                    or episodes
                 ):
+                    self.metrics.record_skip("Unexpected season/episode info")
                     return None
 
             self.metrics.record_processed_item()
@@ -454,7 +462,7 @@ class BT4GScraper(BaseScraper):
 
         except Exception as e:
             self.metrics.record_error("result_processing_error")
-            self.logger.error(f"Error processing search result: {e}")
+            self.logger.exception(f"Error processing search result: {e}")
             return None
 
     def _process_series_data(
