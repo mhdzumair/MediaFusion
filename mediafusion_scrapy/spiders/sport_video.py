@@ -19,7 +19,7 @@ class SportVideoSpider(scrapy.Spider):
         },
     }
 
-    def __init__(self, scrape_all: str = "True", *args, **kwargs):
+    def __init__(self, scrape_all: str = "false", *args, **kwargs):
         super(SportVideoSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
         self.redis = REDIS_SYNC_CLIENT

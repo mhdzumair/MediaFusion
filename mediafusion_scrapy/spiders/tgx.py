@@ -495,10 +495,9 @@ class MoviesTVTgxSpider(TgxSpider):
     name = "movies_tv_tgx"
     search_queries = [
         # Movies
-        # "c3=1&c46=1&c45=1&c42=1&c4=1&c1=1&search=&lang=0&nox=2&nox=1&page=0",
+        "c3=1&c46=1&c45=1&c42=1&c4=1&c1=1&search=&lang=0&nox=2&nox=1&page=0",
         # # TV Series
-        # "c41=1&c5=1&c11=1&c6=1&search=&lang=0&nox=2&nox=1&page=0",
-        "c3=1&c46=1&c45=1&c42=1&c4=1&c1=1&search=&lang=8&nox=2&page=0"
+        "c41=1&c5=1&c11=1&c6=1&search=&lang=0&nox=2&nox=1&page=0",
     ]
     catalog = []
     background_image = None  # Will be fetched from TMDB/IMDB
