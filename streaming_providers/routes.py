@@ -321,6 +321,7 @@ async def delete_all_watchlist(
 
 
 @router.post("/cache/status", response_model=CacheStatusResponse)
+@wrappers.exclude_rate_limit
 async def check_cache_status(request: CacheStatusRequest):
     """
     Check cache status for multiple info hashes.
@@ -335,7 +336,7 @@ async def check_cache_status(request: CacheStatusRequest):
         return CacheStatusResponse(cached_status={})
 
     # Create streaming provider object
-    provider = StreamingProvider(service=request.service)
+    provider = StreamingProvider(service=request.service, token="")
 
     try:
         # Get cache status using existing helper
@@ -349,6 +350,7 @@ async def check_cache_status(request: CacheStatusRequest):
 
 
 @router.post("/cache/submit", response_model=CacheSubmitResponse)
+@wrappers.exclude_rate_limit
 async def submit_cached_hashes(request: CacheSubmitRequest):
     """
     Submit cached info hashes to the central cache.
@@ -362,7 +364,7 @@ async def submit_cached_hashes(request: CacheSubmitRequest):
     if not request.info_hashes:
         return CacheSubmitResponse(success=True, message="No info hashes provided")
 
-    provider = StreamingProvider(service=request.service)
+    provider = StreamingProvider(service=request.service, token="")
     try:
         # Store cache info using existing helper
         await store_cached_info_hashes(provider, request.info_hashes)

@@ -436,6 +436,8 @@ class CacheStatusRequest(BaseModel):
         "debridlink",
         "offcloud",
         "seedr",
+        "pikpak",
+        "torbox",
     ]
     info_hashes: list[str]
 
@@ -456,6 +458,8 @@ class CacheSubmitRequest(BaseModel):
         "debridlink",
         "offcloud",
         "seedr",
+        "pikpak",
+        "torbox",
     ]
     info_hashes: list[str]
 
