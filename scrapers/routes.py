@@ -450,8 +450,7 @@ async def add_torrent(
         raise_error("Failed to store torrent data. Contact support.")
 
     # Cleanup redis caching for quick access
-    for key in stream_cache_keys:
-        await REDIS_ASYNC_CLIENT.delete(key)
+    await REDIS_ASYNC_CLIENT.delete(*stream_cache_keys)
 
     # Send Telegram notification
     if settings.telegram_bot_token:

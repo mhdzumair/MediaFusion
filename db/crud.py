@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from datetime import datetime
-from typing import Optional, Type
+from typing import Optional, Type, Literal
 from uuid import uuid4
 
 import humanize
@@ -181,120 +181,108 @@ async def get_tv_meta_list(
     return meta_list
 
 
-async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaData]:
-    # Check if the movie data is already in the cache
-    cached_data = await REDIS_ASYNC_CLIENT.get(f"movie_data:{movie_id}")
-    if cached_data:
-        return MediaFusionMovieMetaData.model_validate_json(cached_data)
+async def get_media_data_by_id(
+    meta_id: str,
+    media_type: Literal["movie", "series"],
+    model_class: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData],
+) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
+    """
+    Generic function to fetch media metadata by ID.
 
-    movie_data = await MediaFusionMovieMetaData.get(movie_id)
-    # store it in the db for feature reference.
-    if not movie_data and movie_id.startswith("tt"):
-        movie = await meta_fetcher.get_metadata(movie_id, "movie")
-        if not movie:
+    Args:
+        meta_id: Media ID to fetch
+        media_type: Type of media ("movie" or "series")
+        model_class: Class to use for the media data (MediaFusionMovieMetaData or MediaFusionSeriesMetaData)
+
+    Returns:
+        Optional[T]: Media metadata object or None if not found
+    """
+    # Check cache first
+    cached_data = await REDIS_ASYNC_CLIENT.get(f"{media_type}_data:{meta_id}")
+    if cached_data:
+        return model_class.model_validate_json(cached_data)
+
+    # Fetch existing data
+    media_data = await model_class.get(meta_id)
+
+    # Fetch and create new data if needed
+    if not media_data and meta_id.startswith("tt"):
+        raw_data = await meta_fetcher.get_metadata(meta_id, media_type)
+        if not raw_data:
             return None
 
-        movie_data = MediaFusionMovieMetaData(
-            id=movie_id,
-            title=movie["title"],
-            year=movie["year"],
-            poster=movie["poster"],
-            background=movie["background"],
-            description=movie["description"],
-            genres=movie["genres"],
-            imdb_rating=movie["imdb_rating"],
-            parent_guide_nudity_status=movie["parent_guide_nudity_status"],
-            parent_guide_certificates=movie["parent_guide_certificates"],
-            aka_titles=movie["aka_titles"],
-            stars=movie["stars"],
-        )
-        try:
-            await movie_data.create()
-            logging.info("Added metadata for movie %s", movie_data.title)
-        except DuplicateKeyError as error:
-            # Drop custom id and try to save again
-            existing_movie = await MediaFusionMovieMetaData.find_one(
-                {"title": movie_data.title, "year": movie_data.year}
+        # Create metadata object with common fields
+        common_fields = {
+            "id": meta_id,
+            "title": raw_data["title"],
+            "year": raw_data["year"],
+            "poster": raw_data["poster"],
+            "background": raw_data["background"],
+            "description": raw_data["description"],
+            "genres": raw_data["genres"],
+            "imdb_rating": raw_data["imdb_rating"],
+            "parent_guide_nudity_status": raw_data["parent_guide_nudity_status"],
+            "parent_guide_certificates": raw_data["parent_guide_certificates"],
+            "aka_titles": raw_data["aka_titles"],
+            "stars": raw_data["stars"],
+        }
+
+        # Add series-specific fields if needed
+        if media_type == "series":
+            common_fields.update(
+                {"end_year": raw_data["end_year"], "episodes": raw_data["episodes"]}
             )
-            if not existing_movie:
-                logging.error("Error occurred while adding metadata: %s", error)
+
+        media_data = model_class(**common_fields)
+
+        try:
+            await media_data.create()
+            logging.info(f"Added metadata for {media_type} {media_data.title}")
+        except DuplicateKeyError as error:
+            if "_id_ dup key:" in str(error):
+                await asyncio.sleep(1)
+                return await get_media_data_by_id(meta_id, media_type, model_class)
+
+            # Handle duplicate title/year combination
+            existing_media = await model_class.find_one(
+                {"title": media_data.title, "year": media_data.year}
+            )
+
+            if not existing_media:
+                logging.error(f"Error occurred while adding metadata: {error}")
                 return None
-            if existing_movie.id != movie_data.id:
-                # update TorrentStreams meta_id with new id if exist
-                await TorrentStreams.find({"meta_id": existing_movie.id}).update(
-                    Set({"meta_id": movie_data.id})
+
+            if existing_media.id != media_data.id:
+                # Update TorrentStreams meta_id and replace existing record
+                await TorrentStreams.find({"meta_id": existing_media.id}).update(
+                    Set({"meta_id": media_data.id})
                 )
-                await existing_movie.delete()
-                await movie_data.create()
+                await existing_media.delete()
+                await media_data.create()
                 logging.info(
-                    "Replace meta id %s with %s", existing_movie.id, movie_data.id
+                    f"Replace meta id {existing_media.id} with {media_data.id}"
                 )
         except RevisionIdWasChanged:
-            # Wait for a moment before re-fetching to mitigate rapid retry issues
             await asyncio.sleep(1)
-            movie_data = await MediaFusionMovieMetaData.get(movie_id)
+            media_data = await model_class.get(meta_id)
 
-    # Serialize the data and store it in the Redis cache for 1 day
-    if movie_data:
+    # Cache the data
+    if media_data:
         await REDIS_ASYNC_CLIENT.set(
-            f"movie_data:{movie_id}",
-            movie_data.model_dump_json(exclude_none=True),
-            ex=86400,
+            f"{media_type}_data:{meta_id}",
+            media_data.model_dump_json(exclude_none=True),
+            ex=86400,  # 1 day
         )
-    return movie_data
+
+    return media_data
+
+
+async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaData]:
+    return await get_media_data_by_id(movie_id, "movie", MediaFusionMovieMetaData)
 
 
 async def get_series_data_by_id(series_id: str) -> Optional[MediaFusionSeriesMetaData]:
-    series_data = await MediaFusionSeriesMetaData.get(series_id)
-
-    if not series_data and series_id.startswith("tt"):
-        series = await meta_fetcher.get_metadata(series_id, "series")
-        if not series:
-            return None
-
-        series_data = MediaFusionSeriesMetaData(
-            id=series_id,
-            title=series["title"],
-            year=series["year"],
-            end_year=series["end_year"],
-            poster=series["poster"],
-            background=series["background"],
-            description=series["description"],
-            genres=series["genres"],
-            imdb_rating=series["imdb_rating"],
-            parent_guide_nudity_status=series["parent_guide_nudity_status"],
-            parent_guide_certificates=series["parent_guide_certificates"],
-            aka_titles=series["aka_titles"],
-            stars=series["stars"],
-            episodes=series["episodes"],
-        )
-        try:
-            await series_data.create()
-            logging.info("Added metadata for series %s", series_data.title)
-        except DuplicateKeyError as error:
-            # Drop custom id and try to save again
-            existing_series = await MediaFusionSeriesMetaData.find_one(
-                {"title": series_data.title, "year": series_data.year}
-            )
-            if not existing_series:
-                logging.error("Error occurred while adding metadata: %s", error)
-                return None
-            if existing_series.id != series_data.id:
-                # update TorrentStreams meta_id with new id if exist
-                await TorrentStreams.find({"meta_id": existing_series.id}).update(
-                    Set({"meta_id": series_data.id})
-                )
-                await existing_series.delete()
-                await series_data.create()
-                logging.info(
-                    "Replace meta id %s with %s", existing_series.id, series_data.id
-                )
-        except RevisionIdWasChanged:
-            # Wait for a moment before re-fetching to mitigate rapid retry issues
-            await asyncio.sleep(1)
-            series_data = await MediaFusionMovieMetaData.get(series_id)
-
-    return series_data
+    return await get_media_data_by_id(series_id, "series", MediaFusionSeriesMetaData)
 
 
 async def get_tv_data_by_id(tv_id: str) -> Optional[MediaFusionTVMetaData]:
@@ -1350,7 +1338,7 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
         if not result:
             continue
 
-        movie_id = result["imdb_id"]
+        meta_id = result["imdb_id"]
         update_data = {
             "title": result["title"],
             "genres": result["genres"],
@@ -1369,7 +1357,7 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
 
         if metadata_type == "series" and result.get("episodes"):
             # Get current series data to compare episodes
-            current_series = await MediaFusionSeriesMetaData.get(movie_id)
+            current_series = await MediaFusionSeriesMetaData.get(meta_id)
             if current_series:
                 # Create a map of existing episodes by season and episode number
                 existing_episodes = {
@@ -1418,7 +1406,7 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
         # Get TorrentStream counts & last stream added date
         streams_stats = await TorrentStreams.aggregate(
             [
-                {"$match": {"meta_id": movie_id, "is_blocked": {"$ne": True}}},
+                {"$match": {"meta_id": meta_id, "is_blocked": {"$ne": True}}},
                 {
                     "$group": {
                         "_id": None,
@@ -1443,7 +1431,11 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
 
         # Update database entries with the new data
         await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": movie_id},
+            {"_id": meta_id},
             {"$set": update_data},
         )
-        logging.info(f"Updated metadata for {metadata_type} {movie_id}")
+        logging.info(f"Updated metadata for {metadata_type} {meta_id}")
+
+        cache_keys = await REDIS_ASYNC_CLIENT.keys(f"{metadata_type}_{meta_id}_meta*")
+        cache_keys.append(f"{metadata_type}_data:{meta_id}")
+        await REDIS_ASYNC_CLIENT.delete(*cache_keys)
