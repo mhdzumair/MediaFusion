@@ -267,12 +267,13 @@ async def retrieve_or_download_file(
     magnet_link: str,
     info_hash: str,
     stream: TorrentStreams,
+    season: int | None,
     episode: int | None,
     max_retries: int,
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        pikpak, my_pack_folder_id, info_hash, filename, episode
+        pikpak, my_pack_folder_id, info_hash, filename, season, episode
     )
     if not selected_file:
         await free_up_space(pikpak, stream.size)
@@ -281,7 +282,7 @@ async def retrieve_or_download_file(
             pikpak, info_hash, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            pikpak, my_pack_folder_id, info_hash, filename, episode
+            pikpak, my_pack_folder_id, info_hash, filename, season, episode
         )
         if selected_file is None:
             raise ProviderException(
@@ -329,6 +330,7 @@ async def get_video_url_from_pikpak(
     user_data: UserData,
     stream: TorrentStreams,
     filename: str,
+    season: int | None,
     episode: int | None,
     max_retries=1,
     retry_interval=0,
@@ -345,6 +347,7 @@ async def get_video_url_from_pikpak(
             magnet_link,
             info_hash,
             stream,
+            season,
             episode,
             max_retries,
             retry_interval,
