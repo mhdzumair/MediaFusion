@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 
 from tenacity import RetryError
 
-from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
+from db.models import TorrentStreams, MediaFusionMetaData, EpisodeFile
 from scrapers.base_scraper import BaseScraper, ScraperError
 from utils.parser import is_contain_18_plus_keywords
 
@@ -129,7 +129,7 @@ class StremioScraper(BaseScraper):
             meta_id=metadata.id,
             torrent_name=parsed_data["torrent_name"],
             size=parsed_data["size"],
-            filename=parsed_data["file_name"],
+            filename=parsed_data["filename"],
             file_index=stream_data.get("fileIdx"),
             languages=parsed_data["languages"],
             resolution=parsed_data["metadata"].get("resolution"),
@@ -154,18 +154,12 @@ class StremioScraper(BaseScraper):
         episode: int,
         stream_data: Dict[str, Any],
     ) -> bool:
-        if seasons := parsed_data["metadata"].get("seasons"):
-            if len(seasons) == 1:
-                season_number = seasons[0]
-            else:
-                self.metrics.record_skip("Multiple Seasons torrent")
-                return False
-        else:
-            season_number = season
+        season_number = season
 
         if parsed_data["metadata"].get("episodes"):
             episode_data = [
-                Episode(
+                EpisodeFile(
+                    season_number=season_number,
                     episode_number=episode_number,
                     file_index=(
                         stream_data.get("fileIdx")
@@ -177,16 +171,14 @@ class StremioScraper(BaseScraper):
             ]
         else:
             episode_data = [
-                Episode(
+                EpisodeFile(
+                    season_number=season_number,
                     episode_number=episode,
                     file_index=stream_data.get("fileIdx"),
                 )
             ]
 
-        stream.season = Season(
-            season_number=season_number,
-            episodes=episode_data,
-        )
+        stream.episode_files = episode_data
         stream.filename = None
         return True
 

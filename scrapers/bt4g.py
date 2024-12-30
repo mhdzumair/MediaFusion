@@ -9,7 +9,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from db.config import settings
-from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
+from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
@@ -356,15 +356,37 @@ class BT4GScraper(BaseScraper):
                 ):
                     continue
                 file_parsed_data = PTT.parse_title(file_name)
-                seasons.update(parsed_data.get("seasons", []))
-                episodes.update(parsed_data.get("episodes", []))
+                seasons.update(file_parsed_data.get("seasons", []))
+                episodes.update(file_parsed_data.get("episodes", []))
+                season_number = (
+                    file_parsed_data.get("seasons")[0]
+                    if file_parsed_data.get("seasons")
+                    else None
+                )
+                if (
+                    season_number is None
+                    and parsed_data.get("seasons")
+                    and len(parsed_data["seasons"]) == 1
+                ):
+                    season_number = parsed_data["seasons"][0]
+                episode_number = (
+                    file_parsed_data.get("episodes")[0]
+                    if file_parsed_data.get("episodes")
+                    else None
+                )
+                if (
+                    episode_number is None
+                    and parsed_data.get("episodes")
+                    and len(parsed_data["episodes"]) == 1
+                ):
+                    episode_number = parsed_data["episodes"][0]
                 file_info.append(
                     {
                         "filename": file_name,
                         "file_size": file_size,
                         "index": index,
-                        "seasons": file_parsed_data.get("seasons"),
-                        "episodes": file_parsed_data.get("episodes"),
+                        "season_number": season_number,
+                        "episode_number": episode_number,
                     }
                 )
 
@@ -418,41 +440,29 @@ class BT4GScraper(BaseScraper):
         stream: TorrentStreams,
         parsed_data: dict,
         file_info: List[dict],
-        season: int,
-        episode: int,
     ) -> bool:
         """Process series-specific data and validate season/episode information"""
         if not parsed_data.get("seasons"):
             self.metrics.record_skip("Missing season info")
             return False
 
-        if len(parsed_data["seasons"]) != 1:
-            self.metrics.record_skip("Multiple seasons")
-            return False
-
-        season_number = parsed_data["seasons"][0]
-        if season_number != season:
-            self.metrics.record_skip("Season mismatch")
-            return False
-
         # Prepare episode data based on detailed file data
         episode_data = [
-            Episode(
-                episode_number=file["episodes"][0],
+            EpisodeFile(
+                season_number=file.get("season_number"),
+                episode_number=file.get("episode_number"),
                 filename=file.get("filename"),
                 size=file.get("file_size"),
                 file_index=file.get("index"),
             )
             for file in file_info
-            if file.get("episodes")
+            if file.get("season_number") is not None
+            and file.get("episode_number") is not None
         ]
 
         if not episode_data:
             self.metrics.record_skip("No valid episodes")
             return False
 
-        stream.season = Season(
-            season_number=season_number,
-            episodes=episode_data,
-        )
+        stream.episode_files = episode_data
         return True

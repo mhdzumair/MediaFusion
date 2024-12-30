@@ -56,6 +56,6 @@ class MediafusionScraper(StremioScraper):
             "seeders": self.extract_seeders(stream["description"]),
             "languages": metadata.get("languages", []),
             "metadata": metadata,
-            "file_name": (stream.get("behaviorHints", {}).get("filename")),
+            "filename": (stream.get("behaviorHints", {}).get("filename")),
             "source": source,
         }

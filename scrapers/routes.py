@@ -16,7 +16,7 @@ from db.crud import (
     store_new_torrent_streams,
 )
 from db.enums import TorrentType
-from db.models import TorrentStreams, Episode, Season
+from db.models import TorrentStreams, EpisodeFile
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
 from scrapers import imdb_data
@@ -335,19 +335,13 @@ async def add_torrent(
             )
 
         # Season validation
-        if season not in torrent_data.get("seasons", []):
-            if (
-                not (torrent_data.get("season") is None and season == 1)
-                and not force_import
-            ):
-                validation_errors.append(
-                    {
-                        "type": "season_mismatch",
-                        "message": f"Season mismatch: '{torrent_data.get('season')}' != '{season}'",
-                    }
-                )
-            if not torrent_data.get("seasons"):
-                torrent_data["seasons"] = [season]
+        if not torrent_data.get("seasons", []):
+            validation_errors.append(
+                {
+                    "type": "seasons_not_found",
+                    "message": "No season found in torrent data",
+                }
+            )
 
         if validation_errors:
             return {
@@ -358,7 +352,7 @@ async def add_torrent(
             }
 
         torrent_stream = await handle_series_stream_store(
-            info_hash, torrent_data, meta_id, season
+            info_hash, torrent_data, meta_id
         )
 
         stream_cache_keys = [
@@ -387,7 +381,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         torrent_name=parsed_data.get("torrent_name"),
         announce_list=parsed_data.get("announce_list"),
         size=parsed_data.get("total_size"),
-        filename=parsed_data.get("largest_file", {}).get("file_name"),
+        filename=parsed_data.get("largest_file", {}).get("filename"),
         file_index=parsed_data.get("largest_file", {}).get("index"),
         languages=parsed_data.get("languages"),
         resolution=parsed_data.get("resolution"),
@@ -409,36 +403,30 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
     return torrent_stream
 
 
-async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
+async def handle_series_stream_store(info_hash, parsed_data, video_id):
     """
     Handles the storage logic for a single series torrent stream, including updating
     or creating records for all episodes contained within the torrent.
     """
-    # Check for unsupported torrents spanning multiple seasons and no season
-    if len(parsed_data.get("seasons", [])) != 1:
-        return None
-
     # Prepare episode data based on detailed file data or basic episode numbers
-    episode_data = []
-    if parsed_data.get("file_data"):
-        episode_data = [
-            Episode(
-                episode_number=file["episodes"][0],
-                filename=file.get("filename"),
-                size=file.get("size"),
-                file_index=file.get("index"),
-            )
-            for file in parsed_data["file_data"]
-            if file.get("episodes")
-        ]
-    elif episodes := parsed_data.get("episodes"):
-        episode_data = [Episode(episode_number=ep) for ep in episodes]
+    episode_data = [
+        EpisodeFile(
+            season_number=file["season_number"],
+            episode_number=file["episode_number"],
+            filename=file.get("filename"),
+            size=file.get("size"),
+            file_index=file.get("index"),
+            released=file.get("release_date"),
+            title=file.get("title"),
+            overview=file.get("overview"),
+            thumbnail=file.get("thumbnail"),
+        )
+        for file in parsed_data["file_data"]
+    ]
 
     # Skip the torrent if no episode data is available
     if not episode_data:
         return None
-
-    season_number = parsed_data.get("seasons")[0]
 
     # Create new stream, initially without episodes
     torrent_stream = TorrentStreams(
@@ -458,7 +446,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id, season):
         seeders=parsed_data.get("seeders"),
         created_at=parsed_data.get("created_at"),
         meta_id=video_id,
-        season=Season(season_number=season_number, episodes=episode_data),
+        episode_files=episode_data,
         torrent_type=parsed_data.get("torrent_type"),
         torrent_file=parsed_data.get("torrent_file"),
     )

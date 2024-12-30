@@ -7,7 +7,7 @@ from httpx import Response
 from tenacity import RetryError
 
 from db.config import settings
-from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
+from db.models import TorrentStreams, MediaFusionMetaData, EpisodeFile
 from scrapers.base_scraper import BaseScraper, ScraperError
 from utils.parser import (
     is_contain_18_plus_keywords,
@@ -160,32 +160,30 @@ class ZileanScraper(BaseScraper):
 
                 if catalog_type == "movie":
                     torrent_stream.catalog.append("zilean_dmm_movies")
-                elif catalog_type == "series":
+                else:
                     torrent_stream.catalog.append("zilean_dmm_series")
-                    if seasons := torrent_data.get("seasons"):
-                        if len(seasons) != 1:
-                            self.metrics.record_skip("Multiple Seasons torrent")
-                            return None
-                        season_number = seasons[0]
-                    else:
+                    seasons = torrent_data.get("seasons")
+                    if not seasons:
                         self.metrics.record_skip("Missing season info")
                         return None
 
                     if episodes := torrent_data.get("episodes"):
                         episode_data = [
-                            Episode(episode_number=episode_number)
+                            EpisodeFile(
+                                season_number=seasons[0], episode_number=episode_number
+                            )
                             for episode_number in episodes
                         ]
-                    elif season in seasons:
-                        episode_data = [Episode(episode_number=1)]
+                    elif seasons:
+                        episode_data = [
+                            EpisodeFile(season_number=season_number, episode_number=1)
+                            for season_number in seasons
+                        ]
                     else:
                         self.metrics.record_skip("Missing episode info")
                         return None
 
-                    torrent_stream.season = Season(
-                        season_number=season_number,
-                        episodes=episode_data,
-                    )
+                    torrent_stream.episode_files = episode_data
 
                 # Record metrics for successful processing
                 self.metrics.record_processed_item()

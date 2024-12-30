@@ -21,12 +21,12 @@ from torf import Magnet, MagnetError
 
 from db.config import settings
 from db.enums import TorrentType
-from db.models import MediaFusionMovieMetaData, MediaFusionSeriesMetaData
 from db.models import (
+    MediaFusionMovieMetaData,
+    MediaFusionSeriesMetaData,
+    EpisodeFile,
     TorrentStreams,
     MediaFusionMetaData,
-    Episode,
-    Season,
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
 from scrapers import torrent_info
@@ -851,6 +851,16 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             indexers=chunk,
                         )
                     )
+                if settings.scrape_with_aka_titles:
+                    for aka_title in metadata.aka_titles:
+                        search_generators.append(
+                            self.scrape_movie_by_title(
+                                processed_info_hashes,
+                                metadata,
+                                search_query=aka_title,
+                                indexers=chunk,
+                            )
+                        )
 
         async for stream in self.process_streams(
             *search_generators,
@@ -898,6 +908,18 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             indexers=chunk,
                         )
                     )
+                if settings.scrape_with_aka_titles:
+                    for aka_title in metadata.aka_titles:
+                        search_generators.append(
+                            self.scrape_series_by_title(
+                                processed_info_hashes,
+                                metadata,
+                                season,
+                                episode,
+                                search_query=aka_title,
+                                indexers=chunk,
+                            )
+                        )
 
         async for stream in self.process_streams(
             *search_generators,
@@ -1012,6 +1034,10 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
 
     @abc.abstractmethod
     def get_torrent_type(self, item: dict) -> TorrentType:
+        pass
+
+    @abc.abstractmethod
+    def get_created_at(self, item: dict) -> datetime:
         pass
 
     async def scrape_movie_by_imdb(
@@ -1253,14 +1279,6 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
             ):
                 return None
 
-            if catalog_type == "series" and len(parsed_data.get("seasons", [])) > 1:
-                self.logger.warning(
-                    f"Series has multiple seasons: {torrent_title} ({parsed_data.get('year')}) "
-                    f"({metadata.id}) : {parsed_data.get('seasons')}"
-                )
-                self.metrics.record_skip("Multiple seasons torrent")
-                return None
-
             # Get indexer-specific parsed data
             parsed_data = await self.parse_indexer_data(
                 stream_data, catalog_type, parsed_data
@@ -1277,7 +1295,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                 torrent_name=parsed_data["torrent_name"],
                 size=parsed_data["total_size"],
                 filename=(
-                    parsed_data.get("largest_file", {}).get("file_name")
+                    parsed_data.get("largest_file", {}).get("filename")
                     if catalog_type == "movie"
                     else None
                 ),
@@ -1291,7 +1309,9 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                 codec=parsed_data.get("codec"),
                 quality=parsed_data.get("quality"),
                 audio=parsed_data.get("audio"),
+                hdr=parsed_data.get("hdr"),
                 source=parsed_data["source"],
+                uploader=parsed_data.get("uploader"),
                 catalog=parsed_data["catalog"],
                 seeders=parsed_data["seeders"],
                 created_at=parsed_data["created_at"],
@@ -1305,48 +1325,44 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
             )
 
             if catalog_type == "series":
-                season_number = (
-                    parsed_data["seasons"][0] if parsed_data.get("seasons") else None
-                )
-                episode_data = []
+                seasons = parsed_data.get("seasons")
+                episode_files = []
                 if parsed_data.get("file_data"):
-                    episode_data = [
-                        Episode(
-                            episode_number=(
-                                file["episodes"][0]
-                                if file.get("episodes")
-                                else parsed_data["episodes"][0]
-                            ),
+                    episode_files = [
+                        EpisodeFile(
+                            season_number=file["season_number"],
+                            episode_number=file["episode_number"],
                             filename=file.get("filename"),
                             size=file.get("size"),
                             file_index=file.get("index"),
                         )
                         for file in parsed_data["file_data"]
-                        if file.get("episodes")
-                        or (
-                            len(parsed_data["file_data"]) == 1
-                            and parsed_data.get("episodes")
-                        )
+                        if file.get("episode_number")
                     ]
-                elif episodes := parsed_data.get("episodes"):
-                    episode_data = [Episode(episode_number=ep) for ep in episodes]
+                elif episodes := parsed_data.get("episodes") and seasons:
+                    episode_files = [
+                        EpisodeFile(season_number=seasons[0], episode_number=ep)
+                        for ep in episodes
+                    ]
                 elif parsed_data.get("date"):
                     # search with date for episode
-                    episode_date = datetime.strptime(
-                        parsed_data["date"], "%Y-%m-%d"
-                    ).date()
+                    episode_date = datetime.strptime(parsed_data["date"], "%Y-%m-%d")
                     imdb_episode = await get_episode_by_date(
                         metadata.id,
                         parsed_data["title"],
-                        episode_date,
+                        episode_date.date(),
                     )
                     if imdb_episode and imdb_episode.season and imdb_episode.episode:
                         self.logger.info(
                             f"Episode found by {episode_date} date for {parsed_data.get('title')} ({metadata.id})"
                         )
-                        season_number = int(imdb_episode.season)
-                        episode_data = [
-                            Episode(episode_number=int(imdb_episode.episode))
+                        episode_files = [
+                            EpisodeFile(
+                                season_number=int(imdb_episode.season),
+                                episode_number=int(imdb_episode.episode),
+                                title=imdb_episode.title,
+                                released=episode_date,
+                            )
                         ]
                 else:
                     # if no episode data found, then try to get torrent metadata from trackers
@@ -1355,31 +1371,37 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                     )
                     if torrent_data:
                         torrent_file_metadata = torrent_data[0]
-                        episode_data = [
-                            Episode(
-                                episode_number=file["episodes"][0],
+                        episode_files = [
+                            EpisodeFile(
+                                season_number=file["season_number"],
+                                episode_number=file["episode_number"],
                                 filename=file.get("filename"),
                                 size=file.get("size"),
                                 file_index=file.get("index"),
                             )
                             for file in torrent_file_metadata.get("file_data", [])
-                            if file.get("episodes")
+                            if file.get("episode_number") and file.get("season_number")
                         ]
-                    elif season_number:
+                    elif seasons:
                         # Some pack contains few episodes. We can't determine exact episode number
-                        episode_data = [Episode(episode_number=1)]
+                        episode_files = [
+                            EpisodeFile(season_number=season_number, episode_number=1)
+                            for season_number in seasons
+                        ]
 
-                if episode_data and season_number:
-                    torrent_stream.season = Season(
-                        season_number=season_number,
-                        episodes=episode_data,
-                    )
+                if episode_files:
+                    torrent_stream.episode_files = episode_files
                 else:
                     self.metrics.record_skip("Missing episode info")
                     self.logger.warning(
                         f"Episode not found in stream: '{torrent_title}' "
                         f"Scraping for: S{season}E{episode}"
                     )
+                    return None
+            else:
+                # For the Movies, should not have seasons and episodes
+                if parsed_data.get("seasons") or parsed_data.get("episodes"):
+                    self.metrics.record_skip("Unexpected season/episode info")
                     return None
 
             self.metrics.record_processed_item()

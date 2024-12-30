@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import httpx
 
 from db.config import settings
-from db.models import TorrentStreams, Episode, Season
+from db.models import TorrentStreams, EpisodeFile
 from utils.torrent import info_hashes_to_torrent_metadata
 
 # set httpx logging level
@@ -57,23 +57,19 @@ async def update_torrent_series_streams_metadata(
         torrent_stream = await TorrentStreams.get(stream_metadata["info_hash"])
         if torrent_stream:
             episodes = [
-                Episode(
-                    episode_number=file["episodes"][0],
+                EpisodeFile(
+                    season_number=file["season_number"],
+                    episode_number=file["episode_number"],
                     filename=file["filename"],
                     size=file["size"],
                     file_index=file["index"],
                 )
                 for file in stream_metadata["file_data"]
-                if file["episodes"]
             ]
             if not episodes:
                 continue
 
-            torrent_stream.season = Season(
-                season_number=stream_metadata["seasons"][0],
-                episodes=episodes,
-            )
-
+            torrent_stream.episode_files = episodes
             torrent_stream.torrent_name = stream_metadata["torrent_name"]
             torrent_stream.size = stream_metadata["total_size"]
 

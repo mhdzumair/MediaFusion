@@ -18,9 +18,10 @@ class Catalog(BaseModel):
 class Video(BaseModel):
     id: str
     title: str
-    released: str
+    released: str | None = None
     season: int | None = None
     episode: int | None = None
+    thumbnail: str | None = None
 
 
 class Meta(BaseModel):
@@ -39,6 +40,7 @@ class Meta(BaseModel):
     website: str | None = None
     imdbRating: str | float | None = Field(None, alias="imdb_rating")
     releaseInfo: str | int | None = Field(None, alias="year")
+    cast: list[str] | None = Field(None, alias="stars")
 
     @model_validator(mode="after")
     def parse_meta(self) -> "Meta":
@@ -313,6 +315,12 @@ class AuthorizeData(BaseModel):
 class MetaIdProjection(BaseModel):
     id: str = Field(alias="_id")
     type: str
+
+
+class MetaSearchProjection(BaseModel):
+    id: str = Field(alias="_id")
+    title: str
+    aka_titles: Optional[list[str]] = Field(default_factory=list)
 
 
 class TVMetaProjection(BaseModel):

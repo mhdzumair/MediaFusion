@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import PTT
 
-from db.models import TorrentStreams, Episode, Season
+from db.models import TorrentStreams, EpisodeFile
 from streaming_providers.exceptions import ProviderException
 from utils.validation_helper import is_video_file
 
@@ -79,37 +79,43 @@ async def update_torrent_streams_metadata(
         logging.info(f"Updated {torrent_stream.id} metadata")
 
     else:
-        parsed_data = [
-            {
-                "filename": (
-                    file[name_key].lstrip("/")
-                    if remove_leading_slash
-                    else file[name_key]
-                ),
-                "size": file.get(size_key),
-                "index": idx,
-                **PTT.parse_title(file[name_key]),
-            }
-            for idx, file in enumerate(files_data)
-        ]
-        episodes = [
-            Episode(
-                episode_number=file["episodes"][0],
-                filename=file["filename"],
-                size=file["size"],
-                file_index=file["index"] if is_index_trustable else None,
+        title_parsed_data = PTT.parse_title(torrent_stream.torrent_name)
+        episodes = []
+        for idx, file in enumerate(files_data):
+            file_parsed_data = PTT.parse_title(file[name_key])
+            season_number = file_parsed_data.get("seasons") or None
+            if (
+                season_number is None
+                and title_parsed_data.get("seasons")
+                and len(title_parsed_data["seasons"]) == 1
+            ):
+                season_number = title_parsed_data["seasons"][0]
+            episode_number = file_parsed_data.get("episodes") or None
+            if (
+                episode_number is None
+                and title_parsed_data.get("episodes")
+                and len(title_parsed_data["episodes"]) == 1
+            ):
+                episode_number = title_parsed_data["episodes"][0]
+
+            if not season_number or not episode_number:
+                continue
+
+            episodes.append(
+                EpisodeFile(
+                    season_number=season_number,
+                    episode_number=episode_number,
+                    filename=basename(file[name_key]),
+                    size=file[size_key],
+                    file_index=idx if is_index_trustable else None,
+                )
             )
-            for file in parsed_data
-            if season in file["seasons"] and file["episodes"]
-        ]
+
         if not episodes:
             return
 
-        torrent_stream.season = Season(
-            season_number=season,
-            episodes=episodes,
-        )
-        total_size = sum(file["size"] for file in parsed_data if file["size"])
+        torrent_stream.episode_files = episodes
+        total_size = sum(file[size_key] for file in files_data)
         if total_size > torrent_stream.size:
             torrent_stream.size = total_size
         torrent_stream.updated_at = datetime.now()

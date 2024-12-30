@@ -4,9 +4,7 @@ from datetime import datetime
 
 from scrapy.exceptions import DropItem
 
-from db.models import (
-    Episode,
-)
+from db.models import EpisodeFile
 
 
 class FormulaParserPipeline:
@@ -345,7 +343,8 @@ class FormulaParserPipeline:
                     event, torrent_data["created_at"]
                 )
                 episodes.append(
-                    Episode(
+                    EpisodeFile(
+                        season_number=1,
                         episode_number=index + 1,
                         filename=file_detail.get("filename"),
                         size=file_detail["size"],
@@ -363,7 +362,8 @@ class FormulaParserPipeline:
                 )
 
                 episodes.append(
-                    Episode(
+                    EpisodeFile(
+                        season_number=1,
                         episode_number=index + 1,
                         filename=file_name,
                         size=file_detail.get("size"),
@@ -406,7 +406,8 @@ class FormulaParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         torrent_data["episodes"] = [
-            Episode(
+            EpisodeFile(
+                season_number=1,
                 episode_number=1,
                 filename=file_data[0].get("filename"),
                 size=torrent_data.get("total_size"),
@@ -435,7 +436,8 @@ class FormulaParserPipeline:
             file_name = file_detail.get("filename")
 
             episodes.append(
-                Episode(
+                EpisodeFile(
+                    season_number=1,
                     episode_number=index + 1,
                     filename=file_name,
                     size=file_detail.get("size"),

@@ -57,7 +57,7 @@ class TorrentioScraper(StremioScraper):
                 "seeders": self.extract_seeders(descriptions),
                 "languages": metadata["languages"],
                 "metadata": metadata,
-                "file_name": stream.get("behaviorHints", {}).get("filename"),
+                "filename": stream.get("behaviorHints", {}).get("filename"),
                 "source": source,
             }
         except Exception as e:

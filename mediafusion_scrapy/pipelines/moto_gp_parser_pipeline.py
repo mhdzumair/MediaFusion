@@ -4,9 +4,7 @@ import re
 
 from scrapy.exceptions import DropItem
 
-from db.models import (
-    Episode,
-)
+from db.models import EpisodeFile
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
@@ -120,7 +118,8 @@ class MotoGPParserPipeline:
             file_name = file_detail.get("filename")
 
             episodes.append(
-                Episode(
+                EpisodeFile(
+                    season_number=1,
                     episode_number=index + 1,
                     filename=file_name,
                     size=file_detail.get("size"),
