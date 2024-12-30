@@ -540,6 +540,8 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
     streaming_provider_name = None
     streaming_provider_short_name = None
     enable_watchlist_catalogs = False
+    addon_name = settings.addon_name
+
     if user_data.streaming_provider:
         streaming_provider_name = user_data.streaming_provider.service
         streaming_provider_short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(
@@ -548,6 +550,10 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         enable_watchlist_catalogs = (
             user_data.streaming_provider.enable_watchlist_catalogs
         )
+        addon_name += f" {streaming_provider_short_name}"
+
+    if user_data.mediaflow_config:
+        addon_name += " 🕵🏼‍♂️"
 
     manifest_data = {
         "addon_name": settings.addon_name,
