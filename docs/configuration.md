@@ -6,169 +6,169 @@ This guide describes the environment variables available in MediaFusion for conf
 
 These settings define the basic configuration and identity of your MediaFusion instance.
 
-- **addon_name** (default: `"MediaFusion"`): The name of the MediaFusion addon. You can customize this value to identify the addon.
-- **version** : The version of the MediaFusion addon.
-- **description** : A brief description of the MediaFusion addon to show on stremio Addon page.
-- **contact_email** : The contact email for the MediaFusion addon to show on stremio Addon page.
+- **addon_name** (default: `"MediaFusion"`): The name of the MediaFusion addon.
+- **version** (default: `"1.0.0"`): The version of the MediaFusion addon.
+- **description**: A brief description of the MediaFusion addon to show on Stremio Addon page.
+- **branding_description** (default: `""`): Additional branding description text.
+- **contact_email** (default: `"mhdzumair@gmail.com"`): The contact email for the MediaFusion addon.
 - **host_url** (required): The URL where MediaFusion is hosted.
 - **secret_key** (required): A 32-character secret key for securely signing the session. Must be exactly 32 characters long.
 - **api_password** (required): The password for accessing the API endpoints.
-- **logging_level** (default: `"INFO"`): The logging level of the application. Valid options are typically DEBUG, INFO, WARNING, ERROR, and CRITICAL.
-- **logo_url** (default: GitHub RAW Addon URL): The URL of the MediaFusion logo.
-- **is_public_instance** (default: `False`): Set to `True` for community instances that do not require authentication to access the data but protect the `/scraper` endpoint and uploading live TV data endpoints.
+- **logging_level** (default: `"INFO"`): The logging level of the application (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+- **logo_url**: The URL of the MediaFusion logo.
+- **is_public_instance** (default: `False`): Set to `True` for community instances that don't require authentication except for `/scraper` endpoint.
+- **poster_host_url** (default: Same as `host_url`): The URL where poster images are served from.
+- **min_scraping_video_size** (default: `26214400`): Minimum video size in bytes (25 MB) for scraping.
+- **metadata_primary_source** (default: `"imdb"`): Primary source for metadata. Options: "imdb" or "tmdb".
 
 ## Streaming Provider Settings
-- **disabled_providers** (default: `[]`): A list of disabled streaming providers. The providers in this list will not be scraped. e.g. `'["p2p", "pikpak"]'`
+
+- **disabled_providers** (default: `[]`): List of disabled streaming providers. Available options:
+  - "p2p": Peer-to-peer streaming
+  - "realdebrid": RealDebrid service
+  - "seedr": Seedr service
+  - "debridlink": DebridLink service
+  - "alldebrid": AllDebrid service
+  - "offcloud": Offcloud service
+  - "pikpak": PikPak service
+  - "torbox": TorBox service
+  - "premiumize": Premiumize service
+  - "qbittorrent": qBittorrent client
+  - "stremthru": StremThru service
 
 ## Database and Cache Settings
 
-These settings control the database and caching behavior of MediaFusion.
+- **mongo_uri** (required): MongoDB connection URI.
+- **db_max_connections** (default: `50`): Maximum database connections.
+- **redis_url** (default: `"redis://redis-service:6379"`): Redis service URL for caching and tasks.
+- **redis_max_connections** (default: `100`): Maximum Redis connections.
 
-- **mongo_uri** (required): The MongoDB URI connection string.
-- **db_max_connections** (default: 50): The maximum number of connections to the database.
-- **redis_url** (default: `"redis://redis-service:6379"`): The Redis service URL used for caching and task queuing.
+## External Service Settings
 
-## External Service URLs
-
-These URLs define the locations of various external services used by MediaFusion.
-
-- **poster_host_url** (default: Use the Host URL value): The URL where poster images are served from. Use the same value as `host_url` if posters are served from the same location.
-- **requests_proxy_url**: The URL for forwarding requests through a proxy. This setting is optional.
-- **torrentio_url** (default: `"https://torrentio.strem.fun"`): The Torrentio / KightCrawler URL.
-- **mediafusion_url** (default: `"https://mediafusion.elfhosted.com"`): The Mediafusion URL.
-- **playwright_cdp_url** (default: `"ws://browserless:3000?blockAds=true&stealth=true"`): The URL for the Playwright CDP (Chrome DevTools Protocol) service.
-- **flaresolverr_url** (default: `"http://flaresolverr:8191/v1"`): The URL for the FlareSolverr service.
+- **requests_proxy_url**: Optional proxy URL for requests.
+- **playwright_cdp_url** (default: `"ws://browserless:3000?blockAds=true&stealth=true"`): Playwright CDP service URL.
+- **flaresolverr_url** (default: `"http://flaresolverr:8191/v1"`): FlareSolverr service URL.
+- **tmdb_api_key**: TMDB API key for metadata fetching.
 
 ## Prowlarr Settings
 
-These settings are specific to the Prowlarr integration.
+- **is_scrap_from_prowlarr** (default: `True`): Enable/disable Prowlarr scraping.
+- **prowlarr_url** (default: `"http://prowlarr-service:9696"`): Prowlarr service URL.
+- **prowlarr_api_key**: Prowlarr API key.
+- **prowlarr_live_title_search** (default: `True`): Enable live title search in Prowlarr.
+- **prowlarr_background_title_search** (default: `True`): Enable background title search.
+- **prowlarr_search_query_timeout** (default: `30`): Search query timeout in seconds.
+- **prowlarr_search_interval_hour** (default: `72`): Search interval in hours.
+- **prowlarr_immediate_max_process** (default: `10`): Max immediate processes.
+- **prowlarr_immediate_max_process_time** (default: `15`): Max process time in seconds.
+- **prowlarr_feed_scrape_interval_hour** (default: `3`): Feed scraping interval in hours.
 
-- **prowlarr_url** (default: `"http://prowlarr-service:9696"`): The Prowlarr service URL.
-- **prowlarr_api_key**: The API key for Prowlarr authentication.
-- **prowlarr_live_title_search** (default: `False`): Enable or disable live title search in Prowlarr. If False, search movie/series by title in background worker.
-- **prowlarr_background_title_search** (default: `True`): Enable or disable background title search in Prowlarr.
-- **prowlarr_search_query_timeout** (default: 120): The timeout for Prowlarr search queries, in seconds.
-- **prowlarr_search_interval_hour** (default: 24): How often Prowlarr searches are initiated, in hours.
-- **prowlarr_immediate_max_process** (default: 10): Maximum number of immediate Prowlarr processes.
-- **prowlarr_immediate_max_process_time** (default: 15): Maximum time for immediate Prowlarr processes, in seconds.
-- **prowlarr_feed_scrape_interval** (default: 3): Interval for Prowlarr feed scraping, in hours.
+## Torrentio Settings
+
+- **is_scrap_from_torrentio** (default: `False`): Enable/disable Torrentio scraping.
+- **torrentio_search_interval_days** (default: `3`): Search interval in days.
+- **torrentio_url** (default: `"https://torrentio.strem.fun"`): Torrentio service URL.
+
+## MediaFusion Settings
+
+- **is_scrap_from_mediafusion** (default: `False`): Enable/disable MediaFusion scraping.
+- **mediafusion_search_interval_days** (default: `3`): Search interval in days.
+- **mediafusion_url** (default: `"https://mediafusion.elfhosted.com"`): MediaFusion service URL.
+- **sync_debrid_cache_streams** (default: `True`): Enable syncing debrid cache streams.
+
+## Zilean Settings
+
+- **is_scrap_from_zilean** (default: `False`): Enable/disable Zilean scraping.
+- **zilean_search_interval_hour** (default: `24`): Search interval in hours.
+- **zilean_url** (default: `"https://zilean.elfhosted.com"`): Zilean service URL.
+
+## BT4G Settings
+
+- **is_scrap_from_bt4g** (default: `True`): Enable/disable BT4G scraping.
+- **bt4g_url** (default: `"https://bt4gprx.com"`): BT4G service URL.
+- **bt4g_search_interval_hour** (default: `72`): Search interval in hours.
+- **bt4g_search_timeout** (default: `10`): Search timeout in seconds.
+- **bt4g_immediate_max_process** (default: `15`): Max immediate processes.
+- **bt4g_immediate_max_process_time** (default: `15`): Max process time in seconds.
+
+## Jackett Settings
+
+- **is_scrap_from_jackett** (default: `False`): Enable/disable Jackett scraping.
+- **jackett_url** (default: `"http://jackett-service:9117"`): Jackett service URL.
+- **jackett_api_key**: Jackett API key.
+- **jackett_search_interval_hour** (default: `72`): Search interval in hours.
+- **jackett_search_query_timeout** (default: `30`): Search query timeout in seconds.
+- **jackett_immediate_max_process** (default: `10`): Max immediate processes.
+- **jackett_immediate_max_process_time** (default: `15`): Max process time in seconds.
+- **jackett_live_title_search** (default: `True`): Enable live title search.
+- **jackett_background_title_search** (default: `True`): Enable background title search.
+- **jackett_feed_scrape_interval_hour** (default: `3`): Feed scraping interval in hours.
 
 ## Premiumize Settings
 
-OAuth settings for Premiumize integration.
+- **premiumize_oauth_client_id**: Premiumize OAuth client ID.
+- **premiumize_oauth_client_secret**: Premiumize OAuth client secret.
 
-- **premiumize_oauth_client_id**: The OAuth client ID for Premiumize.
-- **premiumize_oauth_client_secret**: The OAuth client secret for Premiumize.
+## Telegram Settings
 
-## Zilean Settings
-- **zilean_url** (default: `"http://zilean-service:9696"`): The Zilean service URL.
-- **zilean_search_interval_hour** (default: 24): How often Zilean searches are initiated, in hours.
+- **telegram_bot_token**: Telegram bot token for notifications about contribution streams.
+- **telegram_chat_id**: Telegram chat ID for notifications.
 
-## Configuration Sources
+## Content Filtering Settings
 
-These settings define where MediaFusion looks for its configuration files.
-
-- **remote_config_source** (default: GitHub RAW URL): The URL of the remote configuration source.
-- **local_config_path** (default: `"resources/json/scraper_config.json"`): The path to the local configuration file.
+- **adult_content_regex_keywords**: Regex pattern for filtering adult content.
+- **adult_content_filter_in_torrent_title** (default: `True`): Enable adult content filtering in torrent titles.
 
 ## Feature Toggles
 
-These boolean flags control various features of MediaFusion.
-
-- **is_scrap_from_torrentio** (default: `False`): Enable or disable scraping from Torrentio.
-- **is_scrap_from_mediafusion** (default: `False`): Enable or disable scraping from Mediafusion. Currently supports scraping movies and series only.
-- **is_scrap_from_zilean** (default: `False`): Enable or disable scraping from Zilean.
-- **enable_rate_limit** (default: `True`): Enable or disable rate limiting.
-- **validate_m3u8_urls_liveness** (default: `True`): Enable or disable the validation of M3U8 URLs for liveness.
-
-## Content Filtering
-
-Settings related to content filtering and moderation.
-
-- **adult_content_regex_keywords**: A regular expression pattern to identify adult content keywords.
+- **enable_rate_limit** (default: `False`): Enable/disable rate limiting.
+- **validate_m3u8_urls_liveness** (default: `True`): Validate M3U8 URLs for liveness.
+- **store_stremthru_magnet_cache** (default: `False`): Store StremThru magnet cache.
+- **is_scrap_from_yts** (default: `True`): Enable/disable YTS scraping.
+- **scrape_with_aka_titles** (default: `True`): Include alternative titles in scraping.
 
 ## Time-related Settings
 
-These settings control various time-based behaviors in the application.
-
-- **torrentio_search_interval_days** (default: 3): How often Torrentio searches are initiated, in days.
-- **mediafusion_search_interval_days** (default: 3): How often Mediafusion searches are initiated, in days.
-- **meta_cache_ttl** (default: 1800): The time-to-live (TTL) for cached metadata, in seconds (30 minutes by default).
-- **worker_max_tasks_per_child** (default: 20): The maximum number of tasks per dramatiq worker child process. This setting helps prevent memory leaks.
+- **meta_cache_ttl** (default: `1800`): Metadata cache TTL in seconds (30 minutes).
+- **worker_max_tasks_per_child** (default: `20`): Max tasks per worker child process.
 
 ## Scheduler Settings
 
-These settings control the various scheduled tasks in MediaFusion.
-
-### Global Scheduler Setting
-- **disable_all_scheduler** (default: `False`): If set to `True`, disables all scheduled tasks.
+### Global Settings
+- **disable_all_scheduler** (default: `False`): Disable all schedulers.
+- **background_search_interval_hours** (default: `72`): Background search interval in hours.
+- **background_search_crontab** (default: `"*/5 * * * *"`): Background search schedule.
 
 ### Individual Scheduler Settings
-Each scheduler has a crontab expression to define when it runs and a corresponding disable flag.
+Each scheduler has a crontab expression and disable flag:
 
 - **tamilmv_scheduler_crontab** (default: `"0 */3 * * *"`)
-- **disable_tamilmv_scheduler** (default: `False`)
 - **tamil_blasters_scheduler_crontab** (default: `"0 */6 * * *"`)
-- **disable_tamil_blasters_scheduler** (default: `False`)
 - **formula_tgx_scheduler_crontab** (default: `"*/30 * * * *"`)
-- **disable_formula_tgx_scheduler** (default: `False`)
 - **nowmetv_scheduler_crontab** (default: `"0 0 * * *"`)
-- **disable_nowmetv_scheduler** (default: `False`)
 - **nowsports_scheduler_crontab** (default: `"0 10 * * *"`)
-- **disable_nowsports_scheduler** (default: `False`)
 - **tamilultra_scheduler_crontab** (default: `"0 8 * * *"`)
-- **disable_tamilultra_scheduler** (default: `False`)
 - **validate_tv_streams_in_db_crontab** (default: `"0 */6 * * *"`)
-- **disable_validate_tv_streams_in_db** (default: `False`)
 - **sport_video_scheduler_crontab** (default: `"*/20 * * * *"`)
-- **disable_sport_video_scheduler** (default: `False`)
 - **dlhd_scheduler_crontab** (default: `"25 * * * *"`)
-- **disable_dlhd_scheduler** (default: `False`)
-- **update_imdb_data_crontab** (default: `"0 2 * * *"`)
 - **motogp_tgx_scheduler_crontab** (default: `"0 5 * * *"`)
-- **disable_motogp_tgx_scheduler** (default: `False`)
 - **update_seeders_crontab** (default: `"0 0 * * *"`)
 - **arab_torrents_scheduler_crontab** (default: `"0 0 * * *"`)
-- **disable_arab_torrents_scheduler** (default: `False`)
 - **wwe_tgx_scheduler_crontab** (default: `"10 */3 * * *"`)
-- **disable_wwe_tgx_scheduler** (default: `False`)
 - **ufc_tgx_scheduler_crontab** (default: `"30 */3 * * *"`)
-- **disable_ufc_tgx_scheduler** (default: `False`)
+- **movies_tv_tgx_scheduler_crontab** (default: `"0 * * * *"`)
 - **prowlarr_feed_scraper_crontab** (default: `"0 */3 * * *"`)
-- **disable_prowlarr_feed_scraper** (default: `False`)
+- **jackett_feed_scraper_crontab** (default: `"0 */3 * * *"`)
+- **cleanup_expired_scraper_task_crontab** (default: `"0 * * * *"`)
+- **cleanup_expired_cache_task_crontab** (default: `"0 0 * * *"`)
 
-Note: Crontab expressions follow the standard cron format: "minute hour day-of-month month day-of-week".
-
-
-#### Scheduler Crontabs
-> [!TIP]
-> To setup the scheduler crontabs, you can use [crontab.guru](https://crontab.guru/) to generate the crontab expressions.
-- **disable_all_scheduler** (default: `False`): Disable all schedulers.
-- **tamilmv_scheduler_crontab** (default: `"0 */3 * * *"`): Scheduler for TamilMV.
-- **disable_tamilmv_scheduler** (default: `False`): Disable TamilMV scheduler.
-- **tamil_blasters_scheduler_crontab** (default: `"0 */6 * * *"`): Scheduler for Tamil Blasters.
-- **disable_tamil_blasters_scheduler** (default: `False`): Disable Tamil Blasters scheduler.
-- **tamilultra_scheduler_crontab** (default: `"0 8 * * *"`): Scheduler for TamilUltra.
-- **disable_tamilultra_scheduler** (default: `False`): Disable TamilUltra scheduler.
-- **formula_tgx_scheduler_crontab** (default: `"*/30 * * * *"`): Scheduler for Formula TGX.
-- **disable_formula_tgx_scheduler** (default: `False`): Disable Formula TGX scheduler.
-- **nowmetv_scheduler_crontab** (default: `"0 0 * * 5"`): Scheduler for NowMeTV.
-- **disable_nowmetv_scheduler** (default: `False`): Disable NowMeTV scheduler.
-- **nowsports_scheduler_crontab** (default: `"0 10 * * *"`): Scheduler for NowSports.
-- **disable_nowsports_scheduler** (default: `False`): Disable NowSports scheduler.
-- **sport_video_scheduler_crontab** (default: `"*/20 * * * *"`): Scheduler for Sport Video.
-- **disable_sport_video_scheduler** (default: `False`): Disable Sport Video scheduler.
-- **dlhd_scheduler_crontab** (default: `"25 * * * *"`): Scheduler for DLHD.
-- **disable_dlhd_scheduler**: Disable DLHD scheduler.
-- **update_imdb_data_crontab** (default: `"0 2 * * *"`): Scheduler for updating IMDb data.
-- **motogp_tgx_scheduler_crontab** (default: `"0 5 * * *"`): Scheduler for MotoGP TGX.
-- **disable_motogp_tgx_scheduler**: Disable MotoGP TGX scheduler.
+Each scheduler can be disabled individually using its corresponding `disable_*_scheduler` setting.
 
 ### How to Configure
 
-#### Configuration for k8s
-To configure these settings, locate the `env` section within your `deployment/local-deployment.yaml` file. Add or update the environment variables like this example:
+You can configure these settings either through environment variables in your deployment or through a `.env` file:
 
+#### Configuration for k8s
 ```yaml
 env:
   - name: MONGO_URI
@@ -179,12 +179,12 @@ env:
 ```
 
 #### Configuration for Docker Compose
-To configure these settings, locate the `.env` file in the root directory of your MediaFusion deployment. Add or update the environment variables like this example:
-
+Create or modify `.env` file:
 ```env
 MONGO_URI=your_mongo_uri
 DB_MAX_CONNECTIONS=100
 # Add other configurations as needed
 ```
 
-Remember to replace placeholder values with actual configuration values suited to your environment and requirements. This customization allows you to tailor MediaFusion to your specific setup and preferences.
+> [!TIP]
+> For scheduler crontabs, you can use [crontab.guru](https://crontab.guru/) to generate and validate crontab expressions.
