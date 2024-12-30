@@ -6,7 +6,6 @@ from io import BytesIO
 from typing import Literal, Annotated
 
 import aiohttp
-import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import (
     Depends,
@@ -141,18 +140,7 @@ async def get_home(request: Request):
 @app.get("/health", tags=["health"])
 @wrappers.exclude_rate_limit
 async def health():
-    start_time = asyncio.get_event_loop().time()
-    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
-        try:
-            response = await client.head("https://www.google.com", timeout=10)
-            return {
-                "status": "healthy",
-                "status_code": response.status_code,
-                "time": asyncio.get_event_loop().time() - start_time,
-            }
-        except Exception as e:
-            logging.error("Health check failed: %s", e)
-            raise HTTPException(status_code=503, detail="Health check failed.")
+    return {"status": "ok"}
 
 
 @app.get("/favicon.ico")
