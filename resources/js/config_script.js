@@ -454,6 +454,8 @@ function getUserData() {
     // Collect and return the rest of the user data
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
+    const showTorrentLanguageFlag = document.getElementById('showTorrentLanguageFlag').checked;
+
     // Collect nudity filter data
     const selectedNudityFilters = Array.from(document.querySelectorAll('input[name="nudity_filter"]:checked')).map(el => el.value);
 
@@ -476,6 +478,7 @@ function getUserData() {
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
         show_full_torrent_name: torrentDisplayOption === 'fullName',
+        show_language_country_flag: showTorrentLanguageFlag,
         nudity_filter: selectedNudityFilters,
         certification_filter: selectedCertificationFilters,
         language_sorting: languageSorting,

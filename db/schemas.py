@@ -235,6 +235,7 @@ class UserData(BaseModel):
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
     live_search_streams: bool = Field(default=False, alias="lss")
     contribution_streams: bool = Field(default=False, alias="cs")
+    show_language_country_flag: bool = Field(default=False, alias="slcf")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):

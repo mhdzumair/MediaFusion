@@ -276,9 +276,9 @@ async def parse_stream_data(
             filter(
                 None,
                 [
+                    f"🎨 {'|'.join(stream_data.hdr)}" if stream_data.hdr else None,
                     f"📺 {stream_data.quality}" if stream_data.quality else None,
                     f"🎞️ {stream_data.codec}" if stream_data.codec else None,
-                    f"🎨 {'|'.join(stream_data.hdr)}" if stream_data.hdr else None,
                     f"🎵 {'|'.join(stream_data.audio)}" if stream_data.audio else None,
                 ],
             )
@@ -296,9 +296,20 @@ async def parse_stream_data(
             file_size = stream_data.size
             size_info = convert_bytes_to_readable(file_size)
 
-        languages = (
-            f"🌐 {' + '.join(stream_data.languages)}" if stream_data.languages else None
-        )
+        if user_data.show_language_country_flag:
+            languages = filter(
+                None,
+                set(
+                    [
+                        const.LANGUAGE_COUNTRY_FLAGS.get(lang)
+                        for lang in stream_data.languages
+                    ]
+                ),
+            )
+        else:
+            languages = stream_data.languages
+
+        languages = f"🌐 {' + '.join(languages)}" if stream_data.languages else None
         source_info = f"🔗 {stream_data.source}"
         if stream_data.uploader:
             source_info += f" 🧑‍💻 {stream_data.uploader}"
@@ -556,7 +567,7 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         addon_name += " 🕵🏼‍♂️"
 
     manifest_data = {
-        "addon_name": settings.addon_name,
+        "addon_name": addon_name,
         "version": settings.version,
         "contact_email": settings.contact_email,
         "description": settings.description,

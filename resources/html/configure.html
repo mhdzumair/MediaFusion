@@ -691,6 +691,12 @@
                                 Show Torrent Full Name
                             </label>
                         </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="showTorrentLanguageFlag" id="showTorrentLanguageFlag" {% if user_data.show_language_country_flag %}checked{% endif %}>
+                            <label class="form-check-label" for="showTorrentLanguageFlag">
+                                Show Language Country Flag
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Enable / Disable live_search_streams -->
