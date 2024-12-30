@@ -85,8 +85,17 @@ class ProwlarrScraper(IndexerBaseScraper):
         return item.get("indexer")
 
     def get_torrent_type(self, item: dict) -> TorrentType:
-        flag = item.get("indexerFlags", ["public"])[0]
+        if item.get("indexerFlags"):
+            flag = item["indexerFlags"][0]
+        else:
+            indexer_id = item.get("indexerId")
+            flag = self.indexer_status.get(indexer_id, {}).get("privacy", "public")
+            if flag == "semiPrivate":
+                return TorrentType.SEMI_PRIVATE
         return TorrentType.PUBLIC if flag == "freeleech" else TorrentType(flag)
+
+    def get_created_at(self, item: dict) -> datetime:
+        return datetime.fromisoformat(item.get("publishDate"))
 
     async def get_healthy_indexers(self) -> List[dict]:
         """Fetch and return list of healthy Prowlarr indexers with their capabilities"""
@@ -190,6 +199,7 @@ class ProwlarrScraper(IndexerBaseScraper):
                     "is_healthy": True,
                     "name": indexer_info["name"],
                     "description": indexer_info["description"],
+                    "privacy": indexer_info["privacy"],
                 }
 
                 healthy_indexers.append(indexer_info)
