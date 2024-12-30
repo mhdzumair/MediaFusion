@@ -1,7 +1,9 @@
 import hashlib
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar
+from datetime import datetime, timezone
+from os.path import basename
+from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar, OrderedDict
 from urllib.parse import quote
 
 import PTT
@@ -31,7 +33,7 @@ def extract_torrent_metadata(
     content: bytes, parsed_data: dict = None, is_raise_error: bool = False
 ) -> dict:
     try:
-        torrent_data = bencodepy.decode(content)
+        torrent_data: OrderedDict = bencodepy.decode(content)
         info = torrent_data[b"info"]
         info_encoded = bencodepy.encode(info)
         m = hashlib.sha1()
@@ -41,57 +43,23 @@ def extract_torrent_metadata(
         # Extract file size, file list, and announce list
         files = info[b"files"] if b"files" in info else [info]
         total_size = sum(file[b"length"] for file in files)
-        file_data = []
-        seasons = set()
-        episodes = set()
-
-        for idx, file in enumerate(files):
-            filename = (
-                "/".join([p.decode() for p in file[b"path"]])
-                if b"files" in info
-                else file[b"name"].decode()
-            )
-            if not is_video_file(filename):
-                continue
-            episode_parsed_data = PTT.parse_title(filename)
-            seasons.update(episode_parsed_data.get("seasons", []))
-            episodes.update(episode_parsed_data.get("episodes", []))
-            file_data.append(
-                {
-                    "filename": filename,
-                    "size": file[b"length"],
-                    "index": idx,
-                    "seasons": episode_parsed_data.get("seasons"),
-                    "episodes": episode_parsed_data.get("episodes"),
-                }
-            )
-        if not file_data:
-            logging.warning("No video files found in torrent. Skipping")
-            if is_raise_error:
-                raise ValueError("No video files found in torrent")
-            return {}
+        created_at = torrent_data.get(b"creation date", 0)
 
         announce_list = [
             tracker[0].decode() for tracker in torrent_data.get(b"announce-list", [])
         ]
-        torrent_name = info.get(b"name", b"").decode() or file_data[0]["filename"]
-        if is_contain_18_plus_keywords(torrent_name):
-            logging.warning(
-                f"Torrent name contains 18+ keywords: {torrent_name}. Skipping"
-            )
+        torrent_name = info.get(b"name", b"").decode()
+        if not torrent_name:
+            logging.warning("Torrent name is empty. Skipping")
             if is_raise_error:
-                raise ValueError("Torrent name contains 18+ keywords")
+                raise ValueError("Torrent name is empty")
             return {}
-
-        largest_file = max(file_data, key=lambda x: x["size"])
 
         metadata = {
             "info_hash": info_hash,
             "announce_list": announce_list,
             "total_size": total_size,
-            "file_data": file_data,
             "torrent_name": torrent_name,
-            "largest_file": largest_file,
             "torrent_file": content,
         }
         if parsed_data:
@@ -99,20 +67,86 @@ def extract_torrent_metadata(
         else:
             metadata.update(PTT.parse_title(torrent_name, True))
 
+        if is_contain_18_plus_keywords(torrent_name) or metadata.get("adult"):
+            logging.warning(
+                f"Torrent name contains 18+ keywords: {torrent_name}. Skipping"
+            )
+            if is_raise_error:
+                raise ValueError("Torrent name contains 18+ keywords")
+            return {}
+
+        if created_at:
+            # Convert to UTC datetime
+            metadata["created_at"] = datetime.fromtimestamp(created_at, tz=timezone.utc)
+
+        file_data = []
+        seasons = set()
+        episodes = set()
+        for idx, file in enumerate(files):
+            full_path = (
+                "/".join([p.decode() for p in file[b"path"]])
+                if b"files" in info
+                else None
+            )
+            filename = basename(full_path) if full_path else file[b"name"].decode()
+            if not is_video_file(filename):
+                continue
+            episode_parsed_data = PTT.parse_title(filename)
+            seasons.update(episode_parsed_data.get("seasons", []))
+            episodes.update(episode_parsed_data.get("episodes", []))
+            season_number = (
+                episode_parsed_data["seasons"][0]
+                if episode_parsed_data.get("seasons")
+                else None
+            )
+            if (
+                season_number is None
+                and metadata.get("seasons")
+                and len(metadata["seasons"]) == 1
+            ):
+                season_number = metadata["seasons"][0]
+            episode_number = (
+                episode_parsed_data["episodes"][0]
+                if episode_parsed_data.get("episodes")
+                else None
+            )
+            if (
+                episode_number is None
+                and metadata.get("episodes")
+                and len(metadata["episodes"]) == 1
+            ):
+                episode_number = metadata["episodes"][0]
+
+            file_data.append(
+                {
+                    "filename": filename,
+                    "size": file[b"length"],
+                    "index": idx,
+                    "season_number": season_number,
+                    "episode_number": episode_number,
+                }
+            )
+        if not file_data:
+            logging.warning(
+                f"No video files found in torrent. Skipping. Found: {files}"
+            )
+            if is_raise_error:
+                raise ValueError("No video files found in torrent")
+            return {}
+
+        largest_file = max(file_data, key=lambda x: x["size"])
+
+        metadata.update(
+            {
+                "largest_file": largest_file,
+                "file_data": file_data,
+            }
+        )
+
         if not metadata.get("seasons"):
             metadata["seasons"] = list(seasons)
         if not metadata.get("episodes"):
             metadata["episodes"] = list(episodes)
-        if (
-            metadata["seasons"]
-            and metadata["episodes"]
-            and not seasons
-            and not episodes
-            and len(file_data) == 1
-        ):
-            # Special case where torrent title contains season and episode but inside filename not contain season and episode info
-            metadata["file_data"][0]["seasons"] = metadata["seasons"]
-            metadata["file_data"][0]["episodes"] = metadata["episodes"]
 
         return metadata
     except Exception as e:

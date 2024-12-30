@@ -17,9 +17,11 @@ class TorrentDownloadAndParsePipeline:
         if not torrent_link:
             raise DropItem(f"No torrent link found in item: {item}")
 
+        headers = {"Referer": item.get("webpage_url")}
+
         response = await maybe_deferred_to_future(
             spider.crawler.engine.download(
-                scrapy.Request(torrent_link, callback=NO_CALLBACK)
+                scrapy.Request(torrent_link, callback=NO_CALLBACK, headers=headers),
             )
         )
 
