@@ -795,7 +795,7 @@ async def get_poster(
             mediafusion_data.is_poster_working = False
             await mediafusion_data.save()
         return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
-    except ConnectionResetError:
+    except (ConnectionResetError, ValueError):
         mediafusion_data.is_poster_working = False
         await mediafusion_data.save()
         return raise_poster_error(mediafusion_id, "Poster generation failed}")
