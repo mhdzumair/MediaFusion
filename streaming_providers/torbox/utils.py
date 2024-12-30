@@ -16,6 +16,7 @@ async def get_video_url_from_torbox(
     filename: str,
     user_ip: str,
     stream: TorrentStreams,
+    season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs: Any,
 ) -> str:
@@ -28,7 +29,7 @@ async def get_video_url_from_torbox(
                 and torrent_info["download_present"] is True
             ):
                 file_id = await select_file_id_from_torrent(
-                    torrent_info, filename, episode
+                    torrent_info, filename, season, episode
                 )
                 response = await torbox_client.create_download_link(
                     torrent_info["id"],
@@ -57,7 +58,7 @@ async def get_video_url_from_torbox(
                 torrent_info = await torbox_client.get_available_torrent(info_hash)
                 if torrent_info:
                     file_id = await select_file_id_from_torrent(
-                        torrent_info, filename, episode
+                        torrent_info, filename, season, episode
                     )
                     response = await torbox_client.create_download_link(
                         torrent_info["id"],
@@ -126,12 +127,16 @@ async def fetch_downloaded_info_hashes_from_torbox(
 
 
 async def select_file_id_from_torrent(
-    torrent_info: Dict[str, Any], filename: str, episode: Optional[int]
+    torrent_info: Dict[str, Any],
+    filename: str,
+    season: Optional[int],
+    episode: Optional[int],
 ) -> int:
     """Select the file id from the torrent info."""
     file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
+        season,
         episode,
         name_key="short_name",
     )

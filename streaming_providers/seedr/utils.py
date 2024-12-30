@@ -183,12 +183,24 @@ async def clean_names(seedr: Seedr, folder_id: str) -> None:
             await seedr.rename_item(file["folder_file_id"], clean_name, "file")
 
 
+async def get_files_from_folder(seedr: Seedr, folder_id: str) -> List[Dict[str, Any]]:
+    """Recursively get all files from a folder."""
+    content = await seedr.list_contents(folder_id)
+    files = content["files"]
+
+    for folder in content["folders"]:
+        files.extend(await get_files_from_folder(seedr, folder["id"]))
+
+    return files
+
+
 async def get_video_url_from_seedr(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
     stream: TorrentStreams,
     filename: Optional[str] = None,
+    season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs,
 ) -> str:
@@ -212,12 +224,12 @@ async def get_video_url_from_seedr(
         await clean_names(seedr, data["id"])
 
         # Get file details
-        folder_content = await seedr.list_contents(data["id"])
+        folder_content = await get_files_from_folder(seedr, data["id"])
         file_index = await select_file_index_from_torrent(
-            folder_content, clean_filename(filename), episode
+            {"files": folder_content}, clean_filename(filename), season, episode
         )
 
-        selected_file = folder_content["files"][file_index]
+        selected_file = folder_content[file_index]
         if not selected_file["play_video"]:
             raise ProviderException(
                 "No matching file available", "no_matching_file.mp4"

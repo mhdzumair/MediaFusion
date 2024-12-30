@@ -71,7 +71,7 @@ async def get_video_url_from_premiumize(
             torrent_info = {
                 "files": [
                     {"name": basename(file_data["path"]), **file_data}
-                    for file_data in response_data["content"]
+                    for file_data in response_data.get("content", [])
                     if "stream_link" in file_data
                 ]
             }

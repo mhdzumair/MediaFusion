@@ -23,7 +23,7 @@ async def get_download_link(
     season: Optional[int],
 ) -> str:
     selected_file_index = await select_file_index_from_torrent(
-        torrent_info, filename, episode
+        torrent_info, filename, season, episode
     )
     if filename is None or file_index is None:
         background_tasks.add_task(

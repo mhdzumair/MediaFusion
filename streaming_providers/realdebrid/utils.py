@@ -29,11 +29,11 @@ async def create_download_link(
     selected_file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
+        season,
         episode,
         "files",
         "path",
         "bytes",
-        True,
     )
 
     if filename is None or file_index is None:
@@ -46,7 +46,6 @@ async def create_download_link(
             file_key="files",
             name_key="path",
             size_key="bytes",
-            remove_leading_slash=True,
             is_index_trustable=True,
         )
 

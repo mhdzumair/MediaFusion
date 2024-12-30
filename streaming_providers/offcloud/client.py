@@ -162,6 +162,7 @@ class OffCloud(DebridClient):
         file_index = await select_file_index_from_torrent(
             {"files": files_data},
             filename=filename,
+            season=season,
             episode=episode,
             file_size_callback=self.update_file_sizes,
         )

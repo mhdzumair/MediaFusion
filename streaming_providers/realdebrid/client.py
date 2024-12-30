@@ -46,7 +46,8 @@ class RealDebrid(DebridClient):
     ) -> dict:
         if method in ["POST", "PUT"] and self.user_ip:
             data = data or {}
-            data["ip"] = self.user_ip
+            if isinstance(data, dict):
+                data["ip"] = self.user_ip
         return await super()._make_request(method=method, url=url, data=data, **kwargs)
 
     async def initialize_headers(self):

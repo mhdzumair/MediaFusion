@@ -128,6 +128,7 @@ async def find_file_in_folder_tree(
     user_data: UserData,
     info_hash: str,
     filename: Optional[str],
+    season: Optional[int],
     episode: Optional[int],
 ) -> dict | None:
     base_url_path = urlparse(
@@ -144,7 +145,7 @@ async def find_file_in_folder_tree(
         return None
 
     selected_file_index = await select_file_index_from_torrent(
-        {"files": files}, filename, episode
+        {"files": files}, filename, season, episode
     )
     selected_file = files[selected_file_index]
     return selected_file
@@ -255,12 +256,13 @@ async def retrieve_or_download_file(
     info_hash: str,
     stream: TorrentStreams,
     filename: Optional[str],
+    season: Optional[int],
     episode: Optional[int],
     max_retries: int,
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        webdav, user_data, info_hash, filename, episode
+        webdav, user_data, info_hash, filename, season, episode
     )
     if not selected_file:
         await set_qbittorrent_preferences(qbittorrent, stream.torrent_type)
@@ -271,7 +273,7 @@ async def retrieve_or_download_file(
             qbittorrent, info_hash, play_video_after, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            webdav, user_data, info_hash, filename, episode
+            webdav, user_data, info_hash, filename, season, episode
         )
         if not selected_file:
             raise ProviderException(
@@ -308,6 +310,7 @@ async def get_video_url_from_qbittorrent(
     user_data: UserData,
     stream: TorrentStreams,
     filename: Optional[str],
+    season: Optional[int],
     episode: Optional[int],
     max_retries=5,
     retry_interval=5,
@@ -335,6 +338,7 @@ async def get_video_url_from_qbittorrent(
             info_hash,
             stream,
             filename,
+            season,
             episode,
             max_retries,
             retry_interval,

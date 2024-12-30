@@ -94,6 +94,7 @@ async def wait_for_download_and_get_link(
     file_index = await select_file_index_from_torrent(
         files_data,
         filename,
+        season,
         episode,
     )
 

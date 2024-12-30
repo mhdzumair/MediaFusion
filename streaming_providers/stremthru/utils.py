@@ -27,7 +27,7 @@ async def add_new_torrent(st_client, magnet_link):
 
 
 async def wait_for_download_and_get_link(
-    st_client, torrent_id, filename, episode, max_retries, retry_interval
+    st_client, torrent_id, filename, season, episode, max_retries, retry_interval
 ):
     torrent_info = await st_client.wait_for_status(
         torrent_id, "downloaded", max_retries, retry_interval
@@ -35,6 +35,7 @@ async def wait_for_download_and_get_link(
     file_index = await select_file_index_from_torrent(
         torrent_info,
         filename,
+        season,
         episode,
     )
     response = await st_client.create_download_link(
@@ -47,6 +48,7 @@ async def get_video_url_from_stremthru(
     magnet_link: str,
     user_data: UserData,
     filename: str,
+    season: int = None,
     episode: int = None,
     max_retries=5,
     retry_interval=5,
@@ -59,6 +61,7 @@ async def get_video_url_from_stremthru(
             st_client,
             torrent_id,
             filename,
+            season,
             episode,
             max_retries,
             retry_interval,
