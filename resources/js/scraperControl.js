@@ -255,18 +255,233 @@ function showConfirmationDialog(validationErrors, torrentData, infoHash) {
     });
 }
 
-function updateMetaType() {
+function updateContentType() {
     const metaType = document.getElementById('metaType').value;
-    if (metaType === 'movie') {
-        setElementDisplay('catalogsSeries', 'none');
-        setElementDisplay('catalogsMovie', 'block');
-        setElementDisplay('seriesParameters', 'none');
+
+    if (metaType === 'sports') {
+        setElementDisplay('sportsMetadata', 'block');
+        setElementDisplay('torrentImdbIdContainer', 'none');
+        setElementDisplay('catalogsSelection', 'none');
     } else {
-        setElementDisplay('catalogsMovie', 'none');
-        setElementDisplay('catalogsSeries', 'block');
-        setElementDisplay('seriesParameters', 'block');
+        setElementDisplay('sportsMetadata', 'none');
+        setElementDisplay('torrentImdbIdContainer', 'block');
+        setElementDisplay('catalogsSelection', 'block');
+        if (metaType === 'movie') {
+            setElementDisplay('catalogsSeries', 'none');
+            setElementDisplay('catalogsMovie', 'block');
+        } else {
+            setElementDisplay('catalogsMovie', 'none');
+            setElementDisplay('catalogsSeries', 'block');
+        }
     }
 }
+
+function collectSportsMetadata() {
+    return {
+        title: document.getElementById('sportsTitle').value,
+        year: document.getElementById('sportsYear').value,
+        poster: document.getElementById('sportsPoster').value,
+        background: document.getElementById('sportsBackground').value,
+        logo: document.getElementById('sportsLogo').value,
+        description: document.getElementById('sportsDescription').value,
+        website: document.getElementById('sportsWebsite').value,
+        is_add_title_to_poster: document.getElementById('addTitleToPoster').checked,
+        catalogs: document.getElementById('sportsCatalog').value
+    };
+}
+
+function parseSeasonsInput(input) {
+    const seasons = [];
+    const parts = input.split(',');
+
+    for (const part of parts) {
+        if (part.includes('-')) {
+            const [start, end] = part.split('-').map(num => parseInt(num.trim()));
+            for (let i = start; i <= end; i++) {
+                seasons.push(i);
+            }
+        } else {
+            const season = parseInt(part.trim());
+            if (!isNaN(season)) {
+                seasons.push(season);
+            }
+        }
+    }
+
+    return seasons;
+}
+
+function showFileAnnotationModal(files) {
+    const modal = document.getElementById('fileAnnotationModal');
+    const fileList = document.getElementById('fileAnnotationList');
+    fileList.innerHTML = '';
+
+    const isSportsContent = document.getElementById('metaType').value === 'sports';
+
+    // Sort files by filename
+    files.sort((a, b) => {
+        return a.filename.localeCompare(b.filename, undefined, {
+            numeric: true,
+            sensitivity: 'base'
+        });
+    });
+
+    files.forEach((file, index) => {
+        const fileRow = `
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">${file.filename}</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Season</label>
+                            <input type="number" class="form-control season-input" 
+                                   id="season-${index}" 
+                                   data-index="${index}"
+                                   value="${file.season_number || ''}" 
+                                   min="1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Episode</label>
+                            <input type="number" class="form-control" 
+                                   id="episode-${index}" 
+                                   value="${file.episode_number || ''}" 
+                                   min="1">
+                        </div>
+                    </div>
+
+                    ${isSportsContent ? `
+                    <div class="episode-metadata mt-3">
+                        <div class="mb-2">
+                            <label class="form-label">Episode Title</label>
+                            <input type="text" class="form-control" 
+                                   id="title-${index}" 
+                                   placeholder="Optional">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Episode Overview</label>
+                            <textarea class="form-control" 
+                                      id="overview-${index}" 
+                                      rows="2" 
+                                      placeholder="Optional"></textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Thumbnail URL</label>
+                            <input type="url" class="form-control" 
+                                   id="thumbnail-${index}" 
+                                   placeholder="Optional">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Release Date</label>
+                            <input type="date" class="form-control" 
+                                   id="release-${index}">
+                        </div>
+                    </div>
+                    ` : `
+                    `}
+                </div>
+            </div>`;
+        fileList.insertAdjacentHTML('beforeend', fileRow);
+    });
+
+    // Set up bulk season assignment handler
+    document.getElementById('applyBulkSeason').onclick = () => {
+        const season = document.getElementById('bulkSeason').value;
+        if (season) {
+            document.querySelectorAll('.season-input').forEach(input => {
+                input.value = season;
+            });
+        }
+    };
+
+    // Set up multiple seasons handler
+    document.getElementById('applyMultiSeasons').onclick = () => {
+        const seasonsInput = document.getElementById('multipleSeasons').value;
+        if (!seasonsInput) return;
+
+        const seasons = parseSeasonsInput(seasonsInput);
+        if (seasons.length === 0) return;
+
+        const fileGroupingOptions = document.getElementById('fileGroupingOptions');
+        fileGroupingOptions.style.display = 'block';
+
+        const applySeasons = () => {
+            const distribution = document.querySelector('input[name="seasonDistribution"]:checked').value;
+            const episodesPerSeason = parseInt(document.getElementById('episodeCount').value) || 0;
+
+            const seasonInputs = document.querySelectorAll('.season-input');
+            if (distribution === 'auto') {
+                // Distribute episodes evenly across seasons
+                const filesPerSeason = Math.ceil(seasonInputs.length / seasons.length);
+                seasonInputs.forEach((input, index) => {
+                    const seasonIndex = Math.floor(index / filesPerSeason);
+                    input.value = seasons[Math.min(seasonIndex, seasons.length - 1)];
+                });
+            } else {
+                // Manual distribution based on episodes per season
+                if (episodesPerSeason > 0) {
+                    seasonInputs.forEach((input, index) => {
+                        const seasonIndex = Math.floor(index / episodesPerSeason);
+                        input.value = seasons[Math.min(seasonIndex, seasons.length - 1)];
+                    });
+                }
+            }
+        };
+
+        // Set up distribution method handlers
+        document.querySelectorAll('input[name="seasonDistribution"]').forEach(radio => {
+            radio.onchange = () => {
+                document.getElementById('episodesPerSeason').style.display =
+                    radio.value === 'manual' ? 'block' : 'none';
+                if (radio.value === 'auto') {
+                    applySeasons();
+                }
+            };
+        });
+
+        document.getElementById('episodeCount').onchange = () => {
+            if (document.getElementById('manualGroup').checked) {
+                applySeasons();
+            }
+        };
+
+        // Initial application
+        applySeasons();
+    };
+
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+
+    return new Promise((resolve, reject) => {
+        document.getElementById('confirmAnnotation').onclick = () => {
+            const annotatedFiles = files.map((file, index) => {
+                const baseData = {
+                    ...file,
+                    season_number: parseInt(document.getElementById(`season-${index}`).value) || null,
+                    episode_number: parseInt(document.getElementById(`episode-${index}`).value) || null,
+                };
+
+                if (isSportsContent) {
+                    return {
+                        ...baseData,
+                        title: document.getElementById(`title-${index}`).value || null,
+                        overview: document.getElementById(`overview-${index}`).value || null,
+                        thumbnail: document.getElementById(`thumbnail-${index}`).value || null,
+                        release_date: document.getElementById(`release-${index}`).value || null,
+
+                    };
+                }
+                return baseData;
+            });
+            bsModal.hide();
+            resolve(annotatedFiles);
+        };
+
+        modal.addEventListener('hidden.bs.modal', () => {
+            reject(new Error('Annotation cancelled'));
+        }, {once: true});
+    });
+}
+
 
 function toggleInput(disableId, input) {
     document.getElementById(disableId).disabled = !!input.value;
@@ -293,7 +508,7 @@ function updateFormFields() {
         case 'add_torrent':
             setElementDisplay("torrentUploadParameters", "block");
             authRequired = false;
-            updateMetaType();
+            updateContentType();
             break;
         case 'scrapy':
             // Show Scrapy-specific parameters
@@ -389,40 +604,62 @@ function constructTvMetadata() {
     return tvMetaData;
 }
 
-
-async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) {
+async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, annotatedFiles = null) {
     let formData = new FormData();
-    const imdbId = document.getElementById('torrentImdbId').value;
     const metaType = document.getElementById('metaType').value;
+    const isSportsContent = metaType === 'sports';
 
-    // Basic validation
-    const imdbIdNumeric = parseInt(imdbId.slice(2), 10);
-    if (!imdbId.startsWith('tt') || imdbId.length < 3 || imdbId.length > 10 || isNaN(imdbIdNumeric)) {
-        showNotification('Invalid IMDb ID', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
+    // Handle sports content metadata
+    if (isSportsContent) {
+        const sportsMetadata = collectSportsMetadata();
+
+        // Validate required fields
+        if (!sportsMetadata.title || !sportsMetadata.poster || !sportsMetadata.catalogs) {
+            showNotification('Title, poster, and sports category are required.', 'error');
+            resetButton(submitBtn, loadingSpinner);
+            return;
+        }
+
+        // Add sports metadata to formData
+        Object.entries(sportsMetadata).forEach(([key, value]) => {
+            if (value !== null && value !== '') {
+                formData.append(key, value);
+            }
+        });
+
+        // Set meta_type based on catalog
+        const isSeriesType = ['formula_racing', 'motogp_racing'].includes(sportsMetadata.catalog);
+        formData.append('meta_type', isSeriesType ? 'series' : 'movie');
+        formData.append('is_sports_content', 'true');
+    } else {
+        // Handle regular IMDb content
+        const imdbId = document.getElementById('torrentImdbId').value;
+        const imdbIdNumeric = parseInt(imdbId.slice(2), 10);
+        if (!imdbId.startsWith('tt') || imdbId.length < 3 || imdbId.length > 10 || isNaN(imdbIdNumeric)) {
+            showNotification('Invalid IMDb ID', 'error');
+            resetButton(submitBtn, loadingSpinner);
+            return;
+        }
+        formData.append('meta_id', imdbId);
+        formData.append('meta_type', metaType);
+
+        // Handle optional catalogs
+        const catalogInputs = metaType === 'movie'
+            ? document.querySelectorAll('#catalogsMovie input[name="catalogs"]:checked')
+            : document.querySelectorAll('#catalogsSeries input[name="catalogs"]:checked');
+
+        const catalogs = Array.from(catalogInputs).map(el => el.value);
+        if (catalogs.length > 0) {
+            formData.append('catalogs', catalogs.join(','));
+        }
+        const selectedLanguages = Array.from(document.querySelectorAll('input[name="languages"]:checked'))
+            .map(el => el.value);
+        if (selectedLanguages.length > 0) {
+            formData.append('languages', selectedLanguages.join(','));
+        }
     }
 
-    formData.append('meta_id', imdbId);
-    formData.append('meta_type', metaType);
-
-    // Handle optional catalogs
-    const catalogInputs = metaType === 'movie'
-        ? document.querySelectorAll('#catalogsMovie input[name="catalogs"]:checked')
-        : document.querySelectorAll('#catalogsSeries input[name="catalogs"]:checked');
-
-    const catalogs = Array.from(catalogInputs).map(el => el.value);
-    if (catalogs.length > 0) {
-        formData.append('catalogs', catalogs.join(','));
-    }
-
-    // Handle languages
-    const selectedLanguages = Array.from(document.querySelectorAll('input[name="languages"]:checked'))
-        .map(el => el.value);
-    if (selectedLanguages.length > 0) {
-        formData.append('languages', selectedLanguages.join(','));
-    }
-
+    // Handle common form fields
     const createdAt = document.getElementById('createdAt').value;
     if (!createdAt) {
         showNotification('Created At is required.', 'error');
@@ -431,28 +668,11 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
     }
     formData.append('created_at', createdAt);
 
-    if (metaType === 'series') {
-        const season = document.getElementById('season').value;
-        let episodes = document.getElementById('episodes').value;
-        if (!season || !episodes) {
-            showNotification('Season and Episodes are required for TV Series.', 'error');
-            resetButton(submitBtn, loadingSpinner);
-            return;
-        }
-        if (episodes.includes('-')) {
-            const [start, end] = episodes.split('-');
-            episodes = Array.from({length: end - start + 1}, (_, i) => parseInt(start) + i).join(',');
-        } else {
-            episodes = episodes.split(',').map(e => e.trim());
-        }
-
-        formData.append('season', season);
-        formData.append('episodes', episodes);
-    }
-
+    // Handle torrent file/magnet
     const magnetLink = document.getElementById('magnetLink').value;
     const torrentFile = document.getElementById('torrentFile').files[0];
     const torrentType = document.getElementById('torrentType').value;
+
     if (!magnetLink && !torrentFile) {
         showNotification('Either Magnet Link or Torrent File is required.', 'error');
         resetButton(submitBtn, loadingSpinner);
@@ -464,8 +684,8 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
         resetButton(submitBtn, loadingSpinner);
         return;
     }
-    formData.append('torrent_type', torrentType);
 
+    formData.append('torrent_type', torrentType);
     if (magnetLink) {
         formData.append('magnet_link', magnetLink);
     } else {
@@ -477,6 +697,15 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
         formData.append('force_import', 'true');
     }
 
+    // Add uploader name
+    const uploaderName = document.getElementById('uploaderName').value.trim() || 'Anonymous';
+    formData.append('uploader', uploaderName);
+
+    // Add annotated files if available
+    if (annotatedFiles) {
+        formData.append('file_data', JSON.stringify(annotatedFiles));
+    }
+
     try {
         const response = await fetch('/scraper/torrent', {
             method: 'POST',
@@ -485,8 +714,19 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
 
         const data = await response.json();
 
-        if (data.status === 'validation_failed' && !forceImport) {
-            // Show confirmation dialog
+        if (data.status === 'needs_annotation') {
+            try {
+                // Show modal for file annotation
+                const newAnnotatedFiles = await showFileAnnotationModal(data.files);
+                // Retry with the annotated files
+                await handleAddTorrent(submitBtn, loadingSpinner, forceImport, newAnnotatedFiles);
+                return;
+            } catch (annotationError) {
+                console.error('Error annotating files:', annotationError);
+                showNotification('File annotation was cancelled', 'warning');
+            }
+        } else if (data.status === 'validation_failed' && !forceImport) {
+            // Show confirmation dialog but preserve the annotated files
             const shouldForceImport = await showConfirmationDialog(
                 data.errors,
                 data.torrent_data,
@@ -494,22 +734,43 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false) 
             );
 
             if (shouldForceImport) {
-                // Retry with force import
-                submitBtn.disabled = true;
-                loadingSpinner.style.display = 'inline-block';
-                await handleAddTorrent(submitBtn, loadingSpinner, true);
+                // Pass the existing annotated files to the next attempt
+                await handleAddTorrent(submitBtn, loadingSpinner, true, annotatedFiles);
                 return;
             }
+        } else if (data.status === 'validation_failed' && forceImport) {
+            showNotification(`Validation failed: ${JSON.stringify(data.errors)}`, 'error');
         } else if (data.detail) {
             showNotification(data.detail, 'error');
         } else {
             showNotification(data.status, 'success');
+            // Clear the form on success
+            resetForm();
         }
     } catch (error) {
-        console.error('Error submitting scraper form:', error);
-        showNotification(`Error submitting scraper form. Error: ${error.toString()}`, 'error');
+        console.error('Error submitting torrent:', error);
+        showNotification(`Error submitting torrent: ${error.toString()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
+    }
+}
+
+function resetForm() {
+    document.getElementById('torrentImdbId').value = '';
+    document.getElementById('magnetLink').value = '';
+    document.getElementById('torrentFile').value = '';
+    document.getElementById('uploaderName').value = '';
+
+    // Reset sports metadata if present
+    if (document.getElementById('sportsMetadata')) {
+        document.getElementById('sportsTitle').value = '';
+        document.getElementById('sportsYear').value = '';
+        document.getElementById('sportsPoster').value = '';
+        document.getElementById('sportsBackground').value = '';
+        document.getElementById('sportsLogo').value = '';
+        document.getElementById('sportsDescription').value = '';
+        document.getElementById('sportsWebsite').value = '';
+        document.getElementById('addTitleToPoster').checked = false;
     }
 }
 
@@ -714,5 +975,7 @@ async function submitScraperForm() {
 
 
 // Initial update for form fields on page load
-document.addEventListener('DOMContentLoaded', updateFormFields);
+document.addEventListener('DOMContentLoaded', function () {
+    updateFormFields();
+});
 document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);

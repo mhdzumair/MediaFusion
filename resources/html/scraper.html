@@ -41,17 +41,89 @@
                     <!-- Torrent Upload Parameters -->
                     <div id="torrentUploadParameters" style="display: none;">
                         <div class="mb-3">
+                            <label for="metaType" class="form-label">Content Type</label>
+                            <select class="form-select" id="metaType" name="metaType" onchange="updateContentType()" required>
+                                <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
+                                <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
+                                <option value="sports">Sports Content</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="torrentImdbIdContainer">
                             <label for="torrentImdbId" class="form-label">IMDb ID</label>
                             <input type="text" class="form-control" id="torrentImdbId" name="torrentImdbId" maxlength="10" placeholder="Enter IMDb ID (e.g., tt1234567)"
                                    value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
                         </div>
-                        <div class="mb-3">
-                            <label for="metaType" class="form-label">Meta Type</label>
-                            <select class="form-select" id="metaType" name="metaType" onchange="updateMetaType()" required>
-                                <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
-                                <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
-                            </select>
+
+                        <!-- Sports Metadata Section -->
+                        <div id="sportsMetadata" style="display: none;" class="mb-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Sports Content Details</h5>
+
+                                    <div class="mb-3">
+                                        <label for="sportsCatalog" class="form-label">Sports Category *</label>
+                                        <select class="form-select" id="sportsCatalog" name="sportsCatalog" required>
+                                            <option value="american_football">American Football</option>
+                                            <option value="baseball">Baseball</option>
+                                            <option value="basketball">Basketball</option>
+                                            <option value="football">Football</option>
+                                            <option value="formula_racing">Formula Racing</option>
+                                            <option value="hockey">Hockey</option>
+                                            <option value="motogp_racing">MotoGP Racing</option>
+                                            <option value="other_sports">Other Sports</option>
+                                            <option value="rugby">Rugby/AFL</option>
+                                            <option value="fighting">Fighting (WWE, UFC)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsTitle" class="form-label">Title *</label>
+                                        <input type="text" class="form-control" id="sportsTitle" name="sportsTitle" required>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsYear" class="form-label">Year</label>
+                                        <input type="text" class="form-control" id="sportsYear" name="sportsYear" placeholder="YYYY or YYYY-YYYY">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsPoster" class="form-label">Poster URL *</label>
+                                        <input type="url" class="form-control" id="sportsPoster" name="sportsPoster" required>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsBackground" class="form-label">Background URL</label>
+                                        <input type="url" class="form-control" id="sportsBackground" name="sportsBackground" placeholder="Leave empty to use poster">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsLogo" class="form-label">Logo URL</label>
+                                        <input type="url" class="form-control" id="sportsLogo" name="sportsLogo">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="addTitleToPoster" name="addTitleToPoster">
+                                            <label class="form-check-label" for="addTitleToPoster">
+                                                Add title to poster
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsDescription" class="form-label">Description</label>
+                                        <textarea class="form-control" id="sportsDescription" name="sportsDescription" rows="3"></textarea>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="sportsWebsite" class="form-label">Website</label>
+                                        <input type="url" class="form-control" id="sportsWebsite" name="sportsWebsite">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+
                         <div class="mb-3">
                             <label for="createdAt" class="form-label">Created At</label>
                             <input type="date" class="form-control" id="createdAt" name="createdAt" required>
@@ -77,7 +149,7 @@
                         </div>
 
                         <!-- Catalogs Selection -->
-                        <div class="mb-3">
+                        <div class="mb-3" id="catalogsSelection">
                             <label class="form-label">Catalogs (Optional)</label>
                             <div class="alert alert-info" role="alert">
                                 <i class="bi bi-info-circle"></i> Selecting catalogs helps organize content but is optional
@@ -114,22 +186,79 @@
                             </div>
                         </div>
 
-                        <!-- Series Parameters -->
-                        <div id="seriesParameters" class="mb-3" style="display: none;">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <label for="season" class="form-label">Season</label>
-                                    <input type="number" class="form-control" id="season" name="season" min="1" value="{% if prefill_data.season %}{{ prefill_data.season }}{% endif %}">
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="episodes" class="form-label">Episodes</label>
-                                    <input type="text" class="form-control" id="episodes" name="episodes" value="{% if prefill_data.episode %}{{ prefill_data.episode }}{% endif %}"
-                                           placeholder="1,2,3 or 1-10">
-                                    <div class="alert alert-info" role="alert">
-                                        <i class="bi bi-info-circle"></i> Enter episode numbers separated by commas or a range (e.g., 1,2,3 or 1-10)
+                        <!-- File Annotation Modal -->
+                        <div class="modal fade" id="fileAnnotationModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Annotate Video Files</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i> Please specify season and episode numbers for each video file
+                                        </div>
+
+                                        <!-- Bulk Season Assignment -->
+                                        <div class="card mb-4">
+                                            <div class="card-body">
+                                                <h6 class="card-title">Bulk Season Assignment</h6>
+                                                <div class="row mb-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Season</label>
+                                                        <div class="input-group">
+                                                            <input type="number" class="form-control" id="bulkSeason" min="1" placeholder="Season number">
+                                                            <button class="btn btn-outline-secondary" type="button" id="applyBulkSeason">Apply to All</button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Multiple Seasons</label>
+                                                        <div class="input-group">
+                                                            <input type="text" class="form-control" id="multipleSeasons" placeholder="e.g., 1-3 or 1,2,4">
+                                                            <button class="btn btn-outline-secondary" type="button" id="applyMultiSeasons">Apply Sequence</button>
+                                                        </div>
+                                                        <small class="text-muted">For multi-season packs. Will assign seasons sequentially to files.</small>
+                                                    </div>
+                                                </div>
+
+                                                <!-- File grouping options -->
+                                                <div id="fileGroupingOptions" style="display: none;">
+                                                    <h6 class="mt-3">Season Distribution</h6>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="seasonDistribution" id="autoDistribute" value="auto" checked>
+                                                        <label class="form-check-label" for="autoDistribute">
+                                                            Auto-distribute episodes across seasons
+                                                        </label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio" name="seasonDistribution" id="manualGroup" value="manual">
+                                                        <label class="form-check-label" for="manualGroup">
+                                                            Manually group episodes per season
+                                                        </label>
+                                                    </div>
+                                                    <div id="episodesPerSeason" class="mt-2" style="display: none;">
+                                                        <label class="form-label">Episodes per season</label>
+                                                        <input type="number" class="form-control" id="episodeCount" min="1" placeholder="Number of episodes per season">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- File list for annotation -->
+                                        <div id="fileAnnotationList"></div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-primary" id="confirmAnnotation">Confirm</button>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Uploader Information -->
+                        <div class="mb-3">
+                            <label for="uploaderName" class="form-label">Uploader Name (Optional)</label>
+                            <input type="text" class="form-control" id="uploaderName" name="uploaderName" placeholder="Enter your name or leave blank for Anonymous">
                         </div>
 
                         <!-- Upload Methods -->
@@ -315,7 +444,8 @@
                     <div id="blockTorrentParameters" style="display: none;">
                         <div class="mb-3">
                             <label for="blockTorrentInfoHash" class="form-label">Torrent Info Hash</label>
-                            <input type="text" class="form-control" id="blockTorrentInfoHash" name="blockTorrentInfoHash" required>
+                            <input type="text" class="form-control" id="blockTorrentInfoHash" name="blockTorrentInfoHash" required
+                                   value="{% if prefill_data.info_hash %}{{ prefill_data.info_hash }}{% endif %}">
                         </div>
                     </div>
                 </div>
