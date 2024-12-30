@@ -277,7 +277,8 @@ async def parse_stream_data(
                 [
                     f"📺 {stream_data.quality}" if stream_data.quality else None,
                     f"🎞️ {stream_data.codec}" if stream_data.codec else None,
-                    f"🎵 {stream_data.audio}" if stream_data.audio else None,
+                    f"🎨 {'|'.join(stream_data.hdr)}" if stream_data.hdr else None,
+                    f"🎵 {'|'.join(stream_data.audio)}" if stream_data.audio else None,
                 ],
             )
         )
@@ -298,6 +299,8 @@ async def parse_stream_data(
             f"🌐 {' + '.join(stream_data.languages)}" if stream_data.languages else None
         )
         source_info = f"🔗 {stream_data.source}"
+        if stream_data.uploader:
+            source_info += f" 🧑‍💻 {stream_data.uploader}"
 
         description = "\n".join(
             filter(

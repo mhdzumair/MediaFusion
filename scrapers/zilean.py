@@ -154,6 +154,7 @@ class ZileanScraper(BaseScraper):
                     codec=torrent_data.get("codec"),
                     quality=torrent_data.get("quality"),
                     audio=torrent_data.get("audio"),
+                    hdr=torrent_data.get("hdr"),
                     source="Zilean DMM",
                     catalog=["zilean_dmm_streams"],
                 )

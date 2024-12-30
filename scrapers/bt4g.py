@@ -430,6 +430,7 @@ class BT4GScraper(BaseScraper):
                 codec=parsed_data.get("codec"),
                 quality=parsed_data.get("quality"),
                 audio=parsed_data.get("audio"),
+                hdr=parsed_data.get("hdr"),
                 source="BT4G",
                 catalog=["bt4g_streams"],
                 seeders=seeders,

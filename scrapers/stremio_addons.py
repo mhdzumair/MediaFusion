@@ -136,7 +136,9 @@ class StremioScraper(BaseScraper):
             codec=parsed_data["metadata"].get("codec"),
             quality=parsed_data["metadata"].get("quality"),
             audio=parsed_data["metadata"].get("audio"),
+            hdr=parsed_data["metadata"].get("hdr"),
             source=parsed_data["source"],
+            uploader=parsed_data.get("uploader"),
             catalog=[f"{self.cache_key_prefix}_streams"],
             seeders=parsed_data["seeders"],
             announce_list=[

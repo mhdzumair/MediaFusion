@@ -100,13 +100,15 @@ class TorrentStreams(Document):
     announce_list: list[str]
     languages: list[str]
     source: str
+    uploader: Optional[str] = None
     catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
     resolution: Optional[str] = None
     codec: Optional[str] = None
     quality: Optional[str] = None
-    audio: Optional[str] = None
+    audio: list[str] | str | None = None
+    hdr: list[str] | None = None
     seeders: Optional[int] = None
     torrent_type: Optional[TorrentType] = TorrentType.PUBLIC
     is_blocked: Optional[bool] = False
