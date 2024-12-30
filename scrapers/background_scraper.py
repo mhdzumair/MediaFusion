@@ -74,6 +74,16 @@ class BackgroundSearchWorker:
                                     indexers=chunk,
                                 )
                             )
+                        if settings.scrape_with_aka_titles:
+                            for aka_title in metadata.aka_titles:
+                                title_streams_generators.append(
+                                    scraper.scrape_movie_by_title(
+                                        processed_info_hashes,
+                                        metadata,
+                                        search_query=aka_title,
+                                        indexers=chunk,
+                                    )
+                                )
 
                     # Process all streams without time limit
                     try:
@@ -179,7 +189,6 @@ class BackgroundSearchWorker:
 
 
 @dramatiq.actor(
-    queue_name="background_search",
     priority=10,
     max_retries=3,
     min_backoff=timedelta(minutes=10),

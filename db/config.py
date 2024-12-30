@@ -120,6 +120,7 @@ class Settings(BaseSettings):
     validate_m3u8_urls_liveness: bool = True
     store_stremthru_magnet_cache: bool = False
     is_scrap_from_yts: bool = True
+    scrape_with_aka_titles: bool = True
 
     # Content Filtering
     adult_content_regex_keywords: str = (

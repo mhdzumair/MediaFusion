@@ -67,6 +67,16 @@ class BT4GScraper(BaseScraper):
                         catalog_type,
                     )
                 )
+            if settings.scrape_with_aka_titles:
+                for aka_title in metadata.aka_titles:
+                    search_generators.append(
+                        self.scrape_by_query(
+                            processed_unique_data,
+                            metadata,
+                            aka_title,
+                            catalog_type,
+                        )
+                    )
         else:  # series
             for query_template in self.SERIES_SEARCH_QUERY_TEMPLATES:
                 search_query = query_template.format(
@@ -84,6 +94,18 @@ class BT4GScraper(BaseScraper):
                         episode=episode,
                     )
                 )
+            if settings.scrape_with_aka_titles:
+                for aka_title in metadata.aka_titles:
+                    search_generators.append(
+                        self.scrape_by_query(
+                            processed_unique_data,
+                            metadata,
+                            aka_title,
+                            catalog_type,
+                            season=season,
+                            episode=episode,
+                        )
+                    )
 
         try:
             async for stream in self.process_streams(
