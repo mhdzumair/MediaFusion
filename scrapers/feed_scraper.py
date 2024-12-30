@@ -225,6 +225,8 @@ class FeedScraper(ABC):
         if imdb_id:
             return await get_metadata_by_id(imdb_id, media_type)
 
+        parsed_title_data["created_at"] = scraper.get_created_at(item)
+
         metadata = await get_or_create_metadata(
             parsed_title_data, media_type, is_search_imdb_title=True, is_imdb_only=True
         )

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import List, Dict, Any, Literal, Optional
 from xml.etree import ElementTree
 
@@ -74,6 +74,9 @@ class JackettScraper(IndexerBaseScraper):
 
     def get_torrent_type(self, item: dict) -> TorrentType:
         return TorrentType(item.get("TrackerType"))
+
+    def get_created_at(self, item: dict) -> datetime:
+        return datetime.fromisoformat(item.get("PublishDate"))
 
     @IndexerBaseScraper.cache(ttl=JACKETT_SEARCH_TTL)
     @IndexerBaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))

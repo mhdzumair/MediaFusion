@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     is_public_instance: bool = False
     poster_host_url: str | None = None
     min_scraping_video_size: int = 26214400  # 25 MB in bytes
+    metadata_primary_source: Literal["imdb", "tmdb"] = "imdb"
 
     # Streaming Provider Toggles
     disabled_providers: list[
@@ -109,6 +110,10 @@ class Settings(BaseSettings):
     # Premiumize Settings
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
+
+    # Telegram Settings
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
 
     # Configuration Sources
     remote_config_source: str = (

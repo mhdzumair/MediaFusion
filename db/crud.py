@@ -1329,3 +1329,121 @@ async def fetch_last_run(spider_id: str, spider_name: str):
         )
 
     return response
+
+
+async def update_metadata(imdb_ids: list[str], metadata_type: str):
+    now = datetime.now()
+
+    # Initialize circuit breaker
+    circuit_breaker = CircuitBreaker(
+        failure_threshold=2, recovery_timeout=10, half_open_attempts=2
+    )
+
+    async for result in batch_process_with_circuit_breaker(
+        meta_fetcher.get_metadata,
+        imdb_ids,
+        5,
+        rate_limit_delay=3,
+        cb=circuit_breaker,
+        media_type=metadata_type,
+    ):
+        if not result:
+            continue
+
+        movie_id = result["imdb_id"]
+        update_data = {
+            "title": result["title"],
+            "genres": result["genres"],
+            "poster": result["poster"],
+            "background": result["background"],
+            "description": result["description"],
+            "imdb_rating": result.get("imdb_rating"),
+            "tmdb_rating": result.get("tmdb_rating"),
+            "parent_guide_nudity_status": result["parent_guide_nudity_status"],
+            "parent_guide_certificates": result["parent_guide_certificates"],
+            "aka_titles": result["aka_titles"],
+            "last_updated_at": now,
+            "runtime": result["runtime"],
+            "stars": result["stars"],
+        }
+
+        if metadata_type == "series" and result.get("episodes"):
+            # Get current series data to compare episodes
+            current_series = await MediaFusionSeriesMetaData.get(movie_id)
+            if current_series:
+                # Create a map of existing episodes by season and episode number
+                existing_episodes = {
+                    (ep.season_number, ep.episode_number): ep
+                    for ep in current_series.episodes
+                }
+
+                # Process new episodes
+                updated_episodes = []
+                updated_episodes_keys = set()
+                for new_ep in result["episodes"]:
+                    key = (new_ep["season_number"], new_ep["episode_number"])
+                    if key in existing_episodes:
+                        # Merge new data with existing episode data
+                        existing_ep = existing_episodes[key]
+                        updated_ep = {
+                            "season_number": new_ep["season_number"],
+                            "episode_number": new_ep["episode_number"],
+                            "title": new_ep["title"] or existing_ep.title,
+                            "overview": new_ep["overview"] or existing_ep.overview,
+                            "imdb_rating": new_ep.get("imdb_rating")
+                            or existing_ep.imdb_rating,
+                            "tmdb_rating": new_ep.get("tmdb_rating")
+                            or existing_ep.tmdb_rating,
+                            "thumbnail": new_ep["thumbnail"] or existing_ep.thumbnail,
+                            "released": new_ep["released"] or existing_ep.released,
+                        }
+                        updated_episodes.append(updated_ep)
+                    else:
+                        # Add new episode
+                        updated_episodes.append(new_ep)
+                    updated_episodes_keys.add(key)
+
+                # Add any existing episodes that weren't in the new data
+                for ep in current_series.episodes:
+                    key = (ep.season_number, ep.episode_number)
+                    if key not in updated_episodes_keys:
+                        updated_episodes.append(ep.model_dump())
+
+                # Sort episodes by season and episode number
+                updated_episodes.sort(
+                    key=lambda x: (x["season_number"], x["episode_number"])
+                )
+                update_data["episodes"] = updated_episodes
+
+        # Get TorrentStream counts & last stream added date
+        streams_stats = await TorrentStreams.aggregate(
+            [
+                {"$match": {"meta_id": movie_id, "is_blocked": {"$ne": True}}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "total_streams": {"$sum": 1},
+                        "last_stream_added": {"$max": "$created_at"},
+                        "catalogs": {"$addToSet": "$catalog"},
+                    }
+                },
+            ]
+        ).to_list(1)
+
+        if streams_stats:
+            update_data["total_streams"] = streams_stats[0].get("total_streams", 0)
+            update_data["last_stream_added"] = streams_stats[0].get("last_stream_added")
+            update_data["catalogs"] = list(
+                {
+                    catalog
+                    for sublist in streams_stats[0].get("catalogs", [])
+                    for catalog in sublist
+                }
+            )
+
+        # Update database entries with the new data
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": movie_id},
+            {"$set": update_data},
+        )
+        logging.info(f"Updated metadata for {metadata_type} {movie_id}")

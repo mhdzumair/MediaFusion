@@ -1,8 +1,7 @@
 import PTT
 from scrapy.exceptions import DropItem
 
-from scrapers.imdb_data import search_imdb, get_imdb_title_data
-from scrapers.tmdb_data import search_tmdb
+from scrapers.scraper_tasks import meta_fetcher
 from utils.const import QUALITY_GROUPS
 
 
@@ -23,16 +22,13 @@ class MovieTVParserPipeline:
         if data["type"] == "movie":
             data["type"] = "series" if data["seasons"] else "movie"
 
-        if data["type"] == "series" and len(data.get("season", [])) > 1:
-            raise DropItem(f"Multiple seasons found in title: {title}")
-
         title = data["title"]
         if data.get("imdb_id"):
-            imdb_data = await get_imdb_title_data(data["imdb_id"], data["type"])
+            imdb_data = await meta_fetcher.get_metadata(data["imdb_id"], data["type"])
         else:
-            imdb_data = await search_imdb(title, data.get("year"), data["type"])
-            if not imdb_data:
-                imdb_data = await search_tmdb(title, data.get("year"), data["type"])
+            imdb_data = await meta_fetcher.search_metadata(
+                title, data.get("year"), data["type"], data.get("created_at")
+            )
 
         if not imdb_data:
             raise DropItem(f"IMDb data not found for title: {title}")

@@ -3,14 +3,11 @@ import random
 import re
 from datetime import datetime
 
-from scrapers.imdb_data import search_imdb
 from scrapy.exceptions import DropItem
 
+from scrapers.scraper_tasks import meta_fetcher
 from scrapers.tmdb_data import search_tmdb
 from utils.runtime_const import SPORTS_ARTIFACTS
-
-from cinemagoerng import web
-from cinemagoerng.model import TVSeries
 
 
 class BaseParserPipeline:
@@ -117,13 +114,15 @@ class BaseParserPipeline:
         }
 
     async def update_imdb_data(self, torrent_data: dict):
-        year = torrent_data.get("date").year
+        year = torrent_data["date"].year
         title = torrent_data.get("event")
         imdb_id = self.known_imdb_ids.get(title.lower())
         if not imdb_id:
             result = self.imdb_cache.get(f"{title}_{year}")
             if not result:
-                result = await search_imdb(title, year)
+                result = await meta_fetcher.search_metadata(
+                    title, year, torrent_data["date"]
+                )
             if not result:
                 logging.warning(f"Failed to find IMDb title for {title}")
                 if not torrent_data["poster"]:
@@ -135,7 +134,7 @@ class BaseParserPipeline:
             imdb_id = result.get("imdb_id")
             self.imdb_cache[f"{title}_{year}"] = result
 
-            if result.get("type_id") != "tvSeries":
+            if result.get("type") != "series":
                 torrent_data["id"] = imdb_id
                 torrent_data.update(
                     dict(
@@ -144,6 +143,9 @@ class BaseParserPipeline:
                         runtime=result.get("runtime"),
                         imdb_rating=result.get("imdb_rating"),
                         description=result.get("description"),
+                        stars=result.get("stars"),
+                        genres=result.get("genres"),
+                        aka_titles=result.get("aka_titles"),
                     )
                 )
                 return
@@ -153,21 +155,14 @@ class BaseParserPipeline:
             torrent_data["poster"] = static_poster
             return
 
-        imdb_title = TVSeries(imdb_id=imdb_id, title=title)
-        web.update_title(
-            imdb_title,
-            page="episodes_with_pagination",
-            keys=["episodes"],
-            filter_type="year",
-            start_year=year,
-            end_year=year,
-            paginate_result=True,
-        )
+        result = self.imdb_cache.get(f"{title}_{year}")
+        if not result:
+            result = await meta_fetcher.get_metadata(imdb_id, "series")
+
         filtered_episode = [
-            ep
-            for season in imdb_title.episodes.values()
-            for ep in season.values()
-            if ep.release_date == torrent_data["date"]
+            episode
+            for episode in result["episodes"]
+            if episode["release_date"] == torrent_data["date"]
         ]
         if not filtered_episode:
             logging.warning(
