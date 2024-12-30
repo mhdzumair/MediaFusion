@@ -134,6 +134,8 @@ async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
     episodes = []
     if imdb_title.type_id in ["tvSeries", "tvMiniSeries"]:
         end_year = imdb_title.end_year
+        # The IMDB episodes are in format {"1" : {"1": "details", "2": "details"...}}
+        imdb_episodes = list(imdb_title.episodes.values())[0].values()
         episodes = [
             SeriesEpisode(
                 season_number=episode.season,
@@ -147,7 +149,7 @@ async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
                 )
                 or f"https://episodes.metahub.space/{episode.imdb_id}/{episode.season}/{episode.episode}/w780.jpg",
             ).model_dump()
-            for episode in imdb_title.episodes
+            for episode in imdb_episodes
         ]
 
     return {
