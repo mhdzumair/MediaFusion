@@ -423,3 +423,44 @@ class KodiConfig(BaseModel):
 class BlockTorrent(BaseModel):
     info_hash: str
     api_password: str
+
+
+class CacheStatusRequest(BaseModel):
+    """Request model for checking cache status"""
+
+    service: Literal[
+        "realdebrid",
+        "premiumize",
+        "alldebrid",
+        "debridlink",
+        "offcloud",
+        "seedr",
+    ]
+    info_hashes: list[str]
+
+
+class CacheStatusResponse(BaseModel):
+    """Response model for cache status"""
+
+    cached_status: dict[str, bool]
+
+
+class CacheSubmitRequest(BaseModel):
+    """Request model for submitting cached info hashes"""
+
+    service: Literal[
+        "realdebrid",
+        "premiumize",
+        "alldebrid",
+        "debridlink",
+        "offcloud",
+        "seedr",
+    ]
+    info_hashes: list[str]
+
+
+class CacheSubmitResponse(BaseModel):
+    """Response model for cache submission"""
+
+    success: bool
+    message: str

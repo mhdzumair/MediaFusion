@@ -14,8 +14,18 @@ from fastapi.responses import RedirectResponse
 
 from db import crud, schemas
 from db.config import settings
+from db.schemas import (
+    CacheStatusResponse,
+    CacheStatusRequest,
+    StreamingProvider,
+    CacheSubmitResponse,
+    CacheSubmitRequest,
+)
 from streaming_providers import mapper
-from streaming_providers.cache_helpers import store_cached_info_hashes
+from streaming_providers.cache_helpers import (
+    store_cached_info_hashes,
+    get_cached_status,
+)
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.premiumize.api import router as premiumize_router
@@ -283,6 +293,63 @@ async def delete_all_watchlist(
         video_url = handle_generic_exception(e, "delete_watchlist")
 
     return RedirectResponse(url=video_url, headers=response.headers)
+
+
+@router.post("/cache/status", response_model=CacheStatusResponse)
+async def check_cache_status(request: CacheStatusRequest):
+    """
+    Check cache status for multiple info hashes.
+
+    Args:
+        request: CacheStatusRequest containing service name and list of info hashes
+
+    Returns:
+        Dictionary mapping info hashes to their cache status
+    """
+    if not request.info_hashes:
+        return CacheStatusResponse(cached_status={})
+
+    # Create streaming provider object
+    provider = StreamingProvider(service=request.service)
+
+    try:
+        # Get cache status using existing helper
+        cached_status = await get_cached_status(provider, request.info_hashes)
+        return CacheStatusResponse(cached_status=cached_status)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error checking cache status: {str(e)}"
+        )
+
+
+@router.post("/cache/submit", response_model=CacheSubmitResponse)
+async def submit_cached_hashes(request: CacheSubmitRequest):
+    """
+    Submit cached info hashes to the central cache.
+
+    Args:
+        request: CacheSubmitRequest containing service name and list of cached info hashes
+
+    Returns:
+        Success status and message
+    """
+    if not request.info_hashes:
+        return CacheSubmitResponse(success=True, message="No info hashes provided")
+
+    provider = StreamingProvider(service=request.service)
+    try:
+        # Store cache info using existing helper
+        await store_cached_info_hashes(provider, request.info_hashes)
+        return CacheSubmitResponse(
+            success=True,
+            message=f"Successfully stored {len(request.info_hashes)} cached info hashes",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error storing cached info hashes: {str(e)}"
+        )
 
 
 router.include_router(seedr_router, prefix="/seedr", tags=["seedr"])
