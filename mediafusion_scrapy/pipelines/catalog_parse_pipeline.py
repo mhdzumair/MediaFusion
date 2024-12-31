@@ -9,6 +9,7 @@ class CatalogParsePipeline:
         languages = item["languages"]
         torrent_name = item["torrent_name"].lower()
         catalogs = item.get("catalog", [])
+        source = item.get("source")
         for language in languages:
             if language.lower() == "english" and "eng" not in torrent_name:
                 # Fix for ESubs torrents
@@ -17,6 +18,9 @@ class CatalogParsePipeline:
                 continue
             catalog_name = f"{language.lower()}_{video_type}"
             if catalog_name not in CATALOG_DATA:
+                continue
+            if source == "TorrentGalaxy" and language.lower() != "english":
+                # Do not add non-english catalogs from TorrentGalaxy
                 continue
             if catalog_name not in catalogs:
                 catalogs.append(catalog_name)
