@@ -294,35 +294,23 @@ async def add_torrent(
 
     # For series, check if we need file annotation
     if meta_type == "series":
-        has_all_metadata = all(
-            file.get("season_number") and file.get("episode_number")
-            for file in torrent_data.get("file_data", [])
-        )
-
-        # If we received annotated file data, update the torrent_data
-        if file_data:
-            annotated_files = json.loads(file_data)
-            torrent_data["file_data"] = annotated_files
-            # Update seasons and episodes based on annotations
-            seasons = {
-                file["season_number"]
-                for file in annotated_files
-                if file["season_number"]
-            }
-            episodes = {
-                file["episode_number"]
-                for file in annotated_files
-                if file["episode_number"]
-            }
-            torrent_data["seasons"] = list(seasons)
-            torrent_data["episodes"] = list(episodes)
-
-        # If automatic detection failed and we don't have annotations yet
-        elif not has_all_metadata:
+        if not file_data:
             return {
                 "status": "needs_annotation",
                 "files": torrent_data.get("file_data", []),
             }
+
+        annotated_files = json.loads(file_data)
+        torrent_data["file_data"] = annotated_files
+        # Update seasons and episodes based on annotations
+        seasons = {
+            file["season_number"] for file in annotated_files if file["season_number"]
+        }
+        episodes = {
+            file["episode_number"] for file in annotated_files if file["episode_number"]
+        }
+        torrent_data["seasons"] = list(seasons)
+        torrent_data["episodes"] = list(episodes)
 
     source = "Contribution Stream"
     languages = set(language_list).union(torrent_data.get("languages", []))
