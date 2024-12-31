@@ -6,7 +6,7 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Optional, List, Any
-from urllib.parse import quote
+from urllib.parse import quote_plus
 
 from thefuzz import fuzz
 
@@ -341,7 +341,7 @@ async def parse_stream_data(
             if episode_data:
                 stream_details["url"] += f"/{season}/{episode}"
             if file_name:
-                stream_details["url"] += f"/{quote(file_name)}"
+                stream_details["url"] += f"/{quote_plus(file_name)}"
             stream_details["behaviorHints"]["notWebReady"] = True
         else:
             stream_details["infoHash"] = stream_data.id
