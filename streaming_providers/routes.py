@@ -1,5 +1,6 @@
 import logging
 from os import path
+from os.path import basename
 from typing import Annotated
 
 from fastapi import (
@@ -100,6 +101,7 @@ async def get_or_create_video_url(
     episode_data = stream.get_episode(season, episode)
     if not filename:
         filename = episode_data.filename if episode_data else stream.filename
+        filename = basename(filename) if filename else None
     file_index = episode_data.file_index if episode_data else stream.file_index
 
     get_video_url = mapper.GET_VIDEO_URL_FUNCTIONS.get(

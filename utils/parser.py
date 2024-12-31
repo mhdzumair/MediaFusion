@@ -6,7 +6,8 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Optional, List, Any
-from urllib.parse import quote_plus
+from os.path import basename
+from urllib.parse import quote
 
 from thefuzz import fuzz
 
@@ -259,6 +260,9 @@ async def parse_stream_data(
             file_name = stream_data.filename
             file_index = stream_data.file_index
 
+        # make sure file_name is basename
+        file_name = basename(file_name) if file_name else None
+
         if show_full_torrent_name:
             torrent_name = (
                 f"{stream_data.torrent_name}/{episode_data.title or episode_data.filename or ''}"
@@ -341,7 +345,7 @@ async def parse_stream_data(
             if episode_data:
                 stream_details["url"] += f"/{season}/{episode}"
             if file_name:
-                stream_details["url"] += f"/{quote_plus(file_name)}"
+                stream_details["url"] += f"/{quote(file_name)}"
             stream_details["behaviorHints"]["notWebReady"] = True
         else:
             stream_details["infoHash"] = stream_data.id
