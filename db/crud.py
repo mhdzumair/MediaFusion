@@ -185,6 +185,7 @@ async def get_media_data_by_id(
     meta_id: str,
     media_type: Literal["movie", "series"],
     model_class: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData],
+    counter_part_model: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData],
 ) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
     """
     Generic function to fetch media metadata by ID.
@@ -193,6 +194,7 @@ async def get_media_data_by_id(
         meta_id: Media ID to fetch
         media_type: Type of media ("movie" or "series")
         model_class: Class to use for the media data (MediaFusionMovieMetaData or MediaFusionSeriesMetaData)
+        counter_part_model: Counterpart class for the media data.
 
     Returns:
         Optional[T]: Media metadata object or None if not found
@@ -209,6 +211,15 @@ async def get_media_data_by_id(
     if not media_data and meta_id.startswith("tt"):
         raw_data = await meta_fetcher.get_metadata(meta_id, media_type)
         if not raw_data:
+            return None
+
+        if raw_data["type"] != media_type:
+            logging.warning(
+                "Mismatched media type for %s %s: %s",
+                media_type,
+                meta_id,
+                raw_data["type"],
+            )
             return None
 
         # Create metadata object with common fields
@@ -240,13 +251,12 @@ async def get_media_data_by_id(
             logging.info(f"Added metadata for {media_type} {media_data.title}")
         except DuplicateKeyError as error:
             if "_id_ dup key:" in str(error):
-                await asyncio.sleep(1)
-                return await get_media_data_by_id(meta_id, media_type, model_class)
-
-            # Handle duplicate title/year combination
-            existing_media = await model_class.find_one(
-                {"title": media_data.title, "year": media_data.year}
-            )
+                existing_media = await counter_part_model.find_one({"_id": meta_id})
+            else:
+                # Handle duplicate title/year combination
+                existing_media = await model_class.find_one(
+                    {"title": media_data.title, "year": media_data.year}
+                )
 
             if not existing_media:
                 logging.error(f"Error occurred while adding metadata: {error}")
@@ -257,11 +267,13 @@ async def get_media_data_by_id(
                 await TorrentStreams.find({"meta_id": existing_media.id}).update(
                     Set({"meta_id": media_data.id})
                 )
-                await existing_media.delete()
-                await media_data.create()
-                logging.info(
-                    f"Replace meta id {existing_media.id} with {media_data.id}"
-                )
+            media_data.catalogs = existing_media.catalogs
+            media_data.total_streams = existing_media.total_streams
+            await existing_media.delete()
+            await media_data.create()
+            logging.info(
+                f"Replace meta id {existing_media.id} ({existing_media.type}) with {media_data.id} ({media_data.type})"
+            )
         except RevisionIdWasChanged:
             await asyncio.sleep(1)
             media_data = await model_class.get(meta_id)
@@ -278,11 +290,15 @@ async def get_media_data_by_id(
 
 
 async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaData]:
-    return await get_media_data_by_id(movie_id, "movie", MediaFusionMovieMetaData)
+    return await get_media_data_by_id(
+        movie_id, "movie", MediaFusionMovieMetaData, MediaFusionSeriesMetaData
+    )
 
 
 async def get_series_data_by_id(series_id: str) -> Optional[MediaFusionSeriesMetaData]:
-    return await get_media_data_by_id(series_id, "series", MediaFusionSeriesMetaData)
+    return await get_media_data_by_id(
+        series_id, "series", MediaFusionSeriesMetaData, MediaFusionMovieMetaData
+    )
 
 
 async def get_tv_data_by_id(tv_id: str) -> Optional[MediaFusionTVMetaData]:

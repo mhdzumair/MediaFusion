@@ -36,7 +36,13 @@ async def get_imdb_title(imdb_id: str, media_type: str) -> Optional[model.Title]
     if not title:
         return None
 
-    if media_type == "movie" and title.type_id != "movie":
+    if media_type == "movie" and title.type_id not in [
+        "movie",
+        "tvMovie",
+        "short",
+        "tvShort",
+        "tvSpecial",
+    ]:
         logging.warning(f"IMDB ID {imdb_id} is not a movie. found {title.type_id}")
         return None
     elif media_type == "series" and title.type_id not in ["tvSeries", "tvMiniSeries"]:
@@ -163,7 +169,12 @@ async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
         "genres": imdb_title.genres,
         "imdb_rating": float(imdb_title.rating) if imdb_title.rating else None,
         "aka_titles": list(set(aka.title for aka in imdb_title.akas)),
-        "type": "movie" if imdb_title.type_id == "movie" else "series",
+        "type": (
+            "movie"
+            if imdb_title.type_id
+            in ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]
+            else "series"
+        ),
         "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
         "parent_guide_certificates": list(
             set(
@@ -212,7 +223,13 @@ async def search_imdb(
 
             # If target year is provided, only allow exact matches
             if year is not None:
-                if imdb_title.type_id == "movie":
+                if imdb_title.type_id in [
+                    "movie",
+                    "tvMovie",
+                    "short",
+                    "tvShort",
+                    "tvSpecial",
+                ]:
                     return 0 if title_year == year else None
                 else:
                     end_year = getattr(imdb_title, "end_year", None)
@@ -227,7 +244,13 @@ async def search_imdb(
 
             # Only use created_year for sorting when target year is None
             if created_year:
-                if imdb_title.type_id == "movie":
+                if imdb_title.type_id in [
+                    "movie",
+                    "tvMovie",
+                    "short",
+                    "tvShort",
+                    "tvSpecial",
+                ]:
                     return abs(title_year - created_year)
                 else:
                     # For series, use the minimum difference between created_year
@@ -246,10 +269,20 @@ async def search_imdb(
             logging.error(f"IMDB search: Error calculating year difference: {err}")
             return float("inf")
 
-    title_types = ["movie", "tvSeries", "tvMiniSeries"]
+    title_types = [
+        "movie",
+        "tvMovie",
+        "short",
+        "tvShort",
+        "tvSpecial",
+        "tvSeries",
+        "tvMiniSeries",
+    ]
     if media_type:
         title_types = (
-            ["movie"] if media_type == "movie" else ["tvSeries", "tvMiniSeries"]
+            ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]
+            if media_type == "movie"
+            else ["tvSeries", "tvMiniSeries"]
         )
 
     for attempt in range(max_retries):
@@ -257,7 +290,7 @@ async def search_imdb(
             # Only add year filter if year is specifically provided
             search_filters = SearchFilters(title_types=title_types)
             if year is not None:
-                if media_type == "movie":
+                if media_type in ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]:
                     search_filters.release_date = RangeFilter(
                         min_value=year, max_value=year
                     )
