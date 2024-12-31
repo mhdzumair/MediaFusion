@@ -29,7 +29,10 @@ from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 
 async def filter_and_sort_streams(
-    streams: list[TorrentStreams], user_data: UserData, user_ip: str | None = None
+    streams: list[TorrentStreams],
+    user_data: UserData,
+    user_ip: str | None = None,
+    stremio_video_id: str | None = None,
 ) -> list[TorrentStreams]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
@@ -116,7 +119,10 @@ async def filter_and_sort_streams(
             if cache_update_function:
                 try:
                     service_name = await cache_update_function(
-                        streams=uncached_streams, user_data=user_data, user_ip=user_ip
+                        streams=uncached_streams,
+                        user_data=user_data,
+                        user_ip=user_ip,
+                        stremio_video_id=stremio_video_id,
                     )
                     # Store only the cached ones in Redis
                     cached_info_hashes = [
@@ -221,7 +227,8 @@ async def parse_stream_data(
     if not streams:
         return []
 
-    streams = await filter_and_sort_streams(streams, user_data, user_ip)
+    stremio_video_id = f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
+    streams = await filter_and_sort_streams(streams, user_data, user_ip, stremio_video_id)
 
     # Precompute constant values
     show_full_torrent_name = user_data.show_full_torrent_name

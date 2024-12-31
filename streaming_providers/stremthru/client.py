@@ -117,12 +117,18 @@ class StremThru(DebridClient):
         return response
 
     async def get_torrent_instant_availability(
-        self, magnet_links: list[str], is_http_response: bool = False
+        self,
+        magnet_links: list[str],
+        stremio_video_id: Optional[str] = None,
+        is_http_response: bool = False,
     ):
+        params = {"magnet": ",".join(magnet_links)}
+        if stremio_video_id:
+            params["sid"] = stremio_video_id
         return await self._make_request(
             "GET",
             "/v0/store/magnets/check",
-            params={"magnet": ",".join(magnet_links)},
+            params=params,
             is_http_response=is_http_response,
         )
 
