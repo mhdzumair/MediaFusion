@@ -5,7 +5,7 @@ from scrapy.http.request import NO_CALLBACK
 from scrapy.utils.defer import maybe_deferred_to_future
 
 from db.config import settings
-from db.crud import is_torrent_stream_exists
+from db.crud import get_stream_by_info_hash
 from utils import torrent
 
 
@@ -68,8 +68,22 @@ class MagnetDownloadAndParsePipeline:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             raise DropItem(f"Failed to parse info_hash from magnet link: {magnet_link}")
-        if await is_torrent_stream_exists(info_hash):
-            raise DropItem(f"Torrent stream already exists: {info_hash}")
+        if torrent_stream := await get_stream_by_info_hash(info_hash):
+            if (
+                item.get("expected_sources")
+                and torrent_stream.source not in item["expected_sources"]
+            ):
+                spider.logger.info(
+                    "Source mismatch for %s: %s != %s. Trying to re-create the data",
+                    torrent_stream.torrent_name,
+                    item["source"],
+                    torrent_stream.source,
+                )
+                await torrent_stream.delete()
+            else:
+                raise DropItem(
+                    f"Torrent stream already exists: {torrent_stream.torrent_name} from {torrent_stream.source}"
+                )
 
         torrent_metadata = await torrent.info_hashes_to_torrent_metadata(
             [info_hash], trackers

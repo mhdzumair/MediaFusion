@@ -195,6 +195,7 @@ class TgxSpider(scrapy.Spider):
                 "catalog": self.catalog,
                 "scraped_info_hash_key": self.scraped_info_hash_key,
                 "imdb_id": imdb_id,
+                "expected_sources": ["TorrentGalaxy", "Contribution Stream"],
             }
 
             if await self.redis.sismember(self.scraped_info_hash_key, info_hash):

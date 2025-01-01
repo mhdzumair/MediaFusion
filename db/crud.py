@@ -829,9 +829,24 @@ async def organize_episodes(series_id):
 async def save_metadata(
     metadata: dict, media_type: str, is_search_imdb_title: bool = True
 ):
-    if await is_torrent_stream_exists(metadata["info_hash"]):
-        logging.info("Stream already exists for %s %s", media_type, metadata["title"])
-        return
+    if torrent_stream := await get_stream_by_info_hash(metadata["info_hash"]):
+        if (
+            metadata.get("expected_sources")
+            and torrent_stream.source not in metadata["expected_sources"]
+        ):
+            logging.info(
+                "Source mismatch for %s %s: %s != %s. Trying to re-create the data",
+                media_type,
+                metadata["title"],
+                metadata["source"],
+                torrent_stream.source,
+            )
+            await torrent_stream.delete()
+        else:
+            logging.info(
+                "Stream already exists for %s %s", media_type, metadata["title"]
+            )
+            return
     metadata = await get_or_create_metadata(metadata, media_type, is_search_imdb_title)
 
     new_stream = create_stream_object(metadata, media_type == "movie")
