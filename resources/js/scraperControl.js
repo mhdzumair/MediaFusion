@@ -744,33 +744,12 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
             showNotification(data.detail, 'error');
         } else {
             showNotification(data.status, 'success');
-            // Clear the form on success
-            resetForm();
         }
     } catch (error) {
         console.error('Error submitting torrent:', error);
         showNotification(`Error submitting torrent: ${error.toString()}`, 'error');
     } finally {
         resetButton(submitBtn, loadingSpinner);
-    }
-}
-
-function resetForm() {
-    document.getElementById('torrentImdbId').value = '';
-    document.getElementById('magnetLink').value = '';
-    document.getElementById('torrentFile').value = '';
-    document.getElementById('uploaderName').value = '';
-
-    // Reset sports metadata if present
-    if (document.getElementById('sportsMetadata')) {
-        document.getElementById('sportsTitle').value = '';
-        document.getElementById('sportsYear').value = '';
-        document.getElementById('sportsPoster').value = '';
-        document.getElementById('sportsBackground').value = '';
-        document.getElementById('sportsLogo').value = '';
-        document.getElementById('sportsDescription').value = '';
-        document.getElementById('sportsWebsite').value = '';
-        document.getElementById('addTitleToPoster').checked = false;
     }
 }
 
