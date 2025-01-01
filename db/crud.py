@@ -16,6 +16,7 @@ from pymongo.errors import DuplicateKeyError
 
 from db import schemas
 from db.config import settings
+from db.enums import NudityStatus
 from db.models import (
     EpisodeFile,
     MediaFusionEventsMetaData,
@@ -1338,6 +1339,13 @@ async def fetch_last_run(spider_id: str, spider_name: str):
 async def update_metadata(imdb_ids: list[str], metadata_type: str):
     now = datetime.now()
 
+    def merge_sets(existing_data, new_data, field_name):
+        existing_set = (
+            set(getattr(existing_data, field_name, [])) if existing_data else set()
+        )
+        new_set = set(new_data.get(field_name, []))
+        return list(existing_set | new_set)
+
     # Initialize circuit breaker
     circuit_breaker = CircuitBreaker(
         failure_threshold=2, recovery_timeout=10, half_open_attempts=2
@@ -1355,20 +1363,44 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
             continue
 
         meta_id = result["imdb_id"]
+
+        meta_class = (
+            MediaFusionMovieMetaData
+            if metadata_type == "movie"
+            else MediaFusionSeriesMetaData
+        )
+        # Get existing metadata to preserve values
+        existing_metadata = await meta_class.get(meta_id)
+
+        # Merge new data with existing data, preserving existing values when new ones are None/empty
         update_data = {
-            "title": result["title"],
-            "genres": result["genres"],
-            "poster": result["poster"],
-            "background": result["background"],
-            "description": result["description"],
-            "imdb_rating": result.get("imdb_rating"),
-            "tmdb_rating": result.get("tmdb_rating"),
-            "parent_guide_nudity_status": result["parent_guide_nudity_status"],
-            "parent_guide_certificates": result["parent_guide_certificates"],
-            "aka_titles": result["aka_titles"],
+            "title": result["title"] or existing_metadata.title,
+            "poster": result["poster"] or existing_metadata.poster,
+            "background": result["background"] or existing_metadata.background,
+            "description": result["description"] or existing_metadata.description,
+            "runtime": result["runtime"] or existing_metadata.runtime,
+            "stars": result["stars"] or existing_metadata.stars,
             "last_updated_at": now,
-            "runtime": result["runtime"],
-            "stars": result["stars"],
+            "imdb_rating": (
+                result.get("imdb_rating")
+                if result.get("imdb_rating") is not None
+                else existing_metadata.imdb_rating
+            ),
+            "tmdb_rating": (
+                result.get("tmdb_rating")
+                if result.get("tmdb_rating") is not None
+                else existing_metadata.tmdb_rating
+            ),
+            "parent_guide_nudity_status": (
+                result.get("parent_guide_nudity_status")
+                if result.get("parent_guide_nudity_status") != NudityStatus.UNKNOWN
+                else existing_metadata.parent_guide_nudity_status
+            ),
+            "aka_titles": merge_sets(existing_metadata, result, "aka_titles"),
+            "genres": merge_sets(existing_metadata, result, "genres"),
+            "parent_guide_certificates": merge_sets(
+                existing_metadata, result, "parent_guide_certificates"
+            ),
         }
 
         if metadata_type == "series" and result.get("episodes"):

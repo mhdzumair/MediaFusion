@@ -367,6 +367,7 @@ class TVStreams(Document):
 class MediaFusionMovieMetaData(MediaFusionMetaData):
     type: str = "movie"
     imdb_rating: Optional[float] = None
+    tmdb_rating: Optional[float] = None
     parent_guide_nudity_status: Optional[NudityStatus] = NudityStatus.UNKNOWN
     parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
     stars: Optional[list[str]] = Field(default_factory=list)
