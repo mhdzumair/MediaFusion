@@ -26,7 +26,9 @@ class BaseParserPipeline:
     ]
     imdb_cache = {}
 
-    def __init__(self, event_name, known_imdb_ids=None, static_poster=None):
+    def __init__(
+        self, event_name, known_imdb_ids=None, static_poster=None, static_logo=None
+    ):
         self.event_name = event_name.lower()
         self.name_parser_patterns = [
             re.compile(pattern.format(event=event_name), re.IGNORECASE)
@@ -34,6 +36,7 @@ class BaseParserPipeline:
         ]
         self.known_imdb_ids = known_imdb_ids or {}
         self.static_poster = static_poster or {}
+        self.static_logo = static_logo or {}
 
     async def process_item(self, item, spider):
         title = re.sub(r"\.\.+", ".", item["torrent_title"])
@@ -116,6 +119,7 @@ class BaseParserPipeline:
     async def update_imdb_data(self, torrent_data: dict):
         year = torrent_data["date"].year
         title = torrent_data.get("event")
+        torrent_data["logo"] = self.static_logo.get(title.lower())
         imdb_id = self.known_imdb_ids.get(title.lower())
         if not imdb_id:
             result = self.imdb_cache.get(f"{title}_{year}")
@@ -162,7 +166,7 @@ class BaseParserPipeline:
         filtered_episode = [
             episode
             for episode in result["episodes"]
-            if episode["release_date"] == torrent_data["date"]
+            if episode["released"].date() == torrent_data["date"]
         ]
         if not filtered_episode:
             logging.warning(
@@ -177,11 +181,10 @@ class BaseParserPipeline:
 
         torrent_data.update(
             dict(
-                poster=episode.primary_image,
-                background=episode.primary_image,
-                description=episode.plot.get("en-US"),
-                runtime=episode.runtime,
-                imdb_rating=episode.rating,
+                poster=episode["thumbnail"],
+                background=episode["thumbnail"],
+                description=episode["overview"],
+                imdb_rating=episode["imdb_rating"],
             )
         )
 
@@ -200,7 +203,16 @@ class WWEParserPipeline(BaseParserPipeline):
         static_poster = {
             "wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg"
         }
-        super().__init__("wwe", known_imdb_ids, static_poster)
+        static_logo = {
+            "wwe raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
+            "wwe monday night raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
+            "wwe smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe friday night smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe friday smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg",
+            "wwe nxt": "https://image.tmdb.org/t/p/original/k0lJrDhoyuW6GWEWmHR7E2dZ1ic.png",
+        }
+        super().__init__("wwe", known_imdb_ids, static_poster, static_logo)
 
 
 class UFCParserPipeline(BaseParserPipeline):

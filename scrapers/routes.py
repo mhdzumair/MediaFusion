@@ -513,6 +513,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
             thumbnail=file.get("thumbnail"),
         )
         for file in parsed_data["file_data"]
+        if file.get("season_number") and file.get("episode_number")
     ]
 
     # Skip the torrent if no episode data is available
