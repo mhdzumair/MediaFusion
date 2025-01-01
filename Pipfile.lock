@@ -417,7 +417,7 @@
         "cinemagoerng": {
             "git": "git+https://github.com/mhdzumair/cinemagoerng.git",
             "markers": "python_version ~= '3.10'",
-            "ref": "15a21fc47d2bd02425bbbb9d23feef6626b92062"
+            "ref": "942918cca440c72136028e57f18459f6fc283428"
         },
         "click": {
             "hashes": [
@@ -990,7 +990,7 @@
         "humanize": {
             "git": "git+https://github.com/python-humanize/humanize.git",
             "markers": "python_version >= '3.9'",
-            "ref": "db482bbbc2f52f86a804d32acfccf0264ebdf5c6"
+            "ref": "f7bb2b7f9d6685b106a27515b4979d3123a23b34"
         },
         "hyperlink": {
             "hashes": [
@@ -1894,12 +1894,12 @@
         },
         "pydantic-settings": {
             "hashes": [
-                "sha256:ac4bfd4a36831a48dbf8b2d9325425b549a0a6f18cea118436d728eb4f1c4d66",
-                "sha256:e00c05d5fa6cbbb227c84bd7487c5c1065084119b750df7c8c1a554aed236eb5"
+                "sha256:10c9caad35e64bfb3c2fbf70a078c0e25cc92499782e5200747f942a065dec93",
+                "sha256:590be9e6e24d06db33a4262829edef682500ef008565a969c73d39d5f8bfb3fd"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==2.7.0"
+            "version": "==2.7.1"
         },
         "pydispatcher": {
             "hashes": [
