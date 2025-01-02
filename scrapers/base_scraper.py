@@ -1337,7 +1337,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             file_index=file.get("index"),
                         )
                         for file in parsed_data["file_data"]
-                        if file.get("episode_number")
+                        if file.get("episode_number") and file.get("season_number")
                     ]
                 elif episodes := parsed_data.get("episodes") and seasons:
                     episode_files = [
