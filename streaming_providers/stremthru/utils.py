@@ -69,10 +69,7 @@ async def get_video_url_from_stremthru(
 
 
 async def update_st_cache_status(
-    streams: list[TorrentStreams],
-    user_data: UserData,
-    stremio_video_id: str | None,
-    **kwargs,
+    streams: list[TorrentStreams], user_data: UserData, stremio_video_id: str, **kwargs
 ) -> str | None:
     """Updates the cache status of streams based on StremThru's instant availability."""
 

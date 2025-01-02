@@ -31,8 +31,8 @@ from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 async def filter_and_sort_streams(
     streams: list[TorrentStreams],
     user_data: UserData,
+    stremio_video_id: str,
     user_ip: str | None = None,
-    stremio_video_id: str | None = None,
 ) -> list[TorrentStreams]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
@@ -227,8 +227,12 @@ async def parse_stream_data(
     if not streams:
         return []
 
-    stremio_video_id = f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
-    streams = await filter_and_sort_streams(streams, user_data, user_ip, stremio_video_id)
+    stremio_video_id = (
+        f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
+    )
+    streams = await filter_and_sort_streams(
+        streams, user_data, stremio_video_id, user_ip
+    )
 
     # Precompute constant values
     show_full_torrent_name = user_data.show_full_torrent_name

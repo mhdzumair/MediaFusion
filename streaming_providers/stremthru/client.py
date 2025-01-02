@@ -36,7 +36,7 @@ class StremThru(DebridClient):
         elif isinstance(self.auth, dict):
             self.headers["X-StremThru-Store-Name"] = self.auth["store"]
             self.headers["X-StremThru-Store-Authorization"] = (
-                f"Bearer {self.auth["token"]}"
+                f"Bearer {self.auth['token']}"
             )
 
     def __del__(self):
@@ -119,12 +119,10 @@ class StremThru(DebridClient):
     async def get_torrent_instant_availability(
         self,
         magnet_links: list[str],
-        stremio_video_id: Optional[str] = None,
+        stremio_video_id: str,
         is_http_response: bool = False,
     ):
-        params = {"magnet": ",".join(magnet_links)}
-        if stremio_video_id:
-            params["sid"] = stremio_video_id
+        params = {"magnet": ",".join(magnet_links), "sid": stremio_video_id}
         return await self._make_request(
             "GET",
             "/v0/store/magnets/check",
