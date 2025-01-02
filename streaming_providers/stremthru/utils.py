@@ -69,14 +69,19 @@ async def get_video_url_from_stremthru(
 
 
 async def update_st_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, **kwargs
+    streams: list[TorrentStreams],
+    user_data: UserData,
+    stremio_video_id: str | None,
+    **kwargs,
 ) -> str | None:
     """Updates the cache status of streams based on StremThru's instant availability."""
 
     try:
         async with _get_client(user_data) as st_client:
             res = await st_client.get_torrent_instant_availability(
-                [stream.id for stream in streams], is_http_response=True
+                [stream.id for stream in streams],
+                stremio_video_id=stremio_video_id,
+                is_http_response=True,
             )
             instant_items = res.body.get("data", {}).get("items", [])
             for stream in streams:
