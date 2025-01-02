@@ -142,6 +142,7 @@ class StreamingProvider(BaseModel):
         "premiumize",
         "qbittorrent",
         "stremthru",
+        "easydebrid",
     ] = Field(alias="sv")
     stremthru_store_name: (
         Literal[
