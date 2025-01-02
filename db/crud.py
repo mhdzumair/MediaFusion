@@ -388,7 +388,7 @@ async def get_movie_streams(
 
     if live_search_streams:
         new_streams = await run_scrapers(movie_metadata, "movie")
-        all_streams = set(cached_streams).union(new_streams)
+        all_streams = list(set(cached_streams).union(new_streams))
         if new_streams:
             # reset the cache
             await REDIS_ASYNC_CLIENT.delete(cache_key)
@@ -433,7 +433,7 @@ async def get_series_streams(
 
     if live_search_streams:
         new_streams = await run_scrapers(series_metadata, "series", season, episode)
-        all_streams = set(cached_streams).union(new_streams)
+        all_streams = list(set(cached_streams).union(new_streams))
         if new_streams:
             # reset the cache
             await REDIS_ASYNC_CLIENT.delete(cache_key)
