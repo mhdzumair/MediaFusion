@@ -439,6 +439,7 @@ class CacheStatusRequest(BaseModel):
         "seedr",
         "pikpak",
         "torbox",
+        "easydebrid",
     ]
     info_hashes: list[str]
 
@@ -461,6 +462,7 @@ class CacheSubmitRequest(BaseModel):
         "seedr",
         "pikpak",
         "torbox",
+        "easydebrid",
     ]
     info_hashes: list[str]
 

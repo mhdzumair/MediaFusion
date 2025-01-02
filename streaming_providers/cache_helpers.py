@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
+from urllib.parse import urljoin
 
 import dramatiq
 import httpx
@@ -211,7 +212,7 @@ class MediaFusionCacheClient:
     """Client for interacting with MediaFusion cache service"""
 
     def __init__(self):
-        self.base_url = settings.mediafusion_url.rstrip("/")
+        self.base_url = settings.mediafusion_url
         self.timeout = httpx.Timeout(30.0)  # 30 second timeout
 
     async def fetch_cache_status(
@@ -233,7 +234,7 @@ class MediaFusionCacheClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{self.base_url}/streaming_provider/cache/status",
+                    urljoin(self.base_url, "/streaming_provider/cache/status"),
                     json={
                         "service": provider.service,
                         "info_hashes": info_hashes,
@@ -276,7 +277,7 @@ class MediaFusionCacheClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{self.base_url}/streaming_provider/cache/submit",
+                    urljoin(self.base_url, "/streaming_provider/cache/submit"),
                     json={
                         "service": provider.service,
                         "info_hashes": info_hashes,
