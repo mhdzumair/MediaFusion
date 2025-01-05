@@ -41,6 +41,7 @@ from utils.parser import (
     parse_stream_data,
     parse_tv_stream_data,
     calculate_max_similarity_ratio,
+    create_exception_stream
 )
 from utils.validation_helper import (
     validate_parent_guide_nudity,
@@ -525,7 +526,18 @@ async def get_movie_streams(
         ]
     movie_metadata = await get_movie_data_by_id(video_id)
     if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
-        return []
+        if movie_metadata:
+            return [create_exception_stream(
+                f"MediaFusion {user_data.streaming_provider.service.title()}",
+                f"🚫This item contains inappropriate content and it is advisable not to watch\n"
+                f"{movie_metadata.parent_guide_nudity_status} {movie_metadata.parent_guide_certificates}",
+                "inappropriate_content.mp4",
+            )]
+        return [create_exception_stream(
+            f"MediaFusion {user_data.streaming_provider.service.title()}",
+            "🚫Movie metadata not found",
+            "metadata_not_found.mp4"
+        )]
 
     live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
     cache_key = f"torrent_streams:{video_id}"
@@ -568,7 +580,18 @@ async def get_series_streams(
     if not (
         series_metadata and validate_parent_guide_nudity(series_metadata, user_data)
     ):
-        return []
+        if series_metadata:
+            return [create_exception_stream(
+                f"MediaFusion {user_data.streaming_provider.service.title()}",
+                f"🚫This item contains inappropriate content.\n"
+                f"{series_metadata.parent_guide_nudity_status} {series_metadata.parent_guide_certificates}",
+                "inappropriate_content.mp4",
+            )]
+        return [create_exception_stream(
+            f"MediaFusion {user_data.streaming_provider.service.title()}",
+            "🚫Series metadata not found",
+            "metadata_not_found.mp4"
+        )]
 
     live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
     cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
