@@ -346,3 +346,16 @@ async def validate_rpdb_token(user_data: schemas.UserData) -> dict:
         url=validation_url,
         invalid_creds_message="Invalid RPDB API Key. Please check your RPDB API Key.",
     )
+
+
+async def validate_mdblist_token(user_data: schemas.UserData) -> dict:
+    if not user_data.mdblist_config:
+        return {"status": "success", "message": "MDBList is not enabled."}
+
+    validation_url = (
+        f"https://api.mdblist.com/user?apikey={user_data.mdblist_config.api_key}"
+    )
+    return await validate_service(
+        url=validation_url,
+        invalid_creds_message="Invalid MDBList API Key. Please check your MDBList API Key.",
+    )

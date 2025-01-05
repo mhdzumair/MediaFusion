@@ -51,6 +51,7 @@ from utils.runtime_const import (
 from utils.validation_helper import (
     validate_mediaflow_proxy_credentials,
     validate_rpdb_token,
+    validate_mdblist_token,
 )
 
 logging.basicConfig(
@@ -160,6 +161,8 @@ async def configure(
     response.headers.update(const.NO_CACHE_HEADERS)
 
     configured_fields = []
+    mdblist_configured_lists = []
+    catalogs_data = const.CATALOG_DATA.copy()
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
         user_data.streaming_provider.password = "••••••••"
@@ -183,11 +186,21 @@ async def configure(
         user_data.rpdb_config.api_key = "••••••••"
         configured_fields.append("rpdb_api_key")
 
+    # Check MDBList configuration
+    if user_data.mdblist_config:
+        # user_data.mdblist_config.api_key = "••••••••"
+        # configured_fields.append("mdblist_api_key")
+        for mdblist in user_data.mdblist_config.lists:
+            mdblist_configured_lists.append(mdblist.model_dump())
+            catalogs_data[f"mdblist_{mdblist.catalog_type}_{mdblist.id}"] = (
+                f"MDBList: {mdblist.title}"
+            )
+
     user_data.api_password = None
 
     # Prepare catalogs based on user preferences or default order
     sorted_catalogs = sorted(
-        const.CATALOG_DATA.items(),
+        catalogs_data.items(),
         key=lambda x: (
             user_data.selected_catalogs.index(x[0])
             if x[0] in user_data.selected_catalogs
@@ -226,6 +239,7 @@ async def configure(
             "disabled_providers": settings.disabled_providers,
             "configured_fields": configured_fields,
             "secret_str": secret_str,
+            "mdblist_configured_lists": mdblist_configured_lists,
         },
     )
 
@@ -316,6 +330,7 @@ async def get_catalog(
     skip: int = 0,
     genre: str = None,
     user_data: schemas.UserData = Depends(get_user_data),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     cache_key, is_watchlist_catalog = get_cache_key(
         catalog_type, catalog_id, skip, genre, user_data
@@ -333,7 +348,14 @@ async def get_catalog(
         response.headers.update(const.NO_CACHE_HEADERS)
 
     metas = await fetch_metas(
-        catalog_type, catalog_id, genre, skip, user_data, request, is_watchlist_catalog
+        catalog_type,
+        catalog_id,
+        genre,
+        skip,
+        user_data,
+        request,
+        is_watchlist_catalog,
+        background_tasks,
     )
 
     if cache_key:
@@ -379,6 +401,7 @@ async def fetch_metas(
     user_data: schemas.UserData,
     request: Request,
     is_watchlist_catalog: bool,
+    background_tasks: BackgroundTasks,
 ) -> schemas.Metas:
     metas = schemas.Metas()
 
@@ -390,6 +413,12 @@ async def fetch_metas(
         )
     elif catalog_type == "events":
         metas.metas.extend(await crud.get_events_meta_list(genre, skip))
+    elif catalog_id.startswith("mdblist"):
+        metas.metas.extend(
+            await crud.get_mdblist_meta_list(
+                user_data, background_tasks, catalog_id, catalog_type, genre, skip
+            )
+        )
     else:
         user_ip = await get_user_public_ip(request, user_data)
         metas.metas.extend(
@@ -655,6 +684,7 @@ async def encrypt_user_data(
                 validate_provider_credentials(request, user_data),
                 validate_mediaflow_proxy_credentials(user_data),
                 validate_rpdb_token(user_data),
+                validate_mdblist_token(user_data),
             ]
 
             results = await asyncio.gather(*validation_tasks, return_exceptions=True)

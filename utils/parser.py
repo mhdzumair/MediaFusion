@@ -581,6 +581,15 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
     if user_data.mediaflow_config:
         addon_name += " 🕵🏼‍♂️"
 
+    mdblist_data = {}
+    if user_data.mdblist_config:
+        mdblist_data = {
+            f"mdblist_{mdblist.catalog_type}_{mdblist.id}": mdblist.model_dump(
+                include={"title", "catalog_type"}
+            )
+            for mdblist in user_data.mdblist_config.lists
+        }
+
     manifest_data = {
         "addon_name": addon_name,
         "version": settings.version,
@@ -594,6 +603,7 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         "enable_watchlist_catalogs": enable_watchlist_catalogs,
         "selected_catalogs": user_data.selected_catalogs,
         "genres": genres,
+        "mdblist_data": mdblist_data,
     }
 
     manifest_json = MANIFEST_TEMPLATE.render(manifest_data)

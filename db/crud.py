@@ -30,6 +30,7 @@ from db.models import (
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import Stream, TorrentStreamsList
+from scrapers.mdblist import initialize_mdblist_scraper
 from scrapers.scraper_tasks import run_scrapers, meta_fetcher
 from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils import crypto
@@ -140,6 +141,157 @@ async def get_meta_list(
         pipeline, projection_model=schemas.Meta
     ).to_list()
     return meta_list
+
+
+async def get_mdblist_meta_list(
+    user_data: schemas.UserData,
+    background_tasks: BackgroundTasks,
+    catalog: str,
+    catalog_type: str,
+    genre: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 25,
+) -> list[schemas.Meta]:
+    """Get a list of metadata entries from MDBList with improved pagination handling"""
+    if not user_data.mdblist_config:
+        return []
+
+    # Extract list info from catalog ID
+    _, media_type, list_id = catalog.split("_", 2)
+    list_config = next(
+        (
+            list_item
+            for list_item in user_data.mdblist_config.lists
+            if str(list_item.id) == list_id and list_item.catalog_type == media_type
+        ),
+        None,
+    )
+
+    if not list_config:
+        return []
+
+    meta_class = (
+        MediaFusionMovieMetaData
+        if catalog_type == "movie"
+        else MediaFusionSeriesMetaData
+    )
+
+    # Initialize MDBList scraper
+    mdblist_scraper = await initialize_mdblist_scraper(user_data.mdblist_config.api_key)
+    try:
+        if not list_config.use_filters:
+            return await mdblist_scraper.get_list_items(
+                list_id=list_id,
+                media_type=media_type,
+                skip=skip,
+                limit=limit,
+                genre=genre,
+                use_filters=False,
+            )
+
+        # For filtered results, we need to maintain a window of filtered results
+        # that's larger than the requested page to handle pagination properly
+        WINDOW_SIZE = max(500, skip + limit * 2)  # Maintain a larger window of results
+
+        # Get a window of IMDb IDs from MDBList
+        imdb_ids = await mdblist_scraper.get_list_items(
+            list_id=list_id,
+            media_type=media_type,
+            skip=0,  # Always start from beginning for filtered results
+            limit=WINDOW_SIZE,
+            genre=genre,
+            use_filters=True,
+        )
+
+        if not imdb_ids:
+            return []
+
+        # Prepare the filter pipeline
+        match_filter = {
+            "_id": {"$in": imdb_ids},
+            "type": catalog_type,
+            "total_streams": {"$gt": 0},
+        }
+
+        # Handle nudity filter
+        if "Disable" not in user_data.nudity_filter:
+            if "Unknown" in user_data.nudity_filter:
+                match_filter["parent_guide_nudity_status"] = {"$exists": True}
+            elif user_data.nudity_filter:
+                match_filter["parent_guide_nudity_status"] = {
+                    "$nin": user_data.nudity_filter
+                }
+
+        # Handle certification filter
+        if "Disable" not in user_data.certification_filter:
+            cert_filters = []
+            if "Unknown" in user_data.certification_filter:
+                cert_filters.append(
+                    {"parent_guide_certificates": {"$exists": True, "$ne": []}}
+                )
+            filter_values = get_filter_certification_values(user_data)
+            if filter_values:
+                cert_filters.append(
+                    {"parent_guide_certificates": {"$nin": filter_values}}
+                )
+            if cert_filters:
+                match_filter["$or"] = cert_filters
+
+        # Use facet to get both filtered results and total count efficiently
+        pipeline = [
+            {"$match": match_filter},
+            {"$sort": {"last_stream_added": -1}},
+            {
+                "$facet": {
+                    "results": [{"$skip": skip}, {"$limit": limit}],
+                    "total": [{"$count": "count"}],
+                },
+            },
+        ]
+
+        results = await meta_class.get_motor_collection().aggregate(pipeline).to_list()
+        if not results:
+            return []
+
+        filtered_results = [
+            schemas.Meta.model_validate(result) for result in results[0]["results"]
+        ]
+        total_count = results[0]["total"][0]["count"] if results[0]["total"] else 0
+
+        # If we're close to the end of our window and there might be more results,
+        # trigger background fetch of next batch of metadata
+        if total_count >= WINDOW_SIZE - limit:
+            # Get the next batch of IMDb IDs for background processing
+            next_batch_ids = await mdblist_scraper.get_list_items(
+                list_id=list_id,
+                media_type=media_type,
+                skip=WINDOW_SIZE,
+                limit=100,  # Fetch next batch
+                genre=genre,
+                use_filters=True,
+            )
+
+            if next_batch_ids:
+                # Check which IDs are missing from our database
+                existing_meta_ids = set(
+                    doc["_id"]
+                    for doc in await meta_class.get_motor_collection()
+                    .find({"_id": {"$in": next_batch_ids}}, {"_id": 1})
+                    .to_list(None)
+                )
+                missing_ids = list(set(next_batch_ids) - existing_meta_ids)
+
+                if missing_ids:
+                    background_tasks.add_task(
+                        fetch_metadata,
+                        missing_ids,
+                        catalog_type,
+                    )
+
+        return filtered_results
+
+    finally:
+        await mdblist_scraper.close()
 
 
 async def get_tv_meta_list(
@@ -1502,3 +1654,21 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
         cache_keys = await REDIS_ASYNC_CLIENT.keys(f"{metadata_type}_{meta_id}_meta*")
         cache_keys.append(f"{metadata_type}_data:{meta_id}")
         await REDIS_ASYNC_CLIENT.delete(*cache_keys)
+
+
+async def fetch_metadata(imdb_ids: list[str], metadata_type: str):
+    circuit_breaker = CircuitBreaker(
+        failure_threshold=2, recovery_timeout=5, half_open_attempts=2
+    )
+
+    async for result in batch_process_with_circuit_breaker(
+        get_movie_data_by_id if metadata_type == "movie" else get_series_data_by_id,
+        imdb_ids,
+        5,
+        rate_limit_delay=1,
+        cb=circuit_breaker,
+    ):
+        if not result:
+            continue
+
+        logging.info(f"Stored metadata for {metadata_type} {result.id}")

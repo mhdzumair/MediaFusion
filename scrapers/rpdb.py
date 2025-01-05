@@ -20,6 +20,9 @@ async def check_rpdb_poster_availability(rpdb_poster_url: str) -> bool:
         ) as client:
             response = await client.head(rpdb_poster_url)
             return response.status_code == 200
+    except httpx.TimeoutException as exc:
+        logging.error(f"Timeout for {rpdb_poster_url} - {exc}")
+        return False
     except httpx.HTTPError as exc:
         logging.error(f"HTTP Exception for {exc.request.url} - {exc}")
         return False

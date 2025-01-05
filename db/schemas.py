@@ -196,6 +196,30 @@ class SortingOption(BaseModel):
         populate_by_name = True
 
 
+class MDBListItem(BaseModel):
+    id: int = Field(alias="i")
+    title: str = Field(alias="t")
+    catalog_type: Literal["movie", "series"] = Field(alias="ct")
+    use_filters: bool = Field(default=False, alias="uf")
+
+    @property
+    def catalog_id(self) -> str:
+        return f"mdblist_{self.catalog_type}_{self.id}"
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
+class MDBListConfig(BaseModel):
+    api_key: str = Field(alias="ak")
+    lists: list[MDBListItem] = Field(default_factory=list, alias="l")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
     selected_catalogs: list[str] = Field(alias="sc", default_factory=list)
@@ -237,6 +261,7 @@ class UserData(BaseModel):
     live_search_streams: bool = Field(default=False, alias="lss")
     contribution_streams: bool = Field(default=False, alias="cs")
     show_language_country_flag: bool = Field(default=False, alias="slcf")
+    mdblist_config: MDBListConfig | None = Field(default=None, alias="mdb")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):

@@ -94,8 +94,19 @@
       "arabic_series": {"type": "series", "name": "Arabic Series"}
     } %}
     {% for catalog_id in selected_catalogs %}
-    {% set catalog = catalog_definitions[catalog_id] %}
-    {% if catalog %}
+    {% set catalog = catalog_definitions[catalog_id] | default(mdblist_data[catalog_id]) %}
+	{% if "mdblist" in catalog_id %}
+	{{ comma() }}
+	{
+	  "id": "{{ catalog_id }}",
+	  "type": "{{ catalog.catalog_type }}",
+	  "name": "{{ catalog.title }}",
+	  "extra": [
+		{"name": "skip", "isRequired": false},
+		{"name": "genre", "isRequired": false, "options": ["action","anime","comedy","crime","documentary","drama","family","fantasy","history","holiday","horror","music","musical","mystery","science-fiction","short","sporting-event","superhero","suspense","thriller","war","western","animation","adventure","romance","reality","soap","news","talk-show","biography","sci-fi","sport","adult","film-noir","reality-tv","game-show","special-interest","children","home-and-garden","tv-movie","sports","eastern","disaster","donghua","sci-fi-fantasy","action-adventure","talk","war-politics","kids"]}
+	  ]
+	}
+    {% elif catalog %}
     {% set genres = catalog.genres | default(genres[catalog.type]) | default([]) %}
     {{ comma() }}
     {

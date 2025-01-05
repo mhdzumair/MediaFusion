@@ -256,7 +256,7 @@ class MetadataFetcher:
                     break
 
             except Exception as e:
-                logger.error(f"Error fetching from {source.value}: {e}")
+                logger.exception(f"Error fetching from {source.value}: {e}")
                 continue
 
         return metadata

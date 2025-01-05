@@ -1,6 +1,7 @@
 // ---- Variables ----
 const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
+let mdbListUI;
 const servicesRequiringCredentials = ['pikpak',];
 const servicesRequiringUrl = ['stremthru'];
 const servicesNotNeedingDebridProxy = ['stremthru'];
@@ -425,6 +426,14 @@ function getUserData() {
         validateInput('rpdb_api_key', rpdbConfig.api_key.trim() !== '');
     }
 
+    let mdblistConfig = null;
+    if (document.getElementById('enable_mdblist').checked) {
+        mdblistConfig = {
+            api_key: document.getElementById('mdblist_api_key').value,
+            lists: mdbListUI.getSelectedListsData()
+        };
+    }
+
     // Collect and validate other user data
     const maxSizeSlider = document.getElementById('max_size_slider');
     const maxSizeValue = maxSizeSlider.value;
@@ -489,6 +498,7 @@ function getUserData() {
         rpdb_config: rpdbConfig,
         live_search_streams: document.getElementById('liveSearchStreams').checked,
         contribution_streams: document.getElementById('contributionStreams').checked,
+        mdblist_config: mdblistConfig,
     };
 }
 
@@ -663,6 +673,10 @@ document.getElementById('enable_rpdb').addEventListener('change', function () {
     setElementDisplay('rpdb_config', this.checked ? 'block' : 'none');
 });
 
+document.getElementById('enable_mdblist').addEventListener('change', function() {
+    setElementDisplay('mdblist_config', this.checked ? 'block' : 'none');
+});
+
 
 // Event listener for the slider
 document.getElementById('max_size_slider').addEventListener('input', updateSizeOutput);
@@ -730,13 +744,14 @@ document.getElementById('copyBtn').addEventListener('click', async function (eve
 // ---- Initial Setup ----
 
 document.addEventListener('DOMContentLoaded', function () {
+    mdbListUI = new MDBListUI();
     updateProviderFields();
     updateSizeOutput();
 });
 
 document.addEventListener('DOMContentLoaded', function () {
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    let tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    let tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
 
@@ -755,6 +770,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
     setupPasswordToggle('mediaflow_api_password', 'toggleMediaFlowPassword', 'toggleMediaFlowPasswordIcon');
     setupPasswordToggle('rpdb_api_key', 'toggleRPDBApiKey', 'toggleRPDBApiKeyIcon');
+    setupPasswordToggle('mdblist_api_key', 'toggleMDBListApiKey', 'toggleMDBListApiKeyIcon');
 });
 
 document.addEventListener('DOMContentLoaded', function () {

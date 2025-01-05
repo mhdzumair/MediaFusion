@@ -282,10 +282,10 @@ class TorrentStreams(Document):
 class TVStreams(Document):
     meta_id: str
     name: str
+    source: str
     url: str | None = None
     ytId: str | None = None
     externalUrl: str | None = None
-    source: str
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     country: str | None = None
