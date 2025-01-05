@@ -359,6 +359,8 @@ async def get_media_data_by_id(
     if cached_data:
         return model_class.model_validate_json(cached_data)
 
+    lock_key = f"meta_id_lock:{meta_id}"
+    _, redis_lock = await acquire_redis_lock(lock_key, timeout=30, block=True)
     # Fetch existing data
     media_data = await model_class.get(meta_id)
 
@@ -366,6 +368,7 @@ async def get_media_data_by_id(
     if not media_data and meta_id.startswith("tt"):
         raw_data = await meta_fetcher.get_metadata(meta_id, media_type)
         if not raw_data:
+            await release_redis_lock(redis_lock)
             return None
 
         if raw_data["type"] != media_type:
@@ -375,6 +378,7 @@ async def get_media_data_by_id(
                 meta_id,
                 raw_data["type"],
             )
+            await release_redis_lock(redis_lock)
             return None
 
         # Create metadata object with common fields
@@ -410,11 +414,16 @@ async def get_media_data_by_id(
             else:
                 # Handle duplicate title/year combination
                 existing_media = await model_class.find_one(
-                    {"title": media_data.title, "year": media_data.year}
+                    {
+                        "title": media_data.title,
+                        "year": media_data.year,
+                        "_id": {"$regex": "^mf"},
+                    }
                 )
 
             if not existing_media:
                 logging.error(f"Error occurred while adding metadata: {error}")
+                await release_redis_lock(redis_lock)
                 return None
 
             if existing_media.id != media_data.id:
@@ -440,7 +449,7 @@ async def get_media_data_by_id(
             media_data.model_dump_json(exclude_none=True),
             ex=86400,  # 1 day
         )
-
+    await release_redis_lock(redis_lock)
     return media_data
 
 
