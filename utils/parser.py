@@ -22,7 +22,7 @@ from streaming_providers.cache_helpers import (
 )
 from utils import const
 from utils.config import config_manager
-from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
+from utils.const import STREAMING_PROVIDERS_SHORT_NAMES, CERTIFICATION_MAPPING
 from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS, MANIFEST_TEMPLATE
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
@@ -92,12 +92,7 @@ async def filter_and_sort_streams(
         filtered_streams.append(stream)
 
     if not filtered_streams:
-        return [
-            create_exception_stream(
-                settings.addon_name,
-                "🚫 Streams were found, but they were filtered due to your configuration.",
-                "filtered_no_streams.mp4"
-            )]
+        return []
 
     # Step 2: Update cache status based on provider
     if user_data.streaming_provider:
@@ -229,19 +224,15 @@ async def parse_stream_data(
     user_ip: str | None = None,
     is_series: bool = False,
 ) -> list[Stream]:
+    if not streams:
+        return []
+
     streaming_provider_name = (
         STREAMING_PROVIDERS_SHORT_NAMES.get(user_data.streaming_provider.service, "P2P")
         if user_data.streaming_provider
         else "P2P"
     )
-
-    if not streams:
-        return [
-            create_exception_stream(
-                settings.addon_name,
-                "🚫 No results available in the system.",
-                "no_results.mp4")
-        ]
+    addon_name = f"{settings.addon_name} {streaming_provider_name}"
 
     stremio_video_id = (
         f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
@@ -250,7 +241,14 @@ async def parse_stream_data(
         streams, user_data, stremio_video_id, user_ip
     )
 
-    streams = await filter_and_sort_streams(streams, user_data, user_ip, streaming_provider_name)
+    if not streams:
+        return [
+            create_exception_stream(
+                settings.addon_name,
+                "🚫 Streams Found\n⚙️ Filtered by your configuration preferences",
+                "filtered_no_streams.mp4",
+            )
+        ]
 
     # Precompute constant values
     show_full_torrent_name = user_data.show_full_torrent_name
@@ -265,7 +263,7 @@ async def parse_stream_data(
             user_data.mediaflow_config
             and user_data.mediaflow_config.proxy_debrid_streams
         ):
-            streaming_provider_name += " 🕵🏼‍♂️"
+            addon_name += " 🕵🏼‍♂️"
 
         base_proxy_url_template = (
             f"{settings.host_url}/streaming_provider/{secret_str}/stream/{{}}"
@@ -355,7 +353,7 @@ async def parse_stream_data(
         )
 
         stream_details = {
-            "name": f"{settings.addon_name} {streaming_provider_name} {resolution} {streaming_provider_status}",
+            "name": f"{addon_name} {resolution} {streaming_provider_status}",
             "description": description,
             "behaviorHints": {
                 "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
@@ -655,3 +653,75 @@ def calculate_max_similarity_ratio(
     max_similarity_ratio = max([title_similarity_ratio] + aka_similarity_ratios)
 
     return max_similarity_ratio
+
+
+def get_certification_level(certificates: list) -> str:
+    """
+    Get the highest certification level from a list of certificates.
+    Returns the category name (All Ages, Children, etc.) based on the highest restriction level.
+    """
+    if not certificates:
+        return "Unknown"
+
+    # Order of restriction levels from lowest to highest
+    levels = ["All Ages", "Children", "Parental Guidance", "Teens", "Adults"]
+
+    highest_level = "Unknown"
+    for certificate in certificates:
+        for level in levels:
+            if certificate in CERTIFICATION_MAPPING[level]:
+                # If current level is more restrictive, update highest_level
+                if (
+                    levels.index(level) > levels.index(highest_level)
+                    if highest_level in levels
+                    else -1
+                ):
+                    highest_level = level
+
+    return highest_level
+
+
+def get_age_rating_emoji(certification_level: str) -> str:
+    """
+    Get appropriate emoji for certification level
+    """
+    emoji_mapping = {
+        "All Ages": "👨‍👩‍👧‍👦",
+        "Children": "👶",
+        "Parental Guidance": "👨‍👩‍👧‍👦",
+        "Teens": "👱",
+        "Adults": "🔞",
+        "Unknown": "❓",
+    }
+    return emoji_mapping.get(certification_level, "❓")
+
+
+def get_nudity_status_emoji(nudity_status: str) -> str:
+    """
+    Get appropriate emoji for nudity status
+    """
+    emoji_mapping = {
+        "None": "👕",
+        "Mild": "⚠️",
+        "Moderate": "🔞",
+        "Severe": "⛔",
+    }
+    return emoji_mapping.get(nudity_status, "❓")
+
+
+def create_content_warning_message(metadata) -> str:
+    """
+    Create a formatted warning message with emojis based on movie metadata
+    """
+    cert_level = get_certification_level(metadata.parent_guide_certificates)
+    cert_emoji = get_age_rating_emoji(cert_level)
+    nudity_emoji = get_nudity_status_emoji(metadata.parent_guide_nudity_status)
+
+    message = (
+        f"⚠️ Content Warning ⚠️\n"
+        f"This content may not be suitable for your preferences:\n"
+        f"Certification: {cert_emoji} {cert_level}\n"
+        f"Nudity Status: {nudity_emoji} {metadata.parent_guide_nudity_status}"
+    )
+
+    return message

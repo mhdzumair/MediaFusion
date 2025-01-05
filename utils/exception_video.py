@@ -23,6 +23,6 @@ def create_text_video(
 
 if __name__ == "__main__":
     create_text_video(
-        "../resources/exceptions/update_imdb_data.mp4",
-        "We updated the metadata from IMDb.\nThanks for your contribution!",
+        "resources/exceptions/inappropriate_content.mp4",
+        "This content may not be suitable for your preferences",
     )
