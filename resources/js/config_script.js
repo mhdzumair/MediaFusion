@@ -413,7 +413,7 @@ function getUserData() {
         if (servicesNotNeedingDebridProxy.includes(provider)) {
             mediaflowConfig.proxy_debrid_streams = false;
         }
-        validateInput('mediaflow_proxy_url', validateUrl(mediaflowConfig.proxy_url));
+        validateInput('mediaflow_proxy_url', mediaflowConfig.proxy_url.trim() !== '');
         validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
 

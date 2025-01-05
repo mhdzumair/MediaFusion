@@ -275,11 +275,13 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
                 return public_ip
     except httpx.HTTPStatusError as e:
         logging.error(f"HTTP error occurred: {e}")
+    except httpx.TimeoutException as e:
+        logging.error(f"Request timed out: {e}")
     except httpx.RequestError as e:
         logging.error(f"Request error occurred: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-    return None
+    raise Exception("Failed to get MediaFlow proxy public IP address.")
 
 
 async def get_user_public_ip(
