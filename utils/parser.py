@@ -92,7 +92,12 @@ async def filter_and_sort_streams(
         filtered_streams.append(stream)
 
     if not filtered_streams:
-        return []
+        return [
+            create_exception_stream(
+                settings.addon_name,
+                "🚫 Streams were found, but they were filtered due to your configuration.",
+                "filtered_no_streams.mp4"
+            )]
 
     # Step 2: Update cache status based on provider
     if user_data.streaming_provider:
@@ -224,8 +229,19 @@ async def parse_stream_data(
     user_ip: str | None = None,
     is_series: bool = False,
 ) -> list[Stream]:
+    streaming_provider_name = (
+        STREAMING_PROVIDERS_SHORT_NAMES.get(user_data.streaming_provider.service, "P2P")
+        if user_data.streaming_provider
+        else "P2P"
+    )
+
     if not streams:
-        return []
+        return [
+            create_exception_stream(
+                settings.addon_name,
+                "🚫 No results available in the system.",
+                "no_results.mp4")
+        ]
 
     stremio_video_id = (
         f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
@@ -234,13 +250,10 @@ async def parse_stream_data(
         streams, user_data, stremio_video_id, user_ip
     )
 
+    streams = await filter_and_sort_streams(streams, user_data, user_ip, streaming_provider_name)
+
     # Precompute constant values
     show_full_torrent_name = user_data.show_full_torrent_name
-    streaming_provider_name = (
-        STREAMING_PROVIDERS_SHORT_NAMES.get(user_data.streaming_provider.service, "P2P")
-        if user_data.streaming_provider
-        else "P2P"
-    )
     has_streaming_provider = user_data.streaming_provider is not None
     download_via_browser = (
         has_streaming_provider and user_data.streaming_provider.download_via_browser
