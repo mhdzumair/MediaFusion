@@ -577,3 +577,21 @@ async def block_torrent(block_data: schemas.BlockTorrent):
             status_code=500, detail=f"Failed to block torrent: {str(e)}"
         )
     return {"status": f"Torrent {block_data.info_hash} has been successfully blocked."}
+
+
+@router.post("/migrate_id", tags=["scraper"])
+async def migrate_id(migrate_data: schemas.MigrateID):
+    # convert mediafusion id to imdb id
+    await TorrentStreams.find({"meta_id": migrate_data.mediafusion_id}).update(
+        {"$set": {"meta_id": migrate_data.imdb_id}}
+    )
+    await MediaFusionMetaData.get_motor_collection().delete_one(
+        {"_id": migrate_data.mediafusion_id}
+    )
+    if migrate_data.media_type == "series":
+        await get_series_data_by_id(migrate_data.imdb_id)
+    else:
+        await get_movie_data_by_id(migrate_data.imdb_id)
+    return {
+        "status": f"Successfully migrated {migrate_data.mediafusion_id} to {migrate_data.imdb_id}."
+    }

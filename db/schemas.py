@@ -497,3 +497,9 @@ class CacheSubmitResponse(BaseModel):
 
     success: bool
     message: str
+
+
+class MigrateID(BaseModel):
+    mediafusion_id: str
+    imdb_id: str
+    media_type: Literal["movie", "series"]
