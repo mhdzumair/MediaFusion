@@ -154,7 +154,7 @@ async def get_mdblist_meta_list(
     skip: int = 0,
     limit: int = 25,
 ) -> list[schemas.Meta]:
-    """Get a list of metadata entries from MDBList with improved pagination handling"""
+    """Get a list of metadata entries from MDBList"""
     if not user_data.mdblist_config:
         return []
 
@@ -191,16 +191,12 @@ async def get_mdblist_meta_list(
                 use_filters=False,
             )
 
-        # For filtered results, we need to maintain a window of filtered results
-        # that's larger than the requested page to handle pagination properly
-        WINDOW_SIZE = max(500, skip + limit * 2)  # Maintain a larger window of results
-
-        # Get a window of IMDb IDs from MDBList
+        # For filtered results, get all IMDb IDs first
         imdb_ids = await mdblist_scraper.get_list_items(
             list_id=list_id,
             media_type=media_type,
-            skip=0,  # Always start from beginning for filtered results
-            limit=WINDOW_SIZE,
+            skip=0,
+            limit=0,  # Ignored for filtered results
             genre=genre,
             use_filters=True,
         )
@@ -208,7 +204,7 @@ async def get_mdblist_meta_list(
         if not imdb_ids:
             return []
 
-        # Prepare the filter pipeline
+        # Build filter pipeline
         match_filter = {
             "_id": {"$in": imdb_ids},
             "type": catalog_type,
@@ -239,58 +235,36 @@ async def get_mdblist_meta_list(
             if cert_filters:
                 match_filter["$or"] = cert_filters
 
-        # Use facet to get both filtered results and total count efficiently
+        # Get filtered results with pagination
+        poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
+
         pipeline = [
             {"$match": match_filter},
             {"$sort": {"last_stream_added": -1}},
-            {
-                "$facet": {
-                    "results": [{"$skip": skip}, {"$limit": limit}],
-                    "total": [{"$count": "count"}],
-                },
-            },
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
         ]
 
         results = await meta_class.get_motor_collection().aggregate(pipeline).to_list()
         if not results:
-            return []
-
-        filtered_results = [
-            schemas.Meta.model_validate(result) for result in results[0]["results"]
-        ]
-        total_count = results[0]["total"][0]["count"] if results[0]["total"] else 0
-
-        # If we're close to the end of our window and there might be more results,
-        # trigger background fetch of next batch of metadata
-        if total_count >= WINDOW_SIZE - limit:
-            # Get the next batch of IMDb IDs for background processing
-            next_batch_ids = await mdblist_scraper.get_list_items(
-                list_id=list_id,
-                media_type=media_type,
-                skip=WINDOW_SIZE,
-                limit=100,  # Fetch next batch
-                genre=genre,
-                use_filters=True,
+            # Check for missing metadata and trigger background fetch
+            existing_ids = set(
+                doc["_id"]
+                for doc in await meta_class.get_motor_collection()
+                .find({"_id": {"$in": imdb_ids}}, {"_id": 1})
+                .to_list(None)
             )
+            missing_ids = list(set(imdb_ids) - existing_ids)
 
-            if next_batch_ids:
-                # Check which IDs are missing from our database
-                existing_meta_ids = set(
-                    doc["_id"]
-                    for doc in await meta_class.get_motor_collection()
-                    .find({"_id": {"$in": next_batch_ids}}, {"_id": 1})
-                    .to_list(None)
+            if missing_ids:
+                background_tasks.add_task(
+                    fetch_metadata,
+                    missing_ids,
+                    catalog_type,
                 )
-                missing_ids = list(set(next_batch_ids) - existing_meta_ids)
-
-                if missing_ids:
-                    background_tasks.add_task(
-                        fetch_metadata,
-                        missing_ids,
-                        catalog_type,
-                    )
-
-        return filtered_results
+            return []
+        return [schemas.Meta.model_validate(result) for result in results]
 
     finally:
         await mdblist_scraper.close()
