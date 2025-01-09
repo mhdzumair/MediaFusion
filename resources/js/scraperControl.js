@@ -279,7 +279,6 @@ function updateContentType() {
 function collectSportsMetadata() {
     return {
         title: document.getElementById('sportsTitle').value,
-        year: document.getElementById('sportsYear').value,
         poster: document.getElementById('sportsPoster').value,
         background: document.getElementById('sportsBackground').value,
         logo: document.getElementById('sportsLogo').value,
@@ -614,7 +613,7 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         const sportsMetadata = collectSportsMetadata();
 
         // Validate required fields
-        if (!sportsMetadata.title || !sportsMetadata.poster || !sportsMetadata.catalogs) {
+        if (!sportsMetadata.title || !sportsMetadata.catalogs) {
             showNotification('Title, poster, and sports category are required.', 'error');
             resetButton(submitBtn, loadingSpinner);
             return;

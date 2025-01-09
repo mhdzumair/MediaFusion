@@ -31,7 +31,7 @@ class MotoGPParserPipeline:
                 ),
             ],
         }
-        self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP"]["poster"])
+        self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["poster"])
 
         self.smcgill1969_resolutions = {
             "4K": "4k",

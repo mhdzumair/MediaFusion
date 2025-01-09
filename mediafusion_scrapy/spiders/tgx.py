@@ -399,8 +399,8 @@ class MotoGPTgxSpider(TgxSpider):
 
     keyword_patterns = re.compile(r"MotoGP[ .+]*", re.IGNORECASE)
     scraped_info_hash_key = "motogp_tgx_scraped_info_hash"
-    background_image = random.choice(SPORTS_ARTIFACTS["MotoGP"]["background"])
-    logo_image = random.choice(SPORTS_ARTIFACTS["MotoGP"]["logo"])
+    background_image = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["background"])
+    logo_image = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["logo"])
 
     custom_settings = {
         "ITEM_PIPELINES": {

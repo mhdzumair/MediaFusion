@@ -1,9 +1,11 @@
 import json
 import logging
+import random
 from datetime import date, datetime
 from typing import Literal, Optional
 from uuid import uuid4
 
+import PTT
 from fastapi import HTTPException, UploadFile, File, Form, APIRouter, BackgroundTasks
 from fastapi.requests import Request
 from fastapi.responses import RedirectResponse, Response
@@ -19,14 +21,14 @@ from db.crud import (
     get_or_create_metadata,
 )
 from db.enums import TorrentType
-from db.models import TorrentStreams, EpisodeFile
+from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio, convert_bytes_to_readable
-from utils.runtime_const import TEMPLATES
+from utils.runtime_const import TEMPLATES, SPORTS_ARTIFACTS
 from utils.telegram_bot import telegram_notifier
 
 router = APIRouter()
@@ -178,9 +180,7 @@ async def update_imdb_data(
 async def add_torrent(
     meta_type: Literal["movie", "series"] = Form(...),
     meta_id: Optional[str] = Form(None),
-    # Sports metadata fields
     title: Optional[str] = Form(None),
-    year: Optional[int] = Form(None),
     poster: Optional[str] = Form(None),
     background: Optional[str] = Form(None),
     logo: Optional[str] = Form(None),
@@ -189,7 +189,6 @@ async def add_torrent(
     is_add_title_to_poster: bool = Form(False),
     catalogs: Optional[str] = Form(None),
     is_sports_content: bool = Form(False),
-    # Common fields
     languages: Optional[str] = Form(None),
     created_at: date = Form(...),
     torrent_type: TorrentType = Form(TorrentType.PUBLIC),
@@ -248,34 +247,47 @@ async def add_torrent(
 
     # Handle sports content metadata
     if is_sports_content:
-        if not title or not poster or not catalog_list:
-            raise_error("Title, poster, and sports catalog are required.")
+        if not title or not catalog_list:
+            raise_error("Title and sports catalog are required.")
+        catalog = catalog_list[0]
+        genres = []
+        sports_category = {}
 
-        # Validate catalog is in CATALOG_DATA
-        if catalog_list[0] not in const.CATALOG_DATA:
+        if catalog in ["wwe", "ufc"]:
+            genres = [catalog]
+            sports_category = SPORTS_ARTIFACTS[catalog]
+            catalog = "fighting"
+        elif catalog_mapped := const.CATALOG_DATA.get(catalog):
+            sports_category = SPORTS_ARTIFACTS[catalog_mapped]
+        else:
             raise_error(
                 f"Invalid sports catalog. Must be one of: {', '.join(const.CATALOG_DATA.keys())}"
             )
 
         # Determine if it's a series type catalog
-        is_series_catalog = catalog_list[0] in ["formula_racing", "motogp_racing"]
+        is_series_catalog = catalog in ["formula_racing", "motogp_racing"]
         if is_series_catalog:
             meta_type = "series"
         else:
             meta_type = "movie"
+            # Check if title has a date and append created_at if not
+            created_at_str = created_at.strftime("%d.%m.%Y")
+            if created_at_str not in title and not PTT.parse_title(title).get("date"):
+                title += f" {created_at_str}"
 
         # Create metadata for sports content
         sports_metadata = {
             "title": title,
-            "year": year,
-            "poster": poster,
-            "background": background or poster,  # Use poster as fallback
-            "logo": logo,
+            "year": created_at.year,
+            "poster": poster or random.choice(sports_category["poster"]),
+            "background": background or random.choice(sports_category["background"]),
+            "logo": logo or random.choice(sports_category["logo"]),
             "description": description,
             "website": website,
-            "is_add_title_to_poster": is_add_title_to_poster,
+            "is_add_title_to_poster": is_add_title_to_poster if poster else True,
             "catalogs": catalog_list,
             "created_at": created_at,
+            "genres": genres,
         }
 
         # Get or create metadata
