@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone, timedelta
 
 import humanize
 from fastapi import APIRouter, Request, Response
@@ -65,6 +66,7 @@ async def get_torrents_by_sources(response: Response):
         [
             {"$group": {"_id": "$source", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
+            {"$limit": 20},  # Limit to top 20 sources
         ]
     ).to_list()
     torrent_sources = [
@@ -151,3 +153,65 @@ async def debrid_cache_metrics():
     Returns statistics about cache size, memory usage, and usage patterns per service.
     """
     return await get_debrid_cache_metrics()
+
+
+@metrics_router.get("/torrents/uploaders", tags=["metrics"])
+async def get_torrents_by_uploaders(response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
+    results = await TorrentStreams.aggregate(
+        [
+            {"$match": {"uploader": {"$ne": None}}},
+            {"$group": {"_id": "$uploader", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 20},  # Limit to top 20 uploaders
+        ]
+    ).to_list()
+
+    uploader_stats = [
+        {"name": stat["_id"] if stat["_id"] else "Unknown", "count": stat["count"]}
+        for stat in results
+    ]
+    return uploader_stats
+
+
+@metrics_router.get("/torrents/uploaders/weekly", tags=["metrics"])
+async def get_weekly_top_uploaders(response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
+
+    # Calculate the start of the current week (Monday)
+    today = datetime.now(tz=timezone.utc)
+    start_of_week = today - timedelta(days=today.weekday())
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    results = await TorrentStreams.aggregate(
+        [
+            {
+                "$match": {
+                    "uploader": {"$ne": None},
+                    "created_at": {"$gte": start_of_week},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$uploader",
+                    "count": {"$sum": 1},
+                    "latest_upload": {"$max": "$created_at"},
+                }
+            },
+            {"$sort": {"count": -1}},
+            {"$limit": 20},
+        ]
+    ).to_list()
+
+    uploaders_stats = [
+        {
+            "name": stat["_id"],
+            "count": stat["count"],
+            "latest_upload": (
+                stat["latest_upload"].isoformat() if stat["latest_upload"] else None
+            ),
+        }
+        for stat in results
+    ]
+
+    return {"week_start": start_of_week.isoformat(), "uploaders": uploaders_stats}

@@ -110,14 +110,10 @@ async def get_redis_metrics() -> Dict[str, Any]:
 
 async def get_debrid_cache_metrics() -> Dict[str, Any]:
     """
-    Get detailed metrics about debrid cache usage.
+    Get simplified metrics about debrid cache usage, focusing only on cached torrents per service.
     """
-    metrics = {
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-        "total_memory_usage": 0,
-        "total_cached_torrents": 0,
-        "services": {},
-    }
+    metrics = {"timestamp": datetime.now(tz=timezone.utc).isoformat(), "services": {}}
+
     debrid_services = [
         "alldebrid",
         "debridlink",
@@ -132,37 +128,21 @@ async def get_debrid_cache_metrics() -> Dict[str, Any]:
     ]
 
     try:
-
         for service in debrid_services:
             cache_key = f"debrid_cache:{service}"
-
-            # Get various metrics for each service
             cache_size = await REDIS_ASYNC_CLIENT.hlen(cache_key)
-            memory_usage = await REDIS_ASYNC_CLIENT.memory_usage(cache_key) or 0
 
-            metrics["services"][service] = {
-                "cached_torrents": cache_size,
-                "memory_usage": memory_usage,
-            }
+            if cache_size > 0:  # Only include services with cached torrents
+                metrics["services"][service] = {"cached_torrents": cache_size}
 
-            # Update totals
-            metrics["total_cached_torrents"] += cache_size
-            metrics["total_memory_usage"] += memory_usage
-
-        # Add human readable total memory
-        metrics["total_memory_usage_human"] = humanize.naturalsize(
-            metrics["total_memory_usage"]
-        )
-
-        # Calculate which service has most cached torrents
-        if metrics["services"]:
-            most_cached = max(
-                metrics["services"].items(), key=lambda x: x[1]["cached_torrents"]
+        # Sort services by cache size
+        metrics["services"] = dict(
+            sorted(
+                metrics["services"].items(),
+                key=lambda x: x[1]["cached_torrents"],
+                reverse=True,
             )
-            metrics["most_used_service"] = {
-                "name": most_cached[0],
-                "cached_count": most_cached[1]["cached_torrents"],
-            }
+        )
 
         return metrics
     except Exception as e:

@@ -13,6 +13,14 @@ body, html {
     overflow-y: auto;
 }
 
+h4 {
+    color: #ffffff;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid rgba(74, 71, 163, 0.5);
+    padding-bottom: 0.5rem;
+}
+
 .config-container {
     margin: 2% auto;
     padding: 2%;
@@ -38,7 +46,37 @@ body, html {
 }
 
 .chart-section {
-    margin-bottom: 2rem;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.chart-section:hover {
+    transform: translateY(-5px);
+}
+
+.date-info {
+    background: rgba(129,87,208,0.6);
+    padding: 8px 16px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+.chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    margin: 20px 0;
+}
+
+.chart-wrapper canvas {
+    position: absolute;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .chart-container {
@@ -49,19 +87,6 @@ body, html {
     position: relative;
 }
 
-.chart-wrapper {
-    position: relative;
-    width: 100%;
-    height: 0;
-    padding-bottom: 50%;
-}
-
-.chart-wrapper canvas {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-}
-
 .logo {
     max-width: 300px;
     display: block;
@@ -69,9 +94,14 @@ body, html {
 }
 
 .card {
-    background: #4a47a3;
-    position: relative;
-    text-align: center;
+    background: linear-gradient(145deg, #4a47a3, #2d2a6a);
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
 }
 
 .card-text {
@@ -178,6 +208,18 @@ body, html {
 
 
 @media (max-width: 768px) {
+    .chart-wrapper {
+        height: 300px;
+    }
+
+    .chart-section {
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    .card-text {
+        font-size: 1.2rem;
+    }
     .config-container {
         padding: 10px;
     }
