@@ -520,6 +520,7 @@ class MDBListUI {
         if (addBtn) {
             this.markListAsAdded(addBtn);
         }
+        this.updateCatalogs();
     }
 
     addListToSelected(listId, listData) {
@@ -554,11 +555,8 @@ class MDBListUI {
         const showSelected = modal.querySelector('#edit-list-type-show').checked;
         const useFilters = modal.querySelector('#edit-list-use-filters').checked;
 
-        // Store current catalog positions
-        const currentPositions = this.getCurrentCatalogPositions();
-
         // Remove existing entries for this base ID
-        this.removeList(baseId);
+        this.removeList(baseId, false);
 
         // Add new entries based on selection
         if (movieSelected) {
@@ -581,15 +579,14 @@ class MDBListUI {
             });
         }
 
-        // Restore catalog positions
-        this.restoreCatalogPositions(currentPositions);
+        this.updateCatalogs();
         this.editModal.hide();
     }
 
-    removeList(listId) {
+    removeList(listId, isUpdateCatalogs = true) {
         this.selectedLists.delete(listId);
         this.renderSelectedLists();
-        this.updateCatalogs();
+        if (isUpdateCatalogs) this.updateCatalogs();
 
         // Update the add button state in the list view
         const addBtn = document.querySelector(`[data-list-id="${this.parseListId(listId).baseId}"] .add-list-btn`);
@@ -614,40 +611,6 @@ class MDBListUI {
         });
 
         return positions;
-    }
-
-    restoreCatalogPositions(positions) {
-        const container = document.getElementById('catalogs');
-        if (!container) return;
-
-        const currentCatalogs = Array.from(container.querySelectorAll('.draggable-catalog'));
-
-        // Sort catalogs based on their stored positions
-        currentCatalogs.sort((a, b) => {
-            const posA = positions.get(a.dataset.id);
-            const posB = positions.get(b.dataset.id);
-
-            // Keep non-MDBList catalogs in their original position
-            if (posA?.isGeneral && !posB?.isGeneral) return -1;
-            if (!posA?.isGeneral && posB?.isGeneral) return 1;
-
-            // Sort based on stored positions
-            if (!posA) return 1;
-            if (!posB) return -1;
-            return posA.index - posB.index;
-        });
-
-        // Reorder catalogs
-        currentCatalogs.forEach(catalog => {
-            container.appendChild(catalog);
-
-            // Restore checkbox state
-            const position = positions.get(catalog.dataset.id);
-            if (position) {
-                const checkbox = catalog.querySelector('input[type="checkbox"]');
-                if (checkbox) checkbox.checked = position.checked;
-            }
-        });
     }
 
     updateCatalogs() {
@@ -683,12 +646,12 @@ class MDBListUI {
             }
         });
 
-        // Sort catalogs based on their previous positions
+        // Sort catalogs based on the selected state and original position
         const sortedCatalogIds = Array.from(currentState.keys())
             .sort((a, b) => {
                 const posA = currentState.get(a);
                 const posB = currentState.get(b);
-                return posA.index - posB.index;
+                return (posA.checked === posB.checked) ? posA.index - posB.index : posB.checked - posA.checked;
             });
 
         // Add catalogs in the correct order
