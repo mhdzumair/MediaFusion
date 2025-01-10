@@ -214,9 +214,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         }
                     },
                     datalabels: {
-                        align: 'start',
+                        align: 'end',
                         anchor: 'end',
-                        rotation: -90,
+                        rotation: 0,
                         color: '#fff',
                         formatter: (value, context) => {
                             return value.y.toLocaleString();

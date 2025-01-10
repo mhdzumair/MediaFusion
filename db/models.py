@@ -260,6 +260,7 @@ class TorrentStreams(Document):
             ),
             IndexModel([("_id", ASCENDING), ("is_blocked", ASCENDING)]),
             IndexModel([("_class_id", ASCENDING)]),
+            IndexModel([("source", ASCENDING), ("created_at", DESCENDING)]),
         ]
 
     def get_episode(

@@ -187,7 +187,7 @@ async def get_weekly_top_uploaders(response: Response):
         [
             {
                 "$match": {
-                    "uploader": {"$ne": None},
+                    "source": "Contribution Stream",
                     "created_at": {"$gte": start_of_week},
                 }
             },
