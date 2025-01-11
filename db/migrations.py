@@ -269,9 +269,9 @@ async def migrate_custom_flag():
 
 async def main():
     logger.info("Starting migration")
-    await database.init()  # allow_index_dropping=True)
-    # await cleanup_duplicate_metadata()
-    # await migrate_custom_flag()
+    await database.init(allow_index_dropping=True)
+    await cleanup_duplicate_metadata()
+    await migrate_custom_flag()
 
     await migrate_series_streams()
     logger.info("Migration completed successfully")
