@@ -19,6 +19,7 @@ from db.crud import (
     store_new_torrent_streams,
     update_metadata,
     get_or_create_metadata,
+    update_meta_stream,
 )
 from db.enums import TorrentType
 from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
@@ -55,6 +56,7 @@ async def get_scraper(
     season: int = None,
     episode: str = None,
     info_hash: str = None,
+    mediafusion_id: str = None,
 ):
     prefill_data = {
         "meta_id": meta_id,
@@ -63,6 +65,7 @@ async def get_scraper(
         "episode": episode,
         "action": action,
         "info_hash": info_hash,
+        "mediafusion_id": mediafusion_id,
     }
     return TEMPLATES.TemplateResponse(
         "html/scraper.html",
@@ -581,7 +584,30 @@ async def block_torrent(block_data: schemas.BlockTorrent):
 
 @router.post("/migrate_id", tags=["scraper"])
 async def migrate_id(migrate_data: schemas.MigrateID):
-    # convert mediafusion id to imdb id
+    # Validate ID formats
+    if not (
+        migrate_data.mediafusion_id.startswith("mf")
+        and migrate_data.imdb_id.startswith("tt")
+    ):
+        raise_error("Invalid mediafusion or IMDb ID.")
+
+    # First verify the IMDb metadata exists
+    if migrate_data.media_type == "series":
+        metadata = await get_series_data_by_id(migrate_data.imdb_id)
+    else:
+        metadata = await get_movie_data_by_id(migrate_data.imdb_id)
+    if not metadata:
+        raise_error(f"Metadata with ID {migrate_data.imdb_id} not found.")
+
+    # Get old metadata for notification before deleting
+    old_metadata = await MediaFusionMetaData.get_motor_collection().find_one(
+        {"_id": migrate_data.mediafusion_id}, projection={"title": 1}
+    )
+    if not old_metadata:
+        raise_error(f"Metadata with ID {migrate_data.mediafusion_id} not found.")
+    old_title = old_metadata.get("title")
+
+    # Perform the migration
     await TorrentStreams.find({"meta_id": migrate_data.mediafusion_id}).update(
         {"$set": {"meta_id": migrate_data.imdb_id}}
     )
@@ -592,6 +618,8 @@ async def migrate_id(migrate_data: schemas.MigrateID):
         await get_series_data_by_id(migrate_data.imdb_id)
     else:
         await get_movie_data_by_id(migrate_data.imdb_id)
+    await update_meta_stream(migrate_data.imdb_id)
+
     return {
         "status": f"Successfully migrated {migrate_data.mediafusion_id} to {migrate_data.imdb_id}."
     }

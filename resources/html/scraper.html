@@ -33,6 +33,7 @@
                         <option value="add_m3u_playlist">Add M3U Playlist</option>
                         <option value="update_imdb_data">Update IMDb Data</option>
                         <option value="block_torrent">Block Torrent</option>
+                        <option value="migrate_id">Migrate MediaFusion ID to IMDb ID</option>
                     </select>
                 </div>
 
@@ -445,6 +446,27 @@
                                    value="{% if prefill_data.info_hash %}{{ prefill_data.info_hash }}{% endif %}">
                         </div>
                     </div>
+
+                    <div id="migrationParameters" style="display: none;">
+                        <div class="mb-3">
+                            <label for="mediafusionId" class="form-label">MediaFusion ID</label>
+                            <input type="text" class="form-control" id="mediafusionId" name="mediafusion_id" required
+                                   value="{% if prefill_data.mediafusion_id %}{{ prefill_data.mediafusion_id }}{% endif %}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="migrationImdbId" class="form-label">IMDb ID</label>
+                            <input type="text" class="form-control" id="migrationImdbId" name="imdb_id"
+                                   placeholder="Enter IMDb ID (e.g., tt1234567)" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="mediaType" class="form-label">Media Type</label>
+                            <select class="form-select" id="mediaType" name="media_type">
+                                <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
+                                <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
+                            </select>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 

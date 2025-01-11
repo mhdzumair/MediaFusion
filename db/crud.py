@@ -1617,31 +1617,9 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
                 )
                 update_data["episodes"] = updated_episodes
 
-        # Get TorrentStream counts & last stream added date
-        streams_stats = await TorrentStreams.aggregate(
-            [
-                {"$match": {"meta_id": meta_id, "is_blocked": {"$ne": True}}},
-                {
-                    "$group": {
-                        "_id": None,
-                        "total_streams": {"$sum": 1},
-                        "last_stream_added": {"$max": "$created_at"},
-                        "catalogs": {"$addToSet": "$catalog"},
-                    }
-                },
-            ]
-        ).to_list(1)
-
-        if streams_stats:
-            update_data["total_streams"] = streams_stats[0].get("total_streams", 0)
-            update_data["last_stream_added"] = streams_stats[0].get("last_stream_added")
-            update_data["catalogs"] = list(
-                {
-                    catalog
-                    for sublist in streams_stats[0].get("catalogs", [])
-                    for catalog in sublist
-                }
-            )
+        # Update stream-related metadata
+        stream_metadata = await update_meta_stream(meta_id, is_update_data_only=True)
+        update_data.update(stream_metadata)
 
         # Update database entries with the new data
         await MediaFusionMetaData.get_motor_collection().update_one(
@@ -1671,3 +1649,54 @@ async def fetch_metadata(imdb_ids: list[str], metadata_type: str):
             continue
 
         logging.info(f"Stored metadata for {metadata_type} {result.id}")
+
+
+async def update_meta_stream(meta_id: str, is_update_data_only: bool = False) -> dict:
+    """
+    Update stream-related metadata for a given meta_id.
+    """
+    # Get TorrentStream counts & last stream added date
+    streams_stats = await TorrentStreams.aggregate(
+        [
+            {"$match": {"meta_id": meta_id, "is_blocked": {"$ne": True}}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_streams": {"$sum": 1},
+                    "last_stream_added": {"$max": "$created_at"},
+                    "catalogs": {"$addToSet": "$catalog"},
+                }
+            },
+        ]
+    ).to_list(1)
+
+    update_data = {"total_streams": 0, "last_stream_added": None, "catalogs": []}
+
+    if streams_stats:
+        # Flatten the catalogs list and remove duplicates
+        flattened_catalogs = list(
+            {
+                catalog
+                for sublist in streams_stats[0].get("catalogs", [])
+                for catalog in sublist
+            }
+        )
+
+        update_data.update(
+            {
+                "total_streams": streams_stats[0].get("total_streams", 0),
+                "last_stream_added": streams_stats[0].get("last_stream_added"),
+                "catalogs": flattened_catalogs,
+            }
+        )
+
+    if is_update_data_only:
+        return update_data
+
+    # Update database entries with the new stream data
+    await MediaFusionMetaData.get_motor_collection().update_one(
+        {"_id": meta_id},
+        {"$set": update_data},
+    )
+    logging.info(f"Updated stream metadata for {meta_id}")
+    return update_data

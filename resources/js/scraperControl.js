@@ -497,6 +497,7 @@ function updateFormFields() {
     setElementDisplay("torrentUploadParameters", "none");
     setElementDisplay("apiPasswordContainer", "none");
     setElementDisplay('blockTorrentParameters', 'none');
+    setElementDisplay('migrationParameters', 'none');
 
     // Get the selected scraper type
     const scraperType = document.getElementById('scraperSelect').value;
@@ -533,8 +534,9 @@ function updateFormFields() {
         case 'block_torrent':
             setElementDisplay("blockTorrentParameters", "block");
             break;
-        default:
-            // Optionally handle any default cases if needed
+        case 'migrate_id':
+            setElementDisplay('migrationParameters', 'block');
+            authRequired = false;
             break;
     }
 
@@ -544,6 +546,17 @@ function updateFormFields() {
         setupPasswordToggle('api_password', 'toggleApiPassword', 'toggleApiPasswordIcon');
     }
 
+}
+
+function handleInitialSetup() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action');
+
+    // Set initial scraper type based on action
+    document.getElementById('scraperSelect').value = action || 'add_torrent';
+
+    // Update form fields based on initial selection
+    updateFormFields();
 }
 
 function constructTvMetadata() {
@@ -850,6 +863,45 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
     }
 }
 
+async function handleMigration(apiPassword, submitBtn, loadingSpinner) {
+    const mediafusionId = document.getElementById('mediafusionId').value.trim();
+    const imdbId = document.getElementById('migrationImdbId').value.trim();
+    const mediaType = document.getElementById('mediaType').value;
+
+    if (!mediafusionId || !imdbId) {
+        showNotification('Both MediaFusion ID and IMDb ID are required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+
+    try {
+        const response = await fetch('/scraper/migrate_id', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                mediafusion_id: mediafusionId,
+                imdb_id: imdbId,
+                media_type: mediaType,
+                api_password: apiPassword
+            })
+        });
+
+        const data = await response.json();
+        if (data.detail) {
+            showNotification(data.detail, 'error');
+        } else {
+            showNotification(data.status, 'success');
+        }
+    } catch (error) {
+        console.error('Error migrating ID:', error);
+        showNotification(`Error migrating ID: ${error.toString()}`, 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
 async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
     document.querySelectorAll('#scrapyParameters input, #scrapyParameters select').forEach(input => {
         if (!input.disabled && input.type !== 'radio' && input.type !== 'checkbox') {
@@ -945,6 +997,9 @@ async function submitScraperForm() {
         case 'block_torrent':
             await handleBlockTorrent(apiPassword, submitBtn, loadingSpinner);
             break;
+        case 'migrate_id':
+            await handleMigration(apiPassword, submitBtn, loadingSpinner);
+            break;
         default:
             await handleScrapyParameters(payload, submitBtn, loadingSpinner);
             break;
@@ -954,6 +1009,6 @@ async function submitScraperForm() {
 
 // Initial update for form fields on page load
 document.addEventListener('DOMContentLoaded', function () {
-    updateFormFields();
+    handleInitialSetup();
 });
 document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);
