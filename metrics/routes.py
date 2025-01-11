@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone, timedelta
 
 import humanize
@@ -11,6 +12,7 @@ from db.models import (
     MediaFusionMetaData,
     TorrentStreams,
 )
+from db.redis_database import REDIS_ASYNC_CLIENT
 from metrics.redis_metrics import get_redis_metrics, get_debrid_cache_metrics
 from utils import const
 from utils.runtime_const import TEMPLATES
@@ -52,7 +54,7 @@ async def render_dashboard(
 @metrics_router.get("/torrents", tags=["metrics"])
 async def get_torrents_count(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
-    count = await TorrentStreams.count()
+    count = await TorrentStreams.get_motor_collection().estimated_document_count()
     return {
         "total_torrents": count,
         "total_torrents_readable": humanize.intword(count),
@@ -62,6 +64,13 @@ async def get_torrents_count(response: Response):
 @metrics_router.get("/torrents/sources", tags=["metrics"])
 async def get_torrents_by_sources(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
+
+    cache_key = "torrents:sources"
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+
+    if cached_data:
+        return json.loads(cached_data)
+
     results = await TorrentStreams.aggregate(
         [
             {"$group": {"_id": "$source", "count": {"$sum": 1}}},
@@ -72,6 +81,9 @@ async def get_torrents_by_sources(response: Response):
     torrent_sources = [
         {"name": source["_id"], "count": source["count"]} for source in results
     ]
+
+    # Cache the results for 5 minutes
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(torrent_sources), ex=300)
     return torrent_sources
 
 
@@ -189,6 +201,7 @@ async def get_weekly_top_uploaders(response: Response):
                 "$match": {
                     "source": "Contribution Stream",
                     "created_at": {"$gte": start_of_week},
+                    "is_blocked": {"$ne": True},
                 }
             },
             {

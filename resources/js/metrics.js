@@ -202,6 +202,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         }
                     }
                 },
+                layout: {
+                    padding: {
+                        top: 50  // Add padding to prevent label cutoff
+                    }
+                },
                 plugins: {
                     legend: {
                         display: false
@@ -252,6 +257,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        right: 50  // Add padding to prevent label cutoff
+                    }
+                },
                 plugins: {
                     legend: {
                         display: false
@@ -320,8 +330,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 labels: data.uploaders.map(uploader => uploader.name),
                 datasets: [{
                     data: data.uploaders.map(uploader => uploader.count),
-                    backgroundColor: 'rgba(122,76,204,0.6)',
-                    borderColor: 'rgba(129,87,208,0.6)',
+                    backgroundColor: 'rgba(147, 112, 219, 0.6)',
+                    borderColor: 'rgba(147, 112, 219, 1)',
                     borderWidth: 1
                 }]
             },
@@ -329,6 +339,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        right: 50  // Add padding to prevent label cutoff
+                    }
+                },
                 plugins: {
                     legend: {
                         display: false
@@ -348,10 +363,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     datalabels: {
                         color: '#fff',
                         anchor: 'end',
-                        align: 'end',
+                        align: 'right',
+                        offset: 4,  // Add a small offset from the end of the bar
                         formatter: (value) => value.toLocaleString(),
                         font: {
-                            weight: 'bold'
+                            weight: 'bold',
+                            size: 12
+                        },
+                        padding: {
+                            right: 6
                         }
                     }
                 },
@@ -365,7 +385,13 @@ document.addEventListener('DOMContentLoaded', function () {
                             color: '#fff',
                             callback: function (value) {
                                 return value.toLocaleString();
-                            }
+                            },
+                            padding: 10  // Add padding to axis ticks
+                        },
+                        // Ensure the axis extends a bit beyond the max value
+                        suggestedMax: function (context) {
+                            const max = Math.max(...context.chart.data.datasets[0].data);
+                            return max * 1.1; // Extend 10% beyond the max value
                         }
                     },
                     y: {
