@@ -34,6 +34,7 @@ class EpisodeFile(BaseModel):
 class MediaFusionMetaData(Document):
     id: str
     title: str
+    is_custom: bool = Field(default=False)
     aka_titles: Optional[list[str]] = Field(default_factory=list)
     year: Optional[int] = None
     poster: Optional[str] = None
@@ -54,9 +55,17 @@ class MediaFusionMetaData(Document):
     class Settings:
         is_root = True
         indexes = [
+            # Partial index for custom IDs (mf prefix) to enforce uniqueness
             IndexModel(
                 [("title", ASCENDING), ("year", ASCENDING), ("type", ASCENDING)],
                 unique=True,
+                partialFilterExpression={"is_custom": True},
+                name="unique_title_year_type_for_mf_id",
+            ),
+            # Regular index for all documents
+            IndexModel(
+                [("title", ASCENDING), ("year", ASCENDING), ("type", ASCENDING)],
+                unique=False,
             ),
             IndexModel(
                 [("title", pymongo.TEXT), ("aka_titles", pymongo.TEXT)],
@@ -260,7 +269,8 @@ class TorrentStreams(Document):
             ),
             IndexModel([("_id", ASCENDING), ("is_blocked", ASCENDING)]),
             IndexModel([("_class_id", ASCENDING)]),
-            IndexModel([("source", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel([("source", ASCENDING)]),
+            IndexModel([("uploader", ASCENDING)]),
         ]
 
     def get_episode(

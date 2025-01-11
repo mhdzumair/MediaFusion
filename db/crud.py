@@ -895,6 +895,7 @@ def create_metadata_object(metadata, imdb_data, model):
         id=metadata["id"],
         title=imdb_data.get("title") or metadata["title"],
         year=year,
+        is_custom=metadata["id"].startswith("mf"),
         end_year=end_year,
         poster=poster,
         background=background,
