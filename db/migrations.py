@@ -1,15 +1,16 @@
 import asyncio
 import logging
+from datetime import datetime
 
-from pymongo import UpdateOne
+from PTT import parse_title
+from pymongo import ASCENDING
 
 from db import database
+from db.crud import update_meta_stream, update_metadata
 from db.models import (
     TorrentStreams,
-    MediaFusionMovieMetaData,
     MediaFusionSeriesMetaData,
     TVStreams,
-    MediaFusionTVMetaData,
     MediaFusionMetaData,
 )
 
@@ -20,533 +21,259 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def cleanup_invalid_torrents():
-    """Remove torrent streams with invalid meta_ids"""
-    torrent_collection = TorrentStreams.get_motor_collection()
+async def migrate_series_streams():
+    """
+    Fetch series metadata IDs, retrieve TorrentStreams with empty episode lists,
+    parse titles using PTT.parse_title, and create episodes based on this information.
+    """
+    logger.info("Starting Series Streams Migration...")
 
-    # Get all unique meta_ids from metadata collections
-    valid_meta_ids = set()
-    for meta_collection in [
-        MediaFusionMovieMetaData,
-        MediaFusionSeriesMetaData,
-    ]:
-        meta_ids = await meta_collection.distinct("_id", {"_id": {"$regex": "^mf"}})
-        valid_meta_ids.update(meta_ids)
+    meta_collection = MediaFusionSeriesMetaData.get_motor_collection()
+    stream_collection = TorrentStreams.get_motor_collection()
 
-    # Delete torrents with non-existent meta_ids
-    result = await torrent_collection.delete_many(
-        {"meta_id": {"$regex": "^mf", "$nin": list(valid_meta_ids)}}
-    )
-    logger.info(f"Deleted {result.deleted_count} torrents with invalid meta_ids")
-
-
-async def cleanup_torrent_streams():
-    """Migrate TorrentStreams using direct MongoDB operations"""
-    collection = TorrentStreams.get_motor_collection()
-
-    # Update string audio fields to arrays
-    result = await collection.update_many(
-        {"audio": {"$type": "string"}}, [{"$set": {"audio": ["$audio"]}}]
-    )
-    logger.info(
-        f"Updated {result.modified_count} documents with string audio to arrays"
-    )
-
-    # Remove unused fields
-    result = await collection.update_many(
-        {
-            "$or": [
-                {"indexer_flags": {"$exists": True}},
-                {"cached": {"$exists": True}},
-                {"encoder": {"$exists": True}},
-            ]
-        },
-        {"$unset": {"indexer_flags": "", "cached": "", "encoder": ""}},
-    )
-    logger.info(f"Removed unused fields from {result.modified_count} documents")
-
-
-async def migrate_torrent_streams():
-    """Migrate TorrentStreams to new episode structure and clean up fields"""
-    collection = TorrentStreams.get_motor_collection()
-
-    # Define video file extensions
-    VIDEO_EXTENSIONS = (
-        ".mp4",
-        ".mkv",
-        ".webm",
-        ".m4v",
-        ".mov",
-        ".m3u8",
-        ".m3u",
-        ".mpd",
-        ".ts",
-        ".mts",
-        ".m2ts",
-        ".m2t",
-        ".mpeg",
-        ".mpg",
-        ".mp2",
-        ".m2v",
-        ".m4p",
-        ".avi",
-        ".wmv",
-        ".flv",
-        ".f4v",
-        ".ogv",
-        ".ogm",
-        ".rm",
-        ".rmvb",
-        ".asf",
-        ".divx",
-        ".3gp",
-        ".3g2",
-        ".vob",
-        ".ifo",
-        ".bdmv",
-        ".hevc",
-        ".av1",
-        ".vp8",
-        ".vp9",
-        ".mxf",
-        ".dav",
-        ".swf",
-        ".nsv",
-        ".strm",
-        ".mvi",
-        ".vid",
-        ".amv",
-        ".m4s",
-        ".mqv",
-        ".nuv",
-        ".wtv",
-        ".dvr-ms",
-        ".pls",
-        ".cue",
-        ".dash",
-        ".hls",
-        ".ismv",
-        ".m4f",
-        ".mp4v",
-        ".gif",
-        ".gifv",
-        ".apng",
-    )
-
-    # Create regex pattern for video extensions
-    regex_pattern = (
-        "(" + "|".join(ext.replace(".", "\\.") for ext in VIDEO_EXTENSIONS) + ")$"
-    )
-
-    # Convert season/episodes structure to episode_files
-    pipeline = [
-        {"$match": {"season": {"$exists": True}}},
-        {
-            "$addFields": {
-                "episode_files": {
-                    "$filter": {
-                        "input": {
-                            "$map": {
-                                "input": "$season.episodes",
-                                "in": {
-                                    "season_number": "$season.season_number",
-                                    "episode_number": "$$this.episode_number",
-                                    "size": "$$this.size",
-                                    "filename": "$$this.filename",
-                                    "file_index": "$$this.file_index",
-                                    "title": "$$this.title",
-                                    "released": "$$this.released",
-                                },
-                            }
-                        },
-                        "as": "episode",
-                        "cond": {
-                            "$regexMatch": {
-                                "input": {"$toLower": "$$episode.filename"},
-                                "regex": regex_pattern,
-                                "options": "i",
-                            }
-                        },
-                    }
-                },
-                "audio": {
-                    "$cond": {
-                        "if": {"$eq": [{"$type": "$audio"}, "string"]},
-                        "then": ["$audio"],
-                        "else": {
-                            "$cond": {
-                                "if": {"$isArray": "$audio"},
-                                "then": {
-                                    "$reduce": {
-                                        "input": "$audio",
-                                        "initialValue": [],
-                                        "in": {
-                                            "$cond": {
-                                                "if": {"$isArray": "$$this"},
-                                                "then": {
-                                                    "$concatArrays": [
-                                                        "$$value",
-                                                        "$$this",
-                                                    ]
-                                                },
-                                                "else": {
-                                                    "$concatArrays": [
-                                                        "$$value",
-                                                        ["$$this"],
-                                                    ]
-                                                },
-                                            }
-                                        },
-                                    }
-                                },
-                                "else": [],
-                            }
-                        },
-                    }
-                },
-            }
-        },
-        {"$unset": ["season"]},
-        {
-            "$merge": {
-                "into": collection.name,
-                "whenMatched": "replace",
-                "whenNotMatched": "fail",
-            }
-        },
-    ]
-
-    logger.info("Starting TorrentStreams migration")
     try:
-        await collection.aggregate(pipeline).to_list(None)
-        logger.info("Completed TorrentStreams migration")
-    except Exception as e:
-        logger.error(f"Failed to migrate TorrentStreams: {str(e)}")
-        raise
-
-
-async def migrate_series_metadata():
-    """Update series metadata with episode information"""
-    series_collection = MediaFusionSeriesMetaData.get_motor_collection()
-    temp_collection_name = "temp_series_metadata_migration"
-
-    # Create aggregation pipeline to gather episode data and update metadata
-    pipeline = [
-        {
-            "$lookup": {
-                "from": TorrentStreams.get_motor_collection().name,
-                "localField": "_id",
-                "foreignField": "meta_id",
-                "pipeline": [
-                    {"$match": {"is_blocked": {"$ne": True}}},
-                    {"$unwind": "$episode_files"},
-                    {
-                        "$group": {
-                            "_id": {
-                                "season": "$episode_files.season_number",
-                                "episode": "$episode_files.episode_number",
-                            },
-                            "title": {"$first": "$episode_files.title"},
-                            "released": {
-                                "$first": {
-                                    "$ifNull": [
-                                        "$episode_files.released",
-                                        "$created_at",
-                                    ]
-                                }
-                            },
-                            "catalogs": {"$addToSet": "$catalog"},
-                            "total_streams": {"$sum": 1},
-                            "last_stream_added": {"$max": "$created_at"},
-                        }
-                    },
-                    {
-                        "$project": {
-                            "season_number": "$_id.season",
-                            "episode_number": "$_id.episode",
-                            "title": 1,
-                            "released": 1,
-                        }
-                    },
-                    {"$sort": {"season_number": 1, "episode_number": 1}},
-                ],
-                "as": "episodes",
-            }
-        },
-        {
-            "$addFields": {
-                "episodes": {
-                    "$map": {
-                        "input": "$episodes",
-                        "in": {
-                            "season_number": "$$this.season_number",
-                            "episode_number": "$$this.episode_number",
-                            "title": "$$this.title",
-                            "released": "$$this.released",
-                        },
-                    }
-                }
-            }
-        },
-        {
-            "$merge": {
-                "into": temp_collection_name,
-                "whenMatched": "replace",
-                "whenNotMatched": "insert",
-            }
-        },
-    ]
-
-    # Run the aggregation
-    logger.info("Starting series metadata migration")
-    await series_collection.aggregate(pipeline).to_list(None)
-
-    # Rename the temporary collection
-    try:
-        await series_collection.database.drop_collection(series_collection.name)
-        await series_collection.database[temp_collection_name].rename(
-            series_collection.name
+        # Fetch all series metadata IDs
+        series_ids = await meta_collection.find({"type": "series"}).distinct("_id")
+        if not series_ids:
+            logger.info("No series metadata IDs found.")
+            return
+        count = await stream_collection.count_documents(
+            {"meta_id": {"$in": series_ids}, "episode_files": {"$size": 0}}
         )
-        logger.info("Successfully migrated series metadata")
-    except Exception as e:
-        logger.error(f"Error during collection rename: {e}")
-        await series_collection.database.drop_collection(temp_collection_name)
-        raise
+        logger.info(f"Found {count} TorrentStreams with empty episode lists.")
+        # Find TorrentStreams with empty episode lists
+        async for stream in stream_collection.find(
+            {"meta_id": {"$in": series_ids}, "episode_files": {"$size": 0}}
+        ):
+            stream_id = stream["_id"]
+            title = stream.get("torrent_name", "")
 
+            # Parse the torrent title
+            parsed_data = parse_title(title)
+            if not parsed_data:
+                logger.warning(f"Failed to parse title for stream ID: {stream_id}")
+                continue
 
-async def migrate_movie_series_metadata(meta_class):
-    """Migrate movie and series metadata using aggregation pipeline"""
-    meta_collection = meta_class.get_motor_collection()
-    streams_collection = TorrentStreams.get_motor_collection()
+            # Create episode details based on parsed data
+            seasons = parsed_data.get("seasons")
+            episodes = parsed_data.get("episodes")
 
-    # Build aggregation pipeline to compute new fields
-    pipeline = [
-        {
-            "$match": {
-                "type": "movie" if meta_class == MediaFusionMovieMetaData else "series"
-            }
-        },
-        {
-            "$lookup": {
-                "from": streams_collection.name,
-                "localField": "_id",
-                "foreignField": "meta_id",
-                "pipeline": [
-                    {"$match": {"is_blocked": {"$ne": True}}},
+            if len(seasons) == 1 and episodes:
+                episode_details = [
                     {
-                        "$group": {
-                            "_id": "$meta_id",
-                            "catalogs": {"$addToSet": "$catalog"},
-                            "total_streams": {"$sum": 1},
-                            "last_stream_added": {"$max": "$created_at"},
-                        }
-                    },
+                        "season_number": seasons[0],
+                        "episode_number": episode,
+                    }
+                    for episode in episodes
+                ]
+            elif len(seasons) == 1 and not episodes:
+                episode_details = [
                     {
-                        "$project": {
-                            "catalogs": {
-                                "$reduce": {
-                                    "input": "$catalogs",
-                                    "initialValue": [],
-                                    "in": {"$setUnion": ["$$value", "$$this"]},
-                                }
-                            },
-                            "total_streams": 1,
-                            "last_stream_added": 1,
-                        }
-                    },
-                ],
-                "as": "stream_data",
-            }
-        },
-        {
-            "$addFields": {
-                "catalogs": {"$ifNull": [{"$first": "$stream_data.catalogs"}, []]},
-                "total_streams": {
-                    "$ifNull": [{"$first": "$stream_data.total_streams"}, 0]
-                },
-                "last_stream_added": {
-                    "$ifNull": [
-                        {"$first": "$stream_data.last_stream_added"},
-                        "$last_updated_at",  # Fallback to last_updated_at if no streams
+                        "season_number": seasons[0],
+                        "episode_number": 1,
+                    }
+                ]
+            elif len(seasons) > 1:
+                episode_details = [
+                    {
+                        "season_number": season,
+                        "episode_number": 1,
+                    }
+                    for season in seasons
+                ]
+            elif episodes:
+                episode_details = [
+                    {
+                        "season_number": 1,
+                        "episode_number": episode,
+                    }
+                    for episode in episodes
+                ]
+            elif parsed_data.get("date") and stream["meta_id"].startswith("tt"):
+                episode_date = datetime.strptime(parsed_data["date"], "%Y-%m-%d")
+                metadata = await MediaFusionSeriesMetaData.get(stream["meta_id"])
+                episode = [
+                    episode
+                    for episode in metadata.episodes
+                    if episode.released
+                    and episode.released.date() == episode_date.date()
+                ]
+                if not metadata.episodes or (
+                    not episode and metadata.episodes[0].thumbnail
+                ):
+                    await update_metadata([metadata.id], "series")
+                    metadata = await MediaFusionSeriesMetaData.get(stream["meta_id"])
+                    episode = [
+                        episode
+                        for episode in metadata.episodes
+                        if episode.released
+                        and episode.released.date() == episode_date.date()
                     ]
-                },
-            }
-        },
-        {
-            "$project": {
-                "_id": 1,
-                "catalogs": 1,
-                "total_streams": 1,
-                "last_stream_added": 1,
-            }
-        },
-    ]
+                if not episode:
+                    logger.warning(
+                        f"No episode found by {episode_date.date()} date for {parsed_data.get('title')} ({metadata.id}), {stream_id}"
+                    )
+                    continue
+                imdb_episode = episode[0]
 
-    try:
-        bulk_operations = []
-        total_processed = 0
-
-        async for doc in meta_collection.aggregate(pipeline):
-            doc_id = doc["_id"]
-            update_data = {
-                "catalogs": doc.get("catalogs", []),
-                "total_streams": doc.get("total_streams", 0),
-                "last_stream_added": doc.get("last_stream_added"),
-            }
-
-            bulk_operations.append(UpdateOne({"_id": doc_id}, {"$set": update_data}))
-
-            total_processed += 1
-
-            # Process in batches of 1000
-            if len(bulk_operations) >= 1000:
-                result = await meta_collection.bulk_write(bulk_operations)
                 logger.info(
-                    f"Processed batch of {len(bulk_operations)} documents. "
-                    f"Total processed: {total_processed}"
+                    f"Episode found by {episode_date} date for {parsed_data.get('title')} ({metadata.id})"
                 )
-                bulk_operations = []
+                episode_details = [
+                    {
+                        "season_number": imdb_episode.season_number,
+                        "episode_number": imdb_episode.episode_number,
+                        "released": imdb_episode.released,
+                        "title": imdb_episode.title,
+                    }
+                ]
+            elif stream["meta_id"].startswith("tt"):
+                episode_details = [
+                    {
+                        "season_number": 1,
+                        "episode_number": 1,
+                    }
+                ]
+            else:
+                logger.warning(
+                    f"Failed to identify episode details for stream ID: {stream_id}. Deleting stream '{title}'"
+                )
+                await TorrentStreams.find({"_id": stream_id}).delete()
+                continue
 
-        # Process remaining operations
-        if bulk_operations:
-            result = await meta_collection.bulk_write(bulk_operations)
-            logger.info(
-                f"Processed final batch of {len(bulk_operations)} documents. "
-                f"Total processed: {total_processed}"
+            # Update the TorrentStream with new episode details
+            await stream_collection.update_one(
+                {"_id": stream_id},
+                {"$set": {"episode_files": [episode_details]}},
             )
 
-        logger.info(
-            f"Successfully migrated {meta_class.__name__}. "
-            f"Total documents processed: {total_processed}"
-        )
+            logger.info(f"Updated stream ID: {stream_id} with parsed episode details.")
 
+        logger.info("Series Streams Migration completed successfully.")
     except Exception as e:
-        logger.error(f"Error during migration of {meta_class.__name__}: {str(e)}")
+        logger.error(f"Error during Series Streams Migration: {e}")
         raise
 
 
-async def migrate_tv_metadata():
-    """Migrate TV metadata using aggregation pipeline"""
-    meta_collection = MediaFusionTVMetaData.get_motor_collection()
-    streams_collection = TVStreams.get_motor_collection()
+async def cleanup_duplicate_metadata():
+    """
+    Migration script to clean up duplicate metadata and update related stream records.
+    Modified version for standalone MongoDB (no transactions).
+    """
+    logging.info("Starting duplicate metadata cleanup migration")
 
+    # Find all duplicate metadata with mf prefix
     pipeline = [
-        {"$match": {"type": "tv"}},
+        {"$match": {"_id": {"$regex": "^mf"}}},
         {
-            "$lookup": {
-                "from": streams_collection.name,
-                "localField": "_id",
-                "foreignField": "meta_id",
-                "pipeline": [
-                    {
-                        "$match": {
-                            "is_working": True,
-                        }
-                    },
-                    {
-                        "$group": {
-                            "_id": "$meta_id",
-                            "total_streams": {"$sum": 1},
-                            "last_stream_added": {"$max": "$created_at"},
-                        }
-                    },
-                ],
-                "as": "stream_data",
-            }
-        },
-        {
-            "$addFields": {
-                "total_streams": {
-                    "$ifNull": [{"$first": "$stream_data.total_streams"}, 0]
-                },
-                "last_stream_added": {
-                    "$ifNull": [
-                        {"$first": "$stream_data.last_stream_added"},
-                        "$last_updated_at",
-                    ]
+            "$group": {
+                "_id": {"title": "$title", "year": "$year", "type": "$type"},
+                "count": {"$sum": 1},
+                "docs": {
+                    "$push": {
+                        "id": "$_id",
+                        "total_streams": {"$ifNull": ["$total_streams", 0]},
+                        "last_updated_at": "$last_updated_at",
+                    }
                 },
             }
         },
-        {"$project": {"_id": 1, "total_streams": 1, "last_stream_added": 1}},
+        {"$match": {"count": {"$gt": 1}}},
     ]
 
-    try:
-        bulk_operations = []
-        total_processed = 0
+    duplicate_groups = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(pipeline)
+        .to_list(None)
+    )
 
-        async for doc in meta_collection.aggregate(pipeline):
-            doc_id = doc["_id"]
-            update_data = {
-                "total_streams": doc.get("total_streams", 0),
-                "last_stream_added": doc.get("last_stream_added"),
-            }
+    logging.info(f"Found {len(duplicate_groups)} groups of duplicates")
 
-            bulk_operations.append(UpdateOne({"_id": doc_id}, {"$set": update_data}))
+    for group in duplicate_groups:
+        group_key = group["_id"]
+        docs = group["docs"]
 
-            total_processed += 1
-
-            # Process in batches of 1000
-            if len(bulk_operations) >= 1000:
-                result = await meta_collection.bulk_write(bulk_operations)
-                logger.info(
-                    f"Processed batch of {len(bulk_operations)} TV documents. "
-                    f"Total processed: {total_processed}"
-                )
-                bulk_operations = []
-
-        # Process remaining operations
-        if bulk_operations:
-            result = await meta_collection.bulk_write(bulk_operations)
-            logger.info(
-                f"Processed final batch of {len(bulk_operations)} TV documents. "
-                f"Total processed: {total_processed}"
-            )
-
-        logger.info(
-            f"Successfully migrated TV metadata. "
-            f"Total documents processed: {total_processed}"
+        # Sort by total_streams (desc) and last_updated_at (desc)
+        sorted_docs = sorted(
+            docs,
+            key=lambda x: (
+                x.get("total_streams", 0),
+                x.get("last_updated_at", datetime.min),
+            ),
+            reverse=True,
         )
 
-    except Exception as e:
-        logger.error(f"Error during TV metadata migration: {str(e)}")
-        raise
+        # Keep the first one (most streams/latest update)
+        keep_id = sorted_docs[0]["id"]
+        remove_ids = [doc["id"] for doc in sorted_docs[1:]]
+
+        logging.info(f"Processing group: {group_key}")
+        logging.info(f"Keeping: {keep_id}")
+        logging.info(f"Removing: {remove_ids}")
+
+        # Update streams based on content type
+        content_type = group_key["type"]
+
+        try:
+            # Update TorrentStreams for movies and series
+            if content_type in ["movie", "series"]:
+                result = await TorrentStreams.get_motor_collection().update_many(
+                    {"meta_id": {"$in": remove_ids}}, {"$set": {"meta_id": keep_id}}
+                )
+                logging.info(f"Updated {result.modified_count} torrent streams")
+
+            # Update TVStreams for tv content
+            elif content_type == "tv":
+                result = await TVStreams.get_motor_collection().update_many(
+                    {"meta_id": {"$in": remove_ids}}, {"$set": {"meta_id": keep_id}}
+                )
+                logging.info(f"Updated {result.modified_count} TV streams")
+
+            # Update streams count for the kept document
+            update_data = await update_meta_stream(keep_id)
+
+            # Remove duplicate metadata last
+            result = await MediaFusionMetaData.get_motor_collection().delete_many(
+                {"_id": {"$in": remove_ids}}
+            )
+            logging.info(f"Removed {result.deleted_count} duplicate metadata records")
+
+            logging.info(
+                f"Updated stream count for {keep_id}: {update_data['total_streams']}"
+            )
+
+        except Exception as e:
+            logging.error(f"Error processing group {group_key}: {str(e)}")
+            continue
 
 
-async def cleanup_metadata():
-    """Unset unused fields in metadata collections and remove documents with 0 total_streams"""
-    collection = MediaFusionMetaData.get_motor_collection()
-
-    # Unset unused fields "streams"
-    result = await collection.update_many(
-        {"streams": {"$exists": True}}, {"$unset": {"streams": ""}}
+async def migrate_custom_flag():
+    """Migration script to set is_custom field for existing documents."""
+    # Update all documents with mf prefix to have is_custom = True
+    await MediaFusionMetaData.get_motor_collection().update_many(
+        {"_id": {"$regex": "^mf"}}, {"$set": {"is_custom": True}}
     )
-    logger.info(f"Removed 'streams' field from {result.modified_count} documents")
 
-    # Remove documents with 0 total_streams and _id starting with "mf"
-    result = await collection.delete_many(
-        {"total_streams": 0, "_id": {"$regex": "^mf"}}
+    # Update all other documents to have is_custom = False
+    await MediaFusionMetaData.get_motor_collection().update_many(
+        {"_id": {"$not": {"$regex": "^mf"}}}, {"$set": {"is_custom": False}}
     )
-    logger.info(f"Deleted {result.deleted_count} documents with 0 total_streams")
+    await MediaFusionMetaData.get_motor_collection().create_index(
+        [("title", ASCENDING), ("year", ASCENDING), ("type", ASCENDING)],
+        unique=True,
+        partialFilterExpression={"is_custom": True},
+        name="unique_title_year_type_for_mf_id",
+    )
+    logging.info("Migration completed: is_custom field has been set for all documents")
 
 
 async def main():
     logger.info("Starting migration")
-    await database.init(allow_index_dropping=True)
+    await database.init()  # allow_index_dropping=True)
+    # await cleanup_duplicate_metadata()
+    # await migrate_custom_flag()
 
-    # Migrate TorrentStreams first
-    logger.info("Migrating TorrentStreams")
-    await cleanup_invalid_torrents()
-    await cleanup_torrent_streams()
-    await migrate_torrent_streams()
-
-    # Migrate metadata collections
-    await migrate_movie_series_metadata(MediaFusionMovieMetaData)
-    await migrate_movie_series_metadata(MediaFusionSeriesMetaData)
-    await migrate_tv_metadata()
-
-    await migrate_series_metadata()
-    await cleanup_metadata()
-
+    await migrate_series_streams()
     logger.info("Migration completed successfully")
 
 
