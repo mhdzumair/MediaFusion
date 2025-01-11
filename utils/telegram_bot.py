@@ -73,14 +73,73 @@ class TelegramNotifier:
         # Add block link
         message += f"\n\n[🚫 Block Torrent]({block_url})"
 
+        await self._send_photo_message(poster, message)
+
+    async def send_block_notification(
+        self,
+        info_hash: str,
+        meta_id: str,
+        title: str,
+        meta_type: str,
+        poster: str,
+        torrent_name: str,
+    ):
+        """Send notification when a torrent is blocked"""
+        if not self.enabled:
+            logger.warning("Telegram notifications are disabled. Check bot token.")
+            return
+
+        meta_id_data = (
+            f"*IMDb*: [{meta_id}](https://www.imdb.com/title/{meta_id}/)\n"
+            if meta_id.startswith("tt")
+            else f"Meta ID: {meta_id}\n"
+        )
+
+        message = (
+            f"🚫 Torrent Blocked\n\n"
+            f"*Title*: {title}\n"
+            f"*Type*: {meta_type.title()}\n"
+            f"{meta_id_data}"
+            f"*Torrent Name*: `{torrent_name}`\n"
+            f"*Info Hash*: `{info_hash}`\n"
+            f"*Poster*: [View]({poster})"
+        )
+
+        await self._send_photo_message(poster, message)
+
+    async def send_migration_notification(
+        self,
+        old_id: str,
+        new_id: str,
+        title: str,
+        meta_type: str,
+        poster: str,
+    ):
+        """Send notification when an ID is migrated"""
+        if not self.enabled:
+            logger.warning("Telegram notifications are disabled. Check bot token.")
+            return
+
+        message = (
+            f"🔄 ID Migration Complete\n\n"
+            f"*Title*: {title}\n"
+            f"*Type*: {meta_type.title()}\n"
+            f"*Old ID*: `{old_id}`\n"
+            f"*New IMDb ID*: [{new_id}](https://www.imdb.com/title/{new_id}/)\n"
+            f"*Poster*: [View]({poster})"
+        )
+
+        await self._send_photo_message(poster, message)
+
+    async def _send_photo_message(self, photo_url: str, message: str):
+        """Send a message with photo, falling back to text-only if photo fails"""
         try:
             async with aiohttp.ClientSession() as session:
-                # Send a single message with photo and caption
                 async with session.post(
                     f"{self.base_url}/sendPhoto",
                     json={
                         "chat_id": self.chat_id,
-                        "photo": poster,
+                        "photo": photo_url,
                         "caption": message,
                         "parse_mode": "Markdown",
                     },

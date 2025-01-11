@@ -575,10 +575,28 @@ async def block_torrent(block_data: schemas.BlockTorrent):
     torrent_stream.is_blocked = True
     try:
         await torrent_stream.save()
+        # Send Telegram notification
+        if settings.telegram_bot_token:
+            metadata = await MediaFusionMetaData.get_motor_collection().find_one(
+                {"_id": torrent_stream.meta_id}, projection={"title": 1, "type": 1}
+            )
+            title = metadata.get("title")
+            meta_type = metadata.get("type")
+            poster = f"{settings.poster_host_url}/poster/{meta_type}/{torrent_stream.meta_id}.jpg"
+            await telegram_notifier.send_block_notification(
+                info_hash=block_data.info_hash,
+                meta_id=torrent_stream.meta_id,
+                title=title,
+                meta_type=meta_type,
+                poster=poster,
+                torrent_name=torrent_stream.torrent_name,
+            )
+
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to block torrent: {str(e)}"
         )
+
     return {"status": f"Torrent {block_data.info_hash} has been successfully blocked."}
 
 
@@ -614,11 +632,18 @@ async def migrate_id(migrate_data: schemas.MigrateID):
     await MediaFusionMetaData.get_motor_collection().delete_one(
         {"_id": migrate_data.mediafusion_id}
     )
-    if migrate_data.media_type == "series":
-        await get_series_data_by_id(migrate_data.imdb_id)
-    else:
-        await get_movie_data_by_id(migrate_data.imdb_id)
     await update_meta_stream(migrate_data.imdb_id)
+
+    # Send notification
+    if settings.telegram_bot_token:
+        new_poster = f"{settings.poster_host_url}/poster/{migrate_data.media_type}/{migrate_data.imdb_id}.jpg"
+        await telegram_notifier.send_migration_notification(
+            old_id=migrate_data.mediafusion_id,
+            new_id=migrate_data.imdb_id,
+            title=old_title,
+            meta_type=migrate_data.media_type,
+            poster=new_poster,
+        )
 
     return {
         "status": f"Successfully migrated {migrate_data.mediafusion_id} to {migrate_data.imdb_id}."
