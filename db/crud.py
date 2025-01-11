@@ -34,6 +34,10 @@ from scrapers.mdblist import initialize_mdblist_scraper
 from scrapers.scraper_tasks import run_scrapers, meta_fetcher
 from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils import crypto
+from utils.const import (
+    USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
+    USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
+)
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import (
@@ -491,13 +495,34 @@ async def get_cached_torrent_streams(
     return streams
 
 
-async def get_movie_streams(
+async def get_streams_base(
     user_data,
     secret_str: str,
     video_id: str,
+    metadata,
+    content_type: str,
+    content_catalogs: list[str],
     user_ip: str | None,
     background_tasks: BackgroundTasks,
+    season: int | None = None,
+    episode: int | None = None,
 ) -> list[Stream]:
+    """
+    Base function for fetching streams for both movies and series.
+
+    Args:
+        user_data: User data containing preferences
+        secret_str: Secret string for authentication
+        video_id: ID of the video content
+        metadata: Metadata for the content
+        content_type: Type of content ("movie" or "series")
+        content_catalogs: List of supported catalogs for the content
+        user_ip: User's IP address
+        background_tasks: Background tasks manager
+        season: Season number (for series only)
+        episode: Episode number (for series only)
+    """
+    # Handle special case for streaming provider deletion
     if video_id.startswith("dl"):
         if not video_id.endswith(user_data.streaming_provider.service):
             return []
@@ -508,34 +533,64 @@ async def get_movie_streams(
                 url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
             )
         ]
-    movie_metadata = await get_movie_data_by_id(video_id)
-    if not movie_metadata:
+
+    if not metadata:
         return []
-    if validate_parent_guide_nudity(movie_metadata, user_data) is False:
+
+    # Check content appropriateness
+    if validate_parent_guide_nudity(metadata, user_data) is False:
         return [
             create_exception_stream(
                 settings.addon_name,
-                create_content_warning_message(movie_metadata),
+                create_content_warning_message(metadata),
                 "inappropriate_content.mp4",
             )
         ]
 
+    # Create user feeds for supported catalogs
+    user_feeds = []
+    if video_id.startswith("mf") and any(
+        catalog in content_catalogs for catalog in metadata.catalogs
+    ):
+        user_feeds = [
+            schemas.Stream(
+                name=settings.addon_name,
+                description=f"🔄 Migrate {video_id} to IMDb ID",
+                externalUrl=f"{settings.host_url}/scraper/?action=migrate_id&mediafusion_id={video_id}&meta_type={content_type}",
+            )
+        ]
+
+    # Handle stream caching and live search
     live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
-    cache_key = f"torrent_streams:{video_id}"
+    cache_key_parts = [video_id]
+    if content_type == "series":
+        cache_key_parts.extend([str(season), str(episode)])
+
+    cache_key = f"torrent_streams:{':'.join(cache_key_parts)}"
     lock_key = f"{cache_key}_lock" if live_search_streams else None
     redis_lock = None
 
-    # Acquire the lock to prevent multiple scrapers from running at the same time
     if lock_key:
         _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
 
-    cached_streams = await get_cached_torrent_streams(cache_key, video_id)
+    # Get cached streams
+    cached_streams = await get_cached_torrent_streams(
+        cache_key,
+        video_id,
+        season,
+        episode,
+    )
 
+    # Handle live search and stream updates
     if live_search_streams:
-        new_streams = await run_scrapers(movie_metadata, "movie")
+        scraper_args = [metadata, content_type]
+        if content_type == "series":
+            scraper_args.extend([season, episode])
+
+        new_streams = await run_scrapers(*scraper_args)
         all_streams = list(set(cached_streams).union(new_streams))
+
         if new_streams:
-            # reset the cache
             await REDIS_ASYNC_CLIENT.delete(cache_key)
             background_tasks.add_task(
                 store_new_torrent_streams, new_streams, redis_lock=redis_lock
@@ -545,7 +600,38 @@ async def get_movie_streams(
     else:
         all_streams = cached_streams
 
-    return await parse_stream_data(all_streams, user_data, secret_str, user_ip=user_ip)
+    # Parse and return results
+    parsed_results = await parse_stream_data(
+        all_streams,
+        user_data,
+        secret_str,
+        season,
+        episode,
+        user_ip=user_ip,
+        is_series=(content_type == "series"),
+    )
+    return parsed_results + user_feeds
+
+
+async def get_movie_streams(
+    user_data,
+    secret_str: str,
+    video_id: str,
+    user_ip: str | None,
+    background_tasks: BackgroundTasks,
+) -> list[Stream]:
+    """Get streams for a movie."""
+    movie_metadata = await get_movie_data_by_id(video_id)
+    return await get_streams_base(
+        user_data=user_data,
+        secret_str=secret_str,
+        video_id=video_id,
+        metadata=movie_metadata,
+        content_type="movie",
+        content_catalogs=USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
+        user_ip=user_ip,
+        background_tasks=background_tasks,
+    )
 
 
 async def get_series_streams(
@@ -557,53 +643,19 @@ async def get_series_streams(
     user_ip: str | None,
     background_tasks: BackgroundTasks,
 ) -> list[Stream]:
+    """Get streams for a series episode."""
     series_metadata = await get_series_data_by_id(video_id)
-    if not series_metadata:
-        return []
-    if validate_parent_guide_nudity(series_metadata, user_data) is False:
-        return [
-            create_exception_stream(
-                settings.addon_name,
-                create_content_warning_message(series_metadata),
-                "inappropriate_content.mp4",
-            )
-        ]
-
-    live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
-    cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
-    lock_key = f"{cache_key}_lock" if live_search_streams else None
-    redis_lock = None
-
-    # Acquire the lock to prevent multiple scrapers from running at the same time
-    if lock_key:
-        _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
-
-    cached_streams = await get_cached_torrent_streams(
-        cache_key, video_id, season, episode
-    )
-
-    if live_search_streams:
-        new_streams = await run_scrapers(series_metadata, "series", season, episode)
-        all_streams = list(set(cached_streams).union(new_streams))
-        if new_streams:
-            # reset the cache
-            await REDIS_ASYNC_CLIENT.delete(cache_key)
-            background_tasks.add_task(
-                store_new_torrent_streams, new_streams, redis_lock
-            )
-        else:
-            await release_redis_lock(redis_lock)
-    else:
-        all_streams = cached_streams
-
-    return await parse_stream_data(
-        all_streams,
-        user_data,
-        secret_str,
-        season,
-        episode,
+    return await get_streams_base(
+        user_data=user_data,
+        secret_str=secret_str,
+        video_id=video_id,
+        metadata=series_metadata,
+        content_type="series",
+        content_catalogs=USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
         user_ip=user_ip,
-        is_series=True,
+        background_tasks=background_tasks,
+        season=season,
+        episode=episode,
     )
 
 
