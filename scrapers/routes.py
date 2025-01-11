@@ -380,6 +380,7 @@ async def add_torrent(
             )
 
         if validation_errors:
+            torrent_data.pop("torrent_file", None)
             return {
                 "status": "validation_failed",
                 "errors": validation_errors,
@@ -429,6 +430,7 @@ async def add_torrent(
             )
 
         if validation_errors:
+            torrent_data.pop("torrent_file", None)
             return {
                 "status": "validation_failed",
                 "errors": validation_errors,
