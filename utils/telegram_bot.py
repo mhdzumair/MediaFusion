@@ -27,6 +27,8 @@ class TelegramNotifier:
         size: str,
         torrent_name: str,
         seasons_and_episodes: Optional[dict] = None,
+        catalogs: Optional[list] = None,
+        languages: Optional[list] = None,
     ):
         """Send notification about new contribution to Telegram channel"""
         if not self.enabled:
@@ -58,6 +60,14 @@ class TelegramNotifier:
             f"*Type*: {torrent_type}\n"
             f"*Poster*: [View]({poster})"
         )
+
+        if catalogs:
+            # Escape underscores and use pipe with spaces
+            escaped_catalogs = [cat.replace("_", "\\_") for cat in catalogs]
+            message += f"\n*Catalogs*: {', '.join(escaped_catalogs)}"
+        if languages:
+            # Use pipe with spaces for languages
+            message += f"\n*Languages*: {', '.join(languages)}"
 
         # Add season/episode info for series
         if meta_type == "series" and seasons_and_episodes:

@@ -25,6 +25,7 @@ from db.enums import TorrentType
 from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
+from scrapers.scraper_tasks import meta_fetcher
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
@@ -179,27 +180,29 @@ async def update_imdb_data(
     return {"status": f"Successfully updated IMDb data for {meta_id}."}
 
 
-@router.post("/torrent", tags=["scraper"])
+@router.post("/torrent")
 async def add_torrent(
-    meta_type: Literal["movie", "series"] = Form(...),
+    meta_type: Literal["movie", "series", "sports"] = Form(...),
+    created_at: date = Form(...),
+    torrent_file: Optional[UploadFile] = File(None),
+    magnet_link: Optional[str] = Form(None),
     meta_id: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     poster: Optional[str] = Form(None),
     background: Optional[str] = Form(None),
     logo: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    website: Optional[str] = Form(None),
     is_add_title_to_poster: bool = Form(False),
     catalogs: Optional[str] = Form(None),
-    is_sports_content: bool = Form(False),
     languages: Optional[str] = Form(None),
-    created_at: date = Form(...),
     torrent_type: TorrentType = Form(TorrentType.PUBLIC),
-    magnet_link: Optional[str] = Form(None),
-    torrent_file: Optional[UploadFile] = File(None),
     force_import: bool = Form(False),
     file_data: Optional[str] = Form(None),
     uploader: Optional[str] = Form("Anonymous"),
+    resolution: Optional[str] = Form(None),
+    quality: Optional[str] = Form(None),
+    audio: Optional[str] = Form(None),
+    codec: Optional[str] = Form(None),
+    hdr: Optional[str] = Form(None),
 ):
     torrent_data: dict = {}
     info_hash = None
@@ -210,21 +213,17 @@ async def add_torrent(
     if torrent_type != TorrentType.PUBLIC and not torrent_file:
         raise_error(f"Torrent file must be provided for {torrent_type} torrents.")
 
-    # Convert catalogs string to list if provided
+    # Convert lists from form data
     catalog_list = catalogs.split(",") if catalogs else []
-
-    # Convert languages string to list if provided
     language_list = languages.split(",") if languages else []
+    audio_list = audio.split(",") if audio else []
+    hdr_list = hdr.split(",") if hdr else []
 
     # Process magnet link or torrent file
     if magnet_link:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             raise_error("Failed to parse magnet link.")
-        if torrent_stream := await get_stream_by_info_hash(info_hash):
-            return {
-                "status": f"Torrent already exists and attached to meta id: {torrent_stream.meta_id}"
-            }
         data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
         if not data:
             raise_error("Failed to fetch torrent metadata.")
@@ -243,13 +242,39 @@ async def add_torrent(
                 f"Torrent name contains 18+ keywords: {torrent_data['torrent_name']}"
             )
         info_hash = torrent_data.get("info_hash")
-        if torrent_stream := await get_stream_by_info_hash(info_hash):
+
+    # Check if torrent already exists
+    if torrent_stream := await get_stream_by_info_hash(info_hash):
+        if torrent_stream.meta_id != meta_id:
+            await torrent_stream.delete()
+        elif meta_type == "movie" and torrent_stream.filename is None:
+            await torrent_stream.delete()
+        elif meta_type == "series" and (
+            not torrent_stream.episode_files
+            or not torrent_stream.episode_files[0].filename
+        ):
+            await torrent_stream.delete()
+        else:
             return {
                 "status": f"Torrent already exists and attached to meta id: {torrent_stream.meta_id}"
             }
 
+    # Add technical specifications to torrent_data
+    if resolution:
+        torrent_data["resolution"] = resolution
+    if quality:
+        torrent_data["quality"] = quality
+    if audio_list:
+        torrent_data["audio"] = audio_list
+    if codec:
+        torrent_data["codec"] = codec
+    if hdr_list:
+        torrent_data["hdr"] = hdr_list
+    if title:
+        torrent_data["title"] = title
+
     # Handle sports content metadata
-    if is_sports_content:
+    if meta_type == "sports":
         if not title or not catalog_list:
             raise_error("Title and sports catalog are required.")
         catalog = catalog_list[0]
@@ -259,6 +284,7 @@ async def add_torrent(
         if catalog in ["wwe", "ufc"]:
             genres = [catalog]
             sports_category = SPORTS_ARTIFACTS[catalog.upper()]
+            catalog_list = ["fighting"]
             catalog = "fighting"
         elif catalog_mapped := const.CATALOG_DATA.get(catalog):
             sports_category = SPORTS_ARTIFACTS[catalog_mapped]
@@ -285,22 +311,35 @@ async def add_torrent(
             "poster": poster or random.choice(sports_category["poster"]),
             "background": background or random.choice(sports_category["background"]),
             "logo": logo or random.choice(sports_category["logo"]),
-            "description": description,
-            "website": website,
             "is_add_title_to_poster": is_add_title_to_poster if poster else True,
             "catalogs": catalog_list,
             "created_at": created_at,
             "genres": genres,
         }
 
-        # Get or create metadata
         metadata_result = await get_or_create_metadata(
             sports_metadata, meta_type, is_search_imdb_title=False, is_imdb_only=False
         )
-
         if not metadata_result:
             raise_error("Failed to create metadata for sports content.")
+        meta_id = metadata_result["id"]
 
+    elif not meta_id:
+        # search for metadata from imdb/tmdb
+        metadata_result = await get_or_create_metadata(
+            {
+                "title": title or torrent_data.get("title"),
+                "year": torrent_data.get("year") or created_at.year,
+                "poster": poster,
+                "background": background,
+                "logo": logo,
+                "is_add_title_to_poster": is_add_title_to_poster,
+                "catalogs": catalog_list,
+                "created_at": created_at,
+            },
+            meta_type,
+            is_search_imdb_title=True,
+        )
         meta_id = metadata_result["id"]
     else:
         # Regular IMDb content validation
@@ -470,6 +509,8 @@ async def add_torrent(
             size=convert_bytes_to_readable(torrent_stream.size),
             torrent_name=torrent_stream.torrent_name,
             seasons_and_episodes=seasons_and_episodes,
+            catalogs=catalog_list,
+            languages=languages,
         )
 
     return {
@@ -650,3 +691,66 @@ async def migrate_id(migrate_data: schemas.MigrateID):
     return {
         "status": f"Successfully migrated {migrate_data.mediafusion_id} to {migrate_data.imdb_id}."
     }
+
+
+@router.post("/analyze_torrent")
+async def analyze_torrent(
+    torrent_file: Optional[UploadFile] = File(None),
+    magnet_link: Optional[str] = Form(None),
+    meta_type: Literal["movie", "series", "sports"] = Form(...),
+):
+    """Analyze torrent file or magnet link and search for matching content"""
+    try:
+        if torrent_file:
+            # Extract metadata from torrent
+            torrent_data = torrent.extract_torrent_metadata(
+                await torrent_file.read(), is_raise_error=True
+            )
+            # Remove torrent_file bytes data from response
+            torrent_data.pop("torrent_file", None)
+        elif magnet_link:
+            info_hash, trackers = torrent.parse_magnet(magnet_link)
+            if not info_hash:
+                raise HTTPException(
+                    status_code=400, detail="Failed to parse magnet link."
+                )
+            data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
+            if not data:
+                raise HTTPException(
+                    status_code=400, detail="Failed to fetch torrent metadata."
+                )
+            torrent_data = data[0]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Either torrent file or magnet link must be provided.",
+            )
+
+        if not torrent_data or not torrent_data.get("title"):
+            raise HTTPException(
+                status_code=400, detail="Could not extract title from torrent"
+            )
+
+        if meta_type == "sports":
+            torrent_data["type"] = "sports"
+            return {
+                "torrent_data": torrent_data,
+                "matches": [],
+            }
+
+        # Search for match using meta_fetcher
+        matches = await meta_fetcher.search_multiple_results(
+            title=torrent_data["title"],
+            year=torrent_data.get("year"),
+            media_type=meta_type,
+        )
+
+        return {
+            "torrent_data": torrent_data,
+            "matches": matches,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to analyze torrent: {str(e)}"
+        )
