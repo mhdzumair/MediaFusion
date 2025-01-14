@@ -258,7 +258,7 @@ async def add_torrent(
 
         if catalog in ["wwe", "ufc"]:
             genres = [catalog]
-            sports_category = SPORTS_ARTIFACTS[catalog]
+            sports_category = SPORTS_ARTIFACTS[catalog.upper()]
             catalog = "fighting"
         elif catalog_mapped := const.CATALOG_DATA.get(catalog):
             sports_category = SPORTS_ARTIFACTS[catalog_mapped]

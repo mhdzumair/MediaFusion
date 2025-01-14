@@ -180,6 +180,20 @@
 	  "https://img.wethrift.com/wwe.jpg"
 	]
   },
+  "Fighting (WWE, UFC)": {
+	"background": [
+	  "https://www.kolpaper.com/wp-content/uploads/2021/01/WrestleMania-Wallpaper-4.jpg",
+	  "https://wallpapercave.com/wp/wp7480043.jpg"
+	],
+	"poster": [
+	  "https://i.pinimg.com/originals/34/bb/f7/34bbf762319412d2c8a0759fa7417adc.png",
+	  "https://rajah.com/sites/default/files/styles/page_image/public/2023-09/wwelogo.jpeg?itok=-8FcfTEJ"
+	],
+	"logo": [
+	  "https://png.pngtree.com/png-vector/20210222/ourlarge/pngtree-element-logo-of-vs-fight-png-image_2932642.jpg",
+	  "https://img.wethrift.com/wwe.jpg"
+	]
+  },
   "Floorball": {
 	"background": [
 	  "https://i.pinimg.com/564x/2e/ec/61/2eec61af4a598497c89b2d25b3fbfeb8.jpg"
