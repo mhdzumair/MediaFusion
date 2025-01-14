@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import math
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urljoin
+from uuid import uuid4
 
 import httpx
 from thefuzz import fuzz
@@ -43,7 +44,12 @@ async def get_tmdb_data(
                 response.raise_for_status()
                 data = response.json()
 
-                return await format_tmdb_response(data, media_type)
+                episodes = []
+                for season_number in range(1, data["number_of_seasons"] + 1):
+                    episodes.extend(
+                        await get_tmdb_season_episodes(str(data["id"]), season_number)
+                    )
+                return format_tmdb_response(data, media_type, episodes)
 
         except httpx.TimeoutException:
             logging.warning(
@@ -140,7 +146,9 @@ async def get_tmdb_season_episodes(
         return []
 
 
-async def format_tmdb_response(data: Dict[str, Any], media_type: str) -> Dict[str, Any]:
+def format_tmdb_response(
+    data: Dict[str, Any], media_type: str, episodes: list
+) -> Dict[str, Any]:
     """
     Format TMDB API response into standardized metadata format
     """
@@ -149,7 +157,7 @@ async def format_tmdb_response(data: Dict[str, Any], media_type: str) -> Dict[st
 
     formatted = {
         "tmdb_id": str(data["id"]),
-        "imdb_id": data["external_ids"].get("imdb_id"),
+        "imdb_id": data["external_ids"].get("imdb_id") or f"mf{uuid4().fields[-1]}",
         "title": data.get("title" if is_movie else "name"),
         "original_title": data.get("original_title" if is_movie else "original_name"),
         "year": int(release_date[:4]) if release_date else None,
@@ -202,13 +210,6 @@ async def format_tmdb_response(data: Dict[str, Any], media_type: str) -> Dict[st
                 "status": data.get("status"),
             }
         )
-
-        # Fetch episode data for each season
-        episodes = []
-        for season_number in range(1, data["number_of_seasons"] + 1):
-            episodes.extend(
-                await get_tmdb_season_episodes(str(data["id"]), season_number)
-            )
         formatted["episodes"] = episodes
 
     return formatted
@@ -411,3 +412,152 @@ async def search_tmdb(
                 return {}
 
     return {}
+
+
+async def search_multiple_tmdb(
+    title: str,
+    limit: int = 5,
+    year: Optional[int] = None,
+    media_type: Optional[str] = None,
+    created_year: Optional[int] = None,
+    min_similarity: int = 60,
+) -> List[Dict[str, Any]]:
+    """
+    Search for multiple matching titles on TMDB.
+    Similar to existing search_tmdb but returns multiple results.
+    """
+    if not settings.tmdb_api_key:
+        logging.error("TMDB API key is not set")
+        return []
+
+    def calculate_year_score(result: Dict[str, Any]) -> Tuple[bool, float]:
+        """Calculate year match score and validity"""
+        try:
+            result_type = result.get("media_type")
+            if media_type and result_type != media_type:
+                return False, float("inf")
+
+            date_field = "release_date" if result_type == "movie" else "first_air_date"
+            result_date = result.get(date_field, "")
+
+            if not result_date:
+                return False, float("inf")
+
+            try:
+                result_year = int(result_date[:4])
+            except (ValueError, TypeError, IndexError):
+                return False, float("inf")
+
+            # Handle exact year matching
+            if year is not None:
+                if result_type == "movie":
+                    return result_year == year, (
+                        0 if result_year == year else float("inf")
+                    )
+                else:
+                    last_air_date = result.get("last_air_date", "")
+                    try:
+                        end_year = int(last_air_date[:4]) if last_air_date else None
+                    except (ValueError, TypeError, IndexError):
+                        end_year = None
+
+                    if end_year is None:
+                        end_year = math.inf if result_year <= year else None
+
+                    if end_year is not None:
+                        return (result_year <= year <= end_year), (
+                            0 if (result_year <= year <= end_year) else float("inf")
+                        )
+                    return False, float("inf")
+
+            # Use created_year for sorting when no exact year match is required
+            if created_year:
+                if result_type == "movie":
+                    return True, abs(result_year - created_year)
+                else:
+                    last_air_date = result.get("last_air_date", "")
+                    try:
+                        end_year = int(last_air_date[:4]) if last_air_date else None
+                    except (ValueError, TypeError, IndexError):
+                        end_year = None
+
+                    if end_year is None:
+                        return True, abs(result_year - created_year)
+                    return True, min(
+                        abs(result_year - created_year), abs(end_year - created_year)
+                    )
+
+            return True, 0  # No year criteria
+
+        except Exception as err:
+            logging.error(f"TMDB search: Error calculating year score: {err}")
+            return False, float("inf")
+
+    if media_type:
+        media_type = "movie" if media_type == "movie" else "tv"
+        endpoint = f"search/{media_type}"
+    else:
+        endpoint = "search/multi"
+
+    params = {
+        "api_key": settings.tmdb_api_key,
+        "query": title,
+        "year": year if media_type == "movie" and year is not None else None,
+        "first_air_date_year": (
+            year if media_type == "tv" and year is not None else None
+        ),
+    }
+    params = {k: v for k, v in params.items() if v is not None}
+
+    try:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
+            response = await client.get(
+                urljoin(TMDB_BASE_URL, endpoint),
+                params=params,
+                headers=UA_HEADER,
+                timeout=10,
+            )
+            response.raise_for_status()
+            results = response.json()["results"]
+
+            candidates = []
+            for result in results:
+                result_title = (
+                    result.get("title")
+                    if result.get("media_type") == "movie"
+                    else result.get("name")
+                )
+
+                if not result_title:
+                    continue
+
+                similarity = fuzz.ratio(result_title.lower(), title.lower())
+                if similarity < min_similarity:
+                    continue
+
+                valid_year, year_score = calculate_year_score(result)
+                if not valid_year:
+                    continue
+
+                # Combine similarity and year score for ranking
+                combined_score = (similarity / 100.0) * (1.0 / (1.0 + year_score))
+                candidates.append((result, combined_score))
+
+            # Sort by combined score and take top results
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            top_candidates = candidates[:limit]
+
+            # Fetch full metadata for top candidates
+            full_results = []
+            for candidate, _ in top_candidates:
+                try:
+                    result = format_tmdb_response(candidate, media_type, [])
+                    full_results.append(result)
+                except Exception as err:
+                    logging.error(f"Error fetching TMDB data for candidate: {err}")
+
+            return full_results
+
+    except Exception as e:
+        logging.error(f"Error in TMDB search: {e}")
+        return []

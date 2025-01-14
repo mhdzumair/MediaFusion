@@ -12,7 +12,7 @@ from db.config import settings
 from db.models import TorrentStreams, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper
 from scrapers.bt4g import BT4GScraper
-from scrapers.imdb_data import get_imdb_title_data, search_imdb
+from scrapers.imdb_data import get_imdb_title_data, search_imdb, search_multiple_imdb
 from scrapers.jackett import JackettScraper
 from scrapers.mediafusion import MediafusionScraper
 from scrapers.prowlarr import ProwlarrScraper
@@ -21,6 +21,7 @@ from scrapers.tmdb_data import (
     search_tmdb,
     get_tmdb_data,
     get_imdb_id_from_tmdb,
+    search_multiple_tmdb,
 )
 from scrapers.torrentio import TorrentioScraper
 from scrapers.yts import YTSScraper
@@ -331,6 +332,62 @@ class MetadataFetcher:
     def clear_expired_cache(self) -> None:
         """Clear expired cache entries"""
         self.cache.clear_expired()
+
+    async def search_multiple_results(
+        self,
+        title: str,
+        limit: int = 10,
+        year: Optional[int] = None,
+        media_type: Optional[str] = None,
+        created_year: Optional[int] = None,
+        min_similarity: int = 60,
+    ) -> list[dict]:
+        """
+        Search for multiple matching titles across IMDB and TMDB.
+
+        Args:
+            title: Title to search for
+            limit: Maximum number of results to return per source
+            year: Specific year to match (exact matching)
+            media_type: Type of media ('movie' or 'series')
+            created_year: Year used for sorting when exact year match isn't required
+            min_similarity: Minimum title similarity score (0-100) for fuzzy matching
+        """
+
+        async def get_tmdb_candidates() -> List[Dict[str, Any]]:
+            try:
+                return await search_multiple_tmdb(
+                    title=title,
+                    limit=limit,
+                    year=year,
+                    media_type=media_type,
+                    created_year=created_year,
+                    min_similarity=min_similarity,
+                )
+            except Exception as e:
+                logging.error(f"Error searching TMDB: {e}")
+                return []
+
+        async def get_imdb_candidates() -> List[Dict[str, Any]]:
+            try:
+                return await search_multiple_imdb(
+                    title=title,
+                    limit=limit,
+                    year=year,
+                    media_type=media_type,
+                    created_year=created_year,
+                    min_similarity=min_similarity,
+                )
+            except Exception as e:
+                logging.error(f"Error searching IMDB: {e}")
+                return []
+
+        # Run searches in parallel
+        tmdb_candidates, imdb_candidates = await asyncio.gather(
+            get_tmdb_candidates(), get_imdb_candidates()
+        )
+
+        return tmdb_candidates + imdb_candidates
 
 
 # Create a singleton instance with 30-minute cache TTL
