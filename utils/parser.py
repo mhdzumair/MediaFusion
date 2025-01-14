@@ -33,7 +33,7 @@ async def filter_and_sort_streams(
     user_data: UserData,
     stremio_video_id: str,
     user_ip: str | None = None,
-) -> list[TorrentStreams]:
+) -> tuple[list[TorrentStreams], dict]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
     quality_filter_set = set(
@@ -49,16 +49,29 @@ async def filter_and_sort_streams(
 
     # Step 1: Filter streams and add normalized attributes
     filtered_streams = []
+    filtered_reasons = {
+        "Requires Streaming Provider": 0,
+        "Requires Private Tracker Support": 0,
+        "Resolution Not Selected": 0,
+        "Size Limit Exceeded": 0,
+        "Quality Not Selected": 0,
+        "Language Not Selected": 0,
+        "Strict 18+ Keyword Filter": 0,
+        "No Cached Streams": 0,
+    }
+
     for stream in streams:
         # Skip private torrents if streaming provider is not supported
         if stream.torrent_type != TorrentType.PUBLIC:
             if not user_data.streaming_provider:
+                filtered_reasons["Requires Streaming Provider"] += 1
                 continue
             if (
                 stream.torrent_type != TorrentType.WEB_SEED
                 and user_data.streaming_provider.service
                 not in const.SUPPORTED_PRIVATE_TRACKER_STREAMING_PROVIDERS
             ):
+                filtered_reasons["Requires Private Tracker Support"] += 1
                 continue
         # Create a copy of the stream model to avoid modifying the original
         stream = stream.model_copy()
@@ -75,24 +88,29 @@ async def filter_and_sort_streams(
         stream.cached = False
 
         if stream.filtered_resolution not in selected_resolutions_set:
+            filtered_reasons["Resolution Not Selected"] += 1
             continue
 
         if stream.size > user_data.max_size:
+            filtered_reasons["Size Limit Exceeded"] += 1
             continue
 
         if stream.filtered_quality not in quality_filter_set:
+            filtered_reasons["Quality Not Selected"] += 1
             continue
 
         if not any(lang in language_filter_set for lang in stream.filtered_languages):
+            filtered_reasons["Language Not Selected"] += 1
             continue
 
         if is_contain_18_plus_keywords(stream.torrent_name):
+            filtered_reasons["Strict 18+ Keyword Filter"] += 1
             continue
 
         filtered_streams.append(stream)
 
     if not filtered_streams:
-        return []
+        return filtered_streams, filtered_reasons
 
     # Step 2: Update cache status based on provider
     if user_data.streaming_provider:
@@ -140,7 +158,13 @@ async def filter_and_sort_streams(
                     )
 
         if user_data.streaming_provider.only_show_cached_streams:
-            filtered_streams = [stream for stream in filtered_streams if stream.cached]
+            cached_filtered_streams = [
+                stream for stream in filtered_streams if stream.cached
+            ]
+            if not cached_filtered_streams:
+                filtered_reasons["No Cached Streams"] = len(filtered_streams)
+                return filtered_streams, filtered_reasons
+            filtered_streams = cached_filtered_streams
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(torrent_stream: TorrentStreams) -> tuple:
@@ -212,7 +236,7 @@ async def filter_and_sort_streams(
             limited_streams.append(stream)
             streams_count_per_resolution[stream.filtered_resolution] = count + 1
 
-    return limited_streams
+    return limited_streams, filtered_reasons
 
 
 async def parse_stream_data(
@@ -237,15 +261,21 @@ async def parse_stream_data(
     stremio_video_id = (
         f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
     )
-    streams = await filter_and_sort_streams(
+    streams, filtered_reasons = await filter_and_sort_streams(
         streams, user_data, stremio_video_id, user_ip
     )
 
     if not streams:
+        reason_data = [
+            f"{count} x {reason}"
+            for reason, count in filtered_reasons.items()
+            if count > 0
+        ]
+        reasons = "\n".join(reason_data)
         return [
             create_exception_stream(
                 settings.addon_name,
-                "🚫 Streams Found\n⚙️ Filtered by your configuration preferences",
+                f"🚫 Streams Found\n⚙️ Filtered by your configuration preferences\n{reasons}",
                 "filtered_no_streams.mp4",
             )
         ]
