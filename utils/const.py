@@ -230,18 +230,17 @@ CERTIFICATION_MAPPING = {
     "Parental Guidance": ["14A", "PG-15", "15A", "15PG", "M", "MA", "RP16", "PG12"],
     "Teens": ["14", "14+", "15", "15+", "16", "16+", "R-12", "R15", "R16", "TV-14"],
     "Adults": [
+        "A",
         "18",
         "18+",
         "18A",
         "NC-17",
-        "X",
-        "XXX",
         "R",
         "R18",
         "R-18",
         "18TC",
-        "21+",
     ],
+    "Adults+": ["R21", "R21+", "21", "21+", "R-21", "R-21+", "R-21A", "XXX", "X"],
 }
 
 LANGUAGES_FILTERS = [

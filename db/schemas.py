@@ -247,8 +247,9 @@ class UserData(BaseModel):
             "Parental Guidance",
             "Teens",
             "Adults",
+            "Adults+",
         ]
-    ] = Field(default=["Adults"], alias="cf")
+    ] = Field(default=["Adults+"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")
     language_sorting: list[str | None] = Field(
         default=const.LANGUAGES_FILTERS, alias="ls"
@@ -305,7 +306,7 @@ class UserData(BaseModel):
 
     @field_validator("certification_filter", mode="after")
     def validate_certification_filter(cls, v):
-        return v or ["Adults"]
+        return v or ["Adults+"]
 
     @field_validator("quality_filter", mode="after")
     def validate_quality_filter(cls, v):

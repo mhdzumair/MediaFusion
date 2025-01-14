@@ -470,6 +470,13 @@
                                     <label class="form-check-label" for="certification_adults">Adults</label>
                                 </div>
                             </div>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input parental-guide-checkbox" type="checkbox" name="certification_filter" value="Adults+" id="certification_adults+"
+                                           {% if "Adults+" in user_data.certification_filter %}checked{% endif %}>
+                                    <label class="form-check-label" for="certification_adults+">Adults+</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

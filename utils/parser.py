@@ -694,7 +694,7 @@ def get_certification_level(certificates: list) -> str:
         return "Unknown"
 
     # Order of restriction levels from lowest to highest
-    levels = ["All Ages", "Children", "Parental Guidance", "Teens", "Adults"]
+    levels = ["All Ages", "Children", "Parental Guidance", "Teens", "Adults", "Adults+"]
 
     highest_level = "Unknown"
     for certificate in certificates:
@@ -721,6 +721,7 @@ def get_age_rating_emoji(certification_level: str) -> str:
         "Parental Guidance": "👨‍👩‍👧‍👦",
         "Teens": "👱",
         "Adults": "🔞",
+        "Adults+": "🔞",
         "Unknown": "❓",
     }
     return emoji_mapping.get(certification_level, "❓")
