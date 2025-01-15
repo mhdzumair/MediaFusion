@@ -109,49 +109,53 @@
                         </div>
                     </div>
 
-                    <!-- Torrent Upload Parameters -->
+
                     <!-- Torrent Upload Parameters Section -->
                     <div id="torrentUploadParameters" style="display: none;">
                         <div class="section-container">
-                            <!-- Content Type Selection -->
-                            <div class="row mb-4">
-                                <div class="col-md-4">
-                                    <label for="metaType" class="form-label">Content Type</label>
-                                    <select class="form-select" id="metaType" name="metaType" onchange="updateContentType()">
-                                        <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
-                                        <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
-                                        <option value="sports">Sports</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="torrentType" class="form-label">Torrent Type</label>
-                                    <select class="form-select" id="torrentType" name="torrentType">
-                                        <option value="public">Public</option>
-                                        <option value="semi-private">Semi-Private</option>
-                                        <option value="private">Private</option>
-                                        <option value="web-seed">Web-Seed</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="createdAt" class="form-label">Release Date</label>
-                                    <input type="date" class="form-control" id="createdAt" name="createdAt" required>
-                                </div>
-                            </div>
-
-                            <!-- Content Metadata Section -->
+                            <!-- Basic Content Information -->
                             <div class="card mb-4">
                                 <div class="card-header">
-                                    <h5 class="mb-0">Content Metadata</h5>
+                                    <h5 class="mb-0">Basic Information</h5>
                                 </div>
                                 <div class="card-body">
-                                    <div class="row mb-3">
-                                        <div class="col-md-6" id="metaIdContainer">
-                                            <label for="torrentImdbId" class="form-label">IMDb ID</label>
-                                            <input type="text" class="form-control" id="torrentImdbId" maxlength="10"
-                                                   placeholder="e.g., tt1234567" value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
+                                    <!-- Content Type and Release Date -->
+                                    <div class="row mb-4">
+                                        <div class="col-md-4">
+                                            <label for="metaType" class="form-label">Content Type</label>
+                                            <select class="form-select" id="metaType" name="metaType" onchange="updateContentType()">
+                                                <option value="movie" {% if prefill_data.meta_type == 'movie' %}selected{% endif %}>Movie</option>
+                                                <option value="series" {% if prefill_data.meta_type == 'series' %}selected{% endif %}>Series</option>
+                                                <option value="sports">Sports</option>
+                                            </select>
                                         </div>
-                                        <div class="col-md-6">
+                                        <div class="col-md-4">
+                                            <label for="torrentType" class="form-label">Torrent Type</label>
+                                            <select class="form-select" id="torrentType" name="torrentType">
+                                                <option value="public">Public</option>
+                                                <option value="semi-private">Semi-Private</option>
+                                                <option value="private">Private</option>
+                                                <option value="web-seed">Web-Seed</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="createdAt" class="form-label">Release Date</label>
+                                            <input type="date" class="form-control" id="createdAt" name="createdAt" required>
+                                        </div>
+                                    </div>
+
+                                    <!-- Content Metadata -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-4" id="metaIdContainer">
+                                            <label for="torrentImdbId" class="form-label">IMDb ID</label>
+                                            <input type="text" class="form-control" id="torrentImdbId" maxlength="10" placeholder="e.g., tt1234567"
+                                                   value="{% if prefill_data.meta_id %}{{ prefill_data.meta_id }}{% endif %}">
+                                        </div>
+                                        <div class="col-md-8">
                                             <label for="title" class="form-label">Title</label>
+                                            <alert class="alert alert-info py-1" role="alert">
+                                                <i class="bi bi-info circle"></i> Validate auto-filled data before submission
+                                            </alert>
                                             <input type="text" class="form-control" id="title" placeholder="Content title">
                                         </div>
                                     </div>
@@ -181,51 +185,87 @@
                                             </label>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
 
-                                    <!-- Technical Specs -->
-                                    <div class="row mb-3">
-                                        <div class="col-md-3">
-                                            <label for="resolution" class="form-label">Resolution</label>
-                                            <select class="form-select" id="resolution">
-                                                <option value="">Select Resolution</option>
-                                                <option value="480p">480p</option>
-                                                <option value="576p">576p</option>
-                                                <option value="720p">720p</option>
-                                                <option value="1080p">1080p</option>
-                                                <option value="1440p">1440p</option>
-                                                <option value="2160p">2160p</option>
-                                                <option value="4K">4K</option>
-                                            </select>
+                            <!-- Technical Specifications -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0">Technical Specifications</h5>
+                                </div>
+                                <div class="card-body">
+                                    <!-- Basic specs grid -->
+                                    <div class="technical-specs-basic"></div>
+
+                                    <!-- Advanced Toggle Button will be inserted here -->
+                                    <div class="advanced-toggle" id="toggleAdvanced">
+                                        <i class="bi bi-chevron-down"></i>
+                                        <span>Advanced Technical Options</span>
+                                    </div>
+
+                                    <!-- Advanced Technical Specifications -->
+                                    <div class="advanced-section" id="advancedSection">
+                                        <div class="row mb-4">
+                                            <div class="col-md-4">
+                                                <label for="resolution" class="form-label">Resolution</label>
+                                                <select class="form-select" id="resolution" onchange="updateSpecField('resolution', this.value)">
+                                                    <option value="">Select Resolution</option>
+                                                    <option value="480p">480p</option>
+                                                    <option value="576p">576p</option>
+                                                    <option value="720p">720p</option>
+                                                    <option value="1080p">1080p</option>
+                                                    <option value="1440p">1440p</option>
+                                                    <option value="2160p">2160p</option>
+                                                    <option value="4K">4K</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label for="quality" class="form-label">Quality</label>
+                                                <select class="form-select" id="quality" onchange="updateSpecField('quality', this.value)">
+                                                    <option value="">Select Quality</option>
+                                                    <option value="BluRay">BluRay</option>
+                                                    <option value="BluRay REMUX">BluRay REMUX</option>
+                                                    <option value="BRRip">BRRip</option>
+                                                    <option value="BDRip">BDRip</option>
+                                                    <option value="WEB-DL">WEB-DL</option>
+                                                    <option value="HDRip">HDRip</option>
+                                                    <option value="DVDRip">DVDRip</option>
+                                                    <option value="HDTV">HDTV</option>
+                                                    <option value="CAM">CAM</option>
+                                                    <option value="TeleSync">TeleSync</option>
+                                                    <option value="SCR">SCR</option>
+                                                </select>
+                                            </div>
+                                            <!-- Video Codec -->
+                                            <div id="video-codec-section" class="col-md-4">
+                                                <label for="videoCodec" class="form-label">Video Codec</label>
+                                                <select class="form-select" id="videoCodec" onchange="updateSpecField('codec', this.value)">
+                                                    <option value="">Select Video Codec</option>
+                                                    <option value="x264">x264</option>
+                                                    <option value="x265">x265</option>
+                                                    <option value="h.264">H.264</option>
+                                                    <option value="h.265">H.265</option>
+                                                    <option value="hevc">HEVC</option>
+                                                    <option value="avc">AVC</option>
+                                                    <option value="mpeg-2">MPEG-2</option>
+                                                    <option value="mpeg-4">MPEG-4</option>
+                                                    <option value="vp9">VP9</option>
+                                                </select>
+                                            </div>
                                         </div>
-                                        <div class="col-md-3">
-                                            <label for="quality" class="form-label">Quality</label>
-                                            <select class="form-select" id="quality">
-                                                <option value="">Select Quality</option>
-                                                <option value="BluRay">BluRay</option>
-                                                <option value="BluRay REMUX">BluRay REMUX</option>
-                                                <option value="BRRip">BRRip</option>
-                                                <option value="BDRip">BDRip</option>
-                                                <option value="WEB-DL">WEB-DL</option>
-                                                <option value="HDRip">HDRip</option>
-                                                <option value="DVDRip">DVDRip</option>
-                                                <option value="HDTV">HDTV</option>
-                                                <option value="CAM">CAM</option>
-                                                <option value="TeleSync">TeleSync</option>
-                                                <option value="SCR">SCR</option>
-                                            </select>
-                                        </div>
+
                                         <!-- Audio Codecs -->
-                                        <div class="mb-3">
+                                        <div id="audio-codecs-section">
                                             <label class="form-label">Audio Codecs</label>
                                             <div class="row">
-                                                {% for codec in ['AAC', 'AC3', 'DTS', 'DTS-HD MA', 'TrueHD', 'Atmos', 'DD+'] %}
+                                                {% for codec in ['AAC', 'AC3', 'DTS', 'DTS-HD MA', 'TrueHD', 'Atmos', 'DD+', 'Dolby Digital Plus', 'DTS Lossless'] %}
                                                     <div class="col-md-3 col-sm-6">
                                                         <div class="form-check mb-2">
                                                             <input class="form-check-input" type="checkbox"
                                                                    name="audioCodecs" value="{{ codec }}"
-                                                                   id="audio-{{ codec|lower|replace('-', '')|replace('+', 'plus') }}">
+                                                                   id="audio-{{ codec|replace(' ', '')|replace('+', '') }}">
                                                             <label class="form-check-label"
-                                                                   for="audio-{{ codec|lower|replace('-', '')|replace('+', 'plus') }}">
+                                                                   for="audio-{{ codec|replace(' ', '')|replace('+', '') }}">
                                                                 {{ codec }}
                                                             </label>
                                                         </div>
@@ -234,122 +274,113 @@
                                             </div>
                                         </div>
 
-                                        <!-- Video Codecs -->
-                                        <div class="col-md-3">
-                                            <label for="videoCodec" class="form-label">Video Codec</label>
-                                            <select class="form-select" id="videoCodec">
-                                                <option value="">Select Video Codec</option>
-                                                <option value="x264">x264</option>
-                                                <option value="x265">x265</option>
-                                                <option value="h.264">H.264</option>
-                                                <option value="h.265">H.265</option>
-                                                <option value="hevc">HEVC</option>
-                                                <option value="avc">AVC</option>
-                                                <option value="mpeg-2">MPEG-2</option>
-                                                <option value="mpeg-4">MPEG-4</option>
-                                                <option value="vp9">VP9</option>
+                                        <!-- HDR Formats -->
+                                        <div id="hdr-formats-section">
+                                            <label class="form-label">HDR Formats</label>
+                                            <div class="row">
+                                                {% for format in ['DV', 'HDR10+', 'HDR', 'SDR'] %}
+                                                    <div class="col-md-3 col-sm-6">
+                                                        <div class="form-check mb-2">
+                                                            <input class="form-check-input" type="checkbox"
+                                                                   name="hdrFormats" value="{{ format }}"
+                                                                   id="hdr-{{ format|replace('+', '') }}">
+                                                            <label class="form-check-label"
+                                                                   for="hdr-{{ format|replace('+', '') }}">
+                                                                {{ format }}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+
+                                        <!-- Languages -->
+                                        <div id="languages-section">
+                                            <label class="form-label">Languages</label>
+                                            <div class="row">
+                                                {% for language in supported_languages %}
+                                                    <div class="col-md-3 col-sm-6">
+                                                        <div class="form-check mb-2">
+                                                            <input class="form-check-input" type="checkbox"
+                                                                   name="languages" value="{{ language }}"
+                                                                   id="lang-{{ language }}">
+                                                            <label class="form-check-label"
+                                                                   for="lang-{{ language }}">
+                                                                {{ language }}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Catalogs Section -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0">Content Categories</h5>
+                                </div>
+                                <div class="card-body">
+                                    <!-- Movie Catalogs -->
+                                    <div id="movieCatalogs" class="catalog-group" style="display: none;">
+                                        <div class="alert alert-info" role="alert">
+                                            <i class="bi bi-info-circle"></i> Select categories to help organize your content
+                                        </div>
+                                        <div class="catalog-grid">
+                                            {% for catalog in supported_movie_catalog_ids %}
+                                                <div class="catalog-item">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" name="catalogs"
+                                                               value="{{ catalog }}" id="catalog-{{ catalog }}">
+                                                        <label class="form-check-label" for="catalog-{{ catalog }}">
+                                                            {{ catalog_data.get(catalog) }}
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+
+                                    <!-- Series Catalogs -->
+                                    <div id="seriesCatalogs" class="catalog-group" style="display: none;">
+                                        <div class="alert alert-info" role="alert">
+                                            <i class="bi bi-info-circle"></i> Select categories to help organize your content
+                                        </div>
+                                        <div class="catalog-grid">
+                                            {% for catalog in supported_series_catalog_ids %}
+                                                <div class="catalog-item">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" name="catalogs"
+                                                               value="{{ catalog }}" id="catalog-{{ catalog }}">
+                                                        <label class="form-check-label" for="catalog-{{ catalog }}">
+                                                            {{ catalog_data.get(catalog) }}
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+
+                                    <!-- Sports Catalogs -->
+                                    <div id="sportsCatalogs" class="catalog-group" style="display: none;">
+                                        <div class="col-md-12">
+                                            <select class="form-select" id="sportsCatalog">
+                                                <option value="">Select Sports Category</option>
+                                                <option value="american_football">American Football / NFL</option>
+                                                <option value="baseball">Baseball / MLB</option>
+                                                <option value="basketball">Basketball / NBA</option>
+                                                <option value="football">Football / Soccer</option>
+                                                <option value="formula_racing">Formula Racing</option>
+                                                <option value="hockey">Hockey / NHL</option>
+                                                <option value="motogp_racing">MotoGP Racing</option>
+                                                <option value="other_sports">Other Sports</option>
+                                                <option value="rugby">Rugby / AFL</option>
+                                                <option value="wwe">WWE</option>
+                                                <option value="ufc">UFC</option>
+                                                <option value="fighting">Fighting</option>
                                             </select>
-                                        </div>
-                                    </div>
-
-                                    <!-- HDR Formats -->
-                                    <div class="mb-3">
-                                        <label class="form-label">HDR Formats</label>
-                                        <div class="row">
-                                            {% for format in ['DV', 'HDR10+', 'HDR', 'SDR'] %}
-                                                <div class="col-md-3 col-sm-6">
-                                                    <div class="form-check mb-2">
-                                                        <input class="form-check-input" type="checkbox"
-                                                               name="hdrFormats" value="{{ format }}"
-                                                               id="hdr-{{ format|lower|replace('+', 'plus') }}">
-                                                        <label class="form-check-label"
-                                                               for="hdr-{{ format|lower|replace('+', 'plus') }}">
-                                                            {{ format }}
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-
-                                    <!-- Languages Selection -->
-                                    <div class="mb-3">
-                                        <label class="form-label">Languages</label>
-                                        <div class="row">
-                                            {% for language in supported_languages %}
-                                                <div class="col-md-3 col-sm-6">
-                                                    <div class="form-check mb-2">
-                                                        <input class="form-check-input" type="checkbox" name="languages"
-                                                               value="{{ language }}" id="lang-{{ language }}">
-                                                        <label class="form-check-label" for="lang-{{ language }}">
-                                                            {{ language }}
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-
-                                    <!-- Catalogs Section -->
-                                    <div class="mb-4">
-                                        <label class="form-label">Catalogs</label>
-                                        <!-- Movie Catalogs -->
-                                        <div id="movieCatalogs" class="row" style="display: none;">
-                                            <div class="alert alert-info" role="alert">
-                                                <i class="bi bi-info-circle"></i> Selecting catalogs helps organize content but is optional
-                                            </div>
-                                            <div class="row">
-                                                {% for catalog in supported_movie_catalog_ids %}
-                                                    <div class="col-md-4 col-sm-6">
-                                                        <div class="form-check mb-2">
-                                                            <input class="form-check-input" type="checkbox" name="catalogs" value="{{ catalog }}" id="catalog-{{ catalog }}">
-                                                            <label class="form-check-label" for="catalog-{{ catalog }}">
-                                                                {{ catalog_data.get(catalog) }}
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-
-                                        <!-- Series Catalogs -->
-                                        <div id="seriesCatalogs" class="row" style="display: none;">
-                                            <div class="alert alert-info" role="alert">
-                                                <i class="bi bi-info-circle"></i> Selecting catalogs helps organize content but is optional
-                                            </div>
-                                            <div class="row">
-                                                {% for catalog in supported_series_catalog_ids %}
-                                                    <div class="col-md-4 col-sm-6">
-                                                        <div class="form-check mb-2">
-                                                            <input class="form-check-input" type="checkbox" name="catalogs" value="{{ catalog }}" id="catalog-{{ catalog }}">
-                                                            <label class="form-check-label" for="catalog-{{ catalog }}">
-                                                                {{ catalog_data.get(catalog) }}
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-
-                                        <!-- Sports Catalogs -->
-                                        <div id="sportsCatalogs" class="row" style="display: none;">
-                                            <div class="col-md-12">
-                                                <select class="form-select" id="sportsCatalog">
-                                                    <option value="">Select Sports Category</option>
-                                                    <option value="american_football">American Football / NFL</option>
-                                                    <option value="baseball">Baseball / MLB</option>
-                                                    <option value="basketball">Basketball / NBA</option>
-                                                    <option value="football">Football / Soccer</option>
-                                                    <option value="formula_racing">Formula Racing</option>
-                                                    <option value="hockey">Hockey / NHL</option>
-                                                    <option value="motogp_racing">MotoGP Racing</option>
-                                                    <option value="other_sports">Other Sports</option>
-                                                    <option value="rugby">Rugby / AFL</option>
-                                                    <option value="wwe">WWE</option>
-                                                    <option value="ufc">UFC</option>
-                                                    <option value="fighting">Fighting</option>
-                                                </select>
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -363,14 +394,11 @@
                                 <div class="card-body">
                                     <div class="mb-3">
                                         <label for="torrentFile" class="form-label">Torrent File</label>
-                                        <input type="file" class="form-control" id="torrentFile" accept=".torrent"
-                                               onchange="toggleInput('magnetLink', this)">
+                                        <input type="file" class="form-control" id="torrentFile" accept=".torrent" onchange="toggleInput('magnetLink', this)">
                                     </div>
                                     <div class="mb-3">
                                         <label for="magnetLink" class="form-label">Magnet Link</label>
-                                        <input type="text" class="form-control" id="magnetLink"
-                                               placeholder="magnet:?xt=urn:btih:..."
-                                               onchange="toggleInput('torrentFile', this)">
+                                        <input type="text" class="form-control" id="magnetLink" placeholder="magnet:?xt=urn:btih:..." onchange="toggleInput('torrentFile', this)">
                                     </div>
                                 </div>
                             </div>
@@ -378,11 +406,11 @@
                             <!-- Uploader Information -->
                             <div class="mb-3">
                                 <label for="uploaderName" class="form-label">Uploader Name (Optional)</label>
-                                <input type="text" class="form-control" id="uploaderName"
-                                       placeholder="Enter your name or leave blank for Anonymous">
+                                <input type="text" class="form-control" id="uploaderName" placeholder="Enter your name or leave blank for Anonymous">
                             </div>
                         </div>
                     </div>
+
                     <!-- Scrapy Parameters -->
                     <div id="scrapyParameters" style="display: none;">
                         <div class="mb-3">

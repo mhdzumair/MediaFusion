@@ -673,24 +673,111 @@ function displayMatchResults(matches, torrentData) {
 
     if (matches && matches.length > 0) {
         matches.forEach(match => {
+            const safeMatchData = encodeURIComponent(JSON.stringify(match));
+            const safeTorrentData = encodeURIComponent(JSON.stringify(torrentData));
+
+            // Format runtime nicely
+            const runtime = match.runtime ? match.runtime.replace('min', '').trim() + ' minutes' : 'N/A';
+
+            // Format rating with stars
+            const rating = match.imdb_rating ?
+                `<i class="bi bi-star-fill text-warning"></i> ${match.imdb_rating}/10` :
+                '<span class="badge bg-secondary">No rating</span>';
+
+            // Handle multiple AKA titles
+            const akaTitles = match.aka_titles && match.aka_titles.length > 0 ?
+                `<div class="small mb-1">Also known as: ${match.aka_titles.join(' • ')}</div>` : '';
+
             const matchHtml = `
-                <div class="list-group-item list-group-item-action">
-                    <div class="d-flex w-100">
-                        <div class="flex-shrink-0">
+                <div class="list-group-item list-group-item-action p-3">
+                    <div class="d-flex">
+                        <!-- Poster Section -->
+                        <div class="flex-shrink-0 me-3">
                             <img src="${match.poster || '/static/img/placeholder.jpg'}" 
                                  alt="${match.title}"
-                                 class="img-thumbnail" style="width: 100px;">
+                                 class="rounded shadow-sm" 
+                                 style="width: 120px; height: 180px; object-fit: cover;">
                         </div>
-                        <div class="ms-3">
-                            <h5 class="mb-1">${match.title} (${match.year})</h5>
-                            <p class="mb-1">${match.type} • ${match.runtime || 'N/A'}</p>
-                            <p class="mb-1 text-muted">${match.plot || ''}</p>
-                            <button class="btn btn-primary btn-sm mt-2"
-                                    data-match='${btoa(JSON.stringify(match))}'
-                                    data-torrent='${btoa(JSON.stringify(torrentData))}'
-                                    onclick="selectMatchFromData(this)">
-                                Select This Match
-                            </button>
+                        
+                        <!-- Content Section -->
+                        <div class="flex-grow-1">
+                            <!-- Header -->
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h5 class="mb-1">${match.title} 
+                                        <span class="text-muted">(${match.year})</span>
+                                    </h5>
+                                    ${akaTitles}
+                                </div>
+                                <div>
+                                    ${rating}
+                                </div>
+                            </div>
+
+                            <!-- Meta Information -->
+                            <div class="d-flex flex-wrap gap-3 mb-2">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-film me-1"></i>
+                                    <span>${match.type.charAt(0).toUpperCase() + match.type.slice(1)}</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-clock me-1"></i>
+                                    <span>${runtime}</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-fingerprint me-1"></i>
+                                    <span>${match.imdb_id}</span>
+                                </div>
+                            </div>
+
+                            <!-- Description -->
+                            <p class="mb-2 text-muted">${match.description || 'No description available.'}</p>
+
+                            <!-- Tags Section -->
+                            <div class="mb-3">
+                                <div class="d-flex flex-wrap gap-2">
+                                    ${match.genres.map(genre => 
+                                        `<span class="badge bg-primary bg-opacity-25 text-primary">${genre}</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Additional Information -->
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-globe2 me-2"></i>
+                                        <small>${match.countries.join(', ') || 'N/A'}</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-translate me-2"></i>
+                                        <small>${match.languages.join(', ') || 'N/A'}</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Stars/Cast -->
+                            ${match.stars && match.stars.length > 0 ? `
+                            <div class="mb-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-person-circle"></i>
+                                    <small class="text-muted">${match.stars.join(', ')}</small>
+                                </div>
+                            </div>
+                            ` : ''}
+
+                            <!-- Action Buttons -->
+                            <div class="d-flex justify-content-end gap-2">
+                                <button class="btn btn-primary btn-sm"
+                                        data-match='${safeMatchData}'
+                                        data-torrent='${safeTorrentData}'
+                                        onclick="selectMatchFromData(this)">
+                                    <i class="bi bi-check2 me-1"></i>
+                                    Select This Match
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -705,9 +792,106 @@ function displayMatchResults(matches, torrentData) {
 }
 
 function selectMatchFromData(button) {
-    const match = JSON.parse(atob(button.getAttribute('data-match')));
-    const torrentData = JSON.parse(atob(button.getAttribute('data-torrent')));
+    const match = JSON.parse(decodeURIComponent(button.getAttribute('data-match')));
+    const torrentData = JSON.parse(decodeURIComponent(button.getAttribute('data-torrent')));
     selectMatch(match, torrentData);
+}
+
+function formatTechnicalSpec(value, type) {
+    if (!value) return '<span class="not-available">Not Set</span>';
+
+    switch (type) {
+        case 'resolution':
+            return `<span class="spec-value">${value}</span>`;
+        case 'audio' || 'languages' || 'hdr':
+            return Array.isArray(value)
+                ? value.join(', ')
+                : value.split(',').join(', ');
+        default:
+            return value;
+    }
+}
+
+function updateBasicTechnicalSpecs(torrentData = {}) {
+    const specsContainer = document.querySelector('.technical-specs-basic');
+    if (!specsContainer) return;
+
+    const specs = [
+        {icon: 'bi-display', label: 'Resolution', value: torrentData.resolution, type: 'resolution'},
+        {icon: 'bi-camera-reels', label: 'Quality', value: torrentData.quality, type: 'quality'},
+        {icon: 'bi-film', label: 'Video Codec', value: torrentData.codec, type: 'codec'},
+        {icon: 'bi-music-note-beamed', label: 'Audio', value: torrentData.audio, type: 'audio'},
+        {icon: 'bi-translate', label: 'Languages', value: torrentData.languages, type: 'languages'},
+        {icon: 'bi-tv', label: 'HDR', value: torrentData.hdr, type: 'hdr'},
+    ];
+
+    specsContainer.innerHTML = specs.map(spec => `
+        <div class="spec-item">
+            <i class="bi ${spec.icon}"></i>
+            <div>
+                <div class="spec-label">${spec.label}</div>
+                <div class="spec-value" id="${spec.type}Spec" >${formatTechnicalSpec(spec.value, spec.type)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Function to set up the advanced toggle system
+function setupAdvancedToggle() {
+    document.getElementById('toggleAdvanced').addEventListener('click', () => {
+        const toggleButton = document.getElementById('toggleAdvanced');
+        toggleButton.classList.toggle('active');
+        const advancedSection = document.getElementById('advancedSection');
+        advancedSection.classList.toggle('show');
+    });
+
+    // Initial update of basic specs
+    updateBasicTechnicalSpecs();
+}
+
+function updateSpecField(fieldId, value) {
+    const targetInput = document.getElementById(`${fieldId}Spec`);
+    if (targetInput) {
+        targetInput.innerHTML = formatTechnicalSpec(value, fieldId);
+    }
+}
+
+function setupFieldChangeHandlers() {
+    // Audio codecs handler
+    const audioCodecsInputs = document.querySelectorAll('input[name="audioCodecs"]');
+    audioCodecsInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            const selectedAudioCodecs = Array.from(audioCodecsInputs)
+                .filter(input => input.checked)
+                .map(input => input.value)
+                .join(', ');
+            updateSpecField('audio', selectedAudioCodecs);
+        });
+    });
+
+    // HDR formats handler
+    const hdrFormatsInputs = document.querySelectorAll('input[name="hdrFormats"]');
+    hdrFormatsInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            const selectedHdrFormats = Array.from(hdrFormatsInputs)
+                .filter(input => input.checked)
+                .map(input => input.value)
+                .join(', ');
+            updateSpecField('hdr', selectedHdrFormats);
+        });
+    });
+
+    // Languages handler
+    const languageInputs = document.querySelectorAll('input[name="languages"]');
+    languageInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            const selectedLanguages = Array.from(languageInputs)
+                .filter(input => input.checked)
+                .map(input => input.value)
+                .join(', ');
+            updateSpecField('languages', selectedLanguages);
+        });
+    });
 }
 
 // Utility functions for form handling
@@ -724,7 +908,7 @@ const formUtils = {
 
         // Reset basic fields
         const basicFields = ['torrentImdbId', 'metaType', 'title', 'poster', 'background', 'logo',
-                           'resolution', 'quality', 'videoCodec', 'createdAt'];
+            'resolution', 'quality', 'videoCodec', 'createdAt'];
         basicFields.forEach(fieldId => {
             const element = document.getElementById(fieldId);
             if (element) element.value = '';
@@ -770,7 +954,7 @@ const formUtils = {
 
         const values = Array.isArray(items) ? items : items.split(',');
         values.forEach(value => {
-            const checkboxId = `${prefix}-${value.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+            const checkboxId = `${prefix}-${value.replace(/[^a-zA-Z0-9]/g, '')}`;
             const checkbox = document.getElementById(checkboxId);
             if (checkbox) checkbox.checked = true;
         });
@@ -863,6 +1047,9 @@ function switchToManualImport(torrentData) {
 
 function applyTorrentData(torrentData) {
     if (!torrentData) return;
+
+    // Update basic specs display
+    updateBasicTechnicalSpecs(torrentData);
 
     // check title and if its empty then add title from torrentData
     if (!document.getElementById('title').value) {
@@ -1330,5 +1517,7 @@ async function submitScraperForm() {
 // Initial update for form fields on page load
 document.addEventListener('DOMContentLoaded', function () {
     handleInitialSetup();
+    setupAdvancedToggle();
+    setupFieldChangeHandlers();
 });
 document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);

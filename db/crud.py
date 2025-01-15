@@ -809,6 +809,8 @@ async def get_tv_meta(meta_id: str):
 async def get_existing_metadata(
     metadata: dict, model: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]
 ) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
+    if metadata.get("id"):
+        return await model.get(metadata["id"])
     title = metadata["title"]
     year = metadata.get("year")
     if isinstance(year, str):
@@ -1590,6 +1592,11 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
         )
         # Get existing metadata to preserve values
         existing_metadata = await meta_class.get(meta_id)
+        if not existing_metadata:
+            logging.warning(
+                f"Metadata not found for {metadata_type} {meta_id}. Skipping update."
+            )
+            continue
 
         # Merge new data with existing data, preserving existing values when new ones are None/empty
         update_data = {

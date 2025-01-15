@@ -325,10 +325,11 @@ async def add_torrent(
             raise_error("Failed to create metadata for sports content.")
         meta_id = metadata_result["id"]
 
-    elif not meta_id:
+    elif not meta_id or meta_id.startswith("mf"):
         # search for metadata from imdb/tmdb
         metadata_result = await get_or_create_metadata(
             {
+                "id": meta_id,
                 "title": title or torrent_data.get("title"),
                 "year": torrent_data.get("year") or created_at.year,
                 "poster": poster,
@@ -339,13 +340,13 @@ async def add_torrent(
                 "created_at": created_at,
             },
             meta_type,
-            is_search_imdb_title=True,
+            is_search_imdb_title=meta_id is None,
         )
         meta_id = metadata_result["id"]
     else:
         # Regular IMDb content validation
-        if not meta_id or not meta_id.startswith("tt") or not meta_id[2:].isdigit():
-            raise_error("Invalid IMDb ID. Must start with 'tt'.")
+        if not meta_id or not meta_id.startswith(("tt", "mf")):
+            raise_error("Invalid IMDb ID. Must start with 'tt' or 'mf'.")
 
     # For series, check if we need file annotation
     if meta_type == "series":
@@ -732,6 +733,7 @@ async def analyze_torrent(
                 status_code=400, detail="Could not extract title from torrent"
             )
 
+        torrent_data["type"] = meta_type
         if meta_type == "sports":
             # parse title for sports content
             title = torrent_data["torrent_name"]
@@ -748,7 +750,6 @@ async def analyze_torrent(
             )
             title = re.sub(r"\s+", " ", title).strip()
             torrent_data["title"] = title
-            torrent_data["type"] = "sports"
             return {
                 "torrent_data": torrent_data,
                 "matches": [],

@@ -170,6 +170,8 @@ def parse_imdb_title(imdb_title: model.Title, episodes: list[dict]) -> dict:
         "year": imdb_title.year,
         "end_year": end_year,
         "description": imdb_title.plot.get("en-US"),
+        "countries": imdb_title.countries,
+        "languages": imdb_title.languages,
         "genres": imdb_title.genres,
         "imdb_rating": float(imdb_title.rating) if imdb_title.rating else None,
         "aka_titles": list(set(aka.title for aka in imdb_title.akas)),

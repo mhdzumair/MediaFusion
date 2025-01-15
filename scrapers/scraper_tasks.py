@@ -382,11 +382,8 @@ class MetadataFetcher:
                 logging.error(f"Error searching IMDB: {e}")
                 return []
 
-        # Run searches in parallel
-        tmdb_candidates, imdb_candidates = await asyncio.gather(
-            get_tmdb_candidates(), get_imdb_candidates()
-        )
-
+        imdb_candidates = await get_imdb_candidates()
+        tmdb_candidates = await get_tmdb_candidates()
         return tmdb_candidates + imdb_candidates
 
 

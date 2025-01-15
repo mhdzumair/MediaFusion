@@ -18,7 +18,7 @@ TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/"
 
 
 async def get_tmdb_data(
-    tmdb_id: str, media_type: str, max_retries: int = 3
+    tmdb_id: str, media_type: str, max_retries: int = 3, load_episodes: bool = True
 ) -> Optional[Dict[str, Any]]:
     """
     Enhanced TMDB data fetcher with retry logic and better error handling
@@ -45,10 +45,13 @@ async def get_tmdb_data(
                 data = response.json()
 
                 episodes = []
-                for season_number in range(1, data["number_of_seasons"] + 1):
-                    episodes.extend(
-                        await get_tmdb_season_episodes(str(data["id"]), season_number)
-                    )
+                if media_type == "series" and load_episodes:
+                    for season_number in range(1, data.get("number_of_seasons", 0) + 1):
+                        episodes.extend(
+                            await get_tmdb_season_episodes(
+                                str(data["id"]), season_number
+                            )
+                        )
                 return format_tmdb_response(data, media_type, episodes)
 
         except httpx.TimeoutException:
@@ -157,7 +160,8 @@ def format_tmdb_response(
 
     formatted = {
         "tmdb_id": str(data["id"]),
-        "imdb_id": data["external_ids"].get("imdb_id") or f"mf{uuid4().fields[-1]}",
+        "imdb_id": data.get("external_ids", {}).get("imdb_id")
+        or f"mf{uuid4().fields[-1]}",
         "title": data.get("title" if is_movie else "name"),
         "original_title": data.get("original_title" if is_movie else "original_name"),
         "year": int(release_date[:4]) if release_date else None,
@@ -172,6 +176,10 @@ def format_tmdb_response(
             else None
         ),
         "description": data.get("overview"),
+        "countries": [
+            country["name"] for country in data.get("production_countries", [])
+        ],
+        "languages": [lang["name"] for lang in data.get("spoken_languages", [])],
         "genres": [genre["name"] for genre in data.get("genres", [])],
         "tmdb_rating": data.get("vote_average"),
         "runtime": f"{data.get('runtime')} min" if data.get("runtime") else None,
@@ -255,6 +263,65 @@ async def get_tmdb_data_by_imdb(
         return None
 
 
+def calculate_year_score(
+    result: Dict[str, Any], year: int, created_year: int
+) -> Tuple[bool, float]:
+    """Calculate year match score and validity"""
+    try:
+        result_date = result.get("release_date") or result.get("first_air_date")
+
+        if not result_date:
+            return False, float("inf")
+
+        try:
+            result_year = int(result_date[:4])
+        except (ValueError, TypeError, IndexError):
+            return False, float("inf")
+
+        # Handle exact year matching
+        if year is not None:
+            if result.get("first_air_date"):
+                last_air_date = result.get("last_air_date", "")
+                try:
+                    end_year = int(last_air_date[:4]) if last_air_date else None
+                except (ValueError, TypeError, IndexError):
+                    end_year = None
+
+                if end_year is None:
+                    end_year = math.inf if result_year <= year else None
+
+                if end_year is not None:
+                    return (result_year <= year <= end_year), (
+                        0 if (result_year <= year <= end_year) else float("inf")
+                    )
+                return False, float("inf")
+            else:
+                return result_year == year, (0 if result_year == year else float("inf"))
+
+        # Use created_year for sorting when no exact year match is required
+        if created_year:
+            if result.get("first_air_date"):
+                last_air_date = result.get("last_air_date", "")
+                try:
+                    end_year = int(last_air_date[:4]) if last_air_date else None
+                except (ValueError, TypeError, IndexError):
+                    end_year = None
+
+                if end_year is None:
+                    return True, abs(result_year - created_year)
+                return True, min(
+                    abs(result_year - created_year), abs(end_year - created_year)
+                )
+            else:
+                return True, abs(result_year - created_year)
+
+        return True, 0  # No year criteria
+
+    except Exception as err:
+        logging.error(f"TMDB search: Error calculating year score: {err}")
+        return False, float("inf")
+
+
 async def search_tmdb(
     title: str,
     year: int | None,
@@ -270,71 +337,6 @@ async def search_tmdb(
     if TMDB_API_KEY is None:
         logging.error("TMDB API key is not set")
         return {}
-
-    def calculate_year_difference(result: Dict[str, Any]) -> float | None:
-        """Calculate year difference score for sorting"""
-        try:
-            result_type = result.get("media_type")
-            if media_type and result_type != media_type:
-                return None
-
-            # Extract year based on media type
-            date_field = "release_date" if result_type == "movie" else "first_air_date"
-            result_date = result.get(date_field, "")
-
-            if not result_date:
-                return None
-
-            try:
-                result_year = int(result_date[:4])
-            except (ValueError, TypeError, IndexError):
-                return None
-
-            # If target year is provided, only allow exact matches
-            if year is not None:
-                if result_type == "movie":
-                    return 0 if result_year == year else None
-                else:
-                    last_air_date = result.get("last_air_date", "")
-                    try:
-                        end_year = int(last_air_date[:4]) if last_air_date else None
-                    except (ValueError, TypeError, IndexError):
-                        end_year = None
-
-                    # If it's an ongoing series, use math.inf for end_year
-                    if end_year is None:
-                        end_year = math.inf if result_year <= year else None
-
-                    # Only proceed if we have valid end_year
-                    if end_year is not None:
-                        return 0 if (result_year <= year <= end_year) else None
-                    return None
-
-            # Only use created_year for sorting when target year is None
-            if created_year:
-                if result_type == "movie":
-                    return abs(result_year - created_year)
-                else:
-                    # For series, use the minimum difference between created_year
-                    # and either start or end year
-                    last_air_date = result.get("last_air_date", "")
-                    try:
-                        end_year = int(last_air_date[:4]) if last_air_date else None
-                    except (ValueError, TypeError, IndexError):
-                        end_year = None
-
-                    if end_year is None:
-                        # If series is ongoing/unknown end, just use start year difference
-                        return abs(result_year - created_year)
-                    return min(
-                        abs(result_year - created_year), abs(end_year - created_year)
-                    )
-
-            return float("inf")  # No year information available
-
-        except (AttributeError, ValueError) as err:
-            logging.error(f"TMDB search: Error calculating year difference: {err}")
-            return float("inf")
 
     if media_type:
         media_type = "movie" if media_type == "movie" else "tv"
@@ -371,20 +373,19 @@ async def search_tmdb(
                 # Filter by title similarity and calculate year differences
                 candidates = []
                 for result in results:
-                    result_title = (
-                        result.get("title")
-                        if result.get("media_type") == "movie"
-                        else result.get("name")
-                    )
+                    result_title = result.get("name") or result.get("title")
                     if (
                         not result_title
                         or fuzz.ratio(result_title.lower(), title.lower()) < 85
                     ):
                         continue
 
-                    year_diff = calculate_year_difference(result)
-                    if year_diff is not None:  # Only include valid matches
-                        candidates.append((result, year_diff))
+                    valid_year, year_score = calculate_year_score(
+                        result, year, created_year
+                    )
+                    if not valid_year:
+                        continue
+                    candidates.append((result, year_score))
 
                 # Sort candidates by year difference
                 candidates.sort(key=lambda x: x[1])
@@ -430,69 +431,6 @@ async def search_multiple_tmdb(
         logging.error("TMDB API key is not set")
         return []
 
-    def calculate_year_score(result: Dict[str, Any]) -> Tuple[bool, float]:
-        """Calculate year match score and validity"""
-        try:
-            result_type = result.get("media_type")
-            if media_type and result_type != media_type:
-                return False, float("inf")
-
-            date_field = "release_date" if result_type == "movie" else "first_air_date"
-            result_date = result.get(date_field, "")
-
-            if not result_date:
-                return False, float("inf")
-
-            try:
-                result_year = int(result_date[:4])
-            except (ValueError, TypeError, IndexError):
-                return False, float("inf")
-
-            # Handle exact year matching
-            if year is not None:
-                if result_type == "movie":
-                    return result_year == year, (
-                        0 if result_year == year else float("inf")
-                    )
-                else:
-                    last_air_date = result.get("last_air_date", "")
-                    try:
-                        end_year = int(last_air_date[:4]) if last_air_date else None
-                    except (ValueError, TypeError, IndexError):
-                        end_year = None
-
-                    if end_year is None:
-                        end_year = math.inf if result_year <= year else None
-
-                    if end_year is not None:
-                        return (result_year <= year <= end_year), (
-                            0 if (result_year <= year <= end_year) else float("inf")
-                        )
-                    return False, float("inf")
-
-            # Use created_year for sorting when no exact year match is required
-            if created_year:
-                if result_type == "movie":
-                    return True, abs(result_year - created_year)
-                else:
-                    last_air_date = result.get("last_air_date", "")
-                    try:
-                        end_year = int(last_air_date[:4]) if last_air_date else None
-                    except (ValueError, TypeError, IndexError):
-                        end_year = None
-
-                    if end_year is None:
-                        return True, abs(result_year - created_year)
-                    return True, min(
-                        abs(result_year - created_year), abs(end_year - created_year)
-                    )
-
-            return True, 0  # No year criteria
-
-        except Exception as err:
-            logging.error(f"TMDB search: Error calculating year score: {err}")
-            return False, float("inf")
-
     if media_type:
         media_type = "movie" if media_type == "movie" else "tv"
         endpoint = f"search/{media_type}"
@@ -522,11 +460,7 @@ async def search_multiple_tmdb(
 
             candidates = []
             for result in results:
-                result_title = (
-                    result.get("title")
-                    if result.get("media_type") == "movie"
-                    else result.get("name")
-                )
+                result_title = result.get("name") or result.get("title")
 
                 if not result_title:
                     continue
@@ -535,12 +469,15 @@ async def search_multiple_tmdb(
                 if similarity < min_similarity:
                     continue
 
-                valid_year, year_score = calculate_year_score(result)
+                valid_year, year_score = calculate_year_score(
+                    result, year, created_year
+                )
                 if not valid_year:
                     continue
 
                 # Combine similarity and year score for ranking
                 combined_score = (similarity / 100.0) * (1.0 / (1.0 + year_score))
+                result["match_score"] = combined_score
                 candidates.append((result, combined_score))
 
             # Sort by combined score and take top results
@@ -551,7 +488,9 @@ async def search_multiple_tmdb(
             full_results = []
             for candidate, _ in top_candidates:
                 try:
-                    result = format_tmdb_response(candidate, media_type, [])
+                    result = await get_tmdb_data(
+                        str(candidate["id"]), media_type, load_episodes=False
+                    )
                     full_results.append(result)
                 except Exception as err:
                     logging.error(f"Error fetching TMDB data for candidate: {err}")
