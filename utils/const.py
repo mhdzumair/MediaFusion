@@ -51,6 +51,7 @@ CATALOG_DATA = {
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
+    "arabic_movies",
     "english_hdrip",
     "english_tcrip",
     "hindi_dubbed",
@@ -76,6 +77,7 @@ USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
 ]
 
 USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS = [
+    "arabic_series",
     "english_series",
     "hindi_series",
     "kannada_series",
