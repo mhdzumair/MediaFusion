@@ -710,223 +710,200 @@ function selectMatchFromData(button) {
     selectMatch(match, torrentData);
 }
 
+// Utility functions for form handling
+const formUtils = {
+    resetForm(preserveFileAndMagnet = false) {
+        // Store torrent file and magnet link if needed
+        let storedFile, storedMagnet;
+        if (preserveFileAndMagnet) {
+            const quickFile = document.getElementById('quickTorrentFile');
+            const quickMagnet = document.getElementById('quickMagnetLink');
+            storedFile = quickFile.files[0];
+            storedMagnet = quickMagnet.value;
+        }
+
+        // Reset basic fields
+        const basicFields = ['torrentImdbId', 'metaType', 'title', 'poster', 'background', 'logo',
+                           'resolution', 'quality', 'videoCodec', 'createdAt'];
+        basicFields.forEach(fieldId => {
+            const element = document.getElementById(fieldId);
+            if (element) element.value = '';
+        });
+
+        // Reset checkboxes (audio, HDR, languages)
+        ['audio-', 'hdr-', 'lang-'].forEach(prefix => {
+            document.querySelectorAll(`input[id^="${prefix}"]`)
+                .forEach(checkbox => checkbox.checked = false);
+        });
+
+        // Reset catalog checkboxes for both movies and series
+        ['movie', 'series'].forEach(type => {
+            const container = document.getElementById(`${type}Catalogs`);
+            if (container) {
+                container.querySelectorAll('input[type="checkbox"]')
+                    .forEach(cb => cb.checked = false);
+            }
+        });
+
+        // Reset other options
+        const addTitleCheckbox = document.getElementById('addTitleToPoster');
+        if (addTitleCheckbox) addTitleCheckbox.checked = false;
+
+        // Restore torrent file and magnet link if needed
+        if (preserveFileAndMagnet) {
+            const quickFile = document.getElementById('quickTorrentFile');
+            const quickMagnet = document.getElementById('quickMagnetLink');
+
+            if (storedFile) {
+                const dt = new DataTransfer();
+                dt.items.add(storedFile);
+                quickFile.files = dt.files;
+            }
+            if (storedMagnet) {
+                quickMagnet.value = storedMagnet;
+            }
+        }
+    },
+
+    setCheckboxValues(items, prefix) {
+        if (!items) return;
+
+        const values = Array.isArray(items) ? items : items.split(',');
+        values.forEach(value => {
+            const checkboxId = `${prefix}-${value.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+            const checkbox = document.getElementById(checkboxId);
+            if (checkbox) checkbox.checked = true;
+        });
+    },
+
+    setCatalogs(type, catalogs) {
+        if (!type || !catalogs) return;
+
+        const container = document.getElementById(`${type}Catalogs`);
+        if (!container) return;
+
+        // Clear existing selections
+        container.querySelectorAll('input[type="checkbox"]')
+            .forEach(cb => cb.checked = false);
+
+        // Set new selections
+        const catalogList = Array.isArray(catalogs) ? catalogs : catalogs.split(',');
+        catalogList.forEach(cat => {
+            const checkbox = container.querySelector(`input[value="${cat}"]`);
+            if (checkbox) checkbox.checked = true;
+        });
+    },
+
+    transferTorrentFile() {
+        const quickFile = document.getElementById('quickTorrentFile');
+        const torrentFile = document.getElementById('torrentFile');
+        const magnetLink = document.getElementById('magnetLink');
+        const quickMagnet = document.getElementById('quickMagnetLink');
+
+        if (quickFile && quickFile.files[0]) {
+            const dt = new DataTransfer();
+            dt.items.add(quickFile.files[0]);
+            torrentFile.files = dt.files;
+        } else if (quickMagnet) {
+            magnetLink.value = quickMagnet.value.trim();
+        }
+    }
+};
+
+// Main functions for handling torrent imports
 function selectMatch(match, torrentData) {
-    // Pre-fill the manual import form with the matched data
+    if (!match || !torrentData) return;
+
+    // Reset all form fields while preserving torrent file/magnet
+    formUtils.resetForm(true);
+
+    // Set scraperSelect first to ensure proper form state
     document.getElementById('scraperSelect').value = 'add_torrent';
-    document.getElementById('torrentImdbId').value = match.imdb_id;
-    document.getElementById('metaType').value = match.type;
-    document.getElementById('title').value = match.title || '';
-    document.getElementById('poster').value = match.poster || '';
-    document.getElementById('background').value = match.background || '';
-    document.getElementById('logo').value = match.logo || '';
+
+    // Apply match data
+    const matchFields = {
+        'imdb_id': 'torrentImdbId',
+        'type': 'metaType',
+        'title': 'title',
+        'poster': 'poster',
+        'background': 'background',
+        'logo': 'logo'
+    };
+
+    Object.entries(matchFields).forEach(([matchKey, fieldId]) => {
+        const element = document.getElementById(fieldId);
+        if (element && match[matchKey]) {
+            element.value = match[matchKey];
+        }
+    });
 
     // Set 'Add title to poster' option
     document.getElementById('addTitleToPoster').checked = match.is_add_title_to_poster || false;
 
-    // Set release date from torrent data
-    if (torrentData.created_at) {
-        const date = new Date(torrentData.created_at);
-        document.getElementById('createdAt').value = date.toISOString().split('T')[0];
-    }
-
-    // Set technical specs from torrent data
-    if (torrentData.resolution) {
-        document.getElementById('resolution').value = torrentData.resolution;
-    }
-    if (torrentData.quality) {
-        document.getElementById('quality').value = torrentData.quality;
-    }
-    if (torrentData.codec) {
-        document.getElementById('videoCodec').value = torrentData.codec;
-    }
-
-    // Handle multiple audio codecs
-    if (torrentData.audio) {
-        const audioCodecs = Array.isArray(torrentData.audio)
-            ? torrentData.audio
-            : torrentData.audio.split(',');
-        audioCodecs.forEach(codec => {
-            const checkbox = document.getElementById(
-                `audio-${codec.toLowerCase().replace(/[^a-z0-9]/g, '')}`
-            );
-            if (checkbox) {
-                checkbox.checked = true;
-            }
-        });
-    }
-
-    // Handle HDR formats
-    if (torrentData.hdr) {
-        const hdrFormats = Array.isArray(torrentData.hdr)
-            ? torrentData.hdr
-            : torrentData.hdr.split(',');
-        hdrFormats.forEach(format => {
-            const checkbox = document.getElementById(
-                `hdr-${format.toLowerCase().replace(/[^a-z0-9]/g, '')}`
-            );
-            if (checkbox) {
-                checkbox.checked = true;
-            }
-        });
-    }
-
-    // Set languages
-    if (torrentData.languages) {
-        const languages = Array.isArray(torrentData.languages)
-            ? torrentData.languages
-            : torrentData.languages.split(',');
-        languages.forEach(lang => {
-            const checkbox = document.getElementById(`lang-${lang}`);
-            if (checkbox) {
-                checkbox.checked = true;
-            }
-        });
-    }
-
-    // Handle catalogs based on content type
-    if (match.type === 'movie' || match.type === 'series') {
-        const catalogsContainer = document.getElementById(`${match.type}Catalogs`);
-        if (catalogsContainer) {
-            // Clear any existing selections
-            catalogsContainer.querySelectorAll('input[type="checkbox"]')
-                .forEach(cb => cb.checked = false);
-
-            // Set new selections
-            if (torrentData.catalog) {
-                const catalogs = Array.isArray(torrentData.catalog)
-                    ? torrentData.catalog
-                    : torrentData.catalog.split(',');
-                catalogs.forEach(cat => {
-                    const checkbox = catalogsContainer.querySelector(`input[value="${cat}"]`);
-                    if (checkbox) {
-                        checkbox.checked = true;
-                    }
-                });
-            }
-        }
-    }
-
-    // Transfer torrent file or magnet link
-    if (document.getElementById('quickTorrentFile').files[0]) {
-        const dt = new DataTransfer();
-        dt.items.add(document.getElementById('quickTorrentFile').files[0]);
-        document.getElementById('torrentFile').files = dt.files;
-    } else {
-        document.getElementById('magnetLink').value = document.getElementById('quickMagnetLink').value.trim();
-    }
+    // Apply torrent specific data
+    applyTorrentData(torrentData);
 
     updateFormFields();
     showNotification('Match selected! Please review and confirm the details.', 'success');
 }
 
 function switchToManualImport(torrentData) {
+    // Reset all form fields while preserving torrent file/magnet
+    formUtils.resetForm(true);
+
     document.getElementById('scraperSelect').value = 'add_torrent';
-    updateFormFields();
 
     if (torrentData) {
-        // Set IMDb ID and metadata defaults
-        document.getElementById('torrentImdbId').value = torrentData.imdb_id || '';
-        document.getElementById('metaType').value = torrentData.type || '';
-        document.getElementById('title').value = torrentData.title || '';
-        document.getElementById('poster').value = torrentData.poster || '';
-        document.getElementById('background').value = torrentData.background || '';
-        document.getElementById('logo').value = torrentData.logo || '';
-
-        // Set 'Add title to poster' option
-        document.getElementById('addTitleToPoster').checked = torrentData.is_add_title_to_poster || false;
-
-        // Set release date
-        if (torrentData.created_at) {
-            const date = new Date(torrentData.created_at);
-            document.getElementById('createdAt').value = date.toISOString().split('T')[0];
-        }
-
-        // Set technical specs
-        if (torrentData.resolution) {
-            document.getElementById('resolution').value = torrentData.resolution;
-        }
-        if (torrentData.quality) {
-            document.getElementById('quality').value = torrentData.quality;
-        }
-        if (torrentData.codec) {
-            document.getElementById('videoCodec').value = torrentData.codec;
-        }
-
-        // Handle multiple audio codecs
-        if (torrentData.audio) {
-            const audioCodecs = Array.isArray(torrentData.audio)
-                ? torrentData.audio
-                : torrentData.audio.split(',');
-            audioCodecs.forEach(codec => {
-                const checkbox = document.getElementById(
-                    `audio-${codec.toLowerCase().replace(/[^a-z0-9]/g, '')}`
-                );
-                if (checkbox) {
-                    checkbox.checked = true;
-                }
-            });
-        }
-
-        // Handle HDR formats
-        if (torrentData.hdr) {
-            const hdrFormats = Array.isArray(torrentData.hdr)
-                ? torrentData.hdr
-                : torrentData.hdr.split(',');
-            hdrFormats.forEach(format => {
-                const checkbox = document.getElementById(
-                    `hdr-${format.toLowerCase().replace(/[^a-z0-9]/g, '')}`
-                );
-                if (checkbox) {
-                    checkbox.checked = true;
-                }
-            });
-        }
-
-        // Set languages
-        if (torrentData.languages) {
-            const languages = Array.isArray(torrentData.languages)
-                ? torrentData.languages
-                : torrentData.languages.split(',');
-            languages.forEach(lang => {
-                const checkbox = document.getElementById(`lang-${lang}`);
-                if (checkbox) {
-                    checkbox.checked = true;
-                }
-            });
-        }
-
-        // Handle catalogs based on content type
-        if (torrentData.type === 'movie' || torrentData.type === 'series') {
-            const catalogsContainer = document.getElementById(`${torrentData.type}Catalogs`);
-            if (catalogsContainer) {
-                // Clear any existing selections
-                catalogsContainer.querySelectorAll('input[type="checkbox"]')
-                    .forEach(cb => cb.checked = false);
-
-                // Set new selections
-                if (torrentData.catalog) {
-                    const catalogs = Array.isArray(torrentData.catalog)
-                        ? torrentData.catalog
-                        : torrentData.catalog.split(',');
-                    catalogs.forEach(cat => {
-                        const checkbox = catalogsContainer.querySelector(`input[value="${cat}"]`);
-                        if (checkbox) {
-                            checkbox.checked = true;
-                        }
-                    });
-                }
-            }
-        }
-
-        // Transfer torrent file or magnet link
-        if (document.getElementById('quickTorrentFile').files[0]) {
-            const dt = new DataTransfer();
-            dt.items.add(document.getElementById('quickTorrentFile').files[0]);
-            document.getElementById('torrentFile').files = dt.files;
-        } else {
-            document.getElementById('magnetLink').value = document.getElementById('quickMagnetLink').value.trim();
-        }
+        // Apply all torrent data
+        applyTorrentData(torrentData);
     }
+
+    updateFormFields();
+}
+
+function applyTorrentData(torrentData) {
+    if (!torrentData) return;
+
+    // check title and if its empty then add title from torrentData
+    if (!document.getElementById('title').value) {
+        document.getElementById('title').value = torrentData.title;
+    }
+
+    // Set release date
+    if (torrentData.created_at) {
+        const date = new Date(torrentData.created_at);
+        document.getElementById('createdAt').value = date.toISOString().split('T')[0];
+    }
+
+    // Set technical specs
+    const technicalFields = {
+        'resolution': 'resolution',
+        'quality': 'quality',
+        'codec': 'videoCodec'
+    };
+
+    Object.entries(technicalFields).forEach(([dataKey, fieldId]) => {
+        if (torrentData[dataKey]) {
+            document.getElementById(fieldId).value = torrentData[dataKey];
+        }
+    });
+
+    // Set checkbox-based fields
+    formUtils.setCheckboxValues(torrentData.audio, 'audio');
+    formUtils.setCheckboxValues(torrentData.hdr, 'hdr');
+    formUtils.setCheckboxValues(torrentData.languages, 'lang');
+
+    // Handle catalogs
+    if (torrentData.type === 'movie' || torrentData.type === 'series') {
+        formUtils.setCatalogs(torrentData.type, torrentData.catalog);
+    }
+
+    // Transfer torrent file or magnet link
+    formUtils.transferTorrentFile();
+
+    // Set metaType
+    document.getElementById('metaType').value = torrentData.type;
+    updateContentType();
 }
 
 async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, annotatedFiles = null) {
