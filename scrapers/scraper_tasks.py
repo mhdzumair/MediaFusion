@@ -382,9 +382,10 @@ class MetadataFetcher:
                 logging.error(f"Error searching IMDB: {e}")
                 return []
 
-        imdb_candidates = await get_imdb_candidates()
-        tmdb_candidates = await get_tmdb_candidates()
-        return tmdb_candidates + imdb_candidates
+        imdb_candidates, tmdb_candidates = await asyncio.gather(
+            get_imdb_candidates(), get_tmdb_candidates()
+        )
+        return imdb_candidates + tmdb_candidates
 
 
 # Create a singleton instance with 30-minute cache TTL

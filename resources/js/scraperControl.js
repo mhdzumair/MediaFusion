@@ -673,8 +673,8 @@ function displayMatchResults(matches, torrentData) {
 
     if (matches && matches.length > 0) {
         matches.forEach(match => {
-            const safeMatchData = encodeURIComponent(JSON.stringify(match));
-            const safeTorrentData = encodeURIComponent(JSON.stringify(torrentData));
+            const safeMatchData = btoa(encodeURIComponent(JSON.stringify(match)));
+            const safeTorrentData = btoa(encodeURIComponent(JSON.stringify(torrentData)));
 
             // Format runtime nicely
             const runtime = match.runtime ? match.runtime.replace('min', '').trim() + ' minutes' : 'N/A';
@@ -792,9 +792,19 @@ function displayMatchResults(matches, torrentData) {
 }
 
 function selectMatchFromData(button) {
-    const match = JSON.parse(decodeURIComponent(button.getAttribute('data-match')));
-    const torrentData = JSON.parse(decodeURIComponent(button.getAttribute('data-torrent')));
-    selectMatch(match, torrentData);
+    try {
+        const matchData = button.getAttribute('data-match');
+        const torrentData = button.getAttribute('data-torrent');
+
+        // Decode using modern approach
+        const match = JSON.parse(decodeURIComponent(atob(matchData)));
+        const torrent = JSON.parse(decodeURIComponent(atob(torrentData)));
+
+        selectMatch(match, torrent);
+    } catch (error) {
+        console.error('Error parsing match data:', error);
+        showNotification('Error processing match data', 'error');
+    }
 }
 
 function formatTechnicalSpec(value, type) {
