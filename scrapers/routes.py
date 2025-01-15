@@ -1,6 +1,7 @@
 import json
 import logging
 import random
+import re
 from datetime import date, datetime
 from typing import Literal, Optional
 from uuid import uuid4
@@ -261,15 +262,15 @@ async def add_torrent(
 
     # Add technical specifications to torrent_data
     if resolution:
-        torrent_data["resolution"] = resolution
+        torrent_data["resolution"] = torrent_data.get("resolution") or resolution
     if quality:
-        torrent_data["quality"] = quality
+        torrent_data["quality"] = torrent_data.get("quality") or quality
     if audio_list:
-        torrent_data["audio"] = audio_list
+        torrent_data["audio"] = torrent_data.get("audio") or audio_list
     if codec:
-        torrent_data["codec"] = codec
+        torrent_data["codec"] = torrent_data.get("codec") or codec
     if hdr_list:
-        torrent_data["hdr"] = hdr_list
+        torrent_data["hdr"] = torrent_data.get("hdr") or hdr_list
     if title:
         torrent_data["title"] = title
 
@@ -732,6 +733,21 @@ async def analyze_torrent(
             )
 
         if meta_type == "sports":
+            # parse title for sports content
+            title = torrent_data["torrent_name"]
+            # remove resolution, quality, codec, audio, hdr from title
+            for key in ["resolution", "quality", "codec", "audio", "hdr", "group"]:
+                title = title.replace(torrent_data.get(key, ""), "")
+
+            # cleanup title
+            title = (
+                title.replace(".torrent", "")
+                .replace(".", " ")
+                .replace("-", " ")
+                .replace("_", " ")
+            )
+            title = re.sub(r"\s+", " ", title).strip()
+            torrent_data["title"] = title
             torrent_data["type"] = "sports"
             return {
                 "torrent_data": torrent_data,
