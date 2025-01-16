@@ -257,10 +257,11 @@
 	}
   },
   "dlhd": {
-	"schedule_url": "https://dlhd.so/schedule/schedule-generated.json",
+	"channels_url": "https://thedaddy.to/24-7-channels.php",
+	"schedule_url": "https://thedaddy.to/schedule/schedule-generated.json",
 	"m3u8_base_url": "https://xyzdddd.mizhls.ru/lb/premium{channel_id}/index.m3u8",
 	"key_url": "https://key.keylocking.ru",
-	"referer": "https://ilovetoplay.xyz/",
+	"referer": "https://cookiewebplay.xyz/",
 	"category_mapping": {
         "Tv Shows": "Other Sports",
         "Soccer": "Football",
