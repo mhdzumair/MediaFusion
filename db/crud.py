@@ -30,6 +30,7 @@ from db.models import (
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import Stream, TorrentStreamsList
+from scrapers.dlhd import dlhd_schedule_service
 from scrapers.mdblist import initialize_mdblist_scraper
 from scrapers.scraper_tasks import run_scrapers, meta_fetcher
 from streaming_providers.cache_helpers import store_cached_info_hashes
@@ -1436,31 +1437,9 @@ async def save_events_data(metadata: dict) -> str:
 
 
 async def get_events_meta_list(genre=None, skip=0, limit=25) -> list[schemas.Meta]:
-    if genre:
-        key_pattern = f"events:genre:{genre}"
-    else:
-        key_pattern = "events:all"
-
-    # Fetch event keys sorted by timestamp in descending order
-    events_keys = await REDIS_ASYNC_CLIENT.zrevrange(
-        key_pattern, skip, skip + limit - 1
+    return await dlhd_schedule_service.get_scheduled_events(
+        genre=genre, skip=skip, limit=limit
     )
-    events = []
-
-    # Iterate over event keys, fetching and decoding JSON data
-    for key in events_keys:
-        events_json = await REDIS_ASYNC_CLIENT.get(key)
-        if events_json:
-            meta_data = schemas.Meta.model_validate_json(events_json)
-            meta_data.poster = (
-                f"{settings.poster_host_url}/poster/events/{meta_data.id}.jpg"
-            )
-            events.append(meta_data)
-        else:
-            # Cleanup: Remove expired or missing event key from the index
-            await REDIS_ASYNC_CLIENT.zrem(key_pattern, key)
-
-    return events
 
 
 async def get_event_meta(meta_id: str) -> dict:
@@ -1469,7 +1448,11 @@ async def get_event_meta(meta_id: str) -> dict:
     if not events_json:
         return {}
 
-    event_data = MediaFusionTVMetaData.model_validate_json(events_json)
+    event_data = MediaFusionEventsMetaData.model_validate_json(events_json)
+    if event_data.event_start_timestamp:
+        # Update description with localized time
+        event_data.description = f"🎬 {event_data.title} - ⏰ {dlhd_schedule_service.format_event_time(event_data.event_start_timestamp)}"
+
     return {
         "meta": {
             "_id": meta_id,

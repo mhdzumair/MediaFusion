@@ -505,11 +505,12 @@ async def search_meta(
 )
 @wrappers.auth_required
 async def get_meta(
+    response: Response,
     catalog_type: Literal["movie", "series", "tv", "events"],
     meta_id: str,
     user_data: schemas.UserData = Depends(get_user_data),
 ):
-    cache_key = f"{catalog_type}_{meta_id}_meta"
+    cache_key = f"{catalog_type}_{meta_id}_meta" if catalog_type != "events" else None
 
     if catalog_type in ["movie", "series"]:
         cache_key += "_" + "_".join(
@@ -517,13 +518,16 @@ async def get_meta(
         )
 
     # Try retrieving the cached data
-    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
-    if cached_data:
-        try:
-            meta_data = schemas.MetaItem.model_validate_json(cached_data)
-            return await update_rpdb_poster(meta_data, user_data, catalog_type)
-        except ValidationError:
-            pass
+    if cache_key:
+        cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+        if cached_data:
+            try:
+                meta_data = schemas.MetaItem.model_validate_json(cached_data)
+                return await update_rpdb_poster(meta_data, user_data, catalog_type)
+            except ValidationError:
+                pass
+    else:
+        response.headers.update(const.NO_CACHE_HEADERS)
 
     if catalog_type == "movie":
         if meta_id.startswith("dl"):
@@ -541,7 +545,8 @@ async def get_meta(
 
     # Cache the data with a TTL of 30 minutes
     # If the data is not found, cached the empty data to avoid db query.
-    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data, default=str), ex=1800)
+    if cache_key:
+        await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data, default=str), ex=1800)
 
     if not data:
         raise HTTPException(status_code=404, detail="Meta ID not found.")

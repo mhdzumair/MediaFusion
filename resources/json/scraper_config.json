@@ -1,10 +1,14 @@
 {
   "start_urls": {
 	"nowsports": "https://neesport.me/",
-    "nowmetv": "https://neeplay.tv/",
+	"nowmetv": "https://neeplay.tv/",
 	"tamilultra": "https://tamilultratv.co.in/",
 	"tamilbulb": "https://tamilbulb.tv/",
-	"tgx": ["torrentgalaxy.to", "tgx.rs", "torrentgalaxy.mx"]
+	"tgx": [
+	  "torrentgalaxy.to",
+	  "tgx.rs",
+	  "torrentgalaxy.mx"
+	]
   },
   "tamil_blasters": {
 	"homepage": "https://www.1tamilblasters.party",
@@ -251,8 +255,21 @@
 	"homepage": "https://www.arab-torrents.com",
 	"catalogs": {
 	  "arabic": {
-		"movies": ["41", "59", "88", "116", "114"],
-		"series": ["44", "57", "89", "71", "115", "113"]
+		"movies": [
+		  "41",
+		  "59",
+		  "88",
+		  "116",
+		  "114"
+		],
+		"series": [
+		  "44",
+		  "57",
+		  "89",
+		  "71",
+		  "115",
+		  "113"
+		]
 	  }
 	}
   },
@@ -263,38 +280,44 @@
 	"key_url": "https://key.keylocking.ru",
 	"referer": "https://cookiewebplay.xyz/",
 	"category_mapping": {
-        "Tv Shows": "Other Sports",
-        "Soccer": "Football",
-        "Cricket": "Cricket",
-        "Tennis": "Tennis",
-        "Motorsport": "Motor Sport",
-        "Boxing": "Boxing",
-        "MMA": "MMA",
-        "Golf": "Golf",
-        "Snooker": "Other Sports",
-        "Am. Football": "American Football",
-        "Athletics": "Athletics",
-        "Aussie rules": "Aussie Rules",
-        "Baseball": "Baseball",
-        "Basketball": "Basketball",
-        "Bowling": "Bowling",
-        "Cycling": "Cycling",
-        "Darts": "Dart",
-        "Floorball": "Floorball",
-        "Futsal": "Futsal",
-        "Gymnastics": "Gymnastics",
-        "Handball": "Handball",
-        "Horse Racing": "Horse Racing",
-        "Ice Hockey": "Hockey",
-        "Lacrosse": "Lacrosse",
-        "Netball": "Netball",
-        "Rugby League": "Rugby/AFL",
-        "Rugby Union": "Rugby/AFL",
-        "Squash": "Squash",
-        "Volleyball": "Volleyball",
-        "GAA": "GAA",
-        "Clubber": "Other Sports"
-    }
+	  "Tv Shows": "Other Sports",
+	  "Soccer": "Football",
+	  "Cricket": "Cricket",
+	  "Tennis": "Tennis",
+	  "Tennis ATP - AUSTRALIAN OPEN": "Tennis",
+	  "Tennis ATP DOUBLES - AUSTRALIAN OPEN": "Tennis",
+	  "Tennis WTA - AUSTRALIAN OPEN": "Tennis",
+	  "Tennis WTA DOUBLES - AUSTRALIAN OPEN": "Tennis",
+	  "Tennis ATP - FRENCH OPEN": "Tennis",
+	  "Tennis MIXED DOUBLES - AUSTRALIAN OPEN": "Tennis",
+	  "Motorsport": "Motor Sport",
+	  "Boxing": "Boxing",
+	  "MMA": "MMA",
+	  "Golf": "Golf",
+	  "Snooker": "Other Sports",
+	  "Am. Football": "American Football",
+	  "Athletics": "Athletics",
+	  "Aussie rules": "Aussie Rules",
+	  "Baseball": "Baseball",
+	  "Basketball": "Basketball",
+	  "Bowling": "Bowling",
+	  "Cycling": "Cycling",
+	  "Darts": "Dart",
+	  "Floorball": "Floorball",
+	  "Futsal": "Futsal",
+	  "Gymnastics": "Gymnastics",
+	  "Handball": "Handball",
+	  "Horse Racing": "Horse Racing",
+	  "Ice Hockey": "Hockey",
+	  "Lacrosse": "Lacrosse",
+	  "Netball": "Netball",
+	  "Rugby League": "Rugby/AFL",
+	  "Rugby Union": "Rugby/AFL",
+	  "Squash": "Squash",
+	  "Volleyball": "Volleyball",
+	  "GAA": "GAA",
+	  "Clubber": "Other Sports"
+	}
   },
   "sport_video": {
 	"categories": {
