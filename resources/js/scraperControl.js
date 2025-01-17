@@ -276,18 +276,6 @@ function updateContentType() {
     }
 }
 
-function collectSportsMetadata() {
-    return {
-        title: document.getElementById('sportsTitle').value,
-        poster: document.getElementById('sportsPoster').value,
-        background: document.getElementById('sportsBackground').value,
-        logo: document.getElementById('sportsLogo').value,
-        description: document.getElementById('sportsDescription').value,
-        website: document.getElementById('sportsWebsite').value,
-        is_add_title_to_poster: document.getElementById('addTitleToPoster').checked,
-        catalogs: document.getElementById('sportsCatalog').value
-    };
-}
 
 function parseSeasonsInput(input) {
     const seasons = [];
@@ -1118,13 +1106,7 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
     const createdAt = document.getElementById('createdAt').value;
     const uploaderName = document.getElementById('uploaderName').value.trim() || 'Anonymous';
 
-    // Validate based on content type
-    if (!isSportsContent && !metaId) {
-        showNotification('Meta ID is required for movies and series.', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
-    }
-
+    // Validate required fields
     if (isSportsContent && !title) {
         showNotification('Title is required for sports content.', 'error');
         resetButton(submitBtn, loadingSpinner);
