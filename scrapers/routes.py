@@ -238,10 +238,6 @@ async def add_torrent(
             raise_error(str(e))
         if not torrent_data:
             raise_error("Failed to extract torrent metadata.")
-        if settings.adult_content_filter_in_torrent_title and torrent_data.get("adult"):
-            raise_error(
-                f"Torrent name contains 18+ keywords: {torrent_data['torrent_name']}"
-            )
         info_hash = torrent_data.get("info_hash")
 
     # Check if torrent already exists

@@ -1,15 +1,24 @@
 import re
 from datetime import timedelta
 
+import PTT
 from fastapi.templating import Jinja2Templates
+from regex import regex
 
 from db import schemas
 from db.config import settings
 from utils import get_json_data, const
 
-ADULT_CONTENT_KEYWORDS = re.compile(
-    settings.adult_content_regex_keywords,
-    re.IGNORECASE,
+ADULT_PARSER = PTT.Parser()
+ADULT_PARSER.add_handler(
+    "adult",
+    PTT.handlers.create_adult_pattern(),
+    PTT.transformers.boolean,
+)
+ADULT_PARSER.add_handler(
+    "adult",
+    regex.compile(settings.adult_content_regex_keywords, regex.IGNORECASE),
+    PTT.transformers.boolean,
 )
 
 SPORTS_ARTIFACTS = get_json_data("resources/json/sports_artifacts.json")

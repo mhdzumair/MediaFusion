@@ -5,8 +5,8 @@ import logging
 import math
 import re
 from datetime import datetime, timezone
-from typing import Optional, List, Any
 from os.path import basename
+from typing import Optional, List, Any
 from urllib.parse import quote
 
 from thefuzz import fuzz
@@ -24,7 +24,7 @@ from utils import const
 from utils.config import config_manager
 from utils.const import STREAMING_PROVIDERS_SHORT_NAMES, CERTIFICATION_MAPPING
 from utils.network import encode_mediaflow_proxy_url
-from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS, MANIFEST_TEMPLATE
+from utils.runtime_const import TRACKERS, MANIFEST_TEMPLATE, ADULT_PARSER
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 
@@ -660,7 +660,10 @@ def is_contain_18_plus_keywords(title: str) -> bool:
     """
     Check if the title contains 18+ keywords to filter out adult content.
     """
-    return ADULT_CONTENT_KEYWORDS.search(title) is not None
+    if not settings.adult_content_filter_in_torrent_title:
+        return False
+
+    return ADULT_PARSER.parse(title).get("adult", False)
 
 
 def calculate_max_similarity_ratio(

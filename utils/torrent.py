@@ -67,7 +67,7 @@ def extract_torrent_metadata(
         else:
             metadata.update(PTT.parse_title(torrent_name, True))
 
-        if is_contain_18_plus_keywords(torrent_name) or metadata.get("adult"):
+        if is_contain_18_plus_keywords(torrent_name):
             logging.warning(
                 f"Torrent name contains 18+ keywords: {torrent_name}. Skipping"
             )

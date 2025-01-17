@@ -44,13 +44,6 @@ class TorrentDownloadAndParsePipeline:
             response.body, item.get("parsed_data")
         )
 
-        if settings.adult_content_filter_in_torrent_title and torrent_metadata.get(
-            "adult"
-        ):
-            raise DropItem(
-                f"Torrent name contains 18+ keywords: {torrent_metadata['torrent_name']}"
-            )
-
         if not torrent_metadata:
             return item
 

@@ -187,10 +187,7 @@ class FeedScraper(ABC):
     ) -> bool:
         """Validate feed item"""
 
-        if is_contain_18_plus_keywords(title) or (
-            settings.adult_content_filter_in_torrent_title
-            and parsed_title_data.get("adult")
-        ):
+        if is_contain_18_plus_keywords(title):
             logger.info(f"Skipping adult content: {title}")
             scraper.metrics.record_skip("Adult Content")
             return False
