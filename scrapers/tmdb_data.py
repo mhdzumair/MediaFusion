@@ -3,7 +3,6 @@ import logging
 import math
 from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urljoin
-from uuid import uuid4
 
 import httpx
 from thefuzz import fuzz
@@ -160,8 +159,7 @@ def format_tmdb_response(
 
     formatted = {
         "tmdb_id": str(data["id"]),
-        "imdb_id": data.get("external_ids", {}).get("imdb_id")
-        or f"mf{uuid4().fields[-1]}",
+        "imdb_id": data.get("external_ids", {}).get("imdb_id") or f"mftmdb{data['id']}",
         "title": data.get("title" if is_movie else "name"),
         "original_title": data.get("original_title" if is_movie else "original_name"),
         "year": int(release_date[:4]) if release_date else None,
