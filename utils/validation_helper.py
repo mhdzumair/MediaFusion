@@ -271,6 +271,10 @@ def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
         ):
             return False
 
+    # Strict policy for adult genres.
+    if metadata.genres and any(genre.lower() == "adult" for genre in metadata.genres):
+        return False
+
     return True
 
 
