@@ -141,7 +141,13 @@
                                         </div>
                                         <div class="col-md-4">
                                             <label for="createdAt" class="form-label">Release Date</label>
-                                            <input type="date" class="form-control" id="createdAt" name="createdAt" required>
+                                            <input type="date"
+                                                   class="form-control"
+                                                   id="createdAt"
+                                                   name="createdAt"
+                                                   required
+                                                   pattern="\d{2}/\d{2}/\d{4}"
+                                                   placeholder="dd/mm/yyyy">
                                         </div>
                                     </div>
 

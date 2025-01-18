@@ -557,6 +557,38 @@ function handleInitialSetup() {
     updateFormFields();
 }
 
+function setupDateInput(inputId, defaultToToday = true) {
+    const dateInput = document.getElementById(inputId);
+    if (!dateInput) return;
+
+    if (defaultToToday) {
+        // Set default value to today's date
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, '0');
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const year = today.getFullYear();
+        dateInput.value = `${year}-${month}-${day}`;
+    }
+
+    // Format date for display
+    dateInput.addEventListener('input', function(e) {
+        const date = new Date(this.value);
+        if (!isNaN(date)) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            this.title = `${day}/${month}/${year}`;
+        }
+    });
+
+    // Trigger initial formatting
+    if (dateInput.value) {
+        const event = new Event('input');
+        dateInput.dispatchEvent(event);
+    }
+}
+
+
 function constructTvMetadata() {
     // Basic TV Metadata collection
     let tvMetaData = {
@@ -1572,5 +1604,6 @@ document.addEventListener('DOMContentLoaded', function () {
     handleInitialSetup();
     setupAdvancedToggle();
     setupFieldChangeHandlers();
+    setupDateInput('createdAt');
 });
 document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);
