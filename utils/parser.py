@@ -758,7 +758,7 @@ def create_content_warning_message(metadata) -> str:
         f"Nudity Status: {nudity_emoji} {metadata.parent_guide_nudity_status}"
     )
 
-    if metadata.genres and any(genre.lower() == "adult" for genre in metadata.genres):
+    if "Adult" in metadata.genres:
         message += "\n🔞 Genre: Adult (Strict 18+ Filter Applied)"
 
     return message
