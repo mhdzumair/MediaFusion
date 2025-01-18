@@ -49,6 +49,7 @@ pytz = "*"
 aiohttp-socks = "*"
 socksio = "*"
 dramatiq-abort = "*"
+tzdata = "*"
 
 [dev-packages]
 pysocks = "*"

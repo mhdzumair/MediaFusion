@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "163b3b6a3d97b3f660a2a203ee1fc720df6d8946ef07e0c8309965ba05f7963e"
+            "sha256": "e9a2a52e230bc665033250eedb7e69593ef4b6788130ab3e701f311578956431"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1408,11 +1408,11 @@
         },
         "parsel": {
             "hashes": [
-                "sha256:14e00dc07731c9030db620c195fcae884b5b4848e9f9c523c6119f708ccfa9ac",
-                "sha256:c4a777ee6c3ff5e39652b58e351c5cf02c12ff420d05b07a7966aebb68ab1700"
+                "sha256:14f17db9559f51b43357b9dfe43cec870a8efb5ea4857abb624ec6ff80d8a080",
+                "sha256:6a0c28bd81f9df34ba665884c88efa0b18b8d2c44c81f64e27f2f0cb37d46169"
             ],
-            "markers": "python_version >= '3.8'",
-            "version": "==1.9.1"
+            "markers": "python_version >= '3.9'",
+            "version": "==1.10.0"
         },
         "parsett": {
             "hashes": [
@@ -1618,11 +1618,11 @@
         },
         "protego": {
             "hashes": [
-                "sha256:2fbe8e9b7a7dbc5016a932b14c98d236aad4c29290bbe457b8d2779666ef7a41",
-                "sha256:e94430d0d25cbbf239bc849d86c5e544fbde531fcccfa059953c7da344a1712c"
+                "sha256:37640bc0ebe37572d624453a21381d05e9d86e44f89ff1e81794d185a0491666",
+                "sha256:93a5e662b61399a0e1f208a324f2c6ea95b23ee39e6cbf2c96246da4a656c2f6"
             ],
-            "markers": "python_version >= '3.8'",
-            "version": "==0.3.1"
+            "markers": "python_version >= '3.9'",
+            "version": "==0.4.0"
         },
         "pyasn1": {
             "hashes": [
@@ -2611,6 +2611,15 @@
             ],
             "markers": "python_version >= '3.8'",
             "version": "==4.12.2"
+        },
+        "tzdata": {
+            "hashes": [
+                "sha256:7d85cc416e9382e69095b7bdf4afd9e3880418a2413feec7069d533d6b4e31cc",
+                "sha256:a48093786cdcde33cad18c2555e8532f34422074448fbc874186f0abd79565cd"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '2'",
+            "version": "==2024.2"
         },
         "tzlocal": {
             "hashes": [
