@@ -35,6 +35,32 @@ class DLHDScheduleService:
         self.category_map = config_manager.get_scraper_config(
             self.name, "category_mapping"
         )
+        self.last_scrape_key = "dlhd:last_scrape_time"
+
+    async def get_last_scrape_time(self) -> Optional[float]:
+        """Get the timestamp of the last schedule scrape"""
+        last_scrape = await REDIS_ASYNC_CLIENT.get(self.last_scrape_key)
+        return float(last_scrape) if last_scrape else None
+
+    async def update_last_scrape_time(self):
+        """Update the timestamp of the last schedule scrape"""
+        current_time = datetime.now(tz=self.gmt).timestamp()
+        await REDIS_ASYNC_CLIENT.set(self.last_scrape_key, str(current_time))
+
+    async def should_refresh_schedule(self) -> bool:
+        """
+        Check if schedule should be refreshed based on last scrape time
+        Returns True if last scrape was more than half of start_within_next_hours ago
+        """
+        last_scrape = await self.get_last_scrape_time()
+        if not last_scrape:
+            return True
+
+        current_time = datetime.now(tz=self.gmt).timestamp()
+        refresh_threshold = (
+            self.start_within_next_hours * 3600
+        ) / 2  # Half of the window in seconds
+        return (current_time - last_scrape) > refresh_threshold
 
     def format_event_time(self, event_timestamp: int) -> str:
         """Format event time in specified timezone"""
@@ -130,58 +156,127 @@ class DLHDScheduleService:
             },
         )
 
+    async def _process_single_channel(
+        self, channel: dict, meta_id: str, is_sd: bool, stats: dict
+    ) -> Optional[list[TVStreams]]:
+        """Process a single channel and create/find its streams"""
+        try:
+            channel_name = channel.get("channel_name")
+            channel_id = channel.get("channel_id")
+
+            if not channel_name or not channel_id:
+                logging.warning(f"Skipping channel with missing data: {channel}")
+                stats["failed"] += 1
+                return None
+
+            tv_channel = await self.find_tv_channel(channel_name)
+            if (
+                tv_channel and not is_sd
+            ):  # Only look for existing streams for HD channels
+                try:
+                    channel_streams = await TVStreams.find(
+                        {
+                            "meta_id": tv_channel.id,
+                            "namespaces": "mediafusion",
+                            "is_working": True,
+                        }
+                    ).to_list(None)
+
+                    if channel_streams:
+                        stats["found"] += len(channel_streams)
+                        return channel_streams
+
+                except Exception as e:
+                    logging.error(
+                        f"Error finding existing streams for channel {channel_name}: {str(e)}"
+                    )
+
+            # Create new stream if no existing streams found or if it's SD
+            try:
+                stream = self.create_stream(
+                    channel_id, channel_name, meta_id, is_sd=is_sd
+                )
+                stats["created"] += 1
+                return [stream]
+            except Exception as e:
+                logging.error(
+                    f"Error creating stream for channel {channel_name}: {str(e)}"
+                )
+                stats["failed"] += 1
+                return None
+
+        except Exception as e:
+            logging.error(f"Error processing channel: {str(e)}")
+            stats["failed"] += 1
+            return None
+
+    async def _process_channel_list(
+        self, channels: list | dict, meta_id: str, is_sd: bool, stats: dict
+    ) -> List[TVStreams]:
+        """Process a list or dictionary of channels"""
+        streams = []
+
+        if not channels:  # Early return if channels is empty
+            return streams
+
+        try:
+            if isinstance(channels, dict):
+                channel_items = channels.values()
+            elif isinstance(channels, list):
+                channel_items = channels
+            else:
+                logging.warning(f"Unexpected channels format: {type(channels)}")
+                return streams
+
+            for channel in channel_items:
+                channel_streams = await self._process_single_channel(
+                    channel, meta_id, is_sd, stats
+                )
+                if channel_streams:
+                    streams.extend(channel_streams)
+
+        except Exception as e:
+            logging.error(f"Error processing channel list: {str(e)}")
+
+        return streams
+
     async def get_event_streams(self, event: dict, meta_id: str) -> list[TVStreams]:
         """Get all available streams for an event"""
+        stats = {
+            "found": 0,  # Number of existing streams found
+            "created": 0,  # Number of new streams created
+            "failed": 0,  # Number of failed attempts
+        }
+
         streams = []
-        found_streams = 0
-        created_streams = 0
 
-        async def process_channel(channel):
-            nonlocal found_streams, created_streams
-            tv_channel = await self.find_tv_channel(channel["channel_name"])
-            if tv_channel:
-                channel_streams = await TVStreams.find(
-                    {
-                        "meta_id": tv_channel.id,
-                        "namespaces": "mediafusion",
-                        "is_working": True,
-                    }
-                ).to_list(None)
-                found_streams += len(channel_streams)
-                streams.extend(channel_streams)
-                if not channel_streams:
-                    stream = self.create_stream(
-                        channel["channel_id"], channel["channel_name"], meta_id
-                    )
-                    created_streams += 1
-                    streams.append(stream)
-            else:
-                stream = self.create_stream(
-                    channel["channel_id"], channel["channel_name"], meta_id
-                )
-                created_streams += 1
-                streams.append(stream)
-
-        # Process main channels
+        # Process main channels (HD)
         if "channels" in event:
-            for channel in event["channels"]:
-                await process_channel(channel)
+            hd_streams = await self._process_channel_list(
+                event["channels"], meta_id, is_sd=False, stats=stats
+            )
+            streams.extend(hd_streams)
 
         # Process SD channels
         if "channels2" in event:
-            for channel in event["channels2"]:
-                stream = self.create_stream(
-                    channel["channel_id"], channel["channel_name"], meta_id, is_sd=True
-                )
-                created_streams += 1
-                streams.append(stream)
+            sd_streams = await self._process_channel_list(
+                event["channels2"], meta_id, is_sd=True, stats=stats
+            )
+            streams.extend(sd_streams)
+
+        if stats["failed"] > 0:
+            logging.warning(
+                "Event %s: %d channels failed to process", meta_id, stats["failed"]
+            )
 
         logging.debug(
-            "Event %s: Found %s existing streams, created %s new streams",
+            "Event %s: Found %s existing streams, created %s new streams, failed %s streams",
             meta_id,
-            found_streams,
-            created_streams,
+            stats["found"],
+            stats["created"],
+            stats["failed"],
         )
+
         return streams
 
     async def cache_event(self, event: MediaFusionEventsMetaData):
@@ -254,6 +349,9 @@ class DLHDScheduleService:
         logging.info(
             f"Processed {processed_count} events, skipped {skipped_count} events outside time window"
         )
+
+        # Update last scrape time after successful processing
+        await self.update_last_scrape_time()
         return events_metadata
 
     async def get_scheduled_events(
@@ -273,31 +371,37 @@ class DLHDScheduleService:
             (current_time + timedelta(hours=self.start_within_next_hours)).timestamp()
         )
 
-        if not force_refresh:
+        # Check if we need to refresh based on last scrape time
+        should_refresh = await self.should_refresh_schedule()
+
+        if not force_refresh and not should_refresh:
             cache_key = f"events:all" if not genre else f"events:genre:{genre}"
             event_keys = await REDIS_ASYNC_CLIENT.zrevrangebyscore(
                 cache_key, max_time, min_time, start=skip, num=limit
             )
 
-            if event_keys:
-                logging.info(f"Found {len(event_keys)} events in cache")
-                for event_key in event_keys:
-                    event_json = await REDIS_ASYNC_CLIENT.get(event_key)
-                    if event_json:
-                        event = MediaFusionEventsMetaData.model_validate_json(
-                            event_json
-                        )
-                        event.poster = (
-                            f"{settings.poster_host_url}/poster/events/{event.id}.jpg"
-                        )
-                        event.description = f"🎬 {event.title} - ⏰ {self.format_event_time(event.event_start_timestamp)}"
-                        events.append(event)
-                    else:
-                        await REDIS_ASYNC_CLIENT.zrem(cache_key, event_key)
+            if not event_keys:
+                logging.info(
+                    "No events found in cache for the specified time window, pagination or genre"
+                )
+                return []
 
-                if len(events) == limit and not force_refresh:
-                    return events
+            logging.info(f"Found {len(event_keys)} events in cache")
+            for event_key in event_keys:
+                event_json = await REDIS_ASYNC_CLIENT.get(event_key)
+                if event_json:
+                    event = MediaFusionEventsMetaData.model_validate_json(event_json)
+                    event.poster = (
+                        f"{settings.poster_host_url}/poster/events/{event.id}.jpg"
+                    )
+                    event.description = f"🎬 {event.title} - ⏰ {self.format_event_time(event.event_start_timestamp)}"
+                    events.append(event)
+                else:
+                    await REDIS_ASYNC_CLIENT.zrem(cache_key, event_key)
 
+            return events
+
+        # If we need to refresh or don't have enough cached events, fetch new data
         all_events = await self.parse_and_cache_schedule()
         filtered_events = [
             event for event in all_events if not genre or genre in event.genres
