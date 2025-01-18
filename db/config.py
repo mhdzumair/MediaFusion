@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     disable_validate_tv_streams_in_db: bool = False
     sport_video_scheduler_crontab: str = "*/20 * * * *"
     disable_sport_video_scheduler: bool = False
-    dlhd_scheduler_crontab: str = "25 * * * *"
+    dlhd_scheduler_crontab: str = "0 0 * * 1"
     disable_dlhd_scheduler: bool = False
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
     disable_motogp_tgx_scheduler: bool = False
