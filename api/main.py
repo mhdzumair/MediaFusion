@@ -381,9 +381,7 @@ def get_cache_key(
     cache_key = f"{catalog_type}_{catalog_id}_{skip}_{genre}_catalog"
     is_watchlist_catalog = False
 
-    if user_data.streaming_provider and catalog_id.startswith(
-        user_data.streaming_provider.service
-    ):
+    if user_data.streaming_provider and "_watchlist_" in catalog_id:
         cache_key = None
         is_watchlist_catalog = True
     elif catalog_type == "events":
@@ -436,18 +434,15 @@ async def fetch_metas(
             )
         )
 
+        watchlist_service = catalog_id.split("_")[0]
         if (
             is_watchlist_catalog
             and catalog_type == "movie"
             and metas.metas
-            and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(
-                user_data.streaming_provider.service
-            )
+            and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(watchlist_service)
         ):
             delete_all_meta = DELETE_ALL_META.model_copy()
-            delete_all_meta.id = delete_all_meta.id.format(
-                user_data.streaming_provider.service
-            )
+            delete_all_meta.id = delete_all_meta.id.format(watchlist_service)
             metas.metas.insert(0, delete_all_meta)
 
     return metas
@@ -626,7 +621,11 @@ async def get_streams(
 
     if catalog_type == "movie":
         if video_id.startswith("dl"):
-            if video_id == f"dl{user_data.streaming_provider.service}":
+            service_name = video_id[2:]
+            if (
+                user_data.streaming_provider
+                and service_name == user_data.streaming_provider.service
+            ):
                 fetched_streams = [
                     schemas.Stream(
                         name=f"{settings.addon_name} {user_data.streaming_provider.service.title()} 🗑️💩🚨",
