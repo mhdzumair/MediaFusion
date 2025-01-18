@@ -248,8 +248,12 @@ class LiveTVSpider(scrapy.Spider):
 
         # Deserialize JSON response
         api_data = response.json()
+        if not api_data.get("embed_url"):
+            self.logger.error(
+                f"Embed URL not found for {stream_title} on channel page: {response.url}"
+            )
         iframe_url = urljoin(
-            response.url, api_data.get("embed_url", "").replace("\\/", "/")
+            response.url, api_data.get("embed_url").replace("\\/", "/")
         )
 
         if iframe_url:
