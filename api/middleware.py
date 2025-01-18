@@ -96,6 +96,20 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         if settings.is_public_instance is False:
             is_auth_required = getattr(endpoint, "auth_required", False)
             if is_auth_required and user_data.api_password != settings.api_password:
+                # check if the endpoint is for /streams
+                if endpoint and endpoint.__name__ == "get_streams":
+                    return JSONResponse(
+                        {
+                            "streams": [
+                                create_exception_stream(
+                                    settings.addon_name,
+                                    "Unauthorized.\nInvalid MediaFusion configuration.\nDelete the Invalid MediaFusion installed addon and reconfigure it.",
+                                    "invalid_config.mp4",
+                                ).model_dump(exclude_none=True, by_alias=True)
+                            ]
+                        },
+                        headers=const.CORS_HEADERS,
+                    )
                 return JSONResponse(
                     {
                         "status": "error",
