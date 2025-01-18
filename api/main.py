@@ -332,6 +332,9 @@ async def get_catalog(
     user_data: schemas.UserData = Depends(get_user_data),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
+    if genre and genre.lower() == "adult":
+        raise HTTPException(404, "Adult genre is not allowed.")
+
     cache_key, is_watchlist_catalog = get_cache_key(
         catalog_type, catalog_id, skip, genre, user_data
     )
