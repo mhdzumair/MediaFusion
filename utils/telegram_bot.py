@@ -141,6 +141,52 @@ class TelegramNotifier:
 
         await self._send_photo_message(poster, message)
 
+    async def send_image_update_notification(
+        self,
+        meta_id: str,
+        title: str,
+        meta_type: str,
+        poster: str,
+        old_poster: Optional[str] = None,
+        new_poster: Optional[str] = None,
+        old_background: Optional[str] = None,
+        new_background: Optional[str] = None,
+        old_logo: Optional[str] = None,
+        new_logo: Optional[str] = None,
+    ):
+        """Send notification when images are updated"""
+        if not self.enabled:
+            logger.warning("Telegram notifications are disabled. Check bot token.")
+            return
+
+        meta_id_data = (
+            f"*IMDb*: [{meta_id}](https://www.imdb.com/title/{meta_id}/)\n"
+            if meta_id.startswith("tt")
+            else f"Meta ID: {meta_id}\n"
+        )
+
+        message = (
+            f"🖼️ Images Updated\n\n"
+            f"*Title*: {title}\n"
+            f"*Type*: {meta_type.title()}\n"
+            f"{meta_id_data}"
+            f"*Old Poster*: [View]({old_poster})\n"
+            f"*Old Background*: [View]({old_background})\n"
+            f"*Old Logo*: [View]({old_logo})\n"
+        )
+
+        # Add details about what was updated
+        if new_poster:
+            message += f"\n*Poster*: Updated ✅ [View]({new_poster})"
+        if new_background:
+            message += f"\n*Background*: Updated ✅ [View]({new_background})"
+        if new_logo:
+            message += f"\n*Logo*: Updated ✅ [View]({new_logo})"
+
+        message += f"\n\n*Preview*: [View]({poster})"
+
+        await self._send_photo_message(poster, message)
+
     async def _send_photo_message(self, photo_url: str, message: str):
         """Send a message with photo, falling back to text-only if photo fails"""
         try:

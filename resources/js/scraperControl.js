@@ -487,6 +487,7 @@ function updateFormFields() {
     setElementDisplay("apiPasswordContainer", "none");
     setElementDisplay('blockTorrentParameters', 'none');
     setElementDisplay('migrationParameters', 'none');
+    setElementDisplay('updateImagesParameters', 'none');
 
     // Get the selected scraper type
     const scraperType = document.getElementById('scraperSelect').value;
@@ -531,6 +532,10 @@ function updateFormFields() {
             setElementDisplay('migrationParameters', 'block');
             authRequired = false;
             break;
+        case 'update_images':
+            setElementDisplay('updateImagesParameters', 'block');
+            authRequired = false;
+            break;
     }
 
     // Setup password toggle if the API password field is displayed
@@ -546,7 +551,7 @@ function handleInitialSetup() {
     const action = urlParams.get('action');
 
     // Set initial scraper type based on action
-    document.getElementById('scraperSelect').value = action || 'quick_import';
+    if (action) document.getElementById('scraperSelect').value = action;
 
     // Update form fields based on initial selection
     updateFormFields();
@@ -724,9 +729,9 @@ function displayMatchResults(matches, torrentData) {
                             <!-- Tags Section -->
                             <div class="mb-3">
                                 <div class="d-flex flex-wrap gap-2">
-                                    ${match.genres.map(genre => 
-                                        `<span class="badge bg-primary bg-opacity-25 text-primary">${genre}</span>`
-                                    ).join('')}
+                                    ${match.genres.map(genre =>
+                `<span class="badge bg-primary bg-opacity-25 text-primary">${genre}</span>`
+            ).join('')}
                                 </div>
                             </div>
 
@@ -1463,6 +1468,59 @@ async function handleBlockTorrent(apiPassword, submitBtn, loadingSpinner) {
     }
 }
 
+
+async function handleUpdateImages(apiPassword, submitBtn, loadingSpinner) {
+    const metaId = document.getElementById('imageUpdateMetaId').value.trim();
+    const poster = document.getElementById('imageUpdatePoster').value.trim();
+    const background = document.getElementById('imageUpdateBackground').value.trim();
+    const logo = document.getElementById('imageUpdateLogo').value.trim();
+
+    // Validate required fields
+    if (!metaId) {
+        showNotification('Content ID is required.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+
+    // Validate at least one image URL is provided
+    if (!poster && !background && !logo) {
+        showNotification('At least one image URL must be provided.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('meta_id', metaId);
+    formData.append('api_password', apiPassword);
+
+    if (poster) formData.append('poster', poster);
+    if (background) formData.append('background', background);
+    if (logo) formData.append('logo', logo);
+
+    try {
+        const response = await fetch('/scraper/update_images', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        if (data.detail) {
+            showNotification(data.detail, 'error');
+        } else {
+            showNotification(data.status, 'success');
+            // Clear form fields on success
+            document.getElementById('imageUpdatePoster').value = '';
+            document.getElementById('imageUpdateBackground').value = '';
+            document.getElementById('imageUpdateLogo').value = '';
+        }
+    } catch (error) {
+        console.error('Error updating images:', error);
+        showNotification(`Error updating images: ${error.toString()}`, 'error');
+    } finally {
+        resetButton(submitBtn, loadingSpinner);
+    }
+}
+
 // Main function
 async function submitScraperForm() {
     const apiPassword = document.getElementById('api_password').value;
@@ -1498,6 +1556,9 @@ async function submitScraperForm() {
             break;
         case 'migrate_id':
             await handleMigration(apiPassword, submitBtn, loadingSpinner);
+            break;
+        case 'update_images':
+            await handleUpdateImages(apiPassword, submitBtn, loadingSpinner);
             break;
         default:
             await handleScrapyParameters(payload, submitBtn, loadingSpinner);

@@ -33,6 +33,7 @@ from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio, convert_bytes_to_readable
 from utils.runtime_const import TEMPLATES, SPORTS_ARTIFACTS
 from utils.telegram_bot import telegram_notifier
+from utils.validation_helper import validate_image_url
 
 router = APIRouter()
 
@@ -767,3 +768,69 @@ async def analyze_torrent(
         raise HTTPException(
             status_code=400, detail=f"Failed to analyze torrent: {str(e)}"
         )
+
+
+@router.post("/update_images")
+async def update_images(
+    meta_id: str = Form(...),
+    poster: Optional[str] = Form(None),
+    background: Optional[str] = Form(None),
+    logo: Optional[str] = Form(None),
+):
+    """Update poster, background, and/or logo for existing content"""
+    # Validate that at least one image URL is provided
+    if not any([poster, background, logo]):
+        raise_error(
+            "At least one image URL (poster, background, or logo) must be provided"
+        )
+
+    # Get metadata to validate it exists and get current values
+    metadata = await MediaFusionMetaData.get_motor_collection().find_one(
+        {"_id": meta_id},
+        projection={"title": 1, "type": 1, "poster": 1, "background": 1, "logo": 1},
+    )
+
+    if not metadata:
+        raise_error(f"Content with ID {meta_id} not found")
+
+    # Build update fields
+    update_fields = {}
+    if poster:
+        update_fields["poster"] = poster
+        update_fields["is_poster_working"] = True
+        if not await validate_image_url(poster):
+            raise_error("Invalid poster image URL, Not able to fetch image")
+    if background:
+        update_fields["background"] = background
+        if not await validate_image_url(background):
+            raise_error("Invalid background image URL, Not able to fetch image")
+    if logo:
+        update_fields["logo"] = logo
+        if not await validate_image_url(logo):
+            raise_error("Invalid logo image URL, Not able to fetch image")
+
+    # Update metadata
+    await MediaFusionMetaData.get_motor_collection().update_one(
+        {"_id": meta_id}, {"$set": update_fields}
+    )
+
+    # Send Telegram notification
+    if settings.telegram_bot_token:
+        await telegram_notifier.send_image_update_notification(
+            meta_id=meta_id,
+            title=metadata.get("title"),
+            meta_type=metadata.get("type"),
+            poster=f"{settings.poster_host_url}/poster/{metadata.get('type')}/{meta_id}.jpg",
+            old_poster=metadata.get("poster"),
+            new_poster=poster,
+            old_background=metadata.get("background"),
+            new_background=background,
+            old_logo=metadata.get("logo"),
+            new_logo=logo,
+        )
+
+    # cleanup redis cache
+    cache_key = f"{metadata.get('type')}_{meta_id}.jpg"
+    await REDIS_ASYNC_CLIENT.delete(cache_key)
+
+    return {"status": f"Successfully updated images for {meta_id}"}
