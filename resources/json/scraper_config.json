@@ -277,6 +277,7 @@
 	"channels_url": "https://thedaddy.to/24-7-channels.php",
 	"schedule_url": "https://thedaddy.to/schedule/schedule-generated.json",
 	"m3u8_base_url": "https://xyzdddd.mizhls.ru/lb/premium{channel_id}/index.m3u8",
+	"m3u8_sd_base_url": "https://xyzdddd.mizhls.ru/lb/bet{channel_id}/index.m3u8",
 	"key_url": "https://key.keylocking.ru",
 	"referer": "https://cookiewebplay.xyz/",
 	"category_mapping": {

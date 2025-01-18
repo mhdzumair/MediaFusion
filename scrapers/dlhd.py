@@ -25,6 +25,9 @@ class DLHDScheduleService:
         self.m3u8_base_url = config_manager.get_scraper_config(
             self.name, "m3u8_base_url"
         )
+        self.m3u8_sd_base_url = config_manager.get_scraper_config(
+            self.name, "m3u8_sd_base_url"
+        )
         self.referer = config_manager.get_scraper_config(self.name, "referer")
         self.gmt = pytz.timezone("Etc/GMT")
         self.start_within_next_hours = start_within_next_hours
@@ -101,14 +104,18 @@ class DLHDScheduleService:
         return await MediaFusionTVMetaData.find_one({"title": channel_name})
 
     def create_stream(
-        self, channel_id: str, channel_name: str, meta_id: str
+        self, channel_id: str, channel_name: str, meta_id: str, is_sd: bool = False
     ) -> TVStreams:
         """Create a new stream for a channel"""
+        if is_sd:
+            url = self.m3u8_sd_base_url.format(channel_id=channel_id)
+        else:
+            url = self.m3u8_base_url.format(channel_id=channel_id)
         return TVStreams(
             meta_id=meta_id,
             name=channel_name,
             source="DaddyLiveHD",
-            url=self.m3u8_base_url.format(channel_id=channel_id),
+            url=url,
             behaviorHints={
                 "notWebReady": True,
                 "proxyHeaders": {
@@ -164,7 +171,7 @@ class DLHDScheduleService:
         if "channels2" in event:
             for channel in event["channels2"]:
                 stream = self.create_stream(
-                    channel["channel_id"], channel["channel_name"], meta_id
+                    channel["channel_id"], channel["channel_name"], meta_id, is_sd=True
                 )
                 created_streams += 1
                 streams.append(stream)
