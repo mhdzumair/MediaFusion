@@ -341,7 +341,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 maintainAspectRatio: false,
                 layout: {
                     padding: {
-                        right: 50  // Add padding to prevent label cutoff
+                        right: 50
                     }
                 },
                 plugins: {
@@ -354,8 +354,8 @@ document.addEventListener('DOMContentLoaded', function () {
                                 const uploader = data.uploaders[context.dataIndex];
                                 const lastUpload = new Date(uploader.latest_upload);
                                 return [
-                                    `Torrents: ${context.raw.toLocaleString()}`,
-                                    `Last Upload: ${lastUpload.toLocaleString()}`
+                                    `Torrents: ${context.raw}`,
+                                    `Last Upload: ${lastUpload.toLocaleDateString()}`
                                 ];
                             }
                         }
@@ -364,8 +364,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         color: '#fff',
                         anchor: 'end',
                         align: 'right',
-                        offset: 4,  // Add a small offset from the end of the bar
-                        formatter: (value) => value.toLocaleString(),
+                        formatter: (value) => value,
                         font: {
                             weight: 'bold',
                             size: 12
@@ -396,13 +395,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     },
                     y: {
                         grid: {
-                            display: false
+                            display: false,
+                            borderWidth: 0
                         },
                         ticks: {
                             color: '#fff',
                             font: {
                                 size: 12
-                            }
+                            },
+                            padding: 10
                         }
                     }
                 }

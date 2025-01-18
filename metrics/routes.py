@@ -82,8 +82,8 @@ async def get_torrents_by_sources(response: Response):
         {"name": source["_id"], "count": source["count"]} for source in results
     ]
 
-    # Cache the results for 5 minutes
-    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(torrent_sources), ex=300)
+    # Cache the results for 30 minutes
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(torrent_sources), ex=1800)
     return torrent_sources
 
 
@@ -195,7 +195,8 @@ async def get_weekly_top_uploaders(response: Response):
     start_of_week = today - timedelta(days=today.weekday())
     start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    results = await TorrentStreams.aggregate(
+    # Get raw aggregation results
+    raw_results = await TorrentStreams.aggregate(
         [
             {
                 "$match": {
@@ -211,20 +212,63 @@ async def get_weekly_top_uploaders(response: Response):
                     "latest_upload": {"$max": "$created_at"},
                 }
             },
-            {"$sort": {"count": -1}},
-            {"$limit": 20},
         ]
     ).to_list()
 
-    uploaders_stats = [
-        {
-            "name": stat["_id"],
-            "count": stat["count"],
-            "latest_upload": (
-                stat["latest_upload"].isoformat() if stat["latest_upload"] else None
-            ),
-        }
-        for stat in results
+    # Process and clean the results
+    processed_results = []
+    anonymous_total = 0
+    anonymous_latest = None
+
+    for stat in raw_results:
+        uploader_name = stat["_id"]
+        count = stat["count"]
+        latest_upload = stat["latest_upload"]
+
+        # Skip invalid entries
+        if count <= 0:
+            continue
+
+        # Combine all anonymous-like entries
+        if (
+            uploader_name is None
+            or uploader_name.strip() == ""
+            or uploader_name.lower() == "anonymous"
+        ):
+            anonymous_total += count
+            if anonymous_latest is None or (
+                latest_upload and latest_upload > anonymous_latest
+            ):
+                anonymous_latest = latest_upload
+        else:
+            processed_results.append(
+                {
+                    "name": uploader_name.strip(),
+                    "count": count,
+                    "latest_upload": (
+                        latest_upload.strftime("%Y-%m-%d") if latest_upload else None
+                    ),
+                }
+            )
+
+    # Add anonymous entry if we have any anonymous uploads
+    if anonymous_total > 0:
+        processed_results.append(
+            {
+                "name": "Anonymous",
+                "count": anonymous_total,
+                "latest_upload": (
+                    anonymous_latest.strftime("%Y-%m-%d") if anonymous_latest else None
+                ),
+            }
+        )
+
+    # Sort by count and limit to top 20
+    final_results = sorted(processed_results, key=lambda x: x["count"], reverse=True)[
+        :20
     ]
 
-    return {"week_start": start_of_week.isoformat(), "uploaders": uploaders_stats}
+    return {
+        "week_start": start_of_week.strftime("%Y-%m-%d"),
+        "uploaders": final_results,
+    }
