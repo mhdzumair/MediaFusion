@@ -23,10 +23,8 @@ async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
     torrents = (
         await TorrentStreams.find(
             {
-                "$or": [
-                    {"seeders": None},
-                    {"updated_at": {"$lt": datetime.now() - timedelta(days=1)}},
-                ]
+                "seeders": None,
+                "updated_at": {"$lt": datetime.now() - timedelta(days=7)},
             },
             skip=offset,
             limit=page_size,
