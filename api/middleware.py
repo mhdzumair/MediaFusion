@@ -25,6 +25,7 @@ from db.schemas import UserData
 from utils import const
 from utils.crypto import crypto_utils
 from utils.network import get_client_ip
+from utils.parser import create_exception_stream
 
 
 async def find_route_handler(app, request: Request) -> Optional[Callable]:
@@ -68,14 +69,22 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         # Decrypt and parse the UserData from secret_str
         try:
             user_data = await crypto_utils.decrypt_user_data(secret_str)
-        except ValidationError as error:
-            return JSONResponse(
-                {
-                    "status": "error",
-                    "message": error.errors()[0]["msg"],
-                }
-            )
-        except ValueError:
+        except (ValueError, ValidationError):
+            # check if the endpoint is for /streams
+            if endpoint and endpoint.__name__ == "get_streams":
+                return JSONResponse(
+                    {
+                        "streams": [
+                            create_exception_stream(
+                                settings.addon_name,
+                                "Invalid MediaFusion configuration.\nDelete the Invalid MediaFusion installed addon and reconfigure it.",
+                                "invalid_config.mp4",
+                            ).model_dump(exclude_none=True, by_alias=True)
+                        ]
+                    },
+                    headers=const.CORS_HEADERS,
+                )
+
             return JSONResponse(
                 {
                     "status": "error",
