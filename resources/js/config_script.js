@@ -467,10 +467,16 @@ function getUserData() {
     const showTorrentLanguageFlag = document.getElementById('showTorrentLanguageFlag').checked;
 
     // Collect nudity filter data
-    const selectedNudityFilters = Array.from(document.querySelectorAll('input[name="nudity_filter"]:checked')).map(el => el.value);
+    let selectedNudityFilters = Array.from(document.querySelectorAll('input[name="nudity_filter"]:checked')).map(el => el.value);
+    if (selectedNudityFilters.length === 0) {
+        selectedNudityFilters = ['Disable'];
+    }
 
     // Collect certification filter data
-    const selectedCertificationFilters = Array.from(document.querySelectorAll('input[name="certification_filter"]:checked')).map(el => el.value);
+    let selectedCertificationFilters = Array.from(document.querySelectorAll('input[name="certification_filter"]:checked')).map(el => el.value);
+    if (selectedCertificationFilters.length === 0) {
+        selectedCertificationFilters = ['Disable'];
+    }
 
     // Collect language sorting order
     const languageSorting = Array.from(document.querySelectorAll('input[name="selected_languages"]:checked')).map(el => el.value || null);
