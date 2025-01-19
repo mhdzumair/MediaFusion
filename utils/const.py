@@ -275,6 +275,12 @@ LANGUAGES_FILTERS = [
     "Turkish",
     "Greek",
     "Swedish",
+    "Romanian",
+    "Hungarian",
+    "Finnish",
+    "Norwegian",
+    "Danish",
+    "Hebrew",
     None,
 ]
 
@@ -334,4 +340,10 @@ LANGUAGE_COUNTRY_FLAGS = {
     "Turkish": "🇹🇷",
     "Greek": "🇬🇷",
     "Swedish": "🇸🇪",
+    "Romanian": "🇷🇴",
+    "Hungarian": "🇭🇺",
+    "Finnish": "🇫🇮",
+    "Norwegian": "🇳🇴",
+    "Danish": "🇩🇰",
+    "Hebrew": "🇮🇱",
 }
