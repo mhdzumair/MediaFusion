@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from ipaddress import ip_address
 from typing import Callable, AsyncGenerator, Any, Tuple, Dict
 from urllib import parse
 from urllib.parse import urlencode, urlparse
@@ -8,11 +9,9 @@ import httpx
 from fastapi.requests import Request
 
 from db.config import settings
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from utils import crypto
-from utils.crypto import encrypt_data
-from utils.runtime_const import PRIVATE_CIDR
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 class CircuitBreakerOpenException(Exception):
@@ -250,7 +249,7 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
         return mediaflow_config.public_ip
 
     parsed_url = urlparse(mediaflow_config.proxy_url)
-    if PRIVATE_CIDR.match(parsed_url.netloc):
+    if is_private_ip(parsed_url.netloc):
         # MediaFlow proxy URL is a private IP address
         return None
 
@@ -299,7 +298,7 @@ async def get_user_public_ip(
     # Get the user's public IP address
     user_ip = get_client_ip(request)
     # check if the user's IP address is a private IP address
-    if PRIVATE_CIDR.match(user_ip):
+    if is_private_ip(user_ip):
         # Use host public IP address.
         return None
     return user_ip
@@ -355,7 +354,7 @@ def encode_mediaflow_proxy_url(
     if encryption_api_password:
         if "api_password" not in query_params:
             query_params["api_password"] = encryption_api_password
-        encrypted_token = encrypt_data(
+        encrypted_token = crypto.encrypt_data(
             encryption_api_password, query_params, expiration, ip
         )
         encoded_params = urlencode({"token": encrypted_token})
@@ -365,3 +364,11 @@ def encode_mediaflow_proxy_url(
     # Construct the full URL
     base_url = parse.urljoin(mediaflow_proxy_url, endpoint)
     return f"{base_url}?{encoded_params}"
+
+
+def is_private_ip(ip_str: str) -> bool:
+    try:
+        ip = ip_address(ip_str)
+        return ip.is_private
+    except ValueError:
+        return False

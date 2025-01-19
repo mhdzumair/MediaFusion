@@ -8,7 +8,7 @@ import httpx
 from db import schemas
 from db.config import settings
 from utils import const
-from utils.runtime_const import PRIVATE_CIDR
+from utils.network import is_private_ip
 from db.redis_database import REDIS_ASYNC_CLIENT
 
 
@@ -329,7 +329,7 @@ async def validate_mediaflow_proxy_credentials(user_data: schemas.UserData) -> d
 
     if results["message"].startswith("RequestError"):
         parsed_url = urlparse(user_data.mediaflow_config.proxy_url)
-        if PRIVATE_CIDR.match(parsed_url.netloc):
+        if is_private_ip(parsed_url.netloc):
             # MediaFlow proxy URL is a private IP address
             return {
                 "status": "success",
