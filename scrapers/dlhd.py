@@ -36,6 +36,7 @@ class DLHDScheduleService:
             self.name, "category_mapping"
         )
         self.last_scrape_key = "dlhd:last_scrape_time"
+        self._category_max_times = {}
 
     async def get_last_scrape_time(self) -> Optional[float]:
         """Get the timestamp of the last schedule scrape"""
@@ -99,29 +100,80 @@ class DLHDScheduleService:
     def create_event_metadata(
         self, event: dict, date_str: str, mapped_category: str
     ) -> Optional[MediaFusionEventsMetaData]:
-        """Create event metadata from schedule data"""
-        event_date = date_parser.parse(date_str.split(" - ")[0]).date()
-        time = datetime.strptime(event["time"], "%H:%M").time()
-        aware_datetime = datetime.combine(event_date, time).replace(tzinfo=self.gmt)
+        """
+        Create event metadata from schedule data with corrected date handling.
+        All times are handled in UK time (GMT) to match the schedule format.
 
-        if not self.is_event_in_timewindow(aware_datetime):
+        The function implements a "high water mark" algorithm for detecting day rollovers:
+        1. For each category, we track the maximum time seen so far in the sequence
+        2. If a new time is less than the max time seen, it's considered next day's event
+        3. If a new time is equal or greater than max time, it updates the max time
+        """
+        try:
+            # Parse the schedule date and ensure it's in GMT
+            uk_date = date_parser.parse(date_str.split(" - ")[0]).date()
+
+            # Parse event time and combine with date in GMT
+            event_time = datetime.strptime(event["time"], "%H:%M").time()
+            event_datetime = datetime.combine(uk_date, event_time)
+            event_datetime_gmt = self.gmt.localize(event_datetime)
+
+            should_roll_to_next_day = False
+
+            # Get the maximum time seen for this category
+            max_time = self._category_max_times.get(mapped_category)
+
+            if max_time is not None:
+                if event_time < max_time:
+                    # If current time is less than max time seen, it's a next day event
+                    should_roll_to_next_day = True
+                    logging.debug(
+                        f"GMT time rollover in {mapped_category}: Current time {event_time} < Max time {max_time}"
+                    )
+                else:
+                    # Update max time if current time is equal or greater
+                    self._category_max_times[mapped_category] = max(
+                        max_time, event_time
+                    )
+                    logging.debug(
+                        f"Updated max time for {mapped_category} to {self._category_max_times[mapped_category]}"
+                    )
+            else:
+                # First event in the sequence
+                self._category_max_times[mapped_category] = event_time
+
+            # Adjust the date if needed
+            if should_roll_to_next_day:
+                event_datetime_gmt += timedelta(days=1)
+                logging.info(
+                    f"Adjusted event date for {event['event']} "
+                    f"from {uk_date} to {event_datetime_gmt.date()} GMT due to high water mark {max_time}"
+                )
+
+            # Check if event is within our time window
+            if not self.is_event_in_timewindow(event_datetime_gmt):
+                return None
+
+            event_start_timestamp = int(event_datetime_gmt.timestamp())
+            meta_id = self.create_event_id(event["event"])
+
+            return MediaFusionEventsMetaData(
+                id=meta_id,
+                title=event["event"],
+                description="",
+                genres=[mapped_category],
+                event_start_timestamp=event_start_timestamp,
+                poster=random.choice(SPORTS_ARTIFACTS[mapped_category]["poster"]),
+                background=random.choice(
+                    SPORTS_ARTIFACTS[mapped_category]["background"]
+                ),
+                logo=random.choice(SPORTS_ARTIFACTS[mapped_category]["logo"]),
+                is_add_title_to_poster=True,
+                streams=[],
+            )
+        except Exception as e:
+            logging.error(f"Error creating event metadata: {str(e)}")
             return None
-
-        event_start_timestamp = int(aware_datetime.timestamp())
-        meta_id = self.create_event_id(event["event"])
-
-        return MediaFusionEventsMetaData(
-            id=meta_id,
-            title=event["event"],
-            description="",
-            genres=[mapped_category],
-            event_start_timestamp=event_start_timestamp,
-            poster=random.choice(SPORTS_ARTIFACTS[mapped_category]["poster"]),
-            background=random.choice(SPORTS_ARTIFACTS[mapped_category]["background"]),
-            logo=random.choice(SPORTS_ARTIFACTS[mapped_category]["logo"]),
-            is_add_title_to_poster=True,
-            streams=[],
-        )
 
     async def find_tv_channel(
         self, channel_name: str
@@ -327,6 +379,8 @@ class DLHDScheduleService:
         skipped_count = 0
 
         for date_section, sports in schedule_data.items():
+            self._category_max_times = {}
+
             for sport, events in sports.items():
                 mapped_category = self.category_map.get(sport, "Other Sports")
                 for event in events:
