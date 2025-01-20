@@ -91,6 +91,9 @@ def extract_torrent_metadata(
             filename = basename(full_path) if full_path else file[b"name"].decode()
             if not is_video_file(filename):
                 continue
+            if "sample" in filename.lower():
+                logging.warning(f"Skipping sample file: {filename}")
+                continue
             episode_parsed_data = PTT.parse_title(filename)
             seasons.update(episode_parsed_data.get("seasons", []))
             episodes.update(episode_parsed_data.get("episodes", []))
