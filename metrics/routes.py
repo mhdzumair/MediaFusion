@@ -201,7 +201,10 @@ async def get_weekly_top_uploaders(response: Response):
             {
                 "$match": {
                     "source": "Contribution Stream",
-                    "created_at": {"$gte": start_of_week},
+                    "$or": [
+                        {"created_at": {"$gte": start_of_week}},
+                        {"uploaded_at": {"$gte": start_of_week}},
+                    ],
                     "is_blocked": {"$ne": True},
                 }
             },

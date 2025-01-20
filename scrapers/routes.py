@@ -2,7 +2,7 @@ import json
 import logging
 import random
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
 from typing import Literal, Optional
 from uuid import uuid4
 
@@ -214,6 +214,10 @@ async def add_torrent(
         raise_error("Either magnet link or torrent file must be provided.")
     if torrent_type != TorrentType.PUBLIC and not torrent_file:
         raise_error(f"Torrent file must be provided for {torrent_type} torrents.")
+
+    # make sure the created_at date is not in the future
+    if created_at > (date.today() + timedelta(days=1)):
+        raise_error("Created at date cannot be more than one day in the future.")
 
     # Convert lists from form data
     catalog_list = catalogs.split(",") if catalogs else []
@@ -544,6 +548,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         meta_id=video_id,
         torrent_type=parsed_data.get("torrent_type"),
         torrent_file=parsed_data.get("torrent_file"),
+        uploaded_at=datetime.now(tz=timezone.utc),
     )
 
     await store_new_torrent_streams([torrent_stream])
@@ -600,6 +605,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
         episode_files=episode_data,
         torrent_type=parsed_data.get("torrent_type"),
         torrent_file=parsed_data.get("torrent_file"),
+        uploaded_at=datetime.now(tz=timezone.utc),
     )
     await store_new_torrent_streams([torrent_stream])
 

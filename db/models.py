@@ -113,6 +113,7 @@ class TorrentStreams(Document):
     catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
+    uploaded_at: Optional[datetime] = None
     resolution: Optional[str] = None
     codec: Optional[str] = None
     quality: Optional[str] = None
