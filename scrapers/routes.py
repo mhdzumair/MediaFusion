@@ -738,14 +738,26 @@ async def analyze_torrent(
             for key in ["resolution", "quality", "codec", "audio", "hdr", "group"]:
                 title = title.replace(torrent_data.get(key, ""), "")
 
+            # extract date from title. ex: 2021.05.01 | 2021-05-01 | 2021_05_01 | 01.05.2021 | 01-05-2021 | 01_05_2021
+            date_str = ""
+            date_str_match = re.search(
+                r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
+                title,
+            )
+            if date_str_match:
+                date_str = date_str_match.group()
+                title = title.replace(date_str, "").strip()
+
             # cleanup title
             title = (
                 title.replace(".torrent", "")
                 .replace(".", " ")
                 .replace("-", " ")
                 .replace("_", " ")
+                .replace("H264", "")
             )
             title = re.sub(r"\s+", " ", title).strip()
+            title += f" {date_str}"
             torrent_data["title"] = title
             return {
                 "torrent_data": torrent_data,
