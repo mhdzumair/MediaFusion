@@ -412,15 +412,6 @@ async def add_torrent(
                 }
             )
 
-        # Year validation
-        if torrent_data.get("year") != movie_data.year and not force_import:
-            validation_errors.append(
-                {
-                    "type": "year_mismatch",
-                    "message": f"Year mismatch: '{movie_data.year}' != '{torrent_data.get('year')}'",
-                }
-            )
-
         if validation_errors:
             torrent_data.pop("torrent_file", None)
             return {
@@ -755,13 +746,8 @@ async def analyze_torrent(
                 title = title.replace(date_str, "").strip()
 
             # cleanup title
-            title = (
-                title.replace(".torrent", "")
-                .replace(".", " ")
-                .replace("-", " ")
-                .replace("_", " ")
-                .replace("H264", "")
-            )
+            title = re.sub(r"h264|.torrent", "", title, flags=re.IGNORECASE)
+            title = title.replace(".", " ").replace("-", " ").replace("_", " ")
             title = re.sub(r"\s+", " ", title).strip()
             title += f" {date_str}"
             torrent_data["title"] = title
