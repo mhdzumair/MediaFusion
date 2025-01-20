@@ -84,6 +84,7 @@ class CommonTamilSpider(scrapy.Spider):
                                 "language": language,
                                 "video_type": video_type,
                                 "source": self.source,
+                                "expected_sources": [self.source],
                             }
                         },
                     )
