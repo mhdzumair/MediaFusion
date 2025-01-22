@@ -281,6 +281,7 @@ LANGUAGES_FILTERS = [
     "Norwegian",
     "Danish",
     "Hebrew",
+    "Lithuanian",
     None,
 ]
 
@@ -346,4 +347,5 @@ LANGUAGE_COUNTRY_FLAGS = {
     "Norwegian": "🇳🇴",
     "Danish": "🇩🇰",
     "Hebrew": "🇮🇱",
+    "Lithuanian": "🇱🇹",
 }
