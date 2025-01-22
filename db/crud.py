@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Type, Literal
 from uuid import uuid4
 
@@ -1715,7 +1715,12 @@ async def update_meta_stream(meta_id: str, is_update_data_only: bool = False) ->
         ]
     ).to_list(1)
 
-    update_data = {"total_streams": 0, "last_stream_added": None, "catalogs": []}
+    update_data = {
+        "total_streams": 0,
+        "last_stream_added": None,
+        "catalogs": [],
+        "last_updated_at": datetime.now(tz=timezone.utc),
+    }
 
     if streams_stats:
         # Flatten the catalogs list and remove duplicates
