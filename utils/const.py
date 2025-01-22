@@ -48,6 +48,8 @@ CATALOG_DATA = {
     "fighting": "Fighting (WWE, UFC)",
     "tgx_movie": "TGx Movies",
     "tgx_series": "TGx Series",
+    "contribution_movies": "Contribution Streams Movies",
+    "contribution_series": "Contribution Streams Series",
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [

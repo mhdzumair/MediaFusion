@@ -67,6 +67,8 @@ async def get_meta_list(
     genre: Optional[str] = None,
 ) -> list[schemas.Meta]:
     """Get a list of metadata entries based on various filters"""
+    if catalog.startswith("contribution_"):
+        catalog = "contribution_stream"
     poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
     meta_class = (
         MediaFusionMovieMetaData

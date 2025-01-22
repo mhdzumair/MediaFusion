@@ -384,6 +384,8 @@ def get_cache_key(
     if user_data.streaming_provider and "_watchlist_" in catalog_id:
         cache_key = None
         is_watchlist_catalog = True
+    elif catalog_id.startswith("contribution_") and user_data.contribution_streams:
+        cache_key = None
     elif catalog_type == "events":
         cache_key = None
     elif catalog_type in ["movie", "series"]:
