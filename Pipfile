@@ -50,6 +50,7 @@ aiohttp-socks = "*"
 socksio = "*"
 dramatiq-abort = "*"
 tzdata = "*"
+ipython = "*"
 
 [dev-packages]
 pysocks = "*"
