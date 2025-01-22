@@ -157,7 +157,7 @@ class Settings(BaseSettings):
     disable_nowsports_scheduler: bool = False
     tamilultra_scheduler_crontab: str = "0 8 * * *"
     disable_tamilultra_scheduler: bool = False
-    validate_tv_streams_in_db_crontab: str = "0 */6 * * *"
+    validate_tv_streams_in_db_crontab: str = "0 0 * * 5"
     disable_validate_tv_streams_in_db: bool = False
     sport_video_scheduler_crontab: str = "*/20 * * * *"
     disable_sport_video_scheduler: bool = False
