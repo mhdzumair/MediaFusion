@@ -342,10 +342,7 @@ class BaseScraper(abc.ABC):
                     and item.id not in processed_info_hashes
                 ):
                     processed_info_hashes.add(item.id)
-                    if (
-                        catalog_type != "series"
-                        or item.get_episode(season, episode) is not None
-                    ):
+                    if catalog_type != "series" or item.get_episodes(season, episode):
                         streams_processed += 1
                     self.logger.debug(
                         f"Processed stream from generator {gen_id}. Total streams processed: {streams_processed}"

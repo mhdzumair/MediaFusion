@@ -301,113 +301,122 @@ async def parse_stream_data(
 
     stream_list = []
     for stream_data in streams:
-        episode_data = stream_data.get_episode(season, episode) if is_series else None
-        if is_series and not episode_data:
+        episode_variants = (
+            stream_data.get_episodes(season, episode) if is_series else [None]
+        )
+        if is_series and not episode_variants:
             continue
 
-        if episode_data:
-            file_name = episode_data.filename
-            file_index = episode_data.file_index
-        else:
-            file_name = stream_data.filename
-            file_index = stream_data.file_index
-
-        # make sure file_name is basename
-        file_name = basename(file_name) if file_name else None
-
-        if show_full_torrent_name:
-            torrent_name = (
-                f"{stream_data.torrent_name}/{episode_data.title or episode_data.filename or ''}"
-                if episode_data
-                else stream_data.torrent_name
-            )
-            torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(
-                ".", " "
-            )
-        else:
-            torrent_name = None
-
-        # Compute quality_detail
-        quality_detail = " ".join(
-            filter(
-                None,
-                [
-                    f"🎨 {'|'.join(stream_data.hdr)}" if stream_data.hdr else None,
-                    f"📺 {stream_data.quality}" if stream_data.quality else None,
-                    f"🎞️ {stream_data.codec}" if stream_data.codec else None,
-                    f"🎵 {'|'.join(stream_data.audio)}" if stream_data.audio else None,
-                ],
-            )
-        )
-
-        resolution = stream_data.resolution.upper() if stream_data.resolution else "N/A"
-        streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
-        seeders_info = (
-            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
-        )
-        if episode_data and episode_data.size:
-            file_size = episode_data.size
-            size_info = f"{convert_bytes_to_readable(file_size)} / {convert_bytes_to_readable(stream_data.size)}"
-        else:
-            file_size = stream_data.size
-            size_info = convert_bytes_to_readable(file_size)
-
-        if user_data.show_language_country_flag:
-            languages = filter(
-                None,
-                set(
-                    [
-                        const.LANGUAGE_COUNTRY_FLAGS.get(lang)
-                        for lang in stream_data.languages
-                    ]
-                ),
-            )
-        else:
-            languages = stream_data.languages
-
-        languages = f"🌐 {' + '.join(languages)}" if stream_data.languages else None
-        source_info = f"🔗 {stream_data.source}"
-        if stream_data.uploader:
-            source_info += f" 🧑‍💻 {stream_data.uploader}"
-
-        description = "\n".join(
-            filter(
-                None,
-                [
-                    torrent_name if show_full_torrent_name else quality_detail,
-                    " ".join(filter(None, [size_info, seeders_info])),
-                    languages,
-                    source_info,
-                ],
-            )
-        )
-
-        stream_details = {
-            "name": f"{addon_name} {resolution} {streaming_provider_status}",
-            "description": description,
-            "behaviorHints": {
-                "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
-                "filename": file_name or stream_data.torrent_name,
-                "videoSize": file_size,
-            },
-        }
-
-        if has_streaming_provider:
-            stream_details["url"] = base_proxy_url_template.format(stream_data.id)
+        for episode_data in episode_variants:
             if episode_data:
-                stream_details["url"] += f"/{season}/{episode}"
-            if file_name:
-                stream_details["url"] += f"/{quote(file_name)}"
-            stream_details["behaviorHints"]["notWebReady"] = True
-        else:
-            stream_details["infoHash"] = stream_data.id
-            stream_details["fileIdx"] = file_index
-            stream_details["sources"] = [
-                f"tracker:{tracker}"
-                for tracker in (stream_data.announce_list or TRACKERS)
-            ] + [f"dht:{stream_data.id}"]
+                file_name = episode_data.filename
+                file_index = episode_data.file_index
+            else:
+                file_name = stream_data.filename
+                file_index = stream_data.file_index
 
-        stream_list.append(Stream(**stream_details))
+            # make sure file_name is basename
+            file_name = basename(file_name) if file_name else None
+
+            if show_full_torrent_name:
+                torrent_name = (
+                    f"{stream_data.torrent_name}/{episode_data.title or episode_data.filename or ''}"
+                    if episode_data
+                    else stream_data.torrent_name
+                )
+                torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(
+                    ".", " "
+                )
+            else:
+                torrent_name = None
+
+            # Compute quality_detail
+            quality_detail = " ".join(
+                filter(
+                    None,
+                    [
+                        f"🎨 {'|'.join(stream_data.hdr)}" if stream_data.hdr else None,
+                        f"📺 {stream_data.quality}" if stream_data.quality else None,
+                        f"🎞️ {stream_data.codec}" if stream_data.codec else None,
+                        (
+                            f"🎵 {'|'.join(stream_data.audio)}"
+                            if stream_data.audio
+                            else None
+                        ),
+                    ],
+                )
+            )
+
+            resolution = (
+                stream_data.resolution.upper() if stream_data.resolution else "N/A"
+            )
+            streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
+            seeders_info = (
+                f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
+            )
+            if episode_data and episode_data.size:
+                file_size = episode_data.size
+                size_info = f"{convert_bytes_to_readable(file_size)} / {convert_bytes_to_readable(stream_data.size)}"
+            else:
+                file_size = stream_data.size
+                size_info = convert_bytes_to_readable(file_size)
+
+            if user_data.show_language_country_flag:
+                languages = filter(
+                    None,
+                    set(
+                        [
+                            const.LANGUAGE_COUNTRY_FLAGS.get(lang)
+                            for lang in stream_data.languages
+                        ]
+                    ),
+                )
+            else:
+                languages = stream_data.languages
+
+            languages = f"🌐 {' + '.join(languages)}" if stream_data.languages else None
+            source_info = f"🔗 {stream_data.source}"
+            if stream_data.uploader:
+                source_info += f" 🧑‍💻 {stream_data.uploader}"
+
+            description = "\n".join(
+                filter(
+                    None,
+                    [
+                        torrent_name if show_full_torrent_name else quality_detail,
+                        " ".join(filter(None, [size_info, seeders_info])),
+                        languages,
+                        source_info,
+                    ],
+                )
+            )
+
+            stream_details = {
+                "name": f"{addon_name} {resolution} {streaming_provider_status}",
+                "description": description,
+                "behaviorHints": {
+                    "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
+                    "filename": file_name or stream_data.torrent_name,
+                    "videoSize": file_size,
+                },
+            }
+
+            if has_streaming_provider:
+                stream_details["url"] = base_proxy_url_template.format(stream_data.id)
+                if episode_data:
+                    stream_details["url"] += f"/{season}/{episode}"
+                if file_name:
+                    stream_details["url"] += f"/{quote(file_name)}"
+                stream_details["behaviorHints"]["notWebReady"] = True
+            else:
+                stream_details["infoHash"] = stream_data.id
+                stream_details["fileIdx"] = file_index
+                stream_details["sources"] = [
+                    f"tracker:{tracker}"
+                    for tracker in (stream_data.announce_list or TRACKERS)
+                ] + [f"dht:{stream_data.id}"]
+
+            stream_list.append(Stream(**stream_details))
 
     if stream_list and download_via_browser:
         download_url = f"{settings.host_url}/download/{secret_str}/{'series' if is_series else 'movie'}/{streams[0].meta_id}"

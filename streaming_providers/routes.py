@@ -98,10 +98,15 @@ async def get_or_create_video_url(
     Retrieves or generates the video URL based on stream data and user info.
     """
     magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
-    episode_data = stream.get_episode(season, episode)
+    episodes = stream.get_episodes(season, episode)
     if not filename:
+        episode_data = episodes[0] if episodes else None
         filename = episode_data.filename if episode_data else stream.filename
         filename = basename(filename) if filename else None
+    else:
+        episode_data = next(
+            (episode for episode in episodes if episode.filename == filename), None
+        )
     file_index = episode_data.file_index if episode_data else stream.file_index
 
     get_video_url = mapper.GET_VIDEO_URL_FUNCTIONS.get(

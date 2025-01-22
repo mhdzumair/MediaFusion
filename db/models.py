@@ -274,21 +274,19 @@ class TorrentStreams(Document):
             IndexModel([("uploader", ASCENDING)]),
         ]
 
-    def get_episode(
+    def get_episodes(
         self, season_number: int, episode_number: int
-    ) -> Optional[EpisodeFile]:
+    ) -> list[EpisodeFile]:
         """
-        Returns the Episode object for the given season and episode number.
+        Returns a list of Episode objects for the given season and episode number,
+        sorted by size in descending order if size is available.
         """
-        return next(
-            (
-                ep
-                for ep in self.episode_files or []
-                if ep.season_number == season_number
-                and ep.episode_number == episode_number
-            ),
-            None,
-        )
+        episodes = [
+            ep
+            for ep in self.episode_files or []
+            if ep.season_number == season_number and ep.episode_number == episode_number
+        ]
+        return sorted(episodes, key=lambda ep: ep.size or 0, reverse=True)
 
 
 class TVStreams(Document):
