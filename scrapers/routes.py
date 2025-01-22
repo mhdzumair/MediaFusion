@@ -27,6 +27,7 @@ from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
 from scrapers.scraper_tasks import meta_fetcher
+from scrapers.tmdb_data import get_tmdb_data
 from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
@@ -327,19 +328,26 @@ async def add_torrent(
         meta_id = metadata_result["id"]
 
     elif not meta_id or meta_id.startswith("mf"):
+        metadata = {
+            "id": meta_id,
+            "title": title or torrent_data.get("title"),
+            "year": torrent_data.get("year") or created_at.year,
+            "poster": poster,
+            "background": background,
+            "logo": logo,
+            "is_add_title_to_poster": is_add_title_to_poster,
+            "catalogs": catalog_list,
+            "created_at": created_at,
+        }
+        if meta_id and meta_id.startswith("mftmdb"):
+            # Search for metadata from tmdb
+            tmdb_data = await get_tmdb_data(meta_id[6:], meta_type)
+            if tmdb_data:
+                metadata.update(tmdb_data)
+
         # search for metadata from imdb/tmdb
         metadata_result = await get_or_create_metadata(
-            {
-                "id": meta_id,
-                "title": title or torrent_data.get("title"),
-                "year": torrent_data.get("year") or created_at.year,
-                "poster": poster,
-                "background": background,
-                "logo": logo,
-                "is_add_title_to_poster": is_add_title_to_poster,
-                "catalogs": catalog_list,
-                "created_at": created_at,
-            },
+            metadata,
             meta_type,
             is_search_imdb_title=meta_id is None,
         )
