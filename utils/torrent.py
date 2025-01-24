@@ -209,6 +209,10 @@ async def info_hashes_to_torrent_metadata(
 ) -> list[dict]:
     torrents_data = []
 
+    if not settings.enable_fetching_torrent_metadata_from_p2p:
+        logging.info("Fetching torrent metadata from P2P is disabled")
+        return torrents_data
+
     demagnetizer = Demagnetizer()
     async with acollect(
         coros=[

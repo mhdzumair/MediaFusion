@@ -134,14 +134,15 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    scheduler.add_job(
-        update_torrent_seeders.send,
-        CronTrigger.from_crontab(settings.update_seeders_crontab),
-        name="update_seeders",
-        kwargs={
-            "crontab_expression": settings.update_seeders_crontab,
-        },
-    )
+    if not settings.disable_update_seeders:
+        scheduler.add_job(
+            update_torrent_seeders.send,
+            CronTrigger.from_crontab(settings.update_seeders_crontab),
+            name="update_seeders",
+            kwargs={
+                "crontab_expression": settings.update_seeders_crontab,
+            },
+        )
 
     if not settings.disable_arab_torrents_scheduler:
         scheduler.add_job(

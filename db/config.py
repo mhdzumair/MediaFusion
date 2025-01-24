@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     store_stremthru_magnet_cache: bool = False
     is_scrap_from_yts: bool = True
     scrape_with_aka_titles: bool = True
+    enable_fetching_torrent_metadata_from_p2p: bool = True
 
     # Content Filtering
     adult_content_regex_keywords: str = (
@@ -166,6 +167,7 @@ class Settings(BaseSettings):
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
     disable_motogp_tgx_scheduler: bool = False
     update_seeders_crontab: str = "0 0 * * *"
+    disable_update_seeders: bool = True
     arab_torrents_scheduler_crontab: str = "0 0 * * *"
     disable_arab_torrents_scheduler: bool = False
     wwe_tgx_scheduler_crontab: str = "10 */3 * * *"
