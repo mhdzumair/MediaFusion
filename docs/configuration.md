@@ -127,7 +127,7 @@ These settings define the basic configuration and identity of your MediaFusion i
 - **store_stremthru_magnet_cache** (default: `False`): Store StremThru magnet cache.
 - **is_scrap_from_yts** (default: `True`): Enable/disable YTS scraping.
 - **scrape_with_aka_titles** (default: `True`): Include alternative titles in scraping.
-- **enable_fetching_torrent_metadata_from_p2p** (default: `False`): Enable fetching torrent metadata from P2P, Cautions: It may raise DMCA issues.
+- **enable_fetching_torrent_metadata_from_p2p** (default: `True`): Enable fetching torrent metadata from P2P, Cautions: It may raise DMCA issues.
 
 ## Time-related Settings
 

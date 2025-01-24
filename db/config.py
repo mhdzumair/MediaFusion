@@ -167,7 +167,7 @@ class Settings(BaseSettings):
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
     disable_motogp_tgx_scheduler: bool = False
     update_seeders_crontab: str = "0 0 * * *"
-    disable_update_seeders: bool = True
+    disable_update_seeders: bool = False
     arab_torrents_scheduler_crontab: str = "0 0 * * *"
     disable_arab_torrents_scheduler: bool = False
     wwe_tgx_scheduler_crontab: str = "10 */3 * * *"
