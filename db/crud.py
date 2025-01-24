@@ -113,6 +113,9 @@ async def get_meta_list(
     # Add genre filter if specified
     if genre:
         match_filter["genres"] = genre
+    else:
+        # Add genre filter to ignore 'Adult' genre
+        match_filter["genres"] = {"$nin": ["Adult"]}
 
     # Handle nudity filter
     if "Disable" not in user_data.nudity_filter:
