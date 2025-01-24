@@ -248,7 +248,7 @@ async def add_torrent(
 
     # Check if torrent already exists
     if torrent_stream := await get_stream_by_info_hash(info_hash):
-        if torrent_stream.meta_id != meta_id:
+        if meta_id and meta_id != torrent_stream.meta_id:
             await torrent_stream.delete()
         elif meta_type == "movie" and torrent_stream.filename is None:
             await torrent_stream.delete()
@@ -724,6 +724,7 @@ async def analyze_torrent(
                     status_code=400, detail="Failed to fetch torrent metadata."
                 )
             torrent_data = data[0]
+            torrent_data.pop("torrent_file", None)
         else:
             raise HTTPException(
                 status_code=400,

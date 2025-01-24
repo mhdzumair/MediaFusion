@@ -56,7 +56,7 @@ def extract_torrent_metadata(
             return {}
 
         metadata = {
-            "info_hash": info_hash,
+            "info_hash": info_hash.lower(),
             "announce_list": announce_list,
             "total_size": total_size,
             "torrent_name": torrent_name,
