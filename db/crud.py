@@ -62,7 +62,7 @@ async def get_meta_list(
     catalog: str,
     is_watchlist_catalog: bool,
     skip: int = 0,
-    limit: int = 25,
+    limit: int = 50,
     user_ip: str | None = None,
     genre: Optional[str] = None,
 ) -> list[schemas.Meta]:
@@ -159,7 +159,7 @@ async def get_mdblist_meta_list(
     catalog_type: str,
     genre: Optional[str] = None,
     skip: int = 0,
-    limit: int = 25,
+    limit: int = 50,
 ) -> list[schemas.Meta]:
     """Get a list of metadata entries from MDBList"""
     if not user_data.mdblist_config:
@@ -278,7 +278,7 @@ async def get_mdblist_meta_list(
 
 
 async def get_tv_meta_list(
-    namespace: str, genre: Optional[str] = None, skip: int = 0, limit: int = 25
+    namespace: str, genre: Optional[str] = None, skip: int = 0, limit: int = 50
 ) -> list[schemas.Meta]:
     poster_path = f"{settings.poster_host_url}/poster/tv/"
 
@@ -1438,7 +1438,7 @@ async def save_events_data(metadata: dict) -> str:
     return event_key
 
 
-async def get_events_meta_list(genre=None, skip=0, limit=25) -> list[schemas.Meta]:
+async def get_events_meta_list(genre=None, skip=0, limit=50) -> list[schemas.Meta]:
     return await dlhd_schedule_service.get_scheduled_events(
         genre=genre, skip=skip, limit=limit
     )
