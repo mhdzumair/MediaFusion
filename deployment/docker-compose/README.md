@@ -178,7 +178,7 @@ docker compose -f docker-compose.yml down
 
 ## Troubleshooting 🛠️
 
-- If you encounter any issues during the deployment, check the logs for the respective service using `docker-compose -f docker-compose.yml logs <service-name>`.
+- If you encounter any issues during the deployment, check the logs for the respective service using `docker compose -f docker-compose.yml logs <service-name>`.
 - If you encounter any issues with the web interface, ensure that the SSL certificate is installed correctly.
 
 ## Feedback 📢
