@@ -87,7 +87,7 @@
 11. Select the repository zip file (e.g., `repository.mediafusion-4.1.1.zip`)
 12. Wait for the "MediaFusion Repository add-on installed" notification
 13. Click "Install from repository"
-14. Select "MediaFusion Repository"
+14. Select "MediaFusion Repository." If it says "Could not connect to repository", close Kodi and open it again and go to add-ons and start from step 13.
 15. Go to "Video add-ons"
 16. Select "MediaFusion"
 17. Click "Install"
