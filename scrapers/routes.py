@@ -37,6 +37,9 @@ from utils.telegram_bot import telegram_notifier
 from utils.validation_helper import validate_image_url
 
 router = APIRouter()
+DATE_STR_REGEX = re.compile(
+    r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
+)
 
 
 def validate_api_password(api_password: str):
@@ -235,6 +238,7 @@ async def add_torrent(
         if not data:
             raise_error("Failed to fetch torrent metadata.")
         torrent_data = data[0]
+        info_hash = info_hash.lower()
     elif torrent_file:
         try:
             torrent_data = torrent.extract_torrent_metadata(
@@ -305,6 +309,10 @@ async def add_torrent(
             # Check if title has a date and append created_at if not
             created_at_str = created_at.strftime("%d.%m.%Y")
             if created_at_str not in title and not PTT.parse_title(title).get("date"):
+                date_str_match = DATE_STR_REGEX.search(title)
+                if date_str_match:
+                    created_at_str = date_str_match.group()
+                    title = title.replace(created_at_str, "").strip()
                 title += f" {created_at_str}"
 
         # Create metadata for sports content
@@ -741,22 +749,33 @@ async def analyze_torrent(
             # parse title for sports content
             title = torrent_data["torrent_name"]
             # remove resolution, quality, codec, audio, hdr from title
-            for key in ["resolution", "quality", "codec", "audio", "hdr", "group"]:
+            for key in [
+                "resolution",
+                "quality",
+                "codec",
+                "audio",
+                "hdr",
+                "group",
+                "extension",
+                "container",
+            ]:
                 title = title.replace(torrent_data.get(key, ""), "")
 
             # extract date from title. ex: 2021.05.01 | 2021-05-01 | 2021_05_01 | 01.05.2021 | 01-05-2021 | 01_05_2021
             date_str = ""
-            date_str_match = re.search(
-                r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
-                title,
-            )
+            date_str_match = DATE_STR_REGEX.search(title)
             if date_str_match:
                 date_str = date_str_match.group()
                 title = title.replace(date_str, "").strip()
 
             # cleanup title
-            title = re.sub(r"h264|.torrent", "", title, flags=re.IGNORECASE)
-            title = title.replace(".", " ").replace("-", " ").replace("_", " ")
+            title = re.sub(r"h26[45]|.torrent", "", title, flags=re.IGNORECASE)
+            title = (
+                title.replace(".", " ")
+                .replace("-", " ")
+                .replace("_", " ")
+                .replace(" at ", " vs ")
+            )
             title = re.sub(r"\s+", " ", title).strip()
             title += f" {date_str}"
             torrent_data["title"] = title
