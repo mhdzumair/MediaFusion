@@ -201,6 +201,8 @@ class MDBListItem(BaseModel):
     title: str = Field(alias="t")
     catalog_type: Literal["movie", "series"] = Field(alias="ct")
     use_filters: bool = Field(default=False, alias="uf")
+    sort: str | None = Field(default="rank", alias="s")
+    order: Literal["asc", "desc"] = Field(default="desc", alias="o")
 
     @property
     def catalog_id(self) -> str:

@@ -158,7 +158,7 @@ async def get_meta_list(
 async def get_mdblist_meta_list(
     user_data: schemas.UserData,
     background_tasks: BackgroundTasks,
-    catalog: str,
+    list_config: schemas.MDBListItem,
     catalog_type: str,
     genre: Optional[str] = None,
     skip: int = 0,
@@ -166,20 +166,6 @@ async def get_mdblist_meta_list(
 ) -> list[schemas.Meta]:
     """Get a list of metadata entries from MDBList"""
     if not user_data.mdblist_config:
-        return []
-
-    # Extract list info from catalog ID
-    _, media_type, list_id = catalog.split("_", 2)
-    list_config = next(
-        (
-            list_item
-            for list_item in user_data.mdblist_config.lists
-            if str(list_item.id) == list_id and list_item.catalog_type == media_type
-        ),
-        None,
-    )
-
-    if not list_config:
         return []
 
     meta_class = (
@@ -193,8 +179,7 @@ async def get_mdblist_meta_list(
     try:
         if not list_config.use_filters:
             return await mdblist_scraper.get_list_items(
-                list_id=list_id,
-                media_type=media_type,
+                list_config=list_config,
                 skip=skip,
                 limit=limit,
                 genre=genre,
@@ -203,8 +188,7 @@ async def get_mdblist_meta_list(
 
         # For filtered results, get all IMDb IDs first
         imdb_ids = await mdblist_scraper.get_list_items(
-            list_id=list_id,
-            media_type=media_type,
+            list_config=list_config,
             skip=0,
             limit=0,  # Ignored for filtered results
             genre=genre,

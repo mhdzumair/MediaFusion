@@ -21,7 +21,7 @@ class MDBListScraper:
 
     async def _fetch_list(
         self,
-        list_id: str,
+        list_config: schemas.MDBListItem,
         offset: int = 0,
         genre: Optional[str] = None,
     ) -> Optional[Dict]:
@@ -31,11 +31,14 @@ class MDBListScraper:
             "limit": self.batch_size,
             "offset": offset,
             "append_to_response": "genre",
+            "sort": list_config.sort,
+            "order": list_config.order,
         }
         if genre:
             params["filter_genre"] = genre
 
-        cache_key = f"mdblist:raw:{list_id}:offset_{offset}:{genre or 'all'}"
+        # Update cache key to include sort and order
+        cache_key = f"mdblist:raw:{list_config.id}:offset_{offset}:{genre or 'all'}:sort_{list_config.sort}:order_{list_config.order}"
         cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
 
         if cached_data:
@@ -43,7 +46,7 @@ class MDBListScraper:
 
         try:
             response = await self.client.get(
-                f"{self.base_url}/lists/{list_id}/items", params=params
+                f"{self.base_url}/lists/{list_config.id}/items", params=params
             )
             if response.status_code == 200:
                 # Cache raw API response for 60 minutes
@@ -55,7 +58,8 @@ class MDBListScraper:
             logging.error(f"Error fetching MDBList data: {e}")
             return None
 
-    def _convert_to_meta(self, item: Dict, media_type: str) -> schemas.Meta:
+    @staticmethod
+    def _convert_to_meta(item: Dict, media_type: str) -> schemas.Meta:
         """Convert MDBList item to Meta object"""
         genres = item.get("genre", [])
         if genres and genres[0] is None:
@@ -73,15 +77,14 @@ class MDBListScraper:
 
     async def get_all_list_items(
         self,
-        list_id: str,
-        media_type: str,
+        list_config: schemas.MDBListItem,
         genre: Optional[str] = None,
     ) -> List[str]:
         """
         Fetch all IMDb IDs from a list until no more results are available.
         Used for filtered results to ensure complete dataset.
         """
-        cache_key = f"mdblist:all_ids:{list_id}:{media_type}:{genre or 'all'}"
+        cache_key = f"mdblist:all_ids:{list_config.id}:{list_config.catalog_type}:{genre or 'all'}:sort_{list_config.sort}:order_{list_config.order}"
         cached_ids = await REDIS_ASYNC_CLIENT.lrange(cache_key, 0, -1)
 
         if cached_ids:
@@ -91,12 +94,14 @@ class MDBListScraper:
         offset = 0
 
         while True:
-            batch = await self._fetch_list(list_id, offset, genre)
+            batch = await self._fetch_list(list_config, offset, genre)
             if not batch:
                 break
 
             # Get the correct list based on media type
-            items = batch.get("movies" if media_type == "movie" else "shows", [])
+            items = batch.get(
+                "movies" if list_config.catalog_type == "movie" else "shows", []
+            )
             if not items:
                 break
 
@@ -129,8 +134,7 @@ class MDBListScraper:
 
     async def get_list_items(
         self,
-        list_id: str,
-        media_type: str,
+        list_config: schemas.MDBListItem,
         skip: int = 0,
         limit: int = 25,
         genre: Optional[str] = None,
@@ -142,17 +146,19 @@ class MDBListScraper:
         For unfiltered results, uses regular pagination.
         """
         if use_filters:
-            return await self.get_all_list_items(list_id, media_type, genre)
+            return await self.get_all_list_items(list_config, genre)
 
         # For unfiltered results, use regular pagination
         offset = (skip // self.batch_size) * self.batch_size
-        batch = await self._fetch_list(list_id, offset, genre)
+        batch = await self._fetch_list(list_config, offset, genre)
         if not batch:
             return []
 
-        items = batch.get("movies" if media_type == "movie" else "shows", [])
+        items = batch.get(
+            "movies" if list_config.catalog_type == "movie" else "shows", []
+        )
         meta_list = [
-            self._convert_to_meta(item, media_type)
+            self._convert_to_meta(item, list_config.catalog_type)
             for item in items
             if item.get("imdb_id", "").startswith("tt")
         ]

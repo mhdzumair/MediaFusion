@@ -152,6 +152,164 @@ body, html {
     background: rgba(40, 40, 60, 0.98);  /* Even more opaque on hover */
 }
 
+.list-group-item {
+    background: rgba(30, 30, 50, 0.95);
+    border: 1px solid rgba(74, 71, 163, 0.2);
+    color: #e0e0e0;
+    transition: all 0.3s ease;
+}
+
+.list-group-item:hover {
+    background: rgba(40, 40, 60, 0.98);
+    border-color: rgba(74, 71, 163, 0.4);
+    transform: translateY(-2px);
+}
+
+
+/* MDBList Selected Lists Section */
+#selected-lists .list-group-item {
+    background: rgba(30, 30, 50, 0.95);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    margin-bottom: 0.5rem;
+}
+
+#selected-lists .list-group-item .list-title {
+    color: #ffffff;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+#selected-lists .badge {
+    padding: 0.4em 0.8em;
+    margin-right: 0.5rem;
+    font-weight: normal;
+}
+
+/* MDBList List Details */
+.list-details {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.list-details .badge {
+    background: rgba(74, 71, 163, 0.2);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+    font-weight: normal;
+    padding: 0.4em 0.8em;
+}
+
+.item-count, .like-count, .media-type, .list-owner {
+    display: inline-flex;
+    align-items: center;
+    color: #e0e0e0;
+    font-size: 0.9rem;
+}
+
+/* MDBList Actions */
+.btn-group .btn {
+    background: rgba(74, 71, 163, 0.2);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+.btn-group .btn:hover {
+    background: rgba(74, 71, 163, 0.4);
+    border-color: rgba(74, 71, 163, 0.5);
+    color: #ffffff;
+}
+
+.btn-group .btn-outline-primary {
+    color: #e0e0e0;
+    border-color: rgba(74, 71, 163, 0.3);
+}
+
+.btn-group .btn-outline-primary:hover {
+    background: rgba(74, 71, 163, 0.3);
+    color: #ffffff;
+}
+
+
+/* MDBList Tab Navigation */
+.nav-tabs {
+    border-bottom-color: rgba(74, 71, 163, 0.2);
+}
+
+.nav-tabs .nav-link {
+    color: #e0e0e0;
+    background: transparent;
+    border: none;
+    padding: 0.75rem 1rem;
+}
+
+.nav-tabs .nav-link:hover {
+    border-color: rgba(74, 71, 163, 0.3);
+    isolation: isolate;
+}
+
+.nav-tabs .nav-link.active {
+    color: #ffffff;
+    background: rgba(74, 71, 163, 0.2);
+    border-color: rgba(74, 71, 163, 0.3);
+    border-bottom-color: transparent;
+}
+
+
+/* MDBList Search Section */
+#list-search-input {
+    background: rgba(30, 30, 50, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+#list-search-input:focus {
+    background: rgba(40, 40, 60, 0.9);
+    border-color: #4a47a3;
+    box-shadow: 0 0 0 0.25rem rgba(74, 71, 163, 0.25);
+}
+
+/* Sort Info Badge */
+.sort-info {
+    background: rgba(74, 71, 163, 0.2);
+    color: #e0e0e0;
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    font-size: 0.85rem;
+}
+
+/* Loading States */
+#my-lists-loading, #top-lists-loading {
+    color: #4a47a3;
+}
+
+/* Alert Messages */
+.alert-info {
+    background: rgba(74, 71, 163, 0.15);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+/* List Management Section */
+#mdblist_management {
+    background: rgba(20, 20, 35, 0.7);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+/* Add List Manual Input */
+#list-url-input {
+    background: rgba(30, 30, 50, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+#list-url-input:focus {
+    background: rgba(40, 40, 60, 0.9);
+    border-color: #4a47a3;
+}
+
 /* Title and year */
 .list-group-item h5 {
     color: #ffffff;
@@ -173,22 +331,54 @@ body, html {
     color: #e0e0e0;  /* Light gray for small text */
 }
 
-/* Genre badges */
-.badge.bg-primary {
-    background-color: rgba(74, 71, 163, 0.3) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(74, 71, 163, 0.5);
-}
-
 /* Icons */
 .list-group-item i {
     color: #4a47a3;  /* Accent color for icons */
 }
 
-/* Rating */
+/* Badge Styles - Improve readability */
+.badge.bg-info {
+    background-color: rgba(74, 71, 163, 0.25) !important;  /* Lighter background */
+    color: #ffffff !important;  /* White text for contrast */
+    border: 1px solid rgba(74, 71, 163, 0.4);
+    font-weight: 400;
+}
+
+/* List Owner and Additional Info Badges */
+.list-owner.badge.bg-info {
+    background-color: rgba(74, 71, 163, 0.3) !important;
+    padding: 0.4em 0.8em;
+    font-size: 0.85rem;
+}
+
+/* Sort Info Badge */
+.sort-info.badge {
+    background-color: rgba(74, 71, 163, 0.3) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(74, 71, 163, 0.4);
+    padding: 0.4em 0.8em;
+    font-size: 0.85rem;
+}
+
+/* Primary Badge Style */
+.badge.bg-primary {
+    background-color: rgba(74, 71, 163, 0.3) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(74, 71, 163, 0.4);
+}
+
+/* Secondary Badge Style */
 .badge.bg-secondary {
-    background-color: rgba(158, 158, 158, 0.3) !important;
-    color: #e0e0e0 !important;
+    background-color: rgba(108, 117, 125, 0.3) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(108, 117, 125, 0.4);
+}
+
+/* Success Badge Style (for Added/Enabled states) */
+.badge.bg-success {
+    background-color: rgba(40, 167, 69, 0.3) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(40, 167, 69, 0.4);
 }
 
 /* Meta sections */

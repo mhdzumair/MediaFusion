@@ -339,6 +339,21 @@ async def get_catalog(
         catalog_type, catalog_id, skip, genre, user_data
     )
 
+    list_config = None
+    if catalog_id.startswith("mdblist"):
+        _, media_type, list_id = catalog_id.split("_", 2)
+        list_config = next(
+            (
+                list_item
+                for list_item in user_data.mdblist_config.lists
+                if str(list_item.id) == list_id and list_item.catalog_type == media_type
+            ),
+            None,
+        )
+        if not list_config:
+            raise HTTPException(404, "MDBList ID not found.")
+        cache_key += f"_{list_config.sort}_{list_config.order}"
+
     if cache_key:
         response.headers.update(const.CACHE_HEADERS)
         if cached_data := await REDIS_ASYNC_CLIENT.get(cache_key):
@@ -358,6 +373,7 @@ async def get_catalog(
         user_data,
         request,
         is_watchlist_catalog,
+        list_config,
         background_tasks,
     )
 
@@ -404,6 +420,7 @@ async def fetch_metas(
     user_data: schemas.UserData,
     request: Request,
     is_watchlist_catalog: bool,
+    list_config: schemas.MDBListItem,
     background_tasks: BackgroundTasks,
 ) -> schemas.Metas:
     metas = schemas.Metas()
@@ -419,7 +436,7 @@ async def fetch_metas(
     elif catalog_id.startswith("mdblist"):
         metas.metas.extend(
             await crud.get_mdblist_meta_list(
-                user_data, background_tasks, catalog_id, catalog_type, genre, skip
+                user_data, background_tasks, list_config, catalog_type, genre, skip
             )
         )
     else:

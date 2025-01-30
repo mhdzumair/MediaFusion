@@ -1088,6 +1088,7 @@
             <div class="text-secondary">
                 <span class="media-type badge bg-primary"></span>
                 <span class="use-filters badge bg-secondary"></span>
+                <span class="sort-info badge bg-info"></span>
             </div>
         </div>
         <div class="btn-group">
@@ -1125,6 +1126,45 @@
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="edit-list-type" id="edit-list-type-show" value="series">
                         <label class="form-check-label" for="edit-list-type-show">Series</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Sorting Options</label>
+                    <div class="row">
+                        <div class="col-8">
+                            <select class="form-select" id="edit-list-sort">
+                                <option value="rank">Rank (Default)</option>
+                                <option value="score">Score</option>
+                                <option value="usort">User Sort</option>
+                                <option value="score_average">Score Average</option>
+                                <option value="released">Release Date</option>
+                                <option value="releasedigital">Digital Release Date</option>
+                                <option value="imdbrating">IMDb Rating</option>
+                                <option value="imdbvotes">IMDb Votes</option>
+                                <option value="last_air_date">Last Air Date</option>
+                                <option value="imdbpopular">IMDb Popular</option>
+                                <option value="tmdbpopular">TMDB Popular</option>
+                                <option value="rogerebert">Roger Ebert Rating</option>
+                                <option value="rtomatoes">Rotten Tomatoes</option>
+                                <option value="rtaudience">RT Audience Score</option>
+                                <option value="metacritic">Metacritic</option>
+                                <option value="myanimelist">MyAnimeList</option>
+                                <option value="letterrating">Letterboxd Rating</option>
+                                <option value="lettervotes">Letterboxd Votes</option>
+                                <option value="budget">Budget</option>
+                                <option value="revenue">Revenue</option>
+                                <option value="runtime">Runtime</option>
+                                <option value="title">Title</option>
+                                <option value="added">Date Added</option>
+                                <option value="random">Random</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <select class="form-select" id="edit-list-order">
+                                <option value="desc">Descending</option>
+                                <option value="asc">Ascending</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="mb-3">

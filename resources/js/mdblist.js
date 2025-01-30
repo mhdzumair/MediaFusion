@@ -153,6 +153,8 @@ class MDBListUI {
                     title: list.title,
                     catalogType: list.catalog_type,
                     useFilters: list.use_filters,
+                    sort: list.sort,
+                    order: list.order,
                     // Preserve other properties if available
                     items: list.items || 0,
                     owner: list.owner || '',
@@ -424,7 +426,9 @@ class MDBListUI {
         const fields = {
             'edit-list-title': list.title || list.name,
             'edit-list-id': list.id,
-            'edit-list-original-id': list.baseId || list.id
+            'edit-list-original-id': list.baseId || list.id,
+            'edit-list-sort': list.sort || 'rank',
+            'edit-list-order': list.order || 'desc'
         };
 
         Object.entries(fields).forEach(([id, value]) => {
@@ -554,6 +558,8 @@ class MDBListUI {
         const movieSelected = modal.querySelector('#edit-list-type-movie').checked;
         const showSelected = modal.querySelector('#edit-list-type-show').checked;
         const useFilters = modal.querySelector('#edit-list-use-filters').checked;
+        const sort = modal.querySelector('#edit-list-sort').value;
+        const order = modal.querySelector('#edit-list-order').value;
 
         // Remove existing entries for this base ID
         this.removeList(baseId, false);
@@ -565,7 +571,9 @@ class MDBListUI {
                 baseId,
                 title,
                 catalogType: 'movie',
-                useFilters
+                useFilters,
+                sort,
+                order
             });
         }
 
@@ -575,7 +583,9 @@ class MDBListUI {
                 baseId,
                 title,
                 catalogType: 'series',
-                useFilters
+                useFilters,
+                sort,
+                order
             });
         }
 
@@ -734,6 +744,14 @@ class MDBListUI {
             const useFilters = item.querySelector('.use-filters');
             useFilters.textContent = list.useFilters ? 'Filters enabled' : 'No filters';
 
+            // Set sort info
+            const sortInfo = item.querySelector('.sort-info');
+            if (sortInfo) {
+                const sortText = list.sort || 'rank';
+                const orderText = list.order || 'desc';
+                sortInfo.textContent = `Sort: ${sortText} (${orderText})`;
+            }
+
             // Setup buttons with individual list data
             const editBtn = item.querySelector('.edit-btn');
             const removeBtn = item.querySelector('.remove-btn');
@@ -762,13 +780,17 @@ class MDBListUI {
                     id: baseId,
                     title: list.title,
                     catalog_types: new Set(),
-                    use_filters: list.useFilters
+                    use_filters: list.useFilters,
+                    sort: list.sort || 'rank',
+                    order: list.order || 'desc'
                 });
             }
 
             const group = groupedLists.get(baseId);
             group.catalog_types.add(list.catalogType);
             group.use_filters = group.use_filters || list.useFilters;
+            group.sort = list.sort || group.sort;
+            group.order = list.order || group.order;
         });
 
         // Convert to array format
@@ -780,7 +802,9 @@ class MDBListUI {
                     id: group.id,
                     title: group.title,
                     catalog_type: types[0],
-                    use_filters: group.use_filters
+                    use_filters: group.use_filters,
+                    sort: group.sort,
+                    order: group.order
                 }];
             } else {
                 // Split into separate entries for each type
@@ -788,7 +812,9 @@ class MDBListUI {
                     id: group.id,
                     title: group.title,
                     catalog_type: type,
-                    use_filters: group.use_filters
+                    use_filters: group.use_filters,
+                    sort: group.sort,
+                    order: group.order
                 }));
             }
         });
