@@ -127,7 +127,9 @@ class Torbox(DebridClient):
         return {}
 
     async def get_queued_torrents(self):
-        response = await self._make_request("GET", "/torrents/getqueued")
+        response = await self._make_request(
+            "GET", "/queued", params={"type": "torrent"}
+        )
         return response
 
     async def create_download_link(
