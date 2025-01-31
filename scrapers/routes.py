@@ -263,7 +263,8 @@ async def add_torrent(
             await torrent_stream.delete()
         else:
             return {
-                "status": f"Torrent already exists and attached to meta id: {torrent_stream.meta_id}"
+                "status": f"⚠️ Torrent {info_hash} already exists and is attached to meta ID: {torrent_stream.meta_id}. "
+                f"Thank you for trying to contribute ✨. If the torrent is not visible, please contact support with the Torrent InfoHash."
             }
 
     # Add technical specifications to torrent_data
@@ -524,7 +525,7 @@ async def add_torrent(
         )
 
     return {
-        "status": f"Successfully added torrent: {torrent_stream.id} for {title}. Thanks for your contribution."
+        "status": f"🎉 Successfully added torrent: {torrent_stream.id} for {title} ({torrent_stream.meta_id}). Thanks for your contribution! 🙌"
     }
 
 

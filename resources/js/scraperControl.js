@@ -1,3 +1,57 @@
+// Define spec options
+const SPEC_OPTIONS = {
+    resolution: [
+        {value: '480p', label: '480p (SD)'},
+        {value: '576p', label: '576p (SD)'},
+        {value: '720p', label: '720p (HD)'},
+        {value: '1080p', label: '1080p (Full HD)'},
+        {value: '1440p', label: '1440p (2K)'},
+        {value: '2160p', label: '2160p (4K)'},
+        {value: '4K', label: '4K UHD'}
+    ],
+    quality: [
+        {value: 'BluRay', label: 'BluRay'},
+        {value: 'BluRay REMUX', label: 'BluRay REMUX'},
+        {value: 'BRRip', label: 'BRRip'},
+        {value: 'BDRip', label: 'BDRip'},
+        {value: 'WEB-DL', label: 'WEB-DL'},
+        {value: 'HDRip', label: 'HDRip'},
+        {value: 'DVDRip', label: 'DVDRip'},
+        {value: 'HDTV', label: 'HDTV'},
+        {value: 'CAM', label: 'CAM'},
+        {value: 'TeleSync', label: 'TeleSync'},
+        {value: 'SCR', label: 'SCR'}
+    ],
+    codec: [
+        {value: 'x264', label: 'x264'},
+        {value: 'x265', label: 'x265 (HEVC)'},
+        {value: 'h.264', label: 'H.264 (AVC)'},
+        {value: 'h.265', label: 'H.265 (HEVC)'},
+        {value: 'hevc', label: 'HEVC'},
+        {value: 'avc', label: 'AVC'},
+        {value: 'mpeg-2', label: 'MPEG-2'},
+        {value: 'mpeg-4', label: 'MPEG-4'},
+        {value: 'vp9', label: 'VP9'}
+    ],
+    audio: [
+        {value: 'AAC', label: 'AAC'},
+        {value: 'AC3', label: 'AC3 (Dolby Digital)'},
+        {value: 'DTS', label: 'DTS'},
+        {value: 'DTS-HD MA', label: 'DTS-HD MA'},
+        {value: 'TrueHD', label: 'Dolby TrueHD'},
+        {value: 'Atmos', label: 'Dolby Atmos'},
+        {value: 'DD+', label: 'DD+'},
+        {value: 'Dolby Digital Plus', label: 'Dolby Digital Plus'},
+        {value: 'DTS Lossless', label: 'DTS Lossless'}
+    ],
+    hdr: [
+        {value: 'DV', label: 'Dolby Vision'},
+        {value: 'HDR10+', label: 'HDR10+'},
+        {value: 'HDR', label: 'HDR'},
+        {value: 'SDR', label: 'SDR'}
+    ]
+};
+
 // ---- Helper Functions ----
 
 function showNotification(message, type = 'info') {
@@ -315,10 +369,28 @@ function showFileAnnotationModal(files) {
 
     files.forEach((file, index) => {
         const fileRow = `
-            <div class="card mb-3">
+            <div class="card mb-3" id="file-row-${index}">
                 <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">${file.filename}</h6>
-                    <div class="row">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="d-flex align-items-center flex-grow-1">
+                            <!-- Include/Exclude Toggle -->
+                            <div class="form-check form-switch me-2">
+                                <input class="form-check-input" type="checkbox" 
+                                       id="include-file-${index}" 
+                                       checked
+                                       onchange="toggleFileInclusion(${index})">
+                                <label class="form-check-label" for="include-file-${index}">
+                                    Include
+                                </label>
+                            </div>
+                            <h6 class="card-subtitle mb-0 text-muted text-truncate" 
+                                style="max-width: 80%;" 
+                                title="${file.filename}">
+                                ${file.filename}
+                            </h6>
+                        </div>
+                    </div>
+                    <div class="row" id="file-inputs-${index}">
                         <div class="col-md-6">
                             <label class="form-label">Season</label>
                             <input type="number" class="form-control season-input" 
@@ -359,28 +431,38 @@ function showFileAnnotationModal(files) {
                         </div>
                         <div class="mb-2">
                             <label class="form-label">Release Date</label>
-                            <input type="date" class="form-control" 
-                                   id="release-${index}">
+                            <input type="text" class="form-control" 
+                                   id="release-${index}"
+                                   placeholder="DD/MM/YYYY">
                         </div>
                     </div>
-                    ` : `
-                    `}
+                    ` : ''}
                 </div>
             </div>`;
         fileList.insertAdjacentHTML('beforeend', fileRow);
+    });
+
+    files.forEach((file, index) => {
+        // Initialize date picker for each file
+        setupDateInput(`release-${index}`, false);
     });
 
     // Set up bulk season assignment handler
     document.getElementById('applyBulkSeason').onclick = () => {
         const season = document.getElementById('bulkSeason').value;
         if (season) {
-            document.querySelectorAll('.season-input').forEach(input => {
-                input.value = season;
+            document.querySelectorAll('.season-input:not([disabled])').forEach(input => {
+                // Only apply to included files
+                const index = input.dataset.index;
+                const isIncluded = document.getElementById(`include-file-${index}`)?.checked;
+                if (isIncluded) {
+                    input.value = season;
+                }
             });
         }
     };
 
-    // Set up multiple seasons handler
+    // Set up multiple seasons handler with the same included files logic
     document.getElementById('applyMultiSeasons').onclick = () => {
         const seasonsInput = document.getElementById('multipleSeasons').value;
         if (!seasonsInput) return;
@@ -395,7 +477,13 @@ function showFileAnnotationModal(files) {
             const distribution = document.querySelector('input[name="seasonDistribution"]:checked').value;
             const episodesPerSeason = parseInt(document.getElementById('episodeCount').value) || 0;
 
-            const seasonInputs = document.querySelectorAll('.season-input');
+            // Filter for only included files
+            const seasonInputs = Array.from(document.querySelectorAll('.season-input:not([disabled])'))
+                .filter(input => {
+                    const index = input.dataset.index;
+                    return document.getElementById(`include-file-${index}`)?.checked;
+                });
+
             if (distribution === 'auto') {
                 // Distribute episodes evenly across seasons
                 const filesPerSeason = Math.ceil(seasonInputs.length / seasons.length);
@@ -414,7 +502,7 @@ function showFileAnnotationModal(files) {
             }
         };
 
-        // Set up distribution method handlers
+        // Distribution method handlers
         document.querySelectorAll('input[name="seasonDistribution"]').forEach(radio => {
             radio.onchange = () => {
                 document.getElementById('episodesPerSeason').style.display =
@@ -431,7 +519,6 @@ function showFileAnnotationModal(files) {
             }
         };
 
-        // Initial application
         applySeasons();
     };
 
@@ -440,24 +527,28 @@ function showFileAnnotationModal(files) {
 
     return new Promise((resolve, reject) => {
         document.getElementById('confirmAnnotation').onclick = () => {
-            const annotatedFiles = files.map((file, index) => {
-                const baseData = {
-                    ...file,
-                    season_number: parseInt(document.getElementById(`season-${index}`).value) || null,
-                    episode_number: parseInt(document.getElementById(`episode-${index}`).value) || null,
-                };
-
-                if (isSportsContent) {
-                    return {
-                        ...baseData,
-                        title: document.getElementById(`title-${index}`).value || null,
-                        overview: document.getElementById(`overview-${index}`).value || null,
-                        thumbnail: document.getElementById(`thumbnail-${index}`).value || null,
-                        release_date: document.getElementById(`release-${index}`).value || null,
-
+            const annotatedFiles = [];
+            files.forEach((file, index) => {
+                // Only include files that are marked for inclusion
+                if (document.getElementById(`include-file-${index}`)?.checked) {
+                    const baseData = {
+                        ...file,
+                        season_number: parseInt(document.getElementById(`season-${index}`).value) || null,
+                        episode_number: parseInt(document.getElementById(`episode-${index}`).value) || null,
                     };
+
+                    if (isSportsContent) {
+                        annotatedFiles.push({
+                            ...baseData,
+                            title: document.getElementById(`title-${index}`).value || null,
+                            overview: document.getElementById(`overview-${index}`).value || null,
+                            thumbnail: document.getElementById(`thumbnail-${index}`).value || null,
+                            release_date: document.getElementById(`release-${index}`).value || null,
+                        });
+                    } else {
+                        annotatedFiles.push(baseData);
+                    }
                 }
-                return baseData;
             });
             bsModal.hide();
             resolve(annotatedFiles);
@@ -467,6 +558,33 @@ function showFileAnnotationModal(files) {
             reject(new Error('Annotation cancelled'));
         }, {once: true});
     });
+}
+
+// Function to toggle file inclusion
+function toggleFileInclusion(index) {
+    const checkbox = document.getElementById(`include-file-${index}`);
+    const inputsContainer = document.getElementById(`file-inputs-${index}`);
+    const fileRow = document.getElementById(`file-row-${index}`);
+
+    if (checkbox.checked) {
+        // File is included
+        inputsContainer.style.opacity = '1';
+        inputsContainer.style.pointerEvents = 'auto';
+        fileRow.classList.remove('excluded-file');
+        // Enable all inputs in the container
+        inputsContainer.querySelectorAll('input, textarea').forEach(input => {
+            input.disabled = false;
+        });
+    } else {
+        // File is excluded
+        inputsContainer.style.opacity = '0.5';
+        inputsContainer.style.pointerEvents = 'none';
+        fileRow.classList.add('excluded-file');
+        // Disable all inputs in the container
+        inputsContainer.querySelectorAll('input, textarea').forEach(input => {
+            input.disabled = true;
+        });
+    }
 }
 
 
@@ -557,37 +675,27 @@ function handleInitialSetup() {
     updateFormFields();
 }
 
-function setupDateInput(inputId, defaultToToday = true) {
-    const dateInput = document.getElementById(inputId);
-    if (!dateInput) return;
 
-    if (defaultToToday) {
-        // Set default value to today's date
-        const today = new Date();
-        const day = String(today.getDate()).padStart(2, '0');
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const year = today.getFullYear();
-        dateInput.value = `${year}-${month}-${day}`;
-    }
-
-    // Format date for display
-    dateInput.addEventListener('input', function(e) {
-        const date = new Date(this.value);
-        if (!isNaN(date)) {
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const year = date.getFullYear();
-            this.title = `${day}/${month}/${year}`;
-        }
+function setupDateInput(inputId, defaultToToday = false, initialDate = null) {
+    const fp = flatpickr(`#${inputId}`, {
+        dateFormat: "d/m/Y",
+        altInput: true,
+        altFormat: "d/m/Y",
+        allowInput: true,
+        defaultHour: 12,
+        maxDate: "today",
+        locale: {
+            firstDayOfWeek: 1
+        },
+        theme: "dark",
+        defaultDate: initialDate // Set initial date if provided
     });
 
-    // Trigger initial formatting
-    if (dateInput.value) {
-        const event = new Event('input');
-        dateInput.dispatchEvent(event);
+    if (defaultToToday && !initialDate) {
+        const today = new Date();
+        fp.setDate(today);
     }
 }
-
 
 function constructTvMetadata() {
     // Basic TV Metadata collection
@@ -861,28 +969,173 @@ function updateBasicTechnicalSpecs(torrentData = {}) {
     ];
 
     specsContainer.innerHTML = specs.map(spec => `
-        <div class="spec-item">
+        <div class="spec-item" data-spec-type="${spec.type}">
             <i class="bi ${spec.icon}"></i>
             <div>
                 <div class="spec-label">${spec.label}</div>
-                <div class="spec-value" id="${spec.type}Spec" >${formatTechnicalSpec(spec.value, spec.type)}</div>
+                <div class="spec-value" id="${spec.type}Spec">${formatTechnicalSpec(spec.value, spec.type)}</div>
             </div>
         </div>
     `).join('');
-}
 
-// Function to set up the advanced toggle system
-function setupAdvancedToggle() {
-    document.getElementById('toggleAdvanced').addEventListener('click', () => {
-        const toggleButton = document.getElementById('toggleAdvanced');
-        toggleButton.classList.toggle('active');
-        const advancedSection = document.getElementById('advancedSection');
-        advancedSection.classList.toggle('show');
+    // Add click handlers to each spec item
+    specsContainer.querySelectorAll('.spec-item').forEach(item => {
+        item.addEventListener('click', function () {
+            const specType = this.dataset.specType;
+            const modal = new bootstrap.Modal(document.getElementById('specSelectionModal'));
+            const modalTitle = document.getElementById('specModalTitle');
+            const singleSelection = document.getElementById('singleSpecSelection');
+            const multipleSelection = document.getElementById('multipleSpecSelection');
+
+            // Determine if this is a multi-select specification
+            const isMultiSelect = ['audio', 'hdr', 'languages'].includes(specType);
+
+            // Update modal title
+            modalTitle.textContent = `Select ${this.querySelector('.spec-label').textContent}`;
+
+            // Show appropriate selection interface
+            singleSelection.style.display = isMultiSelect ? 'none' : 'block';
+            multipleSelection.style.display = isMultiSelect ? 'block' : 'none';
+
+            // Get current value
+            const currentValue = this.querySelector('.spec-value').textContent;
+
+            // Populate options based on spec type
+            if (isMultiSelect) {
+                populateMultiSelect(specType, currentValue);
+            } else {
+                populateSingleSelect(specType, currentValue);
+            }
+
+            // Set up confirmation handler
+            document.getElementById('confirmSpecSelection').onclick = () => {
+                let selectedValue;
+                if (isMultiSelect) {
+                    selectedValue = Array.from(document.querySelectorAll('.spec-checkboxes input:checked'))
+                        .map(cb => cb.value)
+                        .join(', ');
+                } else {
+                    selectedValue = document.getElementById('specSelectSingle').value;
+                }
+
+                if (selectedValue) {
+                    // Update the spec display
+                    updateSpecField(specType, selectedValue);
+                }
+                modal.hide();
+            };
+
+            modal.show();
+        });
     });
-
-    // Initial update of basic specs
-    updateBasicTechnicalSpecs();
 }
+
+// Update populateSingleSelect to use new options format
+function populateSingleSelect(specType, currentValue) {
+    const select = document.getElementById('specSelectSingle');
+    select.innerHTML = '<option value="">Select an option</option>';
+
+    const options = getOptionsForSpecType(specType);
+    options.forEach(option => {
+        const opt = document.createElement('option');
+        opt.value = option.value;
+        opt.textContent = option.label;
+        opt.selected = currentValue === option.value;
+        select.appendChild(opt);
+    });
+}
+
+// Update populateMultiSelect to use new options format
+function populateMultiSelect(specType, currentValue) {
+    const container = document.querySelector('.spec-checkboxes');
+    container.innerHTML = '';
+
+    const currentValues = currentValue.split(', ').map(v => v.trim());
+    const options = getOptionsForSpecType(specType);
+
+    options.forEach(option => {
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.innerHTML = `
+            <input class="form-check-input" type="checkbox" value="${option.value}" 
+                   id="spec-${option.value.replace(/[^a-zA-Z0-9]/g, '')}"
+                   ${currentValues.includes(option.value) ? 'checked' : ''}>
+            <label class="form-check-label" for="spec-${option.value.replace(/[^a-zA-Z0-9]/g, '')}">
+                ${option.label}
+            </label>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// Helper function to get current spec values
+function getSpecValues() {
+    return {
+        resolution: document.getElementById('resolutionSpec')?.textContent.trim(),
+        quality: document.getElementById('qualitySpec')?.textContent.trim(),
+        codec: document.getElementById('codecSpec')?.textContent.trim(),
+        audio: document.getElementById('audioSpec')?.textContent.trim(),
+        languages: document.getElementById('languagesSpec')?.textContent.trim(),
+        hdr: document.getElementById('hdrSpec')?.textContent.trim()
+    };
+}
+
+// Helper function to get options for a spec type
+function getOptionsForSpecType(specType) {
+    if (specType === 'languages') {
+        // Get languages from hidden input
+        try {
+            const supportedLanguages = JSON.parse(document.getElementById('supportedLanguages').value);
+            return supportedLanguages.map(lang => ({value: lang, label: lang}));
+        } catch (e) {
+            console.error('Error parsing supported languages:', e);
+            return [];
+        }
+    }
+    return SPEC_OPTIONS[specType] || [];
+}
+
+function switchToQuickImport() {
+    document.getElementById('scraperSelect').value = 'quick_import';
+    updateFormFields();
+    formUtils.resetForm();
+    hideSuccessAlert();
+    window.scrollTo(0, 0);
+}
+
+// Function to show success message with Import New button
+function showSuccessWithImportNew(message) {
+    const alert = document.getElementById('successAlert');
+    const messageElement = document.getElementById('successMessage');
+
+    // If alert doesn't exist, use notification
+    if (!alert) {
+        showNotification(message, 'success');
+        return;
+    }
+
+    messageElement.textContent = message;
+    alert.style.display = 'block';
+    alert.classList.add('show');
+
+    // Scroll to the top to make the alert visible
+    window.scrollTo(0, 0);
+}
+
+function hideSuccessAlert() {
+    const alert = document.getElementById('successAlert');
+    if (alert) {
+        alert.classList.remove('show');
+        alert.style.display = 'none';
+
+        // Clear the message
+        const messageElement = document.getElementById('successMessage');
+        if (messageElement) {
+            messageElement.textContent = '';
+        }
+    }
+}
+
 
 function updateSpecField(fieldId, value) {
     const targetInput = document.getElementById(`${fieldId}Spec`);
@@ -984,35 +1237,6 @@ const formUtils = {
         }
     },
 
-    setCheckboxValues(items, prefix) {
-        if (!items) return;
-
-        const values = Array.isArray(items) ? items : items.split(',');
-        values.forEach(value => {
-            const checkboxId = `${prefix}-${value.replace(/[^a-zA-Z0-9]/g, '')}`;
-            const checkbox = document.getElementById(checkboxId);
-            if (checkbox) checkbox.checked = true;
-        });
-    },
-
-    setCatalogs(type, catalogs) {
-        if (!type || !catalogs) return;
-
-        const container = document.getElementById(`${type}Catalogs`);
-        if (!container) return;
-
-        // Clear existing selections
-        container.querySelectorAll('input[type="checkbox"]')
-            .forEach(cb => cb.checked = false);
-
-        // Set new selections
-        const catalogList = Array.isArray(catalogs) ? catalogs : catalogs.split(',');
-        catalogList.forEach(cat => {
-            const checkbox = container.querySelector(`input[value="${cat}"]`);
-            if (checkbox) checkbox.checked = true;
-        });
-    },
-
     transferTorrentFile() {
         const quickFile = document.getElementById('quickTorrentFile');
         const torrentFile = document.getElementById('torrentFile');
@@ -1083,48 +1307,81 @@ function switchToManualImport(torrentData) {
 function applyTorrentData(torrentData) {
     if (!torrentData) return;
 
-    // Update basic specs display
-    updateBasicTechnicalSpecs(torrentData);
-
-    // check title and if its empty then add title from torrentData
-    if (!document.getElementById('title').value) {
+    // Update title if empty
+    if (!document.getElementById('title').value && torrentData.title) {
         document.getElementById('title').value = torrentData.title;
     }
 
     // Set release date
     if (torrentData.created_at) {
         const date = new Date(torrentData.created_at);
-        document.getElementById('createdAt').value = date.toISOString().split('T')[0];
+        setupDateInput('createdAt', false, date);
     }
 
-    // Set technical specs
-    const technicalFields = {
-        'resolution': 'resolution',
-        'quality': 'quality',
-        'codec': 'videoCodec'
+    // Map torrent data fields to spec types
+    const specMapping = {
+        resolution: torrentData.resolution,
+        quality: torrentData.quality,
+        codec: torrentData.codec,
+        audio: torrentData.audio,
+        hdr: torrentData.hdr,
+        languages: torrentData.languages
     };
 
-    Object.entries(technicalFields).forEach(([dataKey, fieldId]) => {
-        if (torrentData[dataKey]) {
-            document.getElementById(fieldId).value = torrentData[dataKey];
+    // Helper function to format value based on spec type
+    function formatSpecValue(type, value) {
+        if (!value) return 'Not Set';
+
+        // For array-like values (could be array or comma-separated string)
+        if (typeof value === 'string' && value.includes(',') || Array.isArray(value)) {
+            const valueArray = Array.isArray(value) ? value : value.split(',').map(v => v.trim());
+            return valueArray.join(', ');
         }
+
+        // For single values, validate against available options
+        const options = getOptionsForSpecType(type);
+        const option = options.find(opt => opt.value.toLowerCase() === value.toLowerCase());
+        return option ? option.value : value;
+    }
+
+    // Update basic specs display
+    Object.entries(specMapping).forEach(([type, value]) => {
+        const formattedValue = formatSpecValue(type, value);
+        updateSpecField(type, formattedValue);
     });
 
-    // Set checkbox-based fields
-    formUtils.setCheckboxValues(torrentData.audio, 'audio');
-    formUtils.setCheckboxValues(torrentData.hdr, 'hdr');
-    formUtils.setCheckboxValues(torrentData.languages, 'lang');
+    // Update basic technical specs display
+    updateBasicTechnicalSpecs({
+        resolution: specMapping.resolution,
+        quality: specMapping.quality,
+        codec: specMapping.codec,
+        audio: specMapping.audio,
+        hdr: specMapping.hdr,
+        languages: specMapping.languages
+    });
 
-    // Handle catalogs
+    // Handle content type specific settings
+    document.getElementById('metaType').value = torrentData.type;
     if (torrentData.type === 'movie' || torrentData.type === 'series') {
-        formUtils.setCatalogs(torrentData.type, torrentData.catalog);
+        if (torrentData.catalog) {
+            const catalogs = Array.isArray(torrentData.catalog)
+                ? torrentData.catalog
+                : torrentData.catalog.split(',').map(c => c.trim());
+
+            const container = document.getElementById(`${torrentData.type}Catalogs`);
+            if (container) {
+                catalogs.forEach(catalog => {
+                    const checkbox = container.querySelector(`input[value="${catalog}"]`);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+        }
     }
 
     // Transfer torrent file or magnet link
     formUtils.transferTorrentFile();
 
-    // Set metaType
-    document.getElementById('metaType').value = torrentData.type;
+    // Update UI to reflect content type
     updateContentType();
 }
 
@@ -1134,76 +1391,42 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
     const torrentType = document.getElementById('torrentType').value;
     const isSportsContent = metaType === 'sports';
 
-    // Handle content metadata
-    const metaId = document.getElementById('torrentImdbId')?.value;
-    const title = document.getElementById('title').value;
-    const poster = document.getElementById('poster').value;
-    const background = document.getElementById('background').value;
-    const logo = document.getElementById('logo').value;
-    const createdAt = document.getElementById('createdAt').value;
-    const uploaderName = document.getElementById('uploaderName').value.trim() || 'Anonymous';
-
-    // Validate required fields
-    if (isSportsContent && !title) {
-        showNotification('Title is required for sports content.', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
-    }
-
-    if (!createdAt) {
-        showNotification('Created At is required.', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
-    }
+    // Get current spec values
+    const specValues = getSpecValues();
 
     // Add basic metadata to formData
     formData.append('meta_type', metaType);
     formData.append('torrent_type', torrentType);
-    formData.append('created_at', createdAt);
-    formData.append('uploader', uploaderName);
+    formData.append('created_at', document.getElementById('createdAt').value);
+    formData.append('uploader', document.getElementById('uploaderName').value.trim() || 'Anonymous');
 
-    if (!isSportsContent && metaId) {
-        formData.append('meta_id', metaId);
+    // Add content metadata
+    if (!isSportsContent && document.getElementById('torrentImdbId')?.value) {
+        formData.append('meta_id', document.getElementById('torrentImdbId').value);
     }
 
-    // Add optional metadata fields if provided
+    const title = document.getElementById('title').value;
+    if (!title && isSportsContent) {
+        showNotification('Title is required for sports content.', 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
     if (title) formData.append('title', title);
-    if (poster) formData.append('poster', poster);
-    if (background) formData.append('background', background);
-    if (logo) formData.append('logo', logo);
+
+    // Add optional metadata
+    ['poster', 'background', 'logo'].forEach(field => {
+        const value = document.getElementById(field)?.value;
+        if (value) formData.append(field, value);
+    });
 
     // Add technical specifications
-    const resolution = document.getElementById('resolution').value;
-    const quality = document.getElementById('quality').value;
-    const videoCodec = document.getElementById('videoCodec').value;
+    Object.entries(specValues).forEach(([key, value]) => {
+        if (value && value !== 'Not Set') {
+            formData.append(key, value);
+        }
+    });
 
-    if (resolution) formData.append('resolution', resolution);
-    if (quality) formData.append('quality', quality);
-    if (videoCodec) formData.append('codec', videoCodec);
-
-    // Handle multiple audio codecs
-    const selectedAudioCodecs = Array.from(
-        document.querySelectorAll('input[name="audioCodecs"]:checked')
-    ).map(el => el.value);
-    if (selectedAudioCodecs.length > 0) {
-        formData.append('audio', selectedAudioCodecs.join(','));
-    }
-
-    // Handle HDR formats
-    const selectedHdrFormats = Array.from(
-        document.querySelectorAll('input[name="hdrFormats"]:checked')
-    ).map(el => el.value);
-    if (selectedHdrFormats.length > 0) {
-        formData.append('hdr', selectedHdrFormats.join(','));
-    }
-
-    // Handle languages
-    const selectedLanguages = Array.from(document.querySelectorAll('input[name="languages"]:checked'))
-        .map(el => el.value);
-    if (selectedLanguages.length > 0) {
-        formData.append('languages', selectedLanguages.join(','));
-    }
-
+    // Handle catalogs
     if (isSportsContent) {
         const sportsCatalog = document.getElementById('sportsCatalog').value;
         if (!sportsCatalog) {
@@ -1213,7 +1436,6 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         }
         formData.append('catalogs', sportsCatalog);
     } else {
-        // Handle movie/series catalogs
         const catalogInputs = document.querySelectorAll(`#${metaType}Catalogs input[name="catalogs"]:checked`);
         const catalogs = Array.from(catalogInputs).map(el => el.value);
         if (catalogs.length > 0) {
@@ -1221,8 +1443,9 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         }
     }
 
-    const addTitleToPoster = document.getElementById('addTitleToPoster').checked;
-    formData.append('is_add_title_to_poster', addTitleToPoster.toString());
+    // Handle add title to poster option
+    formData.append('is_add_title_to_poster',
+        document.getElementById('addTitleToPoster').checked.toString());
 
     // Handle torrent file/magnet
     const magnetLink = document.getElementById('magnetLink').value;
@@ -1246,16 +1469,11 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         formData.append('torrent_file', torrentFile);
     }
 
-    // Add force import flag if needed
-    if (forceImport) {
-        formData.append('force_import', 'true');
-    }
+    // Add force import and annotated files if present
+    if (forceImport) formData.append('force_import', 'true');
+    if (annotatedFiles) formData.append('file_data', JSON.stringify(annotatedFiles));
 
-    // Add annotated files if available
-    if (annotatedFiles) {
-        formData.append('file_data', JSON.stringify(annotatedFiles));
-    }
-
+    // Submit the form
     try {
         const response = await fetch('/scraper/torrent', {
             method: 'POST',
@@ -1287,7 +1505,7 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         } else if (data.detail) {
             showNotification(data.detail, 'error');
         } else {
-            showNotification(data.status, 'success');
+            showSuccessWithImportNew(data.status);
         }
     } catch (error) {
         console.error('Error submitting torrent:', error);
@@ -1602,8 +1820,8 @@ async function submitScraperForm() {
 // Initial update for form fields on page load
 document.addEventListener('DOMContentLoaded', function () {
     handleInitialSetup();
-    setupAdvancedToggle();
+    updateBasicTechnicalSpecs();
     setupFieldChangeHandlers();
-    setupDateInput('createdAt');
+    setupDateInput('createdAt', true);
 });
 document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);
