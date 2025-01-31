@@ -61,12 +61,13 @@
   - 🚫 **Support DMCA Take Down**: Torrent blocking feature for DMCA compliance.
   - **Manual Torrent Contribution**: Add support for manual torrent contribution and private and webseeded torrent import support. [Webseed Creator Colab Link](https://colab.research.google.com/github/mhdzumair/MediaFusion/blob/main/docs/TorrentWebCreator.ipynb) <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
   -  🔍 **Jackett Indexer Support**: Add support for Jackett indexer with AKA title searching and individual search.
+
 ## 🚀 Installation Guide
 
 ### Stremio Add-on Installation
 
-1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads).
-2. **MediaFusion Community Instance**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button.
+1. **Stremio**: Install Stremio from [here](https://www.stremio.com/downloads)
+2. **MediaFusion Community Instance**: Navigate to [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/) and click on the 'Configure Add-on' button
 
 ### Kodi Add-on Installation
 
@@ -87,7 +88,8 @@
 11. Select the repository zip file (e.g., `repository.mediafusion-4.1.1.zip`)
 12. Wait for the "MediaFusion Repository add-on installed" notification
 13. Click "Install from repository"
-14. Select "MediaFusion Repository." If it says "Could not connect to repository", close Kodi and open it again and go to add-ons and start from step 13.
+14. Select "MediaFusion Repository" 
+    > If it says "Could not connect to repository", close Kodi and open it again and go to add-ons and start from step 13
 15. Go to "Video add-ons"
 16. Select "MediaFusion"
 17. Click "Install"
@@ -103,6 +105,46 @@
 7. Configure the add-on by going to Add-ons → My add-ons → Video add-ons → MediaFusion → Configure
 
 > **Note**: Installing via repository (Method 1) is recommended as it enables automatic updates when new versions are released.
+
+## ⚙️ Configuration Guide
+
+📺 For a detailed video guide on configuration, check out: https://www.youtube.com/watch?v=ctQY8r1KzPM&t=85s
+
+### Setting Up MediaFusion in Stremio
+
+1. Visit [MediaFusion ElfHosted](https://mediafusion.elfhosted.com/configure)
+2. Configure your desired options
+3. Install the addon using one of these methods:
+   - **For Desktop/Mobile Stremio App Users**:
+     - Click "Install in Stremio" button
+     - Stremio will open automatically with installation prompt
+   - **For Web/iOS Users**:
+     - Click "Copy Manifest URL"
+     - Open Stremio
+     - Go to Addons
+     - Click "+ Add Addon"
+     - Paste the manifest URL
+     - Click Install
+
+### Setting Up MediaFusion in Kodi
+
+1. Navigate to MediaFusion settings in Kodi
+2. Select "Configure/Reconfigure Secret String"
+3. Access the configuration page through one of these methods:
+   - Scan the QR code
+   - Visit https://mediafusion.elfhosted.com/configure
+   - Open the configuration page directly from Kodi
+
+### Configure Addon Options
+1. In the configuration page:
+   - Enable all necessary catalogs
+   - Turn on "Enable IMDb Meta Data Response"
+2. Click on "Setup Kodi Addon"
+3. Enter the 6-digit key shown in Kodi
+   > If the key expires, click "Configure Secret" in Kodi settings to refresh it
+4. Submit the configuration
+5. Verify that the "secret string" value is populated
+6. Return to the main menu
 
 ## 🚀 Local Add-on Deployment
 
