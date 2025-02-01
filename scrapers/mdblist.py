@@ -139,7 +139,7 @@ class MDBListScraper:
         limit: int = 25,
         genre: Optional[str] = None,
         use_filters: bool = True,
-    ) -> List[schemas.Meta] | List[str]:
+    ) -> List[str] | List[schemas.Meta]:
         """
         Get items from a MDBList list.
         For filtered results (use_filters=True), fetches all available items.

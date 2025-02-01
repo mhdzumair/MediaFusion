@@ -56,6 +56,35 @@ from utils.validation_helper import (
 )
 
 
+def apply_parental_guide_filters(
+    user_data: schemas.UserData, match_filter: dict
+) -> None:
+    """
+    Helper function to apply parental guide filters to a MongoDB match filter.
+    """
+    # Handle nudity filter
+    if "Disable" not in user_data.nudity_filter:
+        if "Unknown" in user_data.nudity_filter:
+            match_filter["parent_guide_nudity_status"] = {"$exists": True}
+        elif user_data.nudity_filter:
+            match_filter["parent_guide_nudity_status"] = {
+                "$nin": user_data.nudity_filter
+            }
+
+    # Handle certification filter
+    if "Disable" not in user_data.certification_filter:
+        cert_filters = []
+        if "Unknown" in user_data.certification_filter:
+            cert_filters.append(
+                {"parent_guide_certificates": {"$exists": True, "$ne": []}}
+            )
+        filter_values = get_filter_certification_values(user_data)
+        if filter_values:
+            cert_filters.append({"parent_guide_certificates": {"$nin": filter_values}})
+        if cert_filters:
+            match_filter["$or"] = cert_filters
+
+
 async def get_meta_list(
     user_data: schemas.UserData,
     catalog_type: str,
@@ -113,27 +142,7 @@ async def get_meta_list(
         # Add genre filter to ignore 'Adult' genre
         match_filter["genres"] = {"$nin": ["Adult"]}
 
-    # Handle nudity filter
-    if "Disable" not in user_data.nudity_filter:
-        if "Unknown" in user_data.nudity_filter:
-            match_filter["parent_guide_nudity_status"] = {"$exists": True}
-        elif user_data.nudity_filter:
-            match_filter["parent_guide_nudity_status"] = {
-                "$nin": user_data.nudity_filter
-            }
-
-    # Handle certification filter
-    if "Disable" not in user_data.certification_filter:
-        cert_filters = []
-        if "Unknown" in user_data.certification_filter:
-            cert_filters.append(
-                {"parent_guide_certificates": {"$exists": True, "$ne": []}}
-            )
-        filter_values = get_filter_certification_values(user_data)
-        if filter_values:
-            cert_filters.append({"parent_guide_certificates": {"$nin": filter_values}})
-        if cert_filters:
-            match_filter["$or"] = cert_filters
+    apply_parental_guide_filters(user_data, match_filter)
 
     # Define the pipeline
     pipeline = [
@@ -204,29 +213,7 @@ async def get_mdblist_meta_list(
             "total_streams": {"$gt": 0},
         }
 
-        # Handle nudity filter
-        if "Disable" not in user_data.nudity_filter:
-            if "Unknown" in user_data.nudity_filter:
-                match_filter["parent_guide_nudity_status"] = {"$exists": True}
-            elif user_data.nudity_filter:
-                match_filter["parent_guide_nudity_status"] = {
-                    "$nin": user_data.nudity_filter
-                }
-
-        # Handle certification filter
-        if "Disable" not in user_data.certification_filter:
-            cert_filters = []
-            if "Unknown" in user_data.certification_filter:
-                cert_filters.append(
-                    {"parent_guide_certificates": {"$exists": True, "$ne": []}}
-                )
-            filter_values = get_filter_certification_values(user_data)
-            if filter_values:
-                cert_filters.append(
-                    {"parent_guide_certificates": {"$nin": filter_values}}
-                )
-            if cert_filters:
-                match_filter["$or"] = cert_filters
+        apply_parental_guide_filters(user_data, match_filter)
 
         # Get filtered results with pagination
         poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
