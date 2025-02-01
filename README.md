@@ -59,8 +59,8 @@
   - 🎥 **RPDB Posters**: RPDB posters support with fallback to MediaFusion posters.
   - 📥 **Browser Download Support**: Support for downloading video files from debrid services directly in the browser.
   - 🚫 **Support DMCA Take Down**: Torrent blocking feature for DMCA compliance.
-  - **Manual Torrent Contribution**: Add support for manual torrent contribution and private and webseeded torrent import support. [Webseed Creator Colab Link](https://colab.research.google.com/github/mhdzumair/MediaFusion/blob/main/docs/TorrentWebCreator.ipynb) <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-  -  🔍 **Jackett Indexer Support**: Add support for Jackett indexer with AKA title searching and individual search.
+  - 🤝 **Manual Torrent Contribution**: Add support for manual torrent contribution and private and webseeded torrent import support. [Webseed Creator Colab Link](https://colab.research.google.com/github/mhdzumair/MediaFusion/blob/main/docs/TorrentWebCreator.ipynb) <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+  - 🔍 **Jackett Indexer Support**: Add support for Jackett indexer with AKA title searching and individual search.
 
 ## 🚀 Installation Guide
 
