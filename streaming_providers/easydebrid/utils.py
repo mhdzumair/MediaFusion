@@ -22,6 +22,15 @@ async def get_video_url_from_easydebrid(
         user_ip=user_ip,
     ) as easydebrid_client:
         torrent_info = await easydebrid_client.create_download_link(magnet_link)
+        # If create download link returns an error, we try to add the link for caching, the error returned is generally
+        # {'error': 'Unsupported link for direct download.'}
+        if torrent_info.get("error", ""):
+            await easydebrid_client.add_torrent_file(magnet_link)
+            raise ProviderException(
+                "Torrent did not reach downloaded status.",
+                "torrent_not_downloaded.mp4",
+            )
+
         file_index = await select_file_index_from_torrent(
             torrent_info,
             filename,
