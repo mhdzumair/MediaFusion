@@ -31,7 +31,7 @@ class Torbox(DebridClient):
                     "Download size too large for the user plan",
                     "not_enough_space.mp4",
                 )
-            case "ACTIVE_LIMIT" | "MONTHLY_LIMIT":
+            case "ACTIVE_LIMIT" | "MONTHLY_LIMIT" | "COOLDOWN_LIMIT":
                 raise ProviderException(
                     "Download limit exceeded",
                     "daily_download_limit.mp4",
@@ -64,6 +64,7 @@ class Torbox(DebridClient):
         )
 
         if response_data.get("error"):
+            await self._handle_service_specific_errors(response_data, 200)
             raise ProviderException(
                 f"Failed to add magnet link to Torbox {response_data}",
                 "transfer_error.mp4",
@@ -85,6 +86,8 @@ class Torbox(DebridClient):
             is_expected_to_fail=True,
         )
         if response.get("error"):
+            await self._handle_service_specific_errors(response, 200)
+
             raise ProviderException(
                 f"Failed to add torrent file to Torbox {response.get('error')}",
                 "transfer_error.mp4",
@@ -128,7 +131,9 @@ class Torbox(DebridClient):
 
     async def get_queued_torrents(self):
         response = await self._make_request(
-            "GET", "/queued", params={"type": "torrent"}
+            "GET",
+            "/queued/getqueued",
+            params={"type": "torrent", "bypass_cache": "true"},
         )
         return response
 
@@ -150,6 +155,8 @@ class Torbox(DebridClient):
         )
         if response.get("success"):
             return response
+
+        await self._handle_service_specific_errors(response, 200)
         raise ProviderException(
             f"Failed to create download link from Torbox {response}",
             "transfer_error.mp4",
