@@ -96,6 +96,8 @@ async def update_rpdb_posters(
         if updated_poster:
             meta.poster = updated_poster
 
-    await asyncio.gather(*(update_poster(meta) for meta in metas.metas))
+    await asyncio.gather(
+        *(update_poster(meta) for meta in metas.metas), return_exceptions=True
+    )
 
     return metas
