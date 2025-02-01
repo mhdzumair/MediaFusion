@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from ipaddress import ip_address
 from typing import Callable, AsyncGenerator, Any, Tuple, Dict
 from urllib import parse
@@ -280,7 +281,9 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
         logging.error(f"Request error occurred: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-    raise Exception("Failed to get MediaFlow proxy public IP address.")
+    raise Exception(
+        f"Failed to get MediaFlow proxy public IP address. {mediaflow_config.proxy_url}"
+    )
 
 
 async def get_user_public_ip(
@@ -367,8 +370,37 @@ def encode_mediaflow_proxy_url(
 
 
 def is_private_ip(ip_str: str) -> bool:
+    """
+    Check if an IP address is private, supporting both IPv4 and IPv6 formats.
+    Handles IP addresses with optional port numbers and IPv6 brackets.
+
+    Examples:
+        - IPv4: '127.0.0.1', '127.0.0.1:8888'
+        - IPv6: '::1', '[::1]', '[::1]:8000', 'fe80::1234'
+
+    Returns:
+        bool: True if the IP is private, False otherwise
+    """
+    if not ip_str:
+        return False
+
+    # Extract IP from the input string
+    ip_part = ip_str
+
+    # Handle IPv6 with port [::1]:8000 format
+    ipv6_port_match = re.match(r"\[(.*?)\]:(\d+)$", ip_str)
+    if ipv6_port_match:
+        ip_part = ipv6_port_match.group(1)
+    else:
+        # Handle IPv6 with brackets [::1] format
+        if ip_str.startswith("[") and ip_str.endswith("]"):
+            ip_part = ip_str[1:-1]
+        # Handle IPv4 with port format
+        elif ":" in ip_str and ip_str.count(":") == 1:
+            ip_part = ip_str.split(":")[0]
+
     try:
-        ip = ip_address(ip_str)
+        ip = ip_address(ip_part.strip())
         return ip.is_private
     except ValueError:
         return False

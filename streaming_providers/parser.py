@@ -34,9 +34,10 @@ async def select_file_index_from_torrent(
             if not is_video_file(file[name_key]):
                 continue
             season_parsed_data = PTT.parse_title(file[name_key])
-            if episode in season_parsed_data.get(
-                "episodes"
-            ) and season in season_parsed_data.get("seasons"):
+            found_season = season_parsed_data.get("seasons")
+            if (
+                found_season and season in found_season
+            ) or episode in season_parsed_data.get("episodes"):
                 return index
         raise ProviderException(
             "No matching file available for this torrent", "no_matching_file.mp4"

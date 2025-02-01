@@ -368,6 +368,10 @@ class BT4GScraper(BaseScraper):
             seasons = set()
             episodes = set()
             for index, element in enumerate(file_info_elements):
+                if not element.contents or element.contents[0] is None:
+                    self.logger.warning(f"Skipping empty or invalid element: {element}")
+                    continue
+
                 file_name = element.contents[0].strip()
                 file_size = convert_size_to_bytes(
                     element.find("b", {"class": "cpill"}).get_text(strip=True)
