@@ -45,3 +45,4 @@ mediafusion.local*
 .git
 kodi/
 !kodi/*.py
+!deployment/startup.sh
