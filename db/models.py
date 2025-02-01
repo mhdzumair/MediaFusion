@@ -31,6 +31,12 @@ class EpisodeFile(BaseModel):
     overview: str | None = None
 
 
+class CatalogStats(BaseModel):
+    catalog: str
+    total_streams: int = 0
+    last_stream_added: datetime | None = None
+
+
 class MediaFusionMetaData(Document):
     id: str
     title: str
@@ -48,7 +54,7 @@ class MediaFusionMetaData(Document):
     genres: Optional[list[str]] = Field(default_factory=list)
     last_updated_at: datetime = Field(default_factory=datetime.now)
 
-    catalogs: list[str] = Field(default_factory=list)
+    catalog_stats: list[CatalogStats] = Field(default_factory=list)
     last_stream_added: datetime | None = Field(default_factory=datetime.now)
     total_streams: int | None = 0
 
@@ -72,21 +78,15 @@ class MediaFusionMetaData(Document):
                 weights={"title": 10, "aka_titles": 5},  # Prioritize main title matches
             ),
             IndexModel([("year", ASCENDING), ("end_year", ASCENDING)]),
-            IndexModel(
-                [
-                    ("type", ASCENDING),
-                    ("catalogs", ASCENDING),
-                    ("last_stream_added", DESCENDING),
-                ]
-            ),
-            IndexModel(
-                [
-                    ("type", ASCENDING),
-                    ("genres", ASCENDING),
-                    ("last_stream_added", DESCENDING),
-                ]
-            ),
             IndexModel([("_class_id", ASCENDING)]),
+            IndexModel([("type", ASCENDING), ("genres", ASCENDING)]),
+            IndexModel(
+                [
+                    ("type", ASCENDING),
+                    ("catalog_stats.catalog", ASCENDING),
+                    ("catalog_stats.total_streams", ASCENDING),
+                ]
+            ),
         ]
 
     @field_validator("runtime", mode="before")
@@ -127,11 +127,38 @@ class TorrentStreams(Document):
     @after_event(Insert)
     async def update_metadata_on_create(self):
         """Update metadata when a new stream is created"""
-        update_data = {
-            "$addToSet": {"catalogs": {"$each": self.catalog}},
+        # Initialize update operations for total stream count
+        update_ops = {
             "$inc": {"total_streams": 1},
             "$set": {"last_stream_added": self.created_at},
         }
+
+        # Update catalog_stats array
+        for cat in self.catalog:
+            # Try to update existing catalog stats first
+            result = await MediaFusionMetaData.get_motor_collection().update_one(
+                {"_id": self.meta_id, "catalog_stats.catalog": cat},
+                {
+                    "$inc": {"catalog_stats.$.total_streams": 1},
+                    "$set": {
+                        "catalog_stats.$.last_stream_added": self.created_at,
+                        **update_ops["$set"],
+                    },
+                },
+            )
+
+            # If no existing catalog stats found, add new one
+            if result.modified_count == 0:
+                update_ops["$push"] = update_ops.get("$push", {})
+                update_ops["$push"]["catalog_stats"] = {
+                    "$each": [
+                        {
+                            "catalog": cat,
+                            "total_streams": 1,
+                            "last_stream_added": self.created_at,
+                        }
+                    ]
+                }
 
         # Handle episode metadata updates for series
         if self.episode_files:
@@ -158,35 +185,85 @@ class TorrentStreams(Document):
                         )
 
                 if new_episodes:
-                    update_data["$push"] = {
-                        "episodes": {"$each": [ep.model_dump() for ep in new_episodes]}
+                    update_ops["$push"] = update_ops.get("$push", {})
+                    update_ops["$push"]["episodes"] = {
+                        "$each": [ep.model_dump() for ep in new_episodes]
                     }
 
         await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": self.meta_id}, update_data
+            {"_id": self.meta_id}, update_ops
         )
         logging.info(f"Added stream {self.id} to metadata {self.meta_id}")
 
     @after_event(Delete)
     async def update_metadata_on_delete(self):
         """Update metadata when a stream is deleted"""
-        # First, check if this was the last stream for any catalog
-        remaining_streams = await TorrentStreams.find(
+        # Get all remaining streams for this meta_id grouped by catalog
+        pipeline = [
             {
-                "meta_id": self.meta_id,
-                "catalog": {"$in": self.catalog},
-                "_id": {"$ne": self.id},
+                "$match": {
+                    "meta_id": self.meta_id,
+                    "_id": {"$ne": self.id},
+                    "is_blocked": {"$ne": True},
+                }
+            },
+            {"$unwind": "$catalog"},
+            {
+                "$group": {
+                    "_id": "$catalog",
+                    "total_streams": {"$sum": 1},
+                    "last_stream_added": {"$max": "$created_at"},
+                }
+            },
+        ]
+
+        remaining_streams = (
+            await TorrentStreams.get_motor_collection()
+            .aggregate(pipeline)
+            .to_list(None)
+        )
+        remaining_catalogs = {stream["_id"] for stream in remaining_streams}
+
+        # Build update operations
+        update_ops = {
+            "$inc": {"total_streams": -1},
+            "$pull": {
+                "catalog_stats": {
+                    "catalog": {
+                        "$in": [
+                            cat for cat in self.catalog if cat not in remaining_catalogs
+                        ]
+                    }
+                }
+            },
+        }
+
+        # Update remaining catalog stats
+        for stream in remaining_streams:
+            await MediaFusionMetaData.get_motor_collection().update_one(
+                {"_id": self.meta_id, "catalog_stats.catalog": stream["_id"]},
+                {
+                    "$set": {
+                        "catalog_stats.$.total_streams": stream["total_streams"],
+                        "catalog_stats.$.last_stream_added": stream[
+                            "last_stream_added"
+                        ],
+                    }
+                },
+            )
+
+        # Update last_stream_added
+        if remaining_streams:
+            update_ops["$set"] = {
+                "last_stream_added": max(
+                    stream["last_stream_added"] for stream in remaining_streams
+                )
             }
-        ).count()
-
-        update_data = {"$inc": {"total_streams": -1}}
-
-        if remaining_streams == 0:
-            # If no more streams for these catalogs, remove them
-            update_data["$pullAll"] = {"catalogs": self.catalog}
+        else:
+            update_ops["$set"] = {"last_stream_added": None}
 
         await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": self.meta_id}, update_data
+            {"_id": self.meta_id}, update_ops
         )
         logging.info(f"Removed stream {self.id} from metadata {self.meta_id}")
 

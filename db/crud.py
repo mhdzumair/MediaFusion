@@ -70,11 +70,6 @@ async def get_meta_list(
     if catalog.startswith("contribution_"):
         catalog = "contribution_stream"
     poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
-    meta_class = (
-        MediaFusionMovieMetaData
-        if catalog_type == "movie"
-        else MediaFusionSeriesMetaData
-    )
 
     # Handle watchlist case first
     if is_watchlist_catalog:
@@ -106,8 +101,9 @@ async def get_meta_list(
         # Regular catalog query
         match_filter = {
             "type": catalog_type,
-            "catalogs": catalog,
-            "total_streams": {"$gt": 0},
+            "catalog_stats": {
+                "$elemMatch": {"catalog": catalog, "total_streams": {"$gt": 0}}
+            },
         }
 
     # Add genre filter if specified
@@ -142,16 +138,19 @@ async def get_meta_list(
     # Define the pipeline
     pipeline = [
         {"$match": match_filter},
-        {"$sort": {"last_stream_added": -1}},
+        {"$sort": {f"catalog_stats.last_stream_added": -1}},
         {"$skip": skip},
         {"$limit": limit},
         {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
     ]
 
     # Execute the aggregation pipeline
-    meta_list = await meta_class.aggregate(
-        pipeline, projection_model=schemas.Meta
-    ).to_list()
+    meta_list_raw = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(pipeline)
+        .to_list(None)
+    )
+    meta_list = [schemas.Meta.model_validate(doc) for doc in meta_list_raw]
     return meta_list
 
 
@@ -399,7 +398,7 @@ async def get_media_data_by_id(
                 await TorrentStreams.find({"meta_id": existing_media.id}).update(
                     Set({"meta_id": media_data.id})
                 )
-            media_data.catalogs = existing_media.catalogs
+            media_data.catalog_stats = existing_media.catalog_stats
             media_data.total_streams = existing_media.total_streams
             await existing_media.delete()
             await media_data.create()
@@ -540,7 +539,8 @@ async def get_streams_base(
     # Create user feeds for supported catalogs
     user_feeds = []
     if video_id.startswith("mf") and any(
-        catalog in content_catalogs for catalog in metadata.catalogs
+        catalog_data.catalog in content_catalogs
+        for catalog_data in metadata.catalog_stats
     ):
         user_feeds = [
             schemas.Stream(
@@ -1687,53 +1687,72 @@ async def update_meta_stream(meta_id: str, is_update_data_only: bool = False) ->
     """
     Update stream-related metadata for a given meta_id.
     """
-    # Get TorrentStream counts & last stream added date
-    streams_stats = await TorrentStreams.aggregate(
-        [
-            {"$match": {"meta_id": meta_id, "is_blocked": {"$ne": True}}},
-            {
-                "$group": {
-                    "_id": None,
-                    "total_streams": {"$sum": 1},
-                    "last_stream_added": {"$max": "$created_at"},
-                    "catalogs": {"$addToSet": "$catalog"},
-                }
-            },
-        ]
-    ).to_list(1)
+    # Get TorrentStream counts & last stream added date per catalog
+    pipeline = [
+        {"$match": {"meta_id": meta_id, "is_blocked": {"$ne": True}}},
+        {"$unwind": "$catalog"},
+        {
+            "$group": {
+                "_id": "$catalog",
+                "total_streams": {"$sum": 1},
+                "last_stream_added": {"$max": "$created_at"},
+            }
+        },
+    ]
+
+    catalog_stats = await TorrentStreams.aggregate(pipeline).to_list(None)
+
+    # Calculate overall stats
+    total_streams = sum(stat["total_streams"] for stat in catalog_stats)
+    last_stream_added = (
+        max([stat["last_stream_added"] for stat in catalog_stats])
+        if catalog_stats
+        else None
+    )
 
     update_data = {
-        "total_streams": 0,
-        "last_stream_added": None,
-        "catalogs": [],
+        "total_streams": total_streams,
+        "last_stream_added": last_stream_added,
         "last_updated_at": datetime.now(tz=timezone.utc),
+        "catalog_stats": [
+            {
+                "catalog": stat["_id"],
+                "total_streams": stat["total_streams"],
+                "last_stream_added": stat["last_stream_added"],
+            }
+            for stat in catalog_stats
+        ],
     }
-
-    if streams_stats:
-        # Flatten the catalogs list and remove duplicates
-        flattened_catalogs = list(
-            {
-                catalog
-                for sublist in streams_stats[0].get("catalogs", [])
-                for catalog in sublist
-            }
-        )
-
-        update_data.update(
-            {
-                "total_streams": streams_stats[0].get("total_streams", 0),
-                "last_stream_added": streams_stats[0].get("last_stream_added"),
-                "catalogs": flattened_catalogs,
-            }
-        )
 
     if is_update_data_only:
         return update_data
 
-    # Update database entries with the new stream data
-    await MediaFusionMetaData.get_motor_collection().update_one(
-        {"_id": meta_id},
-        {"$set": update_data},
-    )
+    if catalog_stats:
+        # Remove old catalog_stats and add new ones
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": meta_id},
+            {
+                "$set": {
+                    "total_streams": update_data["total_streams"],
+                    "last_stream_added": update_data["last_stream_added"],
+                    "last_updated_at": update_data["last_updated_at"],
+                    "catalog_stats": update_data["catalog_stats"],
+                }
+            },
+        )
+    else:
+        # If no streams, clear all stats
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": meta_id},
+            {
+                "$set": {
+                    "total_streams": 0,
+                    "last_stream_added": None,
+                    "last_updated_at": update_data["last_updated_at"],
+                    "catalog_stats": [],
+                }
+            },
+        )
+
     logging.info(f"Updated stream metadata for {meta_id}")
     return update_data
