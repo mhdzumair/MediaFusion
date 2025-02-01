@@ -8,6 +8,7 @@ import math
 import logging
 
 from aioseedrcc import Seedr
+from aioseedrcc.exception import SeedrException
 
 from db.models import TorrentStreams
 from db.schemas import UserData
@@ -41,6 +42,11 @@ async def get_seedr_client(user_data: UserData) -> Seedr:
         raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
     except ProviderException as error:
         raise error
+    except SeedrException as error:
+        if "Unauthorized" in str(error):
+            raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+        logging.exception(error)
+        raise ProviderException("Seedr server error", "debrid_service_down_error.mp4")
     except Exception as error:
         logging.exception(error)
         raise error
