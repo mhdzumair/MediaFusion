@@ -276,17 +276,19 @@ async def get_tv_meta_list(
     # Define the pipeline
     pipeline = [
         {"$match": match_filter},
-        {"$sort": {"last_stream_added": -1}},
+        {"$sort": {"title": 1}},
         {"$skip": skip},
         {"$limit": limit},
         {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
     ]
 
     # Execute the aggregation pipeline
-    meta_list = await MediaFusionTVMetaData.aggregate(
-        pipeline, projection_model=schemas.Meta
-    ).to_list()
-
+    meta_list_raw = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(pipeline)
+        .to_list(None)
+    )
+    meta_list = [schemas.Meta.model_validate(doc) for doc in meta_list_raw]
     return meta_list
 
 
