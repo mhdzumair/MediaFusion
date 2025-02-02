@@ -19,6 +19,9 @@ class EasyDebrid(DebridClient):
     async def disable_access_token(self):
         pass
 
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
+        pass
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
@@ -31,6 +34,7 @@ class EasyDebrid(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        is_http_response: bool = False,
         retry_count: int = 0,
     ) -> dict:
         params = params or {}
