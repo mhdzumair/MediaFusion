@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     disable_tamilmv_scheduler: bool = False
     tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
     disable_tamil_blasters_scheduler: bool = False
-    formula_tgx_scheduler_crontab: str = "*/30 * * * 4,5,6,7,0,1"
+    formula_tgx_scheduler_crontab: str = "*/30 * * * *"
     disable_formula_tgx_scheduler: bool = False
     nowmetv_scheduler_crontab: str = "0 0 * * 5"
     disable_nowmetv_scheduler: bool = False
