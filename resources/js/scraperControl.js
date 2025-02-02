@@ -1320,7 +1320,7 @@ function applyTorrentData(torrentData) {
     // Set release date
     if (torrentData.created_at) {
         const date = new Date(torrentData.created_at);
-        setupDateInput('createdAt', false, date);
+        setupDateInput('createdAt', false, date.toLocaleDateString('en-GB'))
     }
 
     // Map torrent data fields to spec types
