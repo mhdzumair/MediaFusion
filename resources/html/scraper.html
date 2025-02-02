@@ -35,7 +35,7 @@
                         <option value="add_tv_metadata">Add TV Metadata</option>
                         <option value="add_m3u_playlist">Add M3U Playlist</option>
                         <option value="update_imdb_data">Update IMDb Data</option>
-                        <option value="block_torrent">Block Torrent</option>
+                        <option value="block_torrent">Block/Delete Torrent</option>
                         <option value="migrate_id">Migrate MediaFusion ID to IMDb ID</option>
                         <option value="update_images">Update Images</option>
                     </select>
@@ -477,6 +477,13 @@
                             <label for="blockTorrentInfoHash" class="form-label">Torrent Info Hash</label>
                             <input type="text" class="form-control" id="blockTorrentInfoHash" name="blockTorrentInfoHash" required
                                    value="{% if prefill_data.info_hash %}{{ prefill_data.info_hash }}{% endif %}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="blockTorrentAction" class="form-label">Action</label>
+                            <select class="form-select" id="blockTorrentAction" name="blockTorrentAction" required>
+                                <option value="block">Block</option>
+                                <option value="delete">Delete</option>
+                            </select>
                         </div>
                     </div>
                 </div>

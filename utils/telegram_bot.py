@@ -58,7 +58,10 @@ class TelegramNotifier:
             f"*Torrent Name*: `{torrent_name}`\n"
             f"*Info Hash*: `{info_hash}`\n"
             f"*Type*: {torrent_type}\n"
-            f"*Poster*: [View]({poster})"
+            f"*Poster*: [View]({poster})\n"
+            f"*Stremio Links*:\n"
+            f"   - *APP*: `stremio://detail/{meta_type}/{meta_id}/{meta_id}`\n"
+            f"   - *WEB*: [View](https://web.stremio.com/#/detail/{meta_type}/{meta_id}/{meta_id})"
         )
 
         if catalogs:
@@ -81,13 +84,14 @@ class TelegramNotifier:
             message += "\n"
 
         # Add block link
-        message += f"\n\n[🚫 Block Torrent]({block_url})"
+        message += f"\n\n[🚫 Block/Delete Torrent]({block_url})"
 
         await self._send_photo_message(poster, message)
 
     async def send_block_notification(
         self,
         info_hash: str,
+        action: str,
         meta_id: str,
         title: str,
         meta_type: str,
@@ -106,7 +110,7 @@ class TelegramNotifier:
         )
 
         message = (
-            f"🚫 Torrent Blocked\n\n"
+            f"🚫 Torrent {'Blocked' if action == 'block' else 'Deleted'}\n\n"
             f"*Title*: {title}\n"
             f"*Type*: {meta_type.title()}\n"
             f"{meta_id_data}"

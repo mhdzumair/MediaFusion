@@ -625,12 +625,17 @@ async def block_torrent(block_data: schemas.BlockTorrent):
     validate_api_password(block_data.api_password)
     torrent_stream = await TorrentStreams.get(block_data.info_hash)
     if not torrent_stream:
-        raise HTTPException(status_code=404, detail="Torrent not found.")
-    if torrent_stream.is_blocked:
+        return {
+            "status": f"Torrent {block_data.info_hash} is already deleted / not found."
+        }
+    if block_data.action == "block" and torrent_stream.is_blocked:
         return {"status": f"Torrent {block_data.info_hash} is already blocked."}
-    torrent_stream.is_blocked = True
     try:
-        await torrent_stream.save()
+        if block_data.action == "delete":
+            await torrent_stream.delete()
+        else:
+            torrent_stream.is_blocked = True
+            await torrent_stream.save()
         # Send Telegram notification
         if settings.telegram_bot_token:
             metadata = await MediaFusionMetaData.get_motor_collection().find_one(
@@ -641,6 +646,7 @@ async def block_torrent(block_data: schemas.BlockTorrent):
             poster = f"{settings.poster_host_url}/poster/{meta_type}/{torrent_stream.meta_id}.jpg"
             await telegram_notifier.send_block_notification(
                 info_hash=block_data.info_hash,
+                action=block_data.action,
                 meta_id=torrent_stream.meta_id,
                 title=title,
                 meta_type=meta_type,
@@ -653,7 +659,9 @@ async def block_torrent(block_data: schemas.BlockTorrent):
             status_code=500, detail=f"Failed to block torrent: {str(e)}"
         )
 
-    return {"status": f"Torrent {block_data.info_hash} has been successfully blocked."}
+    return {
+        "status": f"Torrent {block_data.info_hash} has been successfully {'blocked' if block_data.action == 'block' else 'deleted'}."
+    }
 
 
 @router.post("/migrate_id", tags=["scraper"])

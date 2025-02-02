@@ -452,6 +452,7 @@ class KodiConfig(BaseModel):
 
 class BlockTorrent(BaseModel):
     info_hash: str
+    action: Literal["block", "delete"]
     api_password: str
 
 

@@ -1707,6 +1707,9 @@ async function handleBlockTorrent(apiPassword, submitBtn, loadingSpinner) {
         return;
     }
 
+    // get the action value from drop down blockTorrentAction
+    const action = document.getElementById('blockTorrentAction').value.trim();
+
     try {
         const response = await fetch('/scraper/block_torrent', {
             method: 'POST',
@@ -1715,6 +1718,7 @@ async function handleBlockTorrent(apiPassword, submitBtn, loadingSpinner) {
             },
             body: JSON.stringify({
                 info_hash: infoHash,
+                action: action,
                 api_password: apiPassword
             })
         });
