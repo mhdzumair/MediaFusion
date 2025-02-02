@@ -538,12 +538,17 @@ function showFileAnnotationModal(files) {
                     };
 
                     if (isSportsContent) {
+                        const releaseDate = document.getElementById(`release-${index}`).value;
+                        if (releaseDate) {
+                            const dateParts = releaseDate.split('/');
+                            const date = new Date(`${dateParts[1]}/${dateParts[0]}/${dateParts[2]}`);
+                            baseData.release_date = date.toISOString().split('T')[0]
+                        }
                         annotatedFiles.push({
                             ...baseData,
                             title: document.getElementById(`title-${index}`).value || null,
                             overview: document.getElementById(`overview-${index}`).value || null,
                             thumbnail: document.getElementById(`thumbnail-${index}`).value || null,
-                            release_date: document.getElementById(`release-${index}`).value || null,
                         });
                     } else {
                         annotatedFiles.push(baseData);
@@ -1397,8 +1402,18 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
     // Add basic metadata to formData
     formData.append('meta_type', metaType);
     formData.append('torrent_type', torrentType);
-    formData.append('created_at', document.getElementById('createdAt').value);
     formData.append('uploader', document.getElementById('uploaderName').value.trim() || 'Anonymous');
+
+    const createdAt = document.getElementById('createdAt').value;
+    if (createdAt) {
+        const dateParts = createdAt.split('/');
+        const date = new Date(`${dateParts[1]}/${dateParts[0]}/${dateParts[2]}`);
+        formData.append('created_at', date.toISOString().split('T')[0])
+    } else {
+        showNotification("Release Date is required.", 'error');
+        resetButton(submitBtn, loadingSpinner);
+        return;
+    }
 
     // Add content metadata
     if (!isSportsContent && document.getElementById('torrentImdbId')?.value) {
