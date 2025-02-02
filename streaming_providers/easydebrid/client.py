@@ -19,17 +19,11 @@ class EasyDebrid(DebridClient):
     async def disable_access_token(self):
         pass
 
+    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
+        pass
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await super().__aexit__(exc_type, exc_val, exc_tb)
-
-    async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
-        error_code = error_data.get("error")
-        match error_code:
-            case "Unsupported link for direct download.":
-                raise ProviderException(
-                    "Unsupported link for direct download.",
-                    "unsupported_direct_download.mp4",
-                )
 
     async def _make_request(
         self,
@@ -40,6 +34,7 @@ class EasyDebrid(DebridClient):
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        is_http_response: bool = False,
         retry_count: int = 0,
     ) -> dict:
         params = params or {}
@@ -61,7 +56,24 @@ class EasyDebrid(DebridClient):
             "POST",
             "/link/generate",
             json={"url": magnet},
+            is_expected_to_fail=True, # If it's not cached, we expect it to fail.
         )
+        return response
+
+    async def add_torrent_file(
+        self, magnet
+    ):
+        response = await self._make_request(
+            "POST",
+            "/link/request",
+            json={"url": magnet},
+        )
+        # Returns "{"success" : True}" if added
+        if not response.get("success", ""):
+            raise ProviderException(
+                f"Failed to add magnet link to EasyDebrid {response}",
+                "transfer_error.mp4",
+            )
         return response
 
     async def get_torrent_info(self, torrent_id: str) -> dict:
