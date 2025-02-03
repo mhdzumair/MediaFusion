@@ -44,7 +44,7 @@ class TelegramNotifier:
         meta_id_data = (
             f"*IMDb*: [{meta_id}](https://www.imdb.com/title/{meta_id}/)\n"
             if meta_id.startswith("tt")
-            else f"Meta ID: {meta_id}\n"
+            else f"Meta ID: `{meta_id}`\n"
         )
 
         # Build the message
@@ -60,7 +60,7 @@ class TelegramNotifier:
             f"*Type*: {torrent_type}\n"
             f"*Poster*: [View]({poster})\n"
             f"*Stremio Links*:\n"
-            f"   - *APP*: `stremio://detail/{meta_type}/{meta_id}/{meta_id}`\n"
+            f"   - *APP*: `stremio:///detail/{meta_type}/{meta_id}/{meta_id}`\n"
             f"   - *WEB*: [View](https://web.stremio.com/#/detail/{meta_type}/{meta_id}/{meta_id})"
         )
 
