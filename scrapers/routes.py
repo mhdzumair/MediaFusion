@@ -762,13 +762,14 @@ async def analyze_torrent(
                 "resolution",
                 "quality",
                 "codec",
-                "audio",
                 "hdr",
                 "group",
                 "extension",
                 "container",
             ]:
-                title = title.replace(torrent_data.get(key, ""), "")
+                replacer = torrent_data.get(key, "")
+                if replacer and isinstance(replacer, str):
+                    title = title.replace(replacer, "")
 
             # extract date from title. ex: 2021.05.01 | 2021-05-01 | 2021_05_01 | 01.05.2021 | 01-05-2021 | 01_05_2021
             date_str = ""
