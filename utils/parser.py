@@ -2,6 +2,8 @@ import asyncio
 import functools
 import json
 import logging
+
+import PTT
 import math
 import re
 from datetime import datetime, timezone
@@ -33,6 +35,8 @@ async def filter_and_sort_streams(
     user_data: UserData,
     stremio_video_id: str,
     user_ip: str | None = None,
+    season: int = None,
+    episode: int = None,
 ) -> tuple[list[TorrentStreams], dict]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
@@ -73,6 +77,18 @@ async def filter_and_sort_streams(
             ):
                 filtered_reasons["Requires Private Tracker Support"] += 1
                 continue
+        # It's a series if season and episode is passed in
+        if season and episode:
+            parsed_title = PTT.parse_title(stream.torrent_name)
+            seasons = parsed_title.get("seasons")
+            episodes = parsed_title.get("episodes")
+
+            if season not in seasons:
+                continue
+
+            if episodes and episode not in episodes:
+                continue
+
         # Create a copy of the stream model to avoid modifying the original
         stream = stream.model_copy()
         # Add normalized attributes as dynamic properties
@@ -262,7 +278,7 @@ async def parse_stream_data(
         f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
     )
     streams, filtered_reasons = await filter_and_sort_streams(
-        streams, user_data, stremio_video_id, user_ip
+        streams, user_data, stremio_video_id, user_ip, season, episode
     )
 
     if not streams:

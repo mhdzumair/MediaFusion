@@ -136,10 +136,10 @@ class ZileanScraper(BaseScraper):
 
                 torrent_data = PTT.parse_title(stream["raw_title"], True)
                 if not self.validate_title_and_year(
-                    torrent_data,
-                    metadata,
-                    catalog_type,
-                    stream["raw_title"],
+                        torrent_data,
+                        metadata,
+                        catalog_type,
+                        stream["raw_title"],
                 ):
                     return None
 
@@ -172,21 +172,25 @@ class ZileanScraper(BaseScraper):
                         self.metrics.record_skip("Missing season info")
                         return None
 
-                    if episodes := torrent_data.get("episodes"):
+                    if season not in seasons:
+                        self.metrics.record_skip("Season not found")
+                        return None
+
+                    episodes = torrent_data.get("episodes")
+                    if episodes and episode not in episodes:
+                        self.metrics.record_skip("Episode not found")
+                        return None
+
+                    if episodes:
                         episode_data = [
-                            EpisodeFile(
-                                season_number=seasons[0], episode_number=episode_number
-                            )
-                            for episode_number in episodes
-                        ]
-                    elif seasons:
-                        episode_data = [
-                            EpisodeFile(season_number=season_number, episode_number=1)
-                            for season_number in seasons
+                            EpisodeFile(season_number=seasons[0], episode_number=ep_num)
+                            for ep_num in episodes
                         ]
                     else:
-                        self.metrics.record_skip("Missing episode info")
-                        return None
+                        episode_data = [
+                            EpisodeFile(season_number=season_num, episode_number=1)
+                            for season_num in seasons
+                        ]
 
                     torrent_stream.episode_files = episode_data
 

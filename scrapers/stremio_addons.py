@@ -102,9 +102,17 @@ class StremioScraper(BaseScraper):
                 stream = self.create_torrent_stream(stream_data, parsed_data, metadata)
 
                 if catalog_type == "series":
-                    if not self.process_series_data(
-                        stream, parsed_data, season, episode, stream_data
-                    ):
+                    episodes = parsed_data.get("episodes")
+
+                    if season not in episodes:
+                        self.metrics.record_skip("Season not found")
+                        return None
+
+                    if episode not in episodes:
+                        self.metrics.record_skip("Episode not found")
+                        return None
+
+                    if not self.process_series_data(stream, parsed_data, season, episode, stream_data):
                         return None
 
                 # Record metrics for successful processing

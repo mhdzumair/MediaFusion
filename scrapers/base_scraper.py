@@ -1316,8 +1316,17 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
 
             if catalog_type == "series":
                 seasons = parsed_data.get("seasons")
+
+                if season not in seasons:
+                    self.metrics.record_skip("Season not found")
+                    return None
+
+                if (episodes := parsed_data.get("episodes")) and episode not in episodes:
+                    self.metrics.record_skip("Episode not found")
+                    return None
+
                 episode_files = []
-                if parsed_data.get("file_data"):
+                if file_data := parsed_data.get("file_data"):
                     episode_files = [
                         EpisodeFile(
                             season_number=file["season_number"],
@@ -1326,17 +1335,16 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             size=file.get("size"),
                             file_index=file.get("index"),
                         )
-                        for file in parsed_data["file_data"]
+                        for file in file_data
                         if file.get("episode_number") and file.get("season_number")
                     ]
-                elif episodes := parsed_data.get("episodes") and seasons:
+                elif episodes and seasons:
                     episode_files = [
                         EpisodeFile(season_number=seasons[0], episode_number=ep)
                         for ep in episodes
                     ]
-                elif parsed_data.get("date"):
-                    # search with date for episode
-                    episode_date = datetime.strptime(parsed_data["date"], "%Y-%m-%d")
+                elif date := parsed_data.get("date"):
+                    episode_date = datetime.strptime(date, "%Y-%m-%d")
                     imdb_episode = await get_episode_by_date(
                         metadata.id,
                         parsed_data["title"],
@@ -1355,7 +1363,6 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             )
                         ]
                 else:
-                    # if no episode data found, then try to get torrent metadata from trackers
                     torrent_data = await info_hashes_to_torrent_metadata(
                         [parsed_data["info_hash"]], parsed_data["announce_list"]
                     )
@@ -1373,7 +1380,6 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             if file.get("episode_number") and file.get("season_number")
                         ]
                     elif seasons:
-                        # Some pack contains few episodes. We can't determine exact episode number
                         episode_files = [
                             EpisodeFile(season_number=season_number, episode_number=1)
                             for season_number in seasons
