@@ -25,8 +25,8 @@ class DLHDScheduleService:
         self.m3u8_base_url = config_manager.get_scraper_config(
             self.name, "m3u8_base_url"
         )
-        self.m3u8_sd_base_url = config_manager.get_scraper_config(
-            self.name, "m3u8_sd_base_url"
+        self.server_lookup_url = config_manager.get_scraper_config(
+            self.name, "server_lookup_url"
         )
         self.referer = config_manager.get_scraper_config(self.name, "referer")
         self.gmt = pytz.timezone("Etc/GMT")
@@ -182,13 +182,20 @@ class DLHDScheduleService:
         return await MediaFusionTVMetaData.find_one({"title": channel_name})
 
     def create_stream(
-        self, channel_id: str, channel_name: str, meta_id: str, is_sd: bool = False
+        self,
+        server_key: str,
+        channel_id: str,
+        channel_name: str,
+        meta_id: str,
+        server_type: str,
     ) -> TVStreams:
         """Create a new stream for a channel"""
-        if is_sd:
-            url = self.m3u8_sd_base_url.format(channel_id=channel_id)
-        else:
-            url = self.m3u8_base_url.format(channel_id=channel_id)
+        url = self.m3u8_base_url.format(
+            server_key=server_key,
+            server_type=server_type,
+            channel_id=channel_id,
+        )
+
         return TVStreams(
             meta_id=meta_id,
             name=channel_name,
@@ -209,7 +216,12 @@ class DLHDScheduleService:
         )
 
     async def _process_single_channel(
-        self, channel: dict, meta_id: str, is_sd: bool, stats: dict
+        self,
+        client: httpx.AsyncClient,
+        channel: dict,
+        meta_id: str,
+        is_sd: bool,
+        stats: dict,
     ) -> Optional[list[TVStreams]]:
         """Process a single channel and create/find its streams"""
         try:
@@ -243,10 +255,41 @@ class DLHDScheduleService:
                         f"Error finding existing streams for channel {channel_name}: {str(e)}"
                     )
 
+            server_type = "bet" if is_sd else "premium"
+            server_url = self.server_lookup_url.format(
+                server_type=server_type, channel_id=channel_id
+            )
+
+            server_response = await client.get(
+                server_url,
+                headers={
+                    "Referer": f"{self.referer}premiumtv/daddylivehd.php?id={channel_id}"
+                },
+            )
+
+            if (
+                server_response.status_code != 200
+                or server_response.headers.get("Content-Type") != "application/json"
+            ):
+                logging.error(
+                    f"Failed to fetch server data for channel: {channel_name} ({channel_id})"
+                )
+                stats["failed"] += 1
+                return None
+
+            server_data = server_response.json()
+            server_key = server_data.get("server_key")
+            if not server_key:
+                logging.error(
+                    f"Failed to find server key for channel: {channel_name} ({channel_id})"
+                )
+                stats["failed"] += 1
+                return None
+
             # Create new stream if no existing streams found or if it's SD
             try:
                 stream = self.create_stream(
-                    channel_id, channel_name, meta_id, is_sd=is_sd
+                    server_key, channel_id, channel_name, meta_id, server_type
                 )
                 stats["created"] += 1
                 return [stream]
@@ -270,6 +313,7 @@ class DLHDScheduleService:
 
         if not channels:  # Early return if channels is empty
             return streams
+        client = httpx.AsyncClient(proxy=settings.requests_proxy_url)
 
         try:
             if isinstance(channels, dict):
@@ -282,7 +326,7 @@ class DLHDScheduleService:
 
             for channel in channel_items:
                 channel_streams = await self._process_single_channel(
-                    channel, meta_id, is_sd, stats
+                    client, channel, meta_id, is_sd, stats
                 )
                 if channel_streams:
                     streams.extend(channel_streams)
@@ -290,6 +334,7 @@ class DLHDScheduleService:
         except Exception as e:
             logging.error(f"Error processing channel list: {str(e)}")
 
+        await client.aclose()
         return streams
 
     async def get_event_streams(self, event: dict, meta_id: str) -> list[TVStreams]:

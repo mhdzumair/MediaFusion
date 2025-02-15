@@ -1,7 +1,7 @@
 import logging
-from datetime import datetime
 
 import scrapy
+from scrapy.utils.defer import maybe_deferred_to_future
 from thefuzz import fuzz
 
 from utils.config import config_manager
@@ -28,6 +28,9 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
         self.category_map = config_manager.get_scraper_config(
             self.name, "category_mapping"
         )
+        self.server_lookup_url = config_manager.get_scraper_config(
+            self.name, "server_lookup_url"
+        )
         self.channels_data = {}  # Will store IPTV-org channels data
         self.min_match_ratio = 85  # Minimum ratio for fuzzy matching
 
@@ -42,7 +45,6 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
     def parse_iptv_org_data(self, response):
         """Parse IPTV-org channels data and store it."""
         channels = response.json()
-        current_time = datetime.now()
 
         # Filter out closed channels and store active ones
         for channel in channels:
@@ -94,7 +96,7 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
 
         return best_match
 
-    def parse_channels(self, response):
+    async def parse_channels(self, response):
         """Parse the main channels page."""
         for channel_div in response.css("div.grid-item"):
             channel_link = channel_div.css("a")
@@ -131,8 +133,39 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
                 country = None
                 logo = None
 
+            # fetch server url data from server_lookup_url
+            server_type = "premium"
+            server_url = self.server_lookup_url.format(
+                server_type=server_type, channel_id=channel_id
+            )
+            server_request = scrapy.Request(
+                server_url,
+                headers={"Referer": f"{self.referer}{server_type}tv/daddylivehd.php?id={channel_id}"},
+            )
+            server_response = await maybe_deferred_to_future(
+                self.crawler.engine.download(server_request)
+            )
+            if (
+                server_response.status != 200
+                and server_response.headers.get("Content-Type") != "application/json"
+            ):
+                logging.error(
+                    f"Failed to fetch server data for channel: {title} ({channel_id})"
+                )
+                continue
+
+            server_data = server_response.json()
+            server_key = server_data.get("server_key")
+            if not server_key:
+                logging.error(
+                    f"Failed to find server key for channel: {title} ({channel_id})"
+                )
+                continue
+
             # Build stream URL
-            stream_url = self.m3u8_base_url.format(channel_id=channel_id)
+            stream_url = self.m3u8_base_url.format(
+                server_key=server_key, server_type=server_type, channel_id=channel_id
+            )
 
             # Create item with required fields for LiveStreamResolverPipeline
             item = {

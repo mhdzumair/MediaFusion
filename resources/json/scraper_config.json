@@ -276,9 +276,8 @@
   "dlhd": {
 	"channels_url": "https://thedaddy.to/24-7-channels.php",
 	"schedule_url": "https://thedaddy.to/schedule/schedule-generated.json",
-	"server_lookup_url": "https://newembedplay.xyz/server_lookup.php?channel_id={channel_id}",
-	"m3u8_base_url": "https://windnew.iosplayer.ru/wind/premium{channel_id}/mono.m3u8",
-	"m3u8_sd_base_url": "https://windnew.iosplayer.ru/wind/bet{channel_id}/mono.m3u8",
+	"server_lookup_url": "https://newembedplay.xyz/server_lookup.php?channel_id={server_type}{channel_id}",
+	"m3u8_base_url": "https://{server_key}new.iosplayer.ru/{server_key}/{server_type}{channel_id}/mono.m3u8",
 	"key_url": "https://key.keylocking.ru",
 	"referer": "https://newembedplay.xyz/",
 	"category_mapping": {
