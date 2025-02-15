@@ -1,7 +1,7 @@
 {
   "start_urls": {
-	"nowsports": "https://neesport.me/",
-	"nowmetv": "https://neeplay.tv/",
+	"nowsports": "https://neesports.online/",
+	"nowmetv": "https://neeplay.me/",
 	"tamilultra": "https://tamilultratv.co.in/",
 	"tamilbulb": "https://tamilbulb.tv/",
 	"tgx": [
@@ -11,7 +11,7 @@
 	]
   },
   "tamil_blasters": {
-	"homepage": "https://www.1tamilblasters.party",
+	"homepage": "https://www.1tamilblasters.cool",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
@@ -56,7 +56,7 @@
 	}
   },
   "tamilmv": {
-	"homepage": "https://www.1tamilmv.re",
+	"homepage": "https://www.1tamilmv.bike",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": [
@@ -276,10 +276,11 @@
   "dlhd": {
 	"channels_url": "https://thedaddy.to/24-7-channels.php",
 	"schedule_url": "https://thedaddy.to/schedule/schedule-generated.json",
-	"m3u8_base_url": "https://xyzdddd.mizhls.ru/lb/premium{channel_id}/index.m3u8",
-	"m3u8_sd_base_url": "https://xyzdddd.mizhls.ru/lb/bet{channel_id}/index.m3u8",
+	"server_lookup_url": "https://newembedplay.xyz/server_lookup.php?channel_id={channel_id}",
+	"m3u8_base_url": "https://windnew.iosplayer.ru/wind/premium{channel_id}/mono.m3u8",
+	"m3u8_sd_base_url": "https://windnew.iosplayer.ru/wind/bet{channel_id}/mono.m3u8",
 	"key_url": "https://key.keylocking.ru",
-	"referer": "https://cookiewebplay.xyz/",
+	"referer": "https://newembedplay.xyz/",
 	"category_mapping": {
 	  "Tv Shows": "Other Sports",
 	  "Soccer": "Football",
