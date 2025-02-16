@@ -1327,7 +1327,8 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                             file_index=file.get("index"),
                         )
                         for file in parsed_data["file_data"]
-                        if file.get("episode_number") and file.get("season_number")
+                        if file.get("episode_number") is not None
+                        and file.get("season_number") is not None
                     ]
                 elif episodes := parsed_data.get("episodes") and seasons:
                     episode_files = [
@@ -1370,7 +1371,8 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
                                 file_index=file.get("index"),
                             )
                             for file in torrent_file_metadata.get("file_data", [])
-                            if file.get("episode_number") and file.get("season_number")
+                            if file.get("episode_number") is not None
+                            and file.get("season_number") is not None
                         ]
                     elif seasons:
                         # Some pack contains few episodes. We can't determine exact episode number

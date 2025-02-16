@@ -378,10 +378,14 @@ async def add_torrent(
         torrent_data["file_data"] = annotated_files
         # Update seasons and episodes based on annotations
         seasons = {
-            file["season_number"] for file in annotated_files if file["season_number"]
+            file["season_number"]
+            for file in annotated_files
+            if file["season_number"] is not None
         }
         episodes = {
-            file["episode_number"] for file in annotated_files if file["episode_number"]
+            file["episode_number"]
+            for file in annotated_files
+            if file["episode_number"] is not None
         }
         torrent_data["seasons"] = list(seasons)
         torrent_data["episodes"] = list(episodes)
@@ -583,7 +587,8 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
             thumbnail=file.get("thumbnail"),
         )
         for file in parsed_data["file_data"]
-        if file.get("season_number") and file.get("episode_number")
+        if file.get("season_number") is not None
+        and file.get("episode_number") is not None
     ]
 
     # Skip the torrent if no episode data is available
