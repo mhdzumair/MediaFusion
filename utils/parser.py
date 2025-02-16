@@ -320,8 +320,8 @@ async def parse_stream_data(
 
             if show_full_torrent_name:
                 torrent_name = (
-                    f"{stream_data.torrent_name}/{episode_data.title or episode_data.filename or ''}"
-                    if episode_data
+                    f"{stream_data.torrent_name} ┈➤ {episode_data.filename}"
+                    if episode_data and episode_data.filename
                     else stream_data.torrent_name
                 )
                 torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(

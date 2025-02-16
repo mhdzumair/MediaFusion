@@ -43,7 +43,7 @@ class MediafusionScraper(StremioScraper):
 
     def parse_stream_title(self, stream: dict) -> dict:
         description = stream["description"].splitlines()
-        torrent_name = description[0].removeprefix("📂 ")
+        torrent_name = description[0].removeprefix("📂 ").split(" ┈➤ ")[0]
         metadata = PTT.parse_title(torrent_name, True)
         source = stream["name"].split()[0].title()
 
