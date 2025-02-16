@@ -14,6 +14,7 @@ async def get_video_url_from_easydebrid(
     user_data: UserData,
     filename: str,
     user_ip: str,
+    season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs: Any,
 ) -> str:
@@ -34,6 +35,7 @@ async def get_video_url_from_easydebrid(
         file_index = await select_file_index_from_torrent(
             torrent_info,
             filename,
+            season,
             episode,
             name_key="filename",
         )
