@@ -274,8 +274,8 @@
 	}
   },
   "dlhd": {
-	"channels_url": "https://thedaddy.to/24-7-channels.php",
-	"schedule_url": "https://thedaddy.to/schedule/schedule-generated.json",
+	"channels_url": "https://daddylive.mp/24-7-channels.php",
+	"schedule_url": "https://daddylive.mp/schedule/schedule-generated.json",
 	"server_lookup_url": "https://newembedplay.xyz/server_lookup.php?channel_id={server_type}{channel_id}",
 	"m3u8_base_url": "https://{server_key}new.iosplayer.ru/{server_key}/{server_type}{channel_id}/mono.m3u8",
 	"key_url": "https://key.keylocking.ru",
