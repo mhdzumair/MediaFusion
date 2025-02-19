@@ -14,7 +14,7 @@ services:
       interval: 1m
       timeout: 10s
       retries: 5
-      start_period: 10s
+      start_period: 20m
     restart: unless-stopped
     networks:
       - mediafusion-network
