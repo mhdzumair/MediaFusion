@@ -671,13 +671,6 @@ async def block_torrent(block_data: schemas.BlockTorrent):
 
 @router.post("/migrate_id", tags=["scraper"])
 async def migrate_id(migrate_data: schemas.MigrateID):
-    # Validate ID formats
-    if not (
-        migrate_data.mediafusion_id.startswith("mf")
-        and migrate_data.imdb_id.startswith("tt")
-    ):
-        raise_error("Invalid mediafusion or IMDb ID.")
-
     # First verify the IMDb metadata exists
     if migrate_data.media_type == "series":
         metadata = await get_series_data_by_id(migrate_data.imdb_id)
