@@ -1,6 +1,6 @@
 services:
   mediafusion:
-    image: mhdzumair/mediafusion:4.3.21
+    image: mhdzumair/mediafusion:4.3.22
     ports:
       - "8000:8000"
     env_file: .env
