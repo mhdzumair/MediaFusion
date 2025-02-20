@@ -186,92 +186,111 @@ async def get_torrents_by_uploaders(response: Response):
     return uploader_stats
 
 
-@metrics_router.get("/torrents/uploaders/weekly", tags=["metrics"])
-async def get_weekly_top_uploaders(response: Response):
+@metrics_router.get("/torrents/uploaders/weekly/{week_date}", tags=["metrics"])
+async def get_weekly_top_uploaders(week_date: str, response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    # Calculate the start of the current week (Monday)
-    today = datetime.now(tz=timezone.utc)
-    start_of_week = today - timedelta(days=today.weekday())
-    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        # Parse the input date
+        selected_date = datetime.strptime(week_date, "%Y-%m-%d")
+        selected_date = selected_date.replace(tzinfo=timezone.utc)
 
-    # Get raw aggregation results
-    raw_results = await TorrentStreams.aggregate(
-        [
-            {
-                "$match": {
-                    "source": "Contribution Stream",
-                    "$or": [
-                        {"created_at": {"$gte": start_of_week}},
-                        {"uploaded_at": {"$gte": start_of_week}},
-                    ],
-                    "is_blocked": {"$ne": True},
-                }
-            },
-            {
-                "$group": {
-                    "_id": "$uploader",
-                    "count": {"$sum": 1},
-                    "latest_upload": {"$max": "$created_at"},
-                }
-            },
-        ]
-    ).to_list()
+        # Calculate the start of the week (Monday) for the selected date
+        start_of_week = selected_date - timedelta(days=selected_date.weekday())
+        start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Process and clean the results
-    processed_results = []
-    anonymous_total = 0
-    anonymous_latest = None
+        # Calculate end of week
+        end_of_week = start_of_week + timedelta(days=7)
 
-    for stat in raw_results:
-        uploader_name = stat["_id"]
-        count = stat["count"]
-        latest_upload = stat["latest_upload"]
+        # Get raw aggregation results
+        raw_results = await TorrentStreams.aggregate(
+            [
+                {
+                    "$match": {
+                        "source": "Contribution Stream",
+                        "$or": [
+                            {
+                                "uploaded_at": {
+                                    "$gte": start_of_week,
+                                    "$lt": end_of_week,
+                                }
+                            },
+                        ],
+                        "is_blocked": {"$ne": True},
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$uploader",
+                        "count": {"$sum": 1},
+                        "latest_upload": {"$max": "$created_at"},
+                    }
+                },
+            ]
+        ).to_list()
 
-        # Skip invalid entries
-        if count <= 0:
-            continue
+        # Process and clean the results (keeping existing logic)
+        processed_results = []
+        anonymous_total = 0
+        anonymous_latest = None
 
-        # Combine all anonymous-like entries
-        if (
-            uploader_name is None
-            or uploader_name.strip() == ""
-            or uploader_name.lower() == "anonymous"
-        ):
-            anonymous_total += count
-            if anonymous_latest is None or (
-                latest_upload and latest_upload > anonymous_latest
+        for stat in raw_results:
+            uploader_name = stat["_id"]
+            count = stat["count"]
+            latest_upload = stat["latest_upload"]
+
+            if count <= 0:
+                continue
+
+            if (
+                uploader_name is None
+                or uploader_name.strip() == ""
+                or uploader_name.lower() == "anonymous"
             ):
-                anonymous_latest = latest_upload
-        else:
+                anonymous_total += count
+                if anonymous_latest is None or (
+                    latest_upload and latest_upload > anonymous_latest
+                ):
+                    anonymous_latest = latest_upload
+            else:
+                processed_results.append(
+                    {
+                        "name": uploader_name.strip(),
+                        "count": count,
+                        "latest_upload": (
+                            latest_upload.strftime("%Y-%m-%d")
+                            if latest_upload
+                            else None
+                        ),
+                    }
+                )
+
+        if anonymous_total > 0:
             processed_results.append(
                 {
-                    "name": uploader_name.strip(),
-                    "count": count,
+                    "name": "Anonymous",
+                    "count": anonymous_total,
                     "latest_upload": (
-                        latest_upload.strftime("%Y-%m-%d") if latest_upload else None
+                        anonymous_latest.strftime("%Y-%m-%d")
+                        if anonymous_latest
+                        else None
                     ),
                 }
             )
 
-    # Add anonymous entry if we have any anonymous uploads
-    if anonymous_total > 0:
-        processed_results.append(
-            {
-                "name": "Anonymous",
-                "count": anonymous_total,
-                "latest_upload": (
-                    anonymous_latest.strftime("%Y-%m-%d") if anonymous_latest else None
-                ),
-            }
-        )
+        final_results = sorted(
+            processed_results, key=lambda x: x["count"], reverse=True
+        )[:20]
 
-    # Sort by count and limit to top 20
-    final_results = sorted(processed_results, key=lambda x: x["count"], reverse=True)[
-        :20
-    ]
+        return {
+            "week_start": start_of_week.strftime("%Y-%m-%d"),
+            "week_end": end_of_week.strftime("%Y-%m-%d"),
+            "uploaders": final_results,
+        }
 
-    return {
-        "week_start": start_of_week.strftime("%Y-%m-%d"),
-        "uploaders": final_results,
-    }
+    except ValueError as e:
+        return {
+            "error": f"Invalid date format. Please use YYYY-MM-DD format. Details: {str(e)}"
+        }
+    except Exception as e:
+        return {"error": f"An error occurred: {str(e)}"}
