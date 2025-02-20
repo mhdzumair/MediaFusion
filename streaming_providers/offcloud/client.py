@@ -4,13 +4,11 @@ from typing import Optional, List
 
 import aiohttp
 
-
 from db.models import TorrentStreams
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
     select_file_index_from_torrent,
-    update_torrent_streams_metadata,
 )
 
 
@@ -151,7 +149,6 @@ class OffCloud(DebridClient):
         filename: Optional[str],
         season: Optional[int],
         episode: Optional[int],
-        background_tasks,
     ) -> str:
         if not torrent_info["isDirectory"]:
             return f"https://{torrent_info['server']}.offcloud.com/cloud/download/{request_id}/{torrent_info['fileName']}"
@@ -160,24 +157,14 @@ class OffCloud(DebridClient):
         files_data = [{"name": path.basename(link), "link": link} for link in links]
 
         file_index = await select_file_index_from_torrent(
-            {"files": files_data},
+            torrent_info={"files": files_data},
+            torrent_stream=stream,
             filename=filename,
             season=season,
             episode=episode,
             file_size_callback=self.update_file_sizes,
         )
 
-        if filename is None:
-            if "size" not in files_data[0]:
-                await self.update_file_sizes(files_data)
-            background_tasks.add_task(
-                update_torrent_streams_metadata,
-                torrent_stream=stream,
-                torrent_info={"files": files_data},
-                file_index=file_index,
-                season=season,
-                is_index_trustable=False,
-            )
         selected_file_url = links[file_index]
         return selected_file_url
 

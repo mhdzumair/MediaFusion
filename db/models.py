@@ -123,6 +123,8 @@ class TorrentStreams(Document):
     torrent_type: Optional[TorrentType] = TorrentType.PUBLIC
     is_blocked: Optional[bool] = False
     torrent_file: bytes | None = None
+    known_file_details: dict[str, Any] | None = None
+    annotation_requested_at: Optional[datetime] = None
 
     @after_event(Insert)
     async def update_metadata_on_create(self):

@@ -4,9 +4,9 @@ from typing import Any, Dict, List, Optional, Iterator
 
 from db.models import TorrentStreams
 from db.schemas import UserData
+from streaming_providers.easydebrid.client import EasyDebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
-from streaming_providers.easydebrid.client import EasyDebrid
 
 
 async def get_video_url_from_easydebrid(
@@ -14,6 +14,7 @@ async def get_video_url_from_easydebrid(
     user_data: UserData,
     filename: str,
     user_ip: str,
+    stream: TorrentStreams,
     season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs: Any,
@@ -33,10 +34,11 @@ async def get_video_url_from_easydebrid(
             )
 
         file_index = await select_file_index_from_torrent(
-            torrent_info,
-            filename,
-            season,
-            episode,
+            torrent_info=torrent_info,
+            torrent_stream=stream,
+            filename=filename,
+            season=season,
+            episode=episode,
             name_key="filename",
         )
         return torrent_info["files"][file_index]["url"]

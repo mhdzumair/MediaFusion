@@ -233,6 +233,16 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"Error sending fallback text message: {e}")
 
+    async def send_file_annotation_request(self, info_hash: str):
+        """Send notification to request episode annotations"""
+        if not self.enabled:
+            logger.warning("Telegram notifications are disabled. Check bot token.")
+            return
+
+        message = f"📝 File Annotation Requested\n\n" f"*Info Hash*: `{info_hash}`\n"
+
+        await self._send_text_only_message(message)
+
 
 # Create a singleton instance
 telegram_notifier = TelegramNotifier()

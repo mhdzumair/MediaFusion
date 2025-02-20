@@ -1,11 +1,11 @@
 import asyncio
+import logging
+import math
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional, Dict, List, Any, Tuple
 from enum import Enum
-import math
-import logging
+from typing import Optional, Dict, List, Any, Tuple, AsyncGenerator
 
 from aioseedrcc import Seedr
 from aioseedrcc.exception import SeedrException
@@ -30,7 +30,7 @@ def clean_filename(name: Optional[str], replace: str = "") -> str:
 
 
 @asynccontextmanager
-async def get_seedr_client(user_data: UserData) -> Seedr:
+async def get_seedr_client(user_data: UserData) -> AsyncGenerator[Seedr, Any]:
     """Context manager that provides a Seedr client instance."""
     try:
         async with Seedr(token=user_data.streaming_provider.token) as seedr:
@@ -232,7 +232,11 @@ async def get_video_url_from_seedr(
         # Get file details
         folder_content = await get_files_from_folder(seedr, data["id"])
         file_index = await select_file_index_from_torrent(
-            {"files": folder_content}, clean_filename(filename), season, episode
+            torrent_info={"files": folder_content},
+            torrent_stream=stream,
+            filename=clean_filename(filename),
+            season=season,
+            episode=episode,
         )
 
         selected_file = folder_content[file_index]

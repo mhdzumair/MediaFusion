@@ -1,14 +1,11 @@
 from typing import Optional
 
-from fastapi import BackgroundTasks
-
 from db.models import TorrentStreams
 from db.schemas import UserData
 from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
     select_file_index_from_torrent,
-    update_torrent_streams_metadata,
 )
 
 
@@ -84,7 +81,6 @@ async def wait_for_download_and_get_link(
     episode,
     max_retries,
     retry_interval,
-    background_tasks,
 ):
     torrent_info = await ad_client.wait_for_status(
         torrent_id, "Ready", max_retries, retry_interval
@@ -92,21 +88,13 @@ async def wait_for_download_and_get_link(
     files_data = {"files": flatten_files(torrent_info["files"])}
 
     file_index = await select_file_index_from_torrent(
-        files_data,
-        filename,
-        season,
-        episode,
+        torrent_info=files_data,
+        torrent_stream=stream,
+        filename=filename,
+        season=season,
+        episode=episode,
+        is_filename_trustable=True,
     )
-
-    if filename is None:
-        background_tasks.add_task(
-            update_torrent_streams_metadata,
-            torrent_stream=stream,
-            torrent_info=files_data,
-            file_index=file_index,
-            season=season,
-            is_index_trustable=False,
-        )
 
     response = await ad_client.create_download_link(
         files_data["files"][file_index]["link"]
@@ -121,7 +109,6 @@ async def get_video_url_from_alldebrid(
     stream: TorrentStreams,
     filename: Optional[str],
     user_ip: str,
-    background_tasks: BackgroundTasks,
     season: Optional[int] = None,
     episode: Optional[int] = None,
     max_retries=5,
@@ -146,7 +133,6 @@ async def get_video_url_from_alldebrid(
             episode,
             max_retries,
             retry_interval,
-            background_tasks,
         )
 
 

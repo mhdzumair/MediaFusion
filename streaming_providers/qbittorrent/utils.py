@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from os import path
-from typing import Optional
+from typing import Optional, AsyncGenerator, Any
 from urllib.parse import urljoin, urlparse, quote
 
 from aiohttp import (
@@ -127,6 +127,7 @@ async def find_file_in_folder_tree(
     webdav: WebDavClient,
     user_data: UserData,
     info_hash: str,
+    stream: TorrentStreams,
     filename: Optional[str],
     season: Optional[int],
     episode: Optional[int],
@@ -145,14 +146,20 @@ async def find_file_in_folder_tree(
         return None
 
     selected_file_index = await select_file_index_from_torrent(
-        {"files": files}, filename, season, episode
+        torrent_info={"files": files},
+        torrent_stream=stream,
+        filename=filename,
+        season=season,
+        episode=episode,
+        is_filename_trustable=True,
+        is_index_trustable=True,
     )
     selected_file = files[selected_file_index]
     return selected_file
 
 
 @asynccontextmanager
-async def initialize_qbittorrent(user_data: UserData) -> APIClient:
+async def initialize_qbittorrent(user_data: UserData) -> AsyncGenerator[APIClient, Any]:
     async with ClientSession(
         cookie_jar=CookieJar(unsafe=True), timeout=ClientTimeout(total=15)
     ) as session:
@@ -262,7 +269,7 @@ async def retrieve_or_download_file(
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        webdav, user_data, info_hash, filename, season, episode
+        webdav, user_data, info_hash, stream, filename, season, episode
     )
     if not selected_file:
         await set_qbittorrent_preferences(qbittorrent, stream.torrent_type)
@@ -273,7 +280,7 @@ async def retrieve_or_download_file(
             qbittorrent, info_hash, play_video_after, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            webdav, user_data, info_hash, filename, season, episode
+            webdav, user_data, info_hash, stream, filename, season, episode
         )
         if not selected_file:
             raise ProviderException(

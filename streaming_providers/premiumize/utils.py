@@ -57,6 +57,7 @@ async def get_video_url_from_premiumize(
     user_ip: str,
     stream: TorrentStreams,
     filename: Optional[str],
+    season: Optional[int],
     episode: Optional[int],
     max_retries=5,
     retry_interval=5,
@@ -75,7 +76,9 @@ async def get_video_url_from_premiumize(
                     if "stream_link" in file_data
                 ]
             }
-            return await get_stream_link(torrent_info, filename, episode)
+            return await get_stream_link(
+                torrent_info, filename, stream, season, episode
+            )
 
         # Wait for file selection and then start torrent download
         torrent_info = await pm_client.wait_for_status(
@@ -91,7 +94,7 @@ async def get_video_url_from_premiumize(
                 if "video" in file_data.get("mime_type", "")
             ]
         }
-        return await get_stream_link(torrent_info, filename, episode)
+        return await get_stream_link(torrent_info, filename, stream, season, episode)
 
 
 async def fetch_downloaded_folder_data(
@@ -110,13 +113,17 @@ async def fetch_downloaded_folder_data(
 async def get_stream_link(
     torrent_info: dict[str, Any],
     filename: Optional[str],
+    stream: TorrentStreams,
+    season: Optional[int] = None,
     episode: Optional[int] = None,
 ) -> str:
     """Get the stream link from the torrent info."""
     selected_file_index = await select_file_index_from_torrent(
-        torrent_info,
-        filename,
-        episode,
+        torrent_info=torrent_info,
+        torrent_stream=stream,
+        filename=filename,
+        season=season,
+        episode=episode,
     )
     selected_file = torrent_info["files"][selected_file_index]
     return selected_file["link"]
