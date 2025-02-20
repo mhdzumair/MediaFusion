@@ -1,7 +1,5 @@
 #!/bin/bash
 
-shell
-
 echo "Running Beanie migrations..."
 pipenv run beanie migrate -uri "${MONGO_URI:-$mongo_uri}" -db mediafusion -p migrations/
 
