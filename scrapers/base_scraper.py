@@ -29,6 +29,7 @@ from db.models import (
     MediaFusionMetaData,
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.schemas import UserData
 from scrapers import torrent_info
 from scrapers.imdb_data import get_episode_by_date
 from utils.network import batch_process_with_circuit_breaker, CircuitBreaker
@@ -267,6 +268,7 @@ class BaseScraper(abc.ABC):
 
     async def scrape_and_parse(
         self,
+        user_data: UserData,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
@@ -281,7 +283,7 @@ class BaseScraper(abc.ABC):
         self.metrics.episode = episode
         try:
             result = await self._scrape_and_parse(
-                metadata, catalog_type, season, episode
+                user_data, metadata, catalog_type, season, episode
             )
             if isinstance(result, list):
                 return result
@@ -486,6 +488,7 @@ class BaseScraper(abc.ABC):
     async def parse_response(
         self,
         response: Dict[str, Any],
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
@@ -494,6 +497,7 @@ class BaseScraper(abc.ABC):
         """
         Parse the response into TorrentStreams objects.
         :param response: Response dictionary
+        :param user_data: UserData object
         :param metadata: MediaFusionMetaData object
         :param catalog_type: Catalog type (movie, series)
         :param season: Season number (for series)
@@ -504,6 +508,7 @@ class BaseScraper(abc.ABC):
 
     def get_cache_key(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: str = None,
@@ -761,6 +766,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
 
     async def _scrape_and_parse(
         self,
+        user_data: UserData,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,

@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     is_scrap_from_mediafusion: bool = False
     mediafusion_search_interval_days: int = 3
     mediafusion_url: str = "https://mediafusion.elfhosted.com"
+    mediafusion_api_password: str | None = None
     sync_debrid_cache_streams: bool = False
 
     # Zilean Settings

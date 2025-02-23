@@ -10,6 +10,7 @@ import dramatiq
 
 from db.config import settings
 from db.models import TorrentStreams, MediaFusionMetaData
+from db.schemas import UserData
 from scrapers.base_scraper import BaseScraper
 from scrapers.bt4g import BT4GScraper
 from scrapers.imdb_data import get_imdb_title_data, search_imdb, search_multiple_imdb
@@ -52,6 +53,7 @@ CACHED_DATA = [
 
 
 async def run_scrapers(
+    user_data: UserData,
     metadata: MediaFusionMetaData,
     catalog_type: str,
     season: int = None,
@@ -65,7 +67,9 @@ async def run_scrapers(
         # Create tasks for enabled scrapers
         tasks = [
             tg.create_task(
-                scraper_cls().scrape_and_parse(metadata, catalog_type, season, episode),
+                scraper_cls().scrape_and_parse(
+                    user_data, metadata, catalog_type, season, episode
+                ),
                 name=f"{scraper_cls.__name__}",
             )
             for is_enabled, scraper_cls in SCRAPERS

@@ -562,11 +562,13 @@ async def get_streams_base(
 
     # Handle live search and stream updates
     if live_search_streams:
-        scraper_args = [metadata, content_type]
-        if content_type == "series":
-            scraper_args.extend([season, episode])
-
-        new_streams = await run_scrapers(*scraper_args)
+        new_streams = await run_scrapers(
+            user_data=user_data,
+            metadata=metadata,
+            catalog_type=content_type,
+            season=season,
+            episode=episode,
+        )
         all_streams = list(set(cached_streams).union(new_streams))
 
         if new_streams:

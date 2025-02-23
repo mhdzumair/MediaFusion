@@ -82,13 +82,16 @@ class JackettScraper(IndexerBaseScraper):
     @IndexerBaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def _scrape_and_parse(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
         """Scrape and parse Jackett indexers for torrent streams"""
-        return await super()._scrape_and_parse(metadata, catalog_type, season, episode)
+        return await super()._scrape_and_parse(
+            user_data, metadata, catalog_type, season, episode
+        )
 
     async def get_healthy_indexers(self) -> List[dict]:
         """Fetch and return list of healthy Jackett indexers with their capabilities"""

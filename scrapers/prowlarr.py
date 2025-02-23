@@ -27,13 +27,16 @@ class ProwlarrScraper(IndexerBaseScraper):
     @IndexerBaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def _scrape_and_parse(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
     ) -> List[TorrentStreams]:
         """Scrape and parse Prowlarr indexers for torrent streams"""
-        return await super()._scrape_and_parse(metadata, catalog_type, season, episode)
+        return await super()._scrape_and_parse(
+            user_data, metadata, catalog_type, season, episode
+        )
 
     @property
     def live_title_search_enabled(self) -> bool:

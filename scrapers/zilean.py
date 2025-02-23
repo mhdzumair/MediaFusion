@@ -26,6 +26,7 @@ class ZileanScraper(BaseScraper):
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def _scrape_and_parse(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
@@ -90,7 +91,7 @@ class ZileanScraper(BaseScraper):
 
         try:
             streams = await self.parse_response(
-                stream_data, metadata, catalog_type, season, episode
+                stream_data, user_data, metadata, catalog_type, season, episode
             )
             return streams
         except (ScraperError, RetryError):
@@ -105,6 +106,7 @@ class ZileanScraper(BaseScraper):
     async def parse_response(
         self,
         response: List[Dict[str, Any]],
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,

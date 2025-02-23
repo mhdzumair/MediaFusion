@@ -18,6 +18,7 @@ class YTSScraper(BaseScraper):
     @BaseScraper.rate_limit(calls=2, period=timedelta(seconds=1))
     async def _scrape_and_parse(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: Optional[int] = None,
