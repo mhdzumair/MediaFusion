@@ -37,14 +37,14 @@ def remove_cache(url):
 
 def fetch_data(url, force_refresh=False):
     session = get_request_session()
-
-    if force_refresh:
-        with session.cache_disabled():
-            response = session.get(url)
-    else:
-        response = session.get(url)
-
     try:
+        if force_refresh:
+            with session.cache_disabled():
+                response = session.get(url)
+        else:
+            response = session.get(url)
+        xbmc.log(f"Response from Caching: {response.from_cache}.", xbmc.LOGINFO)
+
         response.raise_for_status()
         if "Cache-Control" in response.headers:
             cache_control = response.headers["Cache-Control"]
