@@ -1,7 +1,7 @@
 {
   "start_urls": {
-	"nowsports": "https://neesports.online/",
-	"nowmetv": "https://neeplay.me/",
+	"nowsports": "https://neesports.me/",
+	"nowmetv": "https://neelive.com/",
 	"tamilultra": "https://tamilultratv.co.in/",
 	"tamilbulb": "https://tamilbulb.tv/",
 	"tgx": [
@@ -11,7 +11,7 @@
 	]
   },
   "tamil_blasters": {
-	"homepage": "https://www.1tamilblasters.cool",
+	"homepage": "https://www.1tamilblasters.rodeo",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
@@ -56,7 +56,7 @@
 	}
   },
   "tamilmv": {
-	"homepage": "https://www.1tamilmv.bike",
+	"homepage": "https://www.1tamilmv.tel",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": [
