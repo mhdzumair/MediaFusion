@@ -14,7 +14,6 @@ from Crypto.Util.Padding import pad, unpad
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
-from utils.runtime_const import SECRET_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +151,28 @@ class CryptoUtils:
         except Exception as e:
             logger.error(f"Failed to decrypt user data: {e}")
             raise ValueError("Invalid user data")
+
+    def decode_user_data(self, encoded_user_data: str) -> UserData:
+        """Decode and decrypt user data from URL-safe string"""
+        try:
+            json_str = from_urlsafe(encoded_user_data)
+            return UserData.model_validate_json(json_str)
+        except Exception as e:
+            raise ValueError("Invalid user data")
+
+    def encode_user_data(self, user_data: UserData) -> str:
+        """Encode and encrypt user data to URL-safe string"""
+        try:
+            json_str = user_data.model_dump_json(
+                exclude_none=True,
+                exclude_defaults=True,
+                exclude_unset=True,
+                round_trip=True,
+                by_alias=True,
+            )
+            return make_urlsafe(json_str.encode("utf-8"))
+        except Exception as e:
+            raise ValueError("Failed to encode user data")
 
     async def retrieve_and_decrypt(self, storage_id: str) -> UserData:
         """Retrieve and decrypt user data from Redis"""

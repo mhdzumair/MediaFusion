@@ -65,10 +65,15 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
 class UserDataMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable):
         endpoint = await find_route_handler(request.app, request)
-        secret_str = request.path_params.get("secret_str")
-        # Decrypt and parse the UserData from secret_str
+
+        # Decrypt and parse the UserData from secret_str or Decode from encoded_user_data header
         try:
-            user_data = await crypto_utils.decrypt_user_data(secret_str)
+            encoded_user_data = request.headers.get("encoded_user_data")
+            if encoded_user_data:
+                user_data = crypto_utils.decode_user_data(encoded_user_data)
+            else:
+                secret_str = request.path_params.get("secret_str")
+                user_data = await crypto_utils.decrypt_user_data(secret_str)
         except (ValueError, ValidationError):
             # check if the endpoint is for /streams
             if endpoint and endpoint.__name__ == "get_streams":
