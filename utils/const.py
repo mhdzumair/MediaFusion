@@ -113,7 +113,7 @@ CORS_HEADERS = {
     "Access-Control-Allow-Methods": "*",
 }
 CACHE_HEADERS = {
-    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=604800, public",
+    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=3600, public",
 }
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
