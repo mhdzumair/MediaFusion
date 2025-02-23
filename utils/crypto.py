@@ -131,7 +131,7 @@ class CryptoUtils:
         try:
             # Handle legacy format (no prefix)
             if not secret_str.startswith((DIRECT_PREFIX, REDIS_PREFIX)):
-                return decrypt_legacy_user_data(secret_str)
+                raise ValueError("Invalid user data")
 
             prefix = secret_str[:2]
             data = secret_str[2:]
@@ -210,20 +210,6 @@ def decrypt_text(secret_str: str, secret_key: str | bytes) -> str:
     decrypted_data = cipher.decrypt(encrypted_data[16:])
     decrypted_data = decrypted_data.rstrip(b"\0")
     return decrypted_data.decode("utf-8")
-
-
-def decrypt_legacy_user_data(secret_str: str | None = None) -> UserData:
-    """Legacy decryption function for existing user configs"""
-    if not secret_str:
-        return UserData()
-
-    try:
-        decrypted_data = decrypt_text(secret_str, SECRET_KEY)
-    except Exception as e:
-        logger.error(f"Failed to decrypt legacy user data: {e}")
-        raise ValueError("Invalid user data")
-    user_data = UserData.model_validate_json(decrypted_data)
-    return user_data
 
 
 def get_text_hash(text: str, full_hash: bool = False) -> str:
