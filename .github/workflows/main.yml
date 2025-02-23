@@ -125,8 +125,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            kodi/plugin.video.mediafusion-*.zip
-            kodi/repository.mediafusion-*.zip
+            kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
