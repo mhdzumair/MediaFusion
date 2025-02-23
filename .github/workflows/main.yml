@@ -42,7 +42,6 @@ jobs:
 
   mediafusion_docker_build:
     needs: update_version
-    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
@@ -74,14 +73,13 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
           tags: |
             mhdzumair/mediafusion:${{ github.ref_name }}
-            mhdzumair/mediafusion:latest
+            mhdzumair/mediafusion:${{ github.event.release.prerelease && 'beta' || 'latest' }}
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   kodi_build:
     needs: update_version
-    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
@@ -115,6 +113,7 @@ jobs:
           done
 
       - name: Deploy to GitHub Pages
+        if: "!github.event.release.prerelease"
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -128,7 +127,7 @@ jobs:
           files: |
             kodi/plugin.video.mediafusion-*.zip
             kodi/repository.mediafusion-*.zip
-          prerelease: false
+          prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
   generate_release_notes:
