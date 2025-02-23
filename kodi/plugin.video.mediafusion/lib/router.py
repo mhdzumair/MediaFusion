@@ -5,6 +5,7 @@ import xbmc
 import xbmcgui
 import xbmcplugin
 
+from .parser import parse_stream_info, format_stream_label
 from .utils import (
     fetch_data,
     build_url,
@@ -25,10 +26,13 @@ def list_categories():
 
     catalogs = manifest_data.get("catalogs", [])
     if not catalogs:
-        log("No catalogs enabled. Make sure to configure correctly", xbmc.LOGERROR)
+        log(
+            "No MediaFusion native catalogs enabled in the config. Use MediaFusion with TMDB Helper",
+            xbmc.LOGERROR,
+        )
         xbmcgui.Dialog().notification(
             "MediaFusion",
-            "No catalogs enabled. Make sure to configure correctly",
+            "No MediaFusion native catalogs enabled in the config. Use MediaFusion with TMDB Helper",
             xbmcgui.NOTIFICATION_ERROR,
         )
         return
@@ -72,6 +76,12 @@ def process_videos(videos, action, catalog_type, catalog_id):
         tags.setUniqueID(
             video["id"], type="imdb" if video["id"].startswith("tt") else "mf"
         )
+        if video["id"].startswith("tt"):
+            tags.setIMDBNumber(video["id"])
+            tags.setUniqueID(video["id"], type="imdb")
+        else:
+            tags.setUniqueID(video["id"], type="mf")
+
         tags.setTitle(video["name"])
         tags.setPlot(video.get("description", ""))
         tags.setRating(float(video.get("imdbRating", 0)))
@@ -203,9 +213,12 @@ def list_seasons(params):
         )
         li = xbmcgui.ListItem(label=f"Season {season}")
         tags = li.getVideoInfoTag()
-        tags.setUniqueID(
-            meta_data["id"], type="imdb" if meta_data["id"].startswith("tt") else "mf"
-        )
+        if meta_data["id"].startswith("tt"):
+            tags.setIMDBNumber(meta_data["id"])
+            tags.setUniqueID(meta_data["id"], type="imdb")
+        else:
+            tags.setUniqueID(meta_data["id"], type="mf")
+
         tags.setTitle(meta_data["name"])
         tags.setPlot(meta_data.get("description", ""))
         tags.setRating(float(meta_data.get("imdbRating", 0)))
@@ -270,9 +283,11 @@ def list_episodes(params):
         )
         li = xbmcgui.ListItem(label=video["title"])
         tags = li.getVideoInfoTag()
-        tags.setUniqueID(
-            meta_data["id"], type="imdb" if meta_data["id"].startswith("tt") else "mf"
-        )
+        if meta_data["id"].startswith("tt"):
+            tags.setIMDBNumber(meta_data["id"])
+            tags.setUniqueID(meta_data["id"], type="imdb")
+        else:
+            tags.setUniqueID(meta_data["id"], type="mf")
         tags.setTitle(video["title"])
         tags.setPlot(meta_data.get("description", ""))
         tags.setRating(float(meta_data.get("imdbRating", 0)))
@@ -327,11 +342,47 @@ def get_streams(params):
         )
         return
 
+    is_imdb = params["video_id"].startswith("tt")
+    if ":" in params["video_id"]:
+        video_id, season, episode = params["video_id"].split(":")
+    else:
+        video_id, season, episode = params["video_id"], None, None
+
     for stream in streams:
-        li = xbmcgui.ListItem(label=stream["name"], offscreen=True)
+        main_label, detail_label = format_stream_label(
+            stream["name"], stream["description"]
+        )
+        video_info = parse_stream_info(
+            stream["name"], stream["description"], stream.get("behaviorHints", {})
+        )
+
+        li = xbmcgui.ListItem(label=main_label, offscreen=True)
         tags = li.getVideoInfoTag()
-        tags.setTitle(stream["name"])
-        tags.setPlot(stream.get("description", ""))
+        tags.setTitle(main_label)
+        tags.setPlot(detail_label)
+
+        supported_video_info = {
+            "size": video_info.get("size"),
+        }
+        if is_imdb:
+            supported_video_info["imdbnumber"] = video_id
+        if season:
+            supported_video_info["season"] = int(season)
+            supported_video_info["episode"] = int(episode)
+            supported_video_info["mediatype"] = "episode"
+        else:
+            supported_video_info["mediatype"] = "video"
+        li.setInfo("video", supported_video_info)
+
+        tags.addVideoStream(
+            xbmc.VideoStreamDetail(
+                width=int(video_info["width"]),
+                height=int(video_info["height"]),
+                language=video_info.get("language"),
+                codec=video_info.get("codec"),
+                hdrtype=video_info.get("hdr"),
+            )
+        )
 
         li.setProperty("IsPlayable", "true")
 
