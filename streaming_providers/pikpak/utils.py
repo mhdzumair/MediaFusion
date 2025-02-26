@@ -233,7 +233,7 @@ async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
     match torrent["message"]:
         case "Save failed, retry please":
             await pikpak.delete_tasks([torrent["id"]])
-        case "Storage space is not enough":
+        case "Storage space is not enough" | "Not enough storage space available":
             try:
                 await pikpak.delete_tasks([torrent["id"]])
             except PikpakException:
@@ -241,7 +241,10 @@ async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
             raise ProviderException(
                 "Not enough storage space available", "not_enough_space.mp4"
             )
-        case "You have reached the limits of free usage today":
+        case (
+            "You have reached the limits of free usage today"
+            | "The number of free transfers has been used up, continued use requires Premium"
+        ):
             try:
                 await pikpak.offline_task_retry(torrent["id"])
             except PikpakException:
