@@ -407,7 +407,6 @@ async def parse_stream_data(
                     stream_details["url"] += f"/{season}/{episode}"
                 if file_name:
                     stream_details["url"] += f"/{quote(file_name)}"
-                stream_details["behaviorHints"]["notWebReady"] = True
             else:
                 stream_details["infoHash"] = stream_data.id
                 stream_details["fileIdx"] = file_index
