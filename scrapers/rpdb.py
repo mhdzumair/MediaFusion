@@ -12,7 +12,8 @@ async def update_rpdb_posters(
 
     # Update meta items with new poster URLs
     for meta in metas.metas:
-        meta.poster = rpdb_poster_base.format(meta.id)
+        if meta.id.startswith("tt"):
+            meta.poster = rpdb_poster_base.format(meta.id)
     return metas
 
 
@@ -23,5 +24,6 @@ async def update_rpdb_poster(
     if not user_data.rpdb_config or catalog_type not in ["movie", "series"]:
         return meta_item
 
-    meta_item.meta.poster = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{meta_item.meta.id}.jpg?fallback=true"
+    if meta_item.meta.id.startswith("tt"):
+        meta_item.meta.poster = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{meta_item.meta.id}.jpg?fallback=true"
     return meta_item
