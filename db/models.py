@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from typing import Optional, Any
 
-import pymongo
 import pytz
 from beanie import (
     Document,
@@ -14,9 +13,10 @@ from beanie import (
     Replace,
 )
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from pymongo import IndexModel, ASCENDING, DESCENDING
+from pymongo import IndexModel, ASCENDING, DESCENDING, TEXT
 
 from db.enums import TorrentType, NudityStatus
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 class EpisodeFile(BaseModel):
@@ -74,7 +74,7 @@ class MediaFusionMetaData(Document):
                 unique=False,
             ),
             IndexModel(
-                [("title", pymongo.TEXT), ("aka_titles", pymongo.TEXT)],
+                [("title", TEXT), ("aka_titles", TEXT)],
                 weights={"title": 10, "aka_titles": 5},  # Prioritize main title matches
             ),
             IndexModel([("year", ASCENDING), ("end_year", ASCENDING)]),
@@ -191,6 +191,11 @@ class TorrentStreams(Document):
                     update_ops["$push"]["episodes"] = {
                         "$each": [ep.model_dump() for ep in new_episodes]
                     }
+                    cache_keys = await REDIS_ASYNC_CLIENT.keys(
+                        f"series_{self.meta_id}_meta*"
+                    )
+                    cache_keys.append(f"series_data:{self.meta_id}")
+                    await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
         await MediaFusionMetaData.get_motor_collection().update_one(
             {"_id": self.meta_id}, update_ops
