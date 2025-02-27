@@ -322,6 +322,9 @@ class TorrentStreams(Document):
                     }
                 },
             )
+            cache_keys = await REDIS_ASYNC_CLIENT.keys(f"series_{self.meta_id}_meta*")
+            cache_keys.append(f"series_data:{self.meta_id}")
+            await REDIS_ASYNC_CLIENT.delete(*cache_keys)
             logging.info(f"Updated episodes for series {self.meta_id}")
 
     def __eq__(self, other):

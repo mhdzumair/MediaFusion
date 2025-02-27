@@ -1075,6 +1075,9 @@ async def save_metadata(
             logging.warning("No episodes found for series %s", metadata["title"])
             return
         new_stream.episode_files = episodes
+        cache_keys = await REDIS_ASYNC_CLIENT.keys(f"series_{metadata['id']}_meta*")
+        cache_keys.append(f"series_data:{metadata['id']}")
+        await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
     await new_stream.create()
     if should_organize_episodes:
