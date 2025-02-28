@@ -4,8 +4,8 @@ CATALOG_DATA = {
     "arabic_series": "Arabic Series",
     "baseball": "Baseball",
     "basketball": "Basketball",
-    "bangala_movies": "Bangala Movies",
-    "bangala_series": "Bangala Series",
+    "bangla_movies": "Bangla Movies",
+    "bangla_series": "Bangla Series",
     "english_hdrip": "English HD Movies",
     "english_series": "English Series",
     "english_tcrip": "English TCRip Movies",
@@ -58,8 +58,8 @@ CATALOG_DATA = {
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
     "arabic_movies",
-    "bangala_movies",
-    "bangala_series",
+    "bangla_movies",
+    "bangla_series",
     "english_hdrip",
     "english_tcrip",
     "hindi_dubbed",
