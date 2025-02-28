@@ -909,15 +909,38 @@ async def download_info(
         if stream.url and stream.url.startswith(streaming_provider_path)
     ]
 
+    if video_id.startswith("tt") and user_data.rpdb_config:
+        _poster = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{video_id}.jpg?fallback=true"
+    else:
+        _poster = f"{settings.poster_host_url}/poster/{catalog_type}/{video_id}.jpg"
+    background = (
+        metadata.background
+        if metadata.background
+        else f"{settings.host_url}/static/images/background.jpg"
+    )
+
+    # Prepare context with all necessary data
     context = {
         "title": metadata.title,
         "year": metadata.year,
-        "poster": metadata.poster,
+        "logo_url": settings.logo_url,
+        "poster": _poster,
+        "background": background,
         "description": metadata.description,
         "streams": downloadable_streams,
         "catalog_type": catalog_type,
         "season": season,
         "episode": episode,
+        "video_id": video_id,
+        "secret_str": secret_str,
+        "settings": settings,
+        "series_data": (
+            metadata.model_dump_json(
+                include={"episodes": {"__all__": {"season_number", "episode_number"}}}
+            )
+            if catalog_type == "series"
+            else None
+        ),
     }
 
     return TEMPLATES.TemplateResponse(
