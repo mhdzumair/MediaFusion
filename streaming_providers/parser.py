@@ -268,9 +268,10 @@ async def update_torrent_streams_metadata(
     Returns True if update was successful, False if annotation was requested.
     """
     # Check if annotation was recently requested
-    if torrent_stream.annotation_requested_at and datetime.now(
-        tz=timezone.utc
-    ) - torrent_stream.annotation_requested_at < timedelta(days=7):
+    if (
+        torrent_stream.annotation_requested_at
+        and datetime.now() - torrent_stream.annotation_requested_at < timedelta(days=7)
+    ):
         logger.info(
             f"Skipping metadata update for {torrent_stream.id} - "
             "recent annotation request"
