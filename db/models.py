@@ -96,6 +96,11 @@ class MediaFusionMetaData(Document):
         return v
 
 
+class KnownFile(BaseModel):
+    size: int
+    filename: str
+
+
 class TorrentStreams(Document):
     model_config = ConfigDict(extra="allow")
 
@@ -123,7 +128,7 @@ class TorrentStreams(Document):
     torrent_type: Optional[TorrentType] = TorrentType.PUBLIC
     is_blocked: Optional[bool] = False
     torrent_file: bytes | None = None
-    known_file_details: dict[str, Any] | None = None
+    known_file_details: Optional[list[KnownFile]] = None
     annotation_requested_at: Optional[datetime] = None
 
     @after_event(Insert)

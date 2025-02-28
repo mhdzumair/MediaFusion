@@ -6,7 +6,7 @@ from typing import Any, Optional, TypedDict
 
 import PTT
 
-from db.models import TorrentStreams, EpisodeFile
+from db.models import TorrentStreams, EpisodeFile, KnownFile
 from streaming_providers.exceptions import ProviderException
 from utils.telegram_bot import telegram_notifier
 from utils.validation_helper import is_video_file
@@ -337,13 +337,7 @@ async def _request_annotation(
     torrent_stream: TorrentStreams, file_infos: list[FileInfo]
 ):
     """Request manual annotation for the torrent stream."""
-    file_details = [
-        {
-            "filename": f.filename,
-            "size": f.size,
-        }
-        for f in file_infos
-    ]
+    file_details = [KnownFile(filename=f.filename, size=f.size) for f in file_infos]
     torrent_stream.known_file_details = file_details
     torrent_stream.annotation_requested_at = datetime.now(tz=timezone.utc)
     await torrent_stream.save()
