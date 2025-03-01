@@ -14,9 +14,7 @@ resolution_mapper = {
 }
 
 
-def parse_stream_info(
-    name: str, description: str, behaviour_hint: dict
-) -> dict[str, str]:
+def parse_stream_info(name, description, behaviour_hint):
     """Parse stream name and description into structured information."""
     info = {
         "name": behaviour_hint.get("filename") or name,
@@ -65,7 +63,7 @@ def parse_stream_info(
     return info
 
 
-def format_stream_label(name, description) -> tuple[str, str]:
+def format_stream_label(name, description):
     """Format stream information into Kodi-friendly labels."""
     # Main label components
     name = name.replace("⚡️", "CACHED").replace("⏳", "NOT CACHED")
