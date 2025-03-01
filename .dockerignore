@@ -46,3 +46,12 @@ mediafusion.local*
 kodi/
 !kodi/*.py
 !deployment/startup.sh
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

@@ -1,0 +1,74 @@
+[project]
+name = "mediafusion"
+version = "4.3.23"
+description = "Media Fusion Add-On For Stremio & Kodi - A powerful streaming API with support for multiple providers and advanced scraping capabilities"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Mohamed Zumair", email = "mhdzumair@gmail.com" },
+    { name = "ragmehos" }
+]
+
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "requests",
+    "beautifulsoup4",
+    "beanie",
+    "motor",
+    "pymongo",
+    "dnspython",
+    "jinja2",
+    "apscheduler",
+    "python-dateutil",
+    "bencodepy",
+    "pydantic-settings",
+    "pycryptodome",
+    "pillow",
+    "httpx",
+    "uvloop; sys_platform != \"win32\"",
+    "thefuzz",
+    "pikpakapi",
+    "diskcache",
+    "demagnetize",
+    "redis[hiredis]",
+    "dramatiq[redis,watch]",
+    "gunicorn",
+    "scrapy",
+    "aioqbt",
+    "aiowebdav",
+    "m3u-ipytv",
+    "python-multipart",
+    "prometheus-client",
+    "pyasynctracker",
+    "scrapy-playwright",
+    "cinemagoerng",
+    "tqdm",
+    "parsett",
+    "tenacity",
+    "ratelimit",
+    "qrcode",
+    "aioseedrcc",
+    "pytz",
+    "aiohttp-socks",
+    "socksio",
+    "dramatiq-abort",
+    "tzdata",
+    "ipython",
+    "scrapy-fake-useragent>=1.4.4",
+    "humanize>=4.12.1",
+]
+
+[dependency-groups]
+dev = [
+    "pysocks",
+    "requests-cache",
+    "kodistubs",
+]
+
+[tool.uv.sources]
+pikpakapi = {git = "git+https://github.com/mhdzumair/PikPakAPI.git"}
+aioqbt = {git = "git+https://github.com/mhdzumair/aioqbt.git"}
+cinemagoerng = {git = "git+https://github.com/mhdzumair/cinemagoerng.git"}
