@@ -50,14 +50,32 @@
                         <h4 class="section-header">Quick Import</h4>
                         <hr class="section-divider">
 
-                        <!-- Content Type Selection -->
+                        <!-- Content Type and Torrent Type Selection -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="quickMetaType" class="form-label">Content Type</label>
+                                <select class="form-select" id="quickMetaType" name="quickMetaType" required>
+                                    <option value="movie">Movie</option>
+                                    <option value="series">Series</option>
+                                    <option value="sports">Sports</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="quickTorrentType" class="form-label">Torrent Type</label>
+                                <select class="form-select" id="quickTorrentType" name="quickTorrentType">
+                                    <option value="public">Public</option>
+                                    <option value="semi-private">Semi-Private</option>
+                                    <option value="private">Private</option>
+                                    <option value="web-seed">Web-Seed</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Uploader Information -->
                         <div class="mb-3">
-                            <label for="quickMetaType" class="form-label">Content Type</label>
-                            <select class="form-select" id="quickMetaType" name="quickMetaType" required>
-                                <option value="movie">Movie</option>
-                                <option value="series">Series</option>
-                                <option value="sports">Sports</option>
-                            </select>
+                            <label for="quickUploaderName" class="form-label">Uploader Name (Optional)</label>
+                            <input type="text" class="form-control" id="quickUploaderName"
+                                   placeholder="Enter your name or leave blank for Anonymous">
                         </div>
 
                         <!-- Torrent Upload Area -->

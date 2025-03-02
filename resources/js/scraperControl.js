@@ -763,6 +763,8 @@ async function handleQuickImport() {
     const metaType = document.getElementById('quickMetaType').value;
     const torrentFile = document.getElementById('quickTorrentFile').files[0];
     const magnetLink = document.getElementById('quickMagnetLink').value.trim();
+    // Store the uploader in localStorage for persistence
+    localStorage.setItem('quickUploaderName', document.getElementById('quickUploaderName').value);
 
     if (!torrentFile && !magnetLink) {
         showNotification('Please provide either a torrent file or magnet link', 'error');
@@ -1050,6 +1052,63 @@ function populateSingleSelect(specType, currentValue) {
     });
 }
 
+// Function to enhance the spec selection modal for languages with search
+function enhanceLanguageSelection() {
+    // Add a search field to the spec selection modal for languages
+    const multipleSpecSelection = document.getElementById('multipleSpecSelection');
+    if (!multipleSpecSelection) return;
+
+    // Create the search container if it doesn't exist
+    if (!document.getElementById('languageSearchContainer')) {
+        const searchHTML = `
+            <div id="languageSearchContainer" class="mb-3" style="display: none;">
+                <input type="text" class="form-control" id="languageSearch" 
+                       placeholder="Search languages..." 
+                       autocomplete="off">
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="selectAllLanguages">
+                        Select All
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clearAllLanguages">
+                        Clear All
+                    </button>
+                </div>
+            </div>
+        `;
+        multipleSpecSelection.insertAdjacentHTML('afterbegin', searchHTML);
+
+        // Add event listener for the search input
+        document.getElementById('languageSearch').addEventListener('input', function() {
+            const searchValue = this.value.toLowerCase();
+            document.querySelectorAll('.spec-checkboxes .form-check').forEach(item => {
+                const label = item.querySelector('label').textContent.toLowerCase();
+                if (label.includes(searchValue)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+
+        // Add event listeners for select all and clear all buttons
+        document.getElementById('selectAllLanguages').addEventListener('click', function() {
+            const visibleCheckboxes = Array.from(document.querySelectorAll('.spec-checkboxes .form-check'))
+                .filter(item => item.style.display !== 'none')
+                .map(item => item.querySelector('input[type="checkbox"]'));
+
+            visibleCheckboxes.forEach(checkbox => checkbox.checked = true);
+        });
+
+        document.getElementById('clearAllLanguages').addEventListener('click', function() {
+            const visibleCheckboxes = Array.from(document.querySelectorAll('.spec-checkboxes .form-check'))
+                .filter(item => item.style.display !== 'none')
+                .map(item => item.querySelector('input[type="checkbox"]'));
+
+            visibleCheckboxes.forEach(checkbox => checkbox.checked = false);
+        });
+    }
+}
+
 // Update populateMultiSelect to use new options format
 function populateMultiSelect(specType, currentValue) {
     const container = document.querySelector('.spec-checkboxes');
@@ -1057,6 +1116,9 @@ function populateMultiSelect(specType, currentValue) {
 
     const currentValues = currentValue.split(', ').map(v => v.trim());
     const options = getOptionsForSpecType(specType);
+
+    // Sort options alphabetically for better organization
+    options.sort((a, b) => a.label.localeCompare(b.label));
 
     options.forEach(option => {
         const div = document.createElement('div');
@@ -1071,6 +1133,21 @@ function populateMultiSelect(specType, currentValue) {
         `;
         container.appendChild(div);
     });
+
+    // Show search for languages, hide for others
+    const searchContainer = document.getElementById('languageSearchContainer');
+    if (searchContainer) {
+        searchContainer.style.display = specType === 'languages' ? 'block' : 'none';
+
+        // Clear search field when opening the modal
+        if (specType === 'languages') {
+            document.getElementById('languageSearch').value = '';
+            // Show all options initially
+            document.querySelectorAll('.spec-checkboxes .form-check').forEach(item => {
+                item.style.display = 'block';
+            });
+        }
+    }
 }
 
 // Helper function to get current spec values
@@ -1385,6 +1462,21 @@ function applyTorrentData(torrentData) {
 
     // Transfer torrent file or magnet link
     formUtils.transferTorrentFile();
+
+    // Transfer additional fields from quick import
+    const torrentType = document.getElementById('quickTorrentType');
+    const uploaderName = document.getElementById('quickUploaderName');
+
+    if (torrentType && torrentType.value) {
+        document.getElementById('torrentType').value = torrentType.value;
+    }
+
+    if (uploaderName && uploaderName.value) {
+        document.getElementById('uploaderName').value = uploaderName.value;
+    } else if (localStorage.getItem('quickUploaderName')) {
+        document.getElementById('uploaderName').value = localStorage.getItem('quickUploaderName');
+    }
+
 
     // Update UI to reflect content type
     updateContentType();
@@ -1842,5 +1934,16 @@ document.addEventListener('DOMContentLoaded', function () {
     updateBasicTechnicalSpecs();
     setupFieldChangeHandlers();
     setupDateInput('createdAt', true);
+
+    // Restore saved uploader
+    const savedUploaderName = localStorage.getItem('quickUploaderName');
+    if (savedUploaderName) {
+        const quickUploaderName = document.getElementById('quickUploaderName');
+        if (quickUploaderName) {
+            quickUploaderName.value = savedUploaderName;
+        }
+    }
+    // Enhance language selection
+    enhanceLanguageSelection();
 });
 document.getElementById('spiderName').addEventListener('change', toggleSpiderSpecificFields);
