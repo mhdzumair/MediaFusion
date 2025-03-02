@@ -664,6 +664,153 @@ async function setupKodiAddon(kodiCode) {
         }
     }
 }
+/**
+ * Add select/deselect buttons and search input for a container
+ *
+ * @param {string} containerId - ID of the container element
+ * @param {string} sectionName - Name of the section for labels and placeholders
+ * @param {string} checkboxSelector - CSS selector for checkboxes in the container
+ */
+function addSelectDeselectSearch(containerId, sectionName, checkboxSelector) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Create a controls container
+    const controlsContainer = document.createElement('div');
+    controlsContainer.className = 'mb-3';
+
+    // Create search input
+    const searchGroup = document.createElement('div');
+    searchGroup.className = 'input-group mb-2';
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'form-control form-control-sm';
+    searchInput.placeholder = `Search ${sectionName}...`;
+    searchInput.id = `${containerId}-search`;
+    searchInput.setAttribute('autocomplete', 'off');
+
+    const searchClearBtn = document.createElement('button');
+    searchClearBtn.className = 'btn btn-outline-secondary btn-sm';
+    searchClearBtn.type = 'button';
+    searchClearBtn.innerHTML = '<i class="bi bi-x"></i>';
+    searchClearBtn.setAttribute('data-bs-toggle', 'tooltip');
+    searchClearBtn.setAttribute('data-bs-placement', 'top');
+    searchClearBtn.setAttribute('title', 'Clear Search');
+
+    searchGroup.appendChild(searchInput);
+    searchGroup.appendChild(searchClearBtn);
+
+    // Create button group
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'btn-group btn-group-sm w-100';
+
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.type = 'button';
+    selectAllBtn.className = 'btn btn-outline-primary';
+    selectAllBtn.innerHTML = '<i class="bi bi-check-all"></i> Select All';
+
+    const deselectAllBtn = document.createElement('button');
+    deselectAllBtn.type = 'button';
+    deselectAllBtn.className = 'btn btn-outline-secondary';
+    deselectAllBtn.innerHTML = '<i class="bi bi-x-lg"></i> Deselect All';
+
+    buttonGroup.appendChild(selectAllBtn);
+    buttonGroup.appendChild(deselectAllBtn);
+
+    // Add elements to controls container
+    controlsContainer.appendChild(searchGroup);
+    controlsContainer.appendChild(buttonGroup);
+
+    // Insert controls at the beginning of the container
+    container.parentNode.insertBefore(controlsContainer, container);
+
+    // Add event listeners
+    selectAllBtn.addEventListener('click', function() {
+        const visibleCheckboxes = getVisibleCheckboxes(container, checkboxSelector);
+        visibleCheckboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+    });
+
+    deselectAllBtn.addEventListener('click', function() {
+        const visibleCheckboxes = getVisibleCheckboxes(container, checkboxSelector);
+        visibleCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+    });
+
+    searchInput.addEventListener('input', function() {
+        filterItems(container, this.value.toLowerCase());
+    });
+
+    searchClearBtn.addEventListener('click', function() {
+        searchInput.value = '';
+        filterItems(container, '');
+    });
+}
+
+/**
+ * Get all visible checkboxes in a container
+ *
+ * @param {HTMLElement} container - Container element
+ * @param {string} checkboxSelector - CSS selector for checkboxes
+ * @returns {HTMLElement[]} Array of visible checkbox elements
+ */
+function getVisibleCheckboxes(container, checkboxSelector) {
+    const allCheckboxes = container.querySelectorAll(checkboxSelector);
+    return Array.from(allCheckboxes).filter(checkbox => {
+        const item = getItemContainer(checkbox);
+        return item && !item.classList.contains('d-none');
+    });
+}
+
+/**
+ * Get the container element of a checkbox
+ *
+ * @param {HTMLElement} checkbox - Checkbox element
+ * @returns {HTMLElement|null} Container element or null
+ */
+function getItemContainer(checkbox) {
+    // Navigate up to find the draggable container or column
+    let parent = checkbox.parentElement;
+    while (parent && !parent.classList.contains('draggable-catalog') &&
+           !parent.classList.contains('draggable-language') &&
+           !parent.classList.contains('col-12') &&
+           !parent.classList.contains('col-md-6') &&
+           !parent.classList.contains('col-lg-4')) {
+        parent = parent.parentElement;
+    }
+    return parent;
+}
+
+/**
+ * Filter items in a container based on search text
+ *
+ * @param {HTMLElement} container - Container element
+ * @param {string} searchText - Text to search for
+ */
+function filterItems(container, searchText) {
+    // Find all items (columns or containers)
+    const items = container.querySelectorAll('.draggable-catalog, .draggable-language, .col-12.col-md-6.col-lg-4');
+
+    if (searchText === '') {
+        // Show all items if search is empty
+        items.forEach(item => {
+            item.classList.remove('d-none');
+        });
+    } else {
+        // Show/hide items based on label text
+        items.forEach(item => {
+            const label = item.querySelector('label');
+            if (label && label.textContent.toLowerCase().includes(searchText)) {
+                item.classList.remove('d-none');
+            } else {
+                item.classList.add('d-none');
+            }
+        });
+    }
+}
 
 // ---- Event Listeners ----
 
@@ -909,6 +1056,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (document.querySelector('input[name="selected_sorting_options"][value="language"]').checked) {
         document.getElementById('languageSortSection').style.display = 'block';
     }
+
+    // Add UI elements for catalogs
+    addSelectDeselectSearch('catalogs', 'Catalogs', 'input[name="selected_catalogs"]');
+
+    // Add UI elements for languages
+    addSelectDeselectSearch('languageSortOrder', 'Languages', 'input[name="selected_languages"]');
 
     // Initialize the parental guide checkboxes
     const parentalGuideCheckboxes = document.querySelectorAll('.parental-guide-checkbox');
