@@ -383,3 +383,30 @@ LANGUAGE_COUNTRY_FLAGS = {
     "Armenian": "🇦🇲",
     "Georgian": "🇬🇪",
 }
+
+
+CONTENT_TYPE_HEADERS_MAPPING = {
+    ".mp4": "video/mp4",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".wmv": "video/x-ms-wmv",
+    ".flv": "video/x-flv",
+    ".m4v": "video/x-m4v",
+    ".3gp": "video/3gpp",
+    ".3g2": "video/3gpp2",
+    ".mpg": "video/mpeg",
+    ".mpeg": "video/mpeg",
+    ".ts": "video/mp2t",
+    ".m2ts": "video/mp2t",
+    ".mts": "video/mp2t",
+    ".vob": "video/x-ms-vob",
+    ".ogv": "video/ogg",
+    ".divx": "video/divx",
+    ".m3u8": "application/x-mpegURL",
+    ".mpd": "application/dash+xml",
+    ".f4v": "video/x-f4v",
+    ".rmvb": "application/vnd.rn-realmedia-vbr",
+    ".asf": "video/x-ms-asf",
+}

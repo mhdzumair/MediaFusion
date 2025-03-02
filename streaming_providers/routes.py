@@ -33,6 +33,7 @@ from streaming_providers.premiumize.api import router as premiumize_router
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.seedr.api import router as seedr_router
 from utils import crypto, torrent, wrappers, const
+from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_user_public_ip, get_user_data, encode_mediaflow_proxy_url
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -63,16 +64,22 @@ async def get_cached_stream_url_and_redirect(
             user_data.mediaflow_config
             and user_data.mediaflow_config.proxy_debrid_streams
         ):
+            response_headers = {
+                "Content-Disposition": "attachment, filename={}".format(
+                    path.basename(cached_stream_url)
+                )
+            }
+            file_extension = path.splitext(cached_stream_url)[-1]
+            content_type = CONTENT_TYPE_HEADERS_MAPPING.get(file_extension)
+            if content_type:
+                response_headers["Content-Type"] = content_type
+
             cached_stream_url = encode_mediaflow_proxy_url(
                 user_data.mediaflow_config.proxy_url,
                 "/proxy/stream",
                 cached_stream_url,
                 query_params={"api_password": user_data.mediaflow_config.api_password},
-                response_headers={
-                    "Content-Disposition": "attachment, filename={}".format(
-                        path.basename(cached_stream_url)
-                    )
-                },
+                response_headers=response_headers,
             )
         return RedirectResponse(
             url=cached_stream_url, headers=response.headers, status_code=302
@@ -145,16 +152,22 @@ def apply_mediaflow_proxy_if_needed(video_url, user_data):
     Applies mediaflow proxy to the video URL if user config requires it.
     """
     if user_data.mediaflow_config and user_data.mediaflow_config.proxy_debrid_streams:
+        response_headers = {
+            "Content-Disposition": "attachment, filename={}".format(
+                path.basename(video_url)
+            )
+        }
+        file_extension = path.splitext(video_url)[-1]
+        content_type = CONTENT_TYPE_HEADERS_MAPPING.get(file_extension)
+        if content_type:
+            response_headers["Content-Type"] = content_type
+
         return encode_mediaflow_proxy_url(
             user_data.mediaflow_config.proxy_url,
             "/proxy/stream",
             video_url,
             query_params={"api_password": user_data.mediaflow_config.api_password},
-            response_headers={
-                "Content-Disposition": "attachment, filename={}".format(
-                    path.basename(video_url)
-                )
-            },
+            response_headers=response_headers,
         )
     return video_url
 
