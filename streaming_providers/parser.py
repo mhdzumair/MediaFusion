@@ -322,6 +322,8 @@ async def update_torrent_streams_metadata(
                 torrent_stream.size = total_size
 
         torrent_stream.updated_at = datetime.now(tz=timezone.utc)
+        torrent_stream.annotation_requested_at = None
+        torrent_stream.known_file_details = None
         await torrent_stream.save()
         logger.info(f"Successfully updated {torrent_stream.id} metadata")
         return True
