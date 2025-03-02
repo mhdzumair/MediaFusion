@@ -59,7 +59,6 @@ CATALOG_DATA = {
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
     "arabic_movies",
     "bangla_movies",
-    "bangla_series",
     "english_hdrip",
     "english_tcrip",
     "hindi_dubbed",
@@ -75,7 +74,6 @@ USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
     "malayalam_old",
     "malayalam_tcrip",
     "punjabi_movies",
-    "punjabi_series",
     "tamil_dubbed",
     "tamil_hdrip",
     "tamil_old",
@@ -88,10 +86,12 @@ USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
 
 USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS = [
     "arabic_series",
+    "bangla_series",
     "english_series",
     "hindi_series",
     "kannada_series",
     "malayalam_series",
+    "punjabi_series",
     "tamil_series",
     "telugu_series",
 ]
