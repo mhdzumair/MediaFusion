@@ -75,7 +75,7 @@ class MediafusionScraper(StremioScraper):
         source = stream["name"].split()[0].title()
         info_hash = stream.get("infoHash")
         if not info_hash:
-            url = stream.get("url")
+            url = stream.get("url", "")
             if "/stream/" not in url:
                 return {}, False
             info_hash = url.split("/")[6]
