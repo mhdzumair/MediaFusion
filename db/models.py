@@ -73,10 +73,7 @@ class MediaFusionMetaData(Document):
                 [("title", ASCENDING), ("year", ASCENDING), ("type", ASCENDING)],
                 unique=False,
             ),
-            IndexModel(
-                [("title", TEXT), ("aka_titles", TEXT)],
-                weights={"title": 10, "aka_titles": 5},  # Prioritize main title matches
-            ),
+            IndexModel([("title", TEXT)]),
             IndexModel([("year", ASCENDING), ("end_year", ASCENDING)]),
             IndexModel([("_class_id", ASCENDING)]),
             IndexModel([("type", ASCENDING), ("genres", ASCENDING)]),

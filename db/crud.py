@@ -1109,7 +1109,6 @@ async def process_search_query(
             "$caseSensitive": False,
         },
         "type": catalog_type,
-        "total_streams": {"$gt": 0},
     }
     filter_conditions = []
 
