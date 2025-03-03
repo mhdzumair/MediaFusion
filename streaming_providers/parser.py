@@ -238,7 +238,6 @@ async def select_file_index_from_torrent(
             return selected_file.index
         else:
             # Found video files but couldn't match season/episode
-            await _request_annotation(torrent_stream, processor.file_infos)
             raise ProviderException(
                 "Found video files but couldn't match season/episode. "
                 "Annotation has been requested.",
@@ -288,7 +287,6 @@ async def update_torrent_streams_metadata(
                     await torrent_stream.save()
                     logger.error(f"No video files found in torrent {torrent_stream.id}")
                     return False
-                await _request_annotation(torrent_stream, processor.file_infos)
                 return False
 
             torrent_stream.filename = file_info.filename
@@ -305,7 +303,6 @@ async def update_torrent_streams_metadata(
                     await torrent_stream.save()
                     logger.error(f"No video files found in torrent {torrent_stream.id}")
                     return False
-                await _request_annotation(torrent_stream, processor.file_infos)
                 return False
 
             episodes = processor.parse_all_episodes(
@@ -332,7 +329,6 @@ async def update_torrent_streams_metadata(
         logger.error(
             f"Error updating metadata for {torrent_stream.id}: {str(e)}", exc_info=True
         )
-        await _request_annotation(torrent_stream, processor.file_infos)
         return False
 
 
