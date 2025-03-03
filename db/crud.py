@@ -1102,17 +1102,16 @@ async def save_series_metadata(metadata: dict, is_search_imdb_title: bool = True
 async def process_search_query(
     search_query: str, catalog_type: str, user_data: schemas.UserData
 ) -> dict:
-    # Initialize base match filter and conditions array
-    match_filter = {
-        "$text": {
-            "$search": search_query,
-            "$caseSensitive": False,
-        },
+    # Create regex pattern for partial matching
+    regex_pattern = f".*{search_query}.*"
+
+    # Base match conditions for both queries
+    base_conditions = {
         "type": catalog_type,
     }
-    filter_conditions = []
 
-    # Handle nudity filter
+    # Add user filters
+    filter_conditions = []
     if "Disable" not in user_data.nudity_filter:
         nudity_conditions = []
         if user_data.nudity_filter:
@@ -1151,34 +1150,127 @@ async def process_search_query(
         elif cert_conditions:
             filter_conditions.append(cert_conditions[0])
 
-    # Combine all filter conditions with the base match filter
+    # Combine all user filters
     if filter_conditions:
         if len(filter_conditions) > 1:
-            match_filter["$and"] = filter_conditions
+            base_conditions["$and"] = filter_conditions
         else:
-            match_filter.update(filter_conditions[0])
+            base_conditions.update(filter_conditions[0])
 
-    # Define the aggregation pipeline
-    pipeline = [
-        {"$match": match_filter},
-        {"$limit": 50},  # Limit the search results to 50
+    # 1. Text search pipeline
+    text_search_pipeline = [
         {
-            "$set": {
-                "poster": {
-                    "$concat": [
-                        f"{settings.poster_host_url}/poster/{catalog_type}/",
-                        "$_id",
-                        ".jpg",
+            "$match": {
+                "$text": {
+                    "$search": search_query,
+                    "$caseSensitive": False,
+                },
+                **base_conditions,
+            }
+        },
+        {
+            "$addFields": {
+                "textScore": {"$meta": "textScore"},
+                "exactTitleMatch": {
+                    "$cond": [
+                        {"$eq": [{"$toLower": "$title"}, search_query.lower()]},
+                        10,
+                        0,
                     ]
+                },
+                "titleStartsWith": {
+                    "$cond": [
+                        {
+                            "$regexMatch": {
+                                "input": {"$toLower": "$title"},
+                                "regex": "^" + search_query.lower(),
+                            }
+                        },
+                        5,
+                        0,
+                    ]
+                },
+            }
+        },
+        {
+            "$addFields": {
+                "relevanceScore": {
+                    "$add": ["$textScore", "$exactTitleMatch", "$titleStartsWith"]
                 }
             }
         },
+        {"$sort": {"relevanceScore": -1}},
+        {"$limit": 40},  # Get top 40 from text search
     ]
 
-    # Execute the aggregation pipeline
-    search_results = (
-        await MediaFusionMetaData.get_motor_collection().aggregate(pipeline).to_list(50)
+    # 2. Regex search pipeline for titles that text search might miss - needs a separate query
+    regex_search_pipeline = [
+        {
+            "$match": {
+                "$and": [
+                    {"title": {"$regex": regex_pattern, "$options": "i"}},
+                    base_conditions,
+                ]
+            }
+        },
+        {"$limit": 30},  # Get more potential regex matches
+    ]
+
+    # Execute the text search pipeline
+    text_search_results = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(
+            text_search_pipeline
+            + [
+                {
+                    "$set": {
+                        "poster": {
+                            "$concat": [
+                                f"{settings.poster_host_url}/poster/{catalog_type}/",
+                                "$_id",
+                                ".jpg",
+                            ]
+                        }
+                    }
+                }
+            ]
+        )
+        .to_list(40)
     )
+
+    # Get IDs from text search results to exclude them from regex search
+    text_result_ids = [doc["_id"] for doc in text_search_results]
+
+    # Add ID exclusion to regex pipeline
+    if text_result_ids:
+        regex_search_pipeline[0]["$match"]["$and"].append(
+            {"_id": {"$nin": text_result_ids}}
+        )
+
+    # Execute the regex search pipeline
+    regex_search_results = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(
+            regex_search_pipeline
+            + [
+                {
+                    "$set": {
+                        "poster": {
+                            "$concat": [
+                                f"{settings.poster_host_url}/poster/{catalog_type}/",
+                                "$_id",
+                                ".jpg",
+                            ]
+                        }
+                    }
+                }
+            ]
+        )
+        .to_list(10)
+    )
+
+    # Combine both result sets
+    search_results = text_search_results + regex_search_results
 
     return {"metas": search_results}
 
