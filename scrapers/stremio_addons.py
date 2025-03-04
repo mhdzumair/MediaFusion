@@ -110,6 +110,9 @@ class StremioScraper(BaseScraper):
                     return None, False
 
                 parsed_data, is_cached = self.parse_stream_title(stream_data)
+                if not parsed_data:
+                    self.metrics.record_skip("Invalid Data")
+                    return None, False
                 source = parsed_data["source"]
 
                 if self.get_scraper_name() not in source:

@@ -652,32 +652,6 @@ async def store_new_torrent_streams(
             existing_stream = await TorrentStreams.get(stream.id)
             if existing_stream:
                 update_data = {"seeders": stream.seeders, "updated_at": datetime.now()}
-
-                if stream.episode_files:
-                    # Get existing episode numbers
-                    existing_episodes = {
-                        (ep.season_number, ep.episode_number)
-                        for ep in (existing_stream.episode_files or [])
-                    }
-
-                    # Find new episodes
-                    new_episodes = [
-                        ep
-                        for ep in stream.episode_files
-                        if (ep.season_number, ep.episode_number)
-                        not in existing_episodes
-                    ]
-
-                    if new_episodes:
-                        logging.info(
-                            "Adding new %s episodes to stream %s",
-                            len(new_episodes),
-                            stream.id,
-                        )
-                        update_data["episode_files"] = (
-                            existing_stream.episode_files or []
-                        ) + new_episodes
-
                 await existing_stream.update(Set(update_data), bulk_writer=bulk_writer)
                 logging.info("Updated stream %s for %s", stream.id, stream.meta_id)
             else:

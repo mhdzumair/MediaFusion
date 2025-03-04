@@ -273,7 +273,7 @@ class BaseScraper(abc.ABC):
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> list[TorrentStreams] | list | None:
         """
         Scrape data and parse it into TorrentStreams objects.
         """
@@ -290,14 +290,13 @@ class BaseScraper(abc.ABC):
             self.logger.error(
                 f"Invalid result received from {self.cache_key_prefix}: {result}"
             )
-            return []
         except Exception as e:
             self.metrics.record_error("unexpected_error")
             self.logger.exception(f"An error occurred while scraping: {e}")
-            return []
         finally:
             self.metrics.stop()
             self.metrics.log_summary(self.logger)
+        return []
 
     async def process_streams(
         self,

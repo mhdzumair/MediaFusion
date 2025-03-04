@@ -233,13 +233,18 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"Error sending fallback text message: {e}")
 
-    async def send_file_annotation_request(self, info_hash: str):
+    async def send_file_annotation_request(self, info_hash: str, torrent_name: str):
         """Send notification to request episode annotations"""
         if not self.enabled:
             logger.warning("Telegram notifications are disabled. Check bot token.")
             return
 
-        message = f"📝 File Annotation Requested\n\n" f"*Info Hash*: `{info_hash}`\n"
+        message = (
+            f"📝 Failed to identify the episodes. Require to annotate.\n\n"
+            f"*Info Hash*: `{info_hash}`\n"
+            f"*Torrent Name*: `{torrent_name}`\n"
+            f"Please review and annotate the episodes manually."
+        )
 
         await self._send_text_only_message(message)
 

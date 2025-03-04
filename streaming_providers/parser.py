@@ -1,17 +1,105 @@
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from os.path import basename
-from typing import Any, Optional, TypedDict
+from typing import Any, Optional, TypedDict, Tuple, Pattern, Callable
 
 import PTT
 
 from db.models import TorrentStreams, EpisodeFile, KnownFile
 from streaming_providers.exceptions import ProviderException
+from utils.lock import acquire_redis_lock
 from utils.telegram_bot import telegram_notifier
 from utils.validation_helper import is_video_file
 
 logger = logging.getLogger(__name__)
+
+# Precompile all regex patterns for better performance
+SEASON_EPISODE_PATTERNS: dict[
+    str, Tuple[Pattern, Callable[[re.Match, int], Tuple[int, int]]]
+] = {
+    # Pattern 1: SxxExx format (most common and reliable)
+    # Examples: "S01E04", "s01e04", "S1E04", "s1e04"
+    "standard": (
+        re.compile(r"[sS](\d{1,2})[eE](\d{1,2})"),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 2: xxXxx format
+    # Examples: "1x01", "01x01", "1X01", "01X01"
+    "separator_x": (
+        re.compile(r"(?<!\w)(\d{1,2})[xX](\d{1,2})(?!\w)"),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 3: Season X Episode Y format (text-based)
+    # Example: "Season 1 Episode 04", "season 01 episode 4"
+    "text_based": (
+        re.compile(r"[sS]eason\s+(\d{1,2}).*?[eE]pisode\s+(\d{1,2})"),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 4: Season/Series followed by episode number
+    # Example: "Season 02 - 05", "Series.1.Ep.03"
+    "season_ep": (
+        re.compile(
+            r"(?:[sS]eason|[sS]eries)[.\s-]*(\d{1,2}).*?(?:[eE]p|[eE]pisode)?[.\s-]*(\d{1,2})"
+        ),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 5: SXXEXX format (no separator)
+    # Examples: "S01E04", "S1E4"
+    "no_separator": (
+        re.compile(r"S(\d{1,2})E(\d{1,2})", re.IGNORECASE),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 6: Show name followed by episode number
+    # Examples: "Show 01", "Show - 01", "Show.01"
+    # Only apply this when it's likely an actual episode number, not part of a hash
+    "simple_episode": (
+        re.compile(r"(?<=\s)(\d{1,2})(?:\s|$|\.)"),
+        lambda m, s: (s, int(m.group(1))),  # Default to season s
+    ),
+    # Pattern 7: bracketed season and episode
+    # Examples: "[S01E04]", "(S1.E4)", "[1x04]"
+    "bracketed": (
+        re.compile(r"[\[\(](?:[sS])?(\d{1,2})[.\s]?(?:[eExX])(\d{1,2})[\]\)]"),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 8: season and episode separated by period
+    # Examples: "1.04", "01.04"
+    "period_sep": (
+        re.compile(r"(?<!\d|\w)(\d{1,2})\.(\d{2})(?!\d|\w)"),
+        lambda m, _: (int(m.group(1)), int(m.group(2))),
+    ),
+    # Pattern 9: episode identifier with underscore or dash
+    # Examples: "_e01", "-e01", "_ep01", "-ep01"
+    "episode_only": (
+        re.compile(r"[_-][eE](?:p)?(\d{1,2})"),
+        lambda m, s: (s, int(m.group(1))),  # Default to season s
+    ),
+    # Pattern 10: Absolute episode numbering
+    # Examples: "Episode.123", "Ep 123", "EP.123"
+    "absolute_ep": (
+        re.compile(r"[eE]p(?:isode)?[.\s](\d{1,3})(?!\w)", re.IGNORECASE),
+        lambda m, s: (s, int(m.group(1))),  # Default to season s
+    ),
+    # Pattern 11: Zero-padded episode numbers
+    # Examples: "00022"
+    "zero_padded": (
+        re.compile(r"(?<!\d)(\d{2,})(?!\d)"),
+        lambda m, s: (s, int(m.group(1))),  # Default to season s
+    ),
+}
+# Additional patterns specifically for anime that should be tried after the general patterns
+ANIME_PATTERNS: dict[
+    str, Tuple[Pattern, Callable[[re.Match, int], Tuple[int, int]]]
+] = {
+    # Common pattern for standalone anime episodes, avoid matching hashes
+    # This should identify patterns like " 01 ", " - 01", etc.
+    "standalone_episode": (
+        re.compile(r"(?:^|\s|\[|\()(\d{1,2})(?:\s|$|\]|\))"),
+        lambda m, s: (s, int(m.group(1))),  # Default to season s
+    ),
+}
 
 
 class TorrentFile(TypedDict):
@@ -93,7 +181,7 @@ class TorrentFileProcessor:
         default_season: Optional[int] = None,
     ) -> tuple[Optional[int], Optional[int]]:
         """Parse season and episode information from filename and torrent title."""
-        # First try from filename
+        # First try from filename with PTT
         parsed_data = PTT.parse_title(file_info.filename)
         seasons = parsed_data.get("seasons", [])
         episodes = parsed_data.get("episodes", [])
@@ -115,6 +203,25 @@ class TorrentFileProcessor:
             if len(title_episodes) == 1:
                 episode = episode or title_episodes[0]
 
+        # If PTT failed to identify season or episode, try the fallback parser
+        if not season or not episode:
+            fallback_season, fallback_episode = fallback_parse_season_episode(
+                file_info.filename, default_season
+            )
+
+            # Use fallback results only if they're not None
+            if fallback_season is not None:
+                season = fallback_season
+            if fallback_episode is not None:
+                episode = fallback_episode
+
+            # Log when fallback parser is used
+            if fallback_season is not None or fallback_episode is not None:
+                logger.info(
+                    f"Used fallback parser for file '{file_info.filename}'. "
+                    f"Detected: S{season}E{episode}"
+                )
+
         # For season packs without explicit season number
         if not season and episode:
             season = default_season or 1
@@ -133,12 +240,16 @@ class TorrentFileProcessor:
                 ):
                     return self.file_infos[episode_file.file_index]
 
-        for file_info in self.get_video_files():
+        video_files = self.get_video_files()
+        for file_info in video_files:
             parsed_season, parsed_episode = self._parse_season_episode_info(
                 file_info, torrent_title, default_season=season
             )
             if parsed_season == season and parsed_episode == episode:
                 return file_info
+        if len(video_files):
+            # in some cases only one video file is present and no season/episode info
+            return video_files[0]
         return None
 
     def parse_all_episodes(
@@ -211,12 +322,12 @@ async def select_file_index_from_torrent(
             await torrent_stream.save()
             raise ProviderException(
                 "No valid video files found in torrent. Torrent has been blocked.",
-                "no_video_file.mp4",
+                "no_matching_file.mp4",
             )
         else:
             raise ProviderException(
                 "No valid video files found in torrent",
-                "no_video_file.mp4",
+                "no_matching_file.mp4",
             )
 
     # Update metadata if filename is trustable
@@ -226,7 +337,6 @@ async def select_file_index_from_torrent(
             processor=processor,
             season=season,
             is_index_trustable=is_index_trustable,
-            is_filename_trustable=is_filename_trustable,
         )
 
     # Try to find by season/episode
@@ -251,7 +361,7 @@ async def select_file_index_from_torrent(
 
     raise ProviderException(
         "No valid video file found in torrent",
-        "no_video_file.mp4",
+        "no_matching_file.mp4",
     )
 
 
@@ -260,20 +370,18 @@ async def update_torrent_streams_metadata(
     processor: TorrentFileProcessor,
     season: Optional[int] = None,
     is_index_trustable: bool = False,
-    is_filename_trustable: bool = False,
 ) -> bool:
     """
     Update torrent stream metadata using the provided processor instance.
     Returns True if update was successful, False if annotation was requested.
     """
-    # Check if annotation was recently requested
-    if (
-        torrent_stream.annotation_requested_at
-        and datetime.now() - torrent_stream.annotation_requested_at < timedelta(days=7)
-    ):
+    # Check if annotation was recently requested with redis lock for 3 days
+    acquired, _ = await acquire_redis_lock(
+        f"annotation_lock_{torrent_stream.id}", timeout=259200, block=False
+    )
+    if not acquired:
         logger.info(
-            f"Skipping metadata update for {torrent_stream.id} - "
-            "recent annotation request"
+            f"Skipping metadata update for {torrent_stream.id} - recent annotation request"
         )
         return False
 
@@ -282,11 +390,9 @@ async def update_torrent_streams_metadata(
             # Movie handling
             file_info = processor.get_largest_video_file()
             if not file_info:
-                if is_filename_trustable:
-                    torrent_stream.is_blocked = True
-                    await torrent_stream.save()
-                    logger.error(f"No video files found in torrent {torrent_stream.id}")
-                    return False
+                torrent_stream.is_blocked = True
+                await torrent_stream.save()
+                logger.error(f"No video files found in torrent {torrent_stream.id}")
                 return False
 
             torrent_stream.filename = file_info.filename
@@ -298,11 +404,9 @@ async def update_torrent_streams_metadata(
             # Series handling
             video_files = processor.get_video_files()
             if not video_files:
-                if is_filename_trustable:
-                    torrent_stream.is_blocked = True
-                    await torrent_stream.save()
-                    logger.error(f"No video files found in torrent {torrent_stream.id}")
-                    return False
+                torrent_stream.is_blocked = True
+                await torrent_stream.save()
+                logger.error(f"No video files found in torrent {torrent_stream.id}")
                 return False
 
             episodes = processor.parse_all_episodes(
@@ -310,8 +414,16 @@ async def update_torrent_streams_metadata(
             )
 
             if not episodes:
-                await _request_annotation(torrent_stream, processor.file_infos)
-                return False
+                if len(video_files) == 1 and len(torrent_stream.episode_files) == 1:
+                    episodes = torrent_stream.episode_files
+                    episodes[0].filename = video_files[0].filename
+                    episodes[0].size = video_files[0].size
+                    episodes[0].file_index = (
+                        video_files[0].index if is_index_trustable else None
+                    )
+                else:
+                    await _request_annotation(torrent_stream, processor.file_infos)
+                    return False
 
             torrent_stream.episode_files = episodes
             total_size = sum(f.size for f in processor.get_video_files())
@@ -319,8 +431,6 @@ async def update_torrent_streams_metadata(
                 torrent_stream.size = total_size
 
         torrent_stream.updated_at = datetime.now(tz=timezone.utc)
-        torrent_stream.annotation_requested_at = None
-        torrent_stream.known_file_details = None
         await torrent_stream.save()
         logger.info(f"Successfully updated {torrent_stream.id} metadata")
         return True
@@ -338,9 +448,91 @@ async def _request_annotation(
     """Request manual annotation for the torrent stream."""
     file_details = [KnownFile(filename=f.filename, size=f.size) for f in file_infos]
     torrent_stream.known_file_details = file_details
-    torrent_stream.annotation_requested_at = datetime.now(tz=timezone.utc)
     await torrent_stream.save()
 
     # Notify contributors
-    await telegram_notifier.send_file_annotation_request(torrent_stream.id)
+    await telegram_notifier.send_file_annotation_request(
+        torrent_stream.id, torrent_stream.torrent_name
+    )
     logger.info(f"Requested annotation for {torrent_stream.id}")
+
+
+def is_likely_hash(match_str: str, filename: str) -> bool:
+    """
+    Check if a matched string is likely part of a hash by looking at surrounding context.
+    Returns True if it's likely a hash, False otherwise.
+    """
+    # Common hash indicators
+    hash_indicators = ["[", "]", "(", ")", "{", "}", "#", "0x"]
+
+    # If the match is surrounded by hash indicators or hex characters, it's likely a hash
+    match_pos = filename.find(match_str)
+    if match_pos == -1:
+        return False
+
+    # Check if it's inside brackets which often contain hashes
+    bracket_match = re.search(
+        r"\[[^\]]*" + re.escape(match_str) + r"[^\[]*\]", filename
+    )
+    if bracket_match:
+        # If the bracketed content is short, it might be an episode indicator
+        # If it's long, it's more likely a hash
+        content = bracket_match.group(0)
+        if len(content) > 10 and any(c.isalpha() for c in content):
+            return True
+
+    # If the match contains letters (like in hex), it's likely a hash
+    if any(c.isalpha() for c in match_str):
+        return True
+
+    return False
+
+
+def fallback_parse_season_episode(
+    filename: str, default_season: int = 1
+) -> tuple[Optional[int], Optional[int]]:
+    """
+    Fallback parser for season and episode information.
+    Returns (season_number, episode_number) tuple where each can be None if not detected.
+
+    Uses precompiled patterns stored in a global dictionary for better performance.
+    Patterns are ordered from most reliable/common to least reliable/specific.
+    """
+    # Extract base filename without path and remove common extensions
+    base_filename = re.sub(r"\.(mkv|mp4|avi|mov|wmv|flv)$", "", filename.split("/")[-1])
+
+    # First try specific, high-confidence patterns
+    for pattern_name, (regex, extractor) in SEASON_EPISODE_PATTERNS.items():
+        match = regex.search(base_filename)
+        if match:
+            # Ensure the match isn't likely part of a hash
+            if pattern_name in ["simple_episode"] and is_likely_hash(
+                match.group(0), base_filename
+            ):
+                continue
+
+            season, episode = extractor(match, default_season)
+            return season, episode
+
+    # Additional patterns specifically for anime titles should be matched only as a last resort
+    # and avoided if the string looks like it contains a hash
+    # First check if there's a standalone number that's likely an episode
+    # But be very careful with anime files to avoid matching hash portions
+    for pattern_name, (regex, extractor) in ANIME_PATTERNS.items():
+        for match in regex.finditer(base_filename):
+            # Skip if the match is inside a hash-like structure
+            if is_likely_hash(match.group(0), base_filename):
+                continue
+
+            # Find position relative to the title
+            # Look for numbers that appear after the anime title but before any hash
+            match_pos = match.start()
+
+            # Very simple heuristic: if it's early in the filename or has space around it
+            # and is a small number (less than 100), it's likely an episode number
+            if match_pos > 5 and int(match.group(1)) < 100:
+                season, episode = extractor(match, default_season)
+                return season, episode
+
+    # No match found
+    return None, None
