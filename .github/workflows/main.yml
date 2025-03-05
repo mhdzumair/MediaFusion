@@ -37,7 +37,11 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git commit -m "chore: update version to ${{  github.ref_name }}"
+          if git diff-index --quiet HEAD; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: update version to ${{ github.ref_name }}"
           git push origin HEAD:main
 
   mediafusion_docker_build:
