@@ -58,3 +58,7 @@ BT4G_SEARCH_TTL = int(
 JACKETT_SEARCH_TTL = int(
     timedelta(hours=settings.jackett_search_interval_hour).total_seconds()
 )
+
+DATE_STR_REGEX = re.compile(
+    r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
+)

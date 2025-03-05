@@ -32,14 +32,11 @@ from scrapers.tv import add_tv_metadata, parse_m3u_playlist
 from utils import const, torrent
 from utils.network import get_request_namespace
 from utils.parser import calculate_max_similarity_ratio, convert_bytes_to_readable
-from utils.runtime_const import TEMPLATES, SPORTS_ARTIFACTS
+from utils.runtime_const import TEMPLATES, SPORTS_ARTIFACTS, DATE_STR_REGEX
 from utils.telegram_bot import telegram_notifier
 from utils.validation_helper import validate_image_url
 
 router = APIRouter()
-DATE_STR_REGEX = re.compile(
-    r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
-)
 
 
 def validate_api_password(api_password: str):

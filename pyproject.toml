@@ -59,6 +59,7 @@ dependencies = [
     "ipython",
     "scrapy-fake-useragent>=1.4.4",
     "humanize>=4.12.1",
+    "dateparser>=1.2.1",
 ]
 
 [dependency-groups]

@@ -1,15 +1,17 @@
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from os.path import basename
 from typing import Any, Optional, TypedDict, Tuple, Pattern, Callable
 
 import PTT
+import dateparser
 
-from db.models import TorrentStreams, EpisodeFile, KnownFile
+from db.models import TorrentStreams, EpisodeFile, KnownFile, MediaFusionSeriesMetaData
 from streaming_providers.exceptions import ProviderException
 from utils.lock import acquire_redis_lock
+from utils.runtime_const import DATE_STR_REGEX
 from utils.telegram_bot import telegram_notifier
 from utils.validation_helper import is_video_file
 
@@ -149,6 +151,7 @@ class TorrentFileProcessor:
         self.file_infos = self._process_files()
         self._video_files: Optional[list[FileInfo]] = None
         self._episodes: Optional[list[EpisodeFile]] = None
+        self._metadata: Optional[MediaFusionSeriesMetaData] = None
 
     def _process_files(self) -> list[FileInfo]:
         """Process all files in the torrent and create FileInfo objects."""
@@ -174,11 +177,12 @@ class TorrentFileProcessor:
         video_files = self.get_video_files()
         return max(video_files, key=lambda x: x.size) if video_files else None
 
-    def _parse_season_episode_info(
+    async def _parse_season_episode_info(
         self,
         file_info: FileInfo,
-        torrent_title: Optional[str] = None,
-        default_season: Optional[int] = None,
+        torrent_title: str,
+        meta_id: str,
+        default_season: Optional[int] = 1,
     ) -> tuple[Optional[int], Optional[int]]:
         """Parse season and episode information from filename and torrent title."""
         # First try from filename with PTT
@@ -186,50 +190,64 @@ class TorrentFileProcessor:
         seasons = parsed_data.get("seasons", [])
         episodes = parsed_data.get("episodes", [])
 
-        season = seasons[0] if seasons else None
-        episode = episodes[0] if episodes else None
-
-        # If no season/episode found, try from torrent title
-        if torrent_title and (not season or not episode):
-            title_parsed = PTT.parse_title(torrent_title)
-            title_seasons = title_parsed.get("seasons", [])
-            title_episodes = title_parsed.get("episodes", [])
-
-            # If only one season in title, use it
-            if len(title_seasons) == 1:
-                season = season or title_seasons[0]
-
-            # If only one episode in title, use it
-            if len(title_episodes) == 1:
-                episode = episode or title_episodes[0]
-
-        # If PTT failed to identify season or episode, try the fallback parser
-        if not season or not episode:
-            fallback_season, fallback_episode = fallback_parse_season_episode(
-                file_info.filename, default_season
-            )
-
-            # Use fallback results only if they're not None
-            if fallback_season is not None:
-                season = fallback_season
-            if fallback_episode is not None:
-                episode = fallback_episode
-
-            # Log when fallback parser is used
-            if fallback_season is not None or fallback_episode is not None:
-                logger.info(
-                    f"Used fallback parser for file '{file_info.filename}'. "
-                    f"Detected: S{season}E{episode}"
-                )
+        if seasons and episodes:
+            return seasons[0], episodes[0]
 
         # For season packs without explicit season number
-        if not season and episode:
-            season = default_season or 1
+        if not seasons and episodes:
+            return default_season, episodes[0]
+
+        # If no season/episode found, try from torrent title
+        title_parsed = PTT.parse_title(torrent_title)
+        title_seasons = title_parsed.get("seasons", [])
+        title_episodes = title_parsed.get("episodes", [])
+
+        # If only one season in title, use it
+        if len(title_seasons) == 1 and len(title_episodes) == 1:
+            return title_seasons[0], title_episodes[0]
+
+        # if we have date in the title, use it to find the episode from metadata
+        if not parsed_data.get("date"):
+            date_str_match = DATE_STR_REGEX.search(file_info.filename)
+            if date_str_match:
+                parsed_data["date"] = dateparser.parse(
+                    date_str_match.group(0)
+                ).strftime("%Y-%m-%d")
+
+        if parsed_data.get("date"):
+            if not self._metadata:
+                self._metadata = await MediaFusionSeriesMetaData.get(meta_id)
+
+            filtered_episode = next(
+                (
+                    episode
+                    for episode in self._metadata.episodes
+                    if episode.released.strftime("%Y-%m-%d") == parsed_data["date"]
+                ),
+                None,
+            )
+            if filtered_episode:
+                return filtered_episode.season_number, filtered_episode.episode_number
+
+            # if we have date in the title but no metadata, return None to avoid false detection
+            return None, None
+
+        # If PTT failed to identify season or episode, try the fallback parser
+        season, episode = fallback_parse_season_episode(
+            file_info.filename, default_season
+        )
+
+        # Log when fallback parser is used
+        if season is not None or episode is not None:
+            logger.info(
+                f"Used fallback parser for file '{file_info.filename}'. "
+                f"Detected: S{season}E{episode}"
+            )
 
         return season, episode
 
-    def find_specific_episode(
-        self, season: int, episode: int, torrent_title: Optional[str] = None
+    async def find_specific_episode(
+        self, season: int, episode: int, torrent_title: str, meta_id: str
     ) -> Optional[FileInfo]:
         """Find a specific episode in the video files."""
         if self._episodes:
@@ -237,13 +255,14 @@ class TorrentFileProcessor:
                 if (
                     episode_file.season_number == season
                     and episode_file.episode_number == episode
+                    and 0 <= episode_file.file_index < len(self.file_infos)
                 ):
                     return self.file_infos[episode_file.file_index]
 
         video_files = self.get_video_files()
         for file_info in video_files:
-            parsed_season, parsed_episode = self._parse_season_episode_info(
-                file_info, torrent_title, default_season=season
+            parsed_season, parsed_episode = await self._parse_season_episode_info(
+                file_info, torrent_title, meta_id, default_season=season
             )
             if parsed_season == season and parsed_episode == episode:
                 return file_info
@@ -252,14 +271,14 @@ class TorrentFileProcessor:
             return video_files[0]
         return None
 
-    def parse_all_episodes(
-        self, torrent_title: str, default_season: Optional[int] = None
+    async def parse_all_episodes(
+        self, torrent_title: str, meta_id: str, default_season: Optional[int] = None
     ) -> list[EpisodeFile]:
         """Parse all episode information from video files."""
         episodes = []
         for file_info in self.get_video_files():
-            season, episode = self._parse_season_episode_info(
-                file_info, torrent_title, default_season
+            season, episode = await self._parse_season_episode_info(
+                file_info, torrent_title, meta_id, default_season
             )
             if season and episode:
                 episodes.append(
@@ -341,8 +360,8 @@ async def select_file_index_from_torrent(
 
     # Try to find by season/episode
     if season and episode:
-        selected_file = processor.find_specific_episode(
-            season, episode, torrent_stream.torrent_name
+        selected_file = await processor.find_specific_episode(
+            season, episode, torrent_stream.torrent_name, torrent_stream.meta_id
         )
         if selected_file:
             return selected_file.index
@@ -409,8 +428,10 @@ async def update_torrent_streams_metadata(
                 logger.error(f"No video files found in torrent {torrent_stream.id}")
                 return False
 
-            episodes = processor.parse_all_episodes(
-                torrent_stream.torrent_name, default_season=season
+            episodes = await processor.parse_all_episodes(
+                torrent_stream.torrent_name,
+                torrent_stream.meta_id,
+                default_season=season,
             )
 
             if not episodes:
@@ -462,8 +483,6 @@ def is_likely_hash(match_str: str, filename: str) -> bool:
     Check if a matched string is likely part of a hash by looking at surrounding context.
     Returns True if it's likely a hash, False otherwise.
     """
-    # Common hash indicators
-    hash_indicators = ["[", "]", "(", ")", "{", "}", "#", "0x"]
 
     # If the match is surrounded by hash indicators or hex characters, it's likely a hash
     match_pos = filename.find(match_str)
