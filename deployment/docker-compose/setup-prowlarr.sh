@@ -14,7 +14,7 @@ PROWLARR_API_KEY=$(openssl rand -hex 16)
 echo "PROWLARR_API_KEY=$PROWLARR_API_KEY" >> .env
 
 # Stop & delete Prowlarr container if it's running
-docker compose rm -sf prowlarr
+docker-compose rm -sf prowlarr
 
 # delete the volume if it exists
 docker volume rm -f docker-compose_prowlarr-config
