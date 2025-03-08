@@ -130,7 +130,6 @@ jobs:
         with:
           files: |
             kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip
-          prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
   generate_release_notes:
