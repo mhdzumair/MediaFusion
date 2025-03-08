@@ -867,7 +867,10 @@ async def update_images(
         )
 
     # cleanup redis cache
-    cache_key = f"{metadata.get('type')}_{meta_id}.jpg"
-    await REDIS_ASYNC_CLIENT.delete(cache_key)
+    cache_keys = [
+        f"{metadata.get('type')}_{meta_id}.jpg",
+        f"{metadata.get('type')}_data:{meta_id}",
+    ]
+    await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
     return {"status": f"Successfully updated images for {meta_id}"}
