@@ -950,7 +950,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             iconContainer.innerHTML = `
                 <i class="bi bi-sort-${newDirection === 'asc' ? 'up-alt' : 'down'}"></i>
-                <span class="d-none d-sm-inline ms-1">${newTooltipText}</span>
+                <span class="d-sm-inline ms-1">${newTooltipText}</span>
             `;
         });
     });
