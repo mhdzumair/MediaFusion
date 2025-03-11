@@ -363,10 +363,36 @@ async def get_video_url_from_pikpak(
 
         file_data = await pikpak.get_download_url(selected_file["id"])
 
-        if file_data.get("medias"):
-            return file_data["medias"][0]["link"]["url"]
-
+        media_link = next(
+            (
+                media["link"]["url"]
+                for media in file_data.get("medias", [])
+                if media.get("link") and media["link"].get("url")
+            ),
+            None,
+        )
+        if media_link:
+            # Validate the media link
+            if await validate_medialink(media_link):
+                return media_link
+            else:
+                raise ProviderException(
+                    "Invalid media link", "pikpak_invalid_media_link.mp4"
+                )
         return file_data["web_content_link"]
+
+
+async def validate_medialink(media_link: str) -> bool:
+    """Validates the media link by checking few bytes of the content."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            async with client.stream("GET", media_link) as response:
+                if response.status_code == 200:
+                    async for _ in response.aiter_raw(2):
+                        return True
+        except httpx.RequestError:
+            pass
+        return False
 
 
 async def update_pikpak_cache_status(
