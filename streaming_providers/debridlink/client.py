@@ -11,6 +11,31 @@ class DebridLink(DebridClient):
     OAUTH_URL = "https://debrid-link.com/api/oauth"
     OPENSOURCE_CLIENT_ID = "RyrV22FOg30DsxjYPziRKA"
 
+    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+        super().__init__(token)
+        self.user_ip = user_ip
+        self.is_private_token = False
+
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[dict] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        **kwargs,
+    ) -> dict | list:
+        if self.user_ip:
+            if data:
+                data["ip"] = self.user_ip
+            elif json:
+                json["ip"] = self.user_ip
+            elif params:
+                params["ip"] = self.user_ip
+        return await super()._make_request(
+            method=method, url=url, data=data, json=json, params=params, **kwargs
+        )
+
     @staticmethod
     def _handle_error_message(error_message):
         match error_message:

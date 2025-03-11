@@ -42,11 +42,14 @@ async def get_video_url_from_debridlink(
     stream: TorrentStreams,
     episode: Optional[int],
     season: Optional[int] = None,
+    user_ip: Optional[str] = None,
     max_retries=5,
     retry_interval=5,
     **kwargs,
 ) -> str:
-    async with DebridLink(token=user_data.streaming_provider.token) as dl_client:
+    async with DebridLink(
+        token=user_data.streaming_provider.token, user_ip=user_ip
+    ) as dl_client:
         torrent_info = await dl_client.get_available_torrent(info_hash)
         if not torrent_info:
             if stream.torrent_file:
