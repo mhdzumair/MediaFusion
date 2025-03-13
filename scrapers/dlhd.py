@@ -287,6 +287,9 @@ class DLHDScheduleService:
                 return None
 
             # Create new stream if no existing streams found or if it's SD
+            channel_name += (
+                "\n⚠️ Stream only available during the event" if is_sd else ""
+            )
             try:
                 stream = self.create_stream(
                     server_key, channel_id, channel_name, meta_id, server_type
@@ -479,7 +482,7 @@ class DLHDScheduleService:
                 cache_key, max_time, min_time, start=skip, num=limit
             )
 
-            if not event_keys:
+            if not event_keys and genre:
                 logging.info(
                     "No events found in cache for the specified time window, pagination or genre"
                 )
@@ -498,7 +501,9 @@ class DLHDScheduleService:
                 else:
                     await REDIS_ASYNC_CLIENT.zrem(cache_key, event_key)
 
-            return events
+            if events or genre:
+                # return cached events if found or genre is specified
+                return events
 
         # If we need to refresh or don't have enough cached events, fetch new data
         all_events = await self.parse_and_cache_schedule()
