@@ -482,7 +482,7 @@ class DLHDScheduleService:
                 cache_key, max_time, min_time, start=skip, num=limit
             )
 
-            if not event_keys and genre:
+            if not event_keys and genre and skip != 0:
                 logging.info(
                     "No events found in cache for the specified time window, pagination or genre"
                 )
@@ -501,7 +501,7 @@ class DLHDScheduleService:
                 else:
                     await REDIS_ASYNC_CLIENT.zrem(cache_key, event_key)
 
-            if events or genre:
+            if events or genre or skip != 0:
                 # return cached events if found or genre is specified
                 return events
 
