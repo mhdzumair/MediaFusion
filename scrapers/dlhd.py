@@ -430,6 +430,8 @@ class DLHDScheduleService:
             self._category_max_times = {}
 
             for sport, events in sports.items():
+                # cleanup sport name
+                sport = sport.replace("</span>", "")
                 mapped_category = self.category_map.get(sport, "Other Sports")
                 for event in events:
                     metadata = self.create_event_metadata(
