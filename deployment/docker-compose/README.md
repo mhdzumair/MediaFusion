@@ -176,6 +176,14 @@ To stop MediaFusion, run the following command:
 docker compose -f docker-compose.yml down
 ```
 
+## Resetting MediaFusion 🔄
+
+To reset MediaFusion, remove the containers and volumes:
+
+```bash
+docker compose -f docker-compose.yml down -v
+```
+
 ## Troubleshooting 🛠️
 
 - If you encounter any issues during the deployment, check the logs for the respective service using `docker compose -f docker-compose.yml logs <service-name>`.
