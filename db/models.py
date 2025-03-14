@@ -152,16 +152,20 @@ class TorrentStreams(Document):
 
             # If no existing catalog stats found, add new one
             if result.modified_count == 0:
-                update_ops["$push"] = update_ops.get("$push", {})
-                update_ops["$push"]["catalog_stats"] = {
-                    "$each": [
-                        {
-                            "catalog": cat,
-                            "total_streams": 1,
-                            "last_stream_added": self.created_at,
-                        }
-                    ]
-                }
+                # Initialize $push.catalog_stats.$each if it doesn't exist yet
+                if "$push" not in update_ops:
+                    update_ops["$push"] = {}
+                if "catalog_stats" not in update_ops["$push"]:
+                    update_ops["$push"]["catalog_stats"] = {"$each": []}
+
+                # Add this catalog to the $each array
+                update_ops["$push"]["catalog_stats"]["$each"].append(
+                    {
+                        "catalog": cat,
+                        "total_streams": 1,
+                        "last_stream_added": self.created_at,
+                    }
+                )
 
         # Handle episode metadata updates for series
         if self.episode_files:
