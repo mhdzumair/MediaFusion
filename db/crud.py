@@ -1709,7 +1709,9 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
                 update_data["episodes"] = updated_episodes
 
         # Update stream-related metadata
-        stream_metadata = await update_meta_stream(meta_id, is_update_data_only=True)
+        stream_metadata = await update_meta_stream(
+            meta_id, metadata_type, is_update_data_only=True
+        )
         update_data.update(stream_metadata)
 
         # Update database entries with the new data
@@ -1742,7 +1744,9 @@ async def fetch_metadata(imdb_ids: list[str], metadata_type: str):
         logging.info(f"Stored metadata for {metadata_type} {result.id}")
 
 
-async def update_meta_stream(meta_id: str, is_update_data_only: bool = False) -> dict:
+async def update_meta_stream(
+    meta_id: str, meta_type: str, is_update_data_only: bool = False
+) -> dict:
     """
     Update stream-related metadata for a given meta_id.
     """
@@ -1813,5 +1817,8 @@ async def update_meta_stream(meta_id: str, is_update_data_only: bool = False) ->
             },
         )
 
+    cache_keys = await REDIS_ASYNC_CLIENT.keys(f"{meta_type}_{meta_id}_meta*")
+    cache_keys.append(f"{meta_type}_data:{meta_id}")
+    await REDIS_ASYNC_CLIENT.delete(*cache_keys)
     logging.info(f"Updated stream metadata for {meta_id}")
     return update_data

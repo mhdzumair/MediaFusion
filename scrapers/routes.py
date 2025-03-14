@@ -161,8 +161,6 @@ async def update_imdb_data(
     redirect_video: bool = False,
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
-    if not (meta_id.startswith("tt") and meta_id[2:].isdigit()):
-        raise_error("Invalid IMDb ID. Must start with 'tt'.")
 
     if media_type == "series":
         series = await get_series_data_by_id(meta_id)
@@ -173,7 +171,10 @@ async def update_imdb_data(
         if not movie:
             raise_error(f"Movie with ID {meta_id} not found.")
 
-    await update_metadata([meta_id], media_type)
+    if meta_id.startswith("tt"):
+        await update_metadata([meta_id], media_type)
+    else:
+        await update_meta_stream(meta_id, media_type)
 
     if redirect_video:
         return RedirectResponse(
@@ -691,7 +692,7 @@ async def migrate_id(migrate_data: schemas.MigrateID):
     await MediaFusionMetaData.get_motor_collection().delete_one(
         {"_id": migrate_data.mediafusion_id}
     )
-    await update_meta_stream(migrate_data.imdb_id)
+    await update_meta_stream(migrate_data.imdb_id, migrate_data.media_type)
 
     # Send notification
     if settings.telegram_bot_token:

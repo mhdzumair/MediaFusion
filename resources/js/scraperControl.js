@@ -1692,12 +1692,6 @@ async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
 
 async function handleUpdateImdbData(submitBtn, loadingSpinner) {
     const imdbId = document.getElementById('imdbId').value;
-    const imdbIdNumeric = parseInt(imdbId.slice(2), 10);
-    if (!imdbId.startsWith('tt') || imdbId.length < 3 || imdbId.length > 10 || isNaN(imdbIdNumeric)) {
-        showNotification('Invalid IMDb ID', 'error');
-        resetButton(submitBtn, loadingSpinner);
-        return;
-    }
     const imdbType = document.getElementById('imdbType').value;
 
     try {
