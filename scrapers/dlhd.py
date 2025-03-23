@@ -2,6 +2,7 @@ import logging
 import random
 from datetime import datetime, timedelta
 from typing import Optional, List
+from urllib.parse import urljoin
 
 import httpx
 import humanize
@@ -73,7 +74,10 @@ class DLHDScheduleService:
         logging.info("Fetching fresh schedule data from DLHD")
         try:
             async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
-                response = await client.get(self.schedule_url)
+                response = await client.get(
+                    self.schedule_url,
+                    headers={"Referer": urljoin(self.schedule_url, "/")},
+                )
                 if response.status_code == 200:
                     return response.json()
                 logging.error(f"Failed to fetch schedule: {response.status_code}")
