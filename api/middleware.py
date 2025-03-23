@@ -72,7 +72,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
             if encoded_user_data:
                 user_data = crypto_utils.decode_user_data(encoded_user_data)
             else:
-                secret_str = request.path_params.get("secret_str")
+                secret_str = request.path_params.get("secret_str") or request.query_params.get("secret_str")
                 user_data = await crypto_utils.decrypt_user_data(secret_str)
         except (ValueError, ValidationError):
             # check if the endpoint is for /streams

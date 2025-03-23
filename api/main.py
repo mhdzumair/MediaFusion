@@ -29,6 +29,7 @@ from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import SortingOption
 from kodi.routes import kodi_router
 from metrics.routes import metrics_router
+from api.frontend_api import router as frontend_api_router
 from scrapers.routes import router as scrapers_router
 from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
 from streaming_providers import mapper
@@ -123,6 +124,7 @@ app.add_middleware(middleware.SecureLoggingMiddleware)
 app.mount("/static", StaticFiles(directory="resources"), name="static")
 
 
+# Keep the existing template-based routes for backward compatibility
 @app.get("/", tags=["home"])
 async def get_home(request: Request):
     return TEMPLATES.TemplateResponse(
@@ -957,3 +959,6 @@ app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
 app.include_router(kodi_router, prefix="/kodi", tags=["kodi"])
+
+# Add the frontend API router
+app.include_router(frontend_api_router)
