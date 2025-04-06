@@ -15,7 +15,6 @@ from .utils import (
     log,
     convert_info_hash_to_magnet,
     is_elementum_installed_and_enabled,
-    remove_cache,
 )
 
 
@@ -100,14 +99,6 @@ def process_videos(videos, action, catalog_type, catalog_id):
             }
         )
 
-        li.addContextMenuItems(
-            [
-                (
-                    "Refresh API",
-                    f"Container.Refresh({build_url(action, catalog_type=catalog_type, catalog_id=catalog_id, force_refresh=1)})",
-                ),
-            ]
-        )
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
@@ -120,8 +111,7 @@ def list_catalog(params):
         BASE_URL,
         f"/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/skip={skip}.json",
     )
-    force_refresh = params.get("force_refresh", False)
-    response = fetch_data(url, force_refresh)
+    response = fetch_data(url)
     if not response:
         return
 
@@ -130,7 +120,6 @@ def list_catalog(params):
         xbmcgui.Dialog().notification(
             "MediaFusion", "No videos available", xbmcgui.NOTIFICATION_ERROR
         )
-        remove_cache(url)
         return
 
     content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
@@ -162,8 +151,7 @@ def search_catalog(params):
         BASE_URL,
         f"/{SECRET_STR}/catalog/{params['catalog_type']}/{params['catalog_id']}/search={search_query}.json",
     )
-    force_refresh = params.get("force_refresh", False)
-    response = fetch_data(url, force_refresh)
+    response = fetch_data(url)
     if not response:
         return
 
@@ -172,7 +160,6 @@ def search_catalog(params):
         xbmcgui.Dialog().notification(
             "MediaFusion", "No results found", xbmcgui.NOTIFICATION_ERROR
         )
-        remove_cache(url)
         return
 
     content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
@@ -189,8 +176,7 @@ def list_seasons(params):
         BASE_URL,
         f"/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json",
     )
-    force_refresh = params.get("force_refresh", False)
-    response = fetch_data(url, force_refresh)
+    response = fetch_data(url)
     if not response:
         return
 
@@ -239,14 +225,6 @@ def list_seasons(params):
             }
         )
 
-        li.addContextMenuItems(
-            [
-                (
-                    "Refresh API",
-                    f"Container.Refresh({build_url('list_seasons', catalog_type=params['catalog_type'], video_id=params['video_id'], force_refresh=1)})",
-                ),
-            ]
-        )
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
@@ -259,8 +237,7 @@ def list_episodes(params):
         BASE_URL,
         f"/{SECRET_STR}/meta/{params['catalog_type']}/{params['video_id']}.json",
     )
-    force_refresh = params.get("force_refresh", False)
-    response = fetch_data(url, force_refresh)
+    response = fetch_data(url)
     if not response:
         return
 
@@ -309,15 +286,6 @@ def list_episodes(params):
             }
         )
 
-        li.addContextMenuItems(
-            [
-                (
-                    "Refresh API",
-                    f"Container.Refresh({build_url('list_episodes', catalog_type=params['catalog_type'], video_id=params['video_id'], season={video['season']}, force_refresh=1)})",
-                ),
-            ]
-        )
-
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
         )
@@ -330,8 +298,7 @@ def get_streams(params):
         BASE_URL,
         f"/{SECRET_STR}/stream/{params['catalog_type']}/{params['video_id']}.json",
     )
-    force_refresh = params.get("force_refresh", False)
-    response = fetch_data(url, force_refresh)
+    response = fetch_data(url)
     if not response:
         return
 
@@ -402,15 +369,6 @@ def get_streams(params):
             video_url = f"plugin://plugin.video.elementum/play?uri={parse.quote_plus(magnet_link)}"
         else:
             continue
-
-        li.addContextMenuItems(
-            [
-                (
-                    "Refresh API",
-                    f"Container.Refresh({build_url('get_streams', catalog_type=params['catalog_type'], video_id=params['video_id'], force_refresh=1)})",
-                ),
-            ]
-        )
 
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE,
