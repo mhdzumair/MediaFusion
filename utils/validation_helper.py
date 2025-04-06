@@ -4,12 +4,31 @@ import logging
 from urllib.parse import urlparse, urljoin
 
 import httpx
+from fastapi import Depends, HTTPException
+from fastapi.security import APIKeyHeader
 
 from db import schemas
 from db.config import settings
 from utils import const
 from utils.network import is_private_ip
 from db.redis_database import REDIS_ASYNC_CLIENT
+
+# API Key Header for authentication
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def api_password_dependency(api_key: str = Depends(API_KEY_HEADER)):
+    """Validate the API password from header or throw exception"""
+    if not settings.api_password:
+        return "no_password_required"
+
+    if api_key != settings.api_password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "APIKey"},
+        )
+    return api_key
 
 
 def is_valid_url(url: str) -> bool:

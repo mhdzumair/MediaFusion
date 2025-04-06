@@ -10,13 +10,15 @@ from utils import const
 from utils.network import get_user_data, get_user_public_ip
 
 # Create a router with more appropriate naming for the frontend
-router = APIRouter(prefix="/api/v1", tags=["frontend"])
+router = APIRouter()
 
 
 # ---- Data Models ----
 
+
 class AppConfig(BaseModel):
     """Base configuration data for the application"""
+
     addon_name: str
     logo_url: str
     host_url: str
@@ -31,18 +33,21 @@ class AppConfig(BaseModel):
 
 class UserConfig(BaseModel):
     """User-specific configuration data"""
+
     user_data: Dict[str, Any]
     configured_fields: List[str]
 
 
 class ValidationResult(BaseModel):
     """Data model for validation results"""
+
     status: str
     message: Optional[str] = None
 
 
 class StreamData(BaseModel):
     """Data model for stream information"""
+
     title: str
     year: int
     poster: str
@@ -58,6 +63,7 @@ class StreamData(BaseModel):
 
 
 # ---- API Endpoints ----
+
 
 @router.get("/app-config", response_model=AppConfig)
 async def get_app_config():
@@ -75,7 +81,8 @@ async def get_app_config():
         "branding_description": settings.branding_description,
         "is_public_instance": settings.is_public_instance,
         "disabled_providers": settings.disabled_providers,
-        "authentication_required": settings.api_password is not None and not settings.is_public_instance,
+        "authentication_required": settings.api_password is not None
+        and not settings.is_public_instance,
     }
 
 
@@ -97,7 +104,9 @@ async def get_user_config(
         configured_fields.extend(["provider_token", "password"])
 
         if user_data.streaming_provider.qbittorrent_config:
-            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = "••••••••"
+            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = (
+                "••••••••"
+            )
             user_data.streaming_provider.qbittorrent_config.webdav_password = "••••••••"
             configured_fields.extend(["qbittorrent_password", "webdav_password"])
 
@@ -132,8 +141,13 @@ async def get_system_constants():
     }
 
 
-@router.get("/download/{secret_str}/{catalog_type}/{video_id}", response_model=StreamData)
-@router.get("/download/{secret_str}/{catalog_type}/{video_id}/{season}/{episode}", response_model=StreamData)
+@router.get(
+    "/download/{secret_str}/{catalog_type}/{video_id}", response_model=StreamData
+)
+@router.get(
+    "/download/{secret_str}/{catalog_type}/{video_id}/{season}/{episode}",
+    response_model=StreamData,
+)
 async def get_download_info(
     request: Request,
     secret_str: str,

@@ -960,5 +960,5 @@ app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
 app.include_router(kodi_router, prefix="/kodi", tags=["kodi"])
 
-# Add the frontend API router
-app.include_router(frontend_api_router)
+
+app.include_router(frontend_api_router, prefix="/api/v1", tags=["frontend"])

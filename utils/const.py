@@ -98,6 +98,19 @@ USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS = [
     "telugu_series",
 ]
 
+USER_UPLOAD_SUPPORTED_SPORTS_CATALOG_IDS = [
+    "american_football",
+    "baseball",
+    "basketball",
+    "football",
+    "formula_racing",
+    "hockey",
+    "motogp_racing",
+    "rugby",
+    "other_sports",
+    "fighting",
+]
+
 RESOLUTIONS = [
     "4k",
     "2160p",
