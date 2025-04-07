@@ -642,11 +642,11 @@ input[type="text"]:focus, input[type="password"]:focus, select.form-control:focu
 .form-check-input:checked + .form-check-label::after {
     content: '✔';
     font-size: 1em;
-    position: absolute;
-    right: 0.5rem;
-    top: 50%;
-    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
     color: white;
+    margin-left: auto;
+    padding-left: 0.5rem;
 }
 
 .form-check-input:checked ~ .form-check-label {
@@ -1157,15 +1157,72 @@ small.text-muted,
     font-weight: 500;
 }
 
+/* Update styles for the episode numbering feature */
+.numbering-btn {
+    padding: 3px 10px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    margin-left: 8px;
+    min-width: 130px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.numbering-btn i {
+    font-size: 0.8rem;
+    margin-right: 4px;
+}
+
+/* Style for file annotation list */
+#fileAnnotationList .card {
+    transition: background-color 0.2s ease;
+}
+
+#fileAnnotationList .card:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
 
 #fileAnnotationList .card-subtitle {
     flex-grow: 1;
-    margin-right: 1rem;
+    margin-right: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Ensure good spacing in the file rows */
+#fileAnnotationList .d-flex {
+    gap: 8px;
+}
+
+/* Make sure the button stays in place even with long filenames */
+#fileAnnotationList .d-flex.justify-content-between {
+    flex-wrap: nowrap;
 }
 
 .excluded-file {
     background-color: rgba(255, 255, 255, 0.05);
     padding: 0.5rem;
+    border-color: #dee2e6;
+}
+
+.numbered-file {
+    animation: highlight-numbered-file 1.5s ease;
+}
+
+@keyframes highlight-numbered-file {
+    0% {
+        background-color: rgba(13, 110, 253, 0.1);
+        border-color: #0d6efd;
+    }
+    50% {
+        background-color: rgba(13, 110, 253, 0.2);
+        border-color: #0d6efd;
+    }
+    100% {
+        background-color: inherit;
+        border-color: inherit;
+    }
 }
 
 .form-switch .form-check-input {

@@ -261,7 +261,7 @@ function showConfirmationDialog(validationErrors, torrentData, infoHash) {
                             <ul class="text-danger">
                                 ${errorMessages}
                             </ul>
-                            
+
                             <div class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" id="confirmGuidelines" required>
                                 <label class="form-check-label" for="confirmGuidelines">
@@ -371,20 +371,20 @@ function showFileAnnotationModal(files) {
         const fileRow = `
             <div class="card mb-3" id="file-row-${index}">
                 <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div class="d-flex align-items-center flex-grow-1">
+                    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap">
+                        <div class="d-flex align-items-center w-100">
                             <!-- Include/Exclude Toggle -->
                             <div class="form-check form-switch me-2">
-                                <input class="form-check-input" type="checkbox" 
-                                       id="include-file-${index}" 
+                                <input class="form-check-input" type="checkbox"
+                                       id="include-file-${index}"
                                        checked
                                        onchange="toggleFileInclusion(${index})">
                                 <label class="form-check-label" for="include-file-${index}">
                                     Include
                                 </label>
                             </div>
-                            <h6 class="card-subtitle mb-0 text-muted text-truncate" 
-                                style="max-width: 80%;" 
+                            <h6 class="card-subtitle mb-0 text-muted text-truncate"
+                                style="max-width: calc(100% - 90px);"
                                 title="${file.filename}">
                                 ${file.filename}
                             </h6>
@@ -393,47 +393,59 @@ function showFileAnnotationModal(files) {
                     <div class="row" id="file-inputs-${index}">
                         <div class="col-md-6">
                             <label class="form-label">Season</label>
-                            <input type="number" class="form-control season-input" 
-                                   id="season-${index}" 
+                            <button type="button" class="btn btn-sm btn-outline-primary numbering-btn"
+                                    onclick="applySeasonNumberingFrom(${index})">
+                                <i class="bi bi-play-fill"></i> Apply same season to all following files
+                            </button>
+                            <input type="number" class="form-control season-input"
+                                   id="season-${index}"
                                    data-index="${index}"
-                                   value="${file.season_number || ''}" 
+                                   value="${file.season_number || ''}"
                                    min="1">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Episode</label>
-                            <input type="number" class="form-control" 
-                                   id="episode-${index}" 
-                                   value="${file.episode_number || ''}" 
+                            <button type="button" class="btn btn-sm btn-outline-primary numbering-btn"
+                                    onclick="applyEpisodeNumberingFrom(${index})">
+                                <i class="bi bi-play-fill"></i> Apply consecutive episode numbering
+                            </button>
+                            <input type="number" class="form-control"
+                                   id="episode-${index}"
+                                   value="${file.episode_number || ''}"
                                    min="1">
                         </div>
                     </div>
 
                     ${isSportsContent ? `
-                    <div class="episode-metadata mt-3">
+                    <div class="episode-metadata mt-3" id="episode-metadata-${index}">
                         <div class="mb-2">
                             <label class="form-label">Episode Title</label>
-                            <input type="text" class="form-control" 
-                                   id="title-${index}" 
-                                   placeholder="Optional">
+                            <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top" title="Provide the episode title to show in the season view">
+                            </i>
+                            <input type="text" class="form-control"
+                                   id="title-${index}"
+                                   placeholder="Optional"
+                                   value="${file.episode_title || ''}">
                         </div>
                         <div class="mb-2">
                             <label class="form-label">Episode Overview</label>
-                            <textarea class="form-control" 
-                                      id="overview-${index}" 
-                                      rows="2" 
+                            <textarea class="form-control"
+                                      id="overview-${index}"
+                                      rows="2"
                                       placeholder="Optional"></textarea>
                         </div>
                         <div class="mb-2">
                             <label class="form-label">Thumbnail URL</label>
-                            <input type="url" class="form-control" 
-                                   id="thumbnail-${index}" 
+                            <input type="url" class="form-control"
+                                   id="thumbnail-${index}"
                                    placeholder="Optional">
                         </div>
                         <div class="mb-2">
                             <label class="form-label">Release Date</label>
-                            <input type="text" class="form-control" 
+                            <input type="text" class="form-control"
                                    id="release-${index}"
-                                   placeholder="DD/MM/YYYY">
+                                   placeholder="DD/MM/YYYY"
+                                   value="${file.release_date || ''}">
                         </div>
                     </div>
                     ` : ''}
@@ -446,81 +458,6 @@ function showFileAnnotationModal(files) {
         // Initialize date picker for each file
         setupDateInput(`release-${index}`, false);
     });
-
-    // Set up bulk season assignment handler
-    document.getElementById('applyBulkSeason').onclick = () => {
-        const season = document.getElementById('bulkSeason').value;
-        if (season) {
-            document.querySelectorAll('.season-input:not([disabled])').forEach(input => {
-                // Only apply to included files
-                const index = input.dataset.index;
-                const isIncluded = document.getElementById(`include-file-${index}`)?.checked;
-                if (isIncluded) {
-                    input.value = season;
-                }
-            });
-        }
-    };
-
-    // Set up multiple seasons handler with the same included files logic
-    document.getElementById('applyMultiSeasons').onclick = () => {
-        const seasonsInput = document.getElementById('multipleSeasons').value;
-        if (!seasonsInput) return;
-
-        const seasons = parseSeasonsInput(seasonsInput);
-        if (seasons.length === 0) return;
-
-        const fileGroupingOptions = document.getElementById('fileGroupingOptions');
-        fileGroupingOptions.style.display = 'block';
-
-        const applySeasons = () => {
-            const distribution = document.querySelector('input[name="seasonDistribution"]:checked').value;
-            const episodesPerSeason = parseInt(document.getElementById('episodeCount').value) || 0;
-
-            // Filter for only included files
-            const seasonInputs = Array.from(document.querySelectorAll('.season-input:not([disabled])'))
-                .filter(input => {
-                    const index = input.dataset.index;
-                    return document.getElementById(`include-file-${index}`)?.checked;
-                });
-
-            if (distribution === 'auto') {
-                // Distribute episodes evenly across seasons
-                const filesPerSeason = Math.ceil(seasonInputs.length / seasons.length);
-                seasonInputs.forEach((input, index) => {
-                    const seasonIndex = Math.floor(index / filesPerSeason);
-                    input.value = seasons[Math.min(seasonIndex, seasons.length - 1)];
-                });
-            } else {
-                // Manual distribution based on episodes per season
-                if (episodesPerSeason > 0) {
-                    seasonInputs.forEach((input, index) => {
-                        const seasonIndex = Math.floor(index / episodesPerSeason);
-                        input.value = seasons[Math.min(seasonIndex, seasons.length - 1)];
-                    });
-                }
-            }
-        };
-
-        // Distribution method handlers
-        document.querySelectorAll('input[name="seasonDistribution"]').forEach(radio => {
-            radio.onchange = () => {
-                document.getElementById('episodesPerSeason').style.display =
-                    radio.value === 'manual' ? 'block' : 'none';
-                if (radio.value === 'auto') {
-                    applySeasons();
-                }
-            };
-        });
-
-        document.getElementById('episodeCount').onchange = () => {
-            if (document.getElementById('manualGroup').checked) {
-                applySeasons();
-            }
-        };
-
-        applySeasons();
-    };
 
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
@@ -565,11 +502,113 @@ function showFileAnnotationModal(files) {
     });
 }
 
+// Function to apply episode numbering starting from a specific index
+function applyEpisodeNumberingFrom(startIndex) {
+    const startEpisodeNumber = 1;
+    const resetOnSeasonChange = true;
+
+    // Get all included file rows
+    const fileRows = Array.from(document.querySelectorAll('.card[id^="file-row-"]'));
+
+    // Filter rows starting from the specified index
+    const relevantFiles = fileRows.slice(fileRows.findIndex(row => row.id === `file-row-${startIndex}`));
+
+    let episodeCounter = startEpisodeNumber;
+    let lastSeason = null;
+
+    // Clear any previous highlights
+    document.querySelectorAll('.card[id^="file-row-"]').forEach(row => {
+        row.classList.remove('numbered-file');
+    });
+
+    // Apply episode numbers with visual feedback
+    relevantFiles.forEach((fileRow, idx) => {
+        const index = fileRow.id.split('-')[2];
+
+        // Skip excluded files
+        if (!document.getElementById(`include-file-${index}`)?.checked) {
+            return;
+        }
+
+        // Get the season input for this file
+        const seasonInput = document.getElementById(`season-${index}`);
+        const currentSeason = parseInt(seasonInput.value) || null;
+
+        // Reset episode counter if season changes and reset option is enabled
+        if (resetOnSeasonChange && lastSeason !== null && currentSeason !== null && currentSeason !== lastSeason) {
+            episodeCounter = 1;
+        }
+
+        // Set the episode number
+        document.getElementById(`episode-${index}`).value = episodeCounter++;
+
+        // Store the current season for next iteration
+        if (currentSeason !== null) {
+            lastSeason = currentSeason;
+        }
+
+        // Add visual highlight with slight delay for visual effect
+        setTimeout(() => {
+            fileRow.classList.add('numbered-file');
+            // Remove highlight after 1.5 seconds
+            setTimeout(() => {
+                fileRow.classList.remove('numbered-file');
+            }, 1500);
+        }, idx * 50);
+    });
+
+    showNotification('Episode numbering applied successfully', 'success');
+}
+
+// Function to apply season numbering starting from a specific index
+function applySeasonNumberingFrom(startIndex) {
+    // Get all file rows
+    const fileRows = Array.from(document.querySelectorAll('.card[id^="file-row-"]'));
+
+    // Get the starting season number from the user
+    const startSeasonNumber = parseInt(document.getElementById(`season-${startIndex}`).value) || parseInt(prompt("Enter starting season number:", "1")) || 1;
+
+    // Filter rows starting from the specified index
+    const relevantFiles = fileRows.slice(fileRows.findIndex(row => row.id === `file-row-${startIndex}`));
+
+    let seasonCounter = startSeasonNumber;
+
+    // Clear any previous highlights
+    document.querySelectorAll('.card[id^="file-row-"]').forEach(row => {
+        row.classList.remove('numbered-file');
+    });
+
+    // Apply season numbers with visual feedback
+    relevantFiles.forEach((fileRow, idx) => {
+        const index = fileRow.id.split('-')[2];
+
+        // Skip excluded files
+        if (!document.getElementById(`include-file-${index}`)?.checked) {
+            return;
+        }
+
+        // Set the season number
+        document.getElementById(`season-${index}`).value = seasonCounter;
+
+        // Add visual highlight with slight delay for visual effect
+        setTimeout(() => {
+            fileRow.classList.add('numbered-file');
+            // Remove highlight after 1.5 seconds
+            setTimeout(() => {
+                fileRow.classList.remove('numbered-file');
+            }, 1500);
+        }, idx * 50);
+    });
+
+    showNotification('Season numbering applied successfully', 'success');
+}
+
 // Function to toggle file inclusion
 function toggleFileInclusion(index) {
     const checkbox = document.getElementById(`include-file-${index}`);
     const inputsContainer = document.getElementById(`file-inputs-${index}`);
     const fileRow = document.getElementById(`file-row-${index}`);
+    const episodeMetadata = document.getElementById(`episode-metadata-${index}`);
 
     if (checkbox.checked) {
         // File is included
@@ -578,6 +617,11 @@ function toggleFileInclusion(index) {
         fileRow.classList.remove('excluded-file');
         // Enable all inputs in the container
         inputsContainer.querySelectorAll('input, textarea').forEach(input => {
+            input.disabled = false;
+        });
+        episodeMetadata.style.opacity = '1';
+        episodeMetadata.style.pointerEvents = 'auto';
+        episodeMetadata.querySelector('input, textarea').forEach(input => {
             input.disabled = false;
         });
     } else {
@@ -589,14 +633,17 @@ function toggleFileInclusion(index) {
         inputsContainer.querySelectorAll('input, textarea').forEach(input => {
             input.disabled = true;
         });
+        episodeMetadata.style.opacity = '0.5';
+        episodeMetadata.style.pointerEvents = 'none';
+        episodeMetadata.querySelector('input, textarea').forEach(input => {
+            input.disabled = true;
+        });
     }
 }
-
 
 function toggleInput(disableId, input) {
     document.getElementById(disableId).disabled = !!input.value;
 }
-
 
 // Function to update form fields based on scraper selection
 function updateFormFields() {
@@ -833,18 +880,18 @@ function displayMatchResults(matches, torrentData) {
                     <div class="d-flex">
                         <!-- Poster Section -->
                         <div class="flex-shrink-0 me-3">
-                            <img src="${match.poster || '/static/img/placeholder.jpg'}" 
+                            <img src="${match.poster || '/static/img/placeholder.jpg'}"
                                  alt="${match.title}"
-                                 class="rounded shadow-sm" 
+                                 class="rounded shadow-sm"
                                  style="width: 120px; height: 180px; object-fit: cover;">
                         </div>
-                        
+
                         <!-- Content Section -->
                         <div class="flex-grow-1">
                             <!-- Header -->
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
-                                    <h5 class="mb-1">${match.title} 
+                                    <h5 class="mb-1">${match.title}
                                         <span class="text-muted">(${match.year})</span>
                                     </h5>
                                     ${akaTitles}
@@ -1062,8 +1109,8 @@ function enhanceLanguageSelection() {
     if (!document.getElementById('languageSearchContainer')) {
         const searchHTML = `
             <div id="languageSearchContainer" class="mb-3" style="display: none;">
-                <input type="text" class="form-control" id="languageSearch" 
-                       placeholder="Search languages..." 
+                <input type="text" class="form-control" id="languageSearch"
+                       placeholder="Search languages..."
                        autocomplete="off">
                 <div class="mt-2">
                     <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="selectAllLanguages">
@@ -1124,7 +1171,7 @@ function populateMultiSelect(specType, currentValue) {
         const div = document.createElement('div');
         div.className = 'form-check';
         div.innerHTML = `
-            <input class="form-check-input" type="checkbox" value="${option.value}" 
+            <input class="form-check-input" type="checkbox" value="${option.value}"
                    id="spec-${option.value.replace(/[^a-zA-Z0-9]/g, '')}"
                    ${currentValues.includes(option.value) ? 'checked' : ''}>
             <label class="form-check-label" for="spec-${option.value.replace(/[^a-zA-Z0-9]/g, '')}">

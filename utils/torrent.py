@@ -127,6 +127,7 @@ def extract_torrent_metadata(
                     "index": idx,
                     "season_number": season_number,
                     "episode_number": episode_number,
+                    "episode_title": episode_parsed_data.get("title"),
                 }
             )
         if not file_data:
