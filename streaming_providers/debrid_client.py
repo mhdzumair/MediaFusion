@@ -6,8 +6,10 @@ from contextlib import AsyncContextDecorator
 from typing import Optional, Dict, Union
 
 import aiohttp
-from aiohttp import ClientResponse, ClientTimeout, ContentTypeError
+from aiohttp import ClientResponse, ClientTimeout, ContentTypeError, FormData
+from aiohttp_socks import ProxyConnector
 
+from db.config import settings
 from streaming_providers.exceptions import ProviderException
 
 
@@ -22,9 +24,11 @@ class DebridClient(AsyncContextDecorator):
     @property
     def session(self) -> aiohttp.ClientSession:
         if self._session is None:
+            connector = aiohttp.TCPConnector(ttl_dns_cache=300)
+            if settings.requests_proxy_url:
+                connector = ProxyConnector.from_url(settings.requests_proxy_url)
             self._session = aiohttp.ClientSession(
-                timeout=self._timeout,
-                connector=aiohttp.TCPConnector(ttl_dns_cache=300),
+                timeout=self._timeout, connector=connector
             )
         return self._session
 
@@ -56,11 +60,12 @@ class DebridClient(AsyncContextDecorator):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str] = None,
+        data: Optional[dict | str | FormData] = None,
         json: Optional[dict] = None,
         params: Optional[dict] = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
+        is_http_response: bool = False,
         retry_count: int = 0,
     ) -> dict | list | str:
         try:
@@ -69,7 +74,7 @@ class DebridClient(AsyncContextDecorator):
             ) as response:
                 await self._check_response_status(response, is_expected_to_fail)
                 return await self._parse_response(
-                    response, is_return_none, is_expected_to_fail
+                    response, is_return_none, is_expected_to_fail, is_http_response
                 )
 
         except ProviderException as error:
@@ -84,6 +89,7 @@ class DebridClient(AsyncContextDecorator):
                     params=params,
                     is_return_none=is_return_none,
                     is_expected_to_fail=is_expected_to_fail,
+                    is_http_response=is_http_response,
                     retry_count=retry_count + 1,
                 )
             await self._handle_request_error(error)
@@ -141,14 +147,23 @@ class DebridClient(AsyncContextDecorator):
 
     @staticmethod
     async def _parse_response(
-        response: ClientResponse, is_return_none: bool, is_expected_to_fail: bool
+        response: ClientResponse,
+        is_return_none: bool,
+        is_expected_to_fail: bool,
+        is_http_response: bool = False,
     ) -> Union[dict, list, str]:
         if is_return_none:
             return {}
         try:
+            if is_http_response:
+                response.body = await response.json()
+                return response
             return await response.json()
         except (ValueError, ContentTypeError) as error:
             response_text = await response.text()
+            if is_http_response:
+                response.body = response_text
+                return response
             if is_expected_to_fail:
                 return response_text
             raise ProviderException(

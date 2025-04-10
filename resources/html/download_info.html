@@ -1,121 +1,743 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Download Options - {{ title }}</title>
-    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/styles.css" rel="stylesheet">
-    <link rel="shortcut icon" href="{{logo_url}}" type="image/x-icon">
+    <title>Download - {{ title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.css" rel="stylesheet">
+    <link rel="shortcut icon" href="{{ logo_url }}" type="image/x-icon">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --secondary: #4b5563;
+            --background: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.5;
+        }
+
+        .main-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        .content-card {
+            background-color: var(--card-bg);
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+
+        .content-header {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 250px;
+            background-size: cover;
+            background-position: center top;
+            filter: blur(2px);
+            opacity: 0.5;
+        }
+
+        .backdrop::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(30, 41, 59, 0.5), var(--card-bg));
+        }
+
+        .content-info {
+            position: relative;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        @media (min-width: 768px) {
+            .content-info {
+                flex-direction: row;
+                align-items: center;
+            }
+        }
+
+        .poster {
+            flex-shrink: 0;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            transition: transform 0.3s;
+            width: 100%;
+            max-width: 200px;
+            margin: 0 auto;
+        }
+
+        @media (min-width: 768px) {
+            .poster {
+                margin: 0;
+            }
+        }
+
+        .poster:hover {
+            transform: translateY(-5px);
+        }
+
+        .poster img {
+            width: 100%;
+            display: block;
+        }
+
+        .content-details {
+            flex-grow: 1;
+        }
+
+        .title-container {
+            margin-bottom: 1rem;
+        }
+
+        .content-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .year {
+            color: var(--text-secondary);
+            font-size: 1.25rem;
+        }
+
+        .description {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .episode-badge {
+            display: inline-flex;
+            align-items: center;
+            background-color: rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .downloads-section {
+            padding: 1.5rem 2rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stream-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        @media (min-width: 768px) {
+            .stream-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .stream-card {
+            background-color: rgba(15, 23, 42, 0.5);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stream-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            border-color: var(--primary);
+        }
+
+        .stream-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--text);
+        }
+
+        .stream-description {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            flex-grow: 1;
+            margin-bottom: 1rem;
+            max-height: 150px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+
+        .stream-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            border-color: var(--primary);
+            color: white;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .btn-primary:hover, .btn-primary:focus {
+            background-color: var(--primary-hover);
+            border-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background-color: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover, .btn-secondary:focus {
+            background-color: rgba(75, 85, 99, 0.2);
+            color: var(--text);
+            border-color: var(--secondary);
+        }
+
+        .episode-nav {
+            background-color: rgba(15, 23, 42, 0.5);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+        }
+
+        .episode-nav-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .form-select {
+            background-color: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 0.25rem rgba(99, 102, 241, 0.25);
+            outline: none;
+        }
+
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .logo-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .logo {
+            height: 40px;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+
+        .logo:hover {
+            opacity: 1;
+        }
+
+        .no-streams-alert {
+            padding: 1rem;
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fee2e2;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Loading states */
+        .btn.loading {
+            position: relative;
+            color: transparent;
+        }
+
+        .btn.loading::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            top: calc(50% - 8px);
+            left: calc(50% - 8px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: button-loading-spinner 0.6s linear infinite;
+        }
+
+        @keyframes button-loading-spinner {
+            from {
+                transform: rotate(0turn);
+            }
+            to {
+                transform: rotate(1turn);
+            }
+        }
+
+        /* Toast tweaks */
+        .toast-success {
+            background-color: var(--success);
+        }
+
+        .toast-error {
+            background-color: var(--danger);
+        }
+
+        .toast-info {
+            background-color: var(--primary);
+        }
+
+        .toast-warning {
+            background-color: var(--warning);
+        }
+    </style>
 </head>
 <body>
-<style>
-    .stream-options {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    }
+    <div class="main-container">
+        <div class="content-card">
+            <div class="content-header">
+                <!-- Backdrop image for visual appeal -->
+                <div class="backdrop" style="background-image: url('{{ background }}');"></div>
 
-    .stream-card {
-        background: rgba(38, 38, 38, 0.68);
-        border-radius: 8px;
-        padding: 1rem;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .stream-title {
-        font-size: 1.2rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .stream-description p {
-        margin: 0.25rem 0;
-        line-height: 1.4;
-    }
-
-    .download-btn {
-        margin-top: auto;
-        padding: 0.5rem 1rem;
-        background: #4a47a3;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: background 0.3s ease;
-    }
-
-    .download-btn:hover {
-        background: #5f5cc3;
-    }
-</style>
-<div class="container">
-    <div class="row justify-content-center">
-        <div class="col-10 col-lg-10 col-md-8 col-sm-10 config-container">
-            <a href="/"><img class="logo" src="{{logo_url}}"></a>
-            <h3 class="text-center mb-4"><b>Download Options</b> - {{ title }} ({{ year }})</h3>
-
-            <div class="row">
-                <div class="col-md-4">
-                    <img src="{{ poster }}" alt="{{ title }} Poster" class="img-fluid mb-3">
-                </div>
-                <div class="col-md-8">
-                    {% if description %} <p>{{ description }}</p> {% endif %}
-                    {% if catalog_type == "series" %}
-                    <p><strong>Season:</strong> {{ season }}, <strong>Episode:</strong> {{ episode }}</p>
-                    {% endif %}
-
-                    <h4 class="mt-4">🎬 Available Streams</h4>
-                    {% if streams %}
-                    <div class="stream-options">
-                        {% for stream in streams %}
-                        <div class="stream-card">
-                            <h3 class="stream-title">{{ stream.name }}</h3>
-                            <div class="stream-description">
-                                {% for line in stream.description.split('\n') %}
-                                <p>{{ line | safe }}</p>
-                                {% endfor %}
-                            </div>
-                            <button class="download-btn" data-url="{{ stream.url }}">Download</button>
-                        </div>
-                        {% endfor %}
+                <div class="content-info">
+                    <div class="poster">
+                        {% if poster and poster.startswith('http') %}
+                        <img src="{{ poster }}" alt="{{ title }} Poster">
+                        {% else %}
+                        <img src="{{ settings.poster_host_url }}/poster/{{ catalog_type }}/{{ video_id }}.jpg" alt="{{ title }} Poster">
+                        {% endif %}
                     </div>
-                    {% else %}
-                    <p>No download options available.</p>
-                    {% endif %}
+
+                    <div class="content-details">
+                        <div class="title-container">
+                            <h1 class="content-title">{{ title }}</h1>
+                            {% if year %}<span class="year">({{ year }})</span>{% endif %}
+                        </div>
+
+                        {% if catalog_type == "series" %}
+                        <div class="episode-badge">
+                            <i class="bi bi-collection-play me-2"></i> Season {{ season }} | Episode {{ episode }}
+                        </div>
+                        {% endif %}
+
+                        {% if description %}
+                        <div class="description">
+                            {{ description }}
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
+            </div>
+
+            <!-- Episode navigation for series -->
+            {% if catalog_type == "series" %}
+            <div class="episode-nav">
+                <h3 class="episode-nav-title">
+                    <i class="bi bi-collection"></i> Episode Selection
+                </h3>
+
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <select id="season-select" class="form-select">
+                            <!-- Will be populated by JS -->
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <select id="episode-select" class="form-select">
+                            <!-- Will be populated by JS -->
+                        </select>
+                    </div>
+                </div>
+
+                <button id="go-btn" class="btn btn-primary w-100">
+                    <i class="bi bi-check-lg"></i> Go to Episode
+                </button>
+
+                <div class="nav-buttons">
+                    <button id="prev-episode" class="btn btn-secondary">
+                        <i class="bi bi-chevron-left"></i> Previous
+                    </button>
+                    <button id="next-episode" class="btn btn-secondary">
+                        Next <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Available downloads section -->
+            <div class="downloads-section">
+                <h2 class="section-title">
+                    <i class="bi bi-cloud-download"></i> Available Downloads
+                </h2>
+
+                {% if streams %}
+                <div class="stream-grid">
+                    {% for stream in streams %}
+                    <div class="stream-card">
+                        <h3 class="stream-name">{{ stream.name }}</h3>
+
+                        <div class="stream-description">
+                            {% for line in stream.description.split('\n') %}
+                            <p>{{ line | safe }}</p>
+                            {% endfor %}
+                        </div>
+
+                        <div class="stream-actions">
+                            <button class="btn btn-primary download-btn" data-url="{{ stream.url }}">
+                                <i class="bi bi-download"></i> Download
+                            </button>
+                            <button class="btn btn-secondary copy-hash-btn" data-info-hash="{{ stream.url.split('/')[6] }}">
+                                <i class="bi bi-clipboard"></i> Copy InfoHash
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="no-streams-alert">
+                    <i class="bi bi-exclamation-triangle"></i> No download options available for this content.
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
-</div>
 
-<!-- JS for Bootstrap -->
-<script src="/static/js/jquery-3.5.1.slim.min.js"></script>
-<script src="/static/js/popper.min.js"></script>
-<script src="/static/js/bootstrap.min.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const downloadButtons = document.querySelectorAll('.download-btn');
-        downloadButtons.forEach(button => {
-            button.addEventListener('click', async function () {
-                const url = this.getAttribute('data-url');
-                const originalText = this.textContent;
-                this.textContent = 'Loading...';
-                this.disabled = true;
+    <!-- Hidden inputs for JS -->
+    <input type="hidden" id="seriesData" value="{{ series_data }}">
+    <input type="hidden" id="currentSeason" value="{{ season }}">
+    <input type="hidden" id="currentEpisode" value="{{ episode }}">
+    <input type="hidden" id="videoId" value="{{ video_id }}">
+    <input type="hidden" id="pathInfo" value="{{ secret_str }}/{{ catalog_type }}/{{ video_id }}">
 
-                // Instead of fetching, we'll redirect the browser to our download endpoint
-                window.location.href = url;
+    <!-- JS Dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.js"></script>
 
-                // Reset button after a short delay
-                setTimeout(() => {
-                    this.textContent = originalText;
-                    this.disabled = false;
-                }, 2000);
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Configure toastr notifications
+            toastr.options = {
+                closeButton: true,
+                newestOnTop: true,
+                progressBar: true,
+                positionClass: "toast-top-right",
+                preventDuplicates: false,
+                showDuration: "300",
+                hideDuration: "1000",
+                timeOut: "5000",
+                extendedTimeOut: "1000",
+                showEasing: "swing",
+                hideEasing: "linear",
+                showMethod: "fadeIn",
+                hideMethod: "fadeOut"
+            };
+
+            // Handle download buttons
+            const downloadButtons = document.querySelectorAll('.download-btn');
+            downloadButtons.forEach(button => {
+                button.addEventListener('click', function () {
+                    const url = this.getAttribute('data-url');
+                    this.classList.add('loading');
+                    this.disabled = true;
+
+                    // Redirect to download URL
+                    window.location.href = url;
+
+                    // Reset button after a delay
+                    setTimeout(() => {
+                        this.classList.remove('loading');
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-download"></i> Download';
+                    }, 3000);
+                });
             });
-        });
 
-    });
-</script>
+            // Handle copy info hash buttons
+            const copyHashButtons = document.querySelectorAll('.copy-hash-btn');
+            copyHashButtons.forEach(button => {
+                button.addEventListener('click', function () {
+                    const infoHash = this.getAttribute('data-info-hash');
+                    const originalHtml = this.innerHTML;
+
+                    if (infoHash) {
+                        navigator.clipboard.writeText(infoHash)
+                            .then(() => {
+                                this.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+                                toastr.success('Hash copied to clipboard');
+                            })
+                            .catch(err => {
+                                this.innerHTML = '<i class="bi bi-x-lg"></i> Failed';
+                                toastr.error('Failed to copy hash: ' + err);
+                            });
+
+                        setTimeout(() => {
+                            this.innerHTML = originalHtml;
+                        }, 2000);
+                    } else {
+                        toastr.error('No hash information available');
+                    }
+                });
+            });
+
+            // Series episode navigation
+            if ('{{ catalog_type }}' === 'series') {
+                // Parse series data from hidden input
+                let seriesData = {};
+                try {
+                    seriesData = JSON.parse(document.getElementById('seriesData').value);
+                } catch (error) {
+                    console.error('Error parsing series data:', error);
+                    seriesData = {episodes: []};
+                }
+
+                const currentSeason = parseInt(document.getElementById('currentSeason').value);
+                const currentEpisode = parseInt(document.getElementById('currentEpisode').value);
+                const videoId = document.getElementById('videoId').value;
+                const pathInfo = document.getElementById('pathInfo').value;
+
+                // Get all unique seasons
+                const episodes = seriesData.episodes || [];
+                const seasons = [...new Set(episodes.map(ep => ep.season_number))].sort((a, b) => a - b);
+
+                // Populate season dropdown
+                const seasonSelect = document.getElementById('season-select');
+                seasonSelect.innerHTML = '';
+
+                // If no seasons in data, use current season
+                if (seasons.length === 0) {
+                    seasons.push(currentSeason);
+                }
+
+                seasons.forEach(season => {
+                    const option = document.createElement('option');
+                    option.value = season;
+                    option.textContent = `Season ${season}`;
+                    if (season === currentSeason) {
+                        option.selected = true;
+                    }
+                    seasonSelect.appendChild(option);
+                });
+
+                // Function to update episode options for selected season
+                function updateEpisodeOptions(season) {
+                    const episodeSelect = document.getElementById('episode-select');
+                    episodeSelect.innerHTML = '';
+
+                    // Get episodes for the selected season
+                    const seasonEpisodes = episodes.filter(ep => ep.season_number === parseInt(season))
+                        .sort((a, b) => a.episode_number - b.episode_number);
+
+                    // If no episodes found, create a range from 1-20
+                    if (seasonEpisodes.length === 0) {
+                        for (let i = 1; i <= 20; i++) {
+                            const option = document.createElement('option');
+                            option.value = i;
+                            option.textContent = `Episode ${i}`;
+                            if (season == currentSeason && i === currentEpisode) {
+                                option.selected = true;
+                            }
+                            episodeSelect.appendChild(option);
+                        }
+                    } else {
+                        // Add all episodes for this season
+                        seasonEpisodes.forEach(ep => {
+                            const option = document.createElement('option');
+                            option.value = ep.episode_number;
+                            const title = ep.title ? `${ep.episode_number}: ${ep.title}` : `Episode ${ep.episode_number}`;
+                            option.textContent = title;
+                            if (season == currentSeason && ep.episode_number === currentEpisode) {
+                                option.selected = true;
+                            }
+                            episodeSelect.appendChild(option);
+                        });
+                    }
+                }
+
+                // Initialize episode dropdown
+                updateEpisodeOptions(currentSeason);
+
+                // Update episodes when season changes
+                seasonSelect.addEventListener('change', function () {
+                    updateEpisodeOptions(parseInt(this.value));
+                });
+
+                // Go button functionality
+                document.getElementById('go-btn').addEventListener('click', function () {
+                    const selectedSeason = parseInt(seasonSelect.value);
+                    const selectedEpisode = parseInt(document.getElementById('episode-select').value);
+
+                    // Navigate to the selected episode
+                    window.location.href = `/download/${pathInfo}/${selectedSeason}/${selectedEpisode}`;
+                });
+
+                // Handle previous/next episode navigation
+                document.getElementById('prev-episode').addEventListener('click', function () {
+                    // Sort all episodes by season and episode
+                    const allEpisodes = [...episodes].sort((a, b) => {
+                        if (a.season_number !== b.season_number) {
+                            return a.season_number - b.season_number;
+                        }
+                        return a.episode_number - b.episode_number;
+                    });
+
+                    // Find current episode index
+                    const currentIndex = allEpisodes.findIndex(
+                        ep => ep.season_number === currentSeason && ep.episode_number === currentEpisode
+                    );
+
+                    if (allEpisodes.length > 0 && currentIndex > 0) {
+                        // Go to previous episode
+                        const prevEp = allEpisodes[currentIndex - 1];
+                        window.location.href = `/download/${pathInfo}/${prevEp.season_number}/${prevEp.episode_number}`;
+                    } else {
+                        // Fallback if no episode data: just decrement episode number
+                        let prevEpisode = currentEpisode - 1;
+                        let prevSeason = currentSeason;
+
+                        if (prevEpisode < 1) {
+                            prevSeason = currentSeason - 1;
+                            // Assume previous season has 20 episodes
+                            prevEpisode = 20;
+
+                            // Disable if we're already at season 1 episode 1
+                            if (prevSeason < 1) {
+                                toastr.info("You're at the first episode");
+                                return;
+                            }
+                        }
+
+                        window.location.href = `/download/${pathInfo}/${prevSeason}/${prevEpisode}`;
+                    }
+                });
+
+                document.getElementById('next-episode').addEventListener('click', function () {
+                    // Sort all episodes by season and episode
+                    const allEpisodes = [...episodes].sort((a, b) => {
+                        if (a.season_number !== b.season_number) {
+                            return a.season_number - b.season_number;
+                        }
+                        return a.episode_number - b.episode_number;
+                    });
+
+                    // Find current episode index
+                    const currentIndex = allEpisodes.findIndex(
+                        ep => ep.season_number === currentSeason && ep.episode_number === currentEpisode
+                    );
+
+                    if (allEpisodes.length > 0 && currentIndex !== -1 && currentIndex < allEpisodes.length - 1) {
+                        // Go to next episode
+                        const nextEp = allEpisodes[currentIndex + 1];
+                        window.location.href = `/download/${pathInfo}/${nextEp.season_number}/${nextEp.episode_number}`;
+                    } else {
+                        // Fallback if no episode data: just increment episode number
+                        let nextEpisode = currentEpisode + 1;
+                        let nextSeason = currentSeason;
+
+                        // For demo, cap episodes at 20 per season
+                        if (nextEpisode > 20) {
+                            nextSeason = currentSeason + 1;
+                            nextEpisode = 1;
+                        }
+
+                        window.location.href = `/download/${pathInfo}/${nextSeason}/${nextEpisode}`;
+                    }
+                });
+
+                // Disable navigation buttons if at first/last episode
+                if (episodes.length > 0) {
+                    const allEpisodes = [...episodes].sort((a, b) => {
+                        if (a.season_number !== b.season_number) {
+                            return a.season_number - b.season_number;
+                        }
+                        return a.episode_number - b.episode_number;
+                    });
+
+                    const currentIndex = allEpisodes.findIndex(
+                        ep => ep.season_number === currentSeason && ep.episode_number === currentEpisode
+                    );
+
+                    if (currentIndex === 0) {
+                        document.getElementById('prev-episode').disabled = true;
+                    }
+
+                    if (currentIndex === allEpisodes.length - 1) {
+                        document.getElementById('next-episode').disabled = true;
+                    }
+                } else if (currentSeason === 1 && currentEpisode === 1) {
+                    document.getElementById('prev-episode').disabled = true;
+                }
+            }
+        });
+    </script>
 </body>
 </html>

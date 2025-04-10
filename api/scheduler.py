@@ -3,11 +3,12 @@ from apscheduler.triggers.cron import CronTrigger
 
 from db.config import settings
 from mediafusion_scrapy.task import run_spider
-from scrapers.imdb_data import fetch_movie_ids_to_update
-from scrapers.prowlarr_feed import run_prowlarr_feed_scraper
+from scrapers.background_scraper import run_background_search
+from scrapers.feed_scraper import run_prowlarr_feed_scraper, run_jackett_feed_scraper
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
-from scrapers.utils import cleanup_expired_scraper_task
+from scrapers.scraper_tasks import cleanup_expired_scraper_task
+from streaming_providers.cache_helpers import cleanup_expired_cache
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler):
@@ -109,30 +110,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    # Schedule streamed scraper
-    if not settings.disable_streamed_scheduler:
-        scheduler.add_job(
-            run_spider.send,
-            CronTrigger.from_crontab(settings.streamed_scheduler_crontab),
-            name="streamed",
-            kwargs={
-                "spider_name": "streamed",
-                "crontab_expression": settings.streamed_scheduler_crontab,
-            },
-        )
-
-    # Schedule streambtw scraper
-    if not settings.disable_streambtw_scheduler:
-        scheduler.add_job(
-            run_spider.send,
-            CronTrigger.from_crontab(settings.streambtw_scheduler_crontab),
-            name="streambtw",
-            kwargs={
-                "spider_name": "streambtw",
-                "crontab_expression": settings.streambtw_scheduler_crontab,
-            },
-        )
-
     # Schedule dlhd scraper
     if not settings.disable_dlhd_scheduler:
         scheduler.add_job(
@@ -144,15 +121,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "crontab_expression": settings.dlhd_scheduler_crontab,
             },
         )
-
-    scheduler.add_job(
-        fetch_movie_ids_to_update.send,
-        CronTrigger.from_crontab(settings.update_imdb_data_crontab),
-        name="update_imdb_data",
-        kwargs={
-            "crontab_expression": settings.update_imdb_data_crontab,
-        },
-    )
 
     if not settings.disable_motogp_tgx_scheduler:
         scheduler.add_job(
@@ -166,14 +134,15 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    scheduler.add_job(
-        update_torrent_seeders.send,
-        CronTrigger.from_crontab(settings.update_seeders_crontab),
-        name="update_seeders",
-        kwargs={
-            "crontab_expression": settings.update_seeders_crontab,
-        },
-    )
+    if not settings.disable_update_seeders:
+        scheduler.add_job(
+            update_torrent_seeders.send,
+            CronTrigger.from_crontab(settings.update_seeders_crontab),
+            name="update_seeders",
+            kwargs={
+                "crontab_expression": settings.update_seeders_crontab,
+            },
+        )
 
     if not settings.disable_arab_torrents_scheduler:
         scheduler.add_job(
@@ -210,6 +179,18 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
+    if not settings.disable_movies_tv_tgx_scheduler:
+        scheduler.add_job(
+            run_spider.send,
+            CronTrigger.from_crontab(settings.movies_tv_tgx_scheduler_crontab),
+            name="movies_tv_tgx",
+            kwargs={
+                "spider_name": "movies_tv_tgx",
+                "crontab_expression": settings.movies_tv_tgx_scheduler_crontab,
+                "scrape_all": "false",
+            },
+        )
+
     # Schedule the feed scraper
     if not settings.disable_prowlarr_feed_scraper:
         scheduler.add_job(
@@ -221,6 +202,16 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
+    if not settings.disable_jackett_feed_scraper:
+        scheduler.add_job(
+            run_jackett_feed_scraper.send,
+            CronTrigger.from_crontab(settings.jackett_feed_scraper_crontab),
+            name="jackett_feed_scraper",
+            kwargs={
+                "crontab_expression": settings.jackett_feed_scraper_crontab,
+            },
+        )
+
     scheduler.add_job(
         cleanup_expired_scraper_task.send,
         CronTrigger.from_crontab(settings.cleanup_expired_scraper_task_crontab),
@@ -228,4 +219,20 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
         kwargs={
             "crontab_expression": settings.cleanup_expired_scraper_task_crontab,
         },
+    )
+
+    scheduler.add_job(
+        cleanup_expired_cache.send,
+        CronTrigger.from_crontab(settings.cleanup_expired_cache_task_crontab),
+        name="cleanup_expired_cache_task",
+        kwargs={
+            "crontab_expression": settings.cleanup_expired_cache_task_crontab,
+        },
+    )
+
+    scheduler.add_job(
+        run_background_search.send,
+        CronTrigger.from_crontab(settings.background_search_crontab),
+        name="background_search",
+        kwargs={"crontab_expression": settings.background_search_crontab},
     )

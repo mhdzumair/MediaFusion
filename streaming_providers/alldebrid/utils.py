@@ -1,7 +1,4 @@
-import asyncio
 from typing import Optional
-
-from fastapi import BackgroundTasks
 
 from db.models import TorrentStreams
 from db.schemas import UserData
@@ -9,26 +6,31 @@ from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
     select_file_index_from_torrent,
-    update_torrent_streams_metadata,
 )
 
 
 async def get_torrent_info(ad_client, info_hash):
     torrent_info = await ad_client.get_available_torrent(info_hash)
-    if torrent_info and torrent_info["status"] == "Ready":
-        return torrent_info
-    elif torrent_info and torrent_info["statusCode"] == 7:
+    if torrent_info and torrent_info["statusCode"] == 7:
         await ad_client.delete_torrents([torrent_info.get("id")])
         raise ProviderException(
             "Not enough seeders available to parse magnet link",
             "transfer_error.mp4",
         )
-    return None
+    return torrent_info
 
 
-async def add_new_torrent(ad_client, magnet_link):
-    response_data = await ad_client.add_magnet_link(magnet_link)
-    return response_data["data"]["magnets"][0]["id"]
+async def add_new_torrent(
+    ad_client: AllDebrid, magnet_link: str, stream: TorrentStreams
+):
+    if stream.torrent_file:
+        response_data = await ad_client.add_torrent_file(
+            stream.torrent_file, stream.torrent_name or "torrent"
+        )
+        return response_data["data"]["files"][0]["id"]
+    else:
+        response_data = await ad_client.add_magnet_link(magnet_link)
+        return response_data["data"]["magnets"][0]["id"]
 
 
 def flatten_files(files):
@@ -79,7 +81,6 @@ async def wait_for_download_and_get_link(
     episode,
     max_retries,
     retry_interval,
-    background_tasks,
 ):
     torrent_info = await ad_client.wait_for_status(
         torrent_id, "Ready", max_retries, retry_interval
@@ -87,20 +88,13 @@ async def wait_for_download_and_get_link(
     files_data = {"files": flatten_files(torrent_info["files"])}
 
     file_index = await select_file_index_from_torrent(
-        files_data,
-        filename,
-        episode,
+        torrent_info=files_data,
+        torrent_stream=stream,
+        filename=filename,
+        season=season,
+        episode=episode,
+        is_filename_trustable=True,
     )
-
-    if filename is None:
-        background_tasks.add_task(
-            update_torrent_streams_metadata,
-            torrent_stream=stream,
-            torrent_info=files_data,
-            file_index=file_index,
-            season=season,
-            is_index_trustable=False,
-        )
 
     response = await ad_client.create_download_link(
         files_data["files"][file_index]["link"]
@@ -115,7 +109,6 @@ async def get_video_url_from_alldebrid(
     stream: TorrentStreams,
     filename: Optional[str],
     user_ip: str,
-    background_tasks: BackgroundTasks,
     season: Optional[int] = None,
     episode: Optional[int] = None,
     max_retries=5,
@@ -127,7 +120,7 @@ async def get_video_url_from_alldebrid(
     ) as ad_client:
         torrent_info = await get_torrent_info(ad_client, info_hash)
         if not torrent_info:
-            torrent_id = await add_new_torrent(ad_client, magnet_link)
+            torrent_id = await add_new_torrent(ad_client, magnet_link, stream)
         else:
             torrent_id = torrent_info.get("id")
 
@@ -140,7 +133,6 @@ async def get_video_url_from_alldebrid(
             episode,
             max_retries,
             retry_interval,
-            background_tasks,
         )
 
 

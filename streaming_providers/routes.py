@@ -1,5 +1,6 @@
 import logging
 from os import path
+from os.path import basename
 from typing import Annotated
 
 from fastapi import (
@@ -14,14 +15,25 @@ from fastapi.responses import RedirectResponse
 
 from db import crud, schemas
 from db.config import settings
+from db.schemas import (
+    CacheStatusResponse,
+    CacheStatusRequest,
+    StreamingProvider,
+    CacheSubmitResponse,
+    CacheSubmitRequest,
+)
 from streaming_providers import mapper
-from streaming_providers.cache_helpers import store_cached_info_hashes
+from streaming_providers.cache_helpers import (
+    store_cached_info_hashes,
+    get_cached_status,
+)
 from streaming_providers.debridlink.api import router as debridlink_router
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.premiumize.api import router as premiumize_router
 from streaming_providers.realdebrid.api import router as realdebrid_router
 from streaming_providers.seedr.api import router as seedr_router
 from utils import crypto, torrent, wrappers, const
+from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import get_user_public_ip, get_user_data, encode_mediaflow_proxy_url
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -52,16 +64,22 @@ async def get_cached_stream_url_and_redirect(
             user_data.mediaflow_config
             and user_data.mediaflow_config.proxy_debrid_streams
         ):
+            response_headers = {
+                "Content-Disposition": "attachment, filename={}".format(
+                    path.basename(cached_stream_url)
+                )
+            }
+            file_extension = path.splitext(cached_stream_url)[-1]
+            content_type = CONTENT_TYPE_HEADERS_MAPPING.get(file_extension)
+            if content_type:
+                response_headers["Content-Type"] = content_type
+
             cached_stream_url = encode_mediaflow_proxy_url(
                 user_data.mediaflow_config.proxy_url,
                 "/proxy/stream",
                 cached_stream_url,
                 query_params={"api_password": user_data.mediaflow_config.api_password},
-                response_headers={
-                    "Content-Disposition": "attachment, filename={}".format(
-                        path.basename(cached_stream_url)
-                    )
-                },
+                response_headers=response_headers,
             )
         return RedirectResponse(
             url=cached_stream_url, headers=response.headers, status_code=302
@@ -81,16 +99,21 @@ async def fetch_stream_or_404(info_hash):
 
 
 async def get_or_create_video_url(
-    stream, user_data, info_hash, season, episode, user_ip, background_tasks
+    stream, user_data, info_hash, season, episode, filename, user_ip, background_tasks
 ):
     """
     Retrieves or generates the video URL based on stream data and user info.
     """
-    magnet_link = await torrent.convert_info_hash_to_magnet(
-        info_hash, stream.announce_list
-    )
-    episode_data = stream.get_episode(season, episode)
-    filename = episode_data.filename if episode_data else stream.filename
+    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
+    episodes = stream.get_episodes(season, episode)
+    if not filename:
+        episode_data = episodes[0] if episodes else None
+        filename = episode_data.filename if episode_data else stream.filename
+        filename = basename(filename) if filename else None
+    else:
+        episode_data = next(
+            (episode for episode in episodes if episode.filename == filename), None
+        )
     file_index = episode_data.file_index if episode_data else stream.file_index
 
     get_video_url = mapper.GET_VIDEO_URL_FUNCTIONS.get(
@@ -110,9 +133,6 @@ async def get_or_create_video_url(
         stream=stream,
         torrent_name=stream.torrent_name,
         background_tasks=background_tasks,
-        indexer_type=(
-            "public" if stream.indexer_flags in [[], ["freeleech"]] else "private"
-        ),
     )
 
     return await get_video_url(**kwargs)
@@ -132,16 +152,22 @@ def apply_mediaflow_proxy_if_needed(video_url, user_data):
     Applies mediaflow proxy to the video URL if user config requires it.
     """
     if user_data.mediaflow_config and user_data.mediaflow_config.proxy_debrid_streams:
+        response_headers = {
+            "Content-Disposition": "attachment, filename={}".format(
+                path.basename(video_url)
+            )
+        }
+        file_extension = path.splitext(video_url)[-1]
+        content_type = CONTENT_TYPE_HEADERS_MAPPING.get(file_extension)
+        if content_type:
+            response_headers["Content-Type"] = content_type
+
         return encode_mediaflow_proxy_url(
             user_data.mediaflow_config.proxy_url,
             "/proxy/stream",
             video_url,
             query_params={"api_password": user_data.mediaflow_config.api_password},
-            response_headers={
-                "Content-Disposition": "attachment, filename={}".format(
-                    path.basename(video_url)
-                )
-            },
+            response_headers=response_headers,
         )
     return video_url
 
@@ -178,8 +204,24 @@ async def get_cached_stream_url(cached_stream_url_key):
     return None
 
 
-@router.head("/{secret_str}/stream", tags=["streaming_provider"])
-@router.get("/{secret_str}/stream", tags=["streaming_provider"])
+@router.head("/{secret_str}/stream/{info_hash}", tags=["streaming_provider"])
+@router.get("/{secret_str}/stream/{info_hash}", tags=["streaming_provider"])
+@router.head("/{secret_str}/stream/{info_hash}/{filename}", tags=["streaming_provider"])
+@router.get("/{secret_str}/stream/{info_hash}/{filename}", tags=["streaming_provider"])
+@router.head(
+    "/{secret_str}/stream/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+)
+@router.get(
+    "/{secret_str}/stream/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+)
+@router.head(
+    "/{secret_str}/stream/{info_hash}/{season}/{episode}/{filename}",
+    tags=["streaming_provider"],
+)
+@router.get(
+    "/{secret_str}/stream/{info_hash}/{season}/{episode}/{filename}",
+    tags=["streaming_provider"],
+)
 @wrappers.exclude_rate_limit
 @wrappers.auth_required
 async def streaming_provider_endpoint(
@@ -191,6 +233,7 @@ async def streaming_provider_endpoint(
     background_tasks: BackgroundTasks,
     season: int = None,
     episode: int = None,
+    filename: str = None,
 ):
     """
     Handles streaming provider requests, using caching for performance and
@@ -228,7 +271,14 @@ async def streaming_provider_endpoint(
 
     try:
         video_url = await get_or_create_video_url(
-            stream, user_data, info_hash, season, episode, user_ip, background_tasks
+            stream,
+            user_data,
+            info_hash,
+            season,
+            episode,
+            filename,
+            user_ip,
+            background_tasks,
         )
         await store_cached_info_hashes(user_data.streaming_provider, [info_hash])
         await cache_stream_url(cached_stream_url_key, video_url)
@@ -288,6 +338,65 @@ async def delete_all_watchlist(
         video_url = handle_generic_exception(e, "delete_watchlist")
 
     return RedirectResponse(url=video_url, headers=response.headers)
+
+
+@router.post("/cache/status", response_model=CacheStatusResponse)
+@wrappers.exclude_rate_limit
+async def check_cache_status(request: CacheStatusRequest):
+    """
+    Check cache status for multiple info hashes.
+
+    Args:
+        request: CacheStatusRequest containing service name and list of info hashes
+
+    Returns:
+        Dictionary mapping info hashes to their cache status
+    """
+    if not request.info_hashes:
+        return CacheStatusResponse(cached_status={})
+
+    # Create streaming provider object
+    provider = StreamingProvider(service=request.service, token="")
+
+    try:
+        # Get cache status using existing helper
+        cached_status = await get_cached_status(provider, request.info_hashes)
+        return CacheStatusResponse(cached_status=cached_status)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error checking cache status: {str(e)}"
+        )
+
+
+@router.post("/cache/submit", response_model=CacheSubmitResponse)
+@wrappers.exclude_rate_limit
+async def submit_cached_hashes(request: CacheSubmitRequest):
+    """
+    Submit cached info hashes to the central cache.
+
+    Args:
+        request: CacheSubmitRequest containing service name and list of cached info hashes
+
+    Returns:
+        Success status and message
+    """
+    if not request.info_hashes:
+        return CacheSubmitResponse(success=True, message="No info hashes provided")
+
+    provider = StreamingProvider(service=request.service, token="")
+    try:
+        # Store cache info using existing helper
+        await store_cached_info_hashes(provider, request.info_hashes)
+        return CacheSubmitResponse(
+            success=True,
+            message=f"Successfully stored {len(request.info_hashes)} cached info hashes",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error storing cached info hashes: {str(e)}"
+        )
 
 
 router.include_router(seedr_router, prefix="/seedr", tags=["seedr"])

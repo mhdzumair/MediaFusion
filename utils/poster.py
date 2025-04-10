@@ -5,14 +5,14 @@ from io import BytesIO
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError, ImageStat
-from imdb import Cinemagoer
+from aiohttp_socks import ProxyConnector
 
+from db.config import settings
 from db.models import MediaFusionMetaData
 from scrapers.imdb_data import get_imdb_rating
 from utils import const
 from db.redis_database import REDIS_ASYNC_CLIENT
 
-ia = Cinemagoer()
 font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
@@ -24,7 +24,10 @@ async def fetch_poster_image(url: str) -> bytes:
         logging.info(f"Using cached image for URL: {url}")
         return cached_image
 
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector()
+    if settings.requests_proxy_url:
+        connector = ProxyConnector.from_url(settings.requests_proxy_url)
+    async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(url, timeout=10, headers=const.UA_HEADER) as response:
             response.raise_for_status()
             if not response.headers["Content-Type"].lower().startswith("image/"):
@@ -47,9 +50,6 @@ def process_poster_image(
         image = Image.open(BytesIO(content)).convert("RGB")
         image = image.resize((300, 450))
         imdb_rating = None
-        if mediafusion_data.id.startswith("tt"):
-            if (imdb_rating := mediafusion_data.imdb_rating) is None:
-                imdb_rating = get_imdb_rating(mediafusion_data.id)
 
         # The add_elements_to_poster function would be synchronous
         image = add_elements_to_poster(image, imdb_rating)
@@ -70,6 +70,11 @@ def process_poster_image(
 
 async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
     content = await fetch_poster_image(mediafusion_data.poster)
+    if mediafusion_data.id.startswith("tt") and mediafusion_data.imdb_rating is None:
+        imdb_rating = await get_imdb_rating(mediafusion_data.id)
+        if imdb_rating:
+            mediafusion_data.imdb_rating = imdb_rating
+            await mediafusion_data.save()
 
     loop = asyncio.get_event_loop()
     byte_io = await asyncio.wait_for(
@@ -152,58 +157,99 @@ def load_font(font_path, font_size):
 
 # Function to split the title into multiple lines
 def split_title(title, font, draw, max_width):
-    lines = []
     words = title.split()
-    # Calculate character width using a cache or default method
+    if not words:
+        return []
+
+    # Calculate character width for common characters
     char_widths = {
         char: draw.textbbox((0, 0), char, font=font)[2] for char in set(title)
     }
-    average_character_width = sum(char_widths.values()) / len(char_widths)
+    average_character_width = (
+        sum(char_widths.values()) / len(char_widths) if char_widths else 10
+    )
 
-    while words:
-        line = ""
-        line_width = 0
-        while words:
-            word = words[0]
-            word_width = sum(
-                char_widths.get(char, average_character_width) for char in word
-            )
-            if line_width + word_width <= max_width or not line:
-                line += word + " "
-                line_width += word_width + average_character_width
-                words.pop(0)
-            else:
-                break
-        lines.append(line.strip())
+    lines = []
+    current_line = []
+    current_width = 0
+
+    for word in words:
+        # Calculate word width more accurately
+        word_width = draw.textbbox((0, 0), word, font=font)[2]
+
+        # If this is the first word on the line or the line is still empty
+        if not current_line:
+            current_line.append(word)
+            current_width = word_width
+            continue
+
+        # Test if adding this word exceeds the max width
+        space_width = char_widths.get(" ", average_character_width)
+        if current_width + space_width + word_width <= max_width:
+            current_line.append(word)
+            current_width += space_width + word_width
+        else:
+            # Complete current line and start a new one
+            lines.append(" ".join(current_line))
+            current_line = [word]
+            current_width = word_width
+
+    # Add the last line if it's not empty
+    if current_line:
+        lines.append(" ".join(current_line))
+
     return lines
 
 
-# Function to adjust font size and split title
 def adjust_font_and_split(
     title, font_path, max_width, max_lines, initial_font_size, draw, min_font_size=10
 ):
-    lower_bound = min_font_size
-    upper_bound = initial_font_size
-    best_fit_font = None
-    best_fit_lines = []
+    # Start with the largest font size and try to fit within max_lines
+    # If that doesn't work, reduce font size
 
-    while lower_bound <= upper_bound:
-        mid_font_size = (lower_bound + upper_bound) // 2
-        font = load_font(font_path, mid_font_size)
+    for font_size in range(initial_font_size, min_font_size - 1, -1):
+        font = load_font(font_path, font_size)
         lines = split_title(title, font, draw, max_width)
 
-        # Check if the current font size fits the criteria
-        all_lines_fit = all(
-            draw.textbbox((0, 0), line, font=font)[2] <= max_width for line in lines
-        )
-        if len(lines) <= max_lines and all_lines_fit:
-            best_fit_font = font
-            best_fit_lines = lines
-            lower_bound = mid_font_size + 1  # Try a larger font size
-        else:
-            upper_bound = mid_font_size - 1  # Reduce font size and try again
+        # Skip empty results (shouldn't happen with improved split_title)
+        if not lines:
+            continue
 
-    return best_fit_lines, best_fit_font
+        # If we can fit all lines within max_lines, we're done
+        if len(lines) <= max_lines:
+            return lines, font
+
+    # If we get here, even the smallest font size couldn't fit within max_lines
+    # So we'll use the smallest font and truncate/adjust as necessary
+    font = load_font(font_path, min_font_size)
+    lines = split_title(title, font, draw, max_width)
+
+    # If we still have too many lines, truncate and add ellipsis to the last line
+    if len(lines) > max_lines:
+        truncated_lines = lines[
+            : max_lines - 1
+        ]  # Leave room for last line with ellipsis
+
+        # Handle the last line: try to add ellipsis
+        last_line = lines[max_lines - 1]
+
+        # Keep removing words until we can fit "..." at the end
+        words = last_line.split()
+        for i in range(len(words), 0, -1):
+            partial_line = " ".join(words[:i])
+            with_ellipsis = partial_line + "..."
+            if draw.textbbox((0, 0), with_ellipsis, font=font)[2] <= max_width:
+                truncated_lines.append(with_ellipsis)
+                break
+
+        # If even a single word with ellipsis doesn't fit, just use ellipsis
+        if len(truncated_lines) < max_lines:
+            truncated_lines.append("...")
+
+        lines = truncated_lines
+
+    # Guaranteed to return something useful
+    return lines, font
 
 
 def get_average_color(image, bbox):
@@ -250,6 +296,7 @@ def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
     initial_font_size = 50  # Starting font size which will be adjusted dynamically
     min_font_size = 20  # Minimum font size to avoid tiny text
 
+    # Use our improved function that guarantees a result
     lines, font = adjust_font_and_split(
         title_text,
         font_path,
@@ -260,7 +307,13 @@ def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
         min_font_size,
     )
 
-    # Calculate the total height of the text block using textbbox and consider spacing between lines
+    # If no lines or font returned (shouldn't happen with improved function), use fallback
+    if not lines or not font:
+        # Fallback to a very simple approach
+        font = load_font(font_path, min_font_size)
+        lines = [title_text[:20] + "..."] if len(title_text) > 20 else [title_text]
+
+    # Calculate the total height of the text block
     line_spacing = 10  # Additional space between lines
     text_block_height = sum(
         draw.textbbox((0, 0), line, font=font)[3] for line in lines

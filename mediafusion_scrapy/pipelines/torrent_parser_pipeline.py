@@ -5,7 +5,7 @@ from scrapy.http.request import NO_CALLBACK
 from scrapy.utils.defer import maybe_deferred_to_future
 
 from db.config import settings
-from db.crud import is_torrent_stream_exists
+from db.crud import get_stream_by_info_hash
 from utils import torrent
 
 
@@ -17,9 +17,11 @@ class TorrentDownloadAndParsePipeline:
         if not torrent_link:
             raise DropItem(f"No torrent link found in item: {item}")
 
+        headers = {"Referer": item.get("webpage_url")}
+
         response = await maybe_deferred_to_future(
             spider.crawler.engine.download(
-                scrapy.Request(torrent_link, callback=NO_CALLBACK)
+                scrapy.Request(torrent_link, callback=NO_CALLBACK, headers=headers),
             )
         )
 
@@ -39,15 +41,8 @@ class TorrentDownloadAndParsePipeline:
             return item
 
         torrent_metadata = torrent.extract_torrent_metadata(
-            response.body, item.get("is_parse_ptt", True)
+            response.body, item.get("parsed_data")
         )
-
-        if settings.adult_content_filter_in_torrent_title and torrent_metadata.get(
-            "adult"
-        ):
-            raise DropItem(
-                f"Torrent name contains 18+ keywords: {torrent_metadata['torrent_name']}"
-            )
 
         if not torrent_metadata:
             return item
@@ -58,8 +53,7 @@ class TorrentDownloadAndParsePipeline:
 
 class MagnetDownloadAndParsePipeline:
     async def process_item(self, item, spider):
-        adapter = ItemAdapter(item)
-        magnet_link = adapter.get("magnet_link")
+        magnet_link = item.get("magnet_link")
 
         if not magnet_link:
             raise DropItem(f"No magnet link found in item: {item}")
@@ -67,14 +61,30 @@ class MagnetDownloadAndParsePipeline:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             raise DropItem(f"Failed to parse info_hash from magnet link: {magnet_link}")
-        if await is_torrent_stream_exists(info_hash):
-            raise DropItem(f"Torrent stream already exists: {info_hash}")
+        if torrent_stream := await get_stream_by_info_hash(info_hash):
+            if (
+                item.get("expected_sources")
+                and torrent_stream.source not in item["expected_sources"]
+            ):
+                spider.logger.info(
+                    "Source mismatch for %s: %s != %s. Trying to re-create the data",
+                    torrent_stream.torrent_name,
+                    item["source"],
+                    torrent_stream.source,
+                )
+                await torrent_stream.delete()
+            else:
+                raise DropItem(
+                    f"Torrent stream already exists: {torrent_stream.torrent_name} from {torrent_stream.source}"
+                )
 
         torrent_metadata = await torrent.info_hashes_to_torrent_metadata(
             [info_hash], trackers
         )
 
         if not torrent_metadata:
+            if item.get("file_data"):
+                return item
             raise DropItem(f"Failed to extract torrent metadata: {item}")
 
         item.update(torrent_metadata[0])

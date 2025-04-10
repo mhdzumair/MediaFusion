@@ -76,7 +76,7 @@ try {
     Add-Content -Path .env -Value "PROWLARR_API_KEY=$env:PROWLARR_API_KEY"
 
     # Docker operations
-    docker-compose rm -sf prowlarr
+    docker compose rm -sf prowlarr
     docker volume rm -f docker-compose_prowlarr-config
     docker volume create docker-compose_prowlarr-config
 
@@ -103,8 +103,8 @@ try {
     Remove-Item $tempConfigPath
 
     # Pull and start containers
-    docker-compose pull prowlarr flaresolverr
-    docker-compose up -d prowlarr flaresolverr
+    docker compose pull prowlarr flaresolverr
+    docker compose up -d prowlarr flaresolverr
 
     # Wait for Prowlarr to be ready
     Wait-ProwlarrReady

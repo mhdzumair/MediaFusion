@@ -4,6 +4,8 @@ CATALOG_DATA = {
     "arabic_series": "Arabic Series",
     "baseball": "Baseball",
     "basketball": "Basketball",
+    "bangla_movies": "Bangla Movies",
+    "bangla_series": "Bangla Series",
     "english_hdrip": "English HD Movies",
     "english_series": "English Series",
     "english_tcrip": "English TCRip Movies",
@@ -34,6 +36,8 @@ CATALOG_DATA = {
     "other_sports": "Other Sports",
     "prowlarr_movies": "Prowlarr Scraped Movies",
     "prowlarr_series": "Prowlarr Scraped Series",
+    "punjabi_movies": "Punjabi Movies",
+    "punjabi_series": "Punjabi Series",
     "rugby": "Rugby/AFL",
     "tamil_dubbed": "Tamil Dubbed Movies",
     "tamil_hdrip": "Tamil HD Movies",
@@ -46,11 +50,18 @@ CATALOG_DATA = {
     "telugu_series": "Telugu Series",
     "telugu_tcrip": "Telugu TCRip Movies",
     "fighting": "Fighting (WWE, UFC)",
+    "tgx_movie": "TGx Movies",
+    "tgx_series": "TGx Series",
+    "contribution_movies": "Contribution Streams Movies",
+    "contribution_series": "Contribution Streams Series",
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
+    "arabic_movies",
+    "bangla_movies",
     "english_hdrip",
     "english_tcrip",
+    "fighting",
     "hindi_dubbed",
     "hindi_hdrip",
     "hindi_old",
@@ -63,6 +74,8 @@ USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
     "malayalam_hdrip",
     "malayalam_old",
     "malayalam_tcrip",
+    "other_sports",
+    "punjabi_movies",
     "tamil_dubbed",
     "tamil_hdrip",
     "tamil_old",
@@ -74,12 +87,28 @@ USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
 ]
 
 USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS = [
+    "arabic_series",
+    "bangla_series",
     "english_series",
     "hindi_series",
     "kannada_series",
     "malayalam_series",
+    "punjabi_series",
     "tamil_series",
     "telugu_series",
+]
+
+USER_UPLOAD_SUPPORTED_SPORTS_CATALOG_IDS = [
+    "american_football",
+    "baseball",
+    "basketball",
+    "football",
+    "formula_racing",
+    "hockey",
+    "motogp_racing",
+    "rugby",
+    "other_sports",
+    "fighting",
 ]
 
 RESOLUTIONS = [
@@ -107,7 +136,7 @@ CORS_HEADERS = {
     "Access-Control-Allow-Methods": "*",
 }
 CACHE_HEADERS = {
-    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=604800, public",
+    "Cache-Control": "max-age=3600, stale-while-revalidate=3600, stale-if-error=3600, public",
 }
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -159,15 +188,14 @@ SCRAPY_SPIDERS = {
     "nowsports": "NowSports",
     "tamilultra": "Tamil Ultra",
     "sport_video": "Sport Video",
-    "streamed": "Streamed Sport Events",
     "tamil_blasters": "TamilBlasters",
     "tamilmv": "TamilMV",
-    "streambtw": "StreamBTW",
     "dlhd": "DaddyLiveHD",
     "motogp_tgx": "MotoGP TGX",
     "arab_torrents": "Arab Torrents",
     "wwe_tgx": "WWE TGX",
     "ufc_tgx": "UFC TGX",
+    "movies_tv_tgx": "Movies TV TGX",
 }
 
 
@@ -182,6 +210,7 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
     "seedr": "SDR",
     "torbox": "TRB",
     "stremthru": "ST",
+    "easydebrid": "ED",
 }
 
 CERTIFICATION_MAPPING = {
@@ -228,18 +257,17 @@ CERTIFICATION_MAPPING = {
     "Parental Guidance": ["14A", "PG-15", "15A", "15PG", "M", "MA", "RP16", "PG12"],
     "Teens": ["14", "14+", "15", "15+", "16", "16+", "R-12", "R15", "R16", "TV-14"],
     "Adults": [
+        "A",
         "18",
         "18+",
         "18A",
         "NC-17",
-        "X",
-        "XXX",
         "R",
         "R18",
         "R-18",
         "18TC",
-        "21+",
     ],
+    "Adults+": ["R21", "R21+", "21", "21+", "R-21", "R-21+", "R-21A", "XXX", "X"],
 }
 
 LANGUAGES_FILTERS = [
@@ -272,6 +300,25 @@ LANGUAGES_FILTERS = [
     "Turkish",
     "Greek",
     "Swedish",
+    "Romanian",
+    "Hungarian",
+    "Finnish",
+    "Norwegian",
+    "Danish",
+    "Hebrew",
+    "Lithuanian",
+    "Punjabi",
+    "Marathi",
+    "Gujarati",
+    "Bhojpuri",
+    "Nepali",
+    "Urdu",
+    "Tagalog",
+    "Filipino",
+    "Malay",
+    "Mongolian",
+    "Armenian",
+    "Georgian",
     None,
 ]
 
@@ -293,4 +340,88 @@ QUALITY_RANKING = {
     quality: rank
     for rank, qualities in enumerate(reversed(QUALITY_GROUPS.values()))
     for quality in qualities
+}
+
+SUPPORTED_PRIVATE_TRACKER_STREAMING_PROVIDERS = {
+    "debridlink",
+    "qbittorrent",
+    "torbox",
+}
+
+LANGUAGE_COUNTRY_FLAGS = {
+    "English": "🇬🇧",
+    "Tamil": "🇮🇳",
+    "Hindi": "🇮🇳",
+    "Malayalam": "🇮🇳",
+    "Kannada": "🇮🇳",
+    "Telugu": "🇮🇳",
+    "Chinese": "🇨🇳",
+    "Russian": "🇷🇺",
+    "Arabic": "🇸🇦",
+    "Japanese": "🇯🇵",
+    "Korean": "🇰🇷",
+    "Taiwanese": "🇹🇼",
+    "Latino": "🇲🇽",
+    "French": "🇫🇷",
+    "Spanish": "🇪🇸",
+    "Portuguese": "🇵🇹",
+    "Italian": "🇮🇹",
+    "German": "🇩🇪",
+    "Ukrainian": "🇺🇦",
+    "Polish": "🇵🇱",
+    "Czech": "🇨🇿",
+    "Thai": "🇹🇭",
+    "Indonesian": "🇮🇩",
+    "Vietnamese": "🇻🇳",
+    "Dutch": "🇳🇱",
+    "Bengali": "🇧🇩",
+    "Turkish": "🇹🇷",
+    "Greek": "🇬🇷",
+    "Swedish": "🇸🇪",
+    "Romanian": "🇷🇴",
+    "Hungarian": "🇭🇺",
+    "Finnish": "🇫🇮",
+    "Norwegian": "🇳🇴",
+    "Danish": "🇩🇰",
+    "Hebrew": "🇮🇱",
+    "Lithuanian": "🇱🇹",
+    "Punjabi": "🇮🇳",
+    "Marathi": "🇮🇳",
+    "Gujarati": "🇮🇳",
+    "Bhojpuri": "🇮🇳",
+    "Nepali": "🇳🇵",
+    "Urdu": "🇵🇰",
+    "Tagalog": "🇵🇭",
+    "Filipino": "🇵🇭",
+    "Malay": "🇲🇾",
+    "Mongolian": "🇲🇳",
+    "Armenian": "🇦🇲",
+    "Georgian": "🇬🇪",
+}
+
+
+CONTENT_TYPE_HEADERS_MAPPING = {
+    ".mp4": "video/mp4",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".wmv": "video/x-ms-wmv",
+    ".flv": "video/x-flv",
+    ".m4v": "video/x-m4v",
+    ".3gp": "video/3gpp",
+    ".3g2": "video/3gpp2",
+    ".mpg": "video/mpeg",
+    ".mpeg": "video/mpeg",
+    ".ts": "video/mp2t",
+    ".m2ts": "video/mp2t",
+    ".mts": "video/mp2t",
+    ".vob": "video/x-ms-vob",
+    ".ogv": "video/ogg",
+    ".divx": "video/divx",
+    ".m3u8": "application/x-mpegURL",
+    ".mpd": "application/dash+xml",
+    ".f4v": "video/x-f4v",
+    ".rmvb": "application/vnd.rn-realmedia-vbr",
+    ".asf": "video/x-ms-asf",
 }

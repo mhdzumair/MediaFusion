@@ -1,9 +1,12 @@
+import random
 from urllib.parse import urlparse
 
 import scrapy
 
 from utils.config import config_manager
 from db.redis_database import REDIS_SYNC_CLIENT
+from utils.const import CATALOG_DATA
+from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class SportVideoSpider(scrapy.Spider):
@@ -19,7 +22,7 @@ class SportVideoSpider(scrapy.Spider):
         },
     }
 
-    def __init__(self, scrape_all: str = "True", *args, **kwargs):
+    def __init__(self, scrape_all: str = "false", *args, **kwargs):
         super(SportVideoSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
         self.redis = REDIS_SYNC_CLIENT
@@ -53,6 +56,9 @@ class SportVideoSpider(scrapy.Spider):
 
     def parse_page(self, response):
         category = response.meta["category"]
+        catalog_mapped = CATALOG_DATA.get(category)
+        generic_posters = SPORTS_ARTIFACTS[catalog_mapped]["poster"]
+        generic_backgrounds = SPORTS_ARTIFACTS[catalog_mapped]["background"]
         # Generalized selector for all content blocks
         content_blocks = response.css('div[id^="wb_LayoutGrid"]')
         for content in content_blocks:
@@ -61,12 +67,29 @@ class SportVideoSpider(scrapy.Spider):
             title = "".join(title_words).replace("(NEW)", "").strip()
 
             # Extract poster URL
-            poster = content.css('div[id^="wb_PhotoGallery"] img::attr(src)').get()
-            if poster:
-                poster = response.urljoin(poster)
+            poster_path = content.css('div[id^="wb_PhotoGallery"] img::attr(src)').get()
+            if poster_path:
+                poster = response.urljoin(poster_path)
+                background = poster
+            else:
+                poster = random.choice(generic_posters)
+                background = random.choice(generic_backgrounds)
+
+            torrent_data = {
+                "title": title.strip(),
+                "poster": poster,
+                "background": background,
+                "parsed_data": {"title": title.strip()},
+                "source": "sport-video.org.ua",
+                "is_add_title_to_poster": True,
+                "catalog": category,
+                "type": "movie",
+                "scraped_url_key": self.scraped_urls_key,
+            }
 
             # Extract torrent page link
             torrent_page_link = content.css('div[id^="wb_Shape"] a::attr(href)').get()
+            torrent_link = content.css('a[href$=".torrent"]::attr(href)').get()
             if title and torrent_page_link:
                 torrent_page_link = response.urljoin(torrent_page_link)
                 # Check if URL has been scraped before
@@ -76,24 +99,20 @@ class SportVideoSpider(scrapy.Spider):
                     )
                     continue
 
+                torrent_data["webpage_url"] = torrent_page_link
                 yield response.follow(
                     torrent_page_link,
                     self.parse_torrent_page,
-                    meta={
-                        "item": {
-                            "title": title.strip(),
-                            "poster": poster,
-                            "background": poster,
-                            "webpage_url": torrent_page_link,
-                            "is_parse_ptt": False,
-                            "source": "sport-video.org.ua",
-                            "is_add_title_to_poster": True,
-                            "catalog": category,
-                            "type": "movie",
-                            "scraped_url_key": self.scraped_urls_key,
-                        }
-                    },
+                    meta={"item": torrent_data},
                 )
+            elif title and torrent_link:
+                # Check if URL has been scraped before
+                if self.redis.sismember(self.scraped_urls_key, torrent_link):
+                    self.logger.info(f"Skipping already scraped URL: {torrent_link}")
+                    continue
+
+                torrent_data["torrent_link"] = response.urljoin(torrent_link)
+                yield torrent_data
 
     def parse_torrent_page(self, response):
         # Retrieve passed item data

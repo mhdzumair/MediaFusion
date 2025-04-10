@@ -1,13 +1,14 @@
 import asyncio
+import logging
+import math
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional, Dict, List, Any, Tuple
 from enum import Enum
-import math
-import logging
+from typing import Optional, Dict, List, Any, Tuple, AsyncGenerator
 
 from aioseedrcc import Seedr
+from aioseedrcc.exception import SeedrException
 
 from db.models import TorrentStreams
 from db.schemas import UserData
@@ -29,7 +30,7 @@ def clean_filename(name: Optional[str], replace: str = "") -> str:
 
 
 @asynccontextmanager
-async def get_seedr_client(user_data: UserData) -> Seedr:
+async def get_seedr_client(user_data: UserData) -> AsyncGenerator[Seedr, Any]:
     """Context manager that provides a Seedr client instance."""
     try:
         async with Seedr(token=user_data.streaming_provider.token) as seedr:
@@ -41,6 +42,11 @@ async def get_seedr_client(user_data: UserData) -> Seedr:
         raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
     except ProviderException as error:
         raise error
+    except SeedrException as error:
+        if "Unauthorized" in str(error):
+            raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
+        logging.exception(error)
+        raise ProviderException("Seedr server error", "debrid_service_down_error.mp4")
     except Exception as error:
         logging.exception(error)
         raise error
@@ -100,8 +106,11 @@ async def ensure_space_available(seedr: Seedr, required_space: int | float) -> N
 
         # Delete folder contents first
         sub_content = await seedr.list_contents(folder["id"])
-        for torrent in sub_content["torrents"]:
-            await seedr.delete_item(torrent["id"], "torrent")
+        if sub_content["torrents"]:
+            # Raise exception if torrent is still downloading.
+            raise ProviderException(
+                "An existing torrent is being downloaded", "torrent_downloading.mp4"
+            )
         for subfolder in sub_content["folders"]:
             await seedr.delete_item(subfolder["id"], "folder")
 
@@ -109,14 +118,25 @@ async def ensure_space_available(seedr: Seedr, required_space: int | float) -> N
         available_space += folder["size"]
 
 
-async def add_torrent(seedr: Seedr, magnet_link: str, info_hash: str) -> None:
+async def add_torrent(
+    seedr: Seedr, magnet_link: str, info_hash: str, stream: TorrentStreams
+) -> None:
     """Add a new torrent to Seedr."""
     await seedr.add_folder(info_hash)
     folder = await get_folder_by_info_hash(seedr, info_hash)
     if not folder:
         raise ProviderException("Failed to create folder", "folder_creation_error.mp4")
 
-    transfer = await seedr.add_torrent(magnet_link=magnet_link, folder_id=folder["id"])
+    if stream.torrent_file:
+        transfer = await seedr.add_torrent(
+            torrent_file_content=stream.torrent_file,
+            folder_id=folder["id"],
+            torrent_file=stream.torrent_name,
+        )
+    else:
+        transfer = await seedr.add_torrent(
+            magnet_link=magnet_link, folder_id=folder["id"]
+        )
 
     if transfer["result"] is True:
         return
@@ -169,12 +189,24 @@ async def clean_names(seedr: Seedr, folder_id: str) -> None:
             await seedr.rename_item(file["folder_file_id"], clean_name, "file")
 
 
+async def get_files_from_folder(seedr: Seedr, folder_id: str) -> List[Dict[str, Any]]:
+    """Recursively get all files from a folder."""
+    content = await seedr.list_contents(folder_id)
+    files = content["files"]
+
+    for folder in content["folders"]:
+        files.extend(await get_files_from_folder(seedr, folder["id"]))
+
+    return files
+
+
 async def get_video_url_from_seedr(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
     stream: TorrentStreams,
     filename: Optional[str] = None,
+    season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs,
 ) -> str:
@@ -185,7 +217,7 @@ async def get_video_url_from_seedr(
 
         if status == TorrentStatus.NOT_FOUND:
             await ensure_space_available(seedr, stream.size)
-            await add_torrent(seedr, magnet_link, info_hash)
+            await add_torrent(seedr, magnet_link, info_hash, stream)
             await wait_for_completion(seedr, info_hash)
             status, data = await check_torrent_status(seedr, info_hash)
 
@@ -198,12 +230,16 @@ async def get_video_url_from_seedr(
         await clean_names(seedr, data["id"])
 
         # Get file details
-        folder_content = await seedr.list_contents(data["id"])
+        folder_content = await get_files_from_folder(seedr, data["id"])
         file_index = await select_file_index_from_torrent(
-            folder_content, clean_filename(filename), episode
+            torrent_info={"files": folder_content},
+            torrent_stream=stream,
+            filename=clean_filename(filename),
+            season=season,
+            episode=episode,
         )
 
-        selected_file = folder_content["files"][file_index]
+        selected_file = folder_content[file_index]
         if not selected_file["play_video"]:
             raise ProviderException(
                 "No matching file available", "no_matching_file.mp4"

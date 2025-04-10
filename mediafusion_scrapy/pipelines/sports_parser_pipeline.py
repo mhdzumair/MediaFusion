@@ -3,13 +3,11 @@ import random
 import re
 from datetime import datetime
 
-from scrapers.imdb_data import search_imdb
 from scrapy.exceptions import DropItem
-from utils.parser import convert_size_to_bytes
-from utils.runtime_const import SPORTS_ARTIFACTS
 
-from cinemagoerng import web
-from cinemagoerng.model import TVSeries
+from scrapers.scraper_tasks import meta_fetcher
+from scrapers.tmdb_data import search_tmdb
+from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class BaseParserPipeline:
@@ -28,7 +26,9 @@ class BaseParserPipeline:
     ]
     imdb_cache = {}
 
-    def __init__(self, event_name, known_imdb_ids=None, static_poster=None):
+    def __init__(
+        self, event_name, known_imdb_ids=None, static_poster=None, static_logo=None
+    ):
         self.event_name = event_name.lower()
         self.name_parser_patterns = [
             re.compile(pattern.format(event=event_name), re.IGNORECASE)
@@ -36,22 +36,23 @@ class BaseParserPipeline:
         ]
         self.known_imdb_ids = known_imdb_ids or {}
         self.static_poster = static_poster or {}
+        self.static_logo = static_logo or {}
 
-    def process_item(self, item, spider):
-        title = re.sub(r"\.\.+", ".", item["torrent_name"])
+    async def process_item(self, item, spider):
+        title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.parse_title(title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
         item.update(
             dict(
                 type="movie",
-                is_imdb=False,
+                is_search_imdb_title=False,
                 genres=[self.event_name.upper()],
                 is_add_title_to_poster=True,
             )
         )
         self.parse_description(item)
-        self.update_imdb_data(item)
+        await self.update_imdb_data(item)
         return item
 
     def parse_title(self, title, torrent_data: dict):
@@ -79,9 +80,11 @@ class BaseParserPipeline:
                     {
                         "title": f"{event_title} {date_str}".strip(),
                         "date": date,
-                        "resolution": data.get("Resolution").replace("i", "p")
-                        if data.get("Resolution")
-                        else None,
+                        "resolution": (
+                            data.get("Resolution").replace("i", "p")
+                            if data.get("Resolution")
+                            else None
+                        ),
                         "event": event_title,
                         "year": date.year,
                     }
@@ -104,23 +107,26 @@ class BaseParserPipeline:
             torrent_data["resolution"] = resolution_match.group(1) + "p"
 
         largest_file = max(
-            torrent_data["file_details"],
-            key=lambda x: convert_size_to_bytes(x["file_size"]),
+            torrent_data["file_data"],
+            key=lambda x: x["size"],
         )
-        largest_file_index = torrent_data["file_details"].index(largest_file)
+        largest_file_index = torrent_data["file_data"].index(largest_file)
         torrent_data["largest_file"] = {
             "index": largest_file_index,
-            "filename": largest_file["file_name"],
+            "filename": largest_file["filename"],
         }
 
-    def update_imdb_data(self, torrent_data: dict):
-        year = torrent_data.get("date").year
+    async def update_imdb_data(self, torrent_data: dict):
+        year = torrent_data["date"].year
         title = torrent_data.get("event")
+        torrent_data["logo"] = self.static_logo.get(title.lower())
         imdb_id = self.known_imdb_ids.get(title.lower())
         if not imdb_id:
             result = self.imdb_cache.get(f"{title}_{year}")
             if not result:
-                result = search_imdb(title, year)
+                result = await meta_fetcher.search_metadata(
+                    title, year, torrent_data["date"]
+                )
             if not result:
                 logging.warning(f"Failed to find IMDb title for {title}")
                 if not torrent_data["poster"]:
@@ -132,7 +138,7 @@ class BaseParserPipeline:
             imdb_id = result.get("imdb_id")
             self.imdb_cache[f"{title}_{year}"] = result
 
-            if result.get("type_id") != "tvSeries":
+            if result.get("type") != "series":
                 torrent_data["id"] = imdb_id
                 torrent_data.update(
                     dict(
@@ -141,6 +147,9 @@ class BaseParserPipeline:
                         runtime=result.get("runtime"),
                         imdb_rating=result.get("imdb_rating"),
                         description=result.get("description"),
+                        stars=result.get("stars"),
+                        genres=result.get("genres"),
+                        aka_titles=result.get("aka_titles"),
                     )
                 )
                 return
@@ -150,21 +159,14 @@ class BaseParserPipeline:
             torrent_data["poster"] = static_poster
             return
 
-        imdb_title = TVSeries(imdb_id=imdb_id, title=title)
-        web.update_title(
-            imdb_title,
-            page="episodes_with_pagination",
-            keys=["episodes"],
-            filter_type="year",
-            start_year=year,
-            end_year=year,
-            paginate_result=True,
-        )
+        result = self.imdb_cache.get(f"{title}_{year}")
+        if not result:
+            result = await meta_fetcher.get_metadata(imdb_id, "series")
+
         filtered_episode = [
-            ep
-            for season in imdb_title.episodes.values()
-            for ep in season.values()
-            if ep.release_date == torrent_data["date"]
+            episode
+            for episode in result["episodes"]
+            if episode["released"].date() == torrent_data["date"]
         ]
         if not filtered_episode:
             logging.warning(
@@ -177,14 +179,12 @@ class BaseParserPipeline:
             return
         episode = filtered_episode[0]
 
-        torrent_data["id"] = episode.imdb_id
         torrent_data.update(
             dict(
-                poster=episode.primary_image,
-                background=episode.primary_image,
-                description=episode.plot.get("en-US"),
-                runtime=episode.runtime,
-                imdb_rating=episode.rating,
+                poster=episode["thumbnail"],
+                background=episode["thumbnail"],
+                description=episode["overview"],
+                imdb_rating=episode["imdb_rating"],
             )
         )
 
@@ -203,29 +203,38 @@ class WWEParserPipeline(BaseParserPipeline):
         static_poster = {
             "wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg"
         }
-        super().__init__("wwe", known_imdb_ids, static_poster)
+        static_logo = {
+            "wwe raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
+            "wwe monday night raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
+            "wwe smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe friday night smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe friday smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg",
+            "wwe nxt": "https://image.tmdb.org/t/p/original/k0lJrDhoyuW6GWEWmHR7E2dZ1ic.png",
+        }
+        super().__init__("wwe", known_imdb_ids, static_poster, static_logo)
 
 
 class UFCParserPipeline(BaseParserPipeline):
     def __init__(self):
         super().__init__("ufc")
 
-    def update_imdb_data(self, torrent_data: dict):
-        imdb_id = torrent_data.get("imd_id")
-        if not imdb_id:
+    async def update_imdb_data(self, torrent_data: dict):
+        year = torrent_data.get("date").year
+        title = torrent_data.get("event")
+        tmdb_data = await search_tmdb(title, year)
+        if not tmdb_data:
             if not torrent_data["poster"]:
                 torrent_data["poster"] = random.choice(
                     SPORTS_ARTIFACTS[self.event_name.upper()]["poster"]
                 )
             return
-        imdb_title = web.get_title(imdb_id=imdb_id, page="main")
         torrent_data.update(
             dict(
-                id=imdb_id,
-                poster=imdb_title.primary_image,
-                background=imdb_title.primary_image,
-                runtime=imdb_title.runtime,
-                imdb_rating=imdb_title.rating,
-                description=imdb_title.plot.get("en-US"),
+                poster=tmdb_data["poster"],
+                background=tmdb_data["background"],
+                is_add_title_to_poster=False,
+                imdb_rating=tmdb_data["tmdb_rating"],
+                description=tmdb_data["description"],
             )
         )

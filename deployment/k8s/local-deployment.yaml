@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:4.1.18
+        image: mhdzumair/mediafusion:4.3.29
         ports:
         - containerPort: 8000
         resources:
@@ -76,7 +76,7 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 1200
           periodSeconds: 5
           timeoutSeconds: 10
 ---
@@ -124,8 +124,8 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:4.1.18
-        command: ["pipenv", "run", "dramatiq", "api.task", "-p", "1", "-t", "1"]
+        image: mhdzumair/mediafusion:4.3.29
+        command: ["dramatiq", "api.task", "-p", "1", "-t", "1"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"

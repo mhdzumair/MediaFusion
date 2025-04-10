@@ -4,10 +4,7 @@ import re
 
 from scrapy.exceptions import DropItem
 
-from db.models import (
-    Episode,
-)
-from utils.parser import convert_size_to_bytes
+from db.models import EpisodeFile
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
@@ -34,7 +31,7 @@ class MotoGPParserPipeline:
                 ),
             ],
         }
-        self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP"]["poster"])
+        self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["poster"])
 
         self.smcgill1969_resolutions = {
             "4K": "4k",
@@ -52,7 +49,7 @@ class MotoGPParserPipeline:
 
     def process_item(self, item, spider):
         uploader = item["uploader"]
-        title = re.sub(r"\.\.+", ".", item["torrent_name"])
+        title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.title_parser_functions[uploader](title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -117,15 +114,15 @@ class MotoGPParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         episodes = []
-        for index, file_detail in enumerate(torrent_data.get("file_details", [])):
-            file_name = file_detail.get("file_name")
-            file_size = file_detail.get("file_size")
+        for index, file_detail in enumerate(torrent_data.get("file_data", [])):
+            file_name = file_detail.get("filename")
 
             episodes.append(
-                Episode(
+                EpisodeFile(
+                    season_number=1,
                     episode_number=index + 1,
                     filename=file_name,
-                    size=convert_size_to_bytes(file_size),
+                    size=file_detail.get("size"),
                     file_index=index,
                     title=" ".join(file_name.split(".")[1:-1]),
                     released=torrent_data.get("created_at"),

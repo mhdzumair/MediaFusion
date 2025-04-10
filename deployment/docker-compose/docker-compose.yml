@@ -1,76 +1,140 @@
-version: '3.8'
-
 services:
   mediafusion:
-    image: mhdzumair/mediafusion:4.1.18
+    image: mhdzumair/mediafusion:4.3.29
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    env_file: .env
     depends_on:
-      - mongodb
-      - redis
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 1m
       timeout: 10s
       retries: 5
-      start_period: 10s
+      start_period: 20m
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
 
   nginx:
     image: nginx:alpine
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./mediafusion.local.pem:/etc/ssl/certs/mediafusion.local.pem
-      - ./mediafusion.local-key.pem:/etc/ssl/private/mediafusion.local-key.pem
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./mediafusion.local.pem:/etc/ssl/certs/mediafusion.local.pem:ro
+      - ./mediafusion.local-key.pem:/etc/ssl/private/mediafusion.local-key.pem:ro
     ports:
       - "443:443"
     depends_on:
-      - mediafusion
+      mediafusion:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mediafusion-network
 
   mongodb:
-    image: mongo
+    image: mongo:latest
     volumes:
       - mongo-data:/data/db
     ports:
       - "27017:27017"
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - mediafusion-network
 
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --save 60 1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mediafusion-network
 
   dramatiq-worker:
-    image: mhdzumair/mediafusion:4.1.18
-    command: ["pipenv", "run", "dramatiq", "api.task", "-p", "1", "-t", "1", "--queues", "scrapy"]
-    env_file:
-      - .env
+    image: mhdzumair/mediafusion:4.3.29
+    command: ["dramatiq", "api.task", "-p", "1", "-t", "4"]
+    env_file: .env
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
 
   prowlarr:
     image: ghcr.io/hotio/prowlarr:latest
     environment:
-      PUID: "1000"
-      PGID: "1000"
-      UMASK: "002"
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=${TZ:-UTC}  # Add timezone support
     ports:
       - "9696:9696"
     volumes:
       - prowlarr-config:/config
+    restart: unless-stopped
+    networks:
+      - mediafusion-network
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     ports:
       - "8191:8191"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mediafusion-network
 
   browserless:
     image: ghcr.io/browserless/chromium
     ports:
       - "3000:3000"
     environment:
-      - TIMEOUT='-1'
+      - TIMEOUT=-1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/json/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mediafusion-network
 
 volumes:
   mongo-data:
+    driver: local
   prowlarr-config:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  mediafusion-network:
+    driver: bridge

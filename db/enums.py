@@ -9,10 +9,11 @@ class MediaType(StrEnum):
     EVENTS = "events"
 
 
-class IndexerType(StrEnum):
-    FREELEACH = "freeleech"
+class TorrentType(StrEnum):
+    PUBLIC = "public"
     SEMI_PRIVATE = "semi-private"
     PRIVATE = "private"
+    WEB_SEED = "web-seed"
 
 
 class NudityStatus(StrEnum):
@@ -21,3 +22,4 @@ class NudityStatus(StrEnum):
     MODERATE = "Moderate"
     SEVERE = "Severe"
     UNKNOWN = "Unknown"
+    DISABLE = "Disable"

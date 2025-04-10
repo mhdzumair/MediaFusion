@@ -3,7 +3,8 @@ from fastapi.responses import RedirectResponse
 
 from db import schemas
 from streaming_providers.premiumize.client import Premiumize
-from utils import crypto, const
+from utils import const
+from utils.crypto import crypto_utils
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ async def oauth2_redirect(code: str):
                 service="premiumize", token=token
             )
         )
-        encrypted_str = crypto.encrypt_user_data(user_data)
+        encrypted_str = await crypto_utils.process_user_data(user_data)
         return RedirectResponse(
             f"/{encrypted_str}/configure", headers=const.NO_CACHE_HEADERS
         )

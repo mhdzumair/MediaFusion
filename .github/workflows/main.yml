@@ -37,12 +37,15 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git commit -m "chore: update version to ${{  github.ref_name }}"
+          if git diff-index --quiet HEAD; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: update version to ${{ github.ref_name }}"
           git push origin HEAD:main
 
   mediafusion_docker_build:
     needs: update_version
-    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
@@ -74,14 +77,13 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
           tags: |
             mhdzumair/mediafusion:${{ github.ref_name }}
-            mhdzumair/mediafusion:latest
+            mhdzumair/mediafusion:${{ github.event.release.prerelease && 'beta' || 'latest' }}
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
 
   kodi_build:
     needs: update_version
-    if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
 
     steps:
@@ -115,6 +117,7 @@ jobs:
           done
 
       - name: Deploy to GitHub Pages
+        if: "!github.event.release.prerelease"
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -126,9 +129,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            kodi/plugin.video.mediafusion-*.zip
-            kodi/repository.mediafusion-*.zip
-          prerelease: false
+            kodi/dist/plugin.video.mediafusion/plugin.video.mediafusion-*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
 
   generate_release_notes:

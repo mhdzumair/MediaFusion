@@ -1,6 +1,7 @@
 // ---- Variables ----
 const oAuthBtn = document.getElementById('oauth_btn');
 let currentAuthorizationToken = null;
+let mdbListUI;
 const servicesRequiringCredentials = ['pikpak',];
 const servicesRequiringUrl = ['stremthru'];
 const servicesNotNeedingDebridProxy = ['stremthru'];
@@ -8,17 +9,18 @@ const providerSignupLinks = {
     pikpak: 'https://mypikpak.com/drive/activity/invited?invitation-code=52875535',
     seedr: 'https://www.seedr.cc/?r=2726511',
     offcloud: 'https://offcloud.com/?=9932cd9f',
-    realdebrid: 'http://real-debrid.com/?id=9490816',
+    realdebrid: ['http://real-debrid.com/?id=9490816', 'http://real-debrid.com/?id=3351376'],
     debridlink: 'https://debrid-link.com/id/kHgZs',
     alldebrid: 'https://alldebrid.com/?uid=3ndha&lang=en',
-    torbox: 'https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c',
+    torbox: ['https://torbox.app/subscription?referral=339b923e-fb23-40e7-8031-4af39c212e3c', 'https://torbox.app/subscription?referral=e2a28977-99ed-43cd-ba2c-e90dc398c49c', 'https://torbox.app/subscription?referral=38f1c266-8a6c-40b2-a6d2-2148e77dafc9'],
+    easydebrid: 'https://paradise-cloud.com/products/easydebrid',
     premiumize: 'https://www.premiumize.me',
     qbittorrent: 'https://github.com/mhdzumair/MediaFusion/tree/main/streaming_providers/qbittorrent#qbittorrent-webdav-setup-options-with-mediafusion',
     stremthru: 'https://github.com/MunifTanjim/stremthru?tab=readme-ov-file#configuration',
 };
 const providerTokenTooltip = {
     '*': `Enter Encoded Token previously generated or Click 'Authorize' to generate a new token or Provide your Private Token.`,
-    stremthru: `Enter the Credential configured using 'STREMTHRU_PROXY_AUTH' config.`,
+    stremthru: `Enter Credential ('store_name:store_token' or base64 encoded basic token from 'STREMTHRU_PROXY_AUTH' config)`,
 };
 
 // ---- OAuth-related Functions ----
@@ -196,7 +198,12 @@ function updateProviderFields(isChangeEvent = false) {
     }
 
     if (provider in providerSignupLinks) {
-        document.getElementById('signup_link').href = providerSignupLinks[provider];
+        // if providerSignupLinks[provider] is an array, randomly select one of the links
+        if (Array.isArray(providerSignupLinks[provider])) {
+            document.getElementById('signup_link').href = providerSignupLinks[provider][Math.floor(Math.random() * providerSignupLinks[provider].length)];
+        } else {
+            document.getElementById('signup_link').href = providerSignupLinks[provider];
+        }
         setElementDisplay('signup_section', 'block');
     } else {
         setElementDisplay('signup_section', 'none');
@@ -274,6 +281,7 @@ async function getInstallationUrl(isRedirect = false) {
         showLoadingWidget();
 
         const userData = getUserData();
+        const existingConfig = document.getElementById('existing_config').value;
         let urlPrefix = window.location.protocol + "//";
         if (isRedirect) {
             urlPrefix = "stremio://";
@@ -284,8 +292,9 @@ async function getInstallationUrl(isRedirect = false) {
             showNotification('Validation failed. Please check your input.', 'error');
             return null;
         }
+        const encryptUrl = '/encrypt-user-data' + (existingConfig ? `/${existingConfig}` : '');
 
-        const response = await fetch('/encrypt-user-data', {
+        const response = await fetch(encryptUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -405,7 +414,7 @@ function getUserData() {
         if (servicesNotNeedingDebridProxy.includes(provider)) {
             mediaflowConfig.proxy_debrid_streams = false;
         }
-        validateInput('mediaflow_proxy_url', validateUrl(mediaflowConfig.proxy_url));
+        validateInput('mediaflow_proxy_url', mediaflowConfig.proxy_url.trim() !== '');
         validateInput('mediaflow_api_password', mediaflowConfig.api_password.trim() !== '');
     }
 
@@ -415,6 +424,14 @@ function getUserData() {
             api_key: document.getElementById('rpdb_api_key').value,
         };
         validateInput('rpdb_api_key', rpdbConfig.api_key.trim() !== '');
+    }
+
+    let mdblistConfig = null;
+    if (document.getElementById('enable_mdblist').checked) {
+        mdblistConfig = {
+            api_key: document.getElementById('mdblist_api_key').value,
+            lists: mdbListUI.getSelectedListsData()
+        };
     }
 
     // Collect and validate other user data
@@ -447,11 +464,19 @@ function getUserData() {
     // Collect and return the rest of the user data
     const torrentDisplayOption = document.querySelector('input[name="torrentDisplayOption"]:checked').value;
 
+    const showTorrentLanguageFlag = document.getElementById('showTorrentLanguageFlag').checked;
+
     // Collect nudity filter data
-    const selectedNudityFilters = Array.from(document.querySelectorAll('input[name="nudity_filter"]:checked')).map(el => el.value);
+    let selectedNudityFilters = Array.from(document.querySelectorAll('input[name="nudity_filter"]:checked')).map(el => el.value);
+    if (selectedNudityFilters.length === 0) {
+        selectedNudityFilters = ['Disable'];
+    }
 
     // Collect certification filter data
-    const selectedCertificationFilters = Array.from(document.querySelectorAll('input[name="certification_filter"]:checked')).map(el => el.value);
+    let selectedCertificationFilters = Array.from(document.querySelectorAll('input[name="certification_filter"]:checked')).map(el => el.value);
+    if (selectedCertificationFilters.length === 0) {
+        selectedCertificationFilters = ['Disable'];
+    }
 
     // Collect language sorting order
     const languageSorting = Array.from(document.querySelectorAll('input[name="selected_languages"]:checked')).map(el => el.value || null);
@@ -469,6 +494,7 @@ function getUserData() {
         max_streams_per_resolution: maxStreamsPerResolution,
         torrent_sorting_priority: selectedSortingOptions,
         show_full_torrent_name: torrentDisplayOption === 'fullName',
+        show_language_country_flag: showTorrentLanguageFlag,
         nudity_filter: selectedNudityFilters,
         certification_filter: selectedCertificationFilters,
         language_sorting: languageSorting,
@@ -478,6 +504,7 @@ function getUserData() {
         rpdb_config: rpdbConfig,
         live_search_streams: document.getElementById('liveSearchStreams').checked,
         contribution_streams: document.getElementById('contributionStreams').checked,
+        mdblist_config: mdblistConfig,
     };
 }
 
@@ -542,6 +569,52 @@ function setupPasswordToggle(passwordInputId, toggleButtonId, toggleIconId) {
     });
 }
 
+// Function to handle configured credential fields
+function handleConfiguredFields(field, isConfigured = false) {
+    const inputField = document.getElementById(field);
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'btn btn-outline-secondary reset-config-btn';
+    resetBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
+    resetBtn.title = 'Reset Configuration';
+
+    if (isConfigured) {
+        inputField.setAttribute('readonly', true);
+        inputField.classList.add('configured-field');
+
+        // Add reset button next to the field
+        if (!inputField.nextElementSibling?.classList.contains('reset-config-btn')) {
+            inputField.parentElement.appendChild(resetBtn);
+        }
+
+        // Handle reset button click
+        resetBtn.onclick = () => {
+            inputField.value = '';
+            inputField.removeAttribute('readonly');
+            inputField.classList.remove('configured-field');
+            resetBtn.remove();
+        };
+    }
+}
+
+// Function to initialize configured fields
+function initConfiguredFields(configuredFields) {
+    const sensitiveFields = [
+        'provider_token',
+        'password',
+        'qbittorrent_password',
+        'webdav_password',
+        'mediaflow_api_password',
+        'rpdb_api_key'
+    ];
+
+    sensitiveFields.forEach(field => {
+        if (configuredFields.includes(field)) {
+            handleConfiguredFields(field, true);
+        }
+    });
+}
+
 async function initiateKodiSetup() {
     // Show modal to input Kodi code
     const kodiCodeModal = new bootstrap.Modal(document.getElementById('kodiCodeModal'));
@@ -591,6 +664,153 @@ async function setupKodiAddon(kodiCode) {
         }
     }
 }
+/**
+ * Add select/deselect buttons and search input for a container
+ *
+ * @param {string} containerId - ID of the container element
+ * @param {string} sectionName - Name of the section for labels and placeholders
+ * @param {string} checkboxSelector - CSS selector for checkboxes in the container
+ */
+function addSelectDeselectSearch(containerId, sectionName, checkboxSelector) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Create a controls container
+    const controlsContainer = document.createElement('div');
+    controlsContainer.className = 'mb-3';
+
+    // Create search input
+    const searchGroup = document.createElement('div');
+    searchGroup.className = 'input-group mb-2';
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'form-control form-control-sm';
+    searchInput.placeholder = `Search ${sectionName}...`;
+    searchInput.id = `${containerId}-search`;
+    searchInput.setAttribute('autocomplete', 'off');
+
+    const searchClearBtn = document.createElement('button');
+    searchClearBtn.className = 'btn btn-outline-secondary btn-sm';
+    searchClearBtn.type = 'button';
+    searchClearBtn.innerHTML = '<i class="bi bi-x"></i>';
+    searchClearBtn.setAttribute('data-bs-toggle', 'tooltip');
+    searchClearBtn.setAttribute('data-bs-placement', 'top');
+    searchClearBtn.setAttribute('title', 'Clear Search');
+
+    searchGroup.appendChild(searchInput);
+    searchGroup.appendChild(searchClearBtn);
+
+    // Create button group
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'btn-group btn-group-sm w-100';
+
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.type = 'button';
+    selectAllBtn.className = 'btn btn-outline-primary';
+    selectAllBtn.innerHTML = '<i class="bi bi-check-all"></i> Select All';
+
+    const deselectAllBtn = document.createElement('button');
+    deselectAllBtn.type = 'button';
+    deselectAllBtn.className = 'btn btn-outline-secondary';
+    deselectAllBtn.innerHTML = '<i class="bi bi-x-lg"></i> Deselect All';
+
+    buttonGroup.appendChild(selectAllBtn);
+    buttonGroup.appendChild(deselectAllBtn);
+
+    // Add elements to controls container
+    controlsContainer.appendChild(searchGroup);
+    controlsContainer.appendChild(buttonGroup);
+
+    // Insert controls at the beginning of the container
+    container.parentNode.insertBefore(controlsContainer, container);
+
+    // Add event listeners
+    selectAllBtn.addEventListener('click', function() {
+        const visibleCheckboxes = getVisibleCheckboxes(container, checkboxSelector);
+        visibleCheckboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+    });
+
+    deselectAllBtn.addEventListener('click', function() {
+        const visibleCheckboxes = getVisibleCheckboxes(container, checkboxSelector);
+        visibleCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+    });
+
+    searchInput.addEventListener('input', function() {
+        filterItems(container, this.value.toLowerCase());
+    });
+
+    searchClearBtn.addEventListener('click', function() {
+        searchInput.value = '';
+        filterItems(container, '');
+    });
+}
+
+/**
+ * Get all visible checkboxes in a container
+ *
+ * @param {HTMLElement} container - Container element
+ * @param {string} checkboxSelector - CSS selector for checkboxes
+ * @returns {HTMLElement[]} Array of visible checkbox elements
+ */
+function getVisibleCheckboxes(container, checkboxSelector) {
+    const allCheckboxes = container.querySelectorAll(checkboxSelector);
+    return Array.from(allCheckboxes).filter(checkbox => {
+        const item = getItemContainer(checkbox);
+        return item && !item.classList.contains('d-none');
+    });
+}
+
+/**
+ * Get the container element of a checkbox
+ *
+ * @param {HTMLElement} checkbox - Checkbox element
+ * @returns {HTMLElement|null} Container element or null
+ */
+function getItemContainer(checkbox) {
+    // Navigate up to find the draggable container or column
+    let parent = checkbox.parentElement;
+    while (parent && !parent.classList.contains('draggable-catalog') &&
+           !parent.classList.contains('draggable-language') &&
+           !parent.classList.contains('col-12') &&
+           !parent.classList.contains('col-md-6') &&
+           !parent.classList.contains('col-lg-4')) {
+        parent = parent.parentElement;
+    }
+    return parent;
+}
+
+/**
+ * Filter items in a container based on search text
+ *
+ * @param {HTMLElement} container - Container element
+ * @param {string} searchText - Text to search for
+ */
+function filterItems(container, searchText) {
+    // Find all items (columns or containers)
+    const items = container.querySelectorAll('.draggable-catalog, .draggable-language, .col-12.col-md-6.col-lg-4');
+
+    if (searchText === '') {
+        // Show all items if search is empty
+        items.forEach(item => {
+            item.classList.remove('d-none');
+        });
+    } else {
+        // Show/hide items based on label text
+        items.forEach(item => {
+            const label = item.querySelector('label');
+            if (label && label.textContent.toLowerCase().includes(searchText)) {
+                item.classList.remove('d-none');
+            } else {
+                item.classList.add('d-none');
+            }
+        });
+    }
+}
 
 // ---- Event Listeners ----
 
@@ -604,6 +824,10 @@ document.getElementById('enable_mediaflow').addEventListener('change', function 
 
 document.getElementById('enable_rpdb').addEventListener('change', function () {
     setElementDisplay('rpdb_config', this.checked ? 'block' : 'none');
+});
+
+document.getElementById('enable_mdblist').addEventListener('change', function() {
+    setElementDisplay('mdblist_config', this.checked ? 'block' : 'none');
 });
 
 
@@ -673,13 +897,14 @@ document.getElementById('copyBtn').addEventListener('click', async function (eve
 // ---- Initial Setup ----
 
 document.addEventListener('DOMContentLoaded', function () {
+    mdbListUI = new MDBListUI();
     updateProviderFields();
     updateSizeOutput();
 });
 
 document.addEventListener('DOMContentLoaded', function () {
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    let tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    let tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
 
@@ -698,14 +923,15 @@ document.addEventListener('DOMContentLoaded', function () {
     setupPasswordToggle('webdav_password', 'toggleWebdavPassword', 'toggleWebdavPasswordIcon');
     setupPasswordToggle('mediaflow_api_password', 'toggleMediaFlowPassword', 'toggleMediaFlowPasswordIcon');
     setupPasswordToggle('rpdb_api_key', 'toggleRPDBApiKey', 'toggleRPDBApiKeyIcon');
+    setupPasswordToggle('mdblist_api_key', 'toggleMDBListApiKey', 'toggleMDBListApiKeyIcon');
 });
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
 
     // Initialize sort direction toggles
     const toggleButtons = document.querySelectorAll('.sort-direction-toggle');
     toggleButtons.forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', function () {
             const sortId = this.dataset.sortId;
             const directionInput = document.getElementById(`direction_${sortId}`);
             const currentDirection = directionInput.value;
@@ -724,7 +950,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             iconContainer.innerHTML = `
                 <i class="bi bi-sort-${newDirection === 'asc' ? 'up-alt' : 'down'}"></i>
-                <span class="d-none d-sm-inline ms-1">${newTooltipText}</span>
+                <span class="d-sm-inline ms-1">${newTooltipText}</span>
             `;
         });
     });
@@ -732,7 +958,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Enable/disable sort direction buttons based on checkbox state
     const sortCheckboxes = document.querySelectorAll('[name="selected_sorting_options"]');
     sortCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
+        checkbox.addEventListener('change', function () {
             const sortId = this.value;
             const toggleButton = document.querySelector(`[data-sort-id="${sortId}"]`);
             const sortItem = this.closest('.sort-item');
@@ -811,6 +1037,10 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Initialize configured fields if they exist
+    const configuredFields = JSON.parse(document.getElementById('configured_fields')?.value || '[]');
+    initConfiguredFields(configuredFields);
+
     // Show or hide the language sort section based on the sorting options
     document.querySelectorAll('input[name="selected_sorting_options"]').forEach(checkbox => {
         checkbox.addEventListener('change', function () {
@@ -826,6 +1056,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (document.querySelector('input[name="selected_sorting_options"][value="language"]').checked) {
         document.getElementById('languageSortSection').style.display = 'block';
     }
+
+    // Add UI elements for catalogs
+    addSelectDeselectSearch('catalogs', 'Catalogs', 'input[name="selected_catalogs"]');
+
+    // Add UI elements for languages
+    addSelectDeselectSearch('languageSortOrder', 'Languages', 'input[name="selected_languages"]');
 
     // Initialize the parental guide checkboxes
     const parentalGuideCheckboxes = document.querySelectorAll('.parental-guide-checkbox');

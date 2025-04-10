@@ -7,7 +7,7 @@ from httpx import Response
 from tenacity import RetryError
 
 from db.config import settings
-from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
+from db.models import TorrentStreams, MediaFusionMetaData, EpisodeFile
 from scrapers.base_scraper import BaseScraper, ScraperError
 from utils.parser import (
     is_contain_18_plus_keywords,
@@ -26,6 +26,7 @@ class ZileanScraper(BaseScraper):
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def _scrape_and_parse(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
@@ -90,7 +91,7 @@ class ZileanScraper(BaseScraper):
 
         try:
             streams = await self.parse_response(
-                stream_data, metadata, catalog_type, season, episode
+                stream_data, user_data, metadata, catalog_type, season, episode
             )
             return streams
         except (ScraperError, RetryError):
@@ -105,6 +106,7 @@ class ZileanScraper(BaseScraper):
     async def parse_response(
         self,
         response: List[Dict[str, Any]],
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: int = None,
@@ -154,38 +156,41 @@ class ZileanScraper(BaseScraper):
                     codec=torrent_data.get("codec"),
                     quality=torrent_data.get("quality"),
                     audio=torrent_data.get("audio"),
+                    hdr=torrent_data.get("hdr"),
                     source="Zilean DMM",
                     catalog=["zilean_dmm_streams"],
                 )
 
                 if catalog_type == "movie":
+                    # For the Movies, should not have seasons and episodes
+                    if torrent_data.get("seasons") or torrent_data.get("episodes"):
+                        self.metrics.record_skip("Unexpected season/episode info")
+                        return None
                     torrent_stream.catalog.append("zilean_dmm_movies")
-                elif catalog_type == "series":
+                else:
                     torrent_stream.catalog.append("zilean_dmm_series")
-                    if seasons := torrent_data.get("seasons"):
-                        if len(seasons) != 1:
-                            self.metrics.record_skip("Multiple Seasons torrent")
-                            return None
-                        season_number = seasons[0]
-                    else:
+                    seasons = torrent_data.get("seasons")
+                    if not seasons:
                         self.metrics.record_skip("Missing season info")
                         return None
 
                     if episodes := torrent_data.get("episodes"):
                         episode_data = [
-                            Episode(episode_number=episode_number)
+                            EpisodeFile(
+                                season_number=seasons[0], episode_number=episode_number
+                            )
                             for episode_number in episodes
                         ]
-                    elif season in seasons:
-                        episode_data = [Episode(episode_number=1)]
+                    elif seasons:
+                        episode_data = [
+                            EpisodeFile(season_number=season_number, episode_number=1)
+                            for season_number in seasons
+                        ]
                     else:
                         self.metrics.record_skip("Missing episode info")
                         return None
 
-                    torrent_stream.season = Season(
-                        season_number=season_number,
-                        episodes=episode_data,
-                    )
+                    torrent_stream.episode_files = episode_data
 
                 # Record metrics for successful processing
                 self.metrics.record_processed_item()

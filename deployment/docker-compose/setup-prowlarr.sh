@@ -14,7 +14,7 @@ PROWLARR_API_KEY=$(openssl rand -hex 16)
 echo "PROWLARR_API_KEY=$PROWLARR_API_KEY" >> .env
 
 # Stop & delete Prowlarr container if it's running
-docker-compose rm -sf prowlarr
+docker compose rm -sf prowlarr
 
 # delete the volume if it exists
 docker volume rm -f docker-compose_prowlarr-config
@@ -37,10 +37,10 @@ docker run --rm -v "$REPO_ROOT/resources/xml/prowlarr-config.xml:/prowlarr-confi
 "
 
 # pull the latest images
-docker-compose pull prowlarr flaresolverr
+docker compose pull prowlarr flaresolverr
 
 # Start Prowlarr and FlareSolverr containers
-docker-compose up -d prowlarr flaresolverr
+docker compose up -d prowlarr flaresolverr
 
 # Function to handle curl requests
 handle_curl() {

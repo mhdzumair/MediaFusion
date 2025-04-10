@@ -15,20 +15,20 @@ NEWSPIDER_MODULE = "mediafusion_scrapy.spiders"
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+USER_AGENT = "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.96 Mobile Safari/537.36 (compatible; Google Search Console)"
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)
-# CONCURRENT_REQUESTS = 32
+CONCURRENT_REQUESTS = 10
 
 # Configure a delay for requests for the same website (default: 0)
 # See https://docs.scrapy.org/en/latest/topics/settings.html#download-delay
 # See also autothrottle settings and docs
-# DOWNLOAD_DELAY = 3
+DOWNLOAD_DELAY = 3
 # The download delay setting will honor only one of:
-# CONCURRENT_REQUESTS_PER_DOMAIN = 16
+CONCURRENT_REQUESTS_PER_DOMAIN = 16
 # CONCURRENT_REQUESTS_PER_IP = 16
 
 # Disable cookies (enabled by default)
@@ -59,7 +59,7 @@ DOWNLOADER_MIDDLEWARES = {
 }
 
 EXTENSIONS = {
-    "scrapy.extensions.closespider.CloseSpider": 100,
+    "mediafusion_scrapy.extensions.CloseSpiderExtended": 100,
 }
 
 # Configure item pipelines
@@ -87,16 +87,14 @@ HTTPCACHE_ENABLED = True
 HTTPCACHE_EXPIRATION_SECS = (
     900  # 15 minutes to avoid a multiple scraping task of same time.
 )
-HTTPCACHE_DIR = "httpcache"
+HTTPCACHE_DIR = "/tmp/httpcache"
 HTTPCACHE_IGNORE_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408, 429]
 HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 # HTTPCACHE_POLICY = "scrapy.extensions.httpcache.RFC2616Policy"
 
-# Set settings whose default value is deprecated to a future-proof value
-REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "INFO"
 
 STATS_CLASS = "mediafusion_scrapy.custom_stats.RedisStatsCollector"
 

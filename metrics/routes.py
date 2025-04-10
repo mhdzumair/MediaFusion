@@ -1,4 +1,6 @@
 import asyncio
+import json
+from datetime import datetime, timezone, timedelta
 
 import humanize
 from fastapi import APIRouter, Request, Response
@@ -10,6 +12,7 @@ from db.models import (
     MediaFusionMetaData,
     TorrentStreams,
 )
+from db.redis_database import REDIS_ASYNC_CLIENT
 from metrics.redis_metrics import get_redis_metrics, get_debrid_cache_metrics
 from utils import const
 from utils.runtime_const import TEMPLATES
@@ -51,7 +54,7 @@ async def render_dashboard(
 @metrics_router.get("/torrents", tags=["metrics"])
 async def get_torrents_count(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
-    count = await TorrentStreams.count()
+    count = await TorrentStreams.get_motor_collection().estimated_document_count()
     return {
         "total_torrents": count,
         "total_torrents_readable": humanize.intword(count),
@@ -61,15 +64,26 @@ async def get_torrents_count(response: Response):
 @metrics_router.get("/torrents/sources", tags=["metrics"])
 async def get_torrents_by_sources(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
+
+    cache_key = "torrents:sources"
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+
+    if cached_data:
+        return json.loads(cached_data)
+
     results = await TorrentStreams.aggregate(
         [
             {"$group": {"_id": "$source", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
+            {"$limit": 20},  # Limit to top 20 sources
         ]
     ).to_list()
     torrent_sources = [
         {"name": source["_id"], "count": source["count"]} for source in results
     ]
+
+    # Cache the results for 30 minutes
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(torrent_sources), ex=1800)
     return torrent_sources
 
 
@@ -151,3 +165,132 @@ async def debrid_cache_metrics():
     Returns statistics about cache size, memory usage, and usage patterns per service.
     """
     return await get_debrid_cache_metrics()
+
+
+@metrics_router.get("/torrents/uploaders", tags=["metrics"])
+async def get_torrents_by_uploaders(response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
+    results = await TorrentStreams.aggregate(
+        [
+            {"$match": {"uploader": {"$ne": None}}},
+            {"$group": {"_id": "$uploader", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 20},  # Limit to top 20 uploaders
+        ]
+    ).to_list()
+
+    uploader_stats = [
+        {"name": stat["_id"] if stat["_id"] else "Unknown", "count": stat["count"]}
+        for stat in results
+    ]
+    return uploader_stats
+
+
+@metrics_router.get("/torrents/uploaders/weekly/{week_date}", tags=["metrics"])
+async def get_weekly_top_uploaders(week_date: str, response: Response):
+    response.headers.update(const.NO_CACHE_HEADERS)
+
+    try:
+        # Parse the input date
+        selected_date = datetime.strptime(week_date, "%Y-%m-%d")
+        selected_date = selected_date.replace(tzinfo=timezone.utc)
+
+        # Calculate the start of the week (Monday) for the selected date
+        start_of_week = selected_date - timedelta(days=selected_date.weekday())
+        start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Calculate end of week
+        end_of_week = start_of_week + timedelta(days=7)
+
+        # Get raw aggregation results
+        raw_results = await TorrentStreams.aggregate(
+            [
+                {
+                    "$match": {
+                        "source": "Contribution Stream",
+                        "$or": [
+                            {
+                                "uploaded_at": {
+                                    "$gte": start_of_week,
+                                    "$lt": end_of_week,
+                                }
+                            },
+                        ],
+                        "is_blocked": {"$ne": True},
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$uploader",
+                        "count": {"$sum": 1},
+                        "latest_upload": {"$max": "$created_at"},
+                    }
+                },
+            ]
+        ).to_list()
+
+        # Process and clean the results (keeping existing logic)
+        processed_results = []
+        anonymous_total = 0
+        anonymous_latest = None
+
+        for stat in raw_results:
+            uploader_name = stat["_id"]
+            count = stat["count"]
+            latest_upload = stat["latest_upload"]
+
+            if count <= 0:
+                continue
+
+            if (
+                uploader_name is None
+                or uploader_name.strip() == ""
+                or uploader_name.lower() == "anonymous"
+            ):
+                anonymous_total += count
+                if anonymous_latest is None or (
+                    latest_upload and latest_upload > anonymous_latest
+                ):
+                    anonymous_latest = latest_upload
+            else:
+                processed_results.append(
+                    {
+                        "name": uploader_name.strip(),
+                        "count": count,
+                        "latest_upload": (
+                            latest_upload.strftime("%Y-%m-%d")
+                            if latest_upload
+                            else None
+                        ),
+                    }
+                )
+
+        if anonymous_total > 0:
+            processed_results.append(
+                {
+                    "name": "Anonymous",
+                    "count": anonymous_total,
+                    "latest_upload": (
+                        anonymous_latest.strftime("%Y-%m-%d")
+                        if anonymous_latest
+                        else None
+                    ),
+                }
+            )
+
+        final_results = sorted(
+            processed_results, key=lambda x: x["count"], reverse=True
+        )[:20]
+
+        return {
+            "week_start": start_of_week.strftime("%Y-%m-%d"),
+            "week_end": end_of_week.strftime("%Y-%m-%d"),
+            "uploaders": final_results,
+        }
+
+    except ValueError as e:
+        return {
+            "error": f"Invalid date format. Please use YYYY-MM-DD format. Details: {str(e)}"
+        }
+    except Exception as e:
+        return {"error": f"An error occurred: {str(e)}"}

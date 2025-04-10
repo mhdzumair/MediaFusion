@@ -1,144 +1,340 @@
 import logging
-from datetime import datetime, timedelta, date
-from typing import Optional
-
-import dramatiq
-import httpx
 import math
+import re
+from datetime import datetime, date
+from enum import Enum
+from typing import Optional, List, Dict, Any, Tuple
+
+import httpx
 from cinemagoerng import model, web, piculet
-from cinemagoerng.model import TVSeries
-from curl_cffi import requests
-from imdb import Cinemagoer, IMDbDataAccessError
+from cinemagoerng.model import TVSeries, SearchFilters, RangeFilter
 from thefuzz import fuzz
 from typedload.exceptions import TypedloadValueError
 
+from db.config import settings
 from db.models import (
-    MediaFusionMetaData,
+    SeriesEpisode,
 )
-from db.schemas import MetaIdProjection
 from utils.const import UA_HEADER
-from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
-
-ia = Cinemagoer()
 
 
-async def get_imdb_movie_data(imdb_id: str, media_type: str) -> Optional[model.Title]:
+async def get_imdb_title(imdb_id: str, media_type: str) -> Optional[model.Title]:
     try:
-        title = web.get_title(imdb_id, page="main")
+        title = await web.get_title_async(
+            imdb_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
+        )
+        if media_type == "series":
+            await web.update_title_async(
+                title,
+                page="episodes_with_pagination",
+                keys=["episodes"],
+                paginate_result=True,
+            )
     except Exception:
         title = await get_imdb_data_via_cinemeta(imdb_id, media_type)
 
     if not title:
         return None
 
+    if media_type == "movie" and title.type_id not in [
+        "movie",
+        "tvMovie",
+        "short",
+        "tvShort",
+        "tvSpecial",
+    ]:
+        logging.warning(f"IMDB ID {imdb_id} is not a movie. found {title.type_id}")
+        return None
+    elif media_type == "series" and title.type_id not in ["tvSeries", "tvMiniSeries"]:
+        logging.warning(f"IMDB ID {imdb_id} is not a series. found {title.type_id}")
+        return None
+
     try:
         web.update_title(
-            title, page="parental_guide", keys=["certification", "advisories"]
+            title,
+            page="parental_guide",
+            keys=["certification", "advisories"],
+            httpx_kwargs={"proxy": settings.requests_proxy_url},
         )
-        web.update_title(title, page="akas", keys=["akas"])
+        web.update_title(
+            title,
+            page="akas",
+            keys=["akas"],
+            httpx_kwargs={"proxy": settings.requests_proxy_url},
+            paginate_result=True,
+        )
+        # Look for worldwide title
+        title.title = next(
+            (
+                aka.title
+                for aka in title.akas
+                if aka.country_code == "XWW" and aka.language_code == "en"
+            ),
+            title.title,
+        )
     except Exception:
         pass
 
     return title
 
 
-def get_imdb_rating(movie_id: str) -> Optional[float]:
+class ImageType(Enum):
+    POSTER = "poster"  # High res for Pillow resizing to 300x450
+    BACKGROUND = "bg"  # Full HD background
+    THUMBNAIL = "thumb"  # Medium resolution thumbnail
+    CUSTOM = "custom"  # For custom dimensions
+
+
+def modify_imdb_image_url(
+    image_url: str,
+    image_type: ImageType = ImageType.POSTER,
+    custom_width: Optional[int] = None,
+    custom_height: Optional[int] = None,
+) -> str | None:
+    """
+    Modify IMDb image URL based on desired type and dimensions.
+    Optimized for different use cases:
+    - POSTER: Returns higher resolution for better quality after Pillow resize
+    - BACKGROUND: Returns direct FHD resolution
+    - THUMBNAIL: Returns medium resolution around 500px
+    """
+    if not image_url:
+        return
+    pattern = r"images/M/([^.]+)\..*"
+    match = re.search(pattern, image_url)
+    if not match:
+        return
+
+    image_id = match.group(1)
+    base_url = "https://m.media-amazon.com/images/M/"
+
+    if image_type == ImageType.POSTER:
+        # High resolution for better quality after Pillow resize to 300x450
+        # Use 900px height which is double the target for better quality
+        return f"{base_url}{image_id}._V1_SY900_QL75_.jpg"
+
+    elif image_type == ImageType.BACKGROUND:
+        # Direct FHD resolution
+        return f"{base_url}{image_id}._V1_UX1920_.jpg"
+
+    elif image_type == ImageType.THUMBNAIL:
+        # Medium resolution around 500px
+        return f"{base_url}{image_id}._V1_SY500_QL75_.jpg"
+
+    else:  # CUSTOM
+        if not (custom_width and custom_height):
+            raise ValueError("Custom width and height required for CUSTOM type")
+
+        if custom_width > custom_height:
+            return f"{base_url}{image_id}._V1_UX{custom_width}_QL75_.jpg"
+        else:
+            return f"{base_url}{image_id}._V1_SY{custom_height}_QL75_.jpg"
+
+
+async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
+    imdb_title = await get_imdb_title(imdb_id, media_type)
+    if not imdb_title:
+        return None
+    episodes = []
+    if imdb_title.type_id in ["tvSeries", "tvMiniSeries"]:
+        episodes = [
+            SeriesEpisode(
+                season_number=episode.season,
+                episode_number=episode.episode,
+                title=episode.title,
+                overview=episode.plot.get("en-US"),
+                released=episode.release_date,
+                imdb_rating=episode.rating,
+                thumbnail=modify_imdb_image_url(
+                    episode.primary_image, ImageType.THUMBNAIL
+                )
+                or f"https://episodes.metahub.space/{episode.imdb_id}/{episode.season}/{episode.episode}/w780.jpg",
+            ).model_dump()
+            for episode in imdb_title.episodes
+        ]
+    return parse_imdb_title(imdb_title, episodes)
+
+
+def parse_imdb_title(imdb_title: model.Title, episodes: list[dict]) -> dict:
+    end_year = None
+    if imdb_title.type_id in ["tvSeries", "tvMiniSeries"]:
+        end_year = imdb_title.end_year
+
+    return {
+        "imdb_id": imdb_title.imdb_id,
+        "poster": modify_imdb_image_url(imdb_title.primary_image, ImageType.POSTER)
+        or f"https://live.metahub.space/poster/small/{imdb_title.imdb_id}/img",
+        "background": imdb_title.primary_image,
+        "logo": f"https://live.metahub.space/logo/medium/{imdb_title.imdb_id}/img",
+        "title": imdb_title.title,
+        "year": imdb_title.year,
+        "end_year": end_year,
+        "description": imdb_title.plot.get("en-US"),
+        "countries": imdb_title.countries,
+        "languages": imdb_title.languages,
+        "genres": imdb_title.genres,
+        "imdb_rating": float(imdb_title.rating) if imdb_title.rating else None,
+        "aka_titles": list(set(aka.title for aka in imdb_title.akas)),
+        "type": (
+            "movie"
+            if imdb_title.type_id
+            in ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]
+            else "series"
+        ),
+        "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
+        "parent_guide_certificates": list(
+            set(
+                rating
+                for cert in imdb_title.certification.certificates
+                for rating in cert.ratings
+            )
+        ),
+        "runtime": f"{imdb_title.runtime} min" if imdb_title.runtime else None,
+        "episodes": episodes,
+        "stars": [cast.name for cast in imdb_title.cast],
+    }
+
+
+async def get_imdb_rating(movie_id: str) -> Optional[float]:
     try:
-        movie = web.get_title(movie_id, page="main")
+        title = await web.get_title_async(
+            movie_id, page="main", httpx_kwargs={"proxy": settings.requests_proxy_url}
+        )
+        return float(title.rating) if title and title.rating else None
     except Exception:
         return None
-    return movie.rating
 
 
-def search_imdb(
-    title: str, year: int, media_type: str = None, max_retries: int = 3
+async def search_imdb(
+    title: str,
+    year: int | None,
+    media_type: str = None,
+    max_retries: int = 3,
+    created_year: int | None = None,
 ) -> dict:
-    def get_poster_urls(imdb_id: str) -> tuple:
-        poster = f"https://live.metahub.space/poster/medium/{imdb_id}/img"
+    """
+    Search for a movie or TV show on IMDB with strict year validation.
+    When year is provided, only exact matches are considered.
+    When year is None, results are sorted by proximity to created_year.
+    """
+
+    def calculate_year_difference(
+        imdb_title: model.Movie | model.TVSeries | model.TVMiniSeries,
+    ) -> float | None:
+        """Calculate year difference score for sorting"""
         try:
-            response = requests.head(poster, timeout=10)
-            if response.status_code == 200:
-                return (
-                    poster,
-                    poster,
-                )
-        except requests.RequestsError:
-            pass
-        return None, None
+            title_year = getattr(imdb_title, "year", None)
+            if title_year is None:
+                return None
 
-    def process_movie(movie, year: int) -> dict:
-        try:
-            try:
-                imdb_title = web.get_title(f"tt{movie.movieID}", page="main")
-            except TypedloadValueError:
-                return {}
-            if not imdb_title:
-                return {}
+            # If target year is provided, only allow exact matches
+            if year is not None:
+                if imdb_title.type_id in [
+                    "movie",
+                    "tvMovie",
+                    "short",
+                    "tvShort",
+                    "tvSpecial",
+                ]:
+                    return 0 if title_year == year else None
+                else:
+                    end_year = getattr(imdb_title, "end_year", None)
+                    # If it's an ongoing series, we can use math.inf for end_year
+                    if end_year is None:
+                        end_year = math.inf if title_year <= year else None
 
-            if (imdb_title.type_id != "tvSeries" and imdb_title.year != year) or (
-                imdb_title.type_id == "tvSeries"
-                and year is not None
-                and not (imdb_title.year <= year <= (imdb_title.end_year or math.inf))
-            ):
-                return {}
+                    # Only proceed if we have valid end_year
+                    if end_year is not None:
+                        return 0 if (title_year <= year <= end_year) else float("inf")
+                    return None
 
-            web.update_title(
-                imdb_title, page="parental_guide", keys=["certification", "advisories"]
-            )
-            web.update_title(imdb_title, page="akas", keys=["akas"])
-
-            poster_image, background_image = get_poster_urls(imdb_title.imdb_id)
-            if not poster_image:
-                poster_image = imdb_title.primary_image
-                background_image = poster_image
-
-            end_year = imdb_title.end_year if imdb_title.type_id == "tvSeries" else None
-
-            return {
-                "imdb_id": imdb_title.imdb_id,
-                "poster": poster_image,
-                "background": background_image,
-                "title": imdb_title.title,
-                "year": imdb_title.year,
-                "end_year": end_year,
-                "description": imdb_title.plot.get("en-US"),
-                "genres": imdb_title.genres,
-                "imdb_rating": imdb_title.rating,
-                "aka_titles": list(set(aka.title for aka in imdb_title.akas)),
-                "type_id": imdb_title.type_id,
-                "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
-                "parent_guide_certificates": list(
-                    set(
-                        cert.certificate
-                        for cert in imdb_title.certification.certificates
+            # Only use created_year for sorting when target year is None
+            if created_year:
+                if imdb_title.type_id in [
+                    "movie",
+                    "tvMovie",
+                    "short",
+                    "tvShort",
+                    "tvSpecial",
+                ]:
+                    return abs(title_year - created_year)
+                else:
+                    # For series, use the minimum difference between created_year
+                    # and either start or end year
+                    end_year = getattr(imdb_title, "end_year", None)
+                    if end_year is None:
+                        # If series is ongoing/unknown end, just use start year difference
+                        return abs(title_year - created_year)
+                    return min(
+                        abs(title_year - created_year), abs(end_year - created_year)
                     )
-                ),
-                "runtime": imdb_title.runtime,
-            }
-        except (IMDbDataAccessError, AttributeError, Exception) as e:
-            logging.error(f"IMDB search: Error processing movie: {e}")
-            return {}
 
+            return float("inf")  # No year information available
+
+        except (AttributeError, Exception) as err:
+            logging.error(f"IMDB search: Error calculating year difference: {err}")
+            return float("inf")
+
+    title_types = [
+        "movie",
+        "tvMovie",
+        "short",
+        "tvShort",
+        "tvSpecial",
+        "tvSeries",
+        "tvMiniSeries",
+    ]
     if media_type:
-        media_type = "movie" if media_type == "movie" else "tv series"
+        title_types = (
+            ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]
+            if media_type == "movie"
+            else ["tvSeries", "tvMiniSeries"]
+        )
+
     for attempt in range(max_retries):
         try:
-            results = ia.search_movie(title)
+            # Only add year filter if year is specifically provided
+            search_filters = SearchFilters(title_types=title_types)
+            if year is not None:
+                if media_type in ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]:
+                    search_filters.release_date = RangeFilter(
+                        min_value=year, max_value=year
+                    )
+                else:
+                    search_filters.release_date = RangeFilter(max_value=year)
 
-            for movie in results:
-                if media_type and movie.get("kind", "") != media_type:
+            results = await web.search_titles_async(
+                title,
+                filters=search_filters,
+                count=10,
+            )
+
+            # Filter by title similarity and calculate year differences
+            candidates = []
+            for imdb_data in results:
+                if fuzz.ratio(imdb_data.title.lower(), title.lower()) < 85:
                     continue
 
-                if fuzz.ratio(movie.get("title", "").lower(), title.lower()) < 85:
-                    continue
+                year_diff = calculate_year_difference(imdb_data)
+                if year_diff is not None:  # Only include valid matches
+                    candidates.append((imdb_data, year_diff))
 
-                movie_data = process_movie(movie, year)
-                if movie_data:
-                    return movie_data
+            # Sort candidates by year difference
+            candidates.sort(key=lambda x: x[1])
 
-            return {}  # No matching movie found
+            # Only fetch full data for the best match
+            if candidates:
+                best_match = candidates[0][0]
+                try:
+                    return await get_imdb_title_data(
+                        best_match.imdb_id, best_match.type_id
+                    )
+                except Exception as err:
+                    logging.error(f"IMDB search: Error fetching best match data: {err}")
 
-        except (IMDbDataAccessError, Exception) as e:
+            return {}
+
+        except Exception as e:
             logging.debug(f"Error in attempt {attempt + 1}: {e}")
             if attempt == max_retries - 1:
                 logging.warning(
@@ -149,125 +345,11 @@ def search_imdb(
     return {}
 
 
-async def process_imdb_data(imdb_ids: list[str], metadata_type: str):
-    now = datetime.now()
-
-    # Initialize circuit breaker
-    circuit_breaker = CircuitBreaker(
-        failure_threshold=2, recovery_timeout=10, half_open_attempts=2
-    )
-
-    async for result in batch_process_with_circuit_breaker(
-        get_imdb_movie_data,
-        imdb_ids,
-        5,
-        rate_limit_delay=3,
-        cb=circuit_breaker,
-        retry_exceptions=[IMDbDataAccessError],
-        media_type=metadata_type,
-    ):
-        if not result:
-            continue
-
-        movie_id = result.imdb_id
-        imdb_rating = float(result.rating) if result.rating is not None else None
-        end_year_dict = (
-            {"end_year": result.end_year}
-            if metadata_type == "series" and result.end_year
-            else {}
-        )
-
-        # Update database entries with the new data
-        await MediaFusionMetaData.find_one({"_id": movie_id}).update(
-            {
-                "$set": {
-                    "genres": result.genres,
-                    "imdb_rating": imdb_rating,
-                    "parent_guide_nudity_status": result.advisories.nudity.status,
-                    "parent_guide_certificates": list(
-                        set(
-                            cert.certificate
-                            for cert in result.certification.certificates
-                        )
-                    ),
-                    "aka_titles": list(set(aka.title for aka in result.akas)),
-                    "last_updated_at": now,
-                    **end_year_dict,
-                }
-            },
-        )
-        logging.info(f"Updating metadata for movie {movie_id}")
-
-
-@dramatiq.actor(time_limit=3 * 60 * 60 * 1000, priority=8, max_retries=3)
-async def process_imdb_data_background(imdb_ids, metadata_type="movie"):
-    # Validate imdb_ids from the database
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-    valid_ids = await MediaFusionMetaData.find(
-        {
-            "_id": {"$in": imdb_ids},
-            "$or": [
-                {"last_updated_at": {"$lt": seven_days_ago}},
-                {"last_updated_at": None},
-            ],
-        },
-        projection_model=MetaIdProjection,
-        with_children=True,
-    ).to_list()
-    valid_ids = [doc.id for doc in valid_ids]
-
-    if valid_ids:
-        await process_imdb_data(valid_ids, metadata_type)
-
-
-@dramatiq.actor(
-    time_limit=60 * 1000, priority=10, max_retries=0, queue_name="scrapy"
-)  # Short time limit as this should be a fast operation
-async def fetch_movie_ids_to_update(*args, **kwargs):
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-
-    # Fetch only the IDs of movies that need updating
-    documents = await MediaFusionMetaData.find(
-        {
-            "_id": {"$regex": r"tt\d+"},
-            "type": {"$in": ["movie", "series"]},
-            "$or": [
-                {"last_updated_at": {"$lt": seven_days_ago}},
-                {"last_updated_at": None},
-            ],
-        },
-        projection_model=MetaIdProjection,
-        with_children=True,
-    ).to_list()
-    movie_ids = []
-    series_ids = []
-    for document in documents:
-        if document.type == "movie":
-            movie_ids.append(document.id)
-        else:
-            series_ids.append(document.id)
-    logging.info(
-        f"Fetched {len(movie_ids)} movie and {len(series_ids)} series IDs for updating"
-    )
-
-    # Divide the IDs into chunks and send them to another actor for processing
-    chunk_size = 25
-    for i in range(0, len(movie_ids), chunk_size):
-        chunk_ids = movie_ids[i : i + chunk_size]
-        process_imdb_data_background.send(chunk_ids, metadata_type="movie")
-
-    for i in range(0, len(series_ids), chunk_size):
-        chunk_ids = series_ids[i : i + chunk_size]
-        process_imdb_data_background.send(chunk_ids, metadata_type="series")
-
-
 async def get_episode_by_date(
     series_id: str, series_title: str, expected_date: date
 ) -> Optional[model.TVEpisode]:
     imdb_title = TVSeries(imdb_id=series_id, title=series_title)
-    web.update_title(
+    await web.update_title_async(
         imdb_title,
         page="episodes_with_pagination",
         keys=["episodes"],
@@ -277,21 +359,40 @@ async def get_episode_by_date(
         paginate_result=True,
     )
     filtered_episode = [
-        ep
-        for season in imdb_title.episodes.values()
-        for ep in season.values()
-        if ep.release_date == expected_date
+        ep for ep in imdb_title.episodes if ep.release_date == expected_date
     ]
     if not filtered_episode:
         return
     return filtered_episode[0]
 
 
+async def get_all_episodes(series_id: str, series_title: str) -> list[SeriesEpisode]:
+    imdb_title = TVSeries(imdb_id=series_id, title=series_title)
+    await web.update_title_async(
+        imdb_title,
+        page="episodes_with_pagination",
+        keys=["episodes"],
+        paginate_result=True,
+    )
+    return [
+        SeriesEpisode(
+            season_number=episode.season,
+            episode_number=episode.episode,
+            title=episode.title,
+            overview=episode.plot.get("en-US"),
+            released=episode.release_date,
+            imdb_rating=episode.rating,
+            thumbnail=episode.primary_image,
+        )
+        for episode in imdb_title.episodes
+    ]
+
+
 async def get_season_episodes(
-    series_id: str, series_title: str, season: str
+    series_id: str, series_title: str, season: int
 ) -> list[model.TVEpisode]:
     imdb_title = TVSeries(imdb_id=series_id, title=series_title)
-    web.update_title(
+    await web.update_title_async(
         imdb_title,
         page="episodes_with_pagination",
         keys=["episodes"],
@@ -307,7 +408,7 @@ async def get_imdb_data_via_cinemeta(
 ) -> Optional[model.Title]:
     url = f"https://v3-cinemeta.strem.io/meta/{media_type}/{title_id}.json"
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
             response = await client.get(
                 url, timeout=10, headers=UA_HEADER, follow_redirects=True
             )
@@ -323,41 +424,169 @@ async def get_imdb_data_via_cinemeta(
             "rating": data["imdbRating"] if data.get("imdbRating") else None,
             "primary_image": data["poster"],
             "plot": {"en-US": data["description"]},
-            "type_id": "tvSeries" if media_type == "series" else "movie",
+            "type_id": "movie" if media_type == "movie" else "tvSeries",
             "cast": [{"name": cast, "imdb_id": ""} for cast in data.get("cast", [])],
-            "runtime": (
-                int(data["runtime"].split(" ")[0]) if data.get("runtime") else None
-            ),
+            "runtime": data["runtime"] if data.get("runtime") else None,
         }
     )
-    year = data.get("year", "").split("–")
+    year = data.get("releaseInfo", "").split("–")
     if len(year) == 2:
-        year, end_year = int(year[0]), int(year[1])
-        data["year"] = year
-        data["end_year"] = end_year
+        data["year"] = int(year[0])
+        data["end_year"] = int(year[1]) if year[1] else None
     elif len(year) == 1:
         data["year"] = int(year[0])
     if media_type == "series":
-        episode_data = {}
+        episode_data = []
         for video in data.get("videos", []):
-            season = str(video["season"])
-            episode = str(video["episode"])
             release_date = datetime.strptime(
                 video["released"], "%Y-%m-%dT%H:%M:%S.%fZ"
             ).date()
-            if season not in episode_data:
-                episode_data[season] = {}
-            episode_data[season][episode] = {
-                "title": video["name"],
-                "type_id": "tvEpisode",
-                "imdb_id": "",
-                "release_date": release_date.isoformat(),
-                "year": release_date.year,
-                "season": season,
-                "episode": episode,
-            }
+            episode_data.append(
+                {
+                    "title": video.get("title") or video.get("name"),
+                    "type_id": "tvEpisode",
+                    "imdb_id": video["id"].split(":")[0],
+                    "release_date": release_date.isoformat(),
+                    "year": release_date.year,
+                    "season": video["season"],
+                    "episode": video["episode"],
+                    "plot": {"en-US": video.get("overview")},
+                    "rating": video.get("imdbRating"),
+                    "primary_image": video.get("thumbnail"),
+                }
+            )
         data["episodes"] = episode_data
     try:
         return piculet.deserialize(data, model.Title)
-    except TypedloadValueError:
+    except TypedloadValueError as err:
         return None
+
+
+async def search_multiple_imdb(
+    title: str,
+    limit: int = 5,
+    year: Optional[int] = None,
+    media_type: Optional[str] = None,
+    created_year: Optional[int] = None,
+    min_similarity: int = 60,
+) -> List[Dict[str, Any]]:
+    """
+    Search for multiple matching titles on IMDB.
+    Similar to existing search_imdb but returns multiple results.
+    """
+
+    def calculate_year_score(
+        imdb_title: model.Movie | model.TVSeries | model.TVMiniSeries,
+    ) -> Tuple[bool, float]:
+        """Calculate year match score and validity"""
+        try:
+            title_year = getattr(imdb_title, "year", None)
+            if title_year is None:
+                return False, float("inf")
+
+            if year is not None:
+                if imdb_title.type_id in [
+                    "movie",
+                    "tvMovie",
+                    "short",
+                    "tvShort",
+                    "tvSpecial",
+                ]:
+                    return title_year == year, 0 if title_year == year else float("inf")
+                else:
+                    end_year = getattr(imdb_title, "end_year", None)
+                    if end_year is None:
+                        end_year = math.inf if title_year <= year else None
+
+                    if end_year is not None:
+                        return (title_year <= year <= end_year), (
+                            0 if (title_year <= year <= end_year) else float("inf")
+                        )
+                    return False, float("inf")
+
+            if created_year:
+                if imdb_title.type_id in [
+                    "movie",
+                    "tvMovie",
+                    "short",
+                    "tvShort",
+                    "tvSpecial",
+                ]:
+                    return True, abs(title_year - created_year)
+                else:
+                    end_year = getattr(imdb_title, "end_year", None)
+                    if end_year is None:
+                        return True, abs(title_year - created_year)
+                    return True, min(
+                        abs(title_year - created_year), abs(end_year - created_year)
+                    )
+
+            return True, 0  # No year criteria
+
+        except Exception as err:
+            logging.error(f"IMDB search: Error calculating year score: {err}")
+            return False, float("inf")
+
+    title_types = [
+        "movie",
+        "tvMovie",
+        "short",
+        "tvShort",
+        "tvSpecial",
+        "tvSeries",
+        "tvMiniSeries",
+    ]
+    if media_type:
+        title_types = (
+            ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]
+            if media_type == "movie"
+            else ["tvSeries", "tvMiniSeries"]
+        )
+
+    try:
+        search_filters = SearchFilters(title_types=title_types)
+        if year is not None:
+            if media_type in ["movie", "tvMovie", "short", "tvShort", "tvSpecial"]:
+                search_filters.release_date = RangeFilter(
+                    min_value=year, max_value=year
+                )
+            else:
+                search_filters.release_date = RangeFilter(max_value=year)
+
+        results = await web.search_titles_async(
+            title,
+            filters=search_filters,
+            count=20,  # Request more to account for filtering
+        )
+
+        candidates = []
+        for imdb_data in results:
+            similarity = fuzz.ratio(imdb_data.title.lower(), title.lower())
+            if similarity < min_similarity:
+                continue
+
+            valid_year, year_score = calculate_year_score(imdb_data)
+            if not valid_year:
+                continue
+
+            # Combine similarity and year score for ranking
+            combined_score = (similarity / 100.0) * (1.0 / (1.0 + year_score))
+            candidates.append((imdb_data, combined_score))
+
+        # Sort by combined score and take top results
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        top_candidates = candidates[:limit]
+
+        full_results = []
+        for candidate, _ in top_candidates:
+            try:
+                result = parse_imdb_title(candidate, [])
+                full_results.append(result)
+            except Exception as err:
+                logging.error(f"Error fetching IMDB data for candidate: {err}")
+
+        return full_results
+
+    except Exception as e:
+        logging.error(f"Error in IMDB search: {e}")
+        return []

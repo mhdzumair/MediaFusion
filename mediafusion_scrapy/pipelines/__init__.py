@@ -3,6 +3,7 @@ from .duplicates_pipeline import TorrentDuplicatesPipeline
 from .formula_parser_pipeline import FormulaParserPipeline
 from .live_stream_resolver_pipeline import LiveStreamResolverPipeline
 from .moto_gp_parser_pipeline import MotoGPParserPipeline
+from .movie_tv_parser_pipeline import MovieTVParserPipeline
 from .redis_cache_pipeline import RedisCacheURLPipeline
 from .sport_video_parser_pipeline import SportVideoParserPipeline
 from .sports_parser_pipeline import UFCParserPipeline, WWEParserPipeline
@@ -18,7 +19,6 @@ from .torrent_parser_pipeline import (
     MagnetDownloadAndParsePipeline,
     TorrentDownloadAndParsePipeline,
 )
-
 
 __all__ = [
     "TorrentDuplicatesPipeline",
@@ -38,4 +38,5 @@ __all__ = [
     "WWEParserPipeline",
     "UFCParserPipeline",
     "CatalogParsePipeline",
+    "MovieTVParserPipeline",
 ]

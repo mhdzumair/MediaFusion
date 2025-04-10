@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+import aiohttp
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -22,23 +24,15 @@ class AllDebrid(DebridClient):
         pass
 
     async def _make_request(
-        self,
-        method: str,
-        url: str,
-        data: Optional[dict] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        self, method: str, url: str, params: Optional[dict] = None, **kwargs
     ) -> dict:
         params = params or {}
         params["agent"] = self.AGENT
         if self.user_ip:
             params["ip"] = self.user_ip
-        url = self.BASE_URL + url
+        full_url = self.BASE_URL + url
         return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=full_url, params=params, **kwargs
         )
 
     @staticmethod
@@ -76,6 +70,23 @@ class AllDebrid(DebridClient):
     async def add_magnet_link(self, magnet_link):
         response_data = await self._make_request(
             "POST", "/magnet/upload", data={"magnets[]": magnet_link}
+        )
+        self._validate_error_response(response_data)
+        return response_data
+
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: str):
+        data = aiohttp.FormData()
+        data.add_field(
+            "files[]",
+            torrent_file,
+            filename=(
+                torrent_name
+                if torrent_name.endswith(".torrent")
+                else torrent_name + ".torrent"
+            ),
+        )
+        response_data = await self._make_request(
+            "POST", "/magnet/upload/file", data=data
         )
         self._validate_error_response(response_data)
         return response_data

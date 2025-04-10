@@ -1,22 +1,27 @@
 import re
 from datetime import timedelta
 
+import PTT
 from fastapi.templating import Jinja2Templates
+from regex import regex
 
 from db import schemas
 from db.config import settings
 from utils import get_json_data, const
 
-ADULT_CONTENT_KEYWORDS = re.compile(
-    settings.adult_content_regex_keywords,
-    re.IGNORECASE,
+ADULT_PARSER = PTT.Parser()
+ADULT_PARSER.add_handler(
+    "adult",
+    PTT.handlers.create_adult_pattern(),
+    PTT.transformers.boolean,
+)
+ADULT_PARSER.add_handler(
+    "adult",
+    regex.compile(settings.adult_content_regex_keywords, regex.IGNORECASE),
+    PTT.transformers.boolean,
 )
 
 SPORTS_ARTIFACTS = get_json_data("resources/json/sports_artifacts.json")
-
-PRIVATE_CIDR = re.compile(
-    r"^(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)",
-)
 
 TEMPLATES = Jinja2Templates(directory="resources")
 MANIFEST_TEMPLATE = TEMPLATES.get_template("templates/manifest.json.j2")
@@ -48,3 +53,14 @@ ZILEAN_SEARCH_TTL = int(
 )
 
 SERVER_NAMESPACE = None
+YTS_SEARCH_TTL = 259200  # 3 days in seconds
+BT4G_SEARCH_TTL = int(
+    timedelta(hours=settings.bt4g_search_interval_hour).total_seconds()
+)
+JACKETT_SEARCH_TTL = int(
+    timedelta(hours=settings.jackett_search_interval_hour).total_seconds()
+)
+
+DATE_STR_REGEX = re.compile(
+    r"\d{4}\.\d{2}\.\d{2}|\d{4}-\d{2}-\d{2}|\d{4}_\d{2}_\d{2}|\d{2}\.\d{2}\.\d{4}|\d{2}-\d{2}-\d{4}|\d{2}_\d{2}_\d{4}",
+)

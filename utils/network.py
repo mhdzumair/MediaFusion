@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import re
+from ipaddress import ip_address
 from typing import Callable, AsyncGenerator, Any, Tuple, Dict
 from urllib import parse
 from urllib.parse import urlencode, urlparse
@@ -7,6 +9,8 @@ from urllib.parse import urlencode, urlparse
 import httpx
 from fastapi.requests import Request
 
+from db.config import settings
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from utils import crypto
 from utils.crypto import encrypt_data
@@ -217,7 +221,7 @@ async def get_redirector_url(url: str, headers: dict) -> str | None:
     Get the final URL after following all redirects.
     """
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
             response = await client.head(url, headers=headers, follow_redirects=True)
             return str(response.url)
     except httpx.HTTPError as e:
@@ -249,7 +253,7 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
         return mediaflow_config.public_ip
 
     parsed_url = urlparse(mediaflow_config.proxy_url)
-    if runtime_const.PRIVATE_CIDR.match(parsed_url.netloc):
+    if is_private_ip(parsed_url.netloc):
         # MediaFlow proxy URL is a private IP address
         return None
 
@@ -274,11 +278,15 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
                 return public_ip
     except httpx.HTTPStatusError as e:
         logging.error(f"HTTP error occurred: {e}")
+    except httpx.TimeoutException as e:
+        logging.error(f"Request timed out: {e}")
     except httpx.RequestError as e:
         logging.error(f"Request error occurred: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-    return None
+    raise Exception(
+        f"Failed to get MediaFlow proxy public IP address. {mediaflow_config.proxy_url}"
+    )
 
 
 async def get_user_public_ip(
@@ -296,7 +304,7 @@ async def get_user_public_ip(
     # Get the user's public IP address
     user_ip = get_client_ip(request)
     # check if the user's IP address is a private IP address
-    if runtime_const.PRIVATE_CIDR.match(user_ip):
+    if is_private_ip(user_ip):
         # Use host public IP address.
         return None
     return user_ip
@@ -358,7 +366,7 @@ def encode_mediaflow_proxy_url(
     if encryption_api_password:
         if "api_password" not in query_params:
             query_params["api_password"] = encryption_api_password
-        encrypted_token = encrypt_data(
+        encrypted_token = crypto.encrypt_data(
             encryption_api_password, query_params, expiration, ip
         )
         encoded_params = urlencode({"token": encrypted_token})
@@ -368,3 +376,40 @@ def encode_mediaflow_proxy_url(
     # Construct the full URL
     base_url = parse.urljoin(mediaflow_proxy_url, endpoint)
     return f"{base_url}?{encoded_params}"
+
+
+def is_private_ip(ip_str: str) -> bool:
+    """
+    Check if an IP address is private, supporting both IPv4 and IPv6 formats.
+    Handles IP addresses with optional port numbers and IPv6 brackets.
+
+    Examples:
+        - IPv4: '127.0.0.1', '127.0.0.1:8888'
+        - IPv6: '::1', '[::1]', '[::1]:8000', 'fe80::1234'
+
+    Returns:
+        bool: True if the IP is private, False otherwise
+    """
+    if not ip_str:
+        return False
+
+    # Extract IP from the input string
+    ip_part = ip_str
+
+    # Handle IPv6 with port [::1]:8000 format
+    ipv6_port_match = re.match(r"\[(.*?)\]:(\d+)$", ip_str)
+    if ipv6_port_match:
+        ip_part = ipv6_port_match.group(1)
+    else:
+        # Handle IPv6 with brackets [::1] format
+        if ip_str.startswith("[") and ip_str.endswith("]"):
+            ip_part = ip_str[1:-1]
+        # Handle IPv4 with port format
+        elif ":" in ip_str and ip_str.count(":") == 1:
+            ip_part = ip_str.split(":")[0]
+
+    try:
+        ip = ip_address(ip_part.strip())
+        return ip.is_private
+    except ValueError:
+        return False

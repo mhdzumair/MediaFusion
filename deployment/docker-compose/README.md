@@ -2,6 +2,9 @@
 
 This guide outlines the steps for deploying MediaFusion locally using Docker Compose. It is an alternative to Kubernetes-based deployment for users who prefer a simpler setup or have constraints running Kubernetes on their machines.
 
+### Local Deployment Video Tutorial 📹
+[![Watch the video](https://video.elfhosted.com/w/rgRFCmdgWW2HDES4QSD6Kb)](https://video.elfhosted.com/w/rgRFCmdgWW2HDES4QSD6Kb)
+
 ## Clone the Repository 📋
 
 ```bash
@@ -173,9 +176,17 @@ To stop MediaFusion, run the following command:
 docker compose -f docker-compose.yml down
 ```
 
+## Resetting MediaFusion 🔄
+
+To reset MediaFusion, remove the containers and volumes:
+
+```bash
+docker compose -f docker-compose.yml down -v
+```
+
 ## Troubleshooting 🛠️
 
-- If you encounter any issues during the deployment, check the logs for the respective service using `docker-compose -f docker-compose.yml logs <service-name>`.
+- If you encounter any issues during the deployment, check the logs for the respective service using `docker compose -f docker-compose.yml logs <service-name>`.
 - If you encounter any issues with the web interface, ensure that the SSL certificate is installed correctly.
 
 ## Feedback 📢

@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
-from typing import Optional
+import re
+from datetime import datetime, timezone
+from typing import Optional, Type, Literal
 from uuid import uuid4
 
 import humanize
@@ -15,33 +16,73 @@ from pymongo.errors import DuplicateKeyError
 
 from db import schemas
 from db.config import settings
+from db.enums import NudityStatus
 from db.models import (
-    Episode,
+    EpisodeFile,
     MediaFusionEventsMetaData,
     MediaFusionMetaData,
     MediaFusionMovieMetaData,
     MediaFusionSeriesMetaData,
     MediaFusionTVMetaData,
-    Season,
     TorrentStreams,
     TVStreams,
+    SeriesEpisode,
 )
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import Stream, TorrentStreamsList
-from scrapers.utils import run_scrapers
-from scrapers.imdb_data import get_imdb_movie_data, search_imdb
+from scrapers.dlhd import dlhd_schedule_service
+from scrapers.mdblist import initialize_mdblist_scraper
+from scrapers.scraper_tasks import run_scrapers, meta_fetcher
 from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils import crypto
+from utils.const import (
+    USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
+    USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
+)
 from utils.lock import acquire_redis_lock, release_redis_lock
+from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import (
     fetch_downloaded_info_hashes,
     parse_stream_data,
     parse_tv_stream_data,
+    calculate_max_similarity_ratio,
+    create_exception_stream,
+    create_content_warning_message,
 )
-from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import (
     validate_parent_guide_nudity,
     get_filter_certification_values,
+    is_video_file,
 )
+
+
+def apply_parental_guide_filters(
+    user_data: schemas.UserData, match_filter: dict
+) -> None:
+    """
+    Helper function to apply parental guide filters to a MongoDB match filter.
+    """
+    # Handle nudity filter
+    if "Disable" not in user_data.nudity_filter:
+        if "Unknown" in user_data.nudity_filter:
+            match_filter["parent_guide_nudity_status"] = {"$exists": True}
+        elif user_data.nudity_filter:
+            match_filter["parent_guide_nudity_status"] = {
+                "$nin": user_data.nudity_filter
+            }
+
+    # Handle certification filter
+    if "Disable" not in user_data.certification_filter:
+        cert_filters = []
+        if "Unknown" in user_data.certification_filter:
+            cert_filters.append(
+                {"parent_guide_certificates": {"$exists": True, "$ne": []}}
+            )
+        filter_values = get_filter_certification_values(user_data)
+        if filter_values:
+            cert_filters.append({"parent_guide_certificates": {"$nin": filter_values}})
+        if cert_filters:
+            match_filter["$or"] = cert_filters
 
 
 async def get_meta_list(
@@ -50,241 +91,338 @@ async def get_meta_list(
     catalog: str,
     is_watchlist_catalog: bool,
     skip: int = 0,
-    limit: int = 25,
+    limit: int = 50,
     user_ip: str | None = None,
     genre: Optional[str] = None,
 ) -> list[schemas.Meta]:
+    """Get a list of metadata entries based on various filters"""
+    if catalog.startswith("contribution_"):
+        catalog = "contribution_stream"
     poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
-    meta_class = MediaFusionMetaData
 
-    # Define query filters for TorrentStreams based on catalog
+    # Handle watchlist case first
     if is_watchlist_catalog:
         downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data, user_ip)
         if not downloaded_info_hashes:
             return []
+
+        # Store cached info hashes
         await store_cached_info_hashes(
             user_data.streaming_provider, downloaded_info_hashes
         )
-        query_filters = {"_id": {"$in": downloaded_info_hashes}}
+
+        # First get meta_ids from TorrentStreams
+        meta_ids = await TorrentStreams.distinct(
+            "meta_id",
+            {"_id": {"$in": downloaded_info_hashes}, "is_blocked": {"$ne": True}},
+        )
+
+        if not meta_ids:
+            return []
+
+        # Now use these meta_ids in the main query
+        match_filter = {
+            "_id": {"$in": meta_ids},
+            "type": catalog_type,
+            "total_streams": {"$gt": 0},
+        }
     else:
-        query_filters = {"catalog": {"$in": [catalog]}}
-
-    query_filters["is_blocked"] = {"$ne": True}
-    match_filter = {
-        "type": catalog_type,
-    }
-
-    if genre:
-        match_filter["genres"] = {"$in": [genre]}
-
-    if "Disable" not in user_data.nudity_filter:
-        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
-
-    if "Disable" not in user_data.certification_filter:
-        match_filter["parent_guide_certificates"] = {
-            "$nin": get_filter_certification_values(user_data)
+        # Regular catalog query
+        match_filter = {
+            "type": catalog_type,
+            "catalog_stats": {
+                "$elemMatch": {"catalog": catalog, "total_streams": {"$gt": 0}}
+            },
         }
 
-    # Define the pipeline for aggregation
+    # Add genre filter if specified
+    if genre:
+        match_filter["genres"] = genre
+    else:
+        # Add genre filter to ignore 'Adult' genre
+        match_filter["genres"] = {"$nin": ["Adult"]}
+
+    apply_parental_guide_filters(user_data, match_filter)
+
+    # Define the pipeline
     pipeline = [
-        {"$match": query_filters},
-        {"$group": {"_id": "$meta_id", "created_at": {"$max": "$created_at"}}},
-        {"$sort": {"created_at": -1}},
-        {
-            "$lookup": {  # Optimized lookup with pagination and filtering
-                "from": meta_class.get_collection_name(),
-                "localField": "_id",
-                "foreignField": "_id",
-                "pipeline": [
-                    {"$match": match_filter},
-                ],
-                "as": "meta_data",
-            }
-        },
-        {"$unwind": "$meta_data"},  # Flatten the results of the lookup
-        {"$replaceRoot": {"newRoot": "$meta_data"}},  # Flatten the structure
-        {"$skip": skip},  # Pagination with skip and limit
+        {"$match": match_filter},
+        {"$sort": {f"catalog_stats.last_stream_added": -1}},
+        {"$skip": skip},
         {"$limit": limit},
         {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
     ]
 
     # Execute the aggregation pipeline
-    meta_list = await TorrentStreams.aggregate(
-        pipeline, projection_model=schemas.Meta
-    ).to_list()
-
+    meta_list_raw = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(pipeline)
+        .to_list(None)
+    )
+    meta_list = [schemas.Meta.model_validate(doc) for doc in meta_list_raw]
     return meta_list
 
 
-async def get_tv_meta_list(
-    namespace: str, genre: Optional[str] = None, skip: int = 0, limit: int = 25
+async def get_mdblist_meta_list(
+    user_data: schemas.UserData,
+    background_tasks: BackgroundTasks,
+    list_config: schemas.MDBListItem,
+    catalog_type: str,
+    genre: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
 ) -> list[schemas.Meta]:
-    # Define query filters for TVStreams
-    query_filters = {
-        "is_working": True,
-        "namespaces": {"$in": [namespace, "mediafusion", None]},
-    }
+    """Get a list of metadata entries from MDBList"""
+    if not user_data.mdblist_config:
+        return []
 
+    meta_class = (
+        MediaFusionMovieMetaData
+        if catalog_type == "movie"
+        else MediaFusionSeriesMetaData
+    )
+
+    # Initialize MDBList scraper
+    mdblist_scraper = await initialize_mdblist_scraper(user_data.mdblist_config.api_key)
+    try:
+        if not list_config.use_filters:
+            return await mdblist_scraper.get_list_items(
+                list_config=list_config,
+                skip=skip,
+                limit=limit,
+                genre=genre,
+                use_filters=False,
+            )
+
+        # For filtered results, get all IMDb IDs first
+        imdb_ids = await mdblist_scraper.get_list_items(
+            list_config=list_config,
+            skip=0,
+            limit=0,  # Ignored for filtered results
+            genre=genre,
+            use_filters=True,
+        )
+
+        if not imdb_ids:
+            return []
+
+        # Build filter pipeline
+        match_filter = {
+            "_id": {"$in": imdb_ids},
+            "type": catalog_type,
+            "total_streams": {"$gt": 0},
+        }
+
+        apply_parental_guide_filters(user_data, match_filter)
+
+        # Get filtered results with pagination
+        poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
+
+        pipeline = [
+            {"$match": match_filter},
+            {"$sort": {"last_stream_added": -1}},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
+        ]
+
+        results = await meta_class.get_motor_collection().aggregate(pipeline).to_list()
+        if not results:
+            # Check for missing metadata and trigger background fetch
+            existing_ids = set(
+                doc["_id"]
+                for doc in await meta_class.get_motor_collection()
+                .find({"_id": {"$in": imdb_ids}}, {"_id": 1})
+                .to_list(None)
+            )
+            missing_ids = list(set(imdb_ids) - existing_ids)
+
+            if missing_ids:
+                background_tasks.add_task(
+                    fetch_metadata,
+                    missing_ids,
+                    catalog_type,
+                )
+            return []
+        return [schemas.Meta.model_validate(result) for result in results]
+
+    finally:
+        await mdblist_scraper.close()
+
+
+async def get_tv_meta_list(
+    namespace: str, genre: Optional[str] = None, skip: int = 0, limit: int = 50
+) -> list[schemas.Meta]:
     poster_path = f"{settings.poster_host_url}/poster/tv/"
 
-    # Define the pipeline for aggregation
+    # Initialize base match filter
+    match_filter = {"type": "tv", "total_streams": {"$gt": 0}}
+
+    # Add genre filter if specified
+    if genre:
+        match_filter["genres"] = genre
+
+    # First get meta_ids from TVStreams
+    meta_ids = await TVStreams.distinct(
+        "meta_id",
+        {"is_working": True, "namespaces": {"$in": [namespace, "mediafusion", None]}},
+    )
+
+    if not meta_ids:
+        return []
+
+    match_filter["_id"] = {"$in": meta_ids}
+
+    # Define the pipeline
     pipeline = [
-        {"$match": query_filters},
-        {"$group": {"_id": "$meta_id", "created_at": {"$max": "$created_at"}}},
-        {"$sort": {"created_at": -1}},
-        {
-            "$lookup": {
-                "from": MediaFusionTVMetaData.get_collection_name(),
-                "localField": "_id",
-                "foreignField": "_id",
-                "pipeline": [
-                    {"$match": {**({"genres": {"$in": [genre]}} if genre else {})}},
-                ],
-                "as": "meta_data",
-            }
-        },
-        {"$unwind": "$meta_data"},  # Flatten the results of the lookup
-        {"$replaceRoot": {"newRoot": "$meta_data"}},  # Flatten the structure
-        {"$skip": skip},  # Pagination with skip and limit
+        {"$match": match_filter},
+        {"$sort": {"title": 1}},
+        {"$skip": skip},
         {"$limit": limit},
         {"$set": {"poster": {"$concat": [poster_path, "$_id", ".jpg"]}}},
     ]
 
     # Execute the aggregation pipeline
-    tv_meta_list = await TVStreams.aggregate(
-        pipeline, projection_model=schemas.Meta
-    ).to_list()
+    meta_list_raw = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(pipeline)
+        .to_list(None)
+    )
+    meta_list = [schemas.Meta.model_validate(doc) for doc in meta_list_raw]
+    return meta_list
 
-    return tv_meta_list
+
+async def get_media_data_by_id(
+    meta_id: str,
+    media_type: Literal["movie", "series"],
+    model_class: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData],
+    counter_part_model: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData],
+) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
+    """
+    Generic function to fetch media metadata by ID.
+
+    Args:
+        meta_id: Media ID to fetch
+        media_type: Type of media ("movie" or "series")
+        model_class: Class to use for the media data (MediaFusionMovieMetaData or MediaFusionSeriesMetaData)
+        counter_part_model: Counterpart class for the media data.
+
+    Returns:
+        Optional[T]: Media metadata object or None if not found
+    """
+    # Check cache first
+    cached_data = await REDIS_ASYNC_CLIENT.get(f"{media_type}_data:{meta_id}")
+    if cached_data:
+        return model_class.model_validate_json(cached_data)
+
+    lock_key = f"meta_id_lock:{meta_id}"
+    _, redis_lock = await acquire_redis_lock(lock_key, timeout=30, block=True)
+    # Fetch existing data
+    media_data = await model_class.get(meta_id)
+
+    # Fetch and create new data if needed
+    if not media_data and meta_id.startswith("tt"):
+        raw_data = await meta_fetcher.get_metadata(meta_id, media_type)
+        if not raw_data:
+            await release_redis_lock(redis_lock)
+            return None
+
+        if raw_data["type"] != media_type:
+            logging.warning(
+                "Mismatched media type for %s %s: %s",
+                media_type,
+                meta_id,
+                raw_data["type"],
+            )
+            await release_redis_lock(redis_lock)
+            return None
+
+        # Create metadata object with common fields
+        common_fields = {
+            "id": meta_id,
+            "title": raw_data["title"],
+            "year": raw_data["year"],
+            "poster": raw_data["poster"],
+            "background": raw_data["background"],
+            "description": raw_data["description"],
+            "genres": raw_data["genres"],
+            "imdb_rating": raw_data["imdb_rating"],
+            "parent_guide_nudity_status": raw_data["parent_guide_nudity_status"],
+            "parent_guide_certificates": raw_data["parent_guide_certificates"],
+            "aka_titles": raw_data["aka_titles"],
+            "stars": raw_data["stars"],
+        }
+
+        # Add series-specific fields if needed
+        if media_type == "series":
+            common_fields.update(
+                {"end_year": raw_data["end_year"], "episodes": raw_data["episodes"]}
+            )
+
+        media_data = model_class(**common_fields)
+
+        try:
+            await media_data.create()
+            logging.info(f"Added metadata for {media_type} {media_data.title}")
+        except DuplicateKeyError as error:
+            if "_id_ dup key:" in str(error):
+                existing_media = await counter_part_model.find_one({"_id": meta_id})
+            else:
+                # Handle duplicate title/year combination
+                existing_media = await model_class.find_one(
+                    {
+                        "title": media_data.title,
+                        "year": media_data.year,
+                        "_id": {"$regex": "^mf"},
+                    }
+                )
+
+            if not existing_media:
+                logging.error(f"Error occurred while adding metadata: {error}")
+                await release_redis_lock(redis_lock)
+                return None
+
+            if existing_media.id != media_data.id:
+                # Update TorrentStreams meta_id and replace existing record
+                await TorrentStreams.find({"meta_id": existing_media.id}).update(
+                    Set({"meta_id": media_data.id})
+                )
+            media_data.catalog_stats = existing_media.catalog_stats
+            media_data.total_streams = existing_media.total_streams
+            await existing_media.delete()
+            await media_data.create()
+            logging.info(
+                f"Replace meta id {existing_media.id} ({existing_media.type}) with {media_data.id} ({media_data.type})"
+            )
+        except RevisionIdWasChanged:
+            await asyncio.sleep(1)
+            media_data = await model_class.get(meta_id)
+
+    # Cache the data
+    if media_data:
+        await REDIS_ASYNC_CLIENT.set(
+            f"{media_type}_data:{meta_id}",
+            media_data.model_dump_json(exclude_none=True),
+            ex=86400,  # 1 day
+        )
+    await release_redis_lock(redis_lock)
+    return media_data
 
 
 async def get_movie_data_by_id(movie_id: str) -> Optional[MediaFusionMovieMetaData]:
-    # Check if the movie data is already in the cache
-    cached_data = await REDIS_ASYNC_CLIENT.get(f"movie_data:{movie_id}")
-    if cached_data:
-        return MediaFusionMovieMetaData.model_validate_json(cached_data)
-
-    movie_data = await MediaFusionMovieMetaData.get(movie_id)
-    # store it in the db for feature reference.
-    if not movie_data and movie_id.startswith("tt"):
-        movie = await get_imdb_movie_data(movie_id, "movie")
-        if not movie:
-            return None
-
-        movie_data = MediaFusionMovieMetaData(
-            id=movie_id,
-            title=movie.title,
-            year=movie.year,
-            poster=movie.primary_image,
-            background=movie.primary_image,
-            description=movie.plot.get("en-US"),
-            genres=movie.genres,
-            imdb_rating=movie.rating,
-            parent_guide_nudity_status=movie.advisories.nudity.status,
-            parent_guide_certificates=list(
-                set(cert.certificate for cert in movie.certification.certificates)
-            ),
-            aka_titles=list(set(aka.title for aka in movie.akas)),
-            stars=list(set(star.name for star in movie.cast))[10:],
-        )
-        try:
-            await movie_data.create()
-            logging.info("Added metadata for movie %s", movie_data.title)
-        except DuplicateKeyError as error:
-            # Drop custom id and try to save again
-            existing_movie = await MediaFusionMovieMetaData.find_one(
-                {"title": movie_data.title, "year": movie_data.year}
-            )
-            if not existing_movie:
-                logging.error("Error occurred while adding metadata: %s", error)
-                return None
-            if existing_movie.id != movie_data.id:
-                # update TorrentStreams meta_id with new id if exist
-                await TorrentStreams.find({"meta_id": existing_movie.id}).update(
-                    Set({"meta_id": movie_data.id})
-                )
-                await existing_movie.delete()
-                await movie_data.create()
-                logging.info(
-                    "Replace meta id %s with %s", existing_movie.id, movie_data.id
-                )
-        except RevisionIdWasChanged:
-            # Wait for a moment before re-fetching to mitigate rapid retry issues
-            await asyncio.sleep(1)
-            movie_data = await MediaFusionMovieMetaData.get(movie_id)
-
-    # Serialize the data and store it in the Redis cache for 1 day
-    if movie_data:
-        await REDIS_ASYNC_CLIENT.set(
-            f"movie_data:{movie_id}",
-            movie_data.model_dump_json(exclude_none=True),
-            ex=86400,
-        )
-    return movie_data
-
-
-async def get_series_data_by_id(
-    series_id: str, fetch_links: bool = False
-) -> Optional[MediaFusionSeriesMetaData]:
-    series_data = await MediaFusionSeriesMetaData.get(
-        series_id, fetch_links=fetch_links
+    return await get_media_data_by_id(
+        movie_id, "movie", MediaFusionMovieMetaData, MediaFusionSeriesMetaData
     )
 
-    if not series_data and series_id.startswith("tt"):
-        series = await get_imdb_movie_data(series_id, "series")
-        if not series:
-            return None
 
-        series_data = MediaFusionSeriesMetaData(
-            id=series_id,
-            title=series.title,
-            year=series.year,
-            end_year=series.end_year if hasattr(series, "end_year") else None,
-            poster=series.primary_image,
-            background=series.primary_image,
-            description=series.plot.get("en-US"),
-            genres=series.genres,
-            imdb_rating=series.rating,
-            parent_guide_nudity_status=series.advisories.nudity.status,
-            parent_guide_certificates=list(
-                set(cert.certificate for cert in series.certification.certificates)
-            ),
-            aka_titles=list(set(aka.title for aka in series.akas))[10:],
-            stars=list(set(star.name for star in series.cast))[10:],
-        )
-        try:
-            await series_data.create()
-            logging.info("Added metadata for series %s", series_data.title)
-        except DuplicateKeyError as error:
-            # Drop custom id and try to save again
-            existing_series = await MediaFusionSeriesMetaData.find_one(
-                {"title": series_data.title, "year": series_data.year}
-            )
-            if not existing_series:
-                logging.error("Error occurred while adding metadata: %s", error)
-                return None
-            if existing_series.id != series_data.id:
-                # update TorrentStreams meta_id with new id if exist
-                await TorrentStreams.find({"meta_id": existing_series.id}).update(
-                    Set({"meta_id": series_data.id})
-                )
-                await existing_series.delete()
-                await series_data.create()
-                logging.info(
-                    "Replace meta id %s with %s", existing_series.id, series_data.id
-                )
-        except RevisionIdWasChanged:
-            # Wait for a moment before re-fetching to mitigate rapid retry issues
-            await asyncio.sleep(1)
-            series_data = await MediaFusionMovieMetaData.get(series_id)
-
-    return series_data
+async def get_series_data_by_id(series_id: str) -> Optional[MediaFusionSeriesMetaData]:
+    return await get_media_data_by_id(
+        series_id, "series", MediaFusionSeriesMetaData, MediaFusionMovieMetaData
+    )
 
 
-async def get_tv_data_by_id(
-    tv_id: str, fetch_links: bool = False
-) -> Optional[MediaFusionTVMetaData]:
-    tv_data = await MediaFusionTVMetaData.get(tv_id, fetch_links=fetch_links)
+async def get_tv_data_by_id(tv_id: str) -> Optional[MediaFusionTVMetaData]:
+    tv_data = await MediaFusionTVMetaData.get(tv_id)
     return tv_data
 
 
@@ -304,45 +442,65 @@ async def get_cached_torrent_streams(
     else:
         # If the data is not in the cache, query it from the database
         if season is not None and episode is not None:
-            streams = (
-                await TorrentStreams.find(
-                    {"meta_id": video_id, "is_blocked": {"$ne": True}}
-                )
-                .find(
-                    {
-                        "season.season_number": season,
-                        "season.episodes.episode_number": episode,
-                    }
-                )
-                .sort("-updated_at")
-                .to_list()
-            )
+            streams = await TorrentStreams.find(
+                {
+                    "meta_id": video_id,
+                    "is_blocked": {"$ne": True},
+                    "episode_files": {
+                        "$elemMatch": {
+                            "season_number": season,
+                            "episode_number": episode,
+                        }
+                    },
+                }
+            ).to_list()
         else:
-            streams = (
-                await TorrentStreams.find(
-                    {"meta_id": video_id, "is_blocked": {"$ne": True}}
-                )
-                .sort("-updated_at")
-                .to_list()
-            )
+            streams = await TorrentStreams.find(
+                {"meta_id": video_id, "is_blocked": {"$ne": True}}
+            ).to_list()
 
         torrent_streams = TorrentStreamsList(streams=streams)
 
         # Serialize the data and store it in the Redis cache for 30 minutes
         await REDIS_ASYNC_CLIENT.set(
-            cache_key, torrent_streams.model_dump_json(exclude_none=True), ex=1800
+            cache_key,
+            torrent_streams.model_dump_json(
+                exclude_none=True, exclude={"streams": {"__all__": {"torrent_file"}}}
+            ),
+            ex=1800,
         )
 
     return streams
 
 
-async def get_movie_streams(
+async def get_streams_base(
     user_data,
     secret_str: str,
     video_id: str,
+    metadata,
+    content_type: str,
+    content_catalogs: list[str],
     user_ip: str | None,
     background_tasks: BackgroundTasks,
+    season: int | None = None,
+    episode: int | None = None,
 ) -> list[Stream]:
+    """
+    Base function for fetching streams for both movies and series.
+
+    Args:
+        user_data: User data containing preferences
+        secret_str: Secret string for authentication
+        video_id: ID of the video content
+        metadata: Metadata for the content
+        content_type: Type of content ("movie" or "series")
+        content_catalogs: List of supported catalogs for the content
+        user_ip: User's IP address
+        background_tasks: Background tasks manager
+        season: Season number (for series only)
+        episode: Episode number (for series only)
+    """
+    # Handle special case for streaming provider deletion
     if video_id.startswith("dl"):
         if not video_id.endswith(user_data.streaming_provider.service):
             return []
@@ -353,26 +511,67 @@ async def get_movie_streams(
                 url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
             )
         ]
-    movie_metadata = await get_movie_data_by_id(video_id)
-    if not (movie_metadata and validate_parent_guide_nudity(movie_metadata, user_data)):
+
+    if not metadata:
         return []
 
+    # Check content appropriateness
+    if validate_parent_guide_nudity(metadata, user_data) is False:
+        return [
+            create_exception_stream(
+                settings.addon_name,
+                create_content_warning_message(metadata),
+                "inappropriate_content.mp4",
+            )
+        ]
+
+    # Create user feeds for supported catalogs
+    user_feeds = []
+    if video_id.startswith("mf") and any(
+        catalog_data.catalog in content_catalogs
+        for catalog_data in metadata.catalog_stats
+    ):
+        user_feeds = [
+            schemas.Stream(
+                name=settings.addon_name,
+                description=f"🔄 Migrate {video_id} to IMDb ID",
+                externalUrl=f"{settings.host_url}/scraper/?action=migrate_id&mediafusion_id={video_id}&meta_type={content_type}",
+            )
+        ]
+
+    # Handle stream caching and live search
     live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
-    cache_key = f"torrent_streams:{video_id}"
+    cache_key_parts = [video_id]
+    if content_type == "series":
+        cache_key_parts.extend([str(season), str(episode)])
+
+    cache_key = f"torrent_streams:{':'.join(cache_key_parts)}"
     lock_key = f"{cache_key}_lock" if live_search_streams else None
     redis_lock = None
 
-    # Acquire the lock to prevent multiple scrapers from running at the same time
     if lock_key:
         _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
 
-    cached_streams = await get_cached_torrent_streams(cache_key, video_id)
+    # Get cached streams
+    cached_streams = await get_cached_torrent_streams(
+        cache_key,
+        video_id,
+        season,
+        episode,
+    )
 
+    # Handle live search and stream updates
     if live_search_streams:
-        new_streams = await run_scrapers(movie_metadata, "movie")
-        all_streams = set(cached_streams).union(new_streams)
+        new_streams = await run_scrapers(
+            user_data=user_data,
+            metadata=metadata,
+            catalog_type=content_type,
+            season=season,
+            episode=episode,
+        )
+        all_streams = list(set(cached_streams).union(new_streams))
+
         if new_streams:
-            # reset the cache
             await REDIS_ASYNC_CLIENT.delete(cache_key)
             background_tasks.add_task(
                 store_new_torrent_streams, new_streams, redis_lock=redis_lock
@@ -382,7 +581,38 @@ async def get_movie_streams(
     else:
         all_streams = cached_streams
 
-    return await parse_stream_data(all_streams, user_data, secret_str, user_ip=user_ip)
+    # Parse and return results
+    parsed_results = await parse_stream_data(
+        all_streams,
+        user_data,
+        secret_str,
+        season,
+        episode,
+        user_ip=user_ip,
+        is_series=(content_type == "series"),
+    )
+    return parsed_results + user_feeds
+
+
+async def get_movie_streams(
+    user_data,
+    secret_str: str,
+    video_id: str,
+    user_ip: str | None,
+    background_tasks: BackgroundTasks,
+) -> list[Stream]:
+    """Get streams for a movie."""
+    movie_metadata = await get_movie_data_by_id(video_id)
+    return await get_streams_base(
+        user_data=user_data,
+        secret_str=secret_str,
+        video_id=video_id,
+        metadata=movie_metadata,
+        content_type="movie",
+        content_catalogs=USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
+        user_ip=user_ip,
+        background_tasks=background_tasks,
+    )
 
 
 async def get_series_streams(
@@ -394,47 +624,19 @@ async def get_series_streams(
     user_ip: str | None,
     background_tasks: BackgroundTasks,
 ) -> list[Stream]:
-    series_metadata = await get_series_data_by_id(video_id, False)
-    if not (
-        series_metadata and validate_parent_guide_nudity(series_metadata, user_data)
-    ):
-        return []
-
-    live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
-    cache_key = f"torrent_streams:{video_id}:{season}:{episode}"
-    lock_key = f"{cache_key}_lock" if live_search_streams else None
-    redis_lock = None
-
-    # Acquire the lock to prevent multiple scrapers from running at the same time
-    if lock_key:
-        _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
-
-    cached_streams = await get_cached_torrent_streams(
-        cache_key, video_id, season, episode
-    )
-
-    if live_search_streams:
-        new_streams = await run_scrapers(series_metadata, "series", season, episode)
-        all_streams = set(cached_streams).union(new_streams)
-        if new_streams:
-            # reset the cache
-            await REDIS_ASYNC_CLIENT.delete(cache_key)
-            background_tasks.add_task(
-                store_new_torrent_streams, new_streams, redis_lock
-            )
-        else:
-            await release_redis_lock(redis_lock)
-    else:
-        all_streams = cached_streams
-
-    return await parse_stream_data(
-        all_streams,
-        user_data,
-        secret_str,
-        season,
-        episode,
+    """Get streams for a series episode."""
+    series_metadata = await get_series_data_by_id(video_id)
+    return await get_streams_base(
+        user_data=user_data,
+        secret_str=secret_str,
+        video_id=video_id,
+        metadata=series_metadata,
+        content_type="series",
+        content_catalogs=USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
         user_ip=user_ip,
-        is_series=True,
+        background_tasks=background_tasks,
+        season=season,
+        episode=episode,
     )
 
 
@@ -450,42 +652,10 @@ async def store_new_torrent_streams(
             existing_stream = await TorrentStreams.get(stream.id)
             if existing_stream:
                 update_data = {"seeders": stream.seeders, "updated_at": datetime.now()}
-                if stream.season and stream.season.episodes:
-                    # Check if existing_stream.season exists before accessing its episodes
-                    existing_episodes = set()
-                    if existing_stream.season:
-                        existing_episodes = (
-                            {
-                                ep.episode_number
-                                for ep in existing_stream.season.episodes
-                            }
-                            if existing_stream.season.episodes
-                            else set()
-                        )
-
-                    new_episodes = [
-                        ep
-                        for ep in stream.season.episodes
-                        if ep.episode_number not in existing_episodes
-                    ]
-                    if new_episodes:
-                        logging.info(
-                            "Adding new %s episodes to stream %s",
-                            len(new_episodes),
-                            stream.id,
-                        )
-                        if existing_stream.season and existing_stream.season.episodes:
-                            update_data["season.episodes"] = (
-                                existing_stream.season.episodes + new_episodes
-                            )
-                        else:
-                            update_data["season"] = stream.season
-
                 await existing_stream.update(Set(update_data), bulk_writer=bulk_writer)
                 logging.info("Updated stream %s for %s", stream.id, stream.meta_id)
             else:
-                await TorrentStreams.insert_one(stream, bulk_writer=bulk_writer)
-                logging.info("Added new stream %s for %s", stream.id, stream.meta_id)
+                await TorrentStreams.insert(stream)
         except DuplicateKeyError:
             logging.warning(
                 "Duplicate stream found: %s for %s", stream.id, stream.meta_id
@@ -519,11 +689,15 @@ async def get_movie_meta(meta_id: str, user_data: schemas.UserData):
             "_id": meta_id,
             "type": "movie",
             "title": movie_data.title,
+            "year": movie_data.year,
             "poster": f"{settings.poster_host_url}/poster/movie/{meta_id}.jpg",
-            "background": movie_data.poster,
+            "background": movie_data.background or movie_data.poster,
             "description": movie_data.description,
             "runtime": movie_data.runtime,
             "website": movie_data.website,
+            "imdb_rating": movie_data.imdb_rating,
+            "genres": movie_data.genres,
+            "stars": movie_data.stars,
         }
     }
 
@@ -535,77 +709,39 @@ async def get_series_meta(meta_id: str, user_data: schemas.UserData):
     if not (series and validate_parent_guide_nudity(series, user_data)):
         return {}
 
-    # Simplified pipeline to get unique season/episode combinations
-    pipeline = [
-        {"$match": {"meta_id": meta_id}},
-        {"$unwind": "$season.episodes"},
+    # Convert episodes to video format
+    videos = [
         {
-            "$group": {
-                "_id": {
-                    "season": "$season.season_number",
-                    "episode": "$season.episodes.episode_number",
-                },
-                "title": {"$first": "$season.episodes.title"},
-                "released": {
-                    "$first": {"$ifNull": ["$season.episodes.released", "$created_at"]}
-                },
-            }
-        },
-        {
-            "$project": {
-                "_id": 0,
-                "id": {
-                    "$concat": [
-                        meta_id,
-                        ":",
-                        {"$toString": "$_id.season"},
-                        ":",
-                        {"$toString": "$_id.episode"},
-                    ]
-                },
-                "title": {
-                    "$ifNull": [
-                        "$title",
-                        {
-                            "$concat": [
-                                "S",
-                                {"$toString": "$_id.season"},
-                                " EP",
-                                {"$toString": "$_id.episode"},
-                            ]
-                        },
-                    ]
-                },
-                "season": "$_id.season",
-                "episode": "$_id.episode",
-                "released": {
-                    "$dateToString": {
-                        "format": "%Y-%m-%dT%H:%M:%S.000Z",
-                        "date": "$released",
-                    }
-                },
-            }
-        },
-        {"$sort": {"season": 1, "episode": 1}},
+            "id": f"{meta_id}:{ep.season_number}:{ep.episode_number}",
+            "title": ep.title,
+            "season": ep.season_number,
+            "episode": ep.episode_number,
+            "overview": ep.overview,
+            "released": (
+                ep.released.strftime("%Y-%m-%dT%H:%M:%S.000Z") if ep.released else None
+            ),
+            "imdb_rating": ep.imdb_rating,
+            "thumbnail": ep.thumbnail,
+        }
+        for ep in sorted(
+            series.episodes, key=lambda x: (x.season_number, x.episode_number)
+        )
     ]
-
-    # Execute the aggregation pipeline on TorrentStreams
-    streams_data = await TorrentStreams.aggregate(pipeline).to_list()
-
-    if not streams_data:
-        return {}
-
-    # Construct the final response
-    poster_path = f"{settings.poster_host_url}/poster/series/{meta_id}.jpg"
 
     return {
         "meta": {
             "_id": meta_id,
             "type": "series",
             "title": series.title,
-            "poster": poster_path,
+            "year": series.year,
+            "end_year": series.end_year,
+            "poster": f"{settings.poster_host_url}/poster/series/{meta_id}.jpg",
             "background": series.background or series.poster,
-            "videos": streams_data,
+            "description": series.description,
+            "imdb_rating": series.imdb_rating,
+            "genres": series.genres,
+            "stars": series.stars,
+            "videos": videos,
         }
     }
 
@@ -625,46 +761,112 @@ async def get_tv_meta(meta_id: str):
     }
 
 
-async def get_existing_metadata(metadata, model):
-    filters = {"title": metadata["title"]}
-    year_filter = metadata.get("year", 0)
+async def get_existing_metadata(
+    metadata: dict, model: Type[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]
+) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
+    if metadata.get("id"):
+        return await model.get(metadata["id"])
+    title = metadata["title"]
+    year = metadata.get("year")
+    if isinstance(year, str):
+        year = int(year)
 
+    # Create a list of filters to try in order
+    filters = []
+
+    # Prepare year filter based on model type
+    if not year:
+        year_filter = {}
     if issubclass(model, MediaFusionMovieMetaData):
-        filters["year"] = year_filter
+        # For movies: exact year match
+        year_filter = {"year": year}
     else:
-        filters["year"] = {"$gte": year_filter}
-        filters["$or"] = [
-            {"end_year": {"$lte": year_filter}},
-            {"end_year": None},
-        ]
+        # For series: check if the series was active in the given year
+        # A series is considered active if:
+        # 1. The year is greater than or equal to the start year (year field)
+        # 2. AND either:
+        #    a. end_year is null (series still ongoing)
+        #    b. OR year is less than or equal to end_year
+        year_filter = {
+            "year": {"$lte": year},
+            "$or": [
+                {"end_year": None},  # Still ongoing series
+                {"end_year": {"$gte": year}},  # Series ended after the given year
+            ],
+        }
 
-    return await model.find_one(
-        filters,
-        projection_model=schemas.MetaIdProjection,
-    )
+    # 1. Exact title match with year
+    exact_match_filter = {"title": title}
+    exact_match_filter.update(year_filter)
+    filters.append(exact_match_filter)
+
+    # 2. Case-insensitive regex match with year
+    regex_filter = {"title": {"$regex": f"^{re.escape(title)}$", "$options": "i"}}
+    regex_filter.update(year_filter)
+    filters.append(regex_filter)
+
+    # 3. Text search with year as a last resort
+    text_search_filter = {
+        "$text": {
+            "$search": title,
+            "$caseSensitive": False,
+        }
+    }
+    text_search_filter.update(year_filter)
+    filters.append(text_search_filter)
+
+    # Try each filter in sequence
+    for filter_query in filters:
+        potential_matches = await model.find(
+            filter_query, projection_model=schemas.MetaSearchProjection
+        ).to_list(10)
+
+        # Find the best match using calculate_max_similarity_ratio
+        best_match = None
+        best_ratio = 0
+
+        for match in potential_matches:
+            similarity_ratio = calculate_max_similarity_ratio(
+                title, match.title, match.aka_titles
+            )
+
+            if similarity_ratio > best_ratio:
+                best_ratio = similarity_ratio
+                best_match = match
+
+        # Return the match if it meets our threshold (95%)
+        if best_match and best_ratio >= 95:
+            return best_match
+
+    return None
 
 
 def create_metadata_object(metadata, imdb_data, model):
     poster = imdb_data.get("poster") or metadata.get("poster")
-    background = imdb_data.get("background", metadata.get("background", poster))
-    year = imdb_data.get("year", metadata.get("year"))
-    end_year = imdb_data.get("end_year", metadata.get("end_year"))
+    background = imdb_data.get("background") or metadata.get("background", poster)
+    year = imdb_data.get("year") or metadata.get("year")
+    end_year = imdb_data.get("end_year") or metadata.get("end_year")
     if isinstance(year, str) and "-" in year:
         year, end_year = year.split("-")
     return model(
         id=metadata["id"],
-        title=imdb_data.get("title", metadata["title"]),
+        title=imdb_data.get("title") or metadata["title"],
         year=year,
+        is_custom=metadata["id"].startswith("mf"),
         end_year=end_year,
         poster=poster,
         background=background,
-        description=metadata.get("description"),
-        runtime=metadata.get("runtime"),
-        website=metadata.get("website"),
+        description=imdb_data.get("description") or metadata.get("description"),
+        runtime=imdb_data.get("runtime") or metadata.get("runtime"),
+        website=imdb_data.get("website") or metadata.get("website"),
         is_add_title_to_poster=metadata.get("is_add_title_to_poster", False),
-        stars=metadata.get("stars"),
-        aka_titles=imdb_data.get("aka_titles", metadata.get("aka_titles")),
-        genres=imdb_data.get("genres", metadata.get("genres")),
+        stars=imdb_data.get("stars") or metadata.get("stars"),
+        aka_titles=imdb_data.get("aka_titles") or metadata.get("aka_titles"),
+        genres=imdb_data.get("genres") or metadata.get("genres"),
+        imdb_rating=imdb_data.get("imdb_rating") or metadata.get("imdb_rating"),
+        parent_guide_nudity_status=imdb_data.get("parent_guide_nudity_status"),
+        parent_guide_certificates=imdb_data.get("parent_guide_certificates"),
+        episodes=imdb_data.get("episodes", []),
     )
 
 
@@ -682,25 +884,40 @@ def create_stream_object(metadata, is_movie: bool = False):
         codec=metadata.get("codec"),
         quality=metadata.get("quality"),
         audio=metadata.get("audio"),
+        hdr=metadata.get("hdr"),
         source=metadata["source"],
+        uploader=metadata.get("uploader"),
         catalog=[catalog] if isinstance(catalog, str) else catalog,
         created_at=metadata["created_at"],
         meta_id=metadata["id"],
+        seeders=metadata.get("seeders"),
     )
 
 
-async def get_or_create_metadata(metadata, media_type, is_imdb):
+async def get_or_create_metadata(
+    metadata: dict,
+    media_type: str,
+    is_search_imdb_title: bool,
+    is_imdb_only: bool = False,
+):
     metadata_class = (
         MediaFusionMovieMetaData if media_type == "movie" else MediaFusionSeriesMetaData
     )
     existing_data = await get_existing_metadata(metadata, metadata_class)
     if not existing_data:
         imdb_data = {}
-        if is_imdb:
-            imdb_data = search_imdb(metadata["title"], metadata.get("year"), media_type)
+        if is_search_imdb_title:
+            imdb_data = await meta_fetcher.search_metadata(
+                metadata["title"],
+                metadata.get("year"),
+                media_type,
+                metadata.get("created_at"),
+            )
+        if not imdb_data and is_imdb_only:
+            return
 
-        metadata["id"] = imdb_data.get(
-            "imdb_id", metadata.get("id", f"mf{uuid4().fields[-1]}")
+        metadata["id"] = (
+            imdb_data.get("imdb_id") or metadata.get("id") or f"mf{uuid4().fields[-1]}"
         )
         is_exist_db = await metadata_class.find_one({"_id": metadata["id"]}).project(
             schemas.MetaIdProjection
@@ -717,110 +934,317 @@ async def get_or_create_metadata(metadata, media_type, is_imdb):
     return metadata
 
 
-async def save_metadata(metadata: dict, media_type: str, is_imdb: bool = True):
-    if await is_torrent_stream_exists(metadata["info_hash"]):
-        logging.info("Stream already exists for %s %s", media_type, metadata["title"])
-        return
-    metadata = await get_or_create_metadata(metadata, media_type, is_imdb)
+async def organize_episodes(series_id):
+    """Organize episodes by release date and assign sequential numbers"""
+    # Fetch all torrent streams for this series
+    torrent_streams = await TorrentStreams.find({"meta_id": series_id}).to_list()
+    series_data = await MediaFusionSeriesMetaData.get(series_id)
+
+    # Flatten all episodes from all streams and sort by release date
+    all_episodes = sorted(
+        (episode for stream in torrent_streams for episode in stream.episode_files),
+        key=lambda e: (
+            e.released.date() or datetime.min.date(),
+            e.filename or "",
+        ),
+    )
+
+    # Assign episode numbers, ensuring the same title across different qualities gets the same number
+    season_episode_map = {}
+    series_episodes = []
+
+    for episode in all_episodes:
+        season = episode.season_number
+        if season not in season_episode_map:
+            season_episode_map[season] = {}
+
+        title_key = episode.title or episode.filename
+        if title_key not in season_episode_map[season]:
+            episode_number = len(season_episode_map[season]) + 1
+            season_episode_map[season][title_key] = episode_number
+
+            # Create SeriesEpisode for MediaFusionSeriesMetaData
+            series_episodes.append(
+                SeriesEpisode(
+                    season_number=season,
+                    episode_number=episode_number,
+                    title=episode.title or f"Episode {episode_number}",
+                    released=episode.released,
+                )
+            )
+
+        episode.episode_number = season_episode_map[season][title_key]
+
+    # Update episodes in each torrent stream
+    for stream in torrent_streams:
+        if stream.episode_files:
+            stream.episode_files.sort(key=lambda e: (e.season_number, e.episode_number))
+            await stream.save()
+
+    # Update series metadata with organized episodes
+    await series_data.update(Set({"episodes": series_episodes}))
+
+    logging.info(f"Organized episodes for series {series_id}")
+
+
+async def save_metadata(
+    metadata: dict, media_type: str, is_search_imdb_title: bool = True
+):
+    if torrent_stream := await get_stream_by_info_hash(metadata["info_hash"]):
+        if (
+            metadata.get("expected_sources")
+            and torrent_stream.source not in metadata["expected_sources"]
+        ):
+            logging.info(
+                "Source mismatch for %s %s: %s != %s. Trying to re-create the data",
+                media_type,
+                metadata["title"],
+                metadata["source"],
+                torrent_stream.source,
+            )
+            await torrent_stream.delete()
+        else:
+            logging.info(
+                "Stream already exists for %s %s", media_type, metadata["title"]
+            )
+            return
+    metadata = await get_or_create_metadata(metadata, media_type, is_search_imdb_title)
 
     new_stream = create_stream_object(metadata, media_type == "movie")
+    should_organize_episodes = False
     if media_type == "series":
-        if metadata.get("episodes") and isinstance(metadata["episodes"][0], Episode):
+        if metadata.get("episodes") and isinstance(
+            metadata["episodes"][0], EpisodeFile
+        ):
             episodes = metadata["episodes"]
         else:
-            episodes = [
-                Episode(
-                    episode_number=file["episodes"][0],
-                    filename=file["filename"],
-                    size=file["size"],
-                    file_index=file["index"],
+            episodes = []
+            for file_data in metadata["file_data"]:
+                if file_data["filename"] and not is_video_file(file_data["filename"]):
+                    continue
+                if not file_data.get("episodes"):
+                    if metadata["id"].startswith("mf"):
+                        episode_number = len(episodes) + 1
+                        should_organize_episodes = True
+                    else:
+                        continue
+                else:
+                    episode_number = file_data["episodes"][0]
+
+                season_number = (
+                    file_data.get("seasons")[0] if file_data.get("seasons") else 1
                 )
-                for file in metadata["file_data"]
-                if file["episodes"]
-            ]
+                episodes.append(
+                    EpisodeFile(
+                        season_number=season_number,
+                        episode_number=episode_number,
+                        filename=file_data["filename"],
+                        size=file_data["size"],
+                        file_index=file_data["index"],
+                        title=file_data.get("title"),
+                    )
+                )
 
         if not episodes:
             logging.warning("No episodes found for series %s", metadata["title"])
             return
-        new_stream.season = Season(
-            season_number=metadata.get("seasons")[0] if metadata.get("seasons") else 1,
-            episodes=episodes,
-        )
+        new_stream.episode_files = episodes
+        cache_keys = await REDIS_ASYNC_CLIENT.keys(f"series_{metadata['id']}_meta*")
+        cache_keys.append(f"series_data:{metadata['id']}")
+        await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
     await new_stream.create()
+    if should_organize_episodes:
+        await organize_episodes(metadata["id"])
     logging.info(
-        "Added stream for %s %s, info_hash: %s",
+        "Added stream for %s %s (%s), info_hash: %s",
         media_type,
         metadata["title"],
+        metadata["id"],
         metadata["info_hash"],
     )
 
 
-async def save_movie_metadata(metadata: dict, is_imdb: bool = True):
-    await save_metadata(metadata, "movie", is_imdb)
+async def save_movie_metadata(metadata: dict, is_search_imdb_title: bool = True):
+    await save_metadata(metadata, "movie", is_search_imdb_title)
 
 
-async def save_series_metadata(metadata: dict, is_imdb: bool = True):
-    await save_metadata(metadata, "series", is_imdb)
+async def save_series_metadata(metadata: dict, is_search_imdb_title: bool = True):
+    await save_metadata(metadata, "series", is_search_imdb_title)
 
 
 async def process_search_query(
     search_query: str, catalog_type: str, user_data: schemas.UserData
 ) -> dict:
-    # Get user's certification filter values
-    certification_values = get_filter_certification_values(user_data)
+    # Create regex pattern for partial matching
+    regex_pattern = f".*{search_query}.*"
 
-    # Initialize the match filter
-    match_filter = {
-        "$text": {"$search": search_query},  # Perform the text search
+    # Base match conditions for both queries
+    base_conditions = {
         "type": catalog_type,
     }
 
+    # Add user filters
+    filter_conditions = []
     if "Disable" not in user_data.nudity_filter:
-        match_filter["parent_guide_nudity_status"] = {"$nin": user_data.nudity_filter}
+        nudity_conditions = []
+        if user_data.nudity_filter:
+            nudity_conditions.append(
+                {"parent_guide_nudity_status": {"$nin": user_data.nudity_filter}}
+            )
+        if "Unknown" in user_data.nudity_filter:
+            nudity_conditions.append({"parent_guide_nudity_status": {"$exists": True}})
 
+        if len(nudity_conditions) > 1:
+            filter_conditions.append({"$and": nudity_conditions})
+        elif nudity_conditions:
+            filter_conditions.append(nudity_conditions[0])
+
+    # Handle certification filter
     if "Disable" not in user_data.certification_filter:
-        match_filter["parent_guide_certificates"] = {"$nin": certification_values}
+        cert_conditions = []
+        filter_values = get_filter_certification_values(user_data)
 
-    # Define the aggregation pipeline
-    pipeline = [
-        {"$match": match_filter},
-        {"$limit": 50},  # Limit the search results to 50
+        if filter_values:
+            cert_conditions.append(
+                {"parent_guide_certificates": {"$nin": filter_values}}
+            )
+        if "Unknown" in user_data.certification_filter:
+            cert_conditions.append(
+                {
+                    "$nor": [
+                        {"parent_guide_certificates": {"$exists": False}},
+                        {"parent_guide_certificates": {"$size": 0}},
+                    ]
+                }
+            )
+
+        if len(cert_conditions) > 1:
+            filter_conditions.append({"$and": cert_conditions})
+        elif cert_conditions:
+            filter_conditions.append(cert_conditions[0])
+
+    # Combine all user filters
+    if filter_conditions:
+        if len(filter_conditions) > 1:
+            base_conditions["$and"] = filter_conditions
+        else:
+            base_conditions.update(filter_conditions[0])
+
+    # 1. Text search pipeline
+    text_search_pipeline = [
         {
-            "$lookup": {
-                "from": TorrentStreams.get_collection_name(),
-                "localField": "_id",
-                "foreignField": "meta_id",
-                "pipeline": [
-                    {
-                        "$match": {
-                            "catalog": {"$in": user_data.selected_catalogs},
-                            "is_blocked": {"$ne": True},
-                        }
-                    },
-                    {"$count": "num_torrents"},
-                ],
-                "as": "torrent_count",
+            "$match": {
+                "$text": {
+                    "$search": search_query,
+                    "$caseSensitive": False,
+                },
+                **base_conditions,
             }
         },
-        {"$match": {"torrent_count.num_torrents": {"$gt": 0}}},
         {
-            "$set": {
-                "poster": {
-                    "$concat": [
-                        f"{settings.poster_host_url}/poster/{catalog_type}/",
-                        "$_id",
-                        ".jpg",
+            "$addFields": {
+                "textScore": {"$meta": "textScore"},
+                "exactTitleMatch": {
+                    "$cond": [
+                        {"$eq": [{"$toLower": "$title"}, search_query.lower()]},
+                        10,
+                        0,
                     ]
+                },
+                "titleStartsWith": {
+                    "$cond": [
+                        {
+                            "$regexMatch": {
+                                "input": {"$toLower": "$title"},
+                                "regex": "^" + search_query.lower(),
+                            }
+                        },
+                        5,
+                        0,
+                    ]
+                },
+            }
+        },
+        {
+            "$addFields": {
+                "relevanceScore": {
+                    "$add": ["$textScore", "$exactTitleMatch", "$titleStartsWith"]
                 }
             }
         },
+        {"$sort": {"relevanceScore": -1}},
+        {"$limit": 40},  # Get top 40 from text search
     ]
 
-    # Execute the aggregation pipeline
-    search_results = (
-        await MediaFusionMetaData.get_motor_collection().aggregate(pipeline).to_list(50)
+    # 2. Regex search pipeline for titles that text search might miss - needs a separate query
+    regex_search_pipeline = [
+        {
+            "$match": {
+                "$and": [
+                    {"title": {"$regex": regex_pattern, "$options": "i"}},
+                    base_conditions,
+                ]
+            }
+        },
+        {"$limit": 30},  # Get more potential regex matches
+    ]
+
+    # Execute the text search pipeline
+    text_search_results = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(
+            text_search_pipeline
+            + [
+                {
+                    "$set": {
+                        "poster": {
+                            "$concat": [
+                                f"{settings.poster_host_url}/poster/{catalog_type}/",
+                                "$_id",
+                                ".jpg",
+                            ]
+                        }
+                    }
+                }
+            ]
+        )
+        .to_list(40)
     )
+
+    # Get IDs from text search results to exclude them from regex search
+    text_result_ids = [doc["_id"] for doc in text_search_results]
+
+    # Add ID exclusion to regex pipeline
+    if text_result_ids:
+        regex_search_pipeline[0]["$match"]["$and"].append(
+            {"_id": {"$nin": text_result_ids}}
+        )
+
+    # Execute the regex search pipeline
+    regex_search_results = (
+        await MediaFusionMetaData.get_motor_collection()
+        .aggregate(
+            regex_search_pipeline
+            + [
+                {
+                    "$set": {
+                        "poster": {
+                            "$concat": [
+                                f"{settings.poster_host_url}/poster/{catalog_type}/",
+                                "$_id",
+                                ".jpg",
+                            ]
+                        }
+                    }
+                }
+            ]
+        )
+        .to_list(10)
+    )
+
+    # Combine both result sets
+    search_results = text_search_results + regex_search_results
 
     return {"metas": search_results}
 
@@ -829,11 +1253,16 @@ async def process_tv_search_query(search_query: str, namespace: str) -> dict:
     pipeline = [
         {
             "$match": {
-                "$text": {"$search": search_query},  # Perform the text search
+                "$text": {
+                    "$search": search_query,
+                    "$caseSensitive": False,
+                },
                 "type": "tv",
+                "total_streams": {"$gt": 0},
             }
         },
         {"$limit": 50},  # Limit the search results to 50
+        # Look up TVStreams to filter by namespace
         {
             "$lookup": {
                 "from": TVStreams.get_collection_name(),
@@ -846,15 +1275,15 @@ async def process_tv_search_query(search_query: str, namespace: str) -> dict:
                             "namespaces": {"$in": [namespace, "mediafusion", None]},
                         }
                     },
-                    {"$count": "num_working_streams"},
+                    {"$limit": 1},
                 ],
-                "as": "working_stream_count",
+                "as": "working_streams",
             }
         },
         {
             "$match": {
-                "working_stream_count.num_working_streams": {
-                    "$gt": 0
+                "working_streams": {
+                    "$ne": []
                 }  # Ensure at least one working stream exists
             }
         },
@@ -983,7 +1412,7 @@ async def save_tv_channel_metadata(tv_metadata: schemas.TVMetaData) -> str:
                     bulk_writer=bulk_writer,
                 )
         else:
-            await TVStreams.insert_one(stream_doc, bulk_writer=bulk_writer)
+            await TVStreams.insert(stream_doc)
 
     await bulk_writer.commit()
     logging.info(f"Processed TV channel {tv_metadata.title}")
@@ -1055,32 +1484,10 @@ async def save_events_data(metadata: dict) -> str:
     return event_key
 
 
-async def get_events_meta_list(genre=None, skip=0, limit=25) -> list[schemas.Meta]:
-    if genre:
-        key_pattern = f"events:genre:{genre}"
-    else:
-        key_pattern = "events:all"
-
-    # Fetch event keys sorted by timestamp in descending order
-    events_keys = await REDIS_ASYNC_CLIENT.zrevrange(
-        key_pattern, skip, skip + limit - 1
+async def get_events_meta_list(genre=None, skip=0, limit=50) -> list[schemas.Meta]:
+    return await dlhd_schedule_service.get_scheduled_events(
+        genre=genre, skip=skip, limit=limit
     )
-    events = []
-
-    # Iterate over event keys, fetching and decoding JSON data
-    for key in events_keys:
-        events_json = await REDIS_ASYNC_CLIENT.get(key)
-        if events_json:
-            meta_data = schemas.Meta.model_validate_json(events_json)
-            meta_data.poster = (
-                f"{settings.poster_host_url}/poster/events/{meta_data.id}.jpg"
-            )
-            events.append(meta_data)
-        else:
-            # Cleanup: Remove expired or missing event key from the index
-            await REDIS_ASYNC_CLIENT.zrem(key_pattern, key)
-
-    return events
 
 
 async def get_event_meta(meta_id: str) -> dict:
@@ -1089,7 +1496,11 @@ async def get_event_meta(meta_id: str) -> dict:
     if not events_json:
         return {}
 
-    event_data = MediaFusionTVMetaData.model_validate_json(events_json)
+    event_data = MediaFusionEventsMetaData.model_validate_json(events_json)
+    if event_data.event_start_timestamp:
+        # Update description with localized time
+        event_data.description = f"🎬 {event_data.title} - ⏰ {dlhd_schedule_service.format_event_time(event_data.event_start_timestamp)}"
+
     return {
         "meta": {
             "_id": meta_id,
@@ -1123,7 +1534,7 @@ async def get_genres(catalog_type: str) -> list[str]:
         return json.loads(genres)
 
     genres = await MediaFusionMetaData.distinct(
-        "genres", {"type": catalog_type, "genres": {"$nin": ["", None]}}
+        "genres", {"type": catalog_type, "genres": {"$nin": ["", None, "Adult"]}}
     )
 
     # cache the genres for 30 minutes
@@ -1175,3 +1586,239 @@ async def fetch_last_run(spider_id: str, spider_name: str):
         )
 
     return response
+
+
+async def update_metadata(imdb_ids: list[str], metadata_type: str):
+    now = datetime.now()
+
+    def merge_sets(existing_data, new_data, field_name):
+        existing_set = (
+            set(getattr(existing_data, field_name, [])) if existing_data else set()
+        )
+        new_set = set(new_data.get(field_name, []))
+        return list(existing_set | new_set)
+
+    # Initialize circuit breaker
+    circuit_breaker = CircuitBreaker(
+        failure_threshold=2, recovery_timeout=10, half_open_attempts=2
+    )
+
+    async for result in batch_process_with_circuit_breaker(
+        meta_fetcher.get_metadata,
+        imdb_ids,
+        5,
+        rate_limit_delay=3,
+        cb=circuit_breaker,
+        media_type=metadata_type,
+    ):
+        if not result:
+            continue
+
+        meta_id = result["imdb_id"]
+
+        meta_class = (
+            MediaFusionMovieMetaData
+            if metadata_type == "movie"
+            else MediaFusionSeriesMetaData
+        )
+        # Get existing metadata to preserve values
+        existing_metadata = await meta_class.get(meta_id)
+        if not existing_metadata:
+            logging.warning(
+                f"Metadata not found for {metadata_type} {meta_id}. Skipping update."
+            )
+            continue
+
+        # Merge new data with existing data, preserving existing values when new ones are None/empty
+        update_data = {
+            "title": result["title"] or existing_metadata.title,
+            "poster": result["poster"] or existing_metadata.poster,
+            "background": result["background"] or existing_metadata.background,
+            "description": result["description"] or existing_metadata.description,
+            "runtime": result["runtime"] or existing_metadata.runtime,
+            "stars": result["stars"] or existing_metadata.stars,
+            "last_updated_at": now,
+            "imdb_rating": (
+                result.get("imdb_rating")
+                if result.get("imdb_rating") is not None
+                else existing_metadata.imdb_rating
+            ),
+            "tmdb_rating": (
+                result.get("tmdb_rating")
+                if result.get("tmdb_rating") is not None
+                else existing_metadata.tmdb_rating
+            ),
+            "parent_guide_nudity_status": (
+                result.get("parent_guide_nudity_status")
+                if result.get("parent_guide_nudity_status") != NudityStatus.UNKNOWN
+                else existing_metadata.parent_guide_nudity_status
+            ),
+            "aka_titles": merge_sets(existing_metadata, result, "aka_titles"),
+            "genres": merge_sets(existing_metadata, result, "genres"),
+            "parent_guide_certificates": merge_sets(
+                existing_metadata, result, "parent_guide_certificates"
+            ),
+        }
+
+        if metadata_type == "series" and result.get("episodes"):
+            # Get current series data to compare episodes
+            current_series = await MediaFusionSeriesMetaData.get(meta_id)
+            if current_series:
+                # Create a map of existing episodes by season and episode number
+                existing_episodes = {
+                    (ep.season_number, ep.episode_number): ep
+                    for ep in current_series.episodes
+                }
+
+                # Process new episodes
+                updated_episodes = []
+                updated_episodes_keys = set()
+                for new_ep in result["episodes"]:
+                    key = (new_ep["season_number"], new_ep["episode_number"])
+                    if key in existing_episodes:
+                        # Merge new data with existing episode data
+                        existing_ep = existing_episodes[key]
+                        updated_ep = {
+                            "season_number": new_ep["season_number"],
+                            "episode_number": new_ep["episode_number"],
+                            "title": new_ep["title"] or existing_ep.title,
+                            "overview": new_ep["overview"] or existing_ep.overview,
+                            "imdb_rating": new_ep.get("imdb_rating")
+                            or existing_ep.imdb_rating,
+                            "tmdb_rating": new_ep.get("tmdb_rating")
+                            or existing_ep.tmdb_rating,
+                            "thumbnail": new_ep["thumbnail"] or existing_ep.thumbnail,
+                            "released": new_ep["released"] or existing_ep.released,
+                        }
+                        updated_episodes.append(updated_ep)
+                    else:
+                        # Add new episode
+                        updated_episodes.append(new_ep)
+                    updated_episodes_keys.add(key)
+
+                # Add any existing episodes that weren't in the new data
+                for ep in current_series.episodes:
+                    key = (ep.season_number, ep.episode_number)
+                    if key not in updated_episodes_keys:
+                        updated_episodes.append(ep.model_dump())
+
+                # Sort episodes by season and episode number
+                updated_episodes.sort(
+                    key=lambda x: (x["season_number"], x["episode_number"])
+                )
+                update_data["episodes"] = updated_episodes
+
+        # Update stream-related metadata
+        stream_metadata = await update_meta_stream(
+            meta_id, metadata_type, is_update_data_only=True
+        )
+        update_data.update(stream_metadata)
+
+        # Update database entries with the new data
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": meta_id},
+            {"$set": update_data},
+        )
+        logging.info(f"Updated metadata for {metadata_type} {meta_id}")
+
+        cache_keys = await REDIS_ASYNC_CLIENT.keys(f"{metadata_type}_{meta_id}_meta*")
+        cache_keys.append(f"{metadata_type}_data:{meta_id}")
+        await REDIS_ASYNC_CLIENT.delete(*cache_keys)
+
+
+async def fetch_metadata(imdb_ids: list[str], metadata_type: str):
+    circuit_breaker = CircuitBreaker(
+        failure_threshold=2, recovery_timeout=5, half_open_attempts=2
+    )
+
+    async for result in batch_process_with_circuit_breaker(
+        get_movie_data_by_id if metadata_type == "movie" else get_series_data_by_id,
+        imdb_ids,
+        5,
+        rate_limit_delay=1,
+        cb=circuit_breaker,
+    ):
+        if not result:
+            continue
+
+        logging.info(f"Stored metadata for {metadata_type} {result.id}")
+
+
+async def update_meta_stream(
+    meta_id: str, meta_type: str, is_update_data_only: bool = False
+) -> dict:
+    """
+    Update stream-related metadata for a given meta_id.
+    """
+    # Get TorrentStream counts & last stream added date per catalog
+    pipeline = [
+        {"$match": {"meta_id": meta_id, "is_blocked": {"$ne": True}}},
+        {"$unwind": "$catalog"},
+        {
+            "$group": {
+                "_id": "$catalog",
+                "total_streams": {"$sum": 1},
+                "last_stream_added": {"$max": "$created_at"},
+            }
+        },
+    ]
+
+    catalog_stats = await TorrentStreams.aggregate(pipeline).to_list(None)
+
+    # Calculate overall stats
+    total_streams = sum(stat["total_streams"] for stat in catalog_stats)
+    last_stream_added = (
+        max([stat["last_stream_added"] for stat in catalog_stats])
+        if catalog_stats
+        else None
+    )
+
+    update_data = {
+        "total_streams": total_streams,
+        "last_stream_added": last_stream_added,
+        "last_updated_at": datetime.now(tz=timezone.utc),
+        "catalog_stats": [
+            {
+                "catalog": stat["_id"],
+                "total_streams": stat["total_streams"],
+                "last_stream_added": stat["last_stream_added"],
+            }
+            for stat in catalog_stats
+        ],
+    }
+
+    if is_update_data_only:
+        return update_data
+
+    if catalog_stats:
+        # Remove old catalog_stats and add new ones
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": meta_id},
+            {
+                "$set": {
+                    "total_streams": update_data["total_streams"],
+                    "last_stream_added": update_data["last_stream_added"],
+                    "last_updated_at": update_data["last_updated_at"],
+                    "catalog_stats": update_data["catalog_stats"],
+                }
+            },
+        )
+    else:
+        # If no streams, clear all stats
+        await MediaFusionMetaData.get_motor_collection().update_one(
+            {"_id": meta_id},
+            {
+                "$set": {
+                    "total_streams": 0,
+                    "last_stream_added": None,
+                    "last_updated_at": update_data["last_updated_at"],
+                    "catalog_stats": [],
+                }
+            },
+        )
+
+    cache_keys = await REDIS_ASYNC_CLIENT.keys(f"{meta_type}_{meta_id}_meta*")
+    cache_keys.append(f"{meta_type}_data:{meta_id}")
+    await REDIS_ASYNC_CLIENT.delete(*cache_keys)
+    logging.info(f"Updated stream metadata for {meta_id}")
+    return update_data

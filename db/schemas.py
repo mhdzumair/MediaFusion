@@ -4,6 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
 from db.config import settings
+from db.enums import NudityStatus
 from db.models import TorrentStreams
 from utils import const
 
@@ -17,9 +18,10 @@ class Catalog(BaseModel):
 class Video(BaseModel):
     id: str
     title: str
-    released: str
+    released: str | None = None
     season: int | None = None
     episode: int | None = None
+    thumbnail: str | None = None
 
 
 class Meta(BaseModel):
@@ -38,6 +40,7 @@ class Meta(BaseModel):
     website: str | None = None
     imdbRating: str | float | None = Field(None, alias="imdb_rating")
     releaseInfo: str | int | None = Field(None, alias="year")
+    cast: list[str] | None = Field(None, alias="stars")
 
     @model_validator(mode="after")
     def parse_meta(self) -> "Meta":
@@ -139,6 +142,7 @@ class StreamingProvider(BaseModel):
         "premiumize",
         "qbittorrent",
         "stremthru",
+        "easydebrid",
     ] = Field(alias="sv")
     stremthru_store_name: (
         Literal[
@@ -192,17 +196,40 @@ class SortingOption(BaseModel):
         populate_by_name = True
 
 
+class MDBListItem(BaseModel):
+    id: int = Field(alias="i")
+    title: str = Field(alias="t")
+    catalog_type: Literal["movie", "series"] = Field(alias="ct")
+    use_filters: bool = Field(default=False, alias="uf")
+    sort: str | None = Field(default="rank", alias="s")
+    order: Literal["asc", "desc"] = Field(default="desc", alias="o")
+
+    @property
+    def catalog_id(self) -> str:
+        return f"mdblist_{self.catalog_type}_{self.id}"
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
+class MDBListConfig(BaseModel):
+    api_key: str = Field(alias="ak")
+    lists: list[MDBListItem] = Field(default_factory=list, alias="l")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
 class UserData(BaseModel):
     streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
-    selected_catalogs: list[str] = Field(
-        default=["english_hdrip", "english_series"],
-        alias="sc",
-    )
+    selected_catalogs: list[str] = Field(alias="sc", default_factory=list)
     selected_resolutions: list[str | None] = Field(
         default=const.RESOLUTIONS, alias="sr"
     )
     enable_catalogs: bool = Field(default=True, alias="ec")
-    enable_imdb_metadata: bool = Field(default=True, alias="eim")
+    enable_imdb_metadata: bool = Field(default=False, alias="eim")
     max_size: int | str | float = Field(default=math.inf, alias="ms")
     max_streams_per_resolution: int = Field(default=10, alias="mspr")
     show_full_torrent_name: bool = Field(default=True, alias="sftn")
@@ -212,14 +239,19 @@ class UserData(BaseModel):
         ],
         alias="tsp",
     )
-    nudity_filter: list[Literal["Disable", "None", "Mild", "Moderate", "Severe"]] = (
-        Field(default=["Severe"], alias="nf")
-    )
+    nudity_filter: list[NudityStatus] = Field(default=[NudityStatus.SEVERE], alias="nf")
     certification_filter: list[
         Literal[
-            "Disable", "All Ages", "Children", "Parental Guidance", "Teens", "Adults"
+            "Disable",
+            "Unknown",
+            "All Ages",
+            "Children",
+            "Parental Guidance",
+            "Teens",
+            "Adults",
+            "Adults+",
         ]
-    ] = Field(default=["Adults"], alias="cf")
+    ] = Field(default=["Adults+"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")
     language_sorting: list[str | None] = Field(
         default=const.LANGUAGES_FILTERS, alias="ls"
@@ -231,6 +263,8 @@ class UserData(BaseModel):
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
     live_search_streams: bool = Field(default=False, alias="lss")
     contribution_streams: bool = Field(default=False, alias="cs")
+    show_language_country_flag: bool = Field(default=False, alias="slcf")
+    mdblist_config: MDBListConfig | None = Field(default=None, alias="mdb")
 
     @field_validator("selected_resolutions", mode="after")
     def validate_selected_resolutions(cls, v):
@@ -274,7 +308,7 @@ class UserData(BaseModel):
 
     @field_validator("certification_filter", mode="after")
     def validate_certification_filter(cls, v):
-        return v or ["Adults"]
+        return v or ["Adults+"]
 
     @field_validator("quality_filter", mode="after")
     def validate_quality_filter(cls, v):
@@ -311,6 +345,12 @@ class AuthorizeData(BaseModel):
 class MetaIdProjection(BaseModel):
     id: str = Field(alias="_id")
     type: str
+
+
+class MetaSearchProjection(BaseModel):
+    id: str = Field(alias="_id")
+    title: str
+    aka_titles: Optional[list[str]] = Field(default_factory=list)
 
 
 class TVMetaProjection(BaseModel):
@@ -358,15 +398,14 @@ class ScraperTask(BaseModel):
         "nowsports",
         "tamilultra",
         "sport_video",
-        "streamed",
         "tamilmv",
         "tamil_blasters",
-        "streambtw",
         "dlhd",
         "motogp_tgx",
         "arab_torrents",
         "wwe_tgx",
         "ufc_tgx",
+        "movies_tv_tgx",
     ]
     pages: int | None = 1
     start_page: int | None = 1
@@ -397,6 +436,7 @@ class ScraperTask(BaseModel):
         "english_hdrip",
         "english_series",
     ] = "all"
+    total_pages: int | None = None
     api_password: str = None
 
 
@@ -412,4 +452,58 @@ class KodiConfig(BaseModel):
 
 class BlockTorrent(BaseModel):
     info_hash: str
+    action: Literal["block", "delete"]
     api_password: str
+
+
+class CacheStatusRequest(BaseModel):
+    """Request model for checking cache status"""
+
+    service: Literal[
+        "realdebrid",
+        "premiumize",
+        "alldebrid",
+        "debridlink",
+        "offcloud",
+        "seedr",
+        "pikpak",
+        "torbox",
+        "easydebrid",
+    ]
+    info_hashes: list[str]
+
+
+class CacheStatusResponse(BaseModel):
+    """Response model for cache status"""
+
+    cached_status: dict[str, bool]
+
+
+class CacheSubmitRequest(BaseModel):
+    """Request model for submitting cached info hashes"""
+
+    service: Literal[
+        "realdebrid",
+        "premiumize",
+        "alldebrid",
+        "debridlink",
+        "offcloud",
+        "seedr",
+        "pikpak",
+        "torbox",
+        "easydebrid",
+    ]
+    info_hashes: list[str]
+
+
+class CacheSubmitResponse(BaseModel):
+    """Response model for cache submission"""
+
+    success: bool
+    message: str
+
+
+class MigrateID(BaseModel):
+    mediafusion_id: str
+    imdb_id: str
+    media_type: Literal["movie", "series"]

@@ -18,7 +18,7 @@ from db.models import (
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
 
-async def init():
+async def init(allow_index_dropping: bool = False):
     retries = 5
     for i in range(retries):
         try:
@@ -37,6 +37,7 @@ async def init():
                     TVStreams,
                 ],
                 multiprocessing_mode=True,
+                allow_index_dropping=allow_index_dropping,
             )
             logging.info("Database initialized successfully.")
             break

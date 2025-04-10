@@ -1,14 +1,10 @@
 import logging
-import logging
 import re
 from datetime import datetime
 
 from scrapy.exceptions import DropItem
 
-from db.models import (
-    Episode,
-)
-from utils.parser import convert_size_to_bytes
+from db.models import EpisodeFile
 
 
 class FormulaParserPipeline:
@@ -39,7 +35,7 @@ class FormulaParserPipeline:
                     r"Formula\s*(?P<Series>[123])"  # Series name with optional space
                     r"\.\s*(?P<Year>\d{4})"  # Year with flexible spacing
                     r"\.\s*R(?P<Round>\d+)"  # Round number with flexible spacing
-                    r"\.\s*(?P<Event>[^\s]+)"  # Event name without space before broadcaster
+                    r"\.\s*(?P<Event>\S+)"  # Event name without space before broadcaster
                     r"\s*(?P<Broadcaster>SkyF1HD|Sky Sports Main Event UHD|Sky Sports F1 UHD|Sky Sports Arena|V Sport Ultra HD|SkyF1)"  # Broadcaster without preceding dot
                     r"\.\s*(?P<Resolution>\d+P)"  # Resolution with flexible spacing
                 ),
@@ -184,7 +180,7 @@ class FormulaParserPipeline:
 
     def process_item(self, item, spider):
         uploader = item["uploader"]
-        title = re.sub(r"\.\.+", ".", item["torrent_name"])
+        title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.title_parser_functions[uploader](title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -313,7 +309,9 @@ class FormulaParserPipeline:
 
     def parse_egortech_description(self, torrent_data: dict):
         torrent_description = torrent_data.get("description")
-        file_details = torrent_data.get("file_details")
+        file_data = torrent_data.get("file_data")
+        if not file_data:
+            return
 
         quality_match = re.search(r"Quality:\s*(\S+)", torrent_description)
         codec_match = re.search(r"Video:\s*([A-Za-z0-9]+)", torrent_description)
@@ -340,15 +338,16 @@ class FormulaParserPipeline:
                 if item.strip()
             ]
 
-            for index, (event, file_detail) in enumerate(zip(events, file_details)):
+            for index, (event, file_detail) in enumerate(zip(events, file_data)):
                 data = self.episode_name_parser_egortech(
                     event, torrent_data["created_at"]
                 )
                 episodes.append(
-                    Episode(
+                    EpisodeFile(
+                        season_number=1,
                         episode_number=index + 1,
-                        filename=file_detail.get("file_name"),
-                        size=convert_size_to_bytes(file_detail.get("file_size")),
+                        filename=file_detail.get("filename"),
+                        size=file_detail["size"],
                         file_index=index,
                         title=data["title"],
                         released=data["date"],
@@ -356,17 +355,18 @@ class FormulaParserPipeline:
                 )
         else:
             # logic to parse episode details directly from file details when description does not contain "Contains:"
-            for index, file_detail in enumerate(file_details):
-                file_name = file_detail.get("file_name")
-                file_size = file_detail.get("file_size")
+            for index, file_detail in enumerate(file_data):
+                file_name = file_detail.get("filename")
                 data = self.episode_name_parser_egortech(
                     file_name, torrent_data["created_at"]
                 )
+
                 episodes.append(
-                    Episode(
+                    EpisodeFile(
+                        season_number=1,
                         episode_number=index + 1,
                         filename=file_name,
-                        size=convert_size_to_bytes(file_size),
+                        size=file_detail.get("size"),
                         file_index=index,
                         title=data["title"],
                         released=data["date"],
@@ -392,6 +392,10 @@ class FormulaParserPipeline:
         if torrent_description is None:
             return
 
+        file_data = torrent_data.get("file_data")
+        if not file_data:
+            return
+
         audio_section = re.search(r"Audios:\n(.+)", torrent_description)
 
         if audio_section:
@@ -402,9 +406,10 @@ class FormulaParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         torrent_data["episodes"] = [
-            Episode(
+            EpisodeFile(
+                season_number=1,
                 episode_number=1,
-                filename=torrent_data["file_details"][0].get("file_name"),
+                filename=file_data[0].get("filename"),
                 size=torrent_data.get("total_size"),
                 title=torrent_data.get("episode_name"),
                 released=torrent_data.get("created_at"),
@@ -414,6 +419,9 @@ class FormulaParserPipeline:
 
     def parse_smcgill1969_description(self, torrent_data: dict):
         torrent_description = torrent_data.get("description")
+        file_data = torrent_data.get("file_data")
+        if not file_data:
+            return
 
         codec_matches = re.findall(r"Codec ID\s*:\s*(\S+)", torrent_description)
         if codec_matches:
@@ -424,15 +432,15 @@ class FormulaParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         episodes = []
-        for index, file_detail in enumerate(torrent_data.get("file_details", [])):
-            file_name = file_detail.get("file_name")
-            file_size = file_detail.get("file_size")
+        for index, file_detail in enumerate(file_data):
+            file_name = file_detail.get("filename")
 
             episodes.append(
-                Episode(
+                EpisodeFile(
+                    season_number=1,
                     episode_number=index + 1,
                     filename=file_name,
-                    size=convert_size_to_bytes(file_size),
+                    size=file_detail.get("size"),
                     file_index=index,
                     title=" ".join(file_name.split(".")[1:-1]),
                     released=torrent_data.get("created_at"),

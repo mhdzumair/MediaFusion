@@ -47,3 +47,7 @@ msgstr ""
 msgctxt "#30007"
 msgid "Setup Failed. Please try again."
 msgstr ""
+
+msgctxt "#30008"
+msgid "Setup TMDB Helper Select"
+msgstr ""

@@ -4,11 +4,31 @@ import logging
 from urllib.parse import urlparse, urljoin
 
 import httpx
+from fastapi import Depends, HTTPException
+from fastapi.security import APIKeyHeader
 
 from db import schemas
+from db.config import settings
 from utils import const
-from utils.runtime_const import PRIVATE_CIDR
+from utils.network import is_private_ip
 from db.redis_database import REDIS_ASYNC_CLIENT
+
+# API Key Header for authentication
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def api_password_dependency(api_key: str = Depends(API_KEY_HEADER)):
+    """Validate the API password from header or throw exception"""
+    if not settings.api_password:
+        return "no_password_required"
+
+    if api_key != settings.api_password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "APIKey"},
+        )
+    return api_key
 
 
 def is_valid_url(url: str) -> bool:
@@ -17,7 +37,7 @@ def is_valid_url(url: str) -> bool:
 
 
 async def does_url_exist(url: str) -> bool:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
         try:
             response = await client.head(
                 url, timeout=10, headers=const.UA_HEADER, follow_redirects=True
@@ -43,7 +63,7 @@ async def validate_live_stream_url(
         return False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
         try:
             response = await client.head(
                 url, timeout=10, headers=headers, follow_redirects=True
@@ -240,20 +260,39 @@ def get_filter_certification_values(user_data: schemas.UserData) -> list[str]:
 
 def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
     """
-    Validate if the metadata has adult content based on the parent guide nudity status or if status is not available, based on certificates.
+    Validate if the metadata has adult content based on parent guide nudity status and certifications.
+    Returns False if the content should be filtered out based on user preferences.
     """
-    filter_certification_values = get_filter_certification_values(user_data)
-    if (
-        metadata.parent_guide_nudity_status
-        and metadata.parent_guide_nudity_status in user_data.nudity_filter
-    ):
+    # Strict policy for adult genres.
+    if metadata.genres and "Adult" in metadata.genres:
         return False
 
-    if metadata.parent_guide_certificates and any(
-        certificate in filter_certification_values
-        for certificate in metadata.parent_guide_certificates
+    # Skip validation if filters are disabled
+    if (
+        "Disable" in user_data.nudity_filter
+        and "Disable" in user_data.certification_filter
     ):
-        return False
+        return True
+
+    # Check nudity status filter
+    if "Disable" not in user_data.nudity_filter:
+        if metadata.parent_guide_nudity_status in user_data.nudity_filter:
+            return False
+
+    # Check certification filter
+    if "Disable" not in user_data.certification_filter:
+        filter_certification_values = get_filter_certification_values(user_data)
+
+        if "Unknown" in user_data.certification_filter:
+            # Filter out if certifications list is empty or doesn't exist
+            if not metadata.parent_guide_certificates:
+                return False
+
+        if metadata.parent_guide_certificates and any(
+            certificate in filter_certification_values
+            for certificate in metadata.parent_guide_certificates
+        ):
+            return False
 
     return True
 
@@ -309,7 +348,7 @@ async def validate_mediaflow_proxy_credentials(user_data: schemas.UserData) -> d
 
     if results["message"].startswith("RequestError"):
         parsed_url = urlparse(user_data.mediaflow_config.proxy_url)
-        if PRIVATE_CIDR.match(parsed_url.netloc):
+        if is_private_ip(parsed_url.netloc):
             # MediaFlow proxy URL is a private IP address
             return {
                 "status": "success",
@@ -329,4 +368,17 @@ async def validate_rpdb_token(user_data: schemas.UserData) -> dict:
     return await validate_service(
         url=validation_url,
         invalid_creds_message="Invalid RPDB API Key. Please check your RPDB API Key.",
+    )
+
+
+async def validate_mdblist_token(user_data: schemas.UserData) -> dict:
+    if not user_data.mdblist_config:
+        return {"status": "success", "message": "MDBList is not enabled."}
+
+    validation_url = (
+        f"https://api.mdblist.com/user?apikey={user_data.mdblist_config.api_key}"
+    )
+    return await validate_service(
+        url=validation_url,
+        invalid_creds_message="Invalid MDBList API Key. Please check your MDBList API Key.",
     )

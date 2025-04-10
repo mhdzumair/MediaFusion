@@ -3,16 +3,16 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-import aiohttp
 import httpx
 from pikpakapi import PikPakApi, PikpakException
 
+from db.config import settings
 from db.models import TorrentStreams
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
 from utils import crypto
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 async def get_torrent_file_by_info_hash(
@@ -123,6 +123,8 @@ async def find_file_in_folder_tree(
     my_pack_folder_id: str,
     info_hash: str,
     filename: str,
+    stream: TorrentStreams,
+    season: int | None,
     episode: int | None,
 ) -> dict | None:
     torrent_file = await get_torrent_file_by_info_hash(
@@ -137,7 +139,11 @@ async def find_file_in_folder_tree(
         files = await get_files_from_folder(pikpak, torrent_file["id"])
 
     file_index = await select_file_index_from_torrent(
-        {"files": files}, filename, episode
+        torrent_info={"files": files},
+        torrent_stream=stream,
+        filename=filename,
+        season=season,
+        episode=episode,
     )
     return files[file_index]
 
@@ -154,6 +160,7 @@ async def initialize_pikpak(user_data: UserData):
             httpx_client_args={
                 "transport": httpx.AsyncHTTPTransport(retries=3),
                 "timeout": 10,
+                "proxy": settings.requests_proxy_url,
             },
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"user_data": user_data},
@@ -165,6 +172,7 @@ async def initialize_pikpak(user_data: UserData):
             httpx_client_args={
                 "transport": httpx.AsyncHTTPTransport(retries=3),
                 "timeout": 10,
+                "proxy": settings.requests_proxy_url,
             },
             token_refresh_callback=store_pikpak_token_in_cache,
             token_refresh_callback_kwargs={"user_data": user_data},
@@ -182,7 +190,7 @@ async def initialize_pikpak(user_data: UserData):
                 "Failed to connect to PikPak. Please try again later.",
                 "debrid_service_down_error.mp4",
             )
-        except (aiohttp.ClientError, httpx.ReadTimeout):
+        except httpx.ReadTimeout:
             raise ProviderException(
                 "Failed to connect to PikPak. Please try again later.",
                 "debrid_service_down_error.mp4",
@@ -225,7 +233,7 @@ async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
     match torrent["message"]:
         case "Save failed, retry please":
             await pikpak.delete_tasks([torrent["id"]])
-        case "Storage space is not enough":
+        case "Storage space is not enough" | "Not enough storage space available":
             try:
                 await pikpak.delete_tasks([torrent["id"]])
             except PikpakException:
@@ -233,7 +241,10 @@ async def handle_torrent_error(pikpak: PikPakApi, torrent: dict):
             raise ProviderException(
                 "Not enough storage space available", "not_enough_space.mp4"
             )
-        case "You have reached the limits of free usage today":
+        case (
+            "You have reached the limits of free usage today"
+            | "The number of free transfers has been used up, continued use requires Premium"
+        ):
             try:
                 await pikpak.offline_task_retry(torrent["id"])
             except PikpakException:
@@ -264,12 +275,13 @@ async def retrieve_or_download_file(
     magnet_link: str,
     info_hash: str,
     stream: TorrentStreams,
+    season: int | None,
     episode: int | None,
     max_retries: int,
     retry_interval: int,
 ):
     selected_file = await find_file_in_folder_tree(
-        pikpak, my_pack_folder_id, info_hash, filename, episode
+        pikpak, my_pack_folder_id, info_hash, filename, stream, season, episode
     )
     if not selected_file:
         await free_up_space(pikpak, stream.size)
@@ -278,7 +290,7 @@ async def retrieve_or_download_file(
             pikpak, info_hash, max_retries, retry_interval
         )
         selected_file = await find_file_in_folder_tree(
-            pikpak, my_pack_folder_id, info_hash, filename, episode
+            pikpak, my_pack_folder_id, info_hash, filename, stream, season, episode
         )
         if selected_file is None:
             raise ProviderException(
@@ -326,6 +338,7 @@ async def get_video_url_from_pikpak(
     user_data: UserData,
     stream: TorrentStreams,
     filename: str,
+    season: int | None,
     episode: int | None,
     max_retries=1,
     retry_interval=0,
@@ -342,6 +355,7 @@ async def get_video_url_from_pikpak(
             magnet_link,
             info_hash,
             stream,
+            season,
             episode,
             max_retries,
             retry_interval,
@@ -349,10 +363,36 @@ async def get_video_url_from_pikpak(
 
         file_data = await pikpak.get_download_url(selected_file["id"])
 
-        if file_data.get("medias"):
-            return file_data["medias"][0]["link"]["url"]
-
+        media_link = next(
+            (
+                media["link"]["url"]
+                for media in file_data.get("medias", [])
+                if media.get("link") and media["link"].get("url")
+            ),
+            None,
+        )
+        if media_link:
+            # Validate the media link
+            if await validate_medialink(media_link):
+                return media_link
+            else:
+                raise ProviderException(
+                    "Invalid media link", "pikpak_invalid_media_link.mp4"
+                )
         return file_data["web_content_link"]
+
+
+async def validate_medialink(media_link: str) -> bool:
+    """Validates the media link by checking few bytes of the content."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            async with client.stream("GET", media_link) as response:
+                if response.status_code == 200:
+                    async for _ in response.aiter_raw(2):
+                        return True
+        except httpx.RequestError:
+            pass
+        return False
 
 
 async def update_pikpak_cache_status(

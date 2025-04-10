@@ -1,12 +1,15 @@
 import asyncio
+import logging
 import re
 from abc import abstractmethod
 from typing import List, Dict, Any, Optional
 
 from tenacity import RetryError
 
-from db.models import TorrentStreams, Season, Episode, MediaFusionMetaData
+from db.models import TorrentStreams, MediaFusionMetaData, EpisodeFile
+from db.schemas import UserData
 from scrapers.base_scraper import BaseScraper, ScraperError
+from streaming_providers.cache_helpers import store_cached_info_hashes
 from utils.parser import is_contain_18_plus_keywords
 
 
@@ -16,19 +19,25 @@ class StremioScraper(BaseScraper):
         self.base_url = base_url
         self.semaphore = asyncio.Semaphore(10)
 
+    def _generate_url(
+        self,
+        user_data,
+        metadata: MediaFusionMetaData,
+        catalog_type: str,
+        season: Optional[int] = None,
+        episode: Optional[int] = None,
+    ) -> str:
+        pass
+
     async def _scrape_and_parse(
         self,
+        user_data,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
     ) -> List[TorrentStreams]:
-        url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}.json"
-        job_name = f"{metadata.title}:{metadata.id}"
-        if catalog_type == "series":
-            url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
-            job_name += f":{season}:{episode}"
-
+        url = self._generate_url(user_data, metadata, catalog_type, season, episode)
         try:
             response = await self.make_request(url)
             response.raise_for_status()
@@ -41,7 +50,7 @@ class StremioScraper(BaseScraper):
 
             self.metrics.record_found_items(len(data.get("streams", [])))
             return await self.parse_response(
-                data, metadata, catalog_type, season, episode
+                data, user_data, metadata, catalog_type, season, episode
             )
         except (ScraperError, RetryError):
             self.metrics.record_error("request_failed")
@@ -57,6 +66,7 @@ class StremioScraper(BaseScraper):
     async def parse_response(
         self,
         response: Dict[str, Any],
+        user_data: UserData,
         metadata: MediaFusionMetaData,
         catalog_type: str,
         season: Optional[int] = None,
@@ -67,7 +77,19 @@ class StremioScraper(BaseScraper):
             for stream_data in response.get("streams", [])
         ]
         results = await asyncio.gather(*tasks)
-        return [stream for stream in results if stream is not None]
+        streams = []
+        cached_info_hashes = []
+        for stream, is_cached in results:
+            if stream:
+                streams.append(stream)
+                if is_cached:
+                    cached_info_hashes.append(stream.id)
+
+        logging.info(
+            f"Found {len(streams)} streams for {metadata.title} on {self.get_scraper_name()} with {len(cached_info_hashes)} cached streams for {user_data.streaming_provider.service}"
+        )
+        await store_cached_info_hashes(user_data.streaming_provider, cached_info_hashes)
+        return streams
 
     async def process_stream(
         self,
@@ -76,7 +98,7 @@ class StremioScraper(BaseScraper):
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> Optional[TorrentStreams]:
+    ) -> tuple[Optional[TorrentStreams], bool]:
         async with self.semaphore:
             try:
                 adult_content_field = self.get_adult_content_field(stream_data)
@@ -85,9 +107,12 @@ class StremioScraper(BaseScraper):
                     self.logger.warning(
                         f"Stream contains 18+ keywords: {adult_content_field}"
                     )
-                    return None
+                    return None, False
 
-                parsed_data = self.parse_stream_title(stream_data)
+                parsed_data, is_cached = self.parse_stream_title(stream_data)
+                if not parsed_data:
+                    self.metrics.record_skip("Invalid Data")
+                    return None, False
                 source = parsed_data["source"]
 
                 if self.get_scraper_name() not in source:
@@ -97,7 +122,7 @@ class StremioScraper(BaseScraper):
                         catalog_type,
                         parsed_data.get("torrent_name"),
                     ):
-                        return None
+                        return None, False
 
                 stream = self.create_torrent_stream(stream_data, parsed_data, metadata)
 
@@ -105,18 +130,18 @@ class StremioScraper(BaseScraper):
                     if not self.process_series_data(
                         stream, parsed_data, season, episode, stream_data
                     ):
-                        return None
+                        return None, False
 
                 # Record metrics for successful processing
                 self.metrics.record_processed_item()
                 self.metrics.record_quality(stream.quality)
                 self.metrics.record_source(source)
 
-                return stream
+                return stream, is_cached
             except Exception as e:
                 self.metrics.record_error("stream_processing_error")
                 self.logger.exception(f"Error processing stream: {e}")
-                return None
+                return None, False
 
     def create_torrent_stream(
         self,
@@ -125,18 +150,20 @@ class StremioScraper(BaseScraper):
         metadata: MediaFusionMetaData,
     ) -> TorrentStreams:
         return TorrentStreams(
-            id=stream_data["infoHash"],
+            id=parsed_data["info_hash"],
             meta_id=metadata.id,
             torrent_name=parsed_data["torrent_name"],
             size=parsed_data["size"],
-            filename=parsed_data["file_name"],
+            filename=parsed_data["filename"],
             file_index=stream_data.get("fileIdx"),
             languages=parsed_data["languages"],
-            resolution=parsed_data["metadata"].get("resolution"),
-            codec=parsed_data["metadata"].get("codec"),
-            quality=parsed_data["metadata"].get("quality"),
-            audio=parsed_data["metadata"].get("audio"),
+            resolution=parsed_data.get("resolution"),
+            codec=parsed_data.get("codec"),
+            quality=parsed_data.get("quality"),
+            audio=parsed_data.get("audio"),
+            hdr=parsed_data.get("hdr"),
             source=parsed_data["source"],
+            uploader=parsed_data.get("uploader"),
             catalog=[f"{self.cache_key_prefix}_streams"],
             seeders=parsed_data["seeders"],
             announce_list=[
@@ -154,18 +181,12 @@ class StremioScraper(BaseScraper):
         episode: int,
         stream_data: Dict[str, Any],
     ) -> bool:
-        if seasons := parsed_data["metadata"].get("seasons"):
-            if len(seasons) == 1:
-                season_number = seasons[0]
-            else:
-                self.metrics.record_skip("Multiple Seasons torrent")
-                return False
-        else:
-            season_number = season
+        season_number = season
 
-        if parsed_data["metadata"].get("episodes"):
+        if parsed_data.get("episodes"):
             episode_data = [
-                Episode(
+                EpisodeFile(
+                    season_number=season_number,
                     episode_number=episode_number,
                     file_index=(
                         stream_data.get("fileIdx")
@@ -173,20 +194,18 @@ class StremioScraper(BaseScraper):
                         else None
                     ),
                 )
-                for episode_number in parsed_data["metadata"]["episodes"]
+                for episode_number in parsed_data["episodes"]
             ]
         else:
             episode_data = [
-                Episode(
+                EpisodeFile(
+                    season_number=season_number,
                     episode_number=episode,
                     file_index=stream_data.get("fileIdx"),
                 )
             ]
 
-        stream.season = Season(
-            season_number=season_number,
-            episodes=episode_data,
-        )
+        stream.episode_files = episode_data
         stream.filename = None
         return True
 
@@ -205,7 +224,7 @@ class StremioScraper(BaseScraper):
         raise NotImplementedError
 
     @abstractmethod
-    def parse_stream_title(self, stream: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_stream_title(self, stream: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         raise NotImplementedError
 
     @abstractmethod

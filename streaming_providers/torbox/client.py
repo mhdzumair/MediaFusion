@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+import aiohttp
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -29,7 +31,7 @@ class Torbox(DebridClient):
                     "Download size too large for the user plan",
                     "not_enough_space.mp4",
                 )
-            case "ACTIVE_LIMIT" | "MONTHLY_LIMIT":
+            case "ACTIVE_LIMIT" | "MONTHLY_LIMIT" | "COOLDOWN_LIMIT":
                 raise ProviderException(
                     "Download limit exceeded",
                     "daily_download_limit.mp4",
@@ -44,17 +46,13 @@ class Torbox(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str] = None,
-        json: Optional[dict] = None,
         params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        **kwargs,
     ) -> dict:
         params = params or {}
-        url = self.BASE_URL + url
+        full_url = self.BASE_URL + url
         return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=full_url, params=params, **kwargs
         )
 
     async def add_magnet_link(self, magnet_link):
@@ -65,12 +63,36 @@ class Torbox(DebridClient):
             is_expected_to_fail=True,
         )
 
-        if response_data.get("detail") is False:
+        if response_data.get("error"):
+            await self._handle_service_specific_errors(response_data, 200)
             raise ProviderException(
                 f"Failed to add magnet link to Torbox {response_data}",
                 "transfer_error.mp4",
             )
         return response_data
+
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: Optional[str]):
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        response = await self._make_request(
+            "POST",
+            "/torrents/createtorrent",
+            data=data,
+            is_expected_to_fail=True,
+        )
+        if response.get("error"):
+            await self._handle_service_specific_errors(response, 200)
+
+            raise ProviderException(
+                f"Failed to add torrent file to Torbox {response.get('error')}",
+                "transfer_error.mp4",
+            )
+        return response
 
     async def get_user_torrent_list(self):
         response = await self._make_request(
@@ -103,19 +125,38 @@ class Torbox(DebridClient):
         response = await self.get_user_torrent_list()
         torrent_list = response.get("data", [])
         for torrent in torrent_list:
-            if torrent.get("hash", "") == info_hash:
+            if torrent.get("hash") == info_hash:
                 return torrent
         return {}
 
-    async def create_download_link(self, torrent_id, filename, user_ip):
+    async def get_queued_torrents(self):
+        response = await self._make_request(
+            "GET",
+            "/queued/getqueued",
+            params={"type": "torrent", "bypass_cache": "true"},
+        )
+        return response
+
+    async def create_download_link(
+        self, torrent_id: int, file_id: int, user_ip: Optional[str]
+    ) -> dict:
+        params = {
+            "token": self.token,
+            "torrent_id": torrent_id,
+            "file_id": file_id,
+        }
+        if user_ip:
+            params["user_ip"] = user_ip
         response = await self._make_request(
             "GET",
             "/torrents/requestdl",
-            params={"token": self.token, "torrent_id": torrent_id, "file_id": filename, "user_ip": user_ip},
+            params=params,
             is_expected_to_fail=True,
         )
-        if "successfully" in response.get("detail"):
+        if response.get("success"):
             return response
+
+        await self._handle_service_specific_errors(response, 200)
         raise ProviderException(
             f"Failed to create download link from Torbox {response}",
             "transfer_error.mp4",

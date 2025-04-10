@@ -32,12 +32,14 @@ from db.schemas import SortingOption
 from db.schemas import UserData
 from kodi.routes import kodi_router
 from metrics.routes import metrics_router
+from api.frontend_api import router as frontend_api_router
 from scrapers.routes import router as scrapers_router
 from scrapers.rpdb import update_rpdb_posters
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
 from streaming_providers.validator import validate_provider_credentials
-from utils import const, crypto, poster, torrent, wrappers
+from utils import const, poster, torrent, wrappers
+from utils.crypto import crypto_utils
 from utils.lock import (
     acquire_scheduler_lock,
     maintain_heartbeat,
@@ -52,6 +54,7 @@ from utils.runtime_const import (
 from utils.validation_helper import (
     validate_mediaflow_proxy_credentials,
     validate_rpdb_token,
+    validate_mdblist_token,
 )
 
 logging.basicConfig(
@@ -123,6 +126,7 @@ app.add_middleware(middleware.SecureLoggingMiddleware)
 app.mount("/static", StaticFiles(directory="resources"), name="static")
 
 
+# Keep the existing template-based routes for backward compatibility
 @app.get("/", tags=["home"])
 async def get_home(request: Request):
     return TEMPLATES.TemplateResponse(
@@ -141,18 +145,7 @@ async def get_home(request: Request):
 @app.get("/health", tags=["health"])
 @wrappers.exclude_rate_limit
 async def health():
-    start_time = asyncio.get_event_loop().time()
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.head("https://www.google.com", timeout=10) as response:
-                return {
-                    "status": "healthy",
-                    "status_code": response.status,
-                    "time": asyncio.get_event_loop().time() - start_time,
-                }
-        except Exception as e:
-            logging.error("Health check failed: %s", e)
-            raise HTTPException(status_code=503, detail="Health check failed.")
+    return {"status": "ok"}
 
 
 @app.get("/favicon.ico")
@@ -167,27 +160,51 @@ async def configure(
     request: Request,
     user_data: schemas.UserData = Depends(get_user_data),
     kodi_code: str = None,
+    secret_str: str = None,
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
+    configured_fields = []
+    mdblist_configured_lists = []
+    catalogs_data = const.CATALOG_DATA.copy()
     # Remove the password from the streaming provider
     if user_data.streaming_provider:
-        user_data.streaming_provider.password = None
-        user_data.streaming_provider.token = None
+        user_data.streaming_provider.password = "••••••••"
+        user_data.streaming_provider.token = "••••••••"
+        configured_fields.extend(["provider_token", "password"])
 
         if user_data.streaming_provider.qbittorrent_config:
-            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = None
-            user_data.streaming_provider.qbittorrent_config.webdav_password = None
+            user_data.streaming_provider.qbittorrent_config.qbittorrent_password = (
+                "••••••••"
+            )
+            user_data.streaming_provider.qbittorrent_config.webdav_password = "••••••••"
+            configured_fields.extend(["qbittorrent_password", "webdav_password"])
 
     # Remove the password from the mediaflow proxy
     if user_data.mediaflow_config:
-        user_data.mediaflow_config.api_password = None
+        user_data.mediaflow_config.api_password = "••••••••"
+        configured_fields.append("mediaflow_api_password")
+
+    # Check RPDB configuration
+    if user_data.rpdb_config:
+        user_data.rpdb_config.api_key = "••••••••"
+        configured_fields.append("rpdb_api_key")
+
+    # Check MDBList configuration
+    if user_data.mdblist_config:
+        # user_data.mdblist_config.api_key = "••••••••"
+        # configured_fields.append("mdblist_api_key")
+        for mdblist in user_data.mdblist_config.lists:
+            mdblist_configured_lists.append(mdblist.model_dump())
+            catalogs_data[f"mdblist_{mdblist.catalog_type}_{mdblist.id}"] = (
+                f"MDBList: {mdblist.title}"
+            )
 
     user_data.api_password = None
 
     # Prepare catalogs based on user preferences or default order
     sorted_catalogs = sorted(
-        const.CATALOG_DATA.items(),
+        catalogs_data.items(),
         key=lambda x: (
             user_data.selected_catalogs.index(x[0])
             if x[0] in user_data.selected_catalogs
@@ -224,6 +241,9 @@ async def configure(
             and not settings.is_public_instance,
             "kodi_code": kodi_code,
             "disabled_providers": settings.disabled_providers,
+            "configured_fields": configured_fields,
+            "secret_str": secret_str,
+            "mdblist_configured_lists": mdblist_configured_lists,
         },
     )
 
@@ -293,6 +313,20 @@ async def get_manifest(
 @app.get(
     "/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}&genre={genre}.json",
     response_model=public_schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}&genre={genre}.json",
+    response_model=schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/genre={genre}&skip={skip}.json",
+    response_model=schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
@@ -617,7 +651,11 @@ async def get_streams(
 
     if catalog_type == "movie":
         if video_id.startswith("dl"):
-            if video_id == f"dl{user_data.streaming_provider.service}":
+            service_name = video_id[2:]
+            if (
+                user_data.streaming_provider
+                and service_name == user_data.streaming_provider.service
+            ):
                 fetched_streams = [
                     schemas.Stream(
                         name=f"{settings.addon_name} {user_data.streaming_provider.service.title()} 🗑️💩🚨",
@@ -656,8 +694,13 @@ async def get_streams(
 
 
 @app.post("/encrypt-user-data", tags=["user_data"])
+@app.post("/encrypt-user-data/{existing_secret_str}", tags=["user_data"])
 @wrappers.rate_limit(30, 60 * 5, "user_data")
-async def encrypt_user_data(user_data: schemas.UserData, request: Request):
+async def encrypt_user_data(
+    user_data: schemas.UserData,
+    request: Request,
+    existing_secret_str: str | None = None,
+):
     async def _validate_all_config() -> dict:
         if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
             return {
@@ -678,6 +721,7 @@ async def encrypt_user_data(user_data: schemas.UserData, request: Request):
                 validate_provider_credentials(request, user_data),
                 validate_mediaflow_proxy_credentials(user_data),
                 validate_rpdb_token(user_data),
+                validate_mdblist_token(user_data),
             ]
 
             results = await asyncio.gather(*validation_tasks, return_exceptions=True)
@@ -698,12 +742,66 @@ async def encrypt_user_data(user_data: schemas.UserData, request: Request):
                 "message": f"Unexpected error during validation: {str(e)}",
             }
 
+    if existing_secret_str:
+        try:
+            existing_config = await crypto_utils.decrypt_user_data(existing_secret_str)
+        except ValueError:
+            existing_config = schemas.UserData()
+
+        if user_data.streaming_provider and existing_config.streaming_provider:
+            if user_data.streaming_provider.password == "••••••••":
+                user_data.streaming_provider.password = (
+                    existing_config.streaming_provider.password
+                )
+            if user_data.streaming_provider.token == "••••••••":
+                user_data.streaming_provider.token = (
+                    existing_config.streaming_provider.token
+                )
+
+            if user_data.streaming_provider.qbittorrent_config:
+                if (
+                    user_data.streaming_provider.qbittorrent_config.qbittorrent_password
+                    == "••••••••"
+                ):
+                    user_data.streaming_provider.qbittorrent_config.qbittorrent_password = (
+                        existing_config.streaming_provider.qbittorrent_config.qbittorrent_password
+                    )
+                if (
+                    user_data.streaming_provider.qbittorrent_config.webdav_password
+                    == "••••••••"
+                ):
+                    user_data.streaming_provider.qbittorrent_config.webdav_password = (
+                        existing_config.streaming_provider.qbittorrent_config.webdav_password
+                    )
+
+        if user_data.mediaflow_config and existing_config.mediaflow_config:
+            if user_data.mediaflow_config.api_password == "••••••••":
+                user_data.mediaflow_config.api_password = (
+                    existing_config.mediaflow_config.api_password
+                )
+
+        if user_data.rpdb_config and existing_config.rpdb_config:
+            if user_data.rpdb_config.api_key == "••••••••":
+                user_data.rpdb_config.api_key = existing_config.rpdb_config.api_key
+
     validation_result = await _validate_all_config()
     if validation_result["status"] == "error":
         return validation_result
 
-    encrypted_str = crypto.encrypt_user_data(user_data)
+    encrypted_str = await crypto_utils.process_user_data(user_data)
     return {"status": "success", "encrypted_str": encrypted_str}
+
+
+def raise_poster_error(meta_id: str, error_message: str):
+    if meta_id.startswith("tt"):
+        # Fall back to Cinemeta poster
+        return RedirectResponse(
+            f"https://live.metahub.space/poster/small/{meta_id}/img", status_code=302
+        )
+    raise HTTPException(
+        status_code=404,
+        detail=f"Failed to create poster for {meta_id}: {error_message}",
+    )
 
 
 @app.get("/poster/{catalog_type}/{mediafusion_id}.jpg", tags=["poster"])
@@ -731,10 +829,10 @@ async def get_poster(
         mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
 
     if not mediafusion_data:
-        raise HTTPException(status_code=404, detail="MediaFusion ID not found.")
+        return raise_poster_error(mediafusion_id, "MediaFusion ID not found.")
 
     if mediafusion_data.is_poster_working is False or not mediafusion_data.poster:
-        raise HTTPException(status_code=404, detail="Poster not found.")
+        return raise_poster_error(mediafusion_id, "Poster not found.")
 
     try:
         image_byte_io = await poster.create_poster(mediafusion_data)
@@ -746,23 +844,24 @@ async def get_poster(
 
         return StreamingResponse(image_byte_io, media_type="image/jpeg")
     except asyncio.TimeoutError:
-        logging.error("Poster generation timeout.")
-        raise HTTPException(status_code=404, detail="Poster generation timeout.")
+        return raise_poster_error(mediafusion_id, "Poster generation timeout.")
     except aiohttp.ClientResponseError as e:
-        logging.error(f"Failed to create poster: {e}, status: {e.status}")
-        if e.status != 404:
-            raise HTTPException(status_code=404, detail="Failed to create poster.")
+        if e.status == 404 and catalog_type != "events":
+            mediafusion_data.is_poster_working = False
+            await mediafusion_data.save()
+        return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
+    except (ConnectionResetError, ValueError):
+        mediafusion_data.is_poster_working = False
+        await mediafusion_data.save()
+        return raise_poster_error(mediafusion_id, "Poster generation failed}")
     except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
-        logging.error(f"Failed to create poster: {e}")
+        return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
     except Exception as e:
         logging.error(
             f"Unexpected error while creating poster: {mediafusion_data.poster} {e}",
             exc_info=True,
         )
-    mediafusion_data.is_poster_working = False
-    if catalog_type != "events":
-        await mediafusion_data.save()
-    raise HTTPException(status_code=404, detail="Failed to create poster.")
+        return raise_poster_error(mediafusion_id, f"Unexpected error: {e}")
 
 
 @app.get(
@@ -821,15 +920,38 @@ async def download_info(
         if stream.url and stream.url.startswith(streaming_provider_path)
     ]
 
+    if video_id.startswith("tt") and user_data.rpdb_config:
+        _poster = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{video_id}.jpg?fallback=true"
+    else:
+        _poster = f"{settings.poster_host_url}/poster/{catalog_type}/{video_id}.jpg"
+    background = (
+        metadata.background
+        if metadata.background
+        else f"{settings.host_url}/static/images/background.jpg"
+    )
+
+    # Prepare context with all necessary data
     context = {
         "title": metadata.title,
         "year": metadata.year,
-        "poster": metadata.poster,
+        "logo_url": settings.logo_url,
+        "poster": _poster,
+        "background": background,
         "description": metadata.description,
         "streams": downloadable_streams,
         "catalog_type": catalog_type,
         "season": season,
         "episode": episode,
+        "video_id": video_id,
+        "secret_str": secret_str,
+        "settings": settings,
+        "series_data": (
+            metadata.model_dump_json(
+                include={"episodes": {"__all__": {"season_number", "episode_number"}}}
+            )
+            if catalog_type == "series"
+            else None
+        ),
     }
 
     return TEMPLATES.TemplateResponse(
@@ -846,3 +968,6 @@ app.include_router(scrapers_router, prefix="/scraper", tags=["scraper"])
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
 app.include_router(kodi_router, prefix="/kodi", tags=["kodi"])
+
+
+app.include_router(frontend_api_router, prefix="/api/v1", tags=["frontend"])

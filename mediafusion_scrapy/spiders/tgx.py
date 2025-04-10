@@ -1,7 +1,9 @@
 import random
 import re
+from copy import deepcopy
 from datetime import datetime
 
+import PTT
 import scrapy
 from scrapy_playwright.page import PageMethod
 
@@ -25,9 +27,12 @@ class TgxSpider(scrapy.Spider):
     keyword_patterns: re.Pattern
     scraped_info_hash_key: str
 
-    def __init__(self, scrape_all: str = "False", *args, **kwargs):
+    def __init__(
+        self, scrape_all: str = "False", total_pages: int = None, *args, **kwargs
+    ):
         super(TgxSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
+        self.total_pages = total_pages
         self.redis = REDIS_ASYNC_CLIENT
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -102,6 +107,9 @@ class TgxSpider(scrapy.Spider):
                     int(last_page_number) if last_page_number.isdigit() else 0
                 )
 
+                if self.total_pages:
+                    last_page_number = min(last_page_number, self.total_pages)
+
                 # Generate requests for all pages
                 for page_number in range(1, last_page_number + 1):
                     next_page_url = (
@@ -117,6 +125,9 @@ class TgxSpider(scrapy.Spider):
                 last_page_number = (
                     int(last_page_number) if last_page_number.isdigit() else 0
                 )
+
+                if self.total_pages:
+                    last_page_number = min(last_page_number, self.total_pages)
 
                 # Generate requests for all pages
                 for page_number in range(1, last_page_number + 1):
@@ -168,20 +179,23 @@ class TgxSpider(scrapy.Spider):
 
             torrent_data = {
                 "info_hash": info_hash,
+                "torrent_title": torrent_name,
                 "torrent_name": torrent_name,
                 "torrent_link": torrent_link,
                 "magnet_link": magnet_link,
                 "background": self.background_image,
                 "logo": self.logo_image,
                 "seeders": seeders,
-                "torrent_page_link": torrent_page_link,
+                "website": torrent_page_link,
                 "unique_id": tgx_unique_id,
                 "source": "TorrentGalaxy",
+                "catalog_source": "tgx",
                 "uploader": uploader_profile_name,
                 "announce_list": announce_list,
                 "catalog": self.catalog,
                 "scraped_info_hash_key": self.scraped_info_hash_key,
                 "imdb_id": imdb_id,
+                "expected_sources": ["TorrentGalaxy", "Contribution Stream"],
             }
 
             if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
@@ -208,27 +222,47 @@ class TgxSpider(scrapy.Spider):
                             ),
                         ],
                         "torrent_data": torrent_data,
+                        "torrent_page_link": torrent_page_link,
                     },
                 )
 
-    def parse_torrent_details(self, response):
-        torrent_data = response.meta["torrent_data"]
-
-        # Extracting file details and sizes
-        file_details = []
-        for row in response.xpath('//table[contains(@class, "table-striped")]//tr'):
-            file_name = row.xpath('td[@class="table_col1"]/text()').get()
-            file_size = row.xpath('td[@class="table_col2"]/text()').get()
-            if file_name and file_size:
-                file_details.append({"file_name": file_name, "file_size": file_size})
-        if not file_details:
+    async def parse_torrent_details(self, response):
+        if (
+            response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]")
+            or "galaxyfence.php" in response.url
+        ):
             self.logger.warning(
-                f"File details not found for {torrent_data['torrent_name']}. Retrying"
+                f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
             )
             yield self.retry_request(response)
             return
 
-        torrent_data["file_details"] = file_details
+        torrent_data = deepcopy(response.meta["torrent_data"])
+
+        # Extracting file details and sizes if available
+        file_data = []
+        file_list = response.xpath(
+            '//button[contains(@class, "flist")]//em/text()'
+        ).get()
+        file_count = int(file_list.strip("()")) if file_list else 0
+        for row in response.xpath('//table[contains(@class, "table-striped")]//tr'):
+            file_name = row.xpath('td[@class="table_col1"]/text()').get()
+            file_size = row.xpath('td[@class="table_col2"]/text()').get()
+            if file_name and file_size:
+                parsed_data = PTT.parse_title(file_name)
+                file_data.append(
+                    {
+                        "filename": file_name,
+                        "size": convert_size_to_bytes(file_size),
+                        "index": len(file_data) + 1,
+                        "seasons": parsed_data.get("seasons"),
+                        "episodes": parsed_data.get("episodes"),
+                        "title": parsed_data.get("title"),
+                    }
+                )
+
+        if file_count == len(file_data):
+            torrent_data["file_data"] = file_data
 
         cover_image_url = response.xpath(
             "//div[contains(@class, 'container-fluid')]/center//img[contains(@class, 'img-responsive')]/@data-src"
@@ -276,6 +310,14 @@ class TgxSpider(scrapy.Spider):
         if language:
             torrent_data["languages"] = [language.strip()]
 
+        # Extracting type
+        title_type = response.xpath(
+            "//div[b='Category:']/following-sibling::div/a/text()"
+        ).get()
+        if title_type:
+            title_type = title_type.strip().lower()
+            torrent_data["type"] = "series" if title_type == "tv" else "movie"
+
         yield torrent_data
 
     def handle_failure(self, failure):
@@ -284,8 +326,9 @@ class TgxSpider(scrapy.Spider):
 
     def retry_request(self, request):
         retry_count = request.meta.get("retry_count", 0)
+        torrent_page_link = request.meta.get("torrent_page_link")
         if retry_count < 3:  # Set your retry limit
-            new_url = request.url.replace(
+            new_url = torrent_page_link.replace(
                 request.url.split("/")[2], random.choice(self.allowed_domains)
             )
             self.logger.info(f"Retrying with new URL: {new_url}")
@@ -309,6 +352,7 @@ class TgxSpider(scrapy.Spider):
                     ],
                     "torrent_data": request.meta["torrent_data"],
                     "retry_count": retry_count + 1,
+                    "torrent_page_link": torrent_page_link,
                 },
             )
         else:
@@ -320,7 +364,6 @@ class FormulaTgxSpider(TgxSpider):
     name = "formula_tgx"
     uploader_profiles = [
         "egortech",
-        "F1Carreras",
         "smcgill1969",
     ]
     catalog = ["formula_racing"]
@@ -332,7 +375,7 @@ class FormulaTgxSpider(TgxSpider):
 
     custom_settings = {
         "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
             "mediafusion_scrapy.pipelines.FormulaParserPipeline": 200,
             "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
         },
@@ -356,12 +399,12 @@ class MotoGPTgxSpider(TgxSpider):
 
     keyword_patterns = re.compile(r"MotoGP[ .+]*", re.IGNORECASE)
     scraped_info_hash_key = "motogp_tgx_scraped_info_hash"
-    background_image = random.choice(SPORTS_ARTIFACTS["MotoGP"]["background"])
-    logo_image = random.choice(SPORTS_ARTIFACTS["MotoGP"]["logo"])
+    background_image = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["background"])
+    logo_image = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["logo"])
 
     custom_settings = {
         "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
             "mediafusion_scrapy.pipelines.MotoGPParserPipeline": 200,
             "mediafusion_scrapy.pipelines.EventSeriesStorePipeline": 300,
         },
@@ -381,7 +424,7 @@ class BaseEventSpider(TgxSpider):
     def get_custom_settings(pipeline):
         return {
             "ITEM_PIPELINES": {
-                "mediafusion_scrapy.pipelines.TorrentDuplicatesPipeline": 100,
+                "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
                 f"mediafusion_scrapy.pipelines.{pipeline}": 200,
                 "mediafusion_scrapy.pipelines.MovieStorePipeline": 300,
             },
@@ -447,3 +490,41 @@ class UFCTGXSpider(BaseEventSpider):
             *args,
             **kwargs,
         )
+
+
+class MoviesTVTgxSpider(TgxSpider):
+    name = "movies_tv_tgx"
+    search_queries = [
+        # Movies
+        "c3=1&c46=1&c45=1&c42=1&c4=1&c1=1&search=&lang=0&nox=2&nox=1&page=0",
+        # # TV Series
+        "c41=1&c5=1&c11=1&c6=1&search=&lang=0&nox=2&nox=1&page=0",
+    ]
+    catalog = []
+    background_image = None  # Will be fetched from TMDB/IMDB
+    logo_image = None
+
+    # Pattern to exclude unwanted content
+    keyword_patterns = re.compile(
+        r"^(?!.*(?:WWE|UFC|Formula|MotoGP)).*$",  # Excludes sports content
+        re.IGNORECASE,
+    )
+    scraped_info_hash_key = "movies_tv_tgx_scraped_info_hash"
+
+    custom_settings = {
+        "ITEM_PIPELINES": {
+            "mediafusion_scrapy.pipelines.MagnetDownloadAndParsePipeline": 100,
+            "mediafusion_scrapy.pipelines.MovieTVParserPipeline": 200,
+            "mediafusion_scrapy.pipelines.CatalogParsePipeline": 300,
+            "mediafusion_scrapy.pipelines.MovieStorePipeline": 400,
+            "mediafusion_scrapy.pipelines.SeriesStorePipeline": 500,
+        },
+        "PLAYWRIGHT_BROWSER_TYPE": "chromium",
+        "PLAYWRIGHT_CDP_URL": settings.playwright_cdp_url,
+        "DOWNLOAD_HANDLERS": {
+            "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+            "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+        },
+        "PLAYWRIGHT_MAX_CONTEXTS": 2,
+        "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 3,
+    }

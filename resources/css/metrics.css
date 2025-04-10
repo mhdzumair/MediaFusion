@@ -6,11 +6,19 @@ body, html {
     color: white;
     width: 100%;
     height: 100%;
-    background-image: url('https://dl.strem.io/addon-background.jpg');
+    background-image: url('/static/images/background.jpg');
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
     overflow-y: auto;
+}
+
+h4 {
+    color: #ffffff;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid rgba(74, 71, 163, 0.5);
+    padding-bottom: 0.5rem;
 }
 
 .config-container {
@@ -38,7 +46,111 @@ body, html {
 }
 
 .chart-section {
-    margin-bottom: 2rem;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.chart-section:hover {
+    transform: translateY(-5px);
+}
+
+.week-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 20px 0;
+    padding: 10px;
+    background: rgba(74, 71, 163, 0.2);
+    border-radius: 8px;
+}
+
+.week-selector button {
+    background: #4a47a3;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 130px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.week-selector button:hover {
+    background: #5b58b4;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.week-selector button:active {
+    transform: translateY(0);
+}
+
+.week-selector input[type="date"] {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    min-width: 150px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.week-selector input[type="date"]:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.week-selector input[type="date"]:focus {
+    outline: none;
+    border-color: #4a47a3;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Style the calendar icon */
+.week-selector input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.7;
+    cursor: pointer;
+}
+
+.week-selector input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
+.date-info {
+    background: rgba(74, 71, 163, 0.4);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 1rem;
+    margin: 15px 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    margin: 20px 0;
+}
+
+.chart-wrapper canvas {
+    position: absolute;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .chart-container {
@@ -49,19 +161,6 @@ body, html {
     position: relative;
 }
 
-.chart-wrapper {
-    position: relative;
-    width: 100%;
-    height: 0;
-    padding-bottom: 50%;
-}
-
-.chart-wrapper canvas {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-}
-
 .logo {
     max-width: 300px;
     display: block;
@@ -69,9 +168,14 @@ body, html {
 }
 
 .card {
-    background: #4a47a3;
-    position: relative;
-    text-align: center;
+    background: linear-gradient(145deg, #4a47a3, #2d2a6a);
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
 }
 
 .card-text {
@@ -178,6 +282,18 @@ body, html {
 
 
 @media (max-width: 768px) {
+    .chart-wrapper {
+        height: 300px;
+    }
+
+    .chart-section {
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    .card-text {
+        font-size: 1.2rem;
+    }
     .config-container {
         padding: 10px;
     }
@@ -185,6 +301,17 @@ body, html {
     .chart-container {
         margin-bottom: 15px;
         padding: 10px;
+    }
+
+    .week-selector {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .week-selector button,
+    .week-selector input[type="date"] {
+        width: 100%;
+        min-width: unset;
     }
 
     h3 {

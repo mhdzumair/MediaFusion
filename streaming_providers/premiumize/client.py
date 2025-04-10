@@ -1,6 +1,8 @@
-from typing import Any, Optional
+from typing import Optional
 from urllib.parse import quote_plus
 from uuid import uuid4
+
+import aiohttp
 
 from db.config import settings
 from streaming_providers.debrid_client import DebridClient
@@ -16,34 +18,33 @@ class Premiumize(DebridClient):
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
 
+    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+        self.user_ip = user_ip
+        super().__init__(token)
+
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
     async def _make_request(
-        self,
-        method: str,
-        url: str,
-        data: Optional[dict | str] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        self, method: str, url: str, params: Optional[dict] = None, **kwargs
     ) -> dict | list:
         params = params or {}
         if self.is_private_token:
             params["apikey"] = self.token
         return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
+            method=method, url=url, params=params, **kwargs
         )
 
     async def initialize_headers(self):
+        self.headers = {}
         if self.token:
             access_token = self.decode_token_str(self.token)
             if access_token:
-                self.headers = {"Authorization": f"Bearer {access_token}"}
+                self.headers["Authorization"] = f"Bearer {access_token}"
             else:
                 self.is_private_token = True
+        if self.user_ip:
+            self.headers["X-Forwarded-For"] = self.user_ip
 
     def get_authorization_url(self) -> str:
         state = uuid4().hex
@@ -67,6 +68,28 @@ class Premiumize(DebridClient):
             "POST",
             f"{self.BASE_URL}/transfer/create",
             data={"src": magnet_link, "folder_id": folder_id},
+        )
+
+    async def add_torrent_file(
+        self, torrent_file: bytes, torrent_name: Optional[str], folder_id: str = None
+    ):
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        data.add_field("folder_id", folder_id)
+        return await self._make_request(
+            "POST",
+            f"{self.BASE_URL}/transfer/create",
+            data={"file": torrent_file, "folder_id": folder_id},
+        )
+
+    async def create_direct_download(self, magnet_link: str):
+        return await self._make_request(
+            "POST", f"{self.BASE_URL}/transfer/directdl", data={"src": magnet_link}
         )
 
     async def create_folder(self, name, parent_id=None):
@@ -124,32 +147,6 @@ class Premiumize(DebridClient):
 
     async def disable_access_token(self):
         pass
-
-    async def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
-        torrent_list_response = await self.get_transfer_list()
-        if torrent_list_response.get("status") != "success":
-            if torrent_list_response.get("message") == "Not logged in.":
-                raise ProviderException(
-                    "Premiumize is not logged in.", "invalid_token.mp4"
-                )
-            raise ProviderException(
-                "Failed to get torrent info from Premiumize", "transfer_error.mp4"
-            )
-
-        available_torrents = torrent_list_response["transfers"]
-        for torrent in available_torrents:
-            src = torrent["src"]
-            if src.startswith("http"):
-                async with self.session.head(src) as response:
-                    if response.status != 200:
-                        continue
-                    magnet_link = response.headers.get("Content-Disposition")
-            elif "magnet" in src:
-                magnet_link = src
-            else:
-                continue
-            if magnet_link and info_hash in magnet_link:
-                return torrent
 
     async def get_account_info(self):
         return await self._make_request("GET", f"{self.BASE_URL}/account/info")

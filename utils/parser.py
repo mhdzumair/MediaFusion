@@ -2,17 +2,19 @@ import asyncio
 import functools
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional, List, Any
-
 import math
 import re
+from datetime import datetime, timezone
+from os.path import basename
+from typing import Optional, List, Any
+from urllib.parse import quote
 
 from thefuzz import fuzz
 
 from db.config import settings
+from db.enums import TorrentType
 from db.models import TorrentStreams, TVStreams
-from db.schemas import Stream, StreamingProvider, UserData, SortingOption
+from db.schemas import Stream, UserData, SortingOption
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import (
     get_cached_status,
@@ -20,15 +22,18 @@ from streaming_providers.cache_helpers import (
 )
 from utils import const
 from utils.config import config_manager
-from utils.const import STREAMING_PROVIDERS_SHORT_NAMES
+from utils.const import STREAMING_PROVIDERS_SHORT_NAMES, CERTIFICATION_MAPPING
 from utils.network import encode_mediaflow_proxy_url
-from utils.runtime_const import ADULT_CONTENT_KEYWORDS, TRACKERS, MANIFEST_TEMPLATE
+from utils.runtime_const import TRACKERS, MANIFEST_TEMPLATE, ADULT_PARSER
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 
 async def filter_and_sort_streams(
-    streams: list[TorrentStreams], user_data: UserData, user_ip: str | None = None
-) -> list[TorrentStreams]:
+    streams: list[TorrentStreams],
+    user_data: UserData,
+    stremio_video_id: str,
+    user_ip: str | None = None,
+) -> tuple[list[TorrentStreams], dict]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
     quality_filter_set = set(
@@ -44,7 +49,30 @@ async def filter_and_sort_streams(
 
     # Step 1: Filter streams and add normalized attributes
     filtered_streams = []
+    filtered_reasons = {
+        "Requires Streaming Provider": 0,
+        "Requires Private Tracker Support": 0,
+        "Resolution Not Selected": 0,
+        "Size Limit Exceeded": 0,
+        "Quality Not Selected": 0,
+        "Language Not Selected": 0,
+        "Strict 18+ Keyword Filter": 0,
+        "No Cached Streams": 0,
+    }
+
     for stream in streams:
+        # Skip private torrents if streaming provider is not supported
+        if stream.torrent_type != TorrentType.PUBLIC:
+            if not user_data.streaming_provider:
+                filtered_reasons["Requires Streaming Provider"] += 1
+                continue
+            if (
+                stream.torrent_type != TorrentType.WEB_SEED
+                and user_data.streaming_provider.service
+                not in const.SUPPORTED_PRIVATE_TRACKER_STREAMING_PROVIDERS
+            ):
+                filtered_reasons["Requires Private Tracker Support"] += 1
+                continue
         # Create a copy of the stream model to avoid modifying the original
         stream = stream.model_copy()
         # Add normalized attributes as dynamic properties
@@ -60,26 +88,29 @@ async def filter_and_sort_streams(
         stream.cached = False
 
         if stream.filtered_resolution not in selected_resolutions_set:
+            filtered_reasons["Resolution Not Selected"] += 1
             continue
 
         if stream.size > user_data.max_size:
+            filtered_reasons["Size Limit Exceeded"] += 1
             continue
 
         if stream.filtered_quality not in quality_filter_set:
+            filtered_reasons["Quality Not Selected"] += 1
             continue
 
-        if "language" in user_data.torrent_sorting_priority and not any(
-            lang in language_filter_set for lang in stream.filtered_languages
-        ):
+        if not any(lang in language_filter_set for lang in stream.filtered_languages):
+            filtered_reasons["Language Not Selected"] += 1
             continue
 
         if is_contain_18_plus_keywords(stream.torrent_name):
+            filtered_reasons["Strict 18+ Keyword Filter"] += 1
             continue
 
         filtered_streams.append(stream)
 
     if not filtered_streams:
-        return []
+        return filtered_streams, filtered_reasons
 
     # Step 2: Update cache status based on provider
     if user_data.streaming_provider:
@@ -105,8 +136,11 @@ async def filter_and_sort_streams(
             cache_update_function = mapper.CACHE_UPDATE_FUNCTIONS.get(service)
             if cache_update_function:
                 try:
-                    await cache_update_function(
-                        streams=uncached_streams, user_data=user_data, user_ip=user_ip
+                    service_name = await cache_update_function(
+                        streams=uncached_streams,
+                        user_data=user_data,
+                        user_ip=user_ip,
+                        stremio_video_id=stremio_video_id,
                     )
                     # Store only the cached ones in Redis
                     cached_info_hashes = [
@@ -114,7 +148,9 @@ async def filter_and_sort_streams(
                     ]
                     if cached_info_hashes:
                         await store_cached_info_hashes(
-                            user_data.streaming_provider, cached_info_hashes
+                            user_data.streaming_provider,
+                            cached_info_hashes,
+                            service_name,
                         )
                 except Exception as error:
                     logging.exception(
@@ -122,7 +158,13 @@ async def filter_and_sort_streams(
                     )
 
         if user_data.streaming_provider.only_show_cached_streams:
-            filtered_streams = [stream for stream in filtered_streams if stream.cached]
+            cached_filtered_streams = [
+                stream for stream in filtered_streams if stream.cached
+            ]
+            if not cached_filtered_streams:
+                filtered_reasons["No Cached Streams"] = len(filtered_streams)
+                return filtered_streams, filtered_reasons
+            filtered_streams = cached_filtered_streams
 
     # Step 3: Dynamically sort streams based on user preferences
     def dynamic_sort_key(torrent_stream: TorrentStreams) -> tuple:
@@ -194,7 +236,7 @@ async def filter_and_sort_streams(
             limited_streams.append(stream)
             streams_count_per_resolution[stream.filtered_resolution] = count + 1
 
-    return limited_streams
+    return limited_streams, filtered_reasons
 
 
 async def parse_stream_data(
@@ -209,15 +251,37 @@ async def parse_stream_data(
     if not streams:
         return []
 
-    streams = await filter_and_sort_streams(streams, user_data, user_ip)
-
-    # Precompute constant values
-    show_full_torrent_name = user_data.show_full_torrent_name
     streaming_provider_name = (
         STREAMING_PROVIDERS_SHORT_NAMES.get(user_data.streaming_provider.service, "P2P")
         if user_data.streaming_provider
         else "P2P"
     )
+    addon_name = f"{settings.addon_name} {streaming_provider_name}"
+
+    stremio_video_id = (
+        f"{streams[0].meta_id}:{season}:{episode}" if is_series else streams[0].meta_id
+    )
+    streams, filtered_reasons = await filter_and_sort_streams(
+        streams, user_data, stremio_video_id, user_ip
+    )
+
+    if not streams:
+        reason_data = [
+            f"{count} x {reason}"
+            for reason, count in filtered_reasons.items()
+            if count > 0
+        ]
+        reasons = "\n".join(reason_data)
+        return [
+            create_exception_stream(
+                settings.addon_name,
+                f"🚫 Streams Found\n⚙️ Filtered by your configuration preferences\n{reasons}",
+                "filtered_no_streams.mp4",
+            )
+        ]
+
+    # Precompute constant values
+    show_full_torrent_name = user_data.show_full_torrent_name
     has_streaming_provider = user_data.streaming_provider is not None
     download_via_browser = (
         has_streaming_provider and user_data.streaming_provider.download_via_browser
@@ -229,102 +293,129 @@ async def parse_stream_data(
             user_data.mediaflow_config
             and user_data.mediaflow_config.proxy_debrid_streams
         ):
-            streaming_provider_name += " 🕵🏼‍♂️"
+            addon_name += " 🕵🏼‍♂️"
 
         base_proxy_url_template = (
-            f"{settings.host_url}/streaming_provider/{secret_str}/stream?info_hash={{}}"
+            f"{settings.host_url}/streaming_provider/{secret_str}/stream/{{}}"
         )
 
     stream_list = []
     for stream_data in streams:
-        episode_data = stream_data.get_episode(season, episode) if is_series else None
-        if is_series and not episode_data:
+        episode_variants = (
+            stream_data.get_episodes(season, episode) if is_series else [None]
+        )
+        if is_series and not episode_variants:
             continue
 
-        if episode_data:
-            file_name = episode_data.filename
-            file_index = episode_data.file_index
-        else:
-            file_name = stream_data.filename
-            file_index = stream_data.file_index
+        for episode_data in episode_variants:
+            if episode_data:
+                file_name = episode_data.filename
+                file_index = episode_data.file_index
+            else:
+                file_name = stream_data.filename
+                file_index = stream_data.file_index
 
-        if show_full_torrent_name:
-            torrent_name = (
-                f"{stream_data.torrent_name}/{episode_data.title or episode_data.filename or ''}"
-                if episode_data
-                else stream_data.torrent_name
+            # make sure file_name is basename
+            file_name = basename(file_name) if file_name else None
+
+            if show_full_torrent_name:
+                torrent_name = (
+                    f"{stream_data.torrent_name} ┈➤ {episode_data.filename}"
+                    if episode_data and episode_data.filename
+                    else stream_data.torrent_name
+                )
+                torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(
+                    ".", " "
+                )
+            else:
+                torrent_name = None
+
+            # Compute quality_detail
+            quality_detail = " ".join(
+                filter(
+                    None,
+                    [
+                        f"🎨 {'|'.join(stream_data.hdr)}" if stream_data.hdr else None,
+                        f"📺 {stream_data.quality}" if stream_data.quality else None,
+                        f"🎞️ {stream_data.codec}" if stream_data.codec else None,
+                        (
+                            f"🎵 {'|'.join(stream_data.audio)}"
+                            if stream_data.audio
+                            else None
+                        ),
+                    ],
+                )
             )
-            torrent_name = "📂 " + torrent_name.replace(".torrent", "").replace(
-                ".", " "
+
+            resolution = (
+                stream_data.resolution.upper() if stream_data.resolution else "N/A"
             )
-        else:
-            torrent_name = None
-
-        # Compute quality_detail
-        quality_detail = " ".join(
-            filter(
-                None,
-                [
-                    f"📺 {stream_data.quality}" if stream_data.quality else None,
-                    f"🎞️ {stream_data.codec}" if stream_data.codec else None,
-                    f"🎵 {stream_data.audio}" if stream_data.audio else None,
-                ],
+            streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
+            seeders_info = (
+                f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
             )
-        )
+            if episode_data and episode_data.size:
+                file_size = episode_data.size
+                size_info = f"{convert_bytes_to_readable(file_size)} / {convert_bytes_to_readable(stream_data.size)}"
+            else:
+                file_size = stream_data.size
+                size_info = convert_bytes_to_readable(file_size)
 
-        resolution = stream_data.resolution.upper() if stream_data.resolution else "N/A"
-        streaming_provider_status = "⚡️" if stream_data.cached else "⏳"
-        seeders_info = (
-            f"👤 {stream_data.seeders}" if stream_data.seeders is not None else None
-        )
-        if episode_data and episode_data.size:
-            file_size = episode_data.size
-            size_info = f"{convert_bytes_to_readable(file_size)} / {convert_bytes_to_readable(stream_data.size)}"
-        else:
-            file_size = stream_data.size
-            size_info = convert_bytes_to_readable(file_size)
+            if user_data.show_language_country_flag:
+                languages = filter(
+                    None,
+                    set(
+                        [
+                            const.LANGUAGE_COUNTRY_FLAGS.get(lang)
+                            for lang in stream_data.languages
+                        ]
+                    ),
+                )
+            else:
+                languages = stream_data.languages
 
-        languages = (
-            f"🌐 {' + '.join(stream_data.languages)}" if stream_data.languages else None
-        )
-        source_info = f"🔗 {stream_data.source}"
+            languages = f"🌐 {' + '.join(languages)}" if stream_data.languages else None
+            source_info = f"🔗 {stream_data.source}"
+            if stream_data.uploader:
+                source_info += f" 🧑‍💻 {stream_data.uploader}"
 
-        description = "\n".join(
-            filter(
-                None,
-                [
-                    torrent_name if show_full_torrent_name else quality_detail,
-                    " ".join(filter(None, [size_info, seeders_info])),
-                    languages,
-                    source_info,
-                ],
+            description = "\n".join(
+                filter(
+                    None,
+                    [
+                        torrent_name if show_full_torrent_name else quality_detail,
+                        " ".join(filter(None, [size_info, seeders_info])),
+                        languages,
+                        source_info,
+                    ],
+                )
             )
-        )
 
-        stream_details = {
-            "name": f"{settings.addon_name} {streaming_provider_name} {resolution} {streaming_provider_status}",
-            "description": description,
-            "behaviorHints": {
-                "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
-                "filename": file_name or stream_data.torrent_name,
-                "videoSize": file_size,
-            },
-        }
+            stream_details = {
+                "name": f"{addon_name} {resolution} {streaming_provider_status}",
+                "description": description,
+                "behaviorHints": {
+                    "bingeGroup": f"{settings.addon_name.replace(' ', '-')}-{quality_detail}-{resolution}",
+                    "filename": file_name or stream_data.torrent_name,
+                    "videoSize": file_size,
+                },
+            }
 
-        if has_streaming_provider:
-            stream_details["url"] = base_proxy_url_template.format(stream_data.id) + (
-                f"&season={season}&episode={episode}" if episode_data else ""
-            )
-            stream_details["behaviorHints"]["notWebReady"] = True
-        else:
-            stream_details["infoHash"] = stream_data.id
-            stream_details["fileIdx"] = file_index
-            stream_details["sources"] = [
-                f"tracker:{tracker}"
-                for tracker in (stream_data.announce_list or TRACKERS)
-            ] + [f"dht:{stream_data.id}"]
+            if has_streaming_provider:
+                stream_details["url"] = base_proxy_url_template.format(stream_data.id)
+                if episode_data:
+                    stream_details["url"] += f"/{season}/{episode}"
+                if file_name:
+                    stream_details["url"] += f"/{quote(file_name)}"
+            else:
+                stream_details["infoHash"] = stream_data.id
+                stream_details["fileIdx"] = file_index
+                stream_details["sources"] = [
+                    f"tracker:{tracker}"
+                    for tracker in (stream_data.announce_list or TRACKERS)
+                ] + [f"dht:{stream_data.id}"]
 
-        stream_list.append(Stream(**stream_details))
+            stream_list.append(Stream(**stream_details))
 
     if stream_list and download_via_browser:
         download_url = f"{settings.host_url}/download/{secret_str}/{'series' if is_series else 'movie'}/{streams[0].meta_id}"
@@ -524,6 +615,8 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
     streaming_provider_name = None
     streaming_provider_short_name = None
     enable_watchlist_catalogs = False
+    addon_name = settings.addon_name
+
     if user_data.streaming_provider:
         streaming_provider_name = user_data.streaming_provider.service
         streaming_provider_short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(
@@ -532,9 +625,22 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         enable_watchlist_catalogs = (
             user_data.streaming_provider.enable_watchlist_catalogs
         )
+        addon_name += f" {streaming_provider_short_name}"
+
+    if user_data.mediaflow_config:
+        addon_name += " 🕵🏼‍♂️"
+
+    mdblist_data = {}
+    if user_data.mdblist_config:
+        mdblist_data = {
+            f"mdblist_{mdblist.catalog_type}_{mdblist.id}": mdblist.model_dump(
+                include={"title", "catalog_type"}
+            )
+            for mdblist in user_data.mdblist_config.lists
+        }
 
     manifest_data = {
-        "addon_name": settings.addon_name,
+        "addon_name": addon_name,
         "version": settings.version,
         "contact_email": settings.contact_email,
         "description": settings.description,
@@ -546,6 +652,7 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         "enable_watchlist_catalogs": enable_watchlist_catalogs,
         "selected_catalogs": user_data.selected_catalogs,
         "genres": genres,
+        "mdblist_data": mdblist_data,
     }
 
     manifest_json = MANIFEST_TEMPLATE.render(manifest_data)
@@ -561,7 +668,10 @@ def is_contain_18_plus_keywords(title: str) -> bool:
     """
     Check if the title contains 18+ keywords to filter out adult content.
     """
-    return ADULT_CONTENT_KEYWORDS.search(title) is not None
+    if not settings.adult_content_filter_in_torrent_title:
+        return False
+
+    return ADULT_PARSER.parse(title).get("adult", False)
 
 
 def calculate_max_similarity_ratio(
@@ -584,3 +694,79 @@ def calculate_max_similarity_ratio(
     max_similarity_ratio = max([title_similarity_ratio] + aka_similarity_ratios)
 
     return max_similarity_ratio
+
+
+def get_certification_level(certificates: list) -> str:
+    """
+    Get the highest certification level from a list of certificates.
+    Returns the category name (All Ages, Children, etc.) based on the highest restriction level.
+    """
+    if not certificates:
+        return "Unknown"
+
+    # Order of restriction levels from lowest to highest
+    levels = ["All Ages", "Children", "Parental Guidance", "Teens", "Adults", "Adults+"]
+
+    highest_level = "Unknown"
+    for certificate in certificates:
+        for level in levels:
+            if certificate in CERTIFICATION_MAPPING[level]:
+                # If current level is more restrictive, update highest_level
+                if (
+                    levels.index(level) > levels.index(highest_level)
+                    if highest_level in levels
+                    else -1
+                ):
+                    highest_level = level
+
+    return highest_level
+
+
+def get_age_rating_emoji(certification_level: str) -> str:
+    """
+    Get appropriate emoji for certification level
+    """
+    emoji_mapping = {
+        "All Ages": "👨‍👩‍👧‍👦",
+        "Children": "👶",
+        "Parental Guidance": "👨‍👩‍👧‍👦",
+        "Teens": "👱",
+        "Adults": "🔞",
+        "Adults+": "🔞",
+        "Unknown": "❓",
+    }
+    return emoji_mapping.get(certification_level, "❓")
+
+
+def get_nudity_status_emoji(nudity_status: str) -> str:
+    """
+    Get appropriate emoji for nudity status
+    """
+    emoji_mapping = {
+        "None": "👕",
+        "Mild": "⚠️",
+        "Moderate": "🔞",
+        "Severe": "⛔",
+    }
+    return emoji_mapping.get(nudity_status, "❓")
+
+
+def create_content_warning_message(metadata) -> str:
+    """
+    Create a formatted warning message with emojis based on movie metadata
+    """
+    cert_level = get_certification_level(metadata.parent_guide_certificates)
+    cert_emoji = get_age_rating_emoji(cert_level)
+    nudity_emoji = get_nudity_status_emoji(metadata.parent_guide_nudity_status)
+
+    message = (
+        f"⚠️ Content Warning ⚠️\n"
+        f"This content may not be suitable for your preferences:\n"
+        f"Certification: {cert_emoji} {cert_level}\n"
+        f"Nudity Status: {nudity_emoji} {metadata.parent_guide_nudity_status}"
+    )
+
+    if "Adult" in metadata.genres:
+        message += "\n🔞 Genre: Adult (Strict 18+ Filter Applied)"
+
+    return message

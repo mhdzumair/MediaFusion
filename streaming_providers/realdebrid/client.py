@@ -41,19 +41,14 @@ class RealDebrid(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
-        is_return_none: bool = False,
-        is_expected_to_fail: bool = False,
-        retry_count: int = 0,
+        data: Optional[dict | bytes] = None,
+        **kwargs,
     ) -> dict:
-        if method == "POST" and self.user_ip:
+        if method in ["POST", "PUT"] and self.user_ip:
             data = data or {}
-            data["ip"] = self.user_ip
-        return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
-        )
+            if isinstance(data, dict):
+                data["ip"] = self.user_ip
+        return await super()._make_request(method=method, url=url, data=data, **kwargs)
 
     async def initialize_headers(self):
         if self.token:
@@ -135,6 +130,13 @@ class RealDebrid(DebridClient):
     async def add_magnet_link(self, magnet_link):
         return await self._make_request(
             "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
+        )
+
+    async def add_torrent_file(self, torrent_file: bytes):
+        return await self._make_request(
+            "PUT",
+            f"{self.BASE_URL}/torrents/addTorrent",
+            data=torrent_file,
         )
 
     async def get_active_torrents(self):

@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+import aiohttp
+
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -8,6 +10,31 @@ class DebridLink(DebridClient):
     BASE_URL = "https://debrid-link.com/api/v2"
     OAUTH_URL = "https://debrid-link.com/api/oauth"
     OPENSOURCE_CLIENT_ID = "RyrV22FOg30DsxjYPziRKA"
+
+    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+        super().__init__(token)
+        self.user_ip = user_ip
+        self.is_private_token = False
+
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[dict] = None,
+        json: Optional[dict] = None,
+        params: Optional[dict] = None,
+        **kwargs,
+    ) -> dict | list:
+        if self.user_ip:
+            if data:
+                data["ip"] = self.user_ip
+            elif json:
+                json["ip"] = self.user_ip
+            elif params:
+                params["ip"] = self.user_ip
+        return await super()._make_request(
+            method=method, url=url, data=data, json=json, params=params, **kwargs
+        )
 
     @staticmethod
     def _handle_error_message(error_message):
@@ -109,6 +136,27 @@ class DebridLink(DebridClient):
             self._handle_error_message(response.get("error"))
             raise ProviderException(
                 f"Failed to add magnet link to Debrid-Link: {response.get('error')}",
+                "transfer_error.mp4",
+            )
+        return response.get("value", {})
+
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: Optional[str]):
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            torrent_file,
+            filename=torrent_name,
+            content_type="application/x-bittorrent",
+        )
+        response = await self._make_request(
+            "POST",
+            f"{self.BASE_URL}/seedbox/add",
+            data={"file": torrent_file},
+        )
+        if response.get("error"):
+            self._handle_error_message(response.get("error"))
+            raise ProviderException(
+                f"Failed to add torrent file to Debrid-Link: {response.get('error')}",
                 "transfer_error.mp4",
             )
         return response.get("value", {})
