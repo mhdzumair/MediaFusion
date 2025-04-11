@@ -13,6 +13,9 @@ from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from utils import crypto
+from utils.crypto import encrypt_data
+from utils import runtime_const
+from db.redis_database import REDIS_ASYNC_CLIENT
 
 
 class CircuitBreakerOpenException(Exception):
@@ -311,17 +314,23 @@ def get_request_namespace(request: Request) -> str:
     """
     Extract the namespace from the request URL.
     """
+    if runtime_const.SERVER_NAMESPACE:
+        return runtime_const.SERVER_NAMESPACE
+
     host = request.url.hostname
     if "elfhosted.com" not in host:
+        runtime_const.SERVER_NAMESPACE = "mediafusion"
         return "mediafusion"
 
     subdomain = host.split(".")[0]
     parts = subdomain.rsplit("-mediafusion")
     if len(parts) == 1:
         # public namespace
+        runtime_const.SERVER_NAMESPACE = "mediafusion"
         return "mediafusion"
 
     namespace = f"tenant-{parts[0]}"
+    runtime_const.SERVER_NAMESPACE = namespace
     return namespace
 
 
