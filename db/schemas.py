@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
 from db.config import settings
 from db.enums import NudityStatus
-from db.models import TorrentStreams
+# Removed TorrentStreams import
 from utils import const
 
 
@@ -130,71 +130,9 @@ class RPDBConfig(BaseModel):
         populate_by_name = True
 
 
-class StreamingProvider(BaseModel):
-    service: Literal[
-        "realdebrid",
-        "seedr",
-        "debridlink",
-        "alldebrid",
-        "offcloud",
-        "pikpak",
-        "torbox",
-        "premiumize",
-        "qbittorrent",
-        "stremthru",
-        "easydebrid",
-    ] = Field(alias="sv")
-    stremthru_store_name: (
-        Literal[
-            "realdebrid",
-            "debridlink",
-            "alldebrid",
-            "torbox",
-            "premiumize",
-        ]
-        | None
-    ) = Field(default=None, alias="stsn")
-    url: HttpUrl | None = Field(default=None, alias="u")
-    token: str | None = Field(default=None, alias="tk")
-    email: str | None = Field(default=None, alias="em")
-    password: str | None = Field(default=None, alias="pw")
-    enable_watchlist_catalogs: bool = Field(default=True, alias="ewc")
-    qbittorrent_config: QBittorrentConfig | None = Field(default=None, alias="qbc")
-    download_via_browser: bool = Field(default=False, alias="dvb")
-    only_show_cached_streams: bool = Field(default=False, alias="oscs")
+# Removed StreamingProvider class
 
-    @model_validator(mode="after")
-    def validate_token_or_username_password(self) -> "StreamingProvider":
-        if self.service in settings.disabled_providers:
-            raise ValueError(
-                f"The streaming provider '{self.service}' has been disabled by the administrator"
-            )
-
-        # validating the token or (email and password) or qbittorrent_config
-        required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
-            self.service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
-        )
-
-        # check if the required fields are present
-        for field in required_fields:
-            if getattr(self, field, None) is None:
-                raise ValueError(f"{field} is required")
-
-        return self
-
-    class Config:
-        extra = "ignore"
-        populate_by_name = True
-
-
-class SortingOption(BaseModel):
-    key: str = Field(alias="k")
-    direction: Literal["asc", "desc"] = Field(default="desc", alias="d")
-
-    class Config:
-        extra = "ignore"
-        populate_by_name = True
-
+# Removed SortingOption class
 
 class MDBListItem(BaseModel):
     id: int = Field(alias="i")
@@ -223,22 +161,15 @@ class MDBListConfig(BaseModel):
 
 
 class UserData(BaseModel):
-    streaming_provider: StreamingProvider | None = Field(default=None, alias="sp")
+    # Removed streaming_provider field
     selected_catalogs: list[str] = Field(alias="sc", default_factory=list)
-    selected_resolutions: list[str | None] = Field(
-        default=const.RESOLUTIONS, alias="sr"
-    )
+    # Removed selected_resolutions field
     enable_catalogs: bool = Field(default=True, alias="ec")
     enable_imdb_metadata: bool = Field(default=False, alias="eim")
-    max_size: int | str | float = Field(default=math.inf, alias="ms")
-    max_streams_per_resolution: int = Field(default=10, alias="mspr")
-    show_full_torrent_name: bool = Field(default=True, alias="sftn")
-    torrent_sorting_priority: list[SortingOption] = Field(
-        default_factory=lambda: [
-            SortingOption(key=k) for k in const.TORRENT_SORTING_PRIORITY
-        ],
-        alias="tsp",
-    )
+    # Removed max_size field
+    # Removed max_streams_per_resolution field
+    # Removed show_full_torrent_name field
+    # Removed torrent_sorting_priority field
     nudity_filter: list[NudityStatus] = Field(default=[NudityStatus.SEVERE], alias="nf")
     certification_filter: list[
         Literal[
@@ -253,54 +184,18 @@ class UserData(BaseModel):
         ]
     ] = Field(default=["Adults+"], alias="cf")
     api_password: str | None = Field(default=None, alias="ap")
-    language_sorting: list[str | None] = Field(
-        default=const.LANGUAGES_FILTERS, alias="ls"
-    )
-    quality_filter: list[str] = Field(
-        default=list(const.QUALITY_GROUPS.keys()), alias="qf"
-    )
+    # Removed language_sorting field
+    # Removed quality_filter field
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
-    live_search_streams: bool = Field(default=False, alias="lss")
-    contribution_streams: bool = Field(default=False, alias="cs")
-    show_language_country_flag: bool = Field(default=False, alias="slcf")
+    # Removed live_search_streams field
+    # Removed contribution_streams field
+    # Removed show_language_country_flag field
     mdblist_config: MDBListConfig | None = Field(default=None, alias="mdb")
 
-    @field_validator("selected_resolutions", mode="after")
-    def validate_selected_resolutions(cls, v):
-        # validating the selected resolutions
-        for resolution in v:
-            if resolution not in const.RESOLUTIONS:
-                raise ValueError("Invalid resolution")
-        return v
-
-    @field_validator("max_size", mode="before")
-    def parse_max_size(cls, v):
-        if isinstance(v, int):
-            return v
-        elif v == "inf":
-            return math.inf
-        if v.isdigit():
-            return int(v)
-        raise ValueError("Invalid max_size")
-
-    @field_validator("torrent_sorting_priority", mode="before")
-    def validate_torrent_sorting_priority(cls, v):
-        # Validate the sorting priority
-        for priority in v:
-            if isinstance(priority, dict):
-                key = priority.get("k", priority.get("key"))
-                if key not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
-                    raise ValueError(f"Invalid priority {key}")
-            elif isinstance(priority, str):
-                if priority not in const.TORRENT_SORTING_PRIORITY_OPTIONS:
-                    raise ValueError(f"Invalid priority {priority}")
-
-        if isinstance(v, list):
-            # Handle string items (old format)
-            if v and isinstance(v[0], str):
-                return [SortingOption(key=item) for item in v]
-        return v
+    # Removed validate_selected_resolutions validator
+    # Removed parse_max_size validator
+    # Removed validate_torrent_sorting_priority validator
 
     @field_validator("nudity_filter", mode="after")
     def validate_nudity_filter(cls, v):
@@ -310,28 +205,10 @@ class UserData(BaseModel):
     def validate_certification_filter(cls, v):
         return v or ["Adults+"]
 
-    @field_validator("quality_filter", mode="after")
-    def validate_quality_filter(cls, v):
-        for quality in v:
-            if quality not in const.QUALITY_GROUPS:
-                raise ValueError("Invalid quality")
-        return v
-
-    @field_validator("language_sorting", mode="after")
-    def validate_language_sorting(cls, v):
-        for language in v:
-            if language not in const.SUPPORTED_LANGUAGES:
-                raise ValueError("Invalid language")
-        return v
-
-    def is_sorting_option_present(self, key: str) -> bool:
-        return any(sort.key == key for sort in self.torrent_sorting_priority)
-
-    def get_sorting_direction(self, key: str) -> str:
-        for sort in self.torrent_sorting_priority:
-            if sort.key == key:
-                return sort.direction
-        return "desc"
+    # Removed validate_quality_filter validator
+    # Removed validate_language_sorting validator
+    # Removed is_sorting_option_present method
+    # Removed get_sorting_direction method
 
     class Config:
         extra = "ignore"
@@ -468,7 +345,7 @@ class CacheStatusRequest(BaseModel):
         "seedr",
         "pikpak",
         "torbox",
-        "easydebrid",
+        # Removed easydebrid
     ]
     info_hashes: list[str]
 
@@ -491,7 +368,7 @@ class CacheSubmitRequest(BaseModel):
         "seedr",
         "pikpak",
         "torbox",
-        "easydebrid",
+        # Removed easydebrid
     ]
     info_hashes: list[str]
 

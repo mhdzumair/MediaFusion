@@ -29,25 +29,21 @@ from db.models import (
     SeriesEpisode,
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
-from db.schemas import Stream, TorrentStreamsList
+from db.schemas import Stream # Removed TorrentStreamsList import
 from scrapers.dlhd import dlhd_schedule_service
 from scrapers.mdblist import initialize_mdblist_scraper
-from scrapers.scraper_tasks import run_scrapers, meta_fetcher
-from streaming_providers.cache_helpers import store_cached_info_hashes
+from scrapers.scraper_tasks import meta_fetcher # Removed run_scrapers import
+# Removed store_cached_info_hashes import
 from utils import crypto
 from utils.const import (
     USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
     USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
 )
 from utils.lock import acquire_redis_lock, release_redis_lock
-from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
+from utils.network import CircuitBreaker # Removed batch_process_with_circuit_breaker
 from utils.parser import (
-    fetch_downloaded_info_hashes,
-    parse_stream_data,
     parse_tv_stream_data,
     calculate_max_similarity_ratio,
-    create_exception_stream,
-    create_content_warning_message,
 )
 from utils.validation_helper import (
     validate_parent_guide_nudity,
@@ -100,37 +96,15 @@ async def get_meta_list(
         catalog = "contribution_stream"
     poster_path = f"{settings.poster_host_url}/poster/{catalog_type}/"
 
-    # Handle watchlist case first
-    if is_watchlist_catalog:
-        downloaded_info_hashes = await fetch_downloaded_info_hashes(user_data, user_ip)
-        if not downloaded_info_hashes:
-            return []
+    # Removed watchlist logic as it depends on streaming providers
+    # if is_watchlist_catalog:
+    #     ... (removed code) ...
+    # else: # Always use regular catalog query now
 
-        # Store cached info hashes
-        await store_cached_info_hashes(
-            user_data.streaming_provider, downloaded_info_hashes
-        )
-
-        # First get meta_ids from TorrentStreams
-        meta_ids = await TorrentStreams.distinct(
-            "meta_id",
-            {"_id": {"$in": downloaded_info_hashes}, "is_blocked": {"$ne": True}},
-        )
-
-        if not meta_ids:
-            return []
-
-        # Now use these meta_ids in the main query
-        match_filter = {
-            "_id": {"$in": meta_ids},
-            "type": catalog_type,
-            "total_streams": {"$gt": 0},
-        }
-    else:
-        # Regular catalog query
-        match_filter = {
-            "type": catalog_type,
-            "catalog_stats": {
+    # Regular catalog query
+    match_filter = {
+        "type": catalog_type,
+        "catalog_stats": {
                 "$elemMatch": {"catalog": catalog, "total_streams": {"$gt": 0}}
             },
         }
@@ -470,201 +444,10 @@ async def get_cached_torrent_streams(
             ex=1800,
         )
 
-    return streams
-
-
-async def get_streams_base(
-    user_data,
-    secret_str: str,
-    video_id: str,
-    metadata,
-    content_type: str,
-    content_catalogs: list[str],
-    user_ip: str | None,
-    background_tasks: BackgroundTasks,
-    season: int | None = None,
-    episode: int | None = None,
-) -> list[Stream]:
-    """
-    Base function for fetching streams for both movies and series.
-
-    Args:
-        user_data: User data containing preferences
-        secret_str: Secret string for authentication
-        video_id: ID of the video content
-        metadata: Metadata for the content
-        content_type: Type of content ("movie" or "series")
-        content_catalogs: List of supported catalogs for the content
-        user_ip: User's IP address
-        background_tasks: Background tasks manager
-        season: Season number (for series only)
-        episode: Episode number (for series only)
-    """
-    # Handle special case for streaming provider deletion
-    if video_id.startswith("dl"):
-        if not video_id.endswith(user_data.streaming_provider.service):
-            return []
-        return [
-            schemas.Stream(
-                name=f"MediaFusion {user_data.streaming_provider.service.title()} 🗑️💩",
-                description="🚨💀⚠️\nDelete all files in streaming provider",
-                url=f"{settings.host_url}/streaming_provider/{secret_str}/delete_all",
-            )
-        ]
-
-    if not metadata:
-        return []
-
-    # Check content appropriateness
-    if validate_parent_guide_nudity(metadata, user_data) is False:
-        return [
-            create_exception_stream(
-                settings.addon_name,
-                create_content_warning_message(metadata),
-                "inappropriate_content.mp4",
-            )
-        ]
-
-    # Create user feeds for supported catalogs
-    user_feeds = []
-    if video_id.startswith("mf") and any(
-        catalog_data.catalog in content_catalogs
-        for catalog_data in metadata.catalog_stats
-    ):
-        user_feeds = [
-            schemas.Stream(
-                name=settings.addon_name,
-                description=f"🔄 Migrate {video_id} to IMDb ID",
-                externalUrl=f"{settings.host_url}/scraper/?action=migrate_id&mediafusion_id={video_id}&meta_type={content_type}",
-            )
-        ]
-
-    # Handle stream caching and live search
-    live_search_streams = user_data.live_search_streams and video_id.startswith("tt")
-    cache_key_parts = [video_id]
-    if content_type == "series":
-        cache_key_parts.extend([str(season), str(episode)])
-
-    cache_key = f"torrent_streams:{':'.join(cache_key_parts)}"
-    lock_key = f"{cache_key}_lock" if live_search_streams else None
-    redis_lock = None
-
-    if lock_key:
-        _, redis_lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
-
-    # Get cached streams
-    cached_streams = await get_cached_torrent_streams(
-        cache_key,
-        video_id,
-        season,
-        episode,
-    )
-
-    # Handle live search and stream updates
-    if live_search_streams:
-        new_streams = await run_scrapers(
-            user_data=user_data,
-            metadata=metadata,
-            catalog_type=content_type,
-            season=season,
-            episode=episode,
-        )
-        all_streams = list(set(cached_streams).union(new_streams))
-
-        if new_streams:
-            await REDIS_ASYNC_CLIENT.delete(cache_key)
-            background_tasks.add_task(
-                store_new_torrent_streams, new_streams, redis_lock=redis_lock
-            )
-        else:
-            await release_redis_lock(redis_lock)
-    else:
-        all_streams = cached_streams
-
-    # Parse and return results
-    parsed_results = await parse_stream_data(
-        all_streams,
-        user_data,
-        secret_str,
-        season,
-        episode,
-        user_ip=user_ip,
-        is_series=(content_type == "series"),
-    )
-    return parsed_results + user_feeds
-
-
-async def get_movie_streams(
-    user_data,
-    secret_str: str,
-    video_id: str,
-    user_ip: str | None,
-    background_tasks: BackgroundTasks,
-) -> list[Stream]:
-    """Get streams for a movie."""
-    movie_metadata = await get_movie_data_by_id(video_id)
-    return await get_streams_base(
-        user_data=user_data,
-        secret_str=secret_str,
-        video_id=video_id,
-        metadata=movie_metadata,
-        content_type="movie",
-        content_catalogs=USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS,
-        user_ip=user_ip,
-        background_tasks=background_tasks,
-    )
-
-
-async def get_series_streams(
-    user_data,
-    secret_str: str,
-    video_id: str,
-    season: int,
-    episode: int,
-    user_ip: str | None,
-    background_tasks: BackgroundTasks,
-) -> list[Stream]:
-    """Get streams for a series episode."""
-    series_metadata = await get_series_data_by_id(video_id)
-    return await get_streams_base(
-        user_data=user_data,
-        secret_str=secret_str,
-        video_id=video_id,
-        metadata=series_metadata,
-        content_type="series",
-        content_catalogs=USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS,
-        user_ip=user_ip,
-        background_tasks=background_tasks,
-        season=season,
-        episode=episode,
-    )
-
-
-async def store_new_torrent_streams(
-    streams: list[TorrentStreams] | set[TorrentStreams], redis_lock=None
-):
-    if not streams:
-        return
-    bulk_writer = BulkWriter()
-
-    for stream in streams:
-        try:
-            existing_stream = await TorrentStreams.get(stream.id)
-            if existing_stream:
-                update_data = {"seeders": stream.seeders, "updated_at": datetime.now()}
-                await existing_stream.update(Set(update_data), bulk_writer=bulk_writer)
-                logging.info("Updated stream %s for %s", stream.id, stream.meta_id)
-            else:
-                await TorrentStreams.insert(stream)
-        except DuplicateKeyError:
-            logging.warning(
-                "Duplicate stream found: %s for %s", stream.id, stream.meta_id
-            )
-
-    await bulk_writer.commit()
-    if redis_lock:
-        await release_redis_lock(redis_lock)
-
+# Removed get_streams_base function
+# Removed get_movie_streams function
+# Removed get_series_streams function
+# Removed store_new_torrent_streams function
 
 async def get_tv_streams(video_id: str, namespace: str, user_data) -> list[Stream]:
     tv_streams = await TVStreams.find(
@@ -1708,11 +1491,11 @@ async def update_metadata(imdb_ids: list[str], metadata_type: str):
                 )
                 update_data["episodes"] = updated_episodes
 
-        # Update stream-related metadata
-        stream_metadata = await update_meta_stream(
-            meta_id, metadata_type, is_update_data_only=True
-        )
-        update_data.update(stream_metadata)
+        # Removed update_meta_stream call
+        # stream_metadata = await update_meta_stream(
+        #     meta_id, metadata_type, is_update_data_only=True
+        # )
+        # update_data.update(stream_metadata)
 
         # Update database entries with the new data
         await MediaFusionMetaData.get_motor_collection().update_one(

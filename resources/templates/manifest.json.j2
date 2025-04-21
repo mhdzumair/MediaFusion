@@ -12,11 +12,6 @@
   "resources": [
     {% if enable_catalogs or enable_watchlist_catalogs %}"catalog",{% endif %}
     {
-      "name": "stream",
-      "types": ["movie", "series", "tv", "events"],
-      "idPrefixes": ["tt", "mf", "dl"]
-    },
-    {
       "name": "meta",
       "types": ["movie", "series", "tv", "events"],
       "idPrefixes": [{% if enable_imdb_metadata %}"tt", {% endif %}"mf", "dl"]
