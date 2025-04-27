@@ -1,11 +1,14 @@
 from db import schemas
-
+from db.enums import MediaType
 
 async def update_rpdb_posters(
-    metas: schemas.Metas, user_data: schemas.UserData, catalog_type: str
+    metas: schemas.Metas, user_data: schemas.UserData, catalog_type: MediaType
 ) -> schemas.Metas:
     """Update multiple meta items with RPDB posters in an optimized way."""
-    if not user_data.rpdb_config or catalog_type not in ["movie", "series"]:
+    if not user_data.rpdb_config or catalog_type not in [
+        MediaType.MOVIE,
+        MediaType.SERIES,
+    ]:
         return metas
 
     rpdb_poster_base = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{{}}.jpg?fallback=true"

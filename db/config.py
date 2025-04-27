@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     # Database and Cache Settings
     mongo_uri: str
+    postgres_uri: str
     db_max_connections: int = 50
     redis_url: str = "redis://redis-service:6379"
     redis_max_connections: int = 100
