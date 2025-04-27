@@ -2,7 +2,7 @@
   "start_urls": {
 	"nowsports": "https://neesports.me/",
 	"nowmetv": "https://neelive.com/",
-	"tamilultra": "https://tamilultratv.co.in/",
+	"tamilultra": "https://tamilultra.fr/",
 	"tamilbulb": "https://tamilbulb.tv/",
 	"tgx": [
 	  "torrentgalaxy.to",
@@ -11,7 +11,7 @@
 	]
   },
   "tamil_blasters": {
-	"homepage": "https://www.1tamilblasters.rodeo",
+	"homepage": "https://www.1tamilblasters.net",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
@@ -56,7 +56,7 @@
 	}
   },
   "tamilmv": {
-	"homepage": "https://www.1tamilmv.tel",
+	"homepage": "https://www.1tamilmv.fi",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": [
@@ -276,10 +276,10 @@
   "dlhd": {
 	"channels_url": "https://daddylive.mp/24-7-channels.php",
 	"schedule_url": "https://daddylive.mp/schedule/schedule-generated.php",
-	"server_lookup_url": "https://webxzplay.cfd/server_lookup.php?channel_id={server_type}{channel_id}",
+	"server_lookup_url": "https://xextreamplay.xyz/server_lookup.php?channel_id={server_type}{channel_id}",
 	"m3u8_base_url": "https://{server_key}new.newkso.ru/{server_key}/{server_type}{channel_id}/mono.m3u8",
 	"key_url": "https://key.keylocking.ru",
-	"referer": "https://webxzplay.cfd/",
+	"referer": "https://xextreamplay.xyz/",
 	"category_mapping": {
 	  "Tv Shows": "Other Sports",
 	  "Soccer": "Football",
