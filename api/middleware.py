@@ -71,6 +71,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
             encoded_user_data = request.headers.get("encoded_user_data")
             if encoded_user_data:
                 user_data = crypto_utils.decode_user_data(encoded_user_data)
+                secret_str = crypto_utils.process_user_data(user_data)
             else:
                 secret_str = request.path_params.get("secret_str") or request.query_params.get("secret_str")
                 user_data = await crypto_utils.decrypt_user_data(secret_str)
@@ -126,7 +127,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
 
         # Attach UserData to request state for access in endpoints
         request.scope["user"] = user_data
-
+        request.scope["secret_str"] = secret_str
         return await call_next(request)
 
 

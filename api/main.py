@@ -42,7 +42,7 @@ from utils.lock import (
     maintain_heartbeat,
     release_scheduler_lock,
 )
-from utils.network import get_request_namespace, get_user_public_ip, get_user_data
+from utils.network import get_request_namespace, get_user_public_ip, get_user_data, get_secret_str
 from utils.parser import generate_manifest
 from utils.runtime_const import (
     DELETE_ALL_META,
@@ -606,7 +606,7 @@ async def get_streams(
     video_id: str,
     response: Response,
     request: Request,
-    secret_str: str = None,
+    secret_str: str = Depends(get_secret_str),
     season: int = None,
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),

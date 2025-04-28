@@ -328,6 +328,8 @@ def get_request_namespace(request: Request) -> str:
 def get_user_data(request: Request, secret_str: str | None = None) -> UserData:
     return request.user
 
+def get_secret_str(request: Request) -> str:
+    return request.secret_str
 
 def encode_mediaflow_proxy_url(
     mediaflow_proxy_url: str,
