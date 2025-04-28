@@ -606,7 +606,7 @@ async def get_streams(
     video_id: str,
     response: Response,
     request: Request,
-    secret_str: str = Depends(get_secret_str),
+    secret_str: str = None,
     season: int = None,
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),
@@ -614,7 +614,7 @@ async def get_streams(
 ):
     if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
         return {"streams": []}
-
+    secret_str = secret_str or Depends(get_secret_str)
     user_ip = await get_user_public_ip(request, user_data)
     user_feeds = []
     if season is None or episode is None:
