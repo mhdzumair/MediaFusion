@@ -614,6 +614,7 @@ async def get_streams(
 ):
     if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
         return {"streams": []}
+
     user_ip = await get_user_public_ip(request, user_data)
     user_feeds = []
     if season is None or episode is None:

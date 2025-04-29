@@ -128,6 +128,7 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         # Attach UserData to request state for access in endpoints
         request.scope["user"] = user_data
         request.scope["secret_str"] = secret_str
+
         return await call_next(request)
 
 
