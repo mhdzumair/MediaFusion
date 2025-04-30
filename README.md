@@ -17,7 +17,7 @@
   - 🌩️ **PikPak** (Free Quota / Premium)
   - 🌱 **Seedr.cc** (Free Quota / Premium)
   - ☁️ **OffCloud** (Free Quota / Premium)
-  - 📦 **Torbox** (Free Quota / Premium)
+  - 🟩 **Torbox** (Free Quota / Premium)
   - 💎 **Real-Debrid** (Premium)
   - 🔗 **Debrid-Link** (Premium)
   - ✨ **Premiumize** (Premium)
