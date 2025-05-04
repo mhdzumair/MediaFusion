@@ -7,7 +7,6 @@ Sources identifying Polish releases.
 
 POLISH_RELEASE_GROUPS: list[str] = [
     "K83",
-    "P2P",
     "BIRD",
     "CHRISVPS",
     "M80",
