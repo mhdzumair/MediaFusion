@@ -7,6 +7,15 @@ from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar, Ordere
 from urllib.parse import quote
 
 import PTT
+
+from functools import lru_cache
+import re
+try:
+    import tldextract           # ↙ will work if it is installed
+except ImportError:
+    tldextract = None           # ↙ and if there isn't one, we switch to fallback mode
+from utils.polish_sources import POLISH_RELEASE_GROUPS, POLISH_SITES_NON_PL
+
 import anyio
 import bencodepy
 import httpx
@@ -28,6 +37,71 @@ from utils.validation_helper import is_video_file
 # remove logging from demagnetize
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
+# ─── POLISH-MULTi DETECTOR ────────────────────────────────────
+_MULTI_PL_GROUP_RE = re.compile(
+    rf"(?i)\bMULTI\b.*\b({'|'.join(map(re.escape, POLISH_RELEASE_GROUPS))})\b"
+)
+
+_POLISH_SITE_SET = {h.lower() for h in POLISH_SITES_NON_PL}
+
+@lru_cache(maxsize=2048)
+def _tail_after_title(name: str) -> str:
+    """
+    It cuts the title + year from the file name (uses PTT),
+    to search for groups/pages only in 'tail' (release-tags).
+    """
+    parsed = PTT.parse_title(name)
+    title = parsed.get("title") or ""
+    year = str(parsed.get("year") or "")
+    if not title:
+        return name
+    words = re.split(r"[ ._\-]", title)
+    patt = r"[ ._\-]+".join(map(re.escape, words))
+    if year and re.search(year, name):
+        patt = rf"{patt}[ ._\-]+{re.escape(year)}"
+    return re.sub(patt, "", name, flags=re.IGNORECASE, count=1)
+
+def _is_polish_site(tail: str) -> bool:
+    """
+    True if there is in the torrent name after removing the movie title:
+      - domain ending in '.pl' **or**
+      - host from POLISH_SITES_NON_PL
+    """
+    hosts = re.findall(r"(https?://[^\s/]+)|([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", tail)
+    for url_grp, host_grp in hosts:
+        host = (url_grp or host_grp).lower().split("://")[-1]
+
+        # ── 1. check the domain .pl ────────────────────────────────────────
+        if tldextract:                     # precisely when the library is available
+            ext = tldextract.extract(host)
+            if ext.suffix == "pl" or ext.suffix.endswith(".pl"):
+                return True
+            registered = ".".join(
+                part for part in [ext.domain, ext.suffix] if part
+            )
+        else:                              # fallback without dependencies
+            if host.endswith(".pl"):
+                return True
+            parts = host.split(".")
+            registered = ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+        # ── 2. compare with a manually maintained list of hosts ──────────────
+        if registered in _POLISH_SITE_SET:
+            return True
+
+    return False
+
+def _flag_polish_multi(name: str, langs: list[str]) -> list[str]:
+    """If the name meets the condition → add 'Polish'."""
+    if "Polish" in langs:
+        return langs
+    tail = _tail_after_title(name)
+    if "MULTI" in tail.upper() and (
+        _MULTI_PL_GROUP_RE.search(tail) or _is_polish_site(tail)
+    ):
+        langs.append("Polish")
+    return langs
+# ───────────────────────────────────────────────────────────────
 
 def extract_torrent_metadata(
     content: bytes, parsed_data: dict = None, is_raise_error: bool = False
@@ -65,7 +139,10 @@ def extract_torrent_metadata(
         if parsed_data:
             metadata.update(parsed_data)
         else:
-            metadata.update(PTT.parse_title(torrent_name, True))
+            metadata.update(PTT.parse_title(torrent_name, True))            
+            metadata["languages"] = _flag_polish_multi(
+                torrent_name, metadata.get("languages", [])
+            )
 
         if is_contain_18_plus_keywords(torrent_name):
             logging.warning(
@@ -95,6 +172,9 @@ def extract_torrent_metadata(
                 logging.warning(f"Skipping sample file: {filename}")
                 continue
             episode_parsed_data = PTT.parse_title(filename)
+            episode_parsed_data["languages"] = _flag_polish_multi(
+                filename, episode_parsed_data.get("languages", [])
+            )
             seasons.update(episode_parsed_data.get("seasons", []))
             episodes.update(episode_parsed_data.get("episodes", []))
             season_number = (
