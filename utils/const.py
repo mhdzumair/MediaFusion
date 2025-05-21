@@ -215,59 +215,40 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
 
 CERTIFICATION_MAPPING = {
     "All Ages": [
-        "ATP",
-        "G",
-        "U",
-        "AL/Tous",
-        "Tous Publics",
-        "Public Averti",
-        "All",
-        "AG",
-        "Approved",
-        "0+",
+        "A", "A.G.", "A/fig", "A/i", "A/i/fig", "AA", "Ai", "AL", "AL/Tous", "ALL", 
+        "Alla", "ATP", "Approved", "Btl", "DA", "E", "G", "General", "Genel İzleyici", 
+        "Genel İzleyici Kitlesi", "I", "K", "KN", "KT", "L", "Libre", "Livre", 
+        "M/4", "Públicos", "S", "Semua", "SU", "T", "TE", "Tous", 
+        "Tous Publics", "TP", "U", "Unrated", "0", "0+", "UR", "ZA", "FAM"
     ],
+    
     "Children": [
-        "TV-Y",
-        "TV-G",
-        "C",
-        "6",
-        "7",
-        "7+",
-        "9",
-        "9+",
-        "10",
-        "10+",
-        "11",
-        "12",
-        "12+",
-        "13",
-        "13+",
-        "TV-Y7",
-        "TV-Y7-FV",
-        "TV-PG",
-        "PG",
-        "PG8",
-        "PG-12",
-        "PG-13",
-        "12A",
-        "12PG",
-        "RP13",
-        "R-13",
+        "3", "4+", "5", "6", "6+", "6A", "7", "7+", "7i", "7-9 PG", "8", "8+", "9", "9+", 
+        "10", "10+", "10A", "P", "10-12 PG", "11", "AP", "C", "Children", "M/6", "PG", "PG8", 
+        "TV-Y", "TV-G", "TV-Y7", "TV-Y7-FV"
     ],
-    "Parental Guidance": ["14A", "PG-15", "15A", "15PG", "M", "MA", "RP16", "PG12"],
-    "Teens": ["14", "14+", "15", "15+", "16", "16+", "R-12", "R15", "R16", "TV-14"],
+    
+    "Parental Guidance": [
+        "12", "12+", "12A", "12PG", "BA", "GY", "I.C.-14", "M/12", "P13", "PG12", 
+        "PG-12", "TV-PG", "12i", "VM12", "N-7", "IC"
+    ],
+    
+    "Teens": [
+        "13", "13+", "14", "14+", "14A", "15", "15+", "15A", "15PG", "16", "16+", 
+        "GA", "IIA", "IIB", "M", "M/16", "MA", "MA 15+", "N-13", "N-16", "PG-13", 
+        "PG-15", "R-12", "R-13", "R-15+", "R-16", "RP13", "RP16", "SAM 13", "SAM 16", 
+        "TV-14", "VM14", "VM16"
+    ],
+    
     "Adults": [
-        "A",
-        "18",
-        "18+",
-        "18A",
-        "NC-17",
-        "R",
-        "R18",
-        "R-18",
-        "18TC",
+        "18", "18+", "18A", "18TC", "I.M.-18", "M/18", "M18", "N-18", "NC-17", "R", 
+        "R-18", "R18", "SAM 18", "TV-MA", "VM18", "III", "A", "D", "S"
     ],
-    "Adults+": ["R21", "R21+", "21", "21+", "R-21", "R-21+", "R-21A", "XXX", "X"],
+    
+    "Adults+": [
+        "20", "20+", "21", "21+", "Banned", "I", "IC", "KK", "P", "R21", "R21+", 
+        "R-21", "R-21+", "R-21A", "RC", "X", "X 18+", "X18", "XX", "XXX"
+    ],
 }
 
 LANGUAGES_FILTERS = [
