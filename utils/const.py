@@ -215,11 +215,11 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
 
 CERTIFICATION_MAPPING = {
     "All Ages": [
-        "A", "A.G.", "A/fig", "A/i", "A/i/fig", "AA", "Ai", "AL", "AL/Tous", "ALL", 
+        "A.G.", "A/fig", "A/i", "A/i/fig", "AA", "Ai", "AL", "AL/Tous", "ALL", 
         "Alla", "ATP", "Approved", "Btl", "E", "FAM", "G", "General", "Genel İzleyici", 
         "Genel İzleyici Kitlesi", "I", "K", "KN", "KT", "L", "Libre", "Livre", 
         "Públicos", "Semua", "SU", "T", "TE", "Tous", "Tous Publics", "TP", "U", 
-        "UR", "ZA", "0", "0+" 
+        "UR", "ZA", "0", "0+"
     ],
     
     "Children": [
@@ -243,7 +243,7 @@ CERTIFICATION_MAPPING = {
     ],
     
     "Adults": [
-        "A", "Caution", "C", "D", "I.M.-18", "III", "M/18", "M18", "N-18", "NC-17", 
+        "A", "Caution", "D", "I.M.-18", "III", "M/18", "M18", "N-18", "NC-17", 
         "R(A)", "R-18", "R18", "RP18", "SAM 18", "TV-MA", "VM18", "Z (VG)",
         "18", "18+", "18A", "18PL", "18PA", "18SG", "18SX", "18TC"
     ],
