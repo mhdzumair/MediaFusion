@@ -219,18 +219,18 @@ CERTIFICATION_MAPPING = {
         "Alla", "ATP", "Approved", "Btl", "DA", "E", "G", "General", "Genel İzleyici", 
         "Genel İzleyici Kitlesi", "I", "K", "KN", "KT", "L", "Libre", "Livre", 
         "M/4", "Públicos", "S", "Semua", "SU", "T", "TE", "Tous", 
-        "Tous Publics", "TP", "U", "Unrated", "0", "0+", "UR", "ZA", "FAM"
+        "Tous Publics", "TP", "U", "0", "0+", "UR", "ZA", "FAM"
     ],
     
     "Children": [
         "3", "4+", "5", "6", "6+", "6A", "7", "7+", "7i", "7-9 PG", "8", "8+", "9", "9+", 
         "10", "10+", "10A", "P", "10-12 PG", "11", "AP", "C", "Children", "M/6", "PG", "PG8", 
-        "TV-Y", "TV-G", "TV-Y7", "TV-Y7-FV"
+        "TV-Y", "TV-G", "TV-Y7", "N-7", "TV-Y7-FV"
     ],
     
     "Parental Guidance": [
         "12", "12+", "12A", "12PG", "BA", "GY", "I.C.-14", "M/12", "P13", "PG12", 
-        "PG-12", "TV-PG", "12i", "VM12", "N-7", "IC"
+        "PG-12", "TV-PG", "12i", "VM12", "IC"
     ],
     
     "Teens": [
@@ -247,7 +247,7 @@ CERTIFICATION_MAPPING = {
     
     "Adults+": [
         "20", "20+", "21", "21+", "Banned", "I", "IC", "KK", "P", "R21", "R21+", 
-        "R-21", "R-21+", "R-21A", "RC", "X", "X 18+", "X18", "XX", "XXX"
+        "R-21", "R-21+", "R-21A", "RC", "X", "X 18+", "X18", "XX", "XXX", "Unrated"
     ],
 }
 
