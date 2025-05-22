@@ -224,7 +224,7 @@ CERTIFICATION_MAPPING = {
     
     "Children": [
         "6", "6+", "6A", "7", "7+", "7-9 PG", "7i", "8", "8+", "9", "9+", 
-        "AP", "C", "Children", "DA", "I", "K", "KN", "LH", "M/4", "M/6", "PG", 
+        "AP", "Children", "DA", "I", "K", "KN", "LH", "M/4", "M/6", "PG", 
         "PG8", "TV-G", "TV-Y", "TV-Y7", "TV-Y7-FV", "P"
     ],
     
@@ -236,7 +236,7 @@ CERTIFICATION_MAPPING = {
     
     "Teens": [
         "13", "13+", "14", "14+", "14A", "15", "15+", "15A", "15PG", "16", "16+", 
-        "B15", "C", "D", "GA", "I.C.-14", "IIA", "IIB", "M", "M/16", "MA", 
+        "B15", "C", "GA", "I.C.-14", "IIA", "IIB", "M", "M/16", "MA", 
         "MA 15+", "N-13", "N-16", "NC16", "PG-13", "PG-15", "R", "R-12", "R-13", "R-15+", 
         "R-16", "RP13", "RP16", "SAM 13", "SAM 16", "TV-14", "VM14", "VM16", "Y"
     ],
