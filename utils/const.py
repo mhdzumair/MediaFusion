@@ -217,41 +217,40 @@ CERTIFICATION_MAPPING = {
     "All Ages": [
         "A.G.", "A/fig", "A/i", "A/i/fig", "AA", "Ai", "AL", "AL/Tous", "ALL", 
         "Alla", "ATP", "Approved", "Btl", "E", "FAM", "G", "General", "Genel İzleyici", 
-        "Genel İzleyici Kitlesi", "I", "K", "KN", "KT", "L", "Libre", "Livre", 
-        "Públicos", "Semua", "SU", "T", "TE", "Tous", "Tous Publics", "TP", "U", 
-        "UR", "ZA", "0", "0+"
+        "Genel İzleyici Kitlesi", "KT", "L", "Libre", "Livre", "Públicos", 
+        "Semua", "SU", "T", "TE", "Tous", "Tous Publics", "TP", "U", "UR", "ZA", 
+        "0", "0+", "3", "4+", "5"
     ],
     
     "Children": [
-        "AP", "C", "Children", "DA", "KNT", "LH", "M/4", "M/6", "P", "PG", "PG8", 
-        "TODO", "TV-G", "TV-Y", "TV-Y7", "TV-Y7-FV",
-        "3", "4+", "5", "6", "6+", "6A", "7", "7+", "7-9 PG", "7i", "8", "8+", "9", "9+", 
-        "10", "10+", "10-12 PG", "10A", "11"
+        "6", "6+", "6A", "7", "7+", "7-9 PG", "7i", "8", "8+", "9", "9+", 
+        "AP", "C", "Children", "DA", "I", "K", "KN", "LH", "M/4", "M/6", "PG", 
+        "PG8", "TV-G", "TV-Y", "TV-Y7", "TV-Y7-FV", "P"
     ],
     
     "Parental Guidance": [
+        "10", "10+", "10-12 PG", "10A", "11", "12", "12+", "12A", "12PG", "12i", 
         "B", "BA", "GY", "M/12", "N-7", "P13", "PG-12", "PG12", "Public Averti", 
-        "TV-PG", "VM12", 
-        "12", "12+", "12A", "12PG", "12i"
+        "TV-PG", "VM12"
     ],
     
     "Teens": [
-        "B15", "C (VG)", "D (VG)", "GA", "I.C.-14", "IIA", "IIB", "M", "M/16", "MA", 
-        "MA 15+", "N-13", "N-16", "NC16", "PG-13", "PG-15", "R-12", "R-13", "R-15+", 
-        "R-16", "RP13", "RP16", "SAM 13", "SAM 16", "TV-14", "VM14", "VM16", "Y",
-        "13", "13+", "14", "14+", "14A", "15", "15+", "15A", "15PG", "16", "16+", "R"
+        "13", "13+", "14", "14+", "14A", "15", "15+", "15A", "15PG", "16", "16+", 
+        "B15", "C", "D", "GA", "I.C.-14", "IIA", "IIB", "M", "M/16", "MA", 
+        "MA 15+", "N-13", "N-16", "NC16", "PG-13", "PG-15", "R", "R-12", "R-13", "R-15+", 
+        "R-16", "RP13", "RP16", "SAM 13", "SAM 16", "TV-14", "VM14", "VM16", "Y"
     ],
     
     "Adults": [
-        "A", "Caution", "D", "I.M.-18", "III", "M/18", "M18", "N-18", "NC-17", 
-        "R(A)", "R-18", "R18", "RP18", "SAM 18", "TV-MA", "VM18", "Z (VG)",
-        "18", "18+", "18A", "18PL", "18PA", "18SG", "18SX", "18TC"
+        "18", "18+", "18A", "18PA", "18PL", "18SG", "18SX", "18TC", "A", 
+        "Caution", "D", "I.M.-18", "III", "M/18", "M18", "N-18", "NC-17", 
+        "R(A)", "R-18", "R18", "RP18", "SAM 18", "TV-MA", "VM18", "Z",
+        "Unrated"
     ],
     
     "Adults+": [
-        "Banned", "KK", "R21", "R21+", "R-21", "R-21+", "R-21A", "RC", "X", "X18", 
-        "X 18+", "XX", "XXX",
-        "20", "20+", "21", "21+", "Unrated"
+        "20", "20+", "21", "21+", "Banned", "KK", "R21", "R21+", "R-21", "R-21+", "R-21A", 
+        "RC", "X", "X18", "X 18+", "XX", "XXX"
     ],
 }
 
