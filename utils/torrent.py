@@ -39,7 +39,7 @@ logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 # ─── POLISH-MULTi DETECTOR ────────────────────────────────────
 _MULTI_PL_GROUP_RE = re.compile(
-    rf"(?i)\bMULTI\b.*\b({'|'.join(map(re.escape, POLISH_RELEASE_GROUPS))})\b"
+    rf"(?i)\bMULTI\b.*\b({'|'.join(map(re.escape, POLISH_RELEASE_GROUPS))})(\b|[^A-Za-z])"
 )
 
 _POLISH_SITE_SET = {h.lower() for h in POLISH_SITES_NON_PL}
