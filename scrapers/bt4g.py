@@ -13,6 +13,7 @@ from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
 from scrapers.base_scraper import BaseScraper
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
+from utils.torrent import _flag_polish_multi
 from utils.runtime_const import BT4G_SEARCH_TTL
 from utils.validation_helper import is_video_file
 
@@ -314,6 +315,7 @@ class BT4GScraper(BaseScraper):
                 return None
 
             parsed_data = PTT.parse_title(torrent_title, True)
+            _flag_polish_multi(torrent_title, parsed_data["languages"])
 
             if not self.validate_title_and_year(
                 parsed_data,
@@ -383,6 +385,7 @@ class BT4GScraper(BaseScraper):
                 ):
                     continue
                 file_parsed_data = PTT.parse_title(file_name)
+                _flag_polish_multi(file_name, file_parsed_data["languages"])
                 seasons.update(file_parsed_data.get("seasons", []))
                 episodes.update(file_parsed_data.get("episodes", []))
                 season_number = (
