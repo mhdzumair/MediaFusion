@@ -177,9 +177,6 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
                     "Referer": self.referer,
                     "Origin": self.referer.rstrip("/"),
                 },
-                "response_headers": {
-                    "Content-Type": "application/vnd.apple.mpegurl",
-                },
                 "genres": [category],
                 "languages": languages,
                 "country": country,
