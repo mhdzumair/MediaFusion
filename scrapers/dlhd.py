@@ -212,9 +212,6 @@ class DLHDScheduleService:
                         "Referer": self.referer,
                         "Origin": self.referer.rstrip("/"),
                     },
-                    "response": {
-                        "Content-Type": "application/vnd.apple.mpegurl",
-                    },
                 },
             },
         )
@@ -267,7 +264,8 @@ class DLHDScheduleService:
             server_response = await client.get(
                 server_url,
                 headers={
-                    "Referer": f"{self.referer}premiumtv/daddylivehd.php?id={channel_id}"
+                    "Referer": f"{self.referer}premiumtv/daddylivehd.php?id={channel_id}",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
                 },
             )
 

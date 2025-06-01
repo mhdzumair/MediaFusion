@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from os.path import basename
 from typing import Optional, List, Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from thefuzz import fuzz
 
@@ -552,6 +552,13 @@ async def process_stream(
         behaviorHints=behavior_hints,
     )
 
+def get_dlhd_channel_url(stream: TVStreams) -> str:
+    parsed_url = urlparse(stream.url)
+    channel_id = parsed_url.path.split("/")[-2]
+    channel_number = re.search(r"(\d+)", channel_id).group(1)
+    channel_url = config_manager.get_scraper_config("dlhd", "channel_url")
+    return channel_url.format(channel_number=channel_number)
+
 
 def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
     endpoint = (
@@ -560,11 +567,15 @@ def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
     query_params = {}
     if stream.drm_key:
         query_params = {"key_id": stream.drm_key_id, "key": stream.drm_key}
-    elif "dlhd" in stream.source:
+    elif stream.source == "DaddyLiveHD":
         query_params = {
             "use_request_proxy": False,
-            "key_url": config_manager.get_scraper_config("dlhd", "key_url"),
+            "host": "DLHD",
+            "redirect_stream": True,
         }
+        stream.url = get_dlhd_channel_url(stream)
+        endpoint = "/extractor/video"
+        stream.behaviorHints = {"proxyHeaders": {}}
 
     return encode_mediaflow_proxy_url(
         mediaflow_config.proxy_url,

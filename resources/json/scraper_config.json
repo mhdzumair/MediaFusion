@@ -275,11 +275,12 @@
   },
   "dlhd": {
 	"channels_url": "https://daddylive.dad/24-7-channels.php",
+	"channel_url": "https://daddylive.dad/stream/stream-{channel_number}.php",
 	"schedule_url": "https://daddylive.dad/schedule/schedule-generated.php",
-	"server_lookup_url": "https://forcedtoplay.xyz/server_lookup.php?channel_id={server_type}{channel_id}",
+	"server_lookup_url": "https://allupplay.xyz/server_lookup.php?channel_id={server_type}{channel_id}",
 	"m3u8_base_url": "https://{server_key}new.newkso.ru/{server_key}/{server_type}{channel_id}/mono.m3u8",
 	"key_url": "https://key.keylocking.ru",
-	"referer": "https://forcedtoplay.xyz/",
+	"referer": "https://allupplay.xyz/",
 	"category_mapping": {
 	  "Tv Shows": "Other Sports",
 	  "Soccer": "Football",

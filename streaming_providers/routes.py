@@ -65,7 +65,7 @@ async def get_cached_stream_url_and_redirect(
             and user_data.mediaflow_config.proxy_debrid_streams
         ):
             response_headers = {
-                "Content-Disposition": "attachment, filename={}".format(
+                "content-disposition": "attachment, filename={}".format(
                     path.basename(cached_stream_url)
                 )
             }
@@ -153,7 +153,7 @@ def apply_mediaflow_proxy_if_needed(video_url, user_data):
     """
     if user_data.mediaflow_config and user_data.mediaflow_config.proxy_debrid_streams:
         response_headers = {
-            "Content-Disposition": "attachment, filename={}".format(
+            "content-disposition": "attachment, filename={}".format(
                 path.basename(video_url)
             )
         }
