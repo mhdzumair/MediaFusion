@@ -552,6 +552,7 @@ async def process_stream(
         behaviorHints=behavior_hints,
     )
 
+
 def get_dlhd_channel_url(stream: TVStreams) -> str:
     parsed_url = urlparse(stream.url)
     channel_id = parsed_url.path.split("/")[-2]
