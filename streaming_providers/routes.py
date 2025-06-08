@@ -204,22 +204,26 @@ async def get_cached_stream_url(cached_stream_url_key):
     return None
 
 
-@router.head("/{secret_str}/stream/{info_hash}", tags=["streaming_provider"])
-@router.get("/{secret_str}/stream/{info_hash}", tags=["streaming_provider"])
-@router.head("/{secret_str}/stream/{info_hash}/{filename}", tags=["streaming_provider"])
-@router.get("/{secret_str}/stream/{info_hash}/{filename}", tags=["streaming_provider"])
+@router.head("/{secret_str}/playback/{info_hash}", tags=["streaming_provider"])
+@router.get("/{secret_str}/playback/{info_hash}", tags=["streaming_provider"])
 @router.head(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+    "/{secret_str}/playback/{info_hash}/{filename}", tags=["streaming_provider"]
 )
 @router.get(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+    "/{secret_str}/playback/{info_hash}/{filename}", tags=["streaming_provider"]
 )
 @router.head(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}/{filename}",
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+)
+@router.get(
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+)
+@router.head(
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}/{filename}",
     tags=["streaming_provider"],
 )
 @router.get(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}/{filename}",
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}/{filename}",
     tags=["streaming_provider"],
 )
 @wrappers.exclude_rate_limit

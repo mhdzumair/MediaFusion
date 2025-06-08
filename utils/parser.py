@@ -296,7 +296,7 @@ async def parse_stream_data(
             addon_name += " 🕵🏼‍♂️"
 
         base_proxy_url_template = (
-            f"{settings.host_url}/streaming_provider/{secret_str}/stream/{{}}"
+            f"{settings.host_url}/streaming_provider/{secret_str}/playback/{{}}"
         )
 
     stream_list = []
