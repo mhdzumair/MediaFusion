@@ -321,15 +321,38 @@ function updateContentType() {
     if (metaType === 'movie') {
         setElementDisplay('movieCatalogs', 'block');
         setElementDisplay('metaIdContainer', 'block');
+        setElementDisplay('episodeParserCard', 'none');
     } else if (metaType === 'series') {
         setElementDisplay('seriesCatalogs', 'block');
         setElementDisplay('metaIdContainer', 'block');
+        setElementDisplay('episodeParserCard', 'block');
     } else if (metaType === 'sports') {
         setElementDisplay('sportsCatalogs', 'block');
         setElementDisplay('metaIdContainer', 'none');
+        setElementDisplay('episodeParserCard', 'block');
     }
 }
 
+function showParserExamples() {
+    const examplesDiv = document.getElementById('parserExamples');
+    if (examplesDiv.style.display === 'none') {
+        examplesDiv.style.display = 'block';
+        event.target.innerHTML = '<i class="bi bi-eye-slash"></i> Hide Examples';
+    } else {
+        examplesDiv.style.display = 'none';
+        event.target.innerHTML = '<i class="bi bi-question-circle"></i> Show Examples';
+    }
+}
+
+function clearAllEpisodeTitles() {
+    // Find all episode title inputs in the modal and clear them
+    const titleInputs = document.querySelectorAll('#fileAnnotationModal input[id^="title-"]');
+    titleInputs.forEach(input => {
+        input.value = '';
+    });
+
+    showNotification('All episode titles cleared', 'info');
+}
 
 function parseSeasonsInput(input) {
     const seasons = [];
@@ -1325,7 +1348,7 @@ const formUtils = {
 
         // Reset basic fields
         const basicFields = ['torrentImdbId', 'metaType', 'title', 'poster', 'background', 'logo',
-            'resolution', 'quality', 'videoCodec', 'createdAt'];
+            'resolution', 'quality', 'videoCodec', 'createdAt', 'episodeNameParser'];
         basicFields.forEach(fieldId => {
             const element = document.getElementById(fieldId);
             if (element) element.value = '';
@@ -1621,6 +1644,12 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         formData.append('magnet_link', magnetLink);
     } else {
         formData.append('torrent_file', torrentFile);
+    }
+
+    // Add episode name parser if provided and applicable
+    const episodeNameParser = document.getElementById('episodeNameParser')?.value;
+    if (episodeNameParser && (metaType === 'series' || metaType === 'sports')) {
+        formData.append('episode_name_parser', episodeNameParser);
     }
 
     // Add force import and annotated files if present

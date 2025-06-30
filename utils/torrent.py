@@ -3,6 +3,7 @@ import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from os.path import basename
+import re
 from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar, OrderedDict
 from urllib.parse import quote
 
@@ -30,7 +31,7 @@ logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 
 def extract_torrent_metadata(
-    content: bytes, parsed_data: dict = None, is_raise_error: bool = False
+    content: bytes, parsed_data: dict = None, is_raise_error: bool = False, episode_name_parser: str = None
 ) -> dict:
     try:
         torrent_data: OrderedDict = bencodepy.decode(content)
@@ -82,6 +83,16 @@ def extract_torrent_metadata(
         file_data = []
         seasons = set()
         episodes = set()
+
+        # Compile episode name parser pattern if provided
+        episode_pattern = None
+        if episode_name_parser:
+            try:
+                episode_pattern = re.compile(episode_name_parser, re.IGNORECASE)
+            except re.error as e:
+                logging.warning(f"Invalid episode name parser regex: {e}")
+                episode_pattern = None
+
         for idx, file in enumerate(files):
             full_path = (
                 "/".join([p.decode() for p in file[b"path"]])
@@ -120,6 +131,31 @@ def extract_torrent_metadata(
             ):
                 episode_number = metadata["episodes"][0]
 
+            # Extract episode title using custom parser if provided
+            episode_title = episode_parsed_data.get("title")
+            if episode_pattern:
+                match = episode_pattern.search(filename)
+                if match:
+                    # If the pattern has named groups, use them
+                    if match.groupdict():
+                        groups = match.groupdict()
+                        # Look for common episode name patterns
+                        extracted_name = (
+                            groups.get("episode_name") or
+                            groups.get("title") or
+                            groups.get("name") or
+                            groups.get("event")
+                        )
+                        if extracted_name:
+                            # Clean up the episode name by replacing dots with spaces
+                            episode_title = extracted_name.replace(".", " ").strip()
+                    else:
+                        # If no named groups, use the first group or full match
+                        if match.groups():
+                            episode_title = match.group(1).replace(".", " ").strip()
+                        else:
+                            episode_title = match.group(0).replace(".", " ").strip()
+
             file_data.append(
                 {
                     "filename": filename,
@@ -127,7 +163,7 @@ def extract_torrent_metadata(
                     "index": idx,
                     "season_number": season_number,
                     "episode_number": episode_number,
-                    "episode_title": episode_parsed_data.get("title"),
+                    "episode_title": episode_title,
                 }
             )
         if not file_data:
@@ -206,7 +242,7 @@ async def _acollect_pipe(
 
 
 async def info_hashes_to_torrent_metadata(
-    info_hashes: list[str], trackers: list[str]
+    info_hashes: list[str], trackers: list[str], episode_name_parser: str = None
 ) -> list[dict]:
     torrents_data = []
 
@@ -229,7 +265,7 @@ async def info_hashes_to_torrent_metadata(
                     pass
                 else:
                     torrents_data.append(
-                        extract_torrent_metadata(torrent_result.dump())
+                        extract_torrent_metadata(torrent_result.dump(), episode_name_parser=episode_name_parser)
                     )
             except Exception as e:
                 logging.error(f"Error processing torrent: {e}")

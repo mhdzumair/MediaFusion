@@ -207,6 +207,7 @@ async def add_torrent(
     audio: Optional[str] = Form(None),
     codec: Optional[str] = Form(None),
     hdr: Optional[str] = Form(None),
+    episode_name_parser: Optional[str] = Form(None),
 ):
     torrent_data: dict = {}
     info_hash = None
@@ -232,7 +233,7 @@ async def add_torrent(
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             raise_error("Failed to parse magnet link.")
-        data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
+        data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers, episode_name_parser=episode_name_parser)
         if not data:
             raise_error("Failed to fetch torrent metadata.")
         torrent_data = data[0]
@@ -240,7 +241,7 @@ async def add_torrent(
     elif torrent_file:
         try:
             torrent_data = torrent.extract_torrent_metadata(
-                await torrent_file.read(), is_raise_error=True
+                await torrent_file.read(), is_raise_error=True, episode_name_parser=episode_name_parser
             )
         except ValueError as e:
             raise_error(str(e))
@@ -659,7 +660,7 @@ async def block_torrent(block_data: schemas.BlockTorrent):
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Failed to block torrent: {str(e)}"
+            status_code=200, detail=f"Failed to block torrent: {str(e)}"
         )
 
     return {
@@ -729,31 +730,32 @@ async def analyze_torrent(
             info_hash, trackers = torrent.parse_magnet(magnet_link)
             if not info_hash:
                 raise HTTPException(
-                    status_code=400, detail="Failed to parse magnet link."
+                    status_code=200, detail="Failed to parse magnet link."
                 )
             data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
             if not data:
                 raise HTTPException(
-                    status_code=400, detail="Failed to fetch torrent metadata."
+                    status_code=200, detail="Failed to fetch torrent metadata."
                 )
             torrent_data = data[0]
             torrent_data.pop("torrent_file", None)
         else:
             raise HTTPException(
-                status_code=400,
+                status_code=200,
                 detail="Either torrent file or magnet link must be provided.",
             )
 
         if not torrent_data or not torrent_data.get("title"):
             raise HTTPException(
-                status_code=400, detail="Could not extract title from torrent"
+                status_code=200, detail="Could not extract title from torrent"
             )
 
         torrent_data["type"] = meta_type
         if meta_type == "sports":
             # parse title for sports content
             title = torrent_data["torrent_name"]
-            # remove resolution, quality, codec, audio, hdr from title
+
+            # remove resolution, quality, codec, audio, hdr from title (case-insensitive)
             for key in [
                 "resolution",
                 "quality",
@@ -765,7 +767,8 @@ async def analyze_torrent(
             ]:
                 replacer = torrent_data.get(key, "")
                 if replacer and isinstance(replacer, str):
-                    title = title.replace(replacer, "")
+                    # Use case-insensitive replacement
+                    title = re.sub(re.escape(replacer), "", title, flags=re.IGNORECASE)
 
             # extract date from title. ex: 2021.05.01 | 2021-05-01 | 2021_05_01 | 01.05.2021 | 01-05-2021 | 01_05_2021
             date_str = ""
@@ -774,8 +777,29 @@ async def analyze_torrent(
                 date_str = date_str_match.group()
                 title = title.replace(date_str, "").strip()
 
-            # cleanup title
-            title = re.sub(r"h26[45]|.torrent", "", title, flags=re.IGNORECASE)
+            # cleanup common keywords and patterns
+            cleanup_patterns = [
+                r"h26[45]",
+                r"\.torrent",
+                r"SkyF1HD",
+                r"HDR",
+                r"HEVC",
+                r"x264",
+                r"x265",
+                r"AAC",
+                r"AC3",
+                r"DTS",
+                r"BluRay",
+                r"BDRip",
+                r"WEBRip",
+                r"HDTV",
+                r"DVDRip",
+            ]
+
+            for pattern in cleanup_patterns:
+                title = re.sub(pattern, "", title, flags=re.IGNORECASE)
+
+            # Replace separators and cleanup
             title = (
                 title.replace(".", " ")
                 .replace("-", " ")
@@ -784,7 +808,7 @@ async def analyze_torrent(
             )
             title = re.sub(r"\s+", " ", title).strip()
             title += f" {date_str}"
-            torrent_data["title"] = title
+            torrent_data["title"] = title.strip()
             return {
                 "torrent_data": torrent_data,
                 "matches": [],
@@ -804,7 +828,7 @@ async def analyze_torrent(
 
     except Exception as e:
         raise HTTPException(
-            status_code=400, detail=f"Failed to analyze torrent: {str(e)}"
+            status_code=200, detail=f"Failed to analyze torrent: {str(e)}"
         )
 
 
