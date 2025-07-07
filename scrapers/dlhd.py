@@ -76,6 +76,7 @@ class DLHDScheduleService:
             async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
                 response = await client.get(
                     self.schedule_url,
+                    follow_redirects=True,
                     headers={"Referer": urljoin(self.schedule_url, "/")},
                 )
                 if response.status_code == 200:
