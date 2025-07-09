@@ -118,6 +118,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str | None = None
 
     # Configuration Sources
+    use_config_source: str = "remote"
     remote_config_source: str = (
         "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/scraper_config.json"
     )
