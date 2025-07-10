@@ -24,11 +24,7 @@ settings:
   - name: mediafusion_note
     type: info
     label: MediaFusion Note
-    default: "Please enter the mediafusion addon url below (ends with manifest.json)"
-  - name: addon_url
-    type: text
-    label: Addon URL
-    default: ""
+    default: "Please update the original link with your self-hosted one to avoid putting load on the main instance."
   - name: validate_imdb_movie
     type: text
     label: IMDB ID of the movie for Radarr validation (required)
@@ -45,13 +41,13 @@ search:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0",
       ]
   paths:
-    - path: "{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}/stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
+    - path: "stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
       method: get
       response:
         type: json
         noResultsMessage: '"streams": []'
       categories: [Movies]
-    - path: "{{ re_replace .Config.addon_url \"^.*\\/(.+?)\\/manifest\\.json$\" \"$1\" }}/stream/series/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_tv }}{{ end }}:{{ if .Query.Season }}{{ .Query.Season }}{{ else }}1{{ end }}:{{ if .Query.Ep }}{{ .Query.Ep }}{{ else }}1{{ end }}.json"
+    - path: "stream/series/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_tv }}{{ end }}:{{ if .Query.Season }}{{ .Query.Season }}{{ else }}1{{ end }}:{{ if .Query.Ep }}{{ .Query.Ep }}{{ else }}1{{ end }}.json"
       method: get
       response:
         type: json
@@ -82,13 +78,19 @@ search:
       text: "{{ if .Result.category_is_tv_show }}TV{{ else }}Movies{{ end }}"
     infohash:
       selector: infoHash
+    magnet:
+      selector: infoHash
+      filters:
+        - name: prepend
+          args: "magnet:?xt=urn:btih:"
     size:
       selector: description
       filters:
         - name: regexp
           args: "\\b(\\d+(?:\\.\\d+)? [MG]B)\\b"
     seeders:
-      selector: description
-      filters:
-        - name: regexp
-          args: "(?<=👤 )(\\d+)"
+      text: "1"
+    leechers:
+      text: "1"
+    details:
+      text: "{{ .Config.sitelink }}{{ if .Result.category_is_tv_show }}/stream/series/{{ .Query.IMDBID }}:{{ .Query.Season}}:{{ .Query.Ep }}.json{{ else }}/stream/movie/{{ .Query.IMDBID }}.json{{ end }}"
