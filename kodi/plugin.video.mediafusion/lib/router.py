@@ -371,20 +371,24 @@ def get_streams(params):
         else:
             continue
 
+        playback_params = {
+            "video_url": video_url,
+            "headers": parse.urlencode(
+                stream.get("behaviorHints", {})
+                      .get("proxyHeaders", {})
+                      .get("request", {})
+            ),
+        }
+        if is_imdb:
+            playback_params["imdb"] = video_id
+        if season is not None:
+            playback_params["season"] = season
+            playback_params["episode"] = episode
+
+        playback_url = build_url("play_video", **playback_params)
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE,
-            url=build_url(
-                "play_video",
-                video_url=video_url,
-                imdb=video_id if is_imdb else None,
-                season=season,
-                episode=episode,
-                headers=parse.urlencode(
-                    stream.get("behaviorHints", {})
-                    .get("proxyHeaders", {})
-                    .get("request", {})
-                ),
-            ),
+            url=playback_url,
             listitem=li,
             isFolder=False,
             totalItems=len(streams),
