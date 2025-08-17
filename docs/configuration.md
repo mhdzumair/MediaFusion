@@ -167,6 +167,10 @@ Each scheduler has a crontab expression and disable flag:
 
 Each scheduler can be disabled individually using its corresponding `disable_*_scheduler` setting.
 
+## Local Development Settings
+
+- **use_config_source** (default: `remote`): Use the remote scraper configuration file or local source.
+
 ### How to Configure
 
 You can configure these settings either through environment variables in your deployment or through a `.env` file:
