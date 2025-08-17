@@ -76,7 +76,7 @@ class MediafusionScraper(StremioScraper):
         info_hash = stream.get("infoHash")
         if not info_hash:
             url = stream.get("url", "")
-            if "/stream/" not in url:
+            if "/streaming_provider/" not in url:
                 return {}, False
             info_hash = url.split("/")[6]
         is_cached = "⚡️" in stream["name"]

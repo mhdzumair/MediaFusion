@@ -389,7 +389,8 @@ class RedisWrapper:
             kwargs['lock_class'] = lock_class
         if thread_local is not None:
             kwargs['thread_local'] = thread_local
-        return self._create_method('lock', None)(key, **kwargs)
+        # Return the lock object directly, not wrapped with _create_method
+        return self.client.lock(key, **kwargs)
 
     def info(self, section: str = None):
         """Redis INFO operation."""
