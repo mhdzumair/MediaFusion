@@ -143,6 +143,7 @@ class StreamingProvider(BaseModel):
         "qbittorrent",
         "stremthru",
         "easydebrid",
+        "debrider",
     ] = Field(alias="sv")
     stremthru_store_name: (
         Literal[
@@ -469,6 +470,7 @@ class CacheStatusRequest(BaseModel):
         "pikpak",
         "torbox",
         "easydebrid",
+        "debrider",
     ]
     info_hashes: list[str]
 
@@ -492,6 +494,7 @@ class CacheSubmitRequest(BaseModel):
         "pikpak",
         "torbox",
         "easydebrid",
+        "debrider",
     ]
     info_hashes: list[str]
 
