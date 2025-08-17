@@ -1,3 +1,4 @@
+import json
 import sys
 from urllib import parse
 
@@ -370,17 +371,24 @@ def get_streams(params):
         else:
             continue
 
+        playback_params = {
+            "video_url": video_url,
+            "headers": parse.urlencode(
+                stream.get("behaviorHints", {})
+                      .get("proxyHeaders", {})
+                      .get("request", {})
+            ),
+        }
+        if is_imdb:
+            playback_params["imdb"] = video_id
+        if season is not None:
+            playback_params["season"] = season
+            playback_params["episode"] = episode
+
+        playback_url = build_url("play_video", **playback_params)
         xbmcplugin.addDirectoryItem(
             handle=ADDON_HANDLE,
-            url=build_url(
-                "play_video",
-                video_url=video_url,
-                headers=parse.urlencode(
-                    stream.get("behaviorHints", {})
-                    .get("proxyHeaders", {})
-                    .get("request", {})
-                ),
-            ),
+            url=playback_url,
             listitem=li,
             isFolder=False,
             totalItems=len(streams),
@@ -390,6 +398,9 @@ def get_streams(params):
 
 def play_video(params):
     video_url = params["video_url"]
+    imdb = params.get("imdb", None)
+    season = params.get("season", None)
+    episode = params.get("episode", None)
     li = xbmcgui.ListItem(path=video_url)
 
     # If headers are present, append them to the URL for ffmpegdirect inputstream
@@ -405,6 +416,13 @@ def play_video(params):
             li.setMimeType("application/dash+xml")
         elif video_url.endswith(".m3u8"):
             li.setMimeType("application/vnd.apple.mpegurl")
+
+    if season:
+        li.setInfo("video", {"season": season, "episode": episode})
+    if imdb:
+        li.setInfo("video", {"imdbnumber": imdb})
+        ids = json.dumps({u'imdb': imdb})
+        xbmcgui.Window(10000).setProperty('script.trakt.ids', ids)
 
     xbmcplugin.setResolvedUrl(ADDON_HANDLE, True, li)
 

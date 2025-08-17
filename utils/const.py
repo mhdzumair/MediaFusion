@@ -216,6 +216,7 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
     "torbox": "TRB",
     "stremthru": "ST",
     "easydebrid": "ED",
+    "debrider": "DBD",
 }
 
 CERTIFICATION_MAPPING = {

@@ -125,6 +125,7 @@ async def get_debrid_cache_metrics() -> Dict[str, Any]:
         "seedr",
         "torbox",
         "easydebrid",
+        "debrider",
     ]
 
     try:

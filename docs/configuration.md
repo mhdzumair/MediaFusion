@@ -36,6 +36,7 @@ These settings define the basic configuration and identity of your MediaFusion i
   - "qbittorrent": qBittorrent client
   - "stremthru": StremThru service
   - "easydebrid": EasyDebrid service
+  - "debrider": Debrider service
 
 ## Database and Cache Settings
 
@@ -165,6 +166,10 @@ Each scheduler has a crontab expression and disable flag:
 - **cleanup_expired_cache_task_crontab** (default: `"0 0 * * *"`)
 
 Each scheduler can be disabled individually using its corresponding `disable_*_scheduler` setting.
+
+## Local Development Settings
+
+- **use_config_source** (default: `remote`): Use the remote scraper configuration file or local source.
 
 ### How to Configure
 
