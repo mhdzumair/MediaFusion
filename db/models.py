@@ -5,6 +5,7 @@ from typing import Optional, Any
 import pytz
 from beanie import (
     Document,
+    Save,
     after_event,
     Insert,
     Delete,
@@ -279,7 +280,7 @@ class TorrentStreams(Document):
         )
         logging.info(f"Removed stream {self.id} from metadata {self.meta_id}")
 
-    @before_event(Update)
+    @before_event([Update, Save])
     async def update_metadata_on_block(self):
         """Update metadata when a stream is blocked"""
         if hasattr(self, "is_blocked") and self.is_blocked:
@@ -517,3 +518,91 @@ class MediaFusionEventsMetaData(MediaFusionMetaData):
     event_start_timestamp: Optional[int] = None
     logo: Optional[str] = None
     streams: list[TVStreams]
+
+
+class RSSParsingPatterns(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    pubDate: str | None = None
+    poster: str | None = None
+    background: str | None = None
+    logo: str | None = None
+    category: str | None = None
+    magnet: str | None = None
+    torrent: str | None = None
+    size: str | None = None
+    seeders: str | None = None
+
+    # Regex patterns
+    magnet_regex: str | None = None
+    torrent_regex: str | None = None
+    size_regex: str | None = None
+    seeders_regex: str | None = None
+    category_regex: str | None = None
+    episode_name_parser: str | None = None  # New field for episode name parsing
+
+    # Regex group numbers (0 = full match, 1+ = capture groups)
+    magnet_regex_group: int = 1
+    torrent_regex_group: int = 1
+    size_regex_group: int = 1
+    seeders_regex_group: int = 1
+    category_regex_group: int = 1
+
+
+class RSSFeedFilters(BaseModel):
+    title_filter: str | None = None
+    title_exclude_filter: str | None = None
+    min_size_mb: int | None = None
+    max_size_mb: int | None = None
+    min_seeders: int | None = None
+    category_filter: list[str] | None = None
+
+
+class RSSFeedMetrics(BaseModel):
+    """RSS Feed scraping metrics"""
+    total_items_found: int = 0
+    total_items_processed: int = 0
+    total_items_skipped: int = 0
+    total_errors: int = 0
+    last_scrape_duration: Optional[float] = None  # in seconds
+    items_processed_last_run: int = 0
+    items_skipped_last_run: int = 0
+    errors_last_run: int = 0
+    skip_reasons: dict[str, int] = Field(default_factory=dict)  # reason -> count
+
+class RSSCatalogPattern(BaseModel):
+    regex: str
+    enabled: bool = True
+    target_catalogs: list[str] = Field(default_factory=list)
+    case_sensitive: bool = False
+    name: str | None = None
+
+
+class RSSFeed(Document):
+    name: str
+    url: str
+    parsing_patterns: Optional[RSSParsingPatterns] = Field(
+        default_factory=RSSParsingPatterns
+    )
+    filters: Optional[RSSFeedFilters] = Field(
+        default_factory=RSSFeedFilters
+    )
+    active: bool = True
+    last_scraped: Optional[datetime] = None
+    source: Optional[str] = None
+    torrent_type: Optional[str] = "public"
+    auto_detect_catalog: Optional[bool] = False
+    catalog_patterns: Optional[list[RSSCatalogPattern]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    metrics: Optional[RSSFeedMetrics] = Field(default_factory=RSSFeedMetrics)
+
+    class Settings:
+        collection = "rss_feeds"
+
+    class Config:
+        validate_assignment = True
+        json_encoders = {datetime: lambda dt: dt.isoformat()}
+
+    def __str__(self):
+        return f"RSSFeed(name={self.name}, url={self.url}, active={self.active})"

@@ -32,6 +32,7 @@ from metrics.routes import metrics_router
 from api.frontend_api import router as frontend_api_router
 from scrapers.routes import router as scrapers_router
 from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
+from api.rss_feeds import router as rss_feeds_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
 from streaming_providers.validator import validate_provider_credentials
@@ -803,7 +804,6 @@ async def get_poster(
 ):
     cache_key = f"{catalog_type}_{mediafusion_id}.jpg"
 
-    # Check if the poster is cached in Redis
     cached_image = await REDIS_ASYNC_CLIENT.get(cache_key)
     if cached_image:
         image_byte_io = BytesIO(cached_image)
@@ -962,3 +962,4 @@ app.include_router(kodi_router, prefix="/kodi", tags=["kodi"])
 
 
 app.include_router(frontend_api_router, prefix="/api/v1", tags=["frontend"])
+app.include_router(rss_feeds_router, prefix="/rss", tags=["rss"])

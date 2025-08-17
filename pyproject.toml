@@ -60,6 +60,8 @@ dependencies = [
     "scrapy-fake-useragent>=1.4.4",
     "humanize>=4.12.1",
     "dateparser>=1.2.1",
+    "feedparser>=6.0.11",
+    "xmltodict>=0.14.2",
 ]
 
 [dependency-groups]

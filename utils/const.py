@@ -17,6 +17,8 @@ CATALOG_DATA = {
     "hindi_series": "Hindi Series",
     "hindi_tcrip": "Hindi TCRip Movies",
     "hockey": "Hockey",
+    "jackett_movies": "Jackett Scraped Movies",
+    "jackett_series": "Jackett Scraped Series",
     "kannada_dubbed": "Kannada Dubbed Movies",
     "kannada_hdrip": "Kannada HD Movies",
     "kannada_old": "Kannada Old Movies",
@@ -39,6 +41,7 @@ CATALOG_DATA = {
     "punjabi_movies": "Punjabi Movies",
     "punjabi_series": "Punjabi Series",
     "rugby": "Rugby/AFL",
+    "motor_sports": "Motor Sports",
     "tamil_dubbed": "Tamil Dubbed Movies",
     "tamil_hdrip": "Tamil HD Movies",
     "tamil_old": "Tamil Old Movies",
@@ -50,6 +53,8 @@ CATALOG_DATA = {
     "telugu_series": "Telugu Series",
     "telugu_tcrip": "Telugu TCRip Movies",
     "fighting": "Fighting (WWE, UFC)",
+    "rss_feed_movies": "RSS Feed Movies",
+    "rss_feed_series": "RSS Feed Series",
     "tgx_movie": "TGx Movies",
     "tgx_series": "TGx Series",
     "contribution_movies": "Contribution Streams Movies",
@@ -215,41 +220,41 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
 
 CERTIFICATION_MAPPING = {
     "All Ages": [
-        "A.G.", "A/fig", "A/i", "A/i/fig", "AA", "Ai", "AL", "AL/Tous", "ALL", 
-        "Alla", "ATP", "Approved", "Btl", "E", "FAM", "G", "General", "Genel İzleyici", 
-        "Genel İzleyici Kitlesi", "KT", "L", "Libre", "Livre", "Públicos", 
-        "Semua", "SU", "T", "TE", "Tous", "Tous Publics", "TP", "U", "UR", "ZA", 
+        "A.G.", "A/fig", "A/i", "A/i/fig", "AA", "Ai", "AL", "AL/Tous", "ALL",
+        "Alla", "ATP", "Approved", "Btl", "E", "FAM", "G", "General", "Genel İzleyici",
+        "Genel İzleyici Kitlesi", "KT", "L", "Libre", "Livre", "Públicos",
+        "Semua", "SU", "T", "TE", "Tous", "Tous Publics", "TP", "U", "UR", "ZA",
         "0", "0+", "3", "4+", "5"
     ],
-    
+
     "Children": [
-        "6", "6+", "6A", "7", "7+", "7-9 PG", "7i", "8", "8+", "9", "9+", 
-        "AP", "Children", "DA", "I", "K", "KN", "LH", "M/4", "M/6", "PG", 
+        "6", "6+", "6A", "7", "7+", "7-9 PG", "7i", "8", "8+", "9", "9+",
+        "AP", "Children", "DA", "I", "K", "KN", "LH", "M/4", "M/6", "PG",
         "PG8", "TV-G", "TV-Y", "TV-Y7", "TV-Y7-FV", "P"
     ],
-    
+
     "Parental Guidance": [
-        "10", "10+", "10-12 PG", "10A", "11", "12", "12+", "12A", "12PG", "12i", 
-        "B", "BA", "GY", "M/12", "N-7", "P13", "PG-12", "PG12", "Public Averti", 
+        "10", "10+", "10-12 PG", "10A", "11", "12", "12+", "12A", "12PG", "12i",
+        "B", "BA", "GY", "M/12", "N-7", "P13", "PG-12", "PG12", "Public Averti",
         "TV-PG", "VM12"
     ],
-    
+
     "Teens": [
-        "13", "13+", "14", "14+", "14A", "15", "15+", "15A", "15PG", "16", "16+", 
-        "B15", "C", "GA", "I.C.-14", "IIA", "IIB", "M", "M/16", "MA", 
-        "MA 15+", "N-13", "N-16", "NC16", "PG-13", "PG-15", "R", "R-12", "R-13", "R-15+", 
+        "13", "13+", "14", "14+", "14A", "15", "15+", "15A", "15PG", "16", "16+",
+        "B15", "C", "GA", "I.C.-14", "IIA", "IIB", "M", "M/16", "MA",
+        "MA 15+", "N-13", "N-16", "NC16", "PG-13", "PG-15", "R", "R-12", "R-13", "R-15+",
         "R-16", "RP13", "RP16", "SAM 13", "SAM 16", "TV-14", "VM14", "VM16", "Y"
     ],
-    
+
     "Adults": [
-        "18", "18+", "18A", "18PA", "18PL", "18SG", "18SX", "18TC", "A", 
-        "Caution", "D", "I.M.-18", "III", "M/18", "M18", "N-18", "NC-17", 
+        "18", "18+", "18A", "18PA", "18PL", "18SG", "18SX", "18TC", "A",
+        "Caution", "D", "I.M.-18", "III", "M/18", "M18", "N-18", "NC-17",
         "R(A)", "R-18", "R18", "RP18", "SAM 18", "TV-MA", "VM18", "Z",
         "Unrated"
     ],
-    
+
     "Adults+": [
-        "20", "20+", "21", "21+", "Banned", "KK", "R21", "R21+", "R-21", "R-21+", "R-21A", 
+        "20", "20+", "21", "21+", "Banned", "KK", "R21", "R21+", "R-21", "R-21+", "R-21A",
         "RC", "X", "X18", "X 18+", "XX", "XXX"
     ],
 }
@@ -309,9 +314,9 @@ LANGUAGES_FILTERS = [
 SUPPORTED_LANGUAGES = set(LANGUAGES_FILTERS)
 
 QUALITY_GROUPS = {
-    "BluRay/UHD": ["BluRay", "BluRay REMUX", "BRRip", "BDRip", "UHDRip"],
-    "WEB/HD": ["WEB-DL", "WEB-DLRip", "WEBRip", "HDRip"],
-    "DVD/TV/SAT": ["DVD", "DVDRip", "HDTV", "SATRip", "TVRip", "PPVRip"],
+    "BluRay/UHD": ["BluRay", "BluRay REMUX", "BRRip", "BDRip", "UHDRip", "REMUX", "BLURAY"],
+    "WEB/HD": ["WEB-DL", "WEB-DLRip", "WEBRip", "HDRip", "WEBMux", ],
+    "DVD/TV/SAT": ["DVD", "DVDRip", "HDTV", "SATRip", "TVRip", "PPVRip", "PDTV"],
     "CAM/Screener": ["CAM", "TeleSync", "TeleCine", "SCR"],
     "Unknown": [None],
 }

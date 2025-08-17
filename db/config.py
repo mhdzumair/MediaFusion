@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     db_max_connections: int = 50
     redis_url: str = "redis://redis-service:6379"
     redis_max_connections: int = 100
+    redis_retry_attempts: int = 3
+    redis_retry_delay: float = 0.1
+    redis_connection_timeout: int = 10
+    redis_enable_circuit_breaker: bool = True
 
     # External Service URLs
     requests_proxy_url: str | None = None
@@ -80,6 +84,7 @@ class Settings(BaseSettings):
     mediafusion_url: str = "https://mediafusion.elfhosted.com"
     mediafusion_api_password: str | None = None
     sync_debrid_cache_streams: bool = False
+    rss_feed_scrape_interval_hour: int = 3
 
     # Zilean Settings
     is_scrap_from_zilean: bool = False
