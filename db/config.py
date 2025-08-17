@@ -40,6 +40,7 @@ class Settings(BaseSettings):
             "qbittorrent",
             "stremthru",
             "easydebrid",
+            "debrider",
         ]
     ] = Field(default_factory=list)
 

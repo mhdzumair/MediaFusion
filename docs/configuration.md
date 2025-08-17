@@ -36,6 +36,7 @@ These settings define the basic configuration and identity of your MediaFusion i
   - "qbittorrent": qBittorrent client
   - "stremthru": StremThru service
   - "easydebrid": EasyDebrid service
+  - "debrider": Debrider service
 
 ## Database and Cache Settings
 
