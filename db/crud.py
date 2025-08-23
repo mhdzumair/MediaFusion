@@ -916,6 +916,7 @@ async def get_or_create_metadata(
         if not imdb_data and is_imdb_only:
             return
 
+        imdb_data = imdb_data or {}
         metadata["id"] = (
             imdb_data.get("imdb_id") or metadata.get("id") or f"mf{uuid4().fields[-1]}"
         )
