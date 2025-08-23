@@ -5,12 +5,20 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 import dramatiq
+import httpx
 import xmltodict
 
-from db.crud import get_or_create_metadata
+from db.crud import get_or_create_metadata, store_new_torrent_streams
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.enums import TorrentType
-from db.models import RSSFeed, RSSFeedFilters, RSSParsingPatterns, TorrentStreams, MediaFusionMovieMetaData, MediaFusionSeriesMetaData
+from db.models import (
+    RSSFeed,
+    RSSFeedFilters,
+    RSSParsingPatterns,
+    TorrentStreams,
+    MediaFusionMovieMetaData,
+    MediaFusionSeriesMetaData,
+)
 from scrapers.base_scraper import BaseScraper
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
@@ -65,7 +73,9 @@ class RssScraper(BaseScraper):
             items = await self.fetch_feed(feed.url, feed.name)
             if not items:
                 self.logger.warning(f"No items found in feed: {feed.name}")
-                await self.update_feed_metrics(feed_id, 0, 0, 0, 0, time.time() - start_time, {})
+                await self.update_feed_metrics(
+                    feed_id, 0, 0, 0, 0, time.time() - start_time, {}
+                )
                 return []
 
             items_found = len(items)
@@ -76,6 +86,9 @@ class RssScraper(BaseScraper):
                 failure_threshold=3, recovery_timeout=10, half_open_attempts=2
             )
             processed_info_hashes = set()
+            collected_streams = []
+            processed_item_ids = []
+
             async for processed_item in batch_process_with_circuit_breaker(
                 self.process_feed_item,
                 items,
@@ -88,16 +101,33 @@ class RssScraper(BaseScraper):
             ):
                 if processed_item:
                     if isinstance(processed_item, TorrentStreams):
-                        results.append(processed_item)
-                        await self.mark_item_as_processed(processed_item.id)
+                        collected_streams.append(processed_item)
+                        processed_item_ids.append(processed_item.id)
                         self.metrics.record_processed_item()
                         items_processed_this_run += 1
-                    elif isinstance(processed_item, dict) and "skip_reason" in processed_item:
+                    elif (
+                        isinstance(processed_item, dict)
+                        and "skip_reason" in processed_item
+                    ):
                         # Track skip reason
                         reason = processed_item["skip_reason"]
-                        skip_reasons_this_run[reason] = skip_reasons_this_run.get(reason, 0) + 1
+                        skip_reasons_this_run[reason] = (
+                            skip_reasons_this_run.get(reason, 0) + 1
+                        )
                     else:
-                        await self.mark_item_as_processed(processed_item)
+                        processed_item_ids.append(processed_item)
+
+            # Bulk insert all collected streams
+            if collected_streams:
+                await store_new_torrent_streams(collected_streams)
+                results.extend(collected_streams)
+                self.logger.info(
+                    f"Bulk inserted {len(collected_streams)} streams for feed: {feed.name}"
+                )
+
+            # Mark all processed items as processed
+            for item_id in processed_item_ids:
+                await self.mark_item_as_processed(item_id)
 
             # Calculate skipped items (items found - items processed)
             items_skipped_this_run = items_found - items_processed_this_run
@@ -105,8 +135,13 @@ class RssScraper(BaseScraper):
             # Update feed metrics
             scrape_duration = time.time() - start_time
             await self.update_feed_metrics(
-                feed_id, items_found, items_processed_this_run,
-                items_skipped_this_run, errors_this_run, scrape_duration, skip_reasons_this_run
+                feed_id,
+                items_found,
+                items_processed_this_run,
+                items_skipped_this_run,
+                errors_this_run,
+                scrape_duration,
+                skip_reasons_this_run,
             )
 
             # Update last scraped timestamp
@@ -121,8 +156,13 @@ class RssScraper(BaseScraper):
             # Update metrics even on error
             scrape_duration = time.time() - start_time
             await self.update_feed_metrics(
-                feed_id, 0, items_processed_this_run,
-                items_skipped_this_run, errors_this_run, scrape_duration, skip_reasons_this_run
+                feed_id,
+                0,
+                items_processed_this_run,
+                items_skipped_this_run,
+                errors_this_run,
+                scrape_duration,
+                skip_reasons_this_run,
             )
             return []
 
@@ -143,17 +183,13 @@ class RssScraper(BaseScraper):
                 elif "feed" in xml_dict and "entry" in xml_dict["feed"]:
                     items = xml_dict["feed"].get("entry", [])
                 else:
-                    self.logger.error(
-                        f"Unexpected RSS feed structure for {name}"
-                    )
+                    self.logger.error(f"Unexpected RSS feed structure for {name}")
                     return []
                 if not isinstance(items, list):
                     items = [items]
                 return items
             except Exception as xml_error:
-                self.logger.info(
-                    f"XML parsing failed for {name}, {str(xml_error)}"
-                )
+                self.logger.info(f"XML parsing failed for {name}, {str(xml_error)}")
                 return []
         except Exception as e:
             self.logger.error(f"Error fetching RSS feed {name}: {str(e)}")
@@ -216,15 +252,17 @@ class RssScraper(BaseScraper):
                 return None
 
             base_path = path[:bracket_start]
-            search_condition = path[bracket_start + 2:bracket_end]
-            remaining_path = path[bracket_end + 1:]
+            search_condition = path[bracket_start + 2 : bracket_end]
+            remaining_path = path[bracket_end + 1 :]
 
             # The remaining path should start with @ for attribute access
             target_field = remaining_path
             # Keep the @ prefix if present, as it's part of the actual key name in XML attributes
             # Don't remove it since the actual data has keys like "@value", "@name", etc.
 
-            self.logger.debug(f"Parsed components: base_path='{base_path}', search_condition='{search_condition}', target_field='{target_field}'")
+            self.logger.debug(
+                f"Parsed components: base_path='{base_path}', search_condition='{search_condition}', target_field='{target_field}'"
+            )
 
             # Parse search condition: @name="seeders" or name="seeders"
             if "=" not in search_condition:
@@ -233,14 +271,16 @@ class RssScraper(BaseScraper):
 
             equal_index = search_condition.find("=")
             search_key = search_condition[:equal_index]
-            search_value = search_condition[equal_index + 1:]
-            search_value = search_value.strip('"\'')  # Remove quotes
+            search_value = search_condition[equal_index + 1 :]
+            search_value = search_value.strip("\"'")  # Remove quotes
 
             # Add @ prefix to search key if not already present (to match XML attribute format)
             if not search_key.startswith("@"):
                 search_key = "@" + search_key
 
-            self.logger.debug(f"Search params: search_key='{search_key}', search_value='{search_value}'")
+            self.logger.debug(
+                f"Search params: search_key='{search_key}', search_value='{search_value}'"
+            )
 
             # Navigate to the array
             current = item
@@ -255,24 +295,34 @@ class RssScraper(BaseScraper):
 
             # Search in the array
             if not isinstance(current, list):
-                self.logger.debug(f"Expected array for path '{base_path}' but got {type(current)}")
+                self.logger.debug(
+                    f"Expected array for path '{base_path}' but got {type(current)}"
+                )
                 return None
 
-            self.logger.debug(f"Searching in array of {len(current)} items for {search_key}='{search_value}'")
+            self.logger.debug(
+                f"Searching in array of {len(current)} items for {search_key}='{search_value}'"
+            )
 
             for i, array_item in enumerate(current):
                 if isinstance(array_item, dict):
                     # Check if this item matches our search condition
                     item_value = array_item.get(search_key)
-                    self.logger.debug(f"Item {i}: {search_key} = '{item_value}' (looking for '{search_value}')")
+                    self.logger.debug(
+                        f"Item {i}: {search_key} = '{item_value}' (looking for '{search_value}')"
+                    )
 
                     if item_value == search_value:
                         # Return the target field from this item
                         result = array_item.get(target_field)
-                        self.logger.debug(f"Found match! Returning {target_field} = '{result}'")
+                        self.logger.debug(
+                            f"Found match! Returning {target_field} = '{result}'"
+                        )
                         return result
 
-            self.logger.debug(f"No matching item found for {search_key}='{search_value}'")
+            self.logger.debug(
+                f"No matching item found for {search_key}='{search_value}'"
+            )
             return None
 
         except (ValueError, AttributeError, KeyError) as e:
@@ -320,7 +370,9 @@ class RssScraper(BaseScraper):
             self.logger.exception(f"Error processing RSS feed item: {str(e)}")
             return None
 
-    async def process_torrent_feed_item(self, item: Dict, feed: RSSFeed, feed_id: str, processed_info_hashes: set) -> Optional[TorrentStreams]:
+    async def process_torrent_feed_item(
+        self, item: Dict, feed: RSSFeed, feed_id: str, processed_info_hashes: set
+    ) -> Optional[TorrentStreams]:
         """Process a feed item containing torrent information with integrated filtering"""
         try:
             patterns = feed.parsing_patterns
@@ -333,17 +385,25 @@ class RssScraper(BaseScraper):
 
             # Extract size and seeders using proper pattern extraction
             size_str = self.extract_field_with_patterns(
-                item, patterns, "size",
-                fallback_fields=["description", "link", "content", "title"]
+                item,
+                patterns,
+                "size",
+                fallback_fields=["description", "link", "content", "title"],
             )
 
             seeders_str = self.extract_field_with_patterns(
-                item, patterns, "seeders",
-                fallback_fields=["description", "link", "content", "title"]
+                item,
+                patterns,
+                "seeders",
+                fallback_fields=["description", "link", "content", "title"],
             )
 
             publish_date_str = self.extract_value(item, patterns.pubDate)
-            publish_date = datetime.strptime(publish_date_str, "%a, %d %b %Y %H:%M:%S %z") if publish_date_str else None
+            publish_date = (
+                datetime.strptime(publish_date_str, "%a, %d %b %Y %H:%M:%S %z")
+                if publish_date_str
+                else None
+            )
 
             # Extract category for filtering
             category = self.extract_value(item, patterns.category)
@@ -364,20 +424,28 @@ class RssScraper(BaseScraper):
             parsed_data = self.parse_title_data(title)
 
             magnet_link = self.extract_field_with_patterns(
-                item, patterns, "magnet",
-                fallback_fields=["description", "link", "content", "title"]
+                item,
+                patterns,
+                "magnet",
+                fallback_fields=["description", "link", "content", "title"],
             )
 
             torrent_link = self.extract_field_with_patterns(
-                item, patterns, "torrent",
-                fallback_fields=["description", "link", "content", "title"]
+                item,
+                patterns,
+                "torrent",
+                fallback_fields=["description", "link", "content", "title"],
             )
 
             # Get episode name parser from feed patterns if available
-            episode_name_parser = getattr(feed.parsing_patterns, 'episode_name_parser', None)
+            episode_name_parser = getattr(
+                feed.parsing_patterns, "episode_name_parser", None
+            )
 
             torrent_data, is_torrent_downloaded = await self.get_torrent_data(
-                torrent_link or magnet_link, parsed_data, episode_name_parser=episode_name_parser
+                torrent_link or magnet_link,
+                parsed_data,
+                episode_name_parser=episode_name_parser,
             )
 
             if not is_torrent_downloaded:
@@ -388,11 +456,17 @@ class RssScraper(BaseScraper):
                 self.logger.debug(f"Could not extract info hash from: {title}")
                 return None
 
-            # Check if already processed
+            # Check if already processed in this run
             if info_hash in processed_info_hashes:
-                self.logger.debug(f"Torrent already processed: {title}")
+                self.logger.debug(f"Torrent already processed in this run: {title}")
                 self.metrics.record_skip("Duplicate torrent")
-                return None
+                return {"skip_reason": "Duplicate torrent"}
+
+            # Check if item was already processed (Redis cache)
+            if await self.is_item_processed(info_hash):
+                self.logger.debug(f"Torrent already processed previously: {title}")
+                self.metrics.record_skip("Already processed")
+                return {"skip_reason": "Already processed"}
 
             torrent_data.update(
                 {
@@ -411,12 +485,18 @@ class RssScraper(BaseScraper):
 
             # Use catalog detection if enabled
             if feed.auto_detect_catalog:
-                detected_catalogs = self.detect_catalog_from_content(item, feed, parsed_data)
+                detected_catalogs = self.detect_catalog_from_content(
+                    item, feed, parsed_data
+                )
                 if detected_catalogs:
                     # Filter detected catalogs to only include valid ones from CATALOG_DATA
-                    valid_catalogs = [cat for cat in detected_catalogs if cat in CATALOG_DATA]
+                    valid_catalogs = [
+                        cat for cat in detected_catalogs if cat in CATALOG_DATA
+                    ]
                     catalog_ids = valid_catalogs if valid_catalogs else []
-                    self.logger.debug(f"Auto-detected catalogs for '{title}': {catalog_ids}")
+                    self.logger.debug(
+                        f"Auto-detected catalogs for '{title}': {catalog_ids}"
+                    )
 
             # Always add appropriate RSS feed catalog
             rss_catalog = "rss_feed_series" if is_series else "rss_feed_movies"
@@ -445,12 +525,14 @@ class RssScraper(BaseScraper):
             if isinstance(metadata_result, dict):
                 meta_id = metadata_result.get("id")
                 # Convert dict to metadata object for process_stream
-                metadata_cls = MediaFusionSeriesMetaData if is_series else MediaFusionMovieMetaData
+                metadata_cls = (
+                    MediaFusionSeriesMetaData if is_series else MediaFusionMovieMetaData
+                )
                 metadata_obj = metadata_cls(
                     id=meta_id,
                     title=metadata_result.get("title"),
                     year=metadata_result.get("year"),
-                    type="series" if is_series else "movie"
+                    type="series" if is_series else "movie",
                 )
             else:
                 # If it's a document object, use it directly
@@ -474,7 +556,7 @@ class RssScraper(BaseScraper):
                 "catalog": final_catalogs,
                 "seeders": torrent_data.get("seeders"),
                 "created_at": torrent_data.get("created_at"),
-                "file_data": torrent_data.get("file_data", [])
+                "file_data": torrent_data.get("file_data", []),
             }
 
             # Use process_stream method instead of custom methods
@@ -482,27 +564,38 @@ class RssScraper(BaseScraper):
                 rss_item_data,
                 metadata_obj,
                 "series" if is_series else "movie",
-                processed_info_hashes
+                processed_info_hashes,
             )
 
-            # Mark item as processed
-            await self.mark_item_as_processed(info_hash)
-
             if stream:
-                # Save the stream to database
-                await stream.insert()
-                self.logger.info(f"Successfully created torrent stream: {info_hash} for {title}")
+                # Add to processed_info_hashes to avoid processing again in this run
+                processed_info_hashes.add(info_hash)
+                self.logger.info(
+                    f"Successfully created torrent stream: {info_hash} for {title}"
+                )
                 return stream
             else:
-                self.logger.warning(f"Failed to create stream for: {info_hash} for {title}")
+                self.logger.warning(
+                    f"Failed to create stream for: {info_hash} for {title}"
+                )
                 return None
-
+        except (httpx.TimeoutException, httpx.ConnectTimeout):
+            self.metrics.record_error("network_timeout")
+            self.logger.warning("Network timeout processing RSS torrent feed item")
+            return None
         except Exception as e:
             self.metrics.record_error("torrent_processing_error")
             self.logger.exception(f"Error processing RSS torrent feed item: {str(e)}")
             return None
 
-    def _passes_all_filters(self, title: str, size_mb: float, seeders: int, category: str, filters: RSSFeedFilters) -> bool:
+    def _passes_all_filters(
+        self,
+        title: str,
+        size_mb: float,
+        seeders: int,
+        category: str,
+        filters: RSSFeedFilters,
+    ) -> bool:
         """Consolidated filtering logic that checks all filters at once"""
 
         # Title filter (inclusion)
@@ -513,7 +606,9 @@ class RssScraper(BaseScraper):
                     self.metrics.record_skip("Title filter")
                     return False
             except re.error:
-                self.logger.warning(f"Invalid title filter regex: {filters.title_filter}")
+                self.logger.warning(
+                    f"Invalid title filter regex: {filters.title_filter}"
+                )
 
         # Title exclude filter
         if filters.title_exclude_filter:
@@ -523,35 +618,54 @@ class RssScraper(BaseScraper):
                     self.metrics.record_skip("Title exclude filter")
                     return False
             except re.error:
-                self.logger.warning(f"Invalid title exclude filter regex: {filters.title_exclude_filter}")
+                self.logger.warning(
+                    f"Invalid title exclude filter regex: {filters.title_exclude_filter}"
+                )
 
         # Size filters
         if filters.min_size_mb and size_mb > 0 and size_mb < filters.min_size_mb:
-            self.logger.debug(f"Item '{title}' too small: {size_mb}MB < {filters.min_size_mb}MB")
+            self.logger.debug(
+                f"Item '{title}' too small: {size_mb}MB < {filters.min_size_mb}MB"
+            )
             self.metrics.record_skip("Size too small")
             return False
 
         if filters.max_size_mb and size_mb > 0 and size_mb > filters.max_size_mb:
-            self.logger.debug(f"Item '{title}' too large: {size_mb}MB > {filters.max_size_mb}MB")
+            self.logger.debug(
+                f"Item '{title}' too large: {size_mb}MB > {filters.max_size_mb}MB"
+            )
             self.metrics.record_skip("Size too large")
             return False
 
         # Seeders filter
         if filters.min_seeders and seeders > 0 and seeders < filters.min_seeders:
-            self.logger.debug(f"Item '{title}' has too few seeders: {seeders} < {filters.min_seeders}")
+            self.logger.debug(
+                f"Item '{title}' has too few seeders: {seeders} < {filters.min_seeders}"
+            )
             self.metrics.record_skip("Too few seeders")
             return False
 
         # Category filter
-        if filters.category_filter and category and str(category) not in filters.category_filter:
-            self.logger.debug(f"Item '{title}' category '{category}' not in allowed list")
+        if (
+            filters.category_filter
+            and category
+            and str(category) not in filters.category_filter
+        ):
+            self.logger.debug(
+                f"Item '{title}' category '{category}' not in allowed list"
+            )
             self.metrics.record_skip("Category not allowed")
             return False
 
         return True
 
-    def extract_field_with_patterns(self, item: Dict, patterns: RSSParsingPatterns, field_name: str,
-                                   fallback_fields: List[str] = None) -> Any:
+    def extract_field_with_patterns(
+        self,
+        item: Dict,
+        patterns: RSSParsingPatterns,
+        field_name: str,
+        fallback_fields: List[str] = None,
+    ) -> Any:
         """
         Extract a field using both direct path and regex patterns with proper group handling.
 
@@ -583,25 +697,33 @@ class RssScraper(BaseScraper):
                     try:
                         match = re.search(regex_pattern, str(direct_value))
                         if match:
-                            return match.group(regex_group) if regex_group <= len(match.groups()) else match.group(0)
+                            return (
+                                match.group(regex_group)
+                                if regex_group <= len(match.groups())
+                                else match.group(0)
+                            )
                     except (re.error, IndexError, AttributeError):
                         pass
 
             # Try regex on fallback fields
             if fallback_fields:
                 for fallback_field in fallback_fields:
-                    field_value = self.extract_value(item, getattr(patterns, fallback_field, fallback_field))
+                    field_value = self.extract_value(
+                        item, getattr(patterns, fallback_field, fallback_field)
+                    )
                     if field_value:
                         try:
                             match = re.search(regex_pattern, str(field_value))
                             if match:
-                                return match.group(regex_group) if regex_group <= len(match.groups()) else match.group(0)
+                                return (
+                                    match.group(regex_group)
+                                    if regex_group <= len(match.groups())
+                                    else match.group(0)
+                                )
                         except (re.error, IndexError, AttributeError):
                             continue
 
         return None
-
-
 
     async def update_feed_last_scraped(self, feed_id: str) -> None:
         """Update the lastScraped timestamp for a feed"""
@@ -612,8 +734,16 @@ class RssScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Error updating feed last_scraped timestamp: {str(e)}")
 
-    async def update_feed_metrics(self, feed_id: str, items_found: int, items_processed: int,
-                                  items_skipped: int, errors: int, duration: float, skip_reasons: dict) -> None:
+    async def update_feed_metrics(
+        self,
+        feed_id: str,
+        items_found: int,
+        items_processed: int,
+        items_skipped: int,
+        errors: int,
+        duration: float,
+        skip_reasons: dict,
+    ) -> None:
         """Update the scraping metrics for a feed"""
         try:
             feed = await RSSFeed.get(feed_id)
@@ -757,7 +887,9 @@ class RssScraper(BaseScraper):
         """Get seeders from RSS item data"""
         return item.get("seeders", 0)
 
-    async def parse_indexer_data(self, indexer_data: dict, catalog_type: str, parsed_data: dict) -> dict:
+    async def parse_indexer_data(
+        self, indexer_data: dict, catalog_type: str, parsed_data: dict
+    ) -> dict:
         """Parse RSS-specific data and return processed data"""
         # For RSS scraper, we already have the processed data
         info_hash = indexer_data.get("info_hash")
@@ -765,25 +897,27 @@ class RssScraper(BaseScraper):
             return None
 
         # Update parsed_data with RSS-specific information
-        parsed_data.update({
-            "info_hash": info_hash.lower(),
-            "announce_list": indexer_data.get("announce_list", []),
-            "total_size": indexer_data.get("total_size", 0),
-            "torrent_name": indexer_data.get("torrent_name", ""),
-            "largest_file": indexer_data.get("largest_file", {}),
-            "file_data": indexer_data.get("file_data", []),
-            "seeders": indexer_data.get("seeders", 0),
-            "created_at": indexer_data.get("created_at", datetime.now()),
-            "source": indexer_data.get("source", "RSS Feed"),
-            "uploader": indexer_data.get("uploader"),
-            "catalog": indexer_data.get("catalog", []),
-            "languages": indexer_data.get("languages", []),
-            "resolution": indexer_data.get("resolution"),
-            "codec": indexer_data.get("codec"),
-            "quality": indexer_data.get("quality"),
-            "audio": indexer_data.get("audio"),
-            "hdr": indexer_data.get("hdr"),
-        })
+        parsed_data.update(
+            {
+                "info_hash": info_hash.lower(),
+                "announce_list": indexer_data.get("announce_list", []),
+                "total_size": indexer_data.get("total_size", 0),
+                "torrent_name": indexer_data.get("torrent_name", ""),
+                "largest_file": indexer_data.get("largest_file", {}),
+                "file_data": indexer_data.get("file_data", []),
+                "seeders": indexer_data.get("seeders", 0),
+                "created_at": indexer_data.get("created_at", datetime.now()),
+                "source": indexer_data.get("source", "RSS Feed"),
+                "uploader": indexer_data.get("uploader"),
+                "catalog": indexer_data.get("catalog", []),
+                "languages": indexer_data.get("languages", []),
+                "resolution": indexer_data.get("resolution"),
+                "codec": indexer_data.get("codec"),
+                "quality": indexer_data.get("quality"),
+                "audio": indexer_data.get("audio"),
+                "hdr": indexer_data.get("hdr"),
+            }
+        )
 
         return parsed_data
 
@@ -796,16 +930,16 @@ class RssScraper(BaseScraper):
 
         # Common field mappings to check
         field_mappings = {
-            'title': ['title', 'name'],
-            'description': ['description', 'summary', 'content'],
-            'pubDate': ['pubDate', 'published', 'date', 'updated'],
-            'category': ['category', 'categories', 'genre'],
-            'size': ['size', 'length'],
-            'seeders': ['seeders', 'seeds'],
-            'leechers': ['leechers', 'peers'],
-            'uploader': ['uploader', 'author', 'creator'],
-            'magnet': ['magnet', 'magnet_link', 'magnet_url'],
-            'torrent': ['torrent', 'torrent_link', 'torrent_url'],
+            "title": ["title", "name"],
+            "description": ["description", "summary", "content"],
+            "pubDate": ["pubDate", "published", "date", "updated"],
+            "category": ["category", "categories", "genre"],
+            "size": ["size", "length"],
+            "seeders": ["seeders", "seeds"],
+            "leechers": ["leechers", "peers"],
+            "uploader": ["uploader", "author", "creator"],
+            "magnet": ["magnet", "magnet_link", "magnet_url"],
+            "torrent": ["torrent", "torrent_link", "torrent_url"],
         }
 
         # Check each field mapping
@@ -817,26 +951,28 @@ class RssScraper(BaseScraper):
                     break
 
         # Look for magnet links in common fields
-        for field in ['description', 'link', 'content', 'summary', 'enclosure.@url']:
+        for field in ["description", "link", "content", "summary", "enclosure.@url"]:
             value = self.extract_value(sample_item, field)
-            if value and 'magnet:' in str(value):
+            if value and "magnet:" in str(value):
                 # Try to extract magnet with regex
                 magnet_match = re.search(r'magnet:\?[^\s<>"]+', str(value))
                 if magnet_match:
-                    patterns['magnet'] = field
-                    patterns['magnet_regex'] = r'magnet:\?[^\s<>"]+'
+                    patterns["magnet"] = field
+                    patterns["magnet_regex"] = r'magnet:\?[^\s<>"]+'
                     break
 
         # Look for torrent links
-        for field in ['description', 'link', 'content', 'summary', 'enclosure.@url']:
+        for field in ["description", "link", "content", "summary", "enclosure.@url"]:
             value = self.extract_value(sample_item, field)
-            if value and ('.torrent' in str(value) or 'download' in str(value).lower()):
-                patterns['torrent'] = field
+            if value and (".torrent" in str(value) or "download" in str(value).lower()):
+                patterns["torrent"] = field
                 break
 
         return patterns
 
-    def detect_catalog_from_content(self, item: Dict, feed: RSSFeed, parsed_data: Dict) -> List[str]:
+    def detect_catalog_from_content(
+        self, item: Dict, feed: RSSFeed, parsed_data: Dict
+    ) -> List[str]:
         """
         Auto-detect catalog based on content analysis using parsed data.
         Returns list of catalog IDs that this item should be assigned to.
@@ -870,9 +1006,13 @@ class RssScraper(BaseScraper):
                 if re.search(regex_pattern, content_text, flags):
                     target_catalogs = pattern.target_catalogs
                     catalogs.extend(target_catalogs)
-                    self.logger.debug(f"Pattern '{pattern.name}' matched, adding catalogs: {target_catalogs}")
+                    self.logger.debug(
+                        f"Pattern '{pattern.name}' matched, adding catalogs: {target_catalogs}"
+                    )
             except re.error as e:
-                self.logger.warning(f"Invalid regex pattern '{regex_pattern}' in pattern '{pattern.name}': {e}")
+                self.logger.warning(
+                    f"Invalid regex pattern '{regex_pattern}' in pattern '{pattern.name}': {e}"
+                )
 
         # If custom patterns matched, return those results
         if catalogs:
@@ -888,31 +1028,40 @@ class RssScraper(BaseScraper):
         sports_detection = {
             # American Football
             "american_football": ["nfl", "american football", "super bowl"],
-
             # Baseball
             "baseball": ["mlb", "baseball", "world series"],
-
             # Basketball
             "basketball": ["nba", "basketball"],
-
             # Football (Soccer)
-            "football": ["football", "soccer", "fifa", "uefa", "premier league", "champions league",
-                        "world cup", "efl", ],
-
+            "football": [
+                "football",
+                "soccer",
+                "fifa",
+                "uefa",
+                "premier league",
+                "champions league",
+                "world cup",
+                "efl",
+            ],
             # Formula Racing
             "formula_racing": ["formula", "f1", "grand prix", "f2", "f3"],
-
             # Hockey
             "hockey": ["nhl", "hockey", "stanley cup"],
-
             # MotoGP Racing
             "motogp_racing": ["motogp", "moto gp", "motorcycle", "racing"],
-
             # Rugby
             "rugby": ["rugby", "afl", "australian football", "nrl"],
-
             # Fighting (WWE, UFC)
-            "fighting": ["ufc", "wwe", "wrestling", "boxing", "mma", "raw", "smackdown", "wrestlemania"],
+            "fighting": [
+                "ufc",
+                "wwe",
+                "wrestling",
+                "boxing",
+                "mma",
+                "raw",
+                "smackdown",
+                "wrestlemania",
+            ],
         }
 
         # Check for specific sports
@@ -922,9 +1071,25 @@ class RssScraper(BaseScraper):
 
         # General sports fallback
         general_sports_keywords = [
-            "sport", "sports", "match", "game", "vs", "versus", "highlights", "replay",
-            "tournament", "championship", "league", "espn", "sky sports", "bt sport",
-            "bein", "fox sports", "nbc sports", "match of the day", "motd"
+            "sport",
+            "sports",
+            "match",
+            "game",
+            "vs",
+            "versus",
+            "highlights",
+            "replay",
+            "tournament",
+            "championship",
+            "league",
+            "espn",
+            "sky sports",
+            "bt sport",
+            "bein",
+            "fox sports",
+            "nbc sports",
+            "match of the day",
+            "motd",
         ]
 
         if any(keyword in content_lower for keyword in general_sports_keywords):
@@ -936,11 +1101,23 @@ class RssScraper(BaseScraper):
             return catalogs
 
         else:
-            tc_qualities = ["CAM", "TELESYNC", "TELECINE", "SCR", "SCREENER", "WORKPRINT", "TC", "TS"]
-            quality_value = "tcrip" if any(tc_qual in quality for tc_qual in tc_qualities) else "hdrip"
+            tc_qualities = [
+                "CAM",
+                "TELESYNC",
+                "TELECINE",
+                "SCR",
+                "SCREENER",
+                "WORKPRINT",
+                "TC",
+                "TS",
+            ]
+            quality_value = (
+                "tcrip"
+                if any(tc_qual in quality for tc_qual in tc_qualities)
+                else "hdrip"
+            )
             catalogs = [f"{lang.lower()}_{quality_value}" for lang in languages]
             return catalogs
-
 
 
 @dramatiq.actor(time_limit=60 * 60 * 1000, priority=5, queue_name="scrapy")

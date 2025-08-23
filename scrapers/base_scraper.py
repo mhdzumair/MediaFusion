@@ -641,7 +641,11 @@ class BaseScraper(abc.ABC):
         await REDIS_ASYNC_CLIENT.zremrangebyscore(scraper_prefix, 0, current_time - ttl)
 
     async def get_torrent_data(
-        self, download_url: str, parsed_data: dict, headers: dict = None, episode_name_parser: str = None
+        self,
+        download_url: str,
+        parsed_data: dict,
+        headers: dict = None,
+        episode_name_parser: str = None,
     ) -> tuple[dict | None, bool]:
         """Common method to get torrent data from magnet or URL"""
         if download_url.startswith("magnet:"):
@@ -665,8 +669,10 @@ class BaseScraper(abc.ABC):
                 f"HTTP Error getting torrent data: {download_url}, status code: {error.response.status_code}"
             )
             return None, False
-        except httpx.TimeoutException as error:
-            self.logger.warning("Timeout while getting torrent data")
+        except (httpx.TimeoutException, httpx.ConnectTimeout) as error:
+            self.logger.warning(
+                f"Timeout while getting torrent data for: {download_url}"
+            )
             raise error
         except httpx.RequestError as error:
             self.logger.error(f"Request error getting torrent data: {error}")
@@ -679,8 +685,15 @@ class BaseScraper(abc.ABC):
 
         if response.status_code in [301, 302, 303, 307, 308]:
             redirect_url = response.headers.get("Location")
-            return await self.get_torrent_data(redirect_url, parsed_data, headers, episode_name_parser)
-        return extract_torrent_metadata(response.content, parsed_data, episode_name_parser=episode_name_parser), True
+            return await self.get_torrent_data(
+                redirect_url, parsed_data, headers, episode_name_parser
+            )
+        return (
+            extract_torrent_metadata(
+                response.content, parsed_data, episode_name_parser=episode_name_parser
+            ),
+            True,
+        )
 
     async def process_stream(
         self,
@@ -860,6 +873,7 @@ class BaseScraper(abc.ABC):
             self.metrics.record_error("result_processing_error")
             self.logger.exception(f"Error processing search result: {e}")
             return None
+
 
 class BackgroundScraperManager:
     def __init__(self):
