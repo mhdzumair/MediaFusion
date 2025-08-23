@@ -188,6 +188,8 @@ class Settings(BaseSettings):
     disable_prowlarr_feed_scraper: bool = False
     jackett_feed_scraper_crontab: str = "0 */3 * * *"
     disable_jackett_feed_scraper: bool = False
+    rss_feed_scraper_crontab: str = "0 */3 * * *"
+    disable_rss_feed_scraper: bool = False
     cleanup_expired_scraper_task_crontab: str = "0 * * * *"
     cleanup_expired_cache_task_crontab: str = "0 0 * * *"
 

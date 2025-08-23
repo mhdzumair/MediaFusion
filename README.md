@@ -9,7 +9,7 @@
 ## ✨ Features
 
 - **Rich Catalogs**: Offers extensive catalogs for multiple languages including Tamil, Hindi, Malayalam, Kannada, English, and dubbed movies, series & live tv.
-  
+
   ![Media Fusion Catalog](resources/images/ss1.png?raw=true)
 
 - **Enhanced Streaming with Various Providers**: Seamless playback from a diverse array of torrent and cloud storage services:
@@ -37,6 +37,7 @@
   - 📺 **TamilUltra & NowMeTV**: Get the best of Live TV channels right at your fingertips.
   - 🔄 **Prowlarr Integration**: Supercharge your scraping streams with Prowlarr's powerful integration.
   - 🔍 **Advanced Prowlarr Integration**: Improved Prowlarr feed scraping for more comprehensive content discovery with latest updates.
+  - 📰 **RSS Feed Scraper**: Automated RSS feed monitoring and scraping with intelligent catalog detection, and parsing with regex patterns.
   - 🌊 **Torrentio/KnightCrawler Streams**: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.
   - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for cached debrid contents.
   - 📺 **MPD DRM Scraping**: Scraping MPD & Support streaming functionality with MediaFlow MPD DRM support.
@@ -61,6 +62,7 @@
   - 🚫 **Support DMCA Take Down**: Torrent blocking feature for DMCA compliance.
   - 🤝 **Manual Torrent Contribution**: Add support for manual torrent contribution and private and webseeded torrent import support. [Webseed Creator Colab Link](https://colab.research.google.com/github/mhdzumair/MediaFusion/blob/main/docs/TorrentWebCreator.ipynb) <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
   - 🔍 **Jackett Indexer Support**: Add support for Jackett indexer with AKA title searching and individual search.
+  - 📰 **RSS Feed Manager**: Comprehensive RSS feed management system with custom parsing patterns, filtering options, and automated scheduling.
 
 ## 🚀 Installation Guide
 
@@ -82,13 +84,13 @@
 5. In the "Enter a name for this media source" field, enter `MediaFusion` and click "OK"
 6. Go back to Kodi home screen
 7. Click Add-ons
-8. Click the Add-on browser (box icon) 
+8. Click the Add-on browser (box icon)
 9. Click "Install from zip file"
 10. Click "MediaFusion"
 11. Select the repository zip file (e.g., `repository.mediafusion-4.1.1.zip`)
 12. Wait for the "MediaFusion Repository add-on installed" notification
 13. Click "Install from repository"
-14. Select "MediaFusion Repository" 
+14. Select "MediaFusion Repository"
     > If it says "Could not connect to repository", close Kodi and open it again and go to add-ons and start from step 13
 15. Go to "Video add-ons"
 16. Select "MediaFusion"

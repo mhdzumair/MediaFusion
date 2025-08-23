@@ -5,6 +5,7 @@ from db.config import settings
 from mediafusion_scrapy.task import run_spider
 from scrapers.background_scraper import run_background_search
 from scrapers.feed_scraper import run_prowlarr_feed_scraper, run_jackett_feed_scraper
+from scrapers.rss_scraper import run_rss_feed_scraper
 from scrapers.trackers import update_torrent_seeders
 from scrapers.tv import validate_tv_streams_in_db
 from scrapers.scraper_tasks import cleanup_expired_scraper_task
@@ -209,6 +210,17 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             name="jackett_feed_scraper",
             kwargs={
                 "crontab_expression": settings.jackett_feed_scraper_crontab,
+            },
+        )
+
+    # Schedule RSS feed scraper
+    if not settings.disable_rss_feed_scraper:
+        scheduler.add_job(
+            run_rss_feed_scraper.send,
+            CronTrigger.from_crontab(settings.rss_feed_scraper_crontab),
+            name="rss_feed_scraper",
+            kwargs={
+                "crontab_expression": settings.rss_feed_scraper_crontab,
             },
         )
 
