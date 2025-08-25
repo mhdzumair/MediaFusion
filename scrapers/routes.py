@@ -41,14 +41,14 @@ router = APIRouter()
 
 def validate_api_password(api_password: str):
     if api_password != settings.api_password:
-        raise HTTPException(status_code=401, detail="Invalid API password.")
+        return {"status": "error", "message": "Invalid API password."}
     return True
 
 
-def raise_error(error_msg: str):
+def create_error_response(error_msg: str):
     error_msg = f"Failed due to: {error_msg}"
     logging.warning(error_msg)
-    raise HTTPException(status_code=200, detail=error_msg)
+    return {"status": "error", "message": error_msg}
 
 
 @router.get("/", tags=["scraper"])
@@ -100,16 +100,18 @@ async def run_scraper_task(task: schemas.ScraperTask):
         total_pages=task.total_pages,
     )
 
-    return {"status": f"Scraping {task.spider_name} task has been scheduled."}
+    return {"status": "success", "message": f"Scraping {task.spider_name} task has been scheduled."}
 
 
 @router.post("/add_tv_metadata", tags=["scraper"])
 async def add_tv_meta_data(data: schemas.TVMetaDataUpload, request: Request):
-    validate_api_password(data.api_password)
+    validation_result = validate_api_password(data.api_password)
+    if isinstance(validation_result, dict):
+        return validation_result
     await add_tv_metadata(
         [data.tv_metadata.model_dump()], namespace=get_request_namespace(request)
     )
-    return {"status": "TV metadata task has been scheduled."}
+    return {"status": "success", "message": "TV metadata task has been scheduled."}
 
 
 @router.post("/m3u_upload", tags=["scraper"])
@@ -122,9 +124,11 @@ async def upload_m3u_playlist(
     m3u_playlist_file: UploadFile = File(None),
     api_password: str = Form(...),
 ):
-    validate_api_password(api_password)
+    validation_result = validate_api_password(api_password)
+    if isinstance(validation_result, dict):
+        return validation_result
     if scraper_type != "add_m3u_playlist":
-        raise_error("Invalid scraper type for this endpoint.")
+        return create_error_response("Invalid scraper type for this endpoint.")
 
     if m3u_playlist_file:
         content = await m3u_playlist_file.read()
@@ -148,9 +152,9 @@ async def upload_m3u_playlist(
             playlist_redis_key=None,
         )
     else:
-        raise_error("Either M3U playlist URL or file must be provided.")
+        return create_error_response("Either M3U playlist URL or file must be provided.")
 
-    return {"status": "M3U playlist upload task has been scheduled."}
+    return {"status": "success", "message": "M3U playlist upload task has been scheduled."}
 
 
 @router.get("/imdb_data", tags=["scraper"])
@@ -165,11 +169,11 @@ async def update_imdb_data(
     if media_type == "series":
         series = await get_series_data_by_id(meta_id)
         if not series:
-            raise_error(f"Series with ID {meta_id} not found.")
+            return create_error_response(f"Series with ID {meta_id} not found.")
     else:
         movie = await get_movie_data_by_id(meta_id)
         if not movie:
-            raise_error(f"Movie with ID {meta_id} not found.")
+            return create_error_response(f"Movie with ID {meta_id} not found.")
 
     if meta_id.startswith("tt"):
         await update_metadata([meta_id], media_type)
@@ -181,7 +185,7 @@ async def update_imdb_data(
             url=f"{settings.host_url}/static/exceptions/update_imdb_data.mp4"
         )
 
-    return {"status": f"Successfully updated IMDb data for {meta_id}."}
+    return {"status": "success", "message": f"Successfully updated IMDb data for {meta_id}."}
 
 
 @router.post("/torrent")
@@ -214,13 +218,13 @@ async def add_torrent(
 
     # Basic validation
     if not magnet_link and not torrent_file:
-        raise_error("Either magnet link or torrent file must be provided.")
+        return create_error_response("Either magnet link or torrent file must be provided.")
     if torrent_type != TorrentType.PUBLIC and not torrent_file:
-        raise_error(f"Torrent file must be provided for {torrent_type} torrents.")
+        return create_error_response(f"Torrent file must be provided for {torrent_type} torrents.")
 
     # make sure the created_at date is not in the future
     if created_at > (date.today() + timedelta(days=1)):
-        raise_error("Created at date cannot be more than one day in the future.")
+        return create_error_response("Created at date cannot be more than one day in the future.")
 
     # Convert lists from form data
     catalog_list = catalogs.split(",") if catalogs else []
@@ -232,10 +236,10 @@ async def add_torrent(
     if magnet_link:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
-            raise_error("Failed to parse magnet link.")
+            return create_error_response("Failed to parse magnet link.")
         data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers, episode_name_parser=episode_name_parser)
         if not data:
-            raise_error("Failed to fetch torrent metadata.")
+            return create_error_response("Failed to fetch torrent metadata.")
         torrent_data = data[0]
         info_hash = info_hash.lower()
     elif torrent_file:
@@ -244,9 +248,9 @@ async def add_torrent(
                 await torrent_file.read(), is_raise_error=True, episode_name_parser=episode_name_parser
             )
         except ValueError as e:
-            raise_error(str(e))
+            return create_error_response(str(e))
         if not torrent_data:
-            raise_error("Failed to extract torrent metadata.")
+            return create_error_response("Failed to extract torrent metadata.")
         info_hash = torrent_data.get("info_hash")
 
     # Check if torrent already exists
@@ -262,7 +266,8 @@ async def add_torrent(
             await torrent_stream.delete()
         else:
             return {
-                "status": f"⚠️ Torrent {info_hash} already exists and is attached to meta ID: {torrent_stream.meta_id}. "
+                "status": "warning",
+                "message": f"⚠️ Torrent {info_hash} already exists and is attached to meta ID: {torrent_stream.meta_id}. "
                 f"Thank you for trying to contribute ✨. If the torrent is not visible, please contact support with the Torrent InfoHash."
             }
 
@@ -283,7 +288,7 @@ async def add_torrent(
     # Handle sports content metadata
     if meta_type == "sports":
         if not title or not catalog_list:
-            raise_error("Title and sports catalog are required.")
+            return create_error_response("Title and sports catalog are required.")
         catalog = catalog_list[0]
         genres = []
         sports_category = {}
@@ -296,7 +301,7 @@ async def add_torrent(
         elif catalog_mapped := const.CATALOG_DATA.get(catalog):
             sports_category = SPORTS_ARTIFACTS[catalog_mapped]
         else:
-            raise_error(
+            return create_error_response(
                 f"Invalid sports catalog. Must be one of: {', '.join(const.CATALOG_DATA.keys())}"
             )
 
@@ -332,7 +337,7 @@ async def add_torrent(
             sports_metadata, meta_type, is_search_imdb_title=False, is_imdb_only=False
         )
         if not metadata_result:
-            raise_error("Failed to create metadata for sports content.")
+            return create_error_response("Failed to create metadata for sports content.")
         meta_id = metadata_result["id"]
 
     elif not meta_id or meta_id.startswith("mf"):
@@ -363,7 +368,7 @@ async def add_torrent(
     else:
         # Regular IMDb content validation
         if not meta_id or not meta_id.startswith(("tt", "mf")):
-            raise_error("Invalid IMDb ID. Must start with 'tt' or 'mf'.")
+            return create_error_response("Invalid IMDb ID. Must start with 'tt' or 'mf'.")
 
     # For series, check if we need file annotation
     if meta_type == "series":
@@ -417,7 +422,7 @@ async def add_torrent(
     if meta_type == "movie":
         movie_data = await get_movie_data_by_id(meta_id)
         if not movie_data:
-            raise_error(f"Movie with ID {meta_id} not found.")
+            return create_error_response(f"Movie with ID {meta_id} not found.")
         title = movie_data.title
 
         # Title similarity check
@@ -449,7 +454,7 @@ async def add_torrent(
     else:  # Series
         series_data = await get_series_data_by_id(meta_id)
         if not series_data:
-            raise_error(f"Series with ID {meta_id} not found.")
+            return create_error_response(f"Series with ID {meta_id} not found.")
         title = series_data.title
 
         # Title similarity check
@@ -505,7 +510,7 @@ async def add_torrent(
             )
 
     if not torrent_stream:
-        raise_error("Failed to store torrent data. Contact support.")
+        return create_error_response("Failed to store torrent data. Contact support.")
 
     # Cleanup redis caching for quick access
     await REDIS_ASYNC_CLIENT.delete(*stream_cache_keys)
@@ -528,7 +533,8 @@ async def add_torrent(
         )
 
     return {
-        "status": f"🎉 Successfully added torrent: {torrent_stream.id} for {title} ({torrent_stream.meta_id}). Thanks for your contribution! 🙌"
+        "status": "success",
+        "message": f"🎉 Successfully added torrent: {torrent_stream.id} for {title} ({torrent_stream.meta_id}). Thanks for your contribution! 🙌"
     }
 
 
@@ -626,14 +632,17 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
 
 @router.post("/block_torrent", tags=["scraper"])
 async def block_torrent(block_data: schemas.BlockTorrent):
-    validate_api_password(block_data.api_password)
+    validation_result = validate_api_password(block_data.api_password)
+    if isinstance(validation_result, dict):
+        return validation_result
     torrent_stream = await TorrentStreams.get(block_data.info_hash)
     if not torrent_stream:
         return {
-            "status": f"Torrent {block_data.info_hash} is already deleted / not found."
+            "status": "warning",
+            "message": f"Torrent {block_data.info_hash} is already deleted / not found."
         }
     if block_data.action == "block" and torrent_stream.is_blocked:
-        return {"status": f"Torrent {block_data.info_hash} is already blocked."}
+        return {"status": "warning", "message": f"Torrent {block_data.info_hash} is already blocked."}
     try:
         if block_data.action == "delete":
             await torrent_stream.delete()
@@ -659,12 +668,11 @@ async def block_torrent(block_data: schemas.BlockTorrent):
             )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=200, detail=f"Failed to block torrent: {str(e)}"
-        )
+        return {"status": "error", "message": f"Failed to block torrent: {str(e)}"}
 
     return {
-        "status": f"Torrent {block_data.info_hash} has been successfully {'blocked' if block_data.action == 'block' else 'deleted'}."
+        "status": "success",
+        "message": f"Torrent {block_data.info_hash} has been successfully {'blocked' if block_data.action == 'block' else 'deleted'}."
     }
 
 
@@ -676,14 +684,14 @@ async def migrate_id(migrate_data: schemas.MigrateID):
     else:
         metadata = await get_movie_data_by_id(migrate_data.imdb_id)
     if not metadata:
-        raise_error(f"Metadata with ID {migrate_data.imdb_id} not found.")
+        return create_error_response(f"Metadata with ID {migrate_data.imdb_id} not found.")
 
     # Get old metadata for notification before deleting
     old_metadata = await MediaFusionMetaData.get_motor_collection().find_one(
         {"_id": migrate_data.mediafusion_id}, projection={"title": 1}
     )
     if not old_metadata:
-        raise_error(f"Metadata with ID {migrate_data.mediafusion_id} not found.")
+        return create_error_response(f"Metadata with ID {migrate_data.mediafusion_id} not found.")
     old_title = old_metadata.get("title")
 
     # Perform the migration
@@ -707,7 +715,8 @@ async def migrate_id(migrate_data: schemas.MigrateID):
         )
 
     return {
-        "status": f"Successfully migrated {migrate_data.mediafusion_id} to {migrate_data.imdb_id}."
+        "status": "success",
+        "message": f"Successfully migrated {migrate_data.mediafusion_id} to {migrate_data.imdb_id}."
     }
 
 
@@ -729,26 +738,17 @@ async def analyze_torrent(
         elif magnet_link:
             info_hash, trackers = torrent.parse_magnet(magnet_link)
             if not info_hash:
-                raise HTTPException(
-                    status_code=200, detail="Failed to parse magnet link."
-                )
+                return {"status": "error", "message": "Failed to parse magnet link."}
             data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
             if not data:
-                raise HTTPException(
-                    status_code=200, detail="Failed to fetch torrent metadata."
-                )
+                return {"status": "error", "message": "Failed to fetch torrent metadata."}
             torrent_data = data[0]
             torrent_data.pop("torrent_file", None)
         else:
-            raise HTTPException(
-                status_code=200,
-                detail="Either torrent file or magnet link must be provided.",
-            )
+            return {"status": "error", "message": "Either torrent file or magnet link must be provided."}
 
         if not torrent_data or not torrent_data.get("title"):
-            raise HTTPException(
-                status_code=200, detail="Could not extract title from torrent"
-            )
+            return {"status": "error", "message": "Could not extract title from torrent"}
 
         torrent_data["type"] = meta_type
         if meta_type == "sports":
@@ -810,6 +810,7 @@ async def analyze_torrent(
             title += f" {date_str}"
             torrent_data["title"] = title.strip()
             return {
+                "status": "success",
                 "torrent_data": torrent_data,
                 "matches": [],
             }
@@ -822,14 +823,13 @@ async def analyze_torrent(
         )
 
         return {
+            "status": "success",
             "torrent_data": torrent_data,
             "matches": matches,
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=200, detail=f"Failed to analyze torrent: {str(e)}"
-        )
+        return {"status": "error", "message": f"Failed to analyze torrent: {str(e)}"}
 
 
 @router.post("/update_images")
@@ -842,7 +842,7 @@ async def update_images(
     """Update poster, background, and/or logo for existing content"""
     # Validate that at least one image URL is provided
     if not any([poster, background, logo]):
-        raise_error(
+        return create_error_response(
             "At least one image URL (poster, background, or logo) must be provided"
         )
 
@@ -853,7 +853,7 @@ async def update_images(
     )
 
     if not metadata:
-        raise_error(f"Content with ID {meta_id} not found")
+        return create_error_response(f"Content with ID {meta_id} not found")
 
     # Build update fields
     update_fields = {}
@@ -861,15 +861,15 @@ async def update_images(
         update_fields["poster"] = poster
         update_fields["is_poster_working"] = True
         if not await validate_image_url(poster):
-            raise_error("Invalid poster image URL, Not able to fetch image")
+            return create_error_response("Invalid poster image URL, Not able to fetch image")
     if background:
         update_fields["background"] = background
         if not await validate_image_url(background):
-            raise_error("Invalid background image URL, Not able to fetch image")
+            return create_error_response("Invalid background image URL, Not able to fetch image")
     if logo:
         update_fields["logo"] = logo
         if not await validate_image_url(logo):
-            raise_error("Invalid logo image URL, Not able to fetch image")
+            return create_error_response("Invalid logo image URL, Not able to fetch image")
 
     # Update metadata
     await MediaFusionMetaData.get_motor_collection().update_one(
@@ -898,4 +898,4 @@ async def update_images(
     ]
     await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
-    return {"status": f"Successfully updated images for {meta_id}"}
+    return {"status": "success", "message": f"Successfully updated images for {meta_id}"}

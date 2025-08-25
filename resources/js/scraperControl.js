@@ -860,7 +860,7 @@ async function handleQuickImport() {
         });
 
         const data = await response.json();
-        if (response.ok) {
+        if (data.status === 'success') {
             if (data.matches && data.matches.length > 0) {
                 displayMatchResults(data.matches, data.torrent_data);
             } else {
@@ -868,7 +868,7 @@ async function handleQuickImport() {
                 switchToManualImport(data.torrent_data);
             }
         } else {
-            showNotification(data.detail || 'Failed to analyze torrent', 'error');
+            showNotification(data.message || 'Failed to analyze torrent', 'error');
         }
     } catch (error) {
         showNotification('Error analyzing torrent: ' + error.message, 'error');
@@ -1685,10 +1685,12 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
                 await handleAddTorrent(submitBtn, loadingSpinner, true, annotatedFiles);
                 return;
             }
-        } else if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showSuccessWithImportNew(data.status);
+        } else if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'warning') {
+            showNotification(data.message, 'warning');
+        } else if (data.status === 'success') {
+            showSuccessWithImportNew(data.message);
         }
     } catch (error) {
         console.error('Error submitting torrent:', error);
@@ -1708,10 +1710,10 @@ async function handleAddTvMetadata(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error constructing TV Metadata:', error);
@@ -1753,10 +1755,10 @@ async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -1777,10 +1779,10 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -1816,10 +1818,10 @@ async function handleMigration(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error migrating ID:', error);
@@ -1848,10 +1850,10 @@ async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -1886,10 +1888,12 @@ async function handleBlockTorrent(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'warning') {
+            showNotification(data.message, 'warning');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error blocking torrent:', error);
@@ -1935,10 +1939,10 @@ async function handleUpdateImages(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
             // Clear form fields on success
             document.getElementById('imageUpdatePoster').value = '';
             document.getElementById('imageUpdateBackground').value = '';
