@@ -191,8 +191,8 @@ class BackgroundSearchWorker:
 @dramatiq.actor(
     priority=10,
     max_retries=3,
-    min_backoff=timedelta(minutes=10),
-    max_backoff=timedelta(hours=1),
+    min_backoff=600000,  # 10 minutes in milliseconds
+    max_backoff=3600000,  # 1 hour in milliseconds
 )
 async def run_background_search(**kwargs):
     """Scheduled task to run background searches"""

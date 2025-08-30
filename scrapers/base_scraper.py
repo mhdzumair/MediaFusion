@@ -681,13 +681,14 @@ class BaseScraper(abc.ABC):
             self.logger.exception(f"Error getting torrent data: {e}")
             return None, False
 
-        response.raise_for_status()
-
         if response.status_code in [301, 302, 303, 307, 308]:
             redirect_url = response.headers.get("Location")
             return await self.get_torrent_data(
                 redirect_url, parsed_data, headers, episode_name_parser
             )
+
+        response.raise_for_status()
+
         return (
             extract_torrent_metadata(
                 response.content, parsed_data, episode_name_parser=episode_name_parser
