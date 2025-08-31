@@ -22,17 +22,18 @@ class MediaFusionAPI {
       const defaultSettings = {
         baseUrl: 'https://mediafusion.elfhosted.com',
         apiPassword: '',
-        uploaderName: 'Anonymous'
+        uploaderName: 'Anonymous',
+        theme: 'auto'
       };
 
       if (typeof browser !== 'undefined' && browser.storage) {
         // Firefox
-        browser.storage.sync.get(['baseUrl', 'apiPassword', 'uploaderName']).then((result) => {
+        browser.storage.sync.get(['baseUrl', 'apiPassword', 'uploaderName', 'theme']).then((result) => {
           resolve({ ...defaultSettings, ...result });
         });
       } else if (typeof chrome !== 'undefined' && chrome.storage) {
         // Chrome
-        chrome.storage.sync.get(['baseUrl', 'apiPassword', 'uploaderName'], (result) => {
+        chrome.storage.sync.get(['baseUrl', 'apiPassword', 'uploaderName', 'theme'], (result) => {
           resolve({ ...defaultSettings, ...result });
         });
       } else {

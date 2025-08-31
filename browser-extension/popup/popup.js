@@ -7,12 +7,17 @@ class PopupManager {
         this.isProcessing = false;
         this.requestInProgress = new Set(); // Track specific request types
         this.hasAnalyzed = false; // Prevent duplicate analysis
+        this.currentTheme = 'auto'; // Default theme
         this.init();
     }
 
-    init() {
+    async init() {
         this.setupEventListeners();
-        this.loadSettings();
+
+        // Apply theme as early as possible to prevent flash
+        await this.initializeTheme();
+
+        await this.loadSettings(); // Wait for settings to load before continuing
         this.checkConnectionStatus();
         this.checkForPrefilledData();
     }
@@ -32,6 +37,13 @@ class PopupManager {
 
         document.getElementById('test-connection-btn').addEventListener('click', () => {
             this.testConnection();
+        });
+
+        // Theme change listener - apply theme immediately when changed
+        document.getElementById('theme-select').addEventListener('change', (e) => {
+            this.applyTheme(e.target.value);
+            // Save theme setting immediately
+            this.saveThemeSetting(e.target.value);
         });
 
         // Upload functionality with request deduplication
@@ -347,13 +359,15 @@ class PopupManager {
                 document.getElementById('api-password').value = settings.apiPassword || '';
                 document.getElementById('default-uploader').value = settings.uploaderName || 'Anonymous';
                 document.getElementById('uploader-name').value = settings.uploaderName || 'Anonymous';
+                document.getElementById('theme-select').value = settings.theme || 'auto';
+                this.applyTheme(settings.theme || 'auto');
             }
         } catch (error) {
             this.showMessage('Failed to load settings: ' + error.message, 'error');
         }
     }
 
-    async saveSettings() {
+        async saveSettings() {
         let baseUrl = document.getElementById('mediafusion-url').value.trim() || 'https://mediafusion.elfhosted.com';
 
         // Strip trailing slash from URL
@@ -364,7 +378,8 @@ class PopupManager {
         const settings = {
             baseUrl: baseUrl,
             apiPassword: document.getElementById('api-password').value.trim(),
-            uploaderName: document.getElementById('default-uploader').value.trim() || 'Anonymous'
+            uploaderName: document.getElementById('default-uploader').value.trim() || 'Anonymous',
+            theme: document.getElementById('theme-select').value || 'auto'
         };
 
         try {
@@ -373,12 +388,66 @@ class PopupManager {
             if (response.success) {
                 this.showMessage('Settings saved successfully', 'success');
                 document.getElementById('uploader-name').value = settings.uploaderName;
+                this.applyTheme(settings.theme);
                 this.checkConnectionStatus();
             } else {
                 this.showMessage('Failed to save settings: ' + (response.error || 'Unknown error'), 'error');
             }
         } catch (error) {
             this.showMessage('Failed to save settings: ' + error.message, 'error');
+        }
+    }
+
+        async initializeTheme() {
+        try {
+            // Get theme setting directly from storage for immediate application
+            const response = await this.sendMessage({ action: 'getSettings' });
+            if (response.success && response.data && response.data.theme) {
+                this.applyTheme(response.data.theme);
+            } else {
+                // Apply default theme
+                this.applyTheme('auto');
+            }
+        } catch (error) {
+            console.log('Failed to initialize theme:', error);
+            // Apply default theme on error
+            this.applyTheme('auto');
+        }
+    }
+
+    applyTheme(theme) {
+        const html = document.documentElement;
+
+        // Remove existing theme attributes
+        html.removeAttribute('data-theme');
+
+        if (theme === 'light') {
+            html.setAttribute('data-theme', 'light');
+        } else if (theme === 'dark') {
+            html.setAttribute('data-theme', 'dark');
+        }
+        // For 'auto', we don't set any attribute, letting CSS media queries handle it
+
+        // Store theme preference for consistency
+        this.currentTheme = theme;
+    }
+
+    async saveThemeSetting(theme) {
+        try {
+            // Get current settings first
+            const response = await this.sendMessage({ action: 'getSettings' });
+            if (response.success && response.data) {
+                // Update only the theme setting
+                const updatedSettings = {
+                    ...response.data,
+                    theme: theme
+                };
+
+                // Save updated settings
+                await this.sendMessage({ action: 'saveSettings', data: updatedSettings });
+            }
+        } catch (error) {
+            console.log('Failed to save theme setting:', error);
         }
     }
 
