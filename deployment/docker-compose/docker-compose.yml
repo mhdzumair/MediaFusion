@@ -79,7 +79,7 @@ services:
     command: redis-server --appendonly yes --save 60 1
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --raw INFO | grep -q '^loading:0$'"]
       interval: 10s
       timeout: 5s
       retries: 5
