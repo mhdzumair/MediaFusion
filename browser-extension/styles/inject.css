@@ -1,0 +1,192 @@
+/* MediaFusion Browser Extension - Injected Styles */
+
+.mediafusion-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    margin: 0 4px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white !important;
+    text-decoration: none !important;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 9999;
+    position: relative;
+}
+
+.mediafusion-upload-btn:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    color: white !important;
+    text-decoration: none !important;
+}
+
+.mediafusion-upload-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.mediafusion-upload-btn.loading {
+    opacity: 0.7;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.mediafusion-upload-btn.success {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+.mediafusion-upload-btn.error {
+    background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+}
+
+.mediafusion-upload-btn .icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    fill: currentColor;
+}
+
+.mediafusion-upload-btn .text {
+    font-size: 12px;
+    line-height: 1;
+}
+
+/* Spinner for loading state */
+.mediafusion-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: mediafusion-spin 1s linear infinite;
+    margin-right: 6px;
+}
+
+@keyframes mediafusion-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Tooltip */
+.mediafusion-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    z-index: 10000;
+    margin-bottom: 4px;
+}
+
+.mediafusion-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.8);
+}
+
+.mediafusion-upload-btn:hover .mediafusion-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Site-specific adjustments */
+
+/* 1337x */
+.torrent-detail-page .mediafusion-upload-btn,
+.table-list-wrap .mediafusion-upload-btn {
+    margin: 2px 4px;
+    vertical-align: middle;
+}
+
+/* The Pirate Bay */
+.detName + .mediafusion-upload-btn,
+#details .mediafusion-upload-btn {
+    margin-left: 8px;
+}
+
+/* RARBG */
+.lista2 .mediafusion-upload-btn {
+    margin: 2px;
+}
+
+/* YTS */
+.movie-actions .mediafusion-upload-btn {
+    margin: 4px;
+}
+
+/* EZTV */
+.forum_header_border .mediafusion-upload-btn {
+    margin: 2px 4px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .mediafusion-upload-btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    
+    .mediafusion-upload-btn .text {
+        display: none;
+    }
+    
+    .mediafusion-upload-btn .icon {
+        margin-right: 0;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .mediafusion-upload-btn {
+        background: #000;
+        border: 2px solid #fff;
+    }
+    
+    .mediafusion-upload-btn:hover {
+        background: #333;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .mediafusion-upload-btn {
+        transition: none;
+    }
+    
+    .mediafusion-spinner {
+        animation: none;
+    }
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+    .mediafusion-tooltip {
+        background: rgba(255, 255, 255, 0.9);
+        color: black;
+    }
+    
+    .mediafusion-tooltip::after {
+        border-top-color: rgba(255, 255, 255, 0.9);
+    }
+}
+
