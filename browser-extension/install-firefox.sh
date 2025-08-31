@@ -24,7 +24,7 @@ cp INSTALLATION.md firefox-build/
 echo "✅ Copied extension files"
 
 # Use Firefox manifest
-cp manifest_firefox.json firefox-build/manifest.json
+cp manifest.json firefox-build/manifest.json
 echo "✅ Using Firefox manifest (Manifest V2)"
 
 # Create Firefox-specific package

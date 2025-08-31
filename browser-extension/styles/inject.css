@@ -1,23 +1,25 @@
 /* MediaFusion Browser Extension - Injected Styles */
 
 .mediafusion-upload-btn {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    margin: 0 4px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: inline-flex !important;
+    align-items: center !important;
+    padding: 6px 12px !important;
+    margin: 0 4px !important;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
     color: white !important;
     text-decoration: none !important;
-    border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    z-index: 9999;
-    position: relative;
+    border: none !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    z-index: 9999 !important;
+    position: relative !important;
+    transform: none !important;
+    animation: none !important;
 }
 
 .mediafusion-upload-btn:hover {
@@ -34,9 +36,13 @@
 }
 
 .mediafusion-upload-btn.loading {
-    opacity: 0.7;
-    cursor: not-allowed;
-    pointer-events: none;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    background: rgba(102, 126, 234, 0.8) !important;
+    backdrop-filter: blur(4px) !important;
+    transform: none !important;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3) !important;
+    animation: none !important;
 }
 
 .mediafusion-upload-btn.success {
@@ -57,22 +63,56 @@
 .mediafusion-upload-btn .text {
     font-size: 12px;
     line-height: 1;
+    white-space: nowrap;
 }
 
-/* Spinner for loading state */
-.mediafusion-spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    animation: mediafusion-spin 1s linear infinite;
-    margin-right: 6px;
+.mediafusion-upload-btn.loading .text {
+    font-weight: 500;
 }
 
-@keyframes mediafusion-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+/* Modern dot loader - clean and minimal */
+.mediafusion-upload-btn .mediafusion-loader {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    transform: none !important;
+    animation: none !important;
+    height: 14px !important;
+}
+
+.mediafusion-upload-btn .mediafusion-dot {
+    width: 6px !important;
+    height: 6px !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-radius: 50% !important;
+    animation: mediafusion-wave 1.4s ease-in-out infinite !important;
+    transform: scale(1) !important;
+    transition: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.4) !important;
+}
+
+.mediafusion-upload-btn .mediafusion-dot:nth-child(1) {
+    animation-delay: 0s !important;
+}
+.mediafusion-upload-btn .mediafusion-dot:nth-child(2) {
+    animation-delay: 0.2s !important;
+}
+.mediafusion-upload-btn .mediafusion-dot:nth-child(3) {
+    animation-delay: 0.4s !important;
+}
+
+@keyframes mediafusion-wave {
+    0%, 60%, 100% {
+        transform: scale(0.8) !important;
+        opacity: 0.6 !important;
+    }
+    30% {
+        transform: scale(1.2) !important;
+        opacity: 1 !important;
+    }
 }
 
 /* Tooltip */
@@ -145,11 +185,11 @@
         padding: 4px 8px;
         font-size: 11px;
     }
-    
+
     .mediafusion-upload-btn .text {
         display: none;
     }
-    
+
     .mediafusion-upload-btn .icon {
         margin-right: 0;
     }
@@ -161,7 +201,7 @@
         background: #000;
         border: 2px solid #fff;
     }
-    
+
     .mediafusion-upload-btn:hover {
         background: #333;
     }
@@ -170,11 +210,23 @@
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
     .mediafusion-upload-btn {
-        transition: none;
+        transition: none !important;
     }
-    
-    .mediafusion-spinner {
-        animation: none;
+
+    .mediafusion-upload-btn .mediafusion-dot {
+        animation: mediafusion-fade 2s ease-in-out infinite !important;
+        transform: scale(1) !important;
+    }
+}
+
+@keyframes mediafusion-fade {
+    0%, 100% {
+        opacity: 0.6 !important;
+        transform: scale(1) !important;
+    }
+    50% {
+        opacity: 1 !important;
+        transform: scale(1) !important;
     }
 }
 
@@ -184,7 +236,7 @@
         background: rgba(255, 255, 255, 0.9);
         color: black;
     }
-    
+
     .mediafusion-tooltip::after {
         border-top-color: rgba(255, 255, 255, 0.9);
     }

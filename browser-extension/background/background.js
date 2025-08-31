@@ -105,11 +105,15 @@ class MediaFusionAPI {
 
     const formData = new FormData();
     formData.append('meta_type', torrentData.metaType || 'movie');
-    
+
     if (torrentData.magnetLink) {
       formData.append('magnet_link', torrentData.magnetLink);
-    } else if (torrentData.torrentFile) {
-      formData.append('torrent_file', torrentData.torrentFile);
+    } else if (torrentData.torrentFileData) {
+      // Reconstruct File from transmitted data
+      const uint8Array = new Uint8Array(torrentData.torrentFileData.data);
+      const blob = new Blob([uint8Array], { type: torrentData.torrentFileData.type });
+      const file = new File([blob], torrentData.torrentFileData.name, { type: torrentData.torrentFileData.type });
+      formData.append('torrent_file', file);
     } else {
       throw new Error('Either magnet link or torrent file is required');
     }
@@ -121,7 +125,7 @@ class MediaFusionAPI {
       });
 
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         return data;
       } else {
@@ -138,12 +142,12 @@ class MediaFusionAPI {
     }
 
     const formData = new FormData();
-    
+
     // Basic metadata
     formData.append('meta_type', torrentData.metaType || 'movie');
     formData.append('uploader', torrentData.uploaderName || this.uploaderName);
     formData.append('torrent_type', torrentData.torrentType || 'public');
-    
+
     // Set created_at to today if not provided
     const createdAt = torrentData.createdAt || new Date().toISOString().split('T')[0];
     formData.append('created_at', createdAt);
@@ -193,34 +197,48 @@ class MediaFusionAPI {
     // Torrent data
     if (torrentData.magnetLink) {
       formData.append('magnet_link', torrentData.magnetLink);
+    } else if (torrentData.torrentFileData) {
+      // Reconstruct File from transmitted data (preferred method)
+      const uint8Array = new Uint8Array(torrentData.torrentFileData.data);
+      const blob = new Blob([uint8Array], { type: torrentData.torrentFileData.type });
+      const file = new File([blob], torrentData.torrentFileData.name, { type: torrentData.torrentFileData.type });
+      formData.append('torrent_file', file);
     } else if (torrentData.torrentFile) {
+      // Fallback for direct File objects (shouldn't happen in normal flow)
       formData.append('torrent_file', torrentData.torrentFile);
     } else {
       throw new Error('Either magnet link or torrent file is required');
+    }
+
+    // Series-specific: Episode name parser for automatic episode detection
+    if (torrentData.episode_name_parser) {
+      console.log('Adding episode_name_parser to formData:', torrentData.episode_name_parser);
+      formData.append('episode_name_parser', torrentData.episode_name_parser);
     }
 
     // Additional options
     if (torrentData.forceImport) {
       formData.append('force_import', 'true');
     }
+
+    // File data for series with episode details
     if (torrentData.fileData) {
       formData.append('file_data', JSON.stringify(torrentData.fileData));
     }
 
-    try {
+        try {
       const response = await fetch(`${this.baseUrl}/scraper/torrent`, {
         method: 'POST',
         body: formData
       });
 
       const data = await response.json();
-      
-      if (data.status === 'success') {
-        return data;
-      } else {
-        throw new Error(data.message || 'Failed to upload torrent');
-      }
+
+      // Always return the full data object, regardless of status
+      // Let the popup handle different statuses appropriately
+      return data;
     } catch (error) {
+      // For network errors or JSON parsing errors, throw a proper error
       throw new Error(`Upload failed: ${error.message}`);
     }
   }
@@ -323,50 +341,69 @@ const handleMessage = async (message, sender, sendResponse) => {
       case 'openPopupWithData':
         try {
           const popupData = message.data;
-          
+
           // Use URL parameters only (simpler and more reliable)
-          const popupUrl = (typeof browser !== 'undefined' && browser.runtime) ? 
-                          browser.runtime.getURL('popup/popup.html') : 
+          const popupUrl = (typeof browser !== 'undefined' && browser.runtime) ?
+                          browser.runtime.getURL('popup/popup.html') :
                           chrome.runtime.getURL('popup/popup.html');
           const params = new URLSearchParams();
-          
+
           if (popupData.magnetLink) {
             params.append('magnet', encodeURIComponent(popupData.magnetLink));
+          }
+          if (popupData.torrentUrl) {
+            params.append('torrent', encodeURIComponent(popupData.torrentUrl));
           }
           if (popupData.contentType) {
             params.append('type', popupData.contentType);
           }
-          
+          if (popupData.sourceUrl) {
+            params.append('source', encodeURIComponent(popupData.sourceUrl));
+          }
+          if (popupData.title) {
+            params.append('title', encodeURIComponent(popupData.title));
+          }
+
           const fullUrl = `${popupUrl}?${params.toString()}`;
-          
-          // Open in a new popup window - use browser API for Firefox, chrome API for Chrome
-          if (typeof browser !== 'undefined' && browser.windows) {
-            // Firefox
-            browser.windows.create({
-              url: fullUrl,
-              type: 'popup',
-              width: 500,
-              height: 700,
-              focused: true
-            });
-          } else if (typeof chrome !== 'undefined' && chrome.windows) {
-            // Chrome
-            chrome.windows.create({
-              url: fullUrl,
-              type: 'popup',
-              width: 500,
-              height: 700,
-              focused: true
-            });
-          } else {
-            // Fallback: open in new tab
+
+          // Try to open in a popup window, fallback to new tab if windows API is not available
+          let windowOpened = false;
+
+          try {
+            if (typeof browser !== 'undefined' && browser.windows) {
+              // Firefox with windows permission
+              await browser.windows.create({
+                url: fullUrl,
+                type: 'popup',
+                width: 500,
+                height: 700,
+                focused: true
+              });
+              windowOpened = true;
+            } else if (typeof chrome !== 'undefined' && chrome.windows) {
+              // Chrome with windows permission
+              chrome.windows.create({
+                url: fullUrl,
+                type: 'popup',
+                width: 500,
+                height: 700,
+                focused: true
+              });
+              windowOpened = true;
+            }
+          } catch (error) {
+            console.log('Windows API not available, falling back to tab:', error.message);
+          }
+
+          // Fallback: open in new tab if popup window creation failed
+          if (!windowOpened) {
             if (typeof browser !== 'undefined' && browser.tabs) {
               browser.tabs.create({ url: fullUrl });
             } else if (typeof chrome !== 'undefined' && chrome.tabs) {
               chrome.tabs.create({ url: fullUrl });
             }
           }
-          
+
           sendResponse({ success: true });
         } catch (error) {
           sendResponse({ success: false, error: error.message });

@@ -19,7 +19,7 @@ cp -r content chrome-build/
 cp -r popup chrome-build/
 cp -r styles chrome-build/
 cp -r icons chrome-build/
-cp manifest.json chrome-build/
+cp manifest_chrome.json chrome-build/manifest.json
 cp README.md chrome-build/
 cp INSTALLATION.md chrome-build/
 echo "✅ Copied extension files"

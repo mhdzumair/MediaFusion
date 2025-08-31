@@ -18,7 +18,7 @@ class MediaFusionContentScript {
 
     loadSiteHandlers() {
         const hostname = window.location.hostname.replace('www.', '');
-        
+
         // Site-specific handlers
         this.siteHandlers.set('1337x.to', this.handle1337x.bind(this));
         this.siteHandlers.set('1337x.st', this.handle1337x.bind(this));
@@ -66,11 +66,11 @@ class MediaFusionContentScript {
     processPage() {
         if (this.isProcessing) return;
         this.isProcessing = true;
-        
+
         try {
             const hostname = window.location.hostname.replace('www.', '');
             const handler = this.siteHandlers.get(hostname);
-            
+
             if (handler) {
                 // Use site-specific handler for better accuracy
                 handler();
@@ -99,7 +99,7 @@ class MediaFusionContentScript {
         torrentLinks.forEach(link => {
             // Skip if it's likely not a torrent download link
             if (link.href.includes('javascript:') || link.href.includes('#')) return;
-            
+
             if (!this.hasUploadButton(link)) {
                 this.addUploadButton(link, 'torrent');
             }
@@ -123,7 +123,7 @@ class MediaFusionContentScript {
         if (window.location.pathname.includes('/torrent/')) {
             const magnetLink = document.querySelector('a[href^="magnet:"]');
             const torrentLink = document.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -131,13 +131,13 @@ class MediaFusionContentScript {
                 this.addUploadButton(torrentLink, 'torrent');
             }
         }
-        
+
         // Search results and category pages
         const tableRows = document.querySelectorAll('.table-list tbody tr');
         tableRows.forEach(row => {
             const magnetLink = row.querySelector('a[href^="magnet:"]');
             const torrentLink = row.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink && !this.hasUploadButton(magnetLink)) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -170,7 +170,7 @@ class MediaFusionContentScript {
         tableRows.forEach(row => {
             const magnetLink = row.querySelector('a[href^="magnet:"]');
             const torrentLink = row.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink && !this.hasUploadButton(magnetLink)) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -207,7 +207,7 @@ class MediaFusionContentScript {
         episodeRows.forEach(row => {
             const magnetLink = row.querySelector('a[href^="magnet:"]');
             const torrentLink = row.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink && !this.hasUploadButton(magnetLink)) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -234,7 +234,7 @@ class MediaFusionContentScript {
         torrentRows.forEach(row => {
             const magnetLink = row.querySelector('a[href^="magnet:"]');
             const torrentLink = row.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink && !this.hasUploadButton(magnetLink)) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -272,7 +272,7 @@ class MediaFusionContentScript {
         tableRows.forEach(row => {
             const magnetLink = row.querySelector('a[href^="magnet:"]');
             const torrentLink = row.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink && !this.hasUploadButton(magnetLink)) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -288,7 +288,7 @@ class MediaFusionContentScript {
         tableRows.forEach(row => {
             const magnetLink = row.querySelector('a[href^="magnet:"]');
             const torrentLink = row.querySelector('a[href$=".torrent"]');
-            
+
             if (magnetLink && !this.hasUploadButton(magnetLink)) {
                 this.addUploadButton(magnetLink, 'magnet');
             }
@@ -345,7 +345,7 @@ class MediaFusionContentScript {
         this.processedLinks.add(linkId);
 
         const button = this.createUploadButton(linkElement, type);
-        
+
         // Try to insert the button next to the link
         if (linkElement.parentNode) {
             linkElement.parentNode.insertBefore(button, linkElement.nextSibling);
@@ -367,10 +367,10 @@ class MediaFusionContentScript {
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            
+
             // Prevent double clicks
             if (button.disabled) return;
-            
+
             this.handleUpload(linkElement, type, button);
         }, { once: false });
 
@@ -381,20 +381,23 @@ class MediaFusionContentScript {
         // Prevent double clicks
         if (button.disabled) return;
         button.disabled = true;
-        
+
         try {
             // Show loading state
             button.classList.add('loading');
             button.innerHTML = `
-                <div class="mediafusion-spinner"></div>
-                <span class="text">Opening...</span>
+                <div class="mediafusion-loader">
+                    <div class="mediafusion-dot"></div>
+                    <div class="mediafusion-dot"></div>
+                    <div class="mediafusion-dot"></div>
+                </div>
             `;
 
             // Get the magnet link or torrent URL
             const magnetLink = type === 'magnet' ? linkElement.href : null;
             const torrentUrl = type === 'torrent' ? linkElement.href : null;
             const contentType = this.guessContentType(linkElement);
-            
+
             // Send message to background script to open popup with data
             const response = await this.sendMessage({
                 action: 'openPopupWithData',
@@ -406,7 +409,7 @@ class MediaFusionContentScript {
                     title: document.title
                 }
             });
-            
+
             if (response && response.success) {
                 // Show success state
                 button.classList.remove('loading');
@@ -420,14 +423,14 @@ class MediaFusionContentScript {
             } else {
                 throw new Error('Failed to open popup');
             }
-            
+
             // Reset after 2 seconds
             setTimeout(() => {
                 this.resetButton(button);
             }, 2000);
-            
+
         } catch (error) {
-            
+
             // Show error state
             button.classList.remove('loading');
             button.classList.add('error');
@@ -437,7 +440,7 @@ class MediaFusionContentScript {
                 </svg>
                 <span class="text">Error</span>
             `;
-            
+
             // Reset after 3 seconds
             setTimeout(() => {
                 this.resetButton(button);
@@ -468,13 +471,13 @@ class MediaFusionContentScript {
     }
 
     guessContentType(linkElement) {
-        const text = linkElement.textContent.toLowerCase() + ' ' + 
+        const text = linkElement.textContent.toLowerCase() + ' ' +
                     (linkElement.title || '').toLowerCase() + ' ' +
                     window.location.pathname.toLowerCase();
 
         if (text.includes('movie') || text.includes('film') || text.includes('cinema')) {
             return 'movie';
-        } else if (text.includes('tv') || text.includes('series') || text.includes('episode') || 
+        } else if (text.includes('tv') || text.includes('series') || text.includes('episode') ||
                    text.includes('season') || text.includes('show')) {
             return 'series';
         } else if (text.includes('sport') || text.includes('match') || text.includes('game') ||
@@ -512,7 +515,7 @@ class MediaFusionContentScript {
 // Prevent multiple instances
 if (!window.mediaFusionContentScriptLoaded) {
     window.mediaFusionContentScriptLoaded = true;
-    
+
     // Initialize content script when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {

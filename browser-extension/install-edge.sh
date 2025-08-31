@@ -19,7 +19,7 @@ cp -r content edge-build/
 cp -r popup edge-build/
 cp -r styles edge-build/
 cp -r icons edge-build/
-cp manifest.json edge-build/
+cp manifest_chrome.json edge-build/manifest.json
 cp README.md edge-build/
 cp INSTALLATION.md edge-build/
 echo "✅ Copied extension files"
