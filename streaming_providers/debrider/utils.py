@@ -14,6 +14,7 @@ async def get_video_url_from_debrider(
     user_data: UserData,
     filename: str,
     user_ip: str,
+    stream: TorrentStreams,
     season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs: Any,
@@ -30,10 +31,11 @@ async def get_video_url_from_debrider(
             )
 
         file_index = await select_file_index_from_torrent(
-            torrent_info,
-            filename,
-            season,
-            episode,
+            torrent_info=torrent_info,
+            torrent_stream=stream,
+            filename=filename,
+            season=season,
+            episode=episode,
         )
         return torrent_info["files"][file_index]["download_link"]
 
