@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
   "name": "MediaFusion Torrent Uploader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Easily contribute torrents to MediaFusion from any torrent site",
   
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting"
+    "activeTab"
   ],
   
   "optional_permissions": [

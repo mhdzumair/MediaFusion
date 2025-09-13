@@ -4,7 +4,6 @@
 class MediaFusionAPI {
   constructor() {
     this.baseUrl = 'https://mediafusion.elfhosted.com';
-    this.apiPassword = '';
     this.uploaderName = 'Anonymous';
     this.init();
   }
@@ -13,7 +12,6 @@ class MediaFusionAPI {
     // Load settings from storage
     const settings = await this.getSettings();
     this.baseUrl = settings.baseUrl || 'https://mediafusion.elfhosted.com';
-    this.apiPassword = settings.apiPassword || '';
     this.uploaderName = settings.uploaderName || 'Anonymous';
   }
 
@@ -21,19 +19,18 @@ class MediaFusionAPI {
     return new Promise((resolve) => {
       const defaultSettings = {
         baseUrl: 'https://mediafusion.elfhosted.com',
-        apiPassword: '',
         uploaderName: 'Anonymous',
         theme: 'auto'
       };
 
       if (typeof browser !== 'undefined' && browser.storage) {
         // Firefox
-        browser.storage.sync.get(['baseUrl', 'apiPassword', 'uploaderName', 'theme']).then((result) => {
+        browser.storage.sync.get(['baseUrl', 'uploaderName', 'theme']).then((result) => {
           resolve({ ...defaultSettings, ...result });
         });
       } else if (typeof chrome !== 'undefined' && chrome.storage) {
         // Chrome
-        chrome.storage.sync.get(['baseUrl', 'apiPassword', 'uploaderName', 'theme'], (result) => {
+        chrome.storage.sync.get(['baseUrl', 'uploaderName', 'theme'], (result) => {
           resolve({ ...defaultSettings, ...result });
         });
       } else {
@@ -59,7 +56,6 @@ class MediaFusionAPI {
   async updateSettings(newSettings) {
     await this.saveSettings(newSettings);
     this.baseUrl = newSettings.baseUrl || this.baseUrl;
-    this.apiPassword = newSettings.apiPassword || this.apiPassword;
     this.uploaderName = newSettings.uploaderName || this.uploaderName;
   }
 
@@ -440,7 +436,6 @@ const handleInstall = (details) => {
     // Set default settings
     mediaFusionAPI.saveSettings({
       baseUrl: 'https://mediafusion.elfhosted.com',
-      apiPassword: '',
       uploaderName: 'Anonymous'
     });
   }

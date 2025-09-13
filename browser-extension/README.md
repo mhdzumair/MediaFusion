@@ -25,19 +25,40 @@ A browser extension that allows users to easily contribute torrents to MediaFusi
 
 ## Installation
 
-### Chrome/Chromium Browsers
-1. Download the extension files
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable "Developer mode" in the top right
-4. Click "Load unpacked" and select the extension folder
-5. The MediaFusion extension icon should appear in your toolbar
+### Firefox (Recommended)
+**Easy Installation from Mozilla Add-ons:**
+1. Visit the [MediaFusion Torrent Uploader](https://addons.mozilla.org/en-US/firefox/addon/mediafusion-torrent-uploader/) page on Mozilla Add-ons
+2. Click "Add to Firefox"
+3. Confirm the installation when prompted
+4. The MediaFusion extension icon will appear in your toolbar
 
-### Firefox
+**Manual Installation (Development):**
 1. Download the extension files
 2. Open Firefox and go to `about:debugging`
 3. Click "This Firefox"
 4. Click "Load Temporary Add-on"
 5. Select the `manifest.json` file from the extension folder
+
+### Chrome/Chromium Browsers
+**Note:** The Chrome Web Store version is currently pending review. Until it's approved, you can install manually:
+
+**Manual Installation:**
+1. Download or clone this repository
+2. Open Chrome and go to `chrome://extensions/`
+3. Enable "Developer mode" in the top right corner
+4. Click "Load unpacked" and select the `browser-extension` folder
+5. The MediaFusion extension icon should appear in your toolbar
+
+**Building for All Browsers:**
+```bash
+# Navigate to the browser-extension directory
+cd browser-extension
+
+# Run the universal build script
+./build.sh
+```
+
+This will create a `dist` folder with builds for all supported browsers (Firefox, Chrome, Edge) and distribution packages.
 
 ## Setup
 
@@ -45,7 +66,8 @@ A browser extension that allows users to easily contribute torrents to MediaFusi
 2. Configure your settings:
    - **MediaFusion URL**: Enter your MediaFusion instance URL (e.g., `https://mediafusion.elfhosted.com`)
    - **Uploader Name**: Enter your preferred uploader name (optional, defaults to "Anonymous")
-   - **API Password**: If your instance requires authentication
+   
+   **Note**: Settings are automatically saved as you type. No need to click a save button!
 
 ## Usage
 

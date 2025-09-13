@@ -466,6 +466,34 @@ body {
     box-shadow: 0 4px 8px var(--shadow-medium);
 }
 
+/* Dark theme specific button styling */
+[data-theme="dark"] .btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .btn-secondary:hover:not(:disabled) {
+    background: var(--text-secondary);
+    color: var(--bg-primary);
+    border-color: var(--text-secondary);
+}
+
+/* Auto dark theme button styling */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .btn-secondary {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+    }
+    
+    :root:not([data-theme="light"]) .btn-secondary:hover:not(:disabled) {
+        background: var(--text-secondary);
+        color: var(--bg-primary);
+        border-color: var(--text-secondary);
+    }
+}
+
 .btn-success {
     background: var(--success-color);
     color: white;

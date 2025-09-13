@@ -17,6 +17,9 @@ class PopupManager {
         // Apply theme as early as possible to prevent flash
         await this.initializeTheme();
 
+        // Load and display extension version
+        this.loadExtensionVersion();
+
         await this.loadSettings(); // Wait for settings to load before continuing
         this.checkConnectionStatus();
         this.checkForPrefilledData();
@@ -30,10 +33,8 @@ class PopupManager {
             });
         });
 
-        // Settings
-        document.getElementById('save-settings-btn').addEventListener('click', () => {
-            this.saveSettings();
-        });
+        // Auto-save settings on input changes
+        this.setupAutoSaveListeners();
 
         document.getElementById('test-connection-btn').addEventListener('click', () => {
             this.testConnection();
@@ -42,8 +43,8 @@ class PopupManager {
         // Theme change listener - apply theme immediately when changed
         document.getElementById('theme-select').addEventListener('change', (e) => {
             this.applyTheme(e.target.value);
-            // Save theme setting immediately
-            this.saveThemeSetting(e.target.value);
+            // Auto-save settings including theme (no URL validation needed)
+            this.autoSaveSettings('theme');
         });
 
         // Upload functionality with request deduplication
@@ -356,7 +357,6 @@ class PopupManager {
 
                 // Show actual stored values (including defaults from background)
                 document.getElementById('mediafusion-url').value = settings.baseUrl || 'https://mediafusion.elfhosted.com';
-                document.getElementById('api-password').value = settings.apiPassword || '';
                 document.getElementById('default-uploader').value = settings.uploaderName || 'Anonymous';
                 document.getElementById('uploader-name').value = settings.uploaderName || 'Anonymous';
                 document.getElementById('theme-select').value = settings.theme || 'auto';
@@ -367,7 +367,12 @@ class PopupManager {
         }
     }
 
-        async saveSettings() {
+    async autoSaveSettings(fieldType = 'all') {
+        // Silent auto-save without success messages
+        await this.saveSettings(true, fieldType);
+    }
+
+    async saveSettings(silent = false, fieldType = 'all') {
         let baseUrl = document.getElementById('mediafusion-url').value.trim() || 'https://mediafusion.elfhosted.com';
 
         // Strip trailing slash from URL
@@ -377,7 +382,6 @@ class PopupManager {
 
         const settings = {
             baseUrl: baseUrl,
-            apiPassword: document.getElementById('api-password').value.trim(),
             uploaderName: document.getElementById('default-uploader').value.trim() || 'Anonymous',
             theme: document.getElementById('theme-select').value || 'auto'
         };
@@ -386,19 +390,29 @@ class PopupManager {
             const response = await this.sendMessage({ action: 'saveSettings', data: settings });
 
             if (response.success) {
-                this.showMessage('Settings saved successfully', 'success');
+                if (!silent) {
+                    this.showMessage('Settings saved successfully', 'success');
+                }
                 document.getElementById('uploader-name').value = settings.uploaderName;
                 this.applyTheme(settings.theme);
-                this.checkConnectionStatus();
+                
+                // Only validate connection when URL changes or when saving all settings
+                if (fieldType === 'url' || fieldType === 'all') {
+                    this.checkConnectionStatus();
+                }
             } else {
-                this.showMessage('Failed to save settings: ' + (response.error || 'Unknown error'), 'error');
+                if (!silent) {
+                    this.showMessage('Failed to save settings: ' + (response.error || 'Unknown error'), 'error');
+                }
             }
         } catch (error) {
-            this.showMessage('Failed to save settings: ' + error.message, 'error');
+            if (!silent) {
+                this.showMessage('Failed to save settings: ' + error.message, 'error');
+            }
         }
     }
 
-        async initializeTheme() {
+    async initializeTheme() {
         try {
             // Get theme setting directly from storage for immediate application
             const response = await this.sendMessage({ action: 'getSettings' });
@@ -432,23 +446,50 @@ class PopupManager {
         this.currentTheme = theme;
     }
 
-    async saveThemeSetting(theme) {
+    loadExtensionVersion() {
         try {
-            // Get current settings first
-            const response = await this.sendMessage({ action: 'getSettings' });
-            if (response.success && response.data) {
-                // Update only the theme setting
-                const updatedSettings = {
-                    ...response.data,
-                    theme: theme
-                };
-
-                // Save updated settings
-                await this.sendMessage({ action: 'saveSettings', data: updatedSettings });
+            // Get manifest version using the appropriate API
+            if (typeof browser !== 'undefined' && browser.runtime) {
+                // Firefox
+                const manifest = browser.runtime.getManifest();
+                document.getElementById('extension-version').textContent = `v${manifest.version}`;
+            } else if (typeof chrome !== 'undefined' && chrome.runtime) {
+                // Chrome
+                const manifest = chrome.runtime.getManifest();
+                document.getElementById('extension-version').textContent = `v${manifest.version}`;
             }
         } catch (error) {
-            console.log('Failed to save theme setting:', error);
+            console.log('Failed to load extension version:', error);
+            // Keep the fallback version if API fails
         }
+    }
+
+    setupAutoSaveListeners() {
+        // Debounce timer to avoid too many save operations
+        let saveTimeout;
+
+        const debouncedSave = (fieldType) => {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                this.autoSaveSettings(fieldType);
+            }, 500); // Wait 500ms after user stops typing
+        };
+
+        // Auto-save on URL input changes
+        document.getElementById('mediafusion-url').addEventListener('input', () => debouncedSave('url'));
+        document.getElementById('mediafusion-url').addEventListener('blur', () => {
+            // Save immediately when field loses focus
+            clearTimeout(saveTimeout);
+            this.autoSaveSettings('url');
+        });
+
+        // Auto-save on uploader name input changes
+        document.getElementById('default-uploader').addEventListener('input', () => debouncedSave('uploader'));
+        document.getElementById('default-uploader').addEventListener('blur', () => {
+            // Save immediately when field loses focus
+            clearTimeout(saveTimeout);
+            this.autoSaveSettings('uploader');
+        });
     }
 
     async testConnection() {
