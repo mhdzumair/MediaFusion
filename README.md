@@ -108,6 +108,32 @@
 
 > **Note**: Installing via repository (Method 1) is recommended as it enables automatic updates when new versions are released.
 
+### Browser Extension Installation
+
+🌐 **MediaFusion Browser Extension** - Easily contribute torrents to MediaFusion directly from any torrent site!
+
+#### Firefox (Recommended)
+**Easy Installation:**
+1. Visit [MediaFusion Torrent Uploader](https://addons.mozilla.org/en-US/firefox/addon/mediafusion-torrent-uploader/) on Mozilla Add-ons
+2. Click "Add to Firefox"
+3. Configure your MediaFusion instance URL in the extension settings
+
+#### Chrome/Edge (Manual Installation)
+**Note:** Chrome Web Store version is pending review. Until approved:
+1. Download or clone this repository
+2. Navigate to `browser-extension` folder
+3. Run `./build.sh` to create distribution files
+4. Load `dist/chrome/` (or `dist/edge/`) as unpacked extension in developer mode
+
+#### Features
+- 🔍 **Auto-detection** of torrents on popular sites (1337x, PirateBay, RARBG, YTS, etc.)
+- 📤 **One-click upload** to your MediaFusion instance
+- 🎯 **Smart metadata matching** with IMDb integration
+- ⚙️ **Configurable settings** for different MediaFusion instances
+- 🎬 **Support for movies, TV series, and sports content**
+
+For detailed installation and usage instructions, see the [Browser Extension README](browser-extension/README.md).
+
 ## ⚙️ Configuration Guide
 
 📺 For a detailed video guide on configuration, check out: https://www.youtube.com/watch?v=ctQY8r1KzPM&t=85s

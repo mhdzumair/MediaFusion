@@ -234,6 +234,8 @@ async def add_torrent(
 
     # Process magnet link or torrent file
     if magnet_link:
+        if not settings.enable_fetching_torrent_metadata_from_p2p:
+            return create_error_response("Fetching torrent metadata from P2P is disabled.")
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             return create_error_response("Failed to parse magnet link.")
@@ -782,6 +784,8 @@ async def analyze_torrent(
                 r"h26[45]",
                 r"\.torrent",
                 r"SkyF1HD",
+                r"SkyUHD",
+                r"SkyF1",
                 r"HDR",
                 r"HEVC",
                 r"x264",
