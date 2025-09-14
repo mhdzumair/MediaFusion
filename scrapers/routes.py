@@ -212,6 +212,7 @@ async def add_torrent(
     codec: Optional[str] = Form(None),
     hdr: Optional[str] = Form(None),
     episode_name_parser: Optional[str] = Form(None),
+    is_quick_import: bool = Form(False),
 ):
     torrent_data: dict = {}
     info_hash = None
@@ -234,11 +235,20 @@ async def add_torrent(
 
     # Process magnet link or torrent file
     if magnet_link:
+        if not settings.enable_fetching_torrent_metadata_from_p2p:
+            return create_error_response("Fetching torrent metadata from P2P is disabled.")
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             return create_error_response("Failed to parse magnet link.")
-        data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers, episode_name_parser=episode_name_parser)
-        if not data:
+        try:
+            data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers, episode_name_parser=episode_name_parser, is_raise_error=True)
+        except ExceptionGroup as e:
+            return create_error_response(str(e.exceptions[0]))
+        except ValueError as e:
+            return create_error_response(str(e))
+        except Exception as e:
+            return create_error_response(f"Failed to fetch torrent metadata: {e}")
+        if not data or not data[0]:
             return create_error_response("Failed to fetch torrent metadata.")
         torrent_data = data[0]
         info_hash = info_hash.lower()
@@ -282,13 +292,16 @@ async def add_torrent(
         torrent_data["codec"] = torrent_data.get("codec") or codec
     if hdr_list:
         torrent_data["hdr"] = torrent_data.get("hdr") or hdr_list
+
     if title:
         torrent_data["title"] = title
+    else:
+        title = torrent_data.get("title")
 
     # Handle sports content metadata
     if meta_type == "sports":
         if not title or not catalog_list:
-            return create_error_response("Title and sports catalog are required.")
+            return create_error_response("Title and sports catalog are required. Use the Analyze Torrent button to set the title and sports catalog.")
         catalog = catalog_list[0]
         genres = []
         sports_category = {}
@@ -343,7 +356,7 @@ async def add_torrent(
     elif not meta_id or meta_id.startswith("mf"):
         metadata = {
             "id": meta_id,
-            "title": title or torrent_data.get("title"),
+            "title": title,
             "year": torrent_data.get("year") or created_at.year,
             "poster": poster,
             "background": background,
@@ -373,12 +386,14 @@ async def add_torrent(
     # For series, check if we need file annotation
     if meta_type == "series":
         if not file_data:
-            return {
-                "status": "needs_annotation",
-                "files": torrent_data.get("file_data", []),
-            }
+            file_data = torrent_data.get("file_data", [])
+            if not is_quick_import:
+                return {
+                    "status": "needs_annotation",
+                    "files": file_data,
+                }
 
-        annotated_files = json.loads(file_data)
+        annotated_files = json.loads(file_data) if isinstance(file_data, str) else file_data
         torrent_data["file_data"] = annotated_files
         # Update seasons and episodes based on annotations
         seasons = {
@@ -739,8 +754,8 @@ async def analyze_torrent(
             info_hash, trackers = torrent.parse_magnet(magnet_link)
             if not info_hash:
                 return {"status": "error", "message": "Failed to parse magnet link."}
-            data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
-            if not data:
+            data = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers, is_raise_error=True)
+            if not data or not data[0]:
                 return {"status": "error", "message": "Failed to fetch torrent metadata."}
             torrent_data = data[0]
             torrent_data.pop("torrent_file", None)
@@ -782,6 +797,8 @@ async def analyze_torrent(
                 r"h26[45]",
                 r"\.torrent",
                 r"SkyF1HD",
+                r"SkyUHD",
+                r"SkyF1",
                 r"HDR",
                 r"HEVC",
                 r"x264",
@@ -828,6 +845,10 @@ async def analyze_torrent(
             "matches": matches,
         }
 
+    except ExceptionGroup as e:
+        return {"status": "error", "message": str(e.exceptions[0])}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": f"Failed to analyze torrent: {str(e)}"}
 

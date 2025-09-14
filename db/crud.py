@@ -766,7 +766,9 @@ async def get_existing_metadata(
 ) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
     if metadata.get("id"):
         return await model.get(metadata["id"])
-    title = metadata["title"]
+    title = metadata.get("title")
+    if not title:
+        return None
     year = metadata.get("year")
     if isinstance(year, str):
         year = int(year)

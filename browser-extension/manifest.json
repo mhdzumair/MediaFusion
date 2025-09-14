@@ -1,0 +1,66 @@
+{
+  "manifest_version": 2,
+  "name": "MediaFusion Torrent Uploader",
+  "version": "1.1.0",
+  "description": "Easily contribute torrents to MediaFusion from any torrent site",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "mediafusion-uploader@mediafusion.dev"
+    }
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "https://*/*",
+    "http://*/*"
+  ],
+
+  "optional_permissions": [
+    "tabs"
+  ],
+
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "MediaFusion Uploader",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "background": {
+    "scripts": ["background/background.js"],
+    "persistent": false
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "content/inject.css"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+
+  "web_accessible_resources": [
+    "icons/*.png",
+    "content/*.css",
+    "popup/*.css"
+  ]
+}

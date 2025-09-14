@@ -1,4 +1,6 @@
 CATALOG_DATA = {
+    "anime_movies": "Anime Movies",
+    "anime_series": "Anime Series",
     "american_football": "American Football",
     "arabic_movies": "Arabic Movies",
     "arabic_series": "Arabic Series",
@@ -62,6 +64,7 @@ CATALOG_DATA = {
 }
 
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
+    "anime_movies",
     "arabic_movies",
     "bangla_movies",
     "english_hdrip",
@@ -92,6 +95,7 @@ USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
 ]
 
 USER_UPLOAD_SUPPORTED_SERIES_CATALOG_IDS = [
+    "anime_series",
     "arabic_series",
     "bangla_series",
     "english_series",
