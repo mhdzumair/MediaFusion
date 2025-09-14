@@ -47,7 +47,7 @@ def extract_torrent_metadata(
         created_at = torrent_data.get(b"creation date", 0)
 
         announce_list = [
-            tracker[0].decode() for tracker in torrent_data.get(b"announce-list", [])
+            tracker[0].decode() for tracker in torrent_data.get(b"announce-list", []) if tracker
         ]
         torrent_name = info.get(b"name", b"").decode()
         if not torrent_name:
@@ -189,6 +189,10 @@ def extract_torrent_metadata(
             metadata["episodes"] = list(episodes)
 
         return metadata
+    except ValueError as e:
+        if is_raise_error:
+            raise e
+        return {}
     except Exception as e:
         logging.exception(f"Error occurred: {e}")
         if is_raise_error:
@@ -242,11 +246,13 @@ async def _acollect_pipe(
 
 
 async def info_hashes_to_torrent_metadata(
-    info_hashes: list[str], trackers: list[str], episode_name_parser: str = None
+    info_hashes: list[str], trackers: list[str], episode_name_parser: str = None, is_raise_error: bool = False
 ) -> list[dict]:
     torrents_data = []
 
     if not settings.enable_fetching_torrent_metadata_from_p2p:
+        if is_raise_error:
+            raise ValueError("Fetching torrent metadata from P2P is disabled")
         logging.info("Fetching torrent metadata from P2P is disabled")
         return torrents_data
 
@@ -265,9 +271,11 @@ async def info_hashes_to_torrent_metadata(
                     pass
                 else:
                     torrents_data.append(
-                        extract_torrent_metadata(torrent_result.dump(), episode_name_parser=episode_name_parser)
+                        extract_torrent_metadata(torrent_result.dump(), is_raise_error=is_raise_error, episode_name_parser=episode_name_parser)
                     )
             except Exception as e:
+                if is_raise_error:
+                    raise e
                 logging.error(f"Error processing torrent: {e}")
 
     return torrents_data
@@ -304,7 +312,7 @@ def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
         magnet = Magnet.from_string(magnet_link)
     except MagnetError:
         return "", []
-    return magnet.infohash, magnet.tr
+    return magnet.infohash.lower(), magnet.tr
 
 
 def get_info_hash_from_magnet(magnet_link: str) -> str:

@@ -52,7 +52,7 @@
         "content/content.js"
       ],
       "css": [
-        "styles/inject.css"
+        "content/inject.css"
       ],
       "run_at": "document_end"
     }
@@ -60,6 +60,7 @@
 
   "web_accessible_resources": [
     "icons/*.png",
-    "styles/*.css"
+    "content/*.css",
+    "popup/*.css"
   ]
 }

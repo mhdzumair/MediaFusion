@@ -1,279 +1,433 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MediaFusion Uploader</title>
-    <link rel="stylesheet" href="popup.css">
-</head>
-<body>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <img src="../icons/icon32.png" alt="MediaFusion" class="logo">
-            <h1>MediaFusion Uploader</h1>
+      <!-- Header -->
+      <div class="header">
+        <img src="../icons/icon32.png" alt="MediaFusion" class="logo" />
+        <h1>MediaFusion Uploader</h1>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="tabs">
+        <button class="tab-button active" data-tab="upload">Upload</button>
+        <button class="tab-button" data-tab="settings">Settings</button>
+      </div>
+
+      <!-- Upload Tab -->
+      <div id="upload-tab" class="tab-content active">
+        <!-- Basic Upload Section -->
+        <div id="basic-upload" class="section">
+          <h3>Quick Upload</h3>
+
+          <div class="form-group">
+            <label for="magnet-input">Magnet Link:</label>
+            <textarea
+              id="magnet-input"
+              placeholder="magnet:?xt=urn:btih:..."
+              rows="3"
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="torrent-file">Or Upload Torrent File:</label>
+            <input type="file" id="torrent-file" accept=".torrent" />
+          </div>
+
+          <div class="row">
+            <div class="col">
+              <label for="content-type">Content Type:</label>
+              <select id="content-type">
+                <option value="movie">Movie</option>
+                <option value="series">TV Series</option>
+                <option value="sports">Sports</option>
+              </select>
+            </div>
+            <div class="col">
+              <label for="uploader-name">Uploader Name:</label>
+              <input type="text" id="uploader-name" placeholder="Anonymous" />
+            </div>
+          </div>
+
+          <!-- Sports Category Selection (shown only for sports content) -->
+          <div class="row" id="sports-category-row" style="display: none">
+            <div class="col">
+              <label for="sports-category">Sports Category:</label>
+              <select id="sports-category">
+                <option value="">Select Sports Category</option>
+                <option value="american_football">American Football</option>
+                <option value="baseball">Baseball</option>
+                <option value="basketball">Basketball</option>
+                <option value="football">Football</option>
+                <option value="formula_racing">Formula Racing</option>
+                <option value="hockey">Hockey</option>
+                <option value="motogp_racing">MotoGP Racing</option>
+                <option value="rugby">Rugby/AFL</option>
+                <option value="other_sports">Other Sports</option>
+                <option value="fighting">Fighting (WWE, UFC)</option>
+              </select>
+            </div>
+            <div class="col">
+              <!-- Empty column for layout balance -->
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button id="analyze-btn" class="btn btn-primary">
+              Analyze Torrent
+            </button>
+            <button id="quick-import-btn" class="btn btn-success">
+              Quick Import to MediaFusion
+            </button>
+          </div>
         </div>
 
-        <!-- Tab Navigation -->
-        <div class="tabs">
-            <button class="tab-button active" data-tab="upload">Upload</button>
-            <button class="tab-button" data-tab="settings">Settings</button>
+        <!-- Analysis Results -->
+        <div id="analysis-results" class="section hidden">
+          <h3>Analysis Results</h3>
+          <div id="torrent-info"></div>
+          <div id="matches-container" class="matches-container"></div>
         </div>
 
-        <!-- Upload Tab -->
-        <div id="upload-tab" class="tab-content active">
-            <!-- Basic Upload Section -->
-            <div id="basic-upload" class="section">
-                <h3>Quick Upload</h3>
+        <!-- Advanced Options (shown after analysis) -->
+        <div id="advanced-options" class="section hidden">
+          <h3>Upload Configuration</h3>
 
-                <div class="form-group">
-                    <label for="magnet-input">Magnet Link:</label>
-                    <textarea id="magnet-input" placeholder="magnet:?xt=urn:btih:..." rows="3"></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="torrent-file">Or Upload Torrent File:</label>
-                    <input type="file" id="torrent-file" accept=".torrent">
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label for="content-type">Content Type:</label>
-                        <select id="content-type">
-                            <option value="movie">Movie</option>
-                            <option value="series">TV Series</option>
-                            <option value="sports">Sports</option>
-                        </select>
-                    </div>
-                    <div class="col">
-                        <label for="uploader-name">Uploader Name:</label>
-                        <input type="text" id="uploader-name" placeholder="Anonymous">
-                    </div>
-                </div>
-
-                <div class="button-group">
-                    <button id="analyze-btn" class="btn btn-primary">Analyze Torrent</button>
-                    <button id="quick-import-btn" class="btn btn-success">Quick Import to MediaFusion</button>
-                </div>
+          <!-- Basic Information -->
+          <div class="subsection">
+            <h4>Basic Information</h4>
+            <div class="row">
+              <div class="col">
+                <label for="imdb-id">IMDb ID:</label>
+                <input type="text" id="imdb-id" placeholder="tt1234567" />
+              </div>
+              <div class="col">
+                <label for="title">Title:</label>
+                <input type="text" id="title" placeholder="Content title" />
+              </div>
             </div>
-
-            <!-- Analysis Results -->
-            <div id="analysis-results" class="section hidden">
-                <h3>Analysis Results</h3>
-                <div id="torrent-info"></div>
-                <div id="matches-container" class="matches-container"></div>
+            <div class="row">
+              <div class="col">
+                <label for="torrent-type">Torrent Type:</label>
+                <select id="torrent-type">
+                  <option value="public">Public</option>
+                  <option value="semi-private">Semi-Private</option>
+                  <option value="private">Private</option>
+                  <option value="web-seed">Web-Seed</option>
+                </select>
+              </div>
+              <div class="col">
+                <label for="poster-url">Poster URL (optional):</label>
+                <input
+                  type="url"
+                  id="poster-url"
+                  placeholder="https://example.com/poster.jpg"
+                />
+              </div>
             </div>
+          </div>
 
-            <!-- Advanced Options (shown after analysis) -->
-            <div id="advanced-options" class="section hidden">
-                <h3>Upload Configuration</h3>
-
-                <!-- Basic Information -->
-                <div class="subsection">
-                    <h4>Basic Information</h4>
-                    <div class="row">
-                        <div class="col">
-                            <label for="imdb-id">IMDb ID:</label>
-                            <input type="text" id="imdb-id" placeholder="tt1234567">
-                        </div>
-                        <div class="col">
-                            <label for="title">Title:</label>
-                            <input type="text" id="title" placeholder="Content title">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col">
-                            <label for="torrent-type">Torrent Type:</label>
-                            <select id="torrent-type">
-                                <option value="public">Public</option>
-                                <option value="semi-private">Semi-Private</option>
-                                <option value="private">Private</option>
-                                <option value="web-seed">Web-Seed</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Technical Specifications -->
-                <div class="subsection">
-                    <h4>Technical Specifications</h4>
-                    <div class="row">
-                        <div class="col">
-                            <label for="resolution">Resolution:</label>
-                            <select id="resolution">
-                                <option value="">Auto-detect</option>
-                                <option value="480p">480p</option>
-                                <option value="720p">720p</option>
-                                <option value="1080p">1080p</option>
-                                <option value="2160p">4K</option>
-                            </select>
-                        </div>
-                        <div class="col">
-                            <label for="quality">Quality:</label>
-                            <select id="quality">
-                                <option value="">Auto-detect</option>
-                                <option value="BluRay">BluRay</option>
-                                <option value="WEB-DL">WEB-DL</option>
-                                <option value="HDRip">HDRip</option>
-                                <option value="DVDRip">DVDRip</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col">
-                            <label for="codec">Codec:</label>
-                            <select id="codec">
-                                <option value="">Auto-detect</option>
-                                <option value="x264">x264</option>
-                                <option value="x265">x265</option>
-                                <option value="H.264">H.264</option>
-                                <option value="H.265">H.265</option>
-                                <option value="HEVC">HEVC</option>
-                                <option value="AV1">AV1</option>
-                                <option value="VP9">VP9</option>
-                                <option value="XviD">XviD</option>
-                                <option value="DivX">DivX</option>
-                            </select>
-                        </div>
-                        <div class="col">
-                            <label for="audio">Audio:</label>
-                            <select id="audio">
-                                <option value="">Auto-detect</option>
-                                <option value="AAC">AAC</option>
-                                <option value="AC3">AC3</option>
-                                <option value="DTS">DTS</option>
-                                <option value="DTS-HD">DTS-HD</option>
-                                <option value="TrueHD">TrueHD</option>
-                                <option value="Atmos">Atmos</option>
-                                <option value="MP3">MP3</option>
-                                <option value="FLAC">FLAC</option>
-                                <option value="PCM">PCM</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Series-specific options -->
-                <div class="subsection" id="series-options" style="display: none;">
-                    <h4>Series Options</h4>
-                    <div class="form-group">
-                        <label for="episode-name-parser">Episode Name Parser (optional):</label>
-                        <input type="text" id="episode-name-parser" placeholder="e.g., S{season:02d}E{episode:02d}">
-                        <div class="parser-examples">
-                            <small><strong>Examples:</strong></small>
-                            <small>• Attack.on.Titan.S04E15.Above.and.Below.1080p.mkv - <code>S\d+E\d+\.(?P&lt;episode_name&gt;.*?)\.1080p</code> - matches Above and Below</small>
-                            <small>• Naruto.Shippuden.Episode.500.The.Message.720p.mp4 - <code>Episode\.(\d+)\.(?P&lt;episode_name&gt;.*?)\.720p</code> - matches The Message</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Sports-specific options -->
-                <div class="subsection" id="sports-options" style="display: none;">
-                    <h4>Sports Options</h4>
-                    <div class="form-group">
-                        <label for="sports-episode-parser">Episode Name Parser (optional):</label>
-                        <input type="text" id="sports-episode-parser" placeholder="e.g., R{episode:02d}">
-                        <div class="parser-examples">
-                            <small><strong>Racing Examples:</strong></small>
-                            <small>• F1.2025.Canadian.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv - <code>Grand\.Prix\.(?P&lt;episode_name&gt;.*?)\.Sky</code> - matches Drivers Press Conference</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Content Categories -->
-                <div class="subsection">
-                    <h4>Categories</h4>
-                    <div id="catalog-selection">
-                        <!-- Will be populated based on content type -->
-                    </div>
-                </div>
-
-                <!-- Upload Actions -->
-                <div class="button-group">
-                    <button id="upload-with-match-btn" class="btn btn-success hidden">Upload with Selected Match</button>
-                    <button id="upload-manual-btn" class="btn btn-primary">Upload to MediaFusion</button>
-                    <button id="back-to-basic-btn" class="btn btn-secondary">Back to Basic</button>
-                </div>
+          <!-- Technical Specifications -->
+          <div class="subsection">
+            <h4>Technical Specifications</h4>
+            <div class="row">
+              <div class="col">
+                <label for="resolution">Resolution:</label>
+                <select id="resolution">
+                  <option value="">Auto-detect</option>
+                  <option value="480p">480p</option>
+                  <option value="576p">576p</option>
+                  <option value="720p">720p</option>
+                  <option value="1080p">1080p</option>
+                  <option value="1440p">1440p</option>
+                  <option value="2160p">2160p (4K)</option>
+                  <option value="4K">4K UHD</option>
+                </select>
+              </div>
+              <div class="col">
+                <label for="quality">Quality:</label>
+                <select id="quality">
+                  <option value="">Auto-detect</option>
+                  <option value="BluRay">BluRay</option>
+                  <option value="WEB-DL">WEB-DL</option>
+                  <option value="HDRip">HDRip</option>
+                  <option value="DVDRip">DVDRip</option>
+                  <option value="HDTV">HDTV</option>
+                  <option value="CAM">CAM</option>
+                  <option value="TeleSync">TeleSync</option>
+                  <option value="SCR">SCR</option>
+                </select>
+              </div>
             </div>
+            <div class="row">
+              <div class="col">
+                <label for="advanced-language-selection">Languages:</label>
+                <div class="language-selection">
+                  <button
+                    type="button"
+                    id="advanced-language-select-btn"
+                    class="btn btn-outline"
+                  >
+                    Select Languages
+                  </button>
+                  <div
+                    id="advanced-selected-languages"
+                    class="selected-languages"
+                  >
+                    Auto-detect
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col">
+                <label for="codec">Codec:</label>
+                <select id="codec">
+                  <option value="">Auto-detect</option>
+                  <option value="x264">x264</option>
+                  <option value="x265">x265</option>
+                  <option value="H.264">H.264</option>
+                  <option value="H.265">H.265</option>
+                  <option value="HEVC">HEVC</option>
+                  <option value="AV1">AV1</option>
+                  <option value="VP9">VP9</option>
+                  <option value="XviD">XviD</option>
+                  <option value="DivX">DivX</option>
+                </select>
+              </div>
+              <div class="col">
+                <label for="audio">Audio:</label>
+                <select id="audio">
+                  <option value="">Auto-detect</option>
+                  <option value="AAC">AAC</option>
+                  <option value="AC3">AC3</option>
+                  <option value="DTS">DTS</option>
+                  <option value="DTS-HD">DTS-HD</option>
+                  <option value="TrueHD">TrueHD</option>
+                  <option value="Atmos">Atmos</option>
+                  <option value="DD+">DD+</option>
+                  <option value="Dolby Digital Plus">Dolby Digital Plus</option>
+                  <option value="DTS Lossless">DTS Lossless</option>
+                  <option value="MP3">MP3</option>
+                  <option value="FLAC">FLAC</option>
+                  <option value="PCM">PCM</option>
+                </select>
+              </div>
+            </div>
+          </div>
 
-            <!-- Status Messages -->
-            <div id="status-messages" class="status-messages"></div>
+          <!-- Series-specific options -->
+          <div class="subsection" id="series-options" style="display: none">
+            <h4>Series Options</h4>
+            <div class="form-group">
+              <label for="episode-name-parser"
+                >Episode Name Parser (optional):</label
+              >
+              <input
+                type="text"
+                id="episode-name-parser"
+                placeholder="e.g., S{season:02d}E{episode:02d}"
+              />
+              <div class="parser-examples">
+                <small><strong>Examples:</strong></small>
+                <small
+                  >• Attack.on.Titan.S04E15.Above.and.Below.1080p.mkv -
+                  <code>S\d+E\d+\.(?P&lt;episode_name&gt;.*?)\.1080p</code> -
+                  matches Above and Below</small
+                >
+                <small
+                  >• Naruto.Shippuden.Episode.500.The.Message.720p.mp4 -
+                  <code>Episode\.(\d+)\.(?P&lt;episode_name&gt;.*?)\.720p</code>
+                  - matches The Message</small
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- Sports-specific options -->
+          <div class="subsection" id="sports-options" style="display: none">
+            <h4>Sports Options</h4>
+            <div class="form-group">
+              <label for="sports-episode-parser"
+                >Episode Name Parser (optional):</label
+              >
+              <input
+                type="text"
+                id="sports-episode-parser"
+                placeholder="e.g., R{episode:02d}"
+              />
+              <div class="parser-examples">
+                <small><strong>Racing Examples:</strong></small>
+                <small
+                  >•
+                  F1.2025.Canadian.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv
+                  - <code>Grand\.Prix\.(?P&lt;episode_name&gt;.*?)\.Sky</code> -
+                  matches Drivers Press Conference</small
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- Content Categories -->
+          <div class="subsection">
+            <h4>Categories</h4>
+            <div id="catalog-selection">
+              <!-- Will be populated based on content type -->
+            </div>
+          </div>
+
+          <!-- Upload Actions -->
+          <div class="button-group">
+            <button id="upload-with-match-btn" class="btn btn-success hidden">
+              Upload with Selected Match
+            </button>
+            <button id="upload-manual-btn" class="btn btn-primary">
+              Upload to MediaFusion
+            </button>
+            <button id="back-to-basic-btn" class="btn btn-secondary">
+              Back to Basic
+            </button>
+          </div>
         </div>
 
-        <!-- Settings Tab -->
-        <div id="settings-tab" class="tab-content">
-            <div class="section">
-                <h3>Configuration</h3>
+        <!-- Status Messages -->
+        <div id="status-messages" class="status-messages"></div>
+      </div>
 
-                <div class="form-group">
-                    <label for="mediafusion-url">MediaFusion URL:</label>
-                    <input type="url" id="mediafusion-url" placeholder="https://mediafusion.elfhosted.com">
-                    <small>Enter your MediaFusion instance URL</small>
-                </div>
+      <!-- Settings Tab -->
+      <div id="settings-tab" class="tab-content">
+        <div class="section">
+          <h3>Configuration</h3>
 
-                <div class="form-group">
-                    <label for="default-uploader">Default Uploader Name:</label>
-                    <input type="text" id="default-uploader" placeholder="Anonymous">
-                </div>
+          <div class="form-group">
+            <label for="mediafusion-url">MediaFusion URL:</label>
+            <input
+              type="url"
+              id="mediafusion-url"
+              placeholder="https://mediafusion.elfhosted.com"
+            />
+            <small>Enter your MediaFusion instance URL</small>
+          </div>
 
-                <div class="form-group">
-                    <label for="theme-select">Theme:</label>
-                    <select id="theme-select">
-                        <option value="auto">Auto (System)</option>
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                    </select>
-                    <small>Choose your preferred theme or follow system settings</small>
-                </div>
+          <div class="form-group">
+            <label for="default-uploader">Default Uploader Name:</label>
+            <input type="text" id="default-uploader" placeholder="Anonymous" />
+          </div>
 
-                <div class="button-group">
-                    <button id="test-connection-btn" class="btn btn-secondary">Test Connection</button>
-                </div>
+          <div class="form-group">
+            <label for="theme-select">Theme:</label>
+            <select id="theme-select">
+              <option value="auto">Auto (System)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <small>Choose your preferred theme or follow system settings</small>
+          </div>
 
-                <div class="connection-status">
-                    <div id="connection-indicator" class="status-indicator"></div>
-                    <span id="connection-text">Not configured</span>
-                </div>
-            </div>
+          <div class="button-group">
+            <button id="test-connection-btn" class="btn btn-secondary">
+              Test Connection
+            </button>
+          </div>
 
-            <div class="section">
-                <h3>About</h3>
-                <p>MediaFusion Browser Extension <span id="extension-version">v1.0.0</span></p>
-                <p>Easily contribute torrents to MediaFusion from any torrent site.</p>
-                <div class="links">
-                    <a href="https://github.com/mhdzumair/MediaFusion" target="_blank">GitHub</a>
-                    <a href="https://github.com/mhdzumair/MediaFusion/issues" target="_blank">Report Issues</a>
-                </div>
-            </div>
+          <div class="connection-status">
+            <div id="connection-indicator" class="status-indicator"></div>
+            <span id="connection-text">Not configured</span>
+          </div>
         </div>
 
-        <!-- Loading Overlay -->
-        <div id="loading-overlay" class="loading-overlay hidden">
-            <div class="spinner"></div>
-            <div class="loading-text">Processing...</div>
+        <div class="section">
+          <h3>About</h3>
+          <p>
+            MediaFusion Browser Extension
+            <span id="extension-version">v1.0.0</span>
+          </p>
+          <p>
+            Easily contribute torrents to MediaFusion from any torrent site.
+          </p>
+          <div class="links">
+            <a href="https://github.com/mhdzumair/MediaFusion" target="_blank"
+              >GitHub</a
+            >
+            <a
+              href="https://github.com/mhdzumair/MediaFusion/issues"
+              target="_blank"
+              >Report Issues</a
+            >
+          </div>
         </div>
+      </div>
 
-        <!-- File Annotation Modal -->
-        <div id="file-annotation-modal" class="modal hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Episode Details Setup</h3>
-                    <button id="close-annotation-modal" class="close-btn">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <p>Please set season and episode numbers for each file:</p>
-                    <div id="file-annotation-list" class="file-list">
-                        <!-- Files will be populated here -->
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button id="cancel-annotation" class="btn btn-secondary">Cancel</button>
-                    <button id="confirm-annotation" class="btn btn-primary">Confirm & Upload</button>
-                </div>
+      <!-- Loading Overlay -->
+      <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <div class="loading-text">Processing...</div>
+      </div>
+
+      <!-- Language Selection Modal -->
+      <div id="language-selection-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>Select Languages</h3>
+            <button id="close-language-modal" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body language-modal-body">
+            <div class="language-search">
+              <input
+                type="text"
+                id="language-search"
+                placeholder="Search languages..."
+                class="form-control"
+              />
             </div>
+            <div id="language-checkboxes" class="language-checkboxes">
+              <!-- Language checkboxes will be populated here -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="clear-languages" class="btn btn-secondary">
+              Clear All
+            </button>
+            <button id="confirm-languages" class="btn btn-primary">
+              Confirm
+            </button>
+          </div>
         </div>
+      </div>
+
+      <!-- File Annotation Modal -->
+      <div id="file-annotation-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>Episode Details Setup</h3>
+            <button id="close-annotation-modal" class="close-btn">
+              &times;
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Please set season and episode numbers for each file:</p>
+            <div id="file-annotation-list" class="file-list">
+              <!-- Files will be populated here -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="cancel-annotation" class="btn btn-secondary">
+              Cancel
+            </button>
+            <button id="confirm-annotation" class="btn btn-primary">
+              Confirm & Upload
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="popup.js"></script>
-</body>
+  </body>
 </html>

@@ -66,7 +66,7 @@ This will create a `dist` folder with builds for all supported browsers (Firefox
 2. Configure your settings:
    - **MediaFusion URL**: Enter your MediaFusion instance URL (e.g., `https://mediafusion.elfhosted.com`)
    - **Uploader Name**: Enter your preferred uploader name (optional, defaults to "Anonymous")
-   
+
    **Note**: Settings are automatically saved as you type. No need to click a save button!
 
 ## Usage
@@ -89,23 +89,18 @@ This will create a `dist` folder with builds for all supported browsers (Firefox
 ### Project Structure
 ```
 browser-extension/
-├── manifest.json          # Chrome extension manifest
-├── manifest_firefox.json  # Firefox extension manifest
+├── manifest_chrome.json   # Chrome extension manifest
+├── manifest.json          # Firefox extension manifest
 ├── popup/
 │   ├── popup.html         # Extension popup interface
 │   ├── popup.js           # Popup functionality
 │   └── popup.css          # Popup styling
 ├── content/
 │   ├── content.js         # Main content script
-│   └── site-handlers/     # Site-specific handlers
-│       ├── 1337x.js
-│       ├── piratebay.js
-│       └── ...
+|   └── inject.css         # Injected styles
 ├── background/
 │   └── background.js      # Background script for API calls
-├── icons/                 # Extension icons
-└── styles/
-    └── inject.css         # Injected styles
+└── icons/                 # Extension icons
 ```
 
 ### Building

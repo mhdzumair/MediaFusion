@@ -23,16 +23,11 @@ mkdir -p dist/edge
 copy_common_files() {
     local target_dir=$1
     echo "📋 Copying common files to $target_dir..."
-    
+
     cp -r background "$target_dir/"
     cp -r content "$target_dir/"
     cp -r popup "$target_dir/"
-    cp -r styles "$target_dir/"
     cp -r icons "$target_dir/"
-    cp README.md "$target_dir/"
-    if [ -f "INSTALLATION.md" ]; then
-        cp INSTALLATION.md "$target_dir/"
-    fi
 }
 
 # Build Firefox version
@@ -109,5 +104,3 @@ echo "  1. Go to edge://extensions/"
 echo "  2. Enable Developer mode"
 echo "  3. Click 'Load unpacked' and select dist/edge/"
 echo ""
-echo "⚠️  Corporate environments: If extension installation is blocked,"
-echo "   try Firefox (often has fewer restrictions) or contact IT for approval."

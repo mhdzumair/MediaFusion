@@ -2,390 +2,519 @@
 // Detects and adds upload buttons to torrent/magnet links
 
 class MediaFusionContentScript {
-    constructor() {
-        this.processedLinks = new Set();
-        this.siteHandlers = new Map();
-        this.universalDetection = true; // Always enabled for maximum compatibility
-        this.isProcessing = false;
-        this.init();
-    }
+  constructor() {
+    this.processedLinks = new Set();
+    this.siteHandlers = new Map();
+    this.isProcessing = false;
+    this.init();
+  }
 
-    async init() {
-        this.loadSiteHandlers();
-        this.startObserving();
-        this.processPage();
-    }
+  async init() {
+    this.loadSiteHandlers();
+    this.startObserving();
+    this.processPage();
+  }
 
-    loadSiteHandlers() {
-        const hostname = window.location.hostname.replace('www.', '');
-
-        // Site-specific handlers
-        this.siteHandlers.set('1337x.to', this.handle1337x.bind(this));
-        this.siteHandlers.set('1337x.st', this.handle1337x.bind(this));
-        this.siteHandlers.set('thepiratebay.org', this.handlePirateBay.bind(this));
-        this.siteHandlers.set('piratebay.org', this.handlePirateBay.bind(this));
-        this.siteHandlers.set('tpb.party', this.handlePirateBay.bind(this));
-        this.siteHandlers.set('thepiratebay10.org', this.handlePirateBay.bind(this));
-        this.siteHandlers.set('rarbg.to', this.handleRARBG.bind(this));
-        this.siteHandlers.set('yts.mx', this.handleYTS.bind(this));
-        this.siteHandlers.set('yts.am', this.handleYTS.bind(this));
-        this.siteHandlers.set('eztv.re', this.handleEZTV.bind(this));
-        this.siteHandlers.set('eztv.io', this.handleEZTV.bind(this));
-        this.siteHandlers.set('limetorrents.info', this.handleLimeTorrents.bind(this));
-        this.siteHandlers.set('limetorrents.lol', this.handleLimeTorrents.bind(this));
-        this.siteHandlers.set('torrentgalaxy.to', this.handleTorrentGalaxy.bind(this));
-        this.siteHandlers.set('zooqle.com', this.handleZooqle.bind(this));
-        this.siteHandlers.set('torlock.com', this.handleTorlock.bind(this));
-        this.siteHandlers.set('kickasstorrents.to', this.handleKickass.bind(this));
-        this.siteHandlers.set('nyaa.si', this.handleNyaa.bind(this));
-        this.siteHandlers.set('sukebei.nyaa.si', this.handleNyaa.bind(this));
-        this.siteHandlers.set('rutracker.org', this.handleRutracker.bind(this));
-        this.siteHandlers.set('uindex.org', this.handleUIndex.bind(this));
-    }
-
-    startObserving() {
-        // Observe DOM changes to catch dynamically loaded content
-        const observer = new MutationObserver((mutations) => {
-            let shouldProcess = false;
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                    shouldProcess = true;
-                }
-            });
-            if (shouldProcess) {
-                setTimeout(() => this.processPage(), 500);
-            }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
-
-    processPage() {
-        if (this.isProcessing) return;
-        this.isProcessing = true;
-
-        try {
-            const hostname = window.location.hostname.replace('www.', '');
-            const handler = this.siteHandlers.get(hostname);
-
-            if (handler) {
-                // Use site-specific handler for better accuracy
-                handler();
-            } else {
-                // Universal detection for all other sites
-                this.handleUniversal();
-            }
-        } finally {
-            setTimeout(() => {
-                this.isProcessing = false;
-            }, 1000);
-        }
-    }
-
-    handleUniversal() {
-        // Universal magnet link detection
-        const magnetLinks = document.querySelectorAll('a[href^="magnet:"]');
-        magnetLinks.forEach(link => {
-            if (!this.hasUploadButton(link)) {
-                this.addUploadButton(link, 'magnet');
-            }
-        });
-
-        // Universal torrent file detection
-        const torrentLinks = document.querySelectorAll('a[href$=".torrent"], a[href*=".torrent?"], a[href*="/download/"], a[href*="/torrent/"]');
-        torrentLinks.forEach(link => {
-            // Skip if it's likely not a torrent download link
-            if (link.href.includes('javascript:') || link.href.includes('#')) return;
-
-            if (!this.hasUploadButton(link)) {
-                this.addUploadButton(link, 'torrent');
-            }
-        });
-    }
-
-    // Generic handler that looks for magnet links and .torrent files
-    handleGeneric() {
-        // Find magnet links
-        const magnetLinks = document.querySelectorAll('a[href^="magnet:"]');
-        magnetLinks.forEach(link => this.addUploadButton(link, 'magnet'));
-
-        // Find torrent file links
-        const torrentLinks = document.querySelectorAll('a[href$=".torrent"], a[href*=".torrent?"]');
-        torrentLinks.forEach(link => this.addUploadButton(link, 'torrent'));
-    }
-
+  loadSiteHandlers() {
     // Site-specific handlers
-    handle1337x() {
-        // Torrent detail page
-        if (window.location.pathname.includes('/torrent/')) {
-            const magnetLink = document.querySelector('a[href^="magnet:"]');
-            const torrentLink = document.querySelector('a[href$=".torrent"]');
+    this.siteHandlers.set("1337x.to", this.handle1337x.bind(this));
+    this.siteHandlers.set("1337x.st", this.handle1337x.bind(this));
+    this.siteHandlers.set("thepiratebay.org", this.handlePirateBay.bind(this));
+    this.siteHandlers.set("tpb.party", this.handlePirateBay.bind(this));
+    this.siteHandlers.set(
+      "thepiratebay10.xyz",
+      this.handlePirateBay.bind(this)
+    );
+    this.siteHandlers.set("yts.mx", this.handleYTS.bind(this));
+    this.siteHandlers.set("yts.am", this.handleYTS.bind(this));
+    this.siteHandlers.set("eztvx.to", this.handleEZTV.bind(this));
+    this.siteHandlers.set(
+      "limetorrents.fun",
+      this.handleLimeTorrents.bind(this)
+    );
+    this.siteHandlers.set(
+      "kickass.torrentbay.st",
+      this.handleKickass.bind(this)
+    );
+    this.siteHandlers.set("nyaa.si", this.handleNyaa.bind(this));
+    this.siteHandlers.set("sukebei.nyaa.si", this.handleNyaa.bind(this));
+    this.siteHandlers.set("rutracker.org", this.handleRutracker.bind(this));
+    this.siteHandlers.set("uindex.org", this.handleUIndex.bind(this));
+  }
 
-            if (magnetLink) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
+  startObserving() {
+    // Observe DOM changes to catch dynamically loaded content
+    const observer = new MutationObserver((mutations) => {
+      let shouldProcess = false;
+      mutations.forEach((mutation) => {
+        if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+          shouldProcess = true;
         }
+      });
+      if (shouldProcess) {
+        setTimeout(() => this.processPage(), 500);
+      }
+    });
 
-        // Search results and category pages
-        const tableRows = document.querySelectorAll('.table-list tbody tr');
-        tableRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            const torrentLink = row.querySelector('a[href$=".torrent"]');
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  }
 
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
+  processPage() {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
+
+    try {
+      const hostname = window.location.hostname.replace("www.", "");
+      const handler = this.siteHandlers.get(hostname);
+
+      if (handler) {
+        // Use site-specific handler for better accuracy
+        handler();
+      } else {
+        // Universal detection for all other sites
+        this.handleUniversal();
+      }
+    } finally {
+      setTimeout(() => {
+        this.isProcessing = false;
+      }, 1000);
     }
+  }
 
-    handlePirateBay() {
-        // Search results
-        const searchResults = document.querySelectorAll('#searchResult tbody tr');
-        searchResults.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-        });
+  handleUniversal() {
+    // Universal magnet link detection
+    const magnetLinks = document.querySelectorAll('a[href^="magnet:"]');
+    magnetLinks.forEach((link) => {
+      if (!this.hasUploadButton(link)) {
+        this.addUploadButton(link, "magnet");
+      }
+    });
 
-        // Torrent detail page
-        const detailMagnet = document.querySelector('.download a[href^="magnet:"]');
-        if (detailMagnet && !this.hasUploadButton(detailMagnet)) {
-            this.addUploadButton(detailMagnet, 'magnet');
+    // Universal torrent file detection - definitive patterns
+    const torrentLinks = document.querySelectorAll(
+      'a[href$=".torrent"], a[href*=".torrent?"], a[data-fileext="torrent"]'
+    );
+    torrentLinks.forEach((link) => {
+      // Skip obvious non-download links
+      if (link.href.includes("javascript:") || link.href.includes("#")) return;
+
+      if (!this.hasUploadButton(link)) {
+        this.addUploadButton(link, "torrent");
+      }
+    });
+  }
+
+  handleUniversalFallback() {
+    // Comprehensive fallback detection for magnet links
+    const magnetSelectors = [
+      'a[href^="magnet:"]',
+      '.item-icons a[href^="magnet:"]',
+      '.download-links a[href^="magnet:"]',
+      ".magnet-link",
+      "[data-magnet]",
+      'span a[href^="magnet:"]',
+      'div a[href^="magnet:"]',
+      'td a[href^="magnet:"]',
+    ];
+
+    magnetSelectors.forEach((selector) => {
+      const links = document.querySelectorAll(selector);
+      links.forEach((link) => {
+        if (!this.hasUploadButton(link)) {
+          this.addUploadButton(link, "magnet");
         }
-    }
+      });
+    });
 
-    handleRARBG() {
-        // Search results
-        const tableRows = document.querySelectorAll('.lista2 tr');
-        tableRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            const torrentLink = row.querySelector('a[href$=".torrent"]');
+    // Comprehensive fallback detection for torrent files - definitive patterns
+    const torrentSelectors = [
+      'a[href$=".torrent"]',
+      'a[href*=".torrent?"]',
+      'a[data-fileext="torrent"]',
+    ];
 
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
+    torrentSelectors.forEach((selector) => {
+      const links = document.querySelectorAll(selector);
+      links.forEach((link) => {
+        // Skip obvious non-download links
+        if (link.href.includes("javascript:") || link.href.includes("#"))
+          return;
 
-    handleYTS() {
-        // Movie detail page
-        const downloadButtons = document.querySelectorAll('.movie-actions a[href$=".torrent"]');
-        downloadButtons.forEach(button => {
-            if (!this.hasUploadButton(button)) {
-                this.addUploadButton(button, 'torrent');
-            }
-        });
-
-        // Browse page
-        const movieItems = document.querySelectorAll('.browse-movie-wrap');
-        movieItems.forEach(item => {
-            const torrentLinks = item.querySelectorAll('a[href$=".torrent"]');
-            torrentLinks.forEach(link => {
-                if (!this.hasUploadButton(link)) {
-                    this.addUploadButton(link, 'torrent');
-                }
-            });
-        });
-    }
-
-    handleEZTV() {
-        // Show detail page and episode listings
-        const episodeRows = document.querySelectorAll('.forum_header_border tr');
-        episodeRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            const torrentLink = row.querySelector('a[href$=".torrent"]');
-
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
-
-    handleLimeTorrents() {
-        // Search results and category pages
-        const tableRows = document.querySelectorAll('.table2 tr');
-        tableRows.forEach(row => {
-            const torrentLink = row.querySelector('a[href*="download.php"]');
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
-
-    handleTorrentGalaxy() {
-        // Search results
-        const torrentRows = document.querySelectorAll('.tgxtablerow');
-        torrentRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            const torrentLink = row.querySelector('a[href$=".torrent"]');
-
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
-
-    handleZooqle() {
-        // Search results
-        const tableRows = document.querySelectorAll('.table-torrents tbody tr');
-        tableRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-        });
-    }
-
-    handleTorlock() {
-        // Search results
-        const tableRows = document.querySelectorAll('.table tbody tr');
-        tableRows.forEach(row => {
-            const torrentLink = row.querySelector('a[href*="/tor/"]');
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
-
-    handleKickass() {
-        // Search results
-        const tableRows = document.querySelectorAll('.data tr');
-        tableRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            const torrentLink = row.querySelector('a[href$=".torrent"]');
-
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
-
-    handleNyaa() {
-        // Search results
-        const tableRows = document.querySelectorAll('.torrent-list tbody tr');
-        tableRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            const torrentLink = row.querySelector('a[href$=".torrent"]');
-
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-            if (torrentLink && !this.hasUploadButton(torrentLink)) {
-                this.addUploadButton(torrentLink, 'torrent');
-            }
-        });
-    }
-
-    handleRutracker() {
-        // Topic pages
-        const downloadLinks = document.querySelectorAll('a[href*="dl.php"]');
-        downloadLinks.forEach(link => {
-            if (!this.hasUploadButton(link)) {
-                this.addUploadButton(link, 'torrent');
-            }
-        });
-    }
-
-    handleUIndex() {
-        // UIndex.org - magnet links in table rows
-        const tableRows = document.querySelectorAll('table tr');
-        tableRows.forEach(row => {
-            const magnetLink = row.querySelector('a[href^="magnet:"]');
-            if (magnetLink && !this.hasUploadButton(magnetLink)) {
-                this.addUploadButton(magnetLink, 'magnet');
-            }
-        });
-
-        // Also check for any standalone magnet links
-        const allMagnetLinks = document.querySelectorAll('a[href^="magnet:"]');
-        allMagnetLinks.forEach(link => {
-            if (!this.hasUploadButton(link)) {
-                this.addUploadButton(link, 'magnet');
-            }
-        });
-    }
-
-    hasUploadButton(element) {
-        const linkId = this.getLinkId(element);
-        return this.processedLinks.has(linkId);
-    }
-
-    getLinkId(element) {
-        return element.href || element.getAttribute('href') || element.outerHTML;
-    }
-
-    addUploadButton(linkElement, type) {
-        const linkId = this.getLinkId(linkElement);
-        if (this.processedLinks.has(linkId)) {
-            return;
+        if (!this.hasUploadButton(link)) {
+          this.addUploadButton(link, "torrent");
         }
+      });
+    });
+  }
 
-        this.processedLinks.add(linkId);
+  // Generic handler that looks for magnet links and .torrent files
+  handleGeneric() {
+    // Find magnet links
+    const magnetLinks = document.querySelectorAll('a[href^="magnet:"]');
+    magnetLinks.forEach((link) => this.addUploadButton(link, "magnet"));
 
-        const button = this.createUploadButton(linkElement, type);
+    // Find torrent file links
+    const torrentLinks = document.querySelectorAll(
+      'a[href$=".torrent"], a[href*=".torrent?"]'
+    );
+    torrentLinks.forEach((link) => this.addUploadButton(link, "torrent"));
+  }
 
-        // Try to insert the button next to the link
-        if (linkElement.parentNode) {
-            linkElement.parentNode.insertBefore(button, linkElement.nextSibling);
-        }
+  // Site-specific handlers
+  handle1337x() {
+    // Torrent detail page
+    if (window.location.pathname.includes("/torrent/")) {
+      const magnetLink = document.querySelector('a[href^="magnet:"]');
+      const torrentLink = document.querySelector('a[href$=".torrent"]');
+
+      if (magnetLink) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+      if (torrentLink) {
+        this.addUploadButton(torrentLink, "torrent");
+      }
     }
 
-    createUploadButton(linkElement, type) {
-        const button = document.createElement('button');
-        button.className = 'mediafusion-upload-btn';
-        button.innerHTML = `
-            <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
-            </svg>
-            <span class="text">MediaFusion</span>
-            <div class="mediafusion-tooltip">Upload to MediaFusion</div>
+    // Search results and category pages
+    const tableRows = document.querySelectorAll(".table-list tbody tr");
+    tableRows.forEach((row) => {
+      const magnetLink = row.querySelector('a[href^="magnet:"]');
+      const torrentLink = row.querySelector('a[href$=".torrent"]');
+
+      if (magnetLink && !this.hasUploadButton(magnetLink)) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+      if (torrentLink && !this.hasUploadButton(torrentLink)) {
+        this.addUploadButton(torrentLink, "torrent");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handlePirateBay() {
+    // Search results - multiple selectors to catch different layouts
+    const searchResults = document.querySelectorAll(
+      "#searchResult tbody tr, .list-entry, tr"
+    );
+    searchResults.forEach((row) => {
+      const magnetLink = row.querySelector('a[href^="magnet:"]');
+      if (magnetLink && !this.hasUploadButton(magnetLink)) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+    });
+
+    // Torrent detail page
+    const detailMagnet = document.querySelector('.download a[href^="magnet:"]');
+    if (detailMagnet && !this.hasUploadButton(detailMagnet)) {
+      this.addUploadButton(detailMagnet, "magnet");
+    }
+
+    // Fallback: Look for magnet links in item-icons spans and other containers
+    const itemIconsLinks = document.querySelectorAll(
+      '.item-icons a[href^="magnet:"], span a[href^="magnet:"]'
+    );
+    itemIconsLinks.forEach((link) => {
+      if (!this.hasUploadButton(link)) {
+        this.addUploadButton(link, "magnet");
+      }
+    });
+
+    // Additional fallback for any magnet links on the page
+    this.handleUniversalFallback();
+  }
+
+  handleYTS() {
+    // All YTS download links - both page and modal
+    const allDownloadLinks = document.querySelectorAll(
+      'a[href$=".torrent"], a[href*="/torrent/download/"]'
+    );
+    allDownloadLinks.forEach((link) => {
+      if (!this.hasUploadButton(link)) {
+        this.addUploadButton(link, "torrent");
+      }
+    });
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handleEZTV() {
+    // Show detail page and episode listings
+    const episodeRows = document.querySelectorAll(".forum_header_border tr");
+    episodeRows.forEach((row) => {
+      const magnetLink = row.querySelector('a[href^="magnet:"]');
+      const torrentLink = row.querySelector('a[href$=".torrent"]');
+
+      if (magnetLink && !this.hasUploadButton(magnetLink)) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+      if (torrentLink && !this.hasUploadButton(torrentLink)) {
+        this.addUploadButton(torrentLink, "torrent");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handleLimeTorrents() {
+    // Search results and category pages
+    const tableRows = document.querySelectorAll(".table2 tr");
+    tableRows.forEach((row) => {
+      const torrentLink = row.querySelector('a[href*="download.php"]');
+      if (torrentLink && !this.hasUploadButton(torrentLink)) {
+        this.addUploadButton(torrentLink, "torrent");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handleKickass() {
+    // Search results - main table
+    const tableRows = document.querySelectorAll(".data tr");
+    tableRows.forEach((row) => {
+      const magnetLink = row.querySelector('a[href^="magnet:"]');
+      const torrentLink = row.querySelector('a[href$=".torrent"]');
+
+      if (magnetLink && !this.hasUploadButton(magnetLink)) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+      if (torrentLink && !this.hasUploadButton(torrentLink)) {
+        this.addUploadButton(torrentLink, "torrent");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handleNyaa() {
+    // Search results
+    const tableRows = document.querySelectorAll(".torrent-list tbody tr");
+    tableRows.forEach((row) => {
+      const magnetLink = row.querySelector('a[href^="magnet:"]');
+      const torrentLink = row.querySelector('a[href$=".torrent"]');
+
+      if (magnetLink && !this.hasUploadButton(magnetLink)) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+      if (torrentLink && !this.hasUploadButton(torrentLink)) {
+        this.addUploadButton(torrentLink, "torrent");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handleRutracker() {
+    // Topic pages
+    const downloadLinks = document.querySelectorAll('a[href*="dl.php"]');
+    downloadLinks.forEach((link) => {
+      if (!this.hasUploadButton(link)) {
+        this.addUploadButton(link, "torrent");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  handleUIndex() {
+    // UIndex.org - magnet links in table rows
+    const tableRows = document.querySelectorAll("table tr");
+    tableRows.forEach((row) => {
+      const magnetLink = row.querySelector('a[href^="magnet:"]');
+      if (magnetLink && !this.hasUploadButton(magnetLink)) {
+        this.addUploadButton(magnetLink, "magnet");
+      }
+    });
+
+    // Also check for any standalone magnet links
+    const allMagnetLinks = document.querySelectorAll('a[href^="magnet:"]');
+    allMagnetLinks.forEach((link) => {
+      if (!this.hasUploadButton(link)) {
+        this.addUploadButton(link, "magnet");
+      }
+    });
+
+    // Fallback detection
+    this.handleUniversalFallback();
+  }
+
+  hasUploadButton(element) {
+    const linkId = this.getLinkId(element);
+    return this.processedLinks.has(linkId);
+  }
+
+  getLinkId(element) {
+    const href =
+      element.href || element.getAttribute("href") || element.outerHTML;
+
+    // For YTS, allow same link in different containers by including parent info
+    if (window.location.hostname.includes("yts.")) {
+      const isInModal = element.closest(".modal, .popup, .download-popup");
+      return isInModal ? `${href}::modal` : href;
+    }
+
+    // For other sites, use the original logic
+    return href;
+  }
+
+  addUploadButton(linkElement, type) {
+    const linkId = this.getLinkId(linkElement);
+    if (this.processedLinks.has(linkId)) {
+      return;
+    }
+
+    this.processedLinks.add(linkId);
+
+    const button = this.createUploadButton(linkElement, type);
+
+    // Try to insert the button next to the link
+    if (linkElement.parentNode) {
+      // Check if we're in a constrained container (like PirateBay's item-icons)
+      const constrainedContainer = linkElement.closest(
+        ".item-icons, .constrained-width"
+      );
+
+      if (constrainedContainer) {
+        // For constrained containers, try to insert after the container
+        const insertionPoint = constrainedContainer.parentNode;
+        if (insertionPoint) {
+          insertionPoint.insertBefore(button, constrainedContainer.nextSibling);
+        } else {
+          // Fallback: insert after the link
+          linkElement.parentNode.insertBefore(button, linkElement.nextSibling);
+        }
+      } else {
+        // Normal insertion next to the link
+        linkElement.parentNode.insertBefore(button, linkElement.nextSibling);
+      }
+    }
+  }
+
+  createUploadButton(linkElement, type) {
+    const button = document.createElement("button");
+
+    // Determine if this should be a compact button
+    const isCompact = this.shouldUseCompactButton(linkElement);
+
+    // Set base classes
+    let className = "mediafusion-upload-btn";
+    if (type === "magnet") {
+      className += " magnet-type";
+    } else if (type === "torrent") {
+      className += " torrent-type";
+    }
+    if (isCompact) {
+      className += " compact";
+    }
+
+    button.className = className;
+
+    // Different icons and text based on type
+    const iconSvg = this.getButtonIcon(type);
+    const buttonText = this.getButtonText(type, isCompact);
+    const tooltipText = this.getTooltipText(type);
+
+    button.innerHTML = `
+            ${iconSvg}
+            ${buttonText}
+            <div class="mediafusion-tooltip">${tooltipText}</div>
         `;
 
-        // Prevent multiple event listeners
-        button.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+    // Prevent multiple event listeners
+    button.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-            // Prevent double clicks
-            if (button.disabled) return;
-
-            this.handleUpload(linkElement, type, button);
-        }, { once: false });
-
-        return button;
-    }
-
-    async handleUpload(linkElement, type, button) {
         // Prevent double clicks
         if (button.disabled) return;
-        button.disabled = true;
 
-        try {
-            // Show loading state
-            button.classList.add('loading');
-            button.innerHTML = `
+        this.handleUpload(linkElement, type, button);
+      },
+      { once: false }
+    );
+
+    return button;
+  }
+
+  shouldUseCompactButton(linkElement) {
+    // Use compact buttons in constrained spaces
+    const constrainedContainers = [
+      ".item-icons", // PirateBay
+      ".constrained-width", // Generic constrained
+      ".torrent-actions", // Small action areas
+      ".download-icons", // Icon-only areas
+      "td", // Table cells (often cramped)
+    ];
+
+    return constrainedContainers.some((selector) =>
+      linkElement.closest(selector)
+    );
+  }
+
+  getButtonIcon(type) {
+    if (type === "magnet") {
+      // Clean horseshoe magnet icon
+      return `<svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M4,2C2.89,2 2,2.89 2,4V11C2,16.5 6.5,21 12,21S22,16.5 22,11V4C22,2.89 21.11,2 20,2H18C16.89,2 16,2.89 16,4V11C16,13.21 14.21,15 12,15S8,13.21 8,11V4C8,2.89 7.11,2 6,2H4M4,4H6V11C6,14.31 8.69,17 12,17S18,14.31 18,11V4H20V11C20,15.42 16.42,19 12,19S4,15.42 4,11V4Z" />
+            </svg>`;
+    } else if (type === "torrent") {
+      // Better torrent file icon - document with download arrow
+      return `<svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,11L16,15H13.5V19H10.5V15H8L12,11Z" />
+            </svg>`;
+    }
+
+    // Default upload icon
+    return `<svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
+        </svg>`;
+  }
+
+  getButtonText(type, isCompact) {
+    if (isCompact) {
+      return ""; // No text in compact mode
+    }
+
+    if (type === "magnet") {
+      return '<span class="text">Upload Magnet Link</span>';
+    } else if (type === "torrent") {
+      return '<span class="text">Upload Torrent File</span>';
+    }
+
+    return '<span class="text">MediaFusion</span>';
+  }
+
+  getTooltipText(type) {
+    if (type === "magnet") {
+      return "Upload Magnet Link to MediaFusion";
+    } else if (type === "torrent") {
+      return "Upload Torrent File to MediaFusion";
+    }
+
+    return "Upload to MediaFusion";
+  }
+
+  async handleUpload(linkElement, type, button) {
+    // Prevent double clicks
+    if (button.disabled) return;
+    button.disabled = true;
+
+    try {
+      // Show loading state
+      button.classList.add("loading");
+      button.innerHTML = `
                 <div class="mediafusion-loader">
                     <div class="mediafusion-dot"></div>
                     <div class="mediafusion-dot"></div>
@@ -393,135 +522,196 @@ class MediaFusionContentScript {
                 </div>
             `;
 
-            // Get the magnet link or torrent URL
-            const magnetLink = type === 'magnet' ? linkElement.href : null;
-            const torrentUrl = type === 'torrent' ? linkElement.href : null;
-            const contentType = this.guessContentType(linkElement);
+      // Get the magnet link or torrent URL
+      const magnetLink = type === "magnet" ? linkElement.href : null;
+      const torrentUrl = type === "torrent" ? linkElement.href : null;
+      const contentType = this.guessContentType(linkElement);
 
-            // Send message to background script to open popup with data
-            const response = await this.sendMessage({
-                action: 'openPopupWithData',
-                data: {
-                    magnetLink: magnetLink,
-                    torrentUrl: torrentUrl,
-                    contentType: contentType,
-                    sourceUrl: window.location.href,
-                    title: document.title
-                }
-            });
+      // Send message to background script to open popup with data
+      const response = await this.sendMessage({
+        action: "openPopupWithData",
+        data: {
+          magnetLink: magnetLink,
+          torrentUrl: torrentUrl,
+          contentType: contentType,
+          sourceUrl: window.location.href,
+          title: document.title,
+        },
+      });
 
-            if (response && response.success) {
-                // Show success state
-                button.classList.remove('loading');
-                button.classList.add('success');
-                button.innerHTML = `
+      if (response && response.success) {
+        // Show success state
+        button.classList.remove("loading");
+        button.classList.add("success");
+        button.innerHTML = `
                     <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
                     </svg>
                     <span class="text">Opened</span>
                 `;
-            } else {
-                throw new Error('Failed to open popup');
-            }
+      } else {
+        throw new Error("Failed to open popup");
+      }
 
-            // Reset after 2 seconds
-            setTimeout(() => {
-                this.resetButton(button);
-            }, 2000);
-
-        } catch (error) {
-
-            // Show error state
-            button.classList.remove('loading');
-            button.classList.add('error');
-            button.innerHTML = `
+      // Reset after 2 seconds
+      setTimeout(() => {
+        this.resetButton(button);
+      }, 2000);
+    } catch (error) {
+      // Show error state
+      button.classList.remove("loading");
+      button.classList.add("error");
+      button.innerHTML = `
                 <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" />
                 </svg>
                 <span class="text">Error</span>
             `;
 
-            // Reset after 3 seconds
-            setTimeout(() => {
-                this.resetButton(button);
-            }, 3000);
-        }
+      // Reset after 3 seconds
+      setTimeout(() => {
+        this.resetButton(button);
+      }, 3000);
+    }
+  }
+
+  resetButton(button) {
+    button.classList.remove("loading", "success", "error");
+
+    // Determine button type from classes
+    let type = "default";
+    if (button.classList.contains("magnet-type")) {
+      type = "magnet";
+    } else if (button.classList.contains("torrent-type")) {
+      type = "torrent";
     }
 
-    resetButton(button) {
-        button.classList.remove('loading', 'success', 'error');
-        button.innerHTML = `
-            <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
-            </svg>
-            <span class="text">MediaFusion</span>
-            <div class="mediafusion-tooltip">Upload to MediaFusion</div>
+    const isCompact = button.classList.contains("compact");
+
+    // Restore original appearance
+    const iconSvg = this.getButtonIcon(type);
+    const buttonText = this.getButtonText(type, isCompact);
+    const tooltipText = this.getTooltipText(type);
+
+    button.innerHTML = `
+            ${iconSvg}
+            ${buttonText}
+            <div class="mediafusion-tooltip">${tooltipText}</div>
         `;
-        button.disabled = false;
+    button.disabled = false;
+  }
+
+  async downloadTorrent(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("Failed to download torrent file");
     }
+    return await response.blob();
+  }
 
+  guessContentType(linkElement) {
+    // Get text from multiple sources for better detection
+    const linkText = linkElement.textContent.toLowerCase();
+    const linkTitle = (linkElement.title || "").toLowerCase();
+    const linkHref = linkElement.href.toLowerCase();
+    const pageTitle = document.title.toLowerCase();
+    const pageUrl = window.location.pathname.toLowerCase();
 
-
-    async downloadTorrent(url) {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error('Failed to download torrent file');
+    // Extract and decode magnet link title if it's a magnet link
+    let magnetTitle = "";
+    if (linkHref.startsWith("magnet:")) {
+      try {
+        // Extract the dn (display name) parameter from magnet link
+        const dnMatch = linkHref.match(/[&?]dn=([^&]*)/i);
+        if (dnMatch && dnMatch[1]) {
+          // URL decode the title
+          magnetTitle = decodeURIComponent(dnMatch[1]).toLowerCase();
+          console.log(`Extracted magnet title: ${magnetTitle}`);
         }
-        return await response.blob();
+      } catch (error) {
+        console.log("Error parsing magnet link:", error);
+      }
     }
 
-    guessContentType(linkElement) {
-        const text = linkElement.textContent.toLowerCase() + ' ' +
-                    (linkElement.title || '').toLowerCase() + ' ' +
-                    window.location.pathname.toLowerCase();
+    // Combine all text sources including decoded magnet title
+    const allText = `${linkText} ${linkTitle} ${linkHref} ${pageTitle} ${pageUrl} ${magnetTitle}`;
 
-        if (text.includes('movie') || text.includes('film') || text.includes('cinema')) {
-            return 'movie';
-        } else if (text.includes('tv') || text.includes('series') || text.includes('episode') ||
-                   text.includes('season') || text.includes('show')) {
-            return 'series';
-        } else if (text.includes('sport') || text.includes('match') || text.includes('game') ||
-                   text.includes('racing') || text.includes('football') || text.includes('basketball')) {
-            return 'sports';
+    // 1. Check for SPORTS first (most specific)
+    const sportsPatterns = [
+      /\b(nfl|nba|nhl|mlb|mls|ufc|wwe|aew|f1|formula\s*1)\b/i,
+      /\b(premier\s*league|champions\s*league|europa\s*league)\b/i,
+      /\b(world\s*cup|euro\s*\d+|olympics|olympic)\b/i,
+      /\b(boxing|wrestling|mma|mixed\s*martial\s*arts)\b/i,
+      /\b(football|soccer|basketball|baseball|hockey|tennis|golf)\b/i,
+      /\b(cricket|rugby|volleyball|badminton|swimming|athletics)\b/i,
+      /\b(racing|motogp|nascar|indycar|rally)\b/i,
+      /\b(vs|versus|\bv\b)\s/i, // Team vs Team
+      /\bfight\s*night\b/i, // Fight Night
+      /\bpay\s*per\s*view\b/i, // Pay Per View
+      /\bppv\b/i, // PPV
+    ];
+
+    for (const pattern of sportsPatterns) {
+      if (pattern.test(allText)) {
+        return "sports";
+      }
+    }
+
+    // 2. Check for SERIES (definitive patterns only)
+    const seriesPatterns = [
+      /\bs\d+e\d+\b/i, // S04E15, s1e1
+      /\bseason\s*\d+\b/i, // Season 4
+      /\bs\s*\d+\b/i, // s04, s1
+      /\bepisode\s*\d+\b/i, // Episode 15
+      /\b\d{1,2}x\d{1,2}\b/, // 4x15, 1x01
+      /complete\s+series/i, // Complete Series
+      /season\s+complete/i, // Season Complete
+      /all\s+episodes/i, // All Episodes
+    ];
+
+    for (const pattern of seriesPatterns) {
+      if (pattern.test(allText)) {
+        return "series";
+      }
+    }
+
+    // 3. Default to MOVIE (no need for complex movie detection)
+    return "movie";
+  }
+
+  sendMessage(message) {
+    return new Promise((resolve, reject) => {
+      const callback = (response) => {
+        if (response) {
+          resolve(response);
+        } else {
+          reject(new Error("No response received"));
         }
+      };
 
-        // Default to movie
-        return 'movie';
-    }
-
-    sendMessage(message) {
-        return new Promise((resolve, reject) => {
-            const callback = (response) => {
-                if (response) {
-                    resolve(response);
-                } else {
-                    reject(new Error('No response received'));
-                }
-            };
-
-            if (typeof browser !== 'undefined' && browser.runtime) {
-                // Firefox
-                browser.runtime.sendMessage(message).then(callback).catch(reject);
-            } else if (typeof chrome !== 'undefined' && chrome.runtime) {
-                // Chrome
-                chrome.runtime.sendMessage(message, callback);
-            } else {
-                reject(new Error('Extension runtime not available'));
-            }
-        });
-    }
+      if (typeof browser !== "undefined" && browser.runtime) {
+        // Firefox
+        browser.runtime.sendMessage(message).then(callback).catch(reject);
+      } else if (typeof chrome !== "undefined" && chrome.runtime) {
+        // Chrome
+        chrome.runtime.sendMessage(message, callback);
+      } else {
+        reject(new Error("Extension runtime not available"));
+      }
+    });
+  }
 }
 
 // Prevent multiple instances
 if (!window.mediaFusionContentScriptLoaded) {
-    window.mediaFusionContentScriptLoaded = true;
+  window.mediaFusionContentScriptLoaded = true;
 
-    // Initialize content script when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            new MediaFusionContentScript();
-        });
-    } else {
-        new MediaFusionContentScript();
-    }
+  // Initialize content script when DOM is ready
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      new MediaFusionContentScript();
+    });
+  } else {
+    new MediaFusionContentScript();
+  }
 }
