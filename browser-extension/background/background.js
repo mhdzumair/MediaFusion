@@ -269,56 +269,24 @@ class MediaFusionAPI {
 
   async quickUpload(magnetLink, options = {}) {
     try {
-      // First analyze the torrent
-      const analysisResult = await this.analyzeTorrent({
-        magnetLink: magnetLink,
+      // For quick upload, directly call add torrent endpoint
+      const uploadData = {
         metaType: options.metaType || "movie",
-      });
+        uploaderName: options.uploaderName || this.uploaderName,
+        torrentType: options.torrentType || "public",
+        isQuickImport: true,
+      };
 
-      // If we have matches, use the first one
-      if (analysisResult.matches && analysisResult.matches.length > 0) {
-        const match = analysisResult.matches[0];
-        const torrentData = analysisResult.torrent_data;
-
-        const uploadData = {
-          magnetLink: magnetLink,
-          metaType: match.type,
-          metaId: match.imdb_id,
-          title: match.title,
-          poster: match.poster,
-          background: match.background,
-          logo: match.logo,
-          uploaderName: options.uploaderName || this.uploaderName,
-          torrentType: options.torrentType || "public",
-          // Copy technical specs from torrent data
-          resolution: torrentData.resolution,
-          quality: torrentData.quality,
-          codec: torrentData.codec,
-          audio: torrentData.audio,
-          hdr: torrentData.hdr,
-          languages: torrentData.languages,
-        };
-
-        return await this.uploadTorrent(uploadData);
+      // Add either magnet link or torrent file data
+      if (magnetLink) {
+        uploadData.magnetLink = magnetLink;
+      } else if (options.torrentFileData) {
+        uploadData.torrentFileData = options.torrentFileData;
       } else {
-        // No matches found, upload with basic data
-        const torrentData = analysisResult.torrent_data;
-        const uploadData = {
-          magnetLink: magnetLink,
-          metaType: options.metaType || "movie",
-          title: torrentData.title,
-          uploaderName: options.uploaderName || this.uploaderName,
-          torrentType: options.torrentType || "public",
-          resolution: torrentData.resolution,
-          quality: torrentData.quality,
-          codec: torrentData.codec,
-          audio: torrentData.audio,
-          hdr: torrentData.hdr,
-          languages: torrentData.languages,
-        };
-
-        return await this.uploadTorrent(uploadData);
+        throw new Error("Either magnet link or torrent file data is required");
       }
+
+      return await this.uploadTorrent(uploadData);
     } catch (error) {
       throw new Error(`Quick upload failed: ${error.message}`);
     }
@@ -469,6 +437,126 @@ const handleMessage = async (message, sender, sendResponse) => {
 
           sendResponse({ success: true });
         } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case "openBulkUploadPopup":
+        try {
+          const bulkData = message.data;
+
+          // Create bulk upload popup URL with data
+          const popupUrl =
+            typeof browser !== "undefined" && browser.runtime
+              ? browser.runtime.getURL("popup/popup.html")
+              : chrome.runtime.getURL("popup/popup.html");
+
+          const params = new URLSearchParams();
+          params.append("bulk", "true");
+          params.append("count", bulkData.totalCount.toString());
+          params.append("source", encodeURIComponent(bulkData.sourceUrl));
+          params.append("title", encodeURIComponent(bulkData.pageTitle));
+
+          // Store bulk torrent data in session storage for the popup to access
+          const bulkSessionData = {
+            torrents: bulkData.torrents,
+            sourceUrl: bulkData.sourceUrl,
+            pageTitle: bulkData.pageTitle,
+            timestamp: Date.now()
+          };
+
+          // Use chrome.storage.session if available, otherwise use chrome.storage.local
+          const storageAPI = (typeof chrome !== "undefined" && chrome.storage.session)
+            ? chrome.storage.session
+            : (typeof browser !== "undefined" && browser.storage.session)
+            ? browser.storage.session
+            : (typeof chrome !== "undefined" && chrome.storage.local)
+            ? chrome.storage.local
+            : browser.storage.local;
+
+          await new Promise((resolve, reject) => {
+            storageAPI.set({ bulkUploadData: bulkSessionData }, () => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve();
+              }
+            });
+          });
+
+          const fullUrl = `${popupUrl}?${params.toString()}`;
+
+          // Open bulk upload popup window
+          let windowOpened = false;
+          const popupWidth = 800;  // Wider for bulk upload
+          const popupHeight = 700;
+
+          try {
+            // Get the current window to position popup relative to it
+            const getCurrentWindow = () => {
+              if (typeof browser !== "undefined" && browser.windows) {
+                return browser.windows.getCurrent();
+              } else if (typeof chrome !== "undefined" && chrome.windows) {
+                return new Promise((resolve) => {
+                  chrome.windows.getCurrent(resolve);
+                });
+              }
+              return Promise.resolve(null);
+            };
+
+            const currentWindow = await getCurrentWindow();
+            let left = 100;
+            let top = 100;
+
+            if (currentWindow) {
+              left = Math.round(currentWindow.left + (currentWindow.width - popupWidth) / 2);
+              top = Math.round(currentWindow.top + (currentWindow.height - popupHeight) / 2);
+            }
+
+            if (typeof browser !== "undefined" && browser.windows) {
+              // Firefox with windows permission
+              await browser.windows.create({
+                url: fullUrl,
+                type: "popup",
+                width: popupWidth,
+                height: popupHeight,
+                left: left,
+                top: top,
+                focused: true,
+              });
+              windowOpened = true;
+            } else if (typeof chrome !== "undefined" && chrome.windows) {
+              // Chrome with windows permission
+              chrome.windows.create({
+                url: fullUrl,
+                type: "popup",
+                width: popupWidth,
+                height: popupHeight,
+                left: left,
+                top: top,
+                focused: true,
+              });
+              windowOpened = true;
+            }
+          } catch (error) {
+            console.log(
+              "Windows API not available, falling back to tab:",
+              error.message
+            );
+          }
+
+          // Fallback to new tab if popup window failed
+          if (!windowOpened) {
+            if (typeof browser !== "undefined" && browser.tabs) {
+              await browser.tabs.create({ url: fullUrl });
+            } else if (typeof chrome !== "undefined" && chrome.tabs) {
+              chrome.tabs.create({ url: fullUrl });
+            }
+          }
+
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error("Bulk upload popup error:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;

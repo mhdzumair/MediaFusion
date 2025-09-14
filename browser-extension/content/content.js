@@ -6,6 +6,8 @@ class MediaFusionContentScript {
     this.processedLinks = new Set();
     this.siteHandlers = new Map();
     this.isProcessing = false;
+    this.bulkUploadButton = null;
+    this.detectedTorrents = new Map(); // Store all detected torrents
     this.init();
   }
 
@@ -80,6 +82,8 @@ class MediaFusionContentScript {
     } finally {
       setTimeout(() => {
         this.isProcessing = false;
+        // Check for bulk upload opportunities after processing
+        this.checkBulkUploadOpportunity();
       }, 1000);
     }
   }
@@ -699,6 +703,270 @@ class MediaFusionContentScript {
         reject(new Error("Extension runtime not available"));
       }
     });
+  }
+
+  // Bulk Upload Methods
+  checkBulkUploadOpportunity() {
+    // Detect all torrent/magnet links on the page
+    this.detectAllTorrents();
+
+    // Show bulk upload button if we have multiple torrents
+    if (this.detectedTorrents.size >= 2) {
+      this.showBulkUploadButton();
+    } else {
+      this.hideBulkUploadButton();
+    }
+  }
+
+  detectAllTorrents() {
+    this.detectedTorrents.clear();
+
+    // Detect magnet links
+    const magnetLinks = document.querySelectorAll('a[href^="magnet:"]');
+    magnetLinks.forEach((link, index) => {
+      const id = `magnet_${index}_${Date.now()}`;
+      this.detectedTorrents.set(id, {
+        id: id,
+        type: 'magnet',
+        element: link, // DOM element for internal use only (not serialized)
+        url: link.href,
+        title: this.extractTorrentTitle(link),
+        contentType: this.guessContentType(link)
+      });
+    });
+
+    // Detect torrent file links
+    const torrentLinks = document.querySelectorAll(
+      'a[href$=".torrent"], a[href*=".torrent?"], a[data-fileext="torrent"]'
+    );
+    torrentLinks.forEach((link, index) => {
+      // Skip obvious non-download links
+      if (link.href.includes("javascript:") || link.href.includes("#")) return;
+
+      const id = `torrent_${index}_${Date.now()}`;
+      this.detectedTorrents.set(id, {
+        id: id,
+        type: 'torrent',
+        element: link, // DOM element for internal use only (not serialized)
+        url: link.href,
+        title: this.extractTorrentTitle(link),
+        contentType: this.guessContentType(link)
+      });
+    });
+
+    console.log(`Detected ${this.detectedTorrents.size} torrents for bulk upload`);
+  }
+
+  extractTorrentTitle(linkElement) {
+    // Try multiple sources for title
+    let title = '';
+
+    // 1. For magnet links, prioritize dn parameter over link text
+    if (linkElement.href.startsWith('magnet:')) {
+      try {
+        const dnMatch = linkElement.href.match(/[&?]dn=([^&]*)/i);
+        if (dnMatch && dnMatch[1]) {
+          title = decodeURIComponent(dnMatch[1]);
+          // Clean up the extracted title
+          title = this.cleanMagnetTitle(title);
+        }
+      } catch (error) {
+        console.log('Error extracting magnet title:', error);
+      }
+    }
+
+    // 2. Link text content (if not a magnet or no dn found)
+    if (!title && linkElement.textContent && linkElement.textContent.trim()) {
+      const linkText = linkElement.textContent.trim();
+      // Skip generic text like "Download", "Magnet", icons, etc.
+      if (!this.isGenericLinkText(linkText)) {
+        title = linkText;
+      }
+    }
+
+    // 3. Title attribute
+    if (!title && linkElement.title) {
+      title = linkElement.title;
+    }
+
+    // 4. Try to get title from nearby elements (like table row)
+    if (!title) {
+      const row = linkElement.closest('tr, .torrent-item, .result-item');
+      if (row) {
+        const titleElement = row.querySelector('.torrent-title, .title, .name, h3, h4, strong');
+        if (titleElement) {
+          title = titleElement.textContent.trim();
+        }
+      }
+    }
+
+    // 5. Fallback to page title or generic
+    if (!title) {
+      title = document.title || 'Unknown Torrent';
+    }
+
+    // Clean up title (remove excessive whitespace, limit length)
+    title = title.replace(/\s+/g, ' ').trim();
+    if (title.length > 100) {
+      title = title.substring(0, 97) + '...';
+    }
+
+    return title;
+  }
+
+  isGenericLinkText(text) {
+    // List of generic text that shouldn't be used as torrent titles
+    const genericTexts = [
+      'download', 'magnet', 'torrent', 'get', 'click here', 'link',
+      'dl', 'mag', 'tor', '⬇', '🧲', '📁', '⚡', '🔗', '↓', 'download magnet',
+      'magnet link', 'torrent file', 'get torrent', 'click to download'
+    ];
+
+    const lowerText = text.toLowerCase().trim();
+
+    // Check if text is too short (likely an icon or abbreviation)
+    if (lowerText.length <= 2) {
+      return true;
+    }
+
+    // Check against generic text list
+    return genericTexts.some(generic => lowerText.includes(generic));
+  }
+
+  cleanMagnetTitle(title) {
+    if (!title) return title;
+
+    // Remove common suffixes and prefixes that clutter the title
+    const cleanPatterns = [
+      // Remove tracker/site tags at the end
+      /\s*\[\s*[^\]]*\.(org|com|net|info|tv|me|to)\s*\]\s*$/i,
+      /\s*\[\s*UIndex\.org\s*\]\s*$/i,
+      /\s*\[\s*[^\]]*tracker[^\]]*\s*\]\s*$/i,
+      // Remove multiple dots and spaces
+      /\.{2,}/g,
+      /\s{2,}/g,
+    ];
+
+    let cleanTitle = title;
+
+    // Apply cleaning patterns
+    cleanPatterns.forEach(pattern => {
+      if (typeof pattern === 'object' && pattern.test) {
+        cleanTitle = cleanTitle.replace(pattern, pattern.global ? ' ' : '');
+      }
+    });
+
+    // Final cleanup
+    cleanTitle = cleanTitle.trim();
+
+    return cleanTitle;
+  }
+
+  showBulkUploadButton() {
+    if (this.bulkUploadButton) {
+      return; // Already showing
+    }
+
+    this.bulkUploadButton = document.createElement('div');
+    this.bulkUploadButton.className = 'mediafusion-bulk-upload-btn';
+    this.bulkUploadButton.innerHTML = `
+      <div class="bulk-btn-content">
+        <svg class="bulk-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,11L16,15H13.5V19H10.5V15H8L12,11Z" />
+        </svg>
+        <span class="bulk-text">Bulk Upload (${this.detectedTorrents.size})</span>
+        <div class="bulk-tooltip">Upload all ${this.detectedTorrents.size} torrents to MediaFusion</div>
+      </div>
+    `;
+
+    // Add click handler
+    this.bulkUploadButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handleBulkUpload();
+    });
+
+    // Add to page
+    document.body.appendChild(this.bulkUploadButton);
+  }
+
+  hideBulkUploadButton() {
+    if (this.bulkUploadButton) {
+      this.bulkUploadButton.remove();
+      this.bulkUploadButton = null;
+    }
+  }
+
+  async handleBulkUpload() {
+    if (this.detectedTorrents.size === 0) {
+      return;
+    }
+
+    try {
+      // Convert Map to Array and remove DOM elements (not serializable)
+      const torrentsArray = Array.from(this.detectedTorrents.values()).map(torrent => ({
+        id: torrent.id,
+        type: torrent.type,
+        url: torrent.url,
+        title: torrent.title,
+        contentType: torrent.contentType
+        // Note: Removed 'element' property as DOM elements cannot be serialized
+      }));
+
+      // Send to background script to open bulk upload popup
+      const response = await this.sendMessage({
+        action: "openBulkUploadPopup",
+        data: {
+          torrents: torrentsArray,
+          sourceUrl: window.location.href,
+          pageTitle: document.title,
+          totalCount: torrentsArray.length
+        }
+      });
+
+      if (response && response.success) {
+        // Show success feedback
+        this.showBulkUploadFeedback('success', 'Bulk upload window opened!');
+      } else {
+        throw new Error('Failed to open bulk upload window');
+      }
+    } catch (error) {
+      console.error('Bulk upload error:', error);
+      this.showBulkUploadFeedback('error', 'Failed to open bulk upload window');
+    }
+  }
+
+  showBulkUploadFeedback(type, message) {
+    if (!this.bulkUploadButton) return;
+
+    const originalContent = this.bulkUploadButton.innerHTML;
+
+    if (type === 'success') {
+      this.bulkUploadButton.innerHTML = `
+        <div class="bulk-btn-content success">
+          <svg class="bulk-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
+          </svg>
+          <span class="bulk-text">${message}</span>
+        </div>
+      `;
+    } else {
+      this.bulkUploadButton.innerHTML = `
+        <div class="bulk-btn-content error">
+          <svg class="bulk-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" />
+          </svg>
+          <span class="bulk-text">${message}</span>
+        </div>
+      `;
+    }
+
+    // Reset after 3 seconds
+    setTimeout(() => {
+      if (this.bulkUploadButton) {
+        this.bulkUploadButton.innerHTML = originalContent;
+      }
+    }, 3000);
   }
 }
 

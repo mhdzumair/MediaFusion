@@ -286,6 +286,13 @@ class PopupManager {
     const contentType = urlParams.get("type");
     const sourceUrl = urlParams.get("source");
     const title = urlParams.get("title");
+    const isBulkMode = urlParams.get("bulk") === "true";
+
+    // Handle bulk upload mode
+    if (isBulkMode) {
+      await this.initializeBulkUploadMode();
+      return;
+    }
 
     if (magnetLink) {
       document.getElementById("magnet-input").value =
@@ -2374,6 +2381,1098 @@ class PopupManager {
         chrome.runtime.sendMessage(message, callback);
       } else {
         reject(new Error("Extension runtime not available"));
+      }
+    });
+  }
+
+  // Bulk Upload Response Handler
+  async handleBulkUploadResponse(data, torrent) {
+    if (data.status === "success") {
+      return {
+        success: true,
+        message: data.message || "Uploaded successfully",
+        analyzedData: data.analyzed_data || null
+      };
+    } else if (data.status === "warning") {
+      return {
+        success: true,
+        message: data.message || "Uploaded with warnings",
+        analyzedData: data.analyzed_data || null
+      };
+    } else if (data.status === "needs_annotation") {
+      return {
+        success: false,
+        message: "Needs file annotation - skipped in bulk upload",
+        analyzedData: data.analyzed_data || null
+      };
+    } else if (data.status === "validation_failed") {
+      // Extract error messages for bulk display
+      const errorMessages = data.errors
+        ? data.errors.map(error => error.message || error.type).join(", ")
+        : "Validation failed";
+      return {
+        success: false,
+        message: `Validation failed: ${errorMessages}`,
+        analyzedData: data.analyzed_data || null
+      };
+    } else if (data.status === "error") {
+      return {
+        success: false,
+        message: data.message || "Upload failed with error",
+        analyzedData: data.analyzed_data || null
+      };
+    } else {
+      // Unknown status
+      console.warn("Unknown bulk upload response status:", data.status);
+      return {
+        success: false,
+        message: `Unknown status: ${data.status}`,
+        analyzedData: data.analyzed_data || null
+      };
+    }
+  }
+
+  // Bulk Upload Methods
+  async initializeBulkUploadMode() {
+    try {
+      // Load bulk upload data from storage
+      const bulkData = await this.loadBulkUploadData();
+      if (!bulkData) {
+        this.showMessage("Bulk upload data not found", "error");
+        return;
+      }
+
+      // Switch to bulk upload interface
+      this.showBulkUploadInterface(bulkData);
+    } catch (error) {
+      console.error("Error initializing bulk upload mode:", error);
+      this.showMessage("Failed to initialize bulk upload mode", "error");
+    }
+  }
+
+  async loadBulkUploadData() {
+    return new Promise((resolve) => {
+      // Try session storage first, then local storage
+      const storageAPI = (typeof chrome !== "undefined" && chrome.storage.session)
+        ? chrome.storage.session
+        : (typeof browser !== "undefined" && browser.storage.session)
+        ? browser.storage.session
+        : (typeof chrome !== "undefined" && chrome.storage.local)
+        ? chrome.storage.local
+        : browser.storage.local;
+
+      storageAPI.get(['bulkUploadData'], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error("Storage error:", chrome.runtime.lastError);
+          resolve(null);
+        } else {
+          resolve(result.bulkUploadData);
+        }
+      });
+    });
+  }
+
+  showBulkUploadInterface(bulkData) {
+    // Store bulk data for filter operations
+    this.bulkData = bulkData;
+
+    // Hide normal interface
+    const container = document.querySelector('.container');
+    if (container) {
+      container.style.display = 'none';
+    }
+
+    // Create bulk upload interface
+    const bulkContainer = document.createElement('div');
+    bulkContainer.className = 'bulk-upload-container';
+    bulkContainer.innerHTML = `
+      <div class="bulk-header">
+        <h2>Bulk Upload to MediaFusion</h2>
+        <p>Found ${bulkData.torrents.length} torrents from: <strong>${bulkData.pageTitle}</strong></p>
+      </div>
+
+      <div class="bulk-controls">
+        <!-- Filter Controls -->
+        <div class="bulk-filters">
+          <div class="filter-section">
+            <label class="filter-label">Filter by Type:</label>
+            <div class="filter-buttons">
+              <button id="filter-all-types" class="filter-btn active" data-filter="all">All (${bulkData.torrents.length})</button>
+              <button id="filter-torrents" class="filter-btn" data-filter="torrent">Torrents (${this.countByType(bulkData.torrents, 'torrent')})</button>
+              <button id="filter-magnets" class="filter-btn" data-filter="magnet">Magnets (${this.countByType(bulkData.torrents, 'magnet')})</button>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <label class="filter-label">Filter by Content:</label>
+            <div class="filter-buttons">
+              <button id="filter-all-content" class="filter-btn active" data-content="all">All</button>
+              <button id="filter-movies" class="filter-btn" data-content="movie">Movies (${this.countByContent(bulkData.torrents, 'movie')})</button>
+              <button id="filter-series" class="filter-btn" data-content="series">Series (${this.countByContent(bulkData.torrents, 'series')})</button>
+              <button id="filter-sports" class="filter-btn" data-content="sports">Sports (${this.countByContent(bulkData.torrents, 'sports')})</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selection Actions -->
+        <div class="bulk-actions">
+          <button id="select-all-btn" class="btn secondary">Select All Visible</button>
+          <button id="deselect-all-btn" class="btn secondary">Deselect All</button>
+          <button id="select-filtered-btn" class="btn secondary">Select Filtered</button>
+          <button id="start-bulk-upload-btn" class="btn primary" disabled>Upload Selected (0)</button>
+        </div>
+
+        <div class="bulk-progress" id="bulk-progress" style="display: none;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <div class="progress-text" id="progress-text">0 / 0 completed</div>
+        </div>
+      </div>
+
+      <div class="bulk-list" id="bulk-list">
+        ${this.generateBulkTorrentList(bulkData.torrents)}
+      </div>
+    `;
+
+    // Add bulk container to body
+    document.body.appendChild(bulkContainer);
+
+    // Setup event listeners with error handling
+    try {
+      this.setupBulkUploadEventListeners(bulkData);
+    } catch (error) {
+      console.error("Error setting up bulk upload event listeners:", error);
+      this.showMessage("Failed to setup bulk upload interface", "error");
+    }
+  }
+
+  generateBulkTorrentList(torrents) {
+    return torrents.map((torrent, index) => `
+      <div class="bulk-item" data-index="${index}">
+        <div class="bulk-item-checkbox">
+          <input type="checkbox" id="torrent-${index}" checked>
+        </div>
+        <div class="bulk-item-content">
+          <div class="bulk-item-header">
+            <label for="torrent-${index}" class="bulk-item-title">${torrent.title}</label>
+            <span class="bulk-item-type ${torrent.type}">${torrent.type.toUpperCase()}</span>
+          </div>
+          <div class="bulk-item-details">
+            <span class="bulk-item-content-type">${torrent.contentType}</span>
+            <span class="bulk-item-url">${this.truncateUrl(torrent.url)}</span>
+          </div>
+          <div class="bulk-item-status-row">
+            <div class="bulk-item-status" id="status-${index}">
+              <span class="status-text">Ready</span>
+            </div>
+            <div class="bulk-item-actions" id="actions-${index}">
+              <button class="result-action-btn advanced-upload" data-index="${index}" title="Manual Upload">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  truncateUrl(url) {
+    if (url.length <= 50) return url;
+    return url.substring(0, 47) + '...';
+  }
+
+  countByType(torrents, type) {
+    return torrents.filter(torrent => torrent.type === type).length;
+  }
+
+  countByContent(torrents, contentType) {
+    return torrents.filter(torrent => torrent.contentType === contentType).length;
+  }
+
+  setupBulkUploadEventListeners(bulkData) {
+    // Store current filter state
+    this.currentTypeFilter = 'all';
+    this.currentContentFilter = 'all';
+
+    // Select/Deselect all buttons with error handling
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const deselectAllBtn = document.getElementById('deselect-all-btn');
+    const selectFilteredBtn = document.getElementById('select-filtered-btn');
+    const startUploadBtn = document.getElementById('start-bulk-upload-btn');
+
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', () => {
+        this.toggleVisibleTorrents(true);
+      });
+    }
+
+    if (deselectAllBtn) {
+      deselectAllBtn.addEventListener('click', () => {
+        this.toggleAllTorrents(false);
+      });
+    }
+
+    if (selectFilteredBtn) {
+      selectFilteredBtn.addEventListener('click', () => {
+        this.selectFilteredTorrents();
+      });
+    }
+
+    // Filter buttons - Type filters
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.handleTypeFilter(e.target.dataset.filter);
+      });
+    });
+
+    // Filter buttons - Content filters
+    document.querySelectorAll('[data-content]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.handleContentFilter(e.target.dataset.content);
+      });
+    });
+
+    // Individual checkbox listeners
+    document.querySelectorAll('.bulk-item input[type="checkbox"]').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        this.updateBulkUploadButton();
+      });
+    });
+
+    // Start bulk upload button
+    if (startUploadBtn) {
+      startUploadBtn.addEventListener('click', () => {
+        this.startBulkUpload(bulkData);
+      });
+    }
+
+    // Action buttons for individual torrents
+    document.querySelectorAll('.bulk-item-actions .advanced-upload').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        this.handleAdvancedUpload(index);
+      });
+    });
+
+    // Initial button state update
+    this.updateBulkUploadButton();
+  }
+
+  toggleAllTorrents(select) {
+    document.querySelectorAll('.bulk-item input[type="checkbox"]').forEach(checkbox => {
+      checkbox.checked = select;
+    });
+    this.updateBulkUploadButton();
+  }
+
+  toggleVisibleTorrents(select) {
+    document.querySelectorAll('.bulk-item:not([style*="display: none"]) input[type="checkbox"]').forEach(checkbox => {
+      checkbox.checked = select;
+    });
+    this.updateBulkUploadButton();
+  }
+
+  selectFilteredTorrents() {
+    // Select only torrents that match current filters
+    document.querySelectorAll('.bulk-item').forEach(item => {
+      const checkbox = item.querySelector('input[type="checkbox"]');
+      const isVisible = !item.style.display || item.style.display !== 'none';
+
+      if (isVisible && checkbox) {
+        checkbox.checked = true;
+      }
+    });
+    this.updateBulkUploadButton();
+  }
+
+  handleTypeFilter(filterType) {
+    this.currentTypeFilter = filterType;
+
+    // Update active filter button
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
+
+    this.applyFilters();
+  }
+
+  handleContentFilter(contentType) {
+    this.currentContentFilter = contentType;
+
+    // Update active filter button
+    document.querySelectorAll('[data-content]').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.querySelector(`[data-content="${contentType}"]`).classList.add('active');
+
+    this.applyFilters();
+  }
+
+  applyFilters() {
+    document.querySelectorAll('.bulk-item').forEach((item, index) => {
+      const torrentData = this.getCurrentBulkData().torrents[index];
+      const matchesTypeFilter = this.currentTypeFilter === 'all' || torrentData.type === this.currentTypeFilter;
+      const matchesContentFilter = this.currentContentFilter === 'all' || torrentData.contentType === this.currentContentFilter;
+
+      if (matchesTypeFilter && matchesContentFilter) {
+        item.style.display = 'flex';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+
+    this.updateFilterCounts();
+    this.updateBulkUploadButton();
+  }
+
+  getCurrentBulkData() {
+    // Store bulk data in instance for filter operations
+    return this.bulkData || { torrents: [] };
+  }
+
+  updateFilterCounts() {
+    const visibleCount = document.querySelectorAll('.bulk-item:not([style*="display: none"])').length;
+    const selectAllBtn = document.getElementById('select-all-btn');
+    if (selectAllBtn) {
+      selectAllBtn.textContent = `Select All Visible (${visibleCount})`;
+    }
+  }
+
+  updateBulkUploadButton() {
+    const selectedCount = document.querySelectorAll('.bulk-item input[type="checkbox"]:checked').length;
+    const uploadButton = document.getElementById('start-bulk-upload-btn');
+
+    if (uploadButton) {
+      uploadButton.textContent = `Upload Selected (${selectedCount})`;
+      uploadButton.disabled = selectedCount === 0;
+    }
+  }
+
+  async startBulkUpload(bulkData) {
+    const selectedTorrents = this.getSelectedTorrents(bulkData);
+    if (selectedTorrents.length === 0) return;
+
+    // Show progress interface
+    document.getElementById('bulk-progress').style.display = 'block';
+    document.getElementById('start-bulk-upload-btn').disabled = true;
+
+    const results = {
+      total: selectedTorrents.length,
+      completed: 0,
+      successful: 0,
+      warnings: 0,
+      failed: 0,
+      details: []
+    };
+
+    // Process torrents one by one (to avoid overwhelming the server)
+    for (let i = 0; i < selectedTorrents.length; i++) {
+      const torrent = selectedTorrents[i];
+
+      try {
+        this.updateTorrentStatus(torrent.index, 'processing', 'Uploading...');
+
+        let result;
+
+        if (torrent.type === 'magnet') {
+          // Use quick upload for magnet links
+          result = await this.sendMessage({
+            action: "quickUpload",
+            data: {
+              magnetLink: torrent.url,
+              options: {
+                metaType: torrent.contentType,
+                isQuickImport: true
+              }
+            }
+          });
+        } else {
+          // For torrent URLs, download the file and use regular upload
+          this.updateTorrentStatus(torrent.index, 'processing', 'Downloading torrent file...');
+
+          const response = await fetch(torrent.url);
+          if (!response.ok) {
+            throw new Error('Failed to download torrent file');
+          }
+
+          const torrentBlob = await response.blob();
+          const torrentFile = new File([torrentBlob], `${torrent.title}.torrent`, {
+            type: 'application/x-bittorrent'
+          });
+
+          // Convert file to transmittable format
+          const arrayBuffer = await torrentFile.arrayBuffer();
+          const torrentData = {
+            torrentFileData: {
+              data: Array.from(new Uint8Array(arrayBuffer)),
+              type: torrentFile.type,
+              name: torrentFile.name
+            },
+            metaType: torrent.contentType
+          };
+
+          this.updateTorrentStatus(torrent.index, 'processing', 'Uploading torrent file...');
+
+          // Use quick upload with torrent file data
+          result = await this.sendMessage({
+            action: "quickUpload",
+            data: {
+              magnetLink: null,
+              options: {
+                metaType: torrent.contentType,
+                torrentFileData: torrentData.torrentFileData,
+                isQuickImport: true
+              }
+            }
+          });
+        }
+
+        if (result.success) {
+          // Handle different response types properly
+          const uploadResult = await this.handleBulkUploadResponse(result.data, torrent);
+
+          if (uploadResult.success) {
+            this.updateTorrentStatus(torrent.index, 'success', uploadResult.message);
+            results.successful++;
+            results.details.push({
+              title: torrent.title,
+              status: 'success',
+              message: uploadResult.message,
+              analyzedData: uploadResult.analyzedData
+            });
+          } else {
+            // This is a warning/skip case (needs_annotation, validation_failed, etc.)
+            this.updateTorrentStatus(torrent.index, 'warning', uploadResult.message);
+            results.warnings++;
+            results.details.push({
+              title: torrent.title,
+              status: 'warning',
+              message: uploadResult.message,
+              analyzedData: uploadResult.analyzedData
+            });
+          }
+        } else {
+          throw new Error(result.error || 'Upload failed');
+        }
+
+      } catch (error) {
+        console.error(`Failed to upload torrent ${torrent.title}:`, error);
+        this.updateTorrentStatus(torrent.index, 'error', error.message);
+        results.failed++;
+
+        results.details.push({
+          title: torrent.title,
+          status: 'error',
+          message: error.message,
+          analyzedData: null
+        });
+      }
+
+      results.completed++;
+      this.updateBulkProgress(results);
+
+      // Small delay between uploads to be nice to the server
+      if (i < selectedTorrents.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    // Store results for later use in advanced upload
+    this.bulkUploadResults = results.details;
+
+    // Hide progress and show completion message
+    document.getElementById('bulk-progress').style.display = 'none';
+    document.getElementById('start-bulk-upload-btn').disabled = false;
+    document.getElementById('start-bulk-upload-btn').textContent = 'Upload Again';
+
+    this.showMessage(`Bulk upload completed: ${results.successful} successful, ${results.warnings} warnings, ${results.failed} failed`, "info");
+  }
+
+  getSelectedTorrents(bulkData) {
+    const selected = [];
+    document.querySelectorAll('.bulk-item input[type="checkbox"]:checked').forEach(checkbox => {
+      const index = parseInt(checkbox.closest('.bulk-item').dataset.index);
+      selected.push({
+        ...bulkData.torrents[index],
+        index: index
+      });
+    });
+    return selected;
+  }
+
+  updateTorrentStatus(index, status, message) {
+    const statusElement = document.getElementById(`status-${index}`);
+    const bulkItem = document.querySelector(`[data-index="${index}"]`);
+    const actionsElement = document.getElementById(`actions-${index}`);
+
+    if (!statusElement || !bulkItem) return;
+
+    // Update status text
+    statusElement.className = `bulk-item-status ${status}`;
+    statusElement.innerHTML = `<span class="status-text">${message}</span>`;
+
+    // Update bulk item highlighting
+    bulkItem.className = `bulk-item ${status}`;
+
+    // Show/hide action buttons based on status
+    if (actionsElement) {
+      if (status === 'error' || status === 'warning') {
+        // Show retry and advanced buttons for failed/warning items
+        actionsElement.innerHTML = `
+          <button class="result-action-btn retry-quick" data-index="${index}" title="Retry Upload">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+            </svg>
+          </button>
+          <button class="result-action-btn advanced-upload" data-index="${index}" title="Manual Upload">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
+            </svg>
+          </button>
+        `;
+        // Re-setup event listeners for new buttons
+        this.setupActionButtonListeners(actionsElement);
+      } else if (status === 'success') {
+        // Show success indicator
+        actionsElement.innerHTML = '<span class="result-success-indicator">✓</span>';
+      } else if (status === 'processing') {
+        // Hide buttons during processing
+        actionsElement.innerHTML = '';
+      }
+    }
+  }
+
+  setupActionButtonListeners(actionsElement) {
+    const retryBtn = actionsElement.querySelector('.retry-quick');
+    const advancedBtn = actionsElement.querySelector('.advanced-upload');
+
+    if (retryBtn) {
+      retryBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const index = parseInt(retryBtn.dataset.index);
+        this.retryTorrentUpload(index);
+      });
+    }
+
+    if (advancedBtn) {
+      advancedBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const index = parseInt(advancedBtn.dataset.index);
+        this.handleAdvancedUpload(index);
+      });
+    }
+  }
+
+  async retryTorrentUpload(index) {
+    if (!this.bulkData || !this.bulkData.torrents[index]) {
+      this.showMessage("Torrent data not found for retry", "error");
+      return;
+    }
+
+    const torrent = this.bulkData.torrents[index];
+
+    try {
+      this.updateTorrentStatus(index, 'processing', 'Retrying upload...');
+
+      let result;
+      if (torrent.type === 'magnet') {
+        result = await this.sendMessage({
+          action: "quickUpload",
+          data: {
+            magnetLink: torrent.url,
+            options: {
+              metaType: torrent.contentType,
+              isQuickImport: true
+            }
+          }
+        });
+      } else {
+        // For torrent files, we need to re-download and upload
+        this.updateTorrentStatus(index, 'processing', 'Downloading torrent file...');
+
+        const response = await fetch(torrent.url);
+        if (!response.ok) {
+          throw new Error('Failed to download torrent file');
+        }
+
+        const torrentBlob = await response.blob();
+        const torrentFile = new File([torrentBlob], `${torrent.title}.torrent`, {
+          type: 'application/x-bittorrent'
+        });
+
+        const arrayBuffer = await torrentFile.arrayBuffer();
+        const torrentFileData = {
+          data: Array.from(new Uint8Array(arrayBuffer)),
+          type: torrentFile.type,
+          name: torrentFile.name
+        };
+
+        this.updateTorrentStatus(index, 'processing', 'Retrying upload...');
+
+        result = await this.sendMessage({
+          action: "quickUpload",
+          data: {
+            magnetLink: null,
+            options: {
+              metaType: torrent.contentType,
+              torrentFileData: torrentFileData,
+              isQuickImport: true
+            }
+          }
+        });
+      }
+
+      if (result.success) {
+        const uploadResult = await this.handleBulkUploadResponse(result.data, torrent);
+
+        if (uploadResult.success) {
+          this.updateTorrentStatus(index, 'success', uploadResult.message);
+          this.showMessage(`Successfully uploaded: ${torrent.title}`, "success");
+        } else {
+          this.updateTorrentStatus(index, 'warning', uploadResult.message);
+          this.showMessage(`Upload completed with warnings: ${torrent.title}`, "warning");
+        }
+      } else {
+        throw new Error(result.error || 'Upload failed');
+      }
+
+    } catch (error) {
+      this.updateTorrentStatus(index, 'error', error.message);
+      this.showMessage(`Retry failed for ${torrent.title}: ${error.message}`, "error");
+    }
+  }
+
+  updateBulkProgress(results) {
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+
+    const percentage = (results.completed / results.total) * 100;
+    progressFill.style.width = `${percentage}%`;
+    progressText.textContent = `${results.completed} / ${results.total} completed (${results.successful} successful, ${results.warnings} warnings, ${results.failed} failed)`;
+  }
+
+  showBulkUploadResults(results) {
+    const resultsContainer = document.getElementById('bulk-results');
+    const summaryElement = document.getElementById('results-summary');
+    const detailsElement = document.getElementById('results-details');
+
+    summaryElement.innerHTML = `
+      <div class="summary-stats">
+        <div class="stat success">
+          <span class="stat-number">${results.successful}</span>
+          <span class="stat-label">Successful</span>
+        </div>
+        <div class="stat warning">
+          <span class="stat-number">${results.warnings}</span>
+          <span class="stat-label">Warnings</span>
+        </div>
+        <div class="stat error">
+          <span class="stat-number">${results.failed}</span>
+          <span class="stat-label">Failed</span>
+        </div>
+        <div class="stat total">
+          <span class="stat-number">${results.total}</span>
+          <span class="stat-label">Total</span>
+        </div>
+      </div>
+    `;
+
+    detailsElement.innerHTML = results.details.map((detail, index) => `
+      <div class="result-item ${detail.status}" data-result-index="${index}">
+        <div class="result-content">
+          <div class="result-title">${detail.title}</div>
+          <div class="result-message">${detail.message}</div>
+        </div>
+        <div class="result-actions">
+          ${this.generateResultActions(detail, index)}
+        </div>
+      </div>
+    `).join('');
+
+    resultsContainer.style.display = 'block';
+
+    // Setup event listeners for individual action buttons
+    this.setupResultActionListeners();
+
+    // Re-enable upload button for potential retry
+    document.getElementById('start-bulk-upload-btn').disabled = false;
+    document.getElementById('start-bulk-upload-btn').textContent = 'Upload Again';
+  }
+
+  generateResultActions(detail, index) {
+    if (detail.status === 'success') {
+      // No actions needed for successful uploads
+      return '<span class="result-success-indicator">✓</span>';
+    } else if (detail.status === 'warning') {
+      // Actions for warnings (needs annotation, validation failed, etc.)
+      return `
+        <button class="result-action-btn retry-quick" data-index="${index}" title="Retry Quick Upload">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+          </svg>
+        </button>
+        <button class="result-action-btn advanced-upload" data-index="${index}" title="Advanced Upload">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.98C19.47,12.66 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11.02L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.65 15.48,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.52,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11.02C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.66 4.57,12.98L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.52,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.48,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.98Z" />
+          </svg>
+        </button>
+      `;
+    } else if (detail.status === 'error') {
+      // Actions for hard failures (network errors, etc.)
+      return `
+        <button class="result-action-btn retry-quick" data-index="${index}" title="Retry Quick Upload">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+          </svg>
+        </button>
+        <button class="result-action-btn advanced-upload" data-index="${index}" title="Advanced Upload">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.98C19.47,12.66 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11.02L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.65 15.48,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.52,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11.02C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.66 4.57,12.98L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.52,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.48,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.98Z" />
+          </svg>
+        </button>
+      `;
+    }
+    return '';
+  }
+
+  setupResultActionListeners() {
+    // Retry quick upload buttons
+    document.querySelectorAll('.result-action-btn.retry-quick').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(e.currentTarget.dataset.index);
+        this.handleRetryQuickUpload(index);
+      });
+    });
+
+    // Advanced upload buttons
+    document.querySelectorAll('.result-action-btn.advanced-upload').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(e.currentTarget.dataset.index);
+        this.handleAdvancedUpload(index);
+      });
+    });
+  }
+
+  async handleRetryQuickUpload(resultIndex) {
+    if (!this.bulkData || !this.bulkData.torrents[resultIndex]) {
+      this.showMessage("Torrent data not found for retry", "error");
+      return;
+    }
+
+    const torrent = this.bulkData.torrents[resultIndex];
+    const resultItem = document.querySelector(`[data-result-index="${resultIndex}"]`);
+
+    if (!resultItem) return;
+
+    try {
+      // Update UI to show retrying
+      const actionsDiv = resultItem.querySelector('.result-actions');
+      actionsDiv.innerHTML = '<span class="result-processing">Retrying...</span>';
+
+      // Perform the same upload logic as bulk upload
+      let result;
+
+      if (torrent.type === 'magnet') {
+        result = await this.sendMessage({
+          action: "quickUpload",
+          data: {
+            magnetLink: torrent.url,
+            options: {
+              metaType: torrent.contentType
+            }
+          }
+        });
+      } else {
+        // Download and upload torrent file
+        const response = await fetch(torrent.url);
+        if (!response.ok) {
+          throw new Error('Failed to download torrent file');
+        }
+
+        const torrentBlob = await response.blob();
+        const torrentFile = new File([torrentBlob], `${torrent.title}.torrent`, {
+          type: 'application/x-bittorrent'
+        });
+
+        const arrayBuffer = await torrentFile.arrayBuffer();
+        const torrentFileData = {
+          data: Array.from(new Uint8Array(arrayBuffer)),
+          type: torrentFile.type,
+          name: torrentFile.name
+        };
+
+        result = await this.sendMessage({
+          action: "quickUpload",
+          data: {
+            magnetLink: null,
+            options: {
+              metaType: torrent.contentType,
+              torrentFileData: torrentFileData
+            }
+          }
+        });
+      }
+
+      if (result.success) {
+        const uploadResult = await this.handleBulkUploadResponse(result.data, torrent);
+
+        if (uploadResult.success) {
+          // Success - update the result item
+          resultItem.className = 'result-item success';
+          resultItem.querySelector('.result-message').textContent = uploadResult.message;
+          actionsDiv.innerHTML = '<span class="result-success-indicator">✓</span>';
+          this.showMessage(`Successfully uploaded: ${torrent.title}`, "success");
+        } else {
+          // Still has issues - restore action buttons
+          resultItem.className = 'result-item warning';
+          resultItem.querySelector('.result-message').textContent = uploadResult.message;
+          actionsDiv.innerHTML = this.generateResultActions({status: 'warning'}, resultIndex);
+          this.setupResultActionListeners(); // Re-setup listeners
+        }
+      } else {
+        throw new Error(result.error || 'Upload failed');
+      }
+
+    } catch (error) {
+      // Error - restore action buttons
+      resultItem.className = 'result-item error';
+      resultItem.querySelector('.result-message').textContent = error.message;
+      const actionsDiv = resultItem.querySelector('.result-actions');
+      actionsDiv.innerHTML = this.generateResultActions({status: 'error'}, resultIndex);
+      this.setupResultActionListeners(); // Re-setup listeners
+
+      this.showMessage(`Retry failed for ${torrent.title}: ${error.message}`, "error");
+    }
+  }
+
+  async handleAdvancedUpload(resultIndex) {
+    if (!this.bulkData || !this.bulkData.torrents[resultIndex]) {
+      this.showMessage("Torrent data not found for advanced upload", "error");
+      return;
+    }
+
+    const torrent = this.bulkData.torrents[resultIndex];
+
+    try {
+      // Store that we're in advanced mode from bulk upload
+      this.isAdvancedFromBulk = true;
+      this.currentBulkTorrentIndex = resultIndex;
+
+      // Hide bulk upload interface
+      document.querySelector('.bulk-upload-container').style.display = 'none';
+
+      // Show normal interface
+      const container = document.querySelector('.container');
+      if (container) {
+        container.style.display = 'block';
+      }
+
+      // Show back button in the normal interface
+      this.showBackToBulkButton();
+
+      // Switch to upload tab
+      this.switchTab('upload');
+
+      // Check if we have analyzed data from bulk upload results
+      const bulkResult = this.bulkUploadResults && this.bulkUploadResults[resultIndex];
+      if (bulkResult && bulkResult.analyzedData) {
+        // Use the analyzed data from the failed bulk upload
+        this.populateFormWithAnalyzedData(bulkResult.analyzedData, torrent);
+      } else {
+        // Fallback to original torrent data
+        if (torrent.type === 'magnet') {
+          document.getElementById('magnet-input').value = torrent.url;
+        } else {
+          // For torrent URLs, we need to download and set as file
+          await this.handleTorrentUrl(torrent.url);
+        }
+
+        // Set content type
+        document.getElementById('content-type').value = torrent.contentType;
+        this.toggleSportsCategoryVisibility();
+      }
+
+      // Show message to user
+      this.showMessage(`Loaded ${torrent.title} for advanced upload. Please review and configure as needed.`, "info");
+
+    } catch (error) {
+      this.showMessage(`Failed to load torrent for advanced upload: ${error.message}`, "error");
+    }
+  }
+
+  populateFormWithAnalyzedData(analyzedData, originalTorrent) {
+    try {
+      // Clear existing form data
+      this.clearForm();
+
+      // Set the original torrent/magnet data
+      if (originalTorrent.type === 'magnet') {
+        document.getElementById('magnet-input').value = originalTorrent.url;
+      } else if (originalTorrent.type === 'torrent') {
+        // For torrent files, we need to show the original URL or file info
+        const torrentInput = document.getElementById('torrent-input');
+        if (torrentInput) {
+          // Create a display element to show the torrent file info
+          const torrentInfo = document.createElement('div');
+          torrentInfo.className = 'torrent-file-info';
+          torrentInfo.innerHTML = `
+            <span class="file-name">${originalTorrent.title}</span>
+            <span class="file-source">From: ${originalTorrent.url}</span>
+          `;
+          torrentInput.parentNode.appendChild(torrentInfo);
+        }
+      }
+
+      // Populate analyzed data
+      if (analyzedData.title) {
+        document.getElementById('title').value = analyzedData.title;
+      }
+
+      if (analyzedData.description) {
+        document.getElementById('description').value = analyzedData.description;
+      }
+
+      if (analyzedData.content_type) {
+        document.getElementById('content-type').value = analyzedData.content_type;
+        this.toggleSportsCategoryVisibility();
+      }
+
+      if (analyzedData.category && analyzedData.content_type === 'sports') {
+        document.getElementById('category').value = analyzedData.category;
+      }
+
+      if (analyzedData.poster) {
+        document.getElementById('poster').value = analyzedData.poster;
+      }
+
+      if (analyzedData.background) {
+        document.getElementById('background').value = analyzedData.background;
+      }
+
+      // Set catalog fields if available
+      if (analyzedData.catalog) {
+        const catalogCheckboxes = document.querySelectorAll('input[name="catalog"]');
+        analyzedData.catalog.forEach(cat => {
+          const checkbox = Array.from(catalogCheckboxes).find(cb => cb.value === cat);
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+
+      // Set quality if available
+      if (analyzedData.quality) {
+        const qualityCheckboxes = document.querySelectorAll('input[name="quality"]');
+        analyzedData.quality.forEach(qual => {
+          const checkbox = Array.from(qualityCheckboxes).find(cb => cb.value === qual);
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+
+      // Set language if available
+      if (analyzedData.language) {
+        const languageCheckboxes = document.querySelectorAll('input[name="language"]');
+        analyzedData.language.forEach(lang => {
+          const checkbox = Array.from(languageCheckboxes).find(cb => cb.value === lang);
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+
+      this.showMessage("Form populated with analyzed data from bulk upload", "success");
+
+    } catch (error) {
+      console.error('Error populating form with analyzed data:', error);
+      this.showMessage("Error populating form with analyzed data", "error");
+    }
+  }
+
+  showBackToBulkButton() {
+    // Create back button in normal interface if it doesn't exist
+    let backButton = document.getElementById('back-to-bulk-btn');
+    if (!backButton) {
+      backButton = document.createElement('button');
+      backButton.id = 'back-to-bulk-btn';
+      backButton.className = 'back-btn';
+      backButton.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z" />
+        </svg>
+        Back to Bulk Upload
+      `;
+      backButton.addEventListener('click', () => {
+        this.returnToBulkUpload();
+      });
+
+      // Update header structure to accommodate the back button
+      const header = document.querySelector('.header');
+      if (header) {
+        // Wrap existing content in logo-section if not already wrapped
+        let logoSection = header.querySelector('.logo-section');
+        if (!logoSection) {
+          logoSection = document.createElement('div');
+          logoSection.className = 'logo-section';
+
+          // Move existing header content to logo section
+          const existingContent = Array.from(header.children);
+          existingContent.forEach(child => {
+            logoSection.appendChild(child);
+          });
+
+          header.appendChild(logoSection);
+        }
+
+        // Add back button to header
+        header.appendChild(backButton);
+      }
+    }
+    backButton.style.display = 'inline-flex';
+  }
+
+  returnToBulkUpload() {
+    // Hide normal interface
+    const container = document.querySelector('.container');
+    if (container) {
+      container.style.display = 'none';
+    }
+
+    // Hide back button in normal interface
+    const backButton = document.getElementById('back-to-bulk-btn');
+    if (backButton) {
+      backButton.style.display = 'none';
+    }
+
+    // Show bulk upload interface
+    const bulkContainer = document.querySelector('.bulk-upload-container');
+    if (bulkContainer) {
+      bulkContainer.style.display = 'block';
+    }
+
+    // Clear form data
+    this.clearForm();
+
+    // Reset flags
+    this.isAdvancedFromBulk = false;
+    this.currentBulkTorrentIndex = null;
+
+    this.showMessage("Returned to bulk upload mode", "info");
+  }
+
+  async sendMessage(message) {
+    return new Promise((resolve) => {
+      if (typeof browser !== "undefined" && browser.runtime) {
+        browser.runtime.sendMessage(message).then(resolve).catch(() => resolve({ success: false, error: "Communication error" }));
+      } else if (typeof chrome !== "undefined" && chrome.runtime) {
+        chrome.runtime.sendMessage(message, (response) => {
+          resolve(response || { success: false, error: "No response" });
+        });
+      } else {
+        resolve({ success: false, error: "Extension runtime not available" });
       }
     });
   }
