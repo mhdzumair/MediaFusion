@@ -12,10 +12,13 @@
   --border-color-focus: #667eea;
   --accent-primary: #667eea;
   --accent-secondary: #764ba2;
+  --primary-color: #007bff;
   --success-color: #28a745;
   --warning-color: #ffc107;
   --error-color: #dc3545;
   --info-color: #17a2b8;
+  --primary-shadow: rgba(0, 123, 255, 0.3);
+  --primary-shadow-light: rgba(0, 123, 255, 0.2);
 
   /* Notification colors for light theme */
   --success-bg: #d4edda;
@@ -60,10 +63,13 @@
   --border-color-focus: #667eea;
   --accent-primary: #667eea;
   --accent-secondary: #764ba2;
+  --primary-color: #4299e1;
   --success-color: #38a169;
   --warning-color: #d69e2e;
   --error-color: #e53e3e;
   --info-color: #3182ce;
+  --primary-shadow: rgba(66, 153, 225, 0.3);
+  --primary-shadow-light: rgba(66, 153, 225, 0.2);
 
   /* Notification colors for dark theme */
   --success-bg: rgba(56, 161, 105, 0.15);
@@ -107,10 +113,13 @@
     --text-muted: #718096;
     --border-color: #4a5568;
     --border-color-focus: #667eea;
+    --primary-color: #4299e1;
     --success-color: #38a169;
     --warning-color: #d69e2e;
     --error-color: #e53e3e;
     --info-color: #3182ce;
+    --primary-shadow: rgba(66, 153, 225, 0.3);
+    --primary-shadow-light: rgba(66, 153, 225, 0.2);
 
     /* Notification colors for auto dark theme */
     --success-bg: rgba(56, 161, 105, 0.15);
@@ -1885,12 +1894,12 @@ body {
   border-color: var(--primary-color);
   color: white;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+  box-shadow: 0 4px 12px var(--primary-shadow);
 }
 
 .back-btn:active {
   transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(0, 123, 255, 0.2);
+  box-shadow: 0 2px 6px var(--primary-shadow-light);
 }
 
 /* Header back button positioning */
