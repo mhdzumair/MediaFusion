@@ -1,0 +1,56 @@
+<?xml version='1.0' encoding='utf-8'?>
+<addons><addon id="repository.mediafusion" version="4.3.35" name="MediaFusion Repository" provider-name="Mohamed Zumair">
+    <extension point="xbmc.addon.repository" name="MediaFusion Repository">
+        <dir>
+            <info compressed="false">https://mhdzumair.github.io/MediaFusion/addons.xml</info>
+            <checksum>https://mhdzumair.github.io/MediaFusion/addons.xml.md5</checksum>
+            <datadir zip="true">https://mhdzumair.github.io/MediaFusion/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>MediaFusion Repository</summary>
+        <description>Repository for MediaFusion Kodi addon</description>
+        <platform>all</platform>
+        <assets>
+            <icon>mediafusion_logo.png</icon>
+            <fanart>mediafusion_logo.png</fanart>
+        </assets>
+    </extension>
+</addon><addon id="plugin.video.mediafusion" version="4.3.35" name="MediaFusion" provider-name="Mohamed Zumair">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0" />
+        <import addon="xbmc.metadata" version="2.1.0" />
+        <import addon="script.module.requests" version="2.31.0" />
+        <import addon="inputstream.ffmpegdirect" version="20.5.0" />
+        <import addon="plugin.video.elementum" optional="true" />
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="main.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">MediaFusion addon for Kodi</summary>
+        <description lang="en_GB">A Kodi addon to provide MediaFusion functionalities similar to the Stremio addon.</description>
+        <platform>all</platform>
+        <assets>
+            <icon>resources/mediafusion_logo.png</icon>
+            <fanart>resources/mediafusion_logo.png</fanart>
+        </assets>
+    </extension>
+</addon><addon id="repository.mediafusion" version="4.3.35" name="MediaFusion Repository" provider-name="Mohamed Zumair">
+    <extension point="xbmc.addon.repository" name="MediaFusion Repository">
+        <dir>
+            <info compressed="false">https://mhdzumair.github.io/MediaFusion/addons.xml</info>
+            <checksum>https://mhdzumair.github.io/MediaFusion/addons.xml.md5</checksum>
+            <datadir zip="true">https://mhdzumair.github.io/MediaFusion/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>MediaFusion Repository</summary>
+        <description>Repository for MediaFusion Kodi addon</description>
+        <platform>all</platform>
+        <assets>
+            <icon>mediafusion_logo.png</icon>
+            <fanart>mediafusion_logo.png</fanart>
+        </assets>
+    </extension>
+</addon></addons>

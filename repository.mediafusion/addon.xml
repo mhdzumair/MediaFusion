@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="repository.mediafusion" version="4.3.35" name="MediaFusion Repository" provider-name="Mohamed Zumair">
+    <extension point="xbmc.addon.repository" name="MediaFusion Repository">
+        <dir>
+            <info compressed="false">https://mhdzumair.github.io/MediaFusion/addons.xml</info>
+            <checksum>https://mhdzumair.github.io/MediaFusion/addons.xml.md5</checksum>
+            <datadir zip="true">https://mhdzumair.github.io/MediaFusion/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>MediaFusion Repository</summary>
+        <description>Repository for MediaFusion Kodi addon</description>
+        <platform>all</platform>
+        <assets>
+            <icon>mediafusion_logo.png</icon>
+            <fanart>mediafusion_logo.png</fanart>
+        </assets>
+    </extension>
+</addon>
