@@ -2498,8 +2498,8 @@ class PopupManager {
             <label class="filter-label">Filter by Type:</label>
             <div class="filter-buttons">
               <button id="filter-all-types" class="filter-btn active" data-filter="all">All (${bulkData.torrents.length})</button>
-              <button id="filter-torrents" class="filter-btn" data-filter="torrent">Torrents (${this.countByType(bulkData.torrents, 'torrent')})</button>
-              <button id="filter-magnets" class="filter-btn" data-filter="magnet">Magnets (${this.countByType(bulkData.torrents, 'magnet')})</button>
+              <button id="filter-torrents" class="filter-btn" data-filter="torrent">Select Torrents (${this.countByType(bulkData.torrents, 'torrent')})</button>
+              <button id="filter-magnets" class="filter-btn" data-filter="magnet">Select Magnets (${this.countByType(bulkData.torrents, 'magnet')})</button>
             </div>
           </div>
 
@@ -2507,9 +2507,9 @@ class PopupManager {
             <label class="filter-label">Filter by Content:</label>
             <div class="filter-buttons">
               <button id="filter-all-content" class="filter-btn active" data-content="all">All</button>
-              <button id="filter-movies" class="filter-btn" data-content="movie">Movies (${this.countByContent(bulkData.torrents, 'movie')})</button>
-              <button id="filter-series" class="filter-btn" data-content="series">Series (${this.countByContent(bulkData.torrents, 'series')})</button>
-              <button id="filter-sports" class="filter-btn" data-content="sports">Sports (${this.countByContent(bulkData.torrents, 'sports')})</button>
+              <button id="filter-movies" class="filter-btn" data-content="movie">Select Movies (${this.countByContent(bulkData.torrents, 'movie')})</button>
+              <button id="filter-series" class="filter-btn" data-content="series">Select Series (${this.countByContent(bulkData.torrents, 'series')})</button>
+              <button id="filter-sports" class="filter-btn" data-content="sports">Select Sports (${this.countByContent(bulkData.torrents, 'sports')})</button>
             </div>
           </div>
         </div>
@@ -2518,7 +2518,6 @@ class PopupManager {
         <div class="bulk-actions">
           <button id="select-all-btn" class="btn secondary">Select All Visible</button>
           <button id="deselect-all-btn" class="btn secondary">Deselect All</button>
-          <button id="select-filtered-btn" class="btn secondary">Select Filtered</button>
           <button id="start-bulk-upload-btn" class="btn primary" disabled>Upload Selected (0)</button>
         </div>
 
@@ -2600,7 +2599,6 @@ class PopupManager {
     // Select/Deselect all buttons with error handling
     const selectAllBtn = document.getElementById('select-all-btn');
     const deselectAllBtn = document.getElementById('deselect-all-btn');
-    const selectFilteredBtn = document.getElementById('select-filtered-btn');
     const startUploadBtn = document.getElementById('start-bulk-upload-btn');
 
     if (selectAllBtn) {
@@ -2615,11 +2613,6 @@ class PopupManager {
       });
     }
 
-    if (selectFilteredBtn) {
-      selectFilteredBtn.addEventListener('click', () => {
-        this.selectFilteredTorrents();
-      });
-    }
 
     // Filter buttons - Type filters
     document.querySelectorAll('[data-filter]').forEach(btn => {
@@ -2677,8 +2670,13 @@ class PopupManager {
     this.updateBulkUploadButton();
   }
 
-  selectFilteredTorrents() {
-    // Select only torrents that match current filters
+  selectFilteredItems() {
+    // First deselect all items
+    document.querySelectorAll('.bulk-item input[type="checkbox"]').forEach(checkbox => {
+      checkbox.checked = false;
+    });
+
+    // Then select only visible (filtered) items
     document.querySelectorAll('.bulk-item').forEach(item => {
       const checkbox = item.querySelector('input[type="checkbox"]');
       const isVisible = !item.style.display || item.style.display !== 'none';
@@ -2687,6 +2685,7 @@ class PopupManager {
         checkbox.checked = true;
       }
     });
+
     this.updateBulkUploadButton();
   }
 
@@ -2700,6 +2699,9 @@ class PopupManager {
     document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
 
     this.applyFilters();
+
+    // Auto-select filtered items
+    this.selectFilteredItems();
   }
 
   handleContentFilter(contentType) {
@@ -2712,6 +2714,9 @@ class PopupManager {
     document.querySelector(`[data-content="${contentType}"]`).classList.add('active');
 
     this.applyFilters();
+
+    // Auto-select filtered items
+    this.selectFilteredItems();
   }
 
   applyFilters() {
