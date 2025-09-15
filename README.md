@@ -108,27 +108,33 @@
 
 > **Note**: Installing via repository (Method 1) is recommended as it enables automatic updates when new versions are released.
 
-### Browser Extension Installation
+### Contribution Stream - Browser Extension Installation
 
 🌐 **MediaFusion Browser Extension** - Easily contribute torrents to MediaFusion directly from any torrent site!
 
-#### Firefox (Recommended)
+#### Firefox (Desktop & Android)
 **Easy Installation:**
-1. Visit [MediaFusion Torrent Uploader](https://addons.mozilla.org/en-US/firefox/addon/mediafusion-torrent-uploader/) on Mozilla Add-ons
-2. Click "Add to Firefox"
-3. Configure your MediaFusion instance URL in the extension settings
+1. **Desktop**: Visit [MediaFusion Torrent Uploader](https://addons.mozilla.org/en-US/firefox/addon/mediafusion-torrent-uploader/) on Mozilla Add-ons
+2. **Android**: Available on Firefox for Android! Install from the same Mozilla Add-ons link
+3. Click "Add to Firefox"
+4. Configure your MediaFusion instance URL in the extension settings
 
 #### Chrome/Edge (Manual Installation)
 **Note:** Chrome Web Store version is pending review. Until approved:
-1. Download or clone this repository
-2. Navigate to `browser-extension` folder
-3. Run `./build.sh` to create distribution files
-4. Load `dist/chrome/` (or `dist/edge/`) as unpacked extension in developer mode
+1. Download the extension package from [Releases](https://github.com/mhdzumair/MediaFusion/releases/tag/4.3.35)
+2. Extract the downloaded ZIP file (`mediafusion-extension-chrome.zip`)
+3. Open Chrome/Edge and go to Extensions page (`chrome://extensions/` or `edge://extensions/`)
+4. Enable "Developer mode"
+5. Click "Load unpacked" and select the extracted folder
+6. Configure your MediaFusion instance URL in the extension settings
 
-#### Features
-- 🔍 **Auto-detection** of torrents on popular sites (1337x, PirateBay, RARBG, YTS, etc.)
-- 📤 **One-click upload** to your MediaFusion instance
+#### ✨ Key Features
+- 🔍 **Auto-detection** of torrents on popular sites (1337x, PirateBay, YTS, etc.)
+- ⚡ **Quick Import** - One-click upload with automatic metadata detection
+- 📦 **Bulk Upload** - Select and upload multiple torrents at once from torrent sites
 - 🎯 **Smart metadata matching** with IMDb integration
+- 🌍 **Multi-language support** with 50+ languages
+- 📱 **Mobile support** - Works on Firefox Android
 - ⚙️ **Configurable settings** for different MediaFusion instances
 - 🎬 **Support for movies, TV series, and sports content**
 
