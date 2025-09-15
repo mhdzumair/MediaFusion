@@ -1521,6 +1521,25 @@ body {
   transition: all 0.2s ease;
 }
 
+.bulk-item-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  margin-right: 12px;
+  background: var(--accent-primary);
+  color: var(--text-white);
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.bulk-item-number .item-number {
+  line-height: 1;
+}
+
 .bulk-item.processing {
   background: rgba(255, 193, 7, 0.1);
   border-left: 4px solid var(--warning-color);
@@ -1992,6 +2011,13 @@ body {
 
   .bulk-item {
     padding: 12px;
+  }
+
+  .bulk-item-number {
+    min-width: 28px;
+    height: 28px;
+    font-size: 12px;
+    margin-right: 8px;
   }
 
   .bulk-item-header {

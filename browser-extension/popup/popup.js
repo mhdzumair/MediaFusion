@@ -1624,6 +1624,12 @@ class PopupManager {
         data.message || "Upload completed with warnings",
         "warning"
       );
+
+      // Update bulk status if we're in advanced mode from bulk upload
+      if (this.isAdvancedFromBulk && this.currentBulkTorrentIndex !== null) {
+        this.updateTorrentStatus(this.currentBulkTorrentIndex, 'warning', data.message || "Uploaded with warnings");
+      }
+
       this.clearForm();
       this.showBasicUpload();
     } else if (data.status === "error") {
@@ -1632,10 +1638,21 @@ class PopupManager {
         data.message || "Upload failed with unknown error",
         "error"
       );
+
+      // Update bulk status if we're in advanced mode from bulk upload
+      if (this.isAdvancedFromBulk && this.currentBulkTorrentIndex !== null) {
+        this.updateTorrentStatus(this.currentBulkTorrentIndex, 'error', data.message || "Upload failed with error");
+      }
     } else if (data.status === "success") {
       // Success
       const message = data.message || "Upload completed successfully!";
       this.showMessage(message, "success");
+
+      // Update bulk status if we're in advanced mode from bulk upload
+      if (this.isAdvancedFromBulk && this.currentBulkTorrentIndex !== null) {
+        this.updateTorrentStatus(this.currentBulkTorrentIndex, 'success', data.message || "Uploaded successfully");
+      }
+
       this.clearForm();
       this.showBasicUpload();
     } else {
@@ -1645,6 +1662,12 @@ class PopupManager {
         data.message || "Upload completed with unknown status: " + data.status,
         "warning"
       );
+
+      // Update bulk status if we're in advanced mode from bulk upload
+      if (this.isAdvancedFromBulk && this.currentBulkTorrentIndex !== null) {
+        this.updateTorrentStatus(this.currentBulkTorrentIndex, 'warning', data.message || `Unknown status: ${data.status}`);
+      }
+
       this.clearForm();
       this.showBasicUpload();
     }
@@ -2547,35 +2570,70 @@ class PopupManager {
   }
 
   generateBulkTorrentList(torrents) {
-    return torrents.map((torrent, index) => `
-      <div class="bulk-item" data-index="${index}">
-        <div class="bulk-item-checkbox">
-          <input type="checkbox" id="torrent-${index}" checked>
-        </div>
-        <div class="bulk-item-content">
-          <div class="bulk-item-header">
-            <label for="torrent-${index}" class="bulk-item-title">${torrent.title}</label>
-            <span class="bulk-item-type ${torrent.type}">${torrent.type.toUpperCase()}</span>
+    return torrents.map((torrent, index) => {
+      // Get stored status or default to 'ready'
+      const status = torrent.uploadStatus || 'ready';
+      const message = torrent.uploadMessage || 'Ready';
+
+      // Generate appropriate actions based on status
+      let actionsHtml = '';
+      if (status === 'error' || status === 'warning') {
+        actionsHtml = `
+          <button class="result-action-btn retry-quick" data-index="${index}" title="Retry Upload">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" />
+            </svg>
+          </button>
+          <button class="result-action-btn advanced-upload" data-index="${index}" title="Manual Upload">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
+            </svg>
+          </button>
+        `;
+      } else if (status === 'success') {
+        actionsHtml = '<span class="result-success-indicator">✓</span>';
+      } else if (status === 'processing') {
+        actionsHtml = '';
+      } else {
+        // Default ready state
+        actionsHtml = `
+          <button class="result-action-btn advanced-upload" data-index="${index}" title="Manual Upload">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
+            </svg>
+          </button>
+        `;
+      }
+
+      return `
+        <div class="bulk-item ${status}" data-index="${index}" data-original-index="${index}">
+          <div class="bulk-item-number">
+            <span class="item-number">${index + 1}</span>
           </div>
-          <div class="bulk-item-details">
-            <span class="bulk-item-content-type">${torrent.contentType}</span>
-            <span class="bulk-item-url">${this.truncateUrl(torrent.url)}</span>
+          <div class="bulk-item-checkbox">
+            <input type="checkbox" id="torrent-${index}" checked>
           </div>
-          <div class="bulk-item-status-row">
-            <div class="bulk-item-status" id="status-${index}">
-              <span class="status-text">Ready</span>
+          <div class="bulk-item-content">
+            <div class="bulk-item-header">
+              <label for="torrent-${index}" class="bulk-item-title">${torrent.title}</label>
+              <span class="bulk-item-type ${torrent.type}">${torrent.type.toUpperCase()}</span>
             </div>
-            <div class="bulk-item-actions" id="actions-${index}">
-              <button class="result-action-btn advanced-upload" data-index="${index}" title="Manual Upload">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z" />
-                </svg>
-              </button>
+            <div class="bulk-item-details">
+              <span class="bulk-item-content-type">${torrent.contentType}</span>
+              <span class="bulk-item-url">${this.truncateUrl(torrent.url)}</span>
+            </div>
+            <div class="bulk-item-status-row">
+              <div class="bulk-item-status ${status}" id="status-${index}">
+                <span class="status-text">${message}</span>
+              </div>
+              <div class="bulk-item-actions" id="actions-${index}">
+                ${actionsHtml}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   truncateUrl(url) {
@@ -2649,6 +2707,16 @@ class PopupManager {
         e.stopPropagation();
         const index = parseInt(btn.dataset.index);
         this.handleAdvancedUpload(index);
+      });
+    });
+
+    // Retry buttons for failed/warning torrents
+    document.querySelectorAll('.bulk-item-actions .retry-quick').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        this.retryTorrentUpload(index);
       });
     });
 
@@ -2732,6 +2800,9 @@ class PopupManager {
       }
     });
 
+    // Renumber visible items
+    this.renumberVisibleItems();
+
     this.updateFilterCounts();
     this.updateBulkUploadButton();
   }
@@ -2739,6 +2810,17 @@ class PopupManager {
   getCurrentBulkData() {
     // Store bulk data in instance for filter operations
     return this.bulkData || { torrents: [] };
+  }
+
+  renumberVisibleItems() {
+    // Get all visible items and renumber them sequentially
+    const visibleItems = document.querySelectorAll('.bulk-item:not([style*="display: none"])');
+    visibleItems.forEach((item, visibleIndex) => {
+      const numberElement = item.querySelector('.item-number');
+      if (numberElement) {
+        numberElement.textContent = visibleIndex + 1;
+      }
+    });
   }
 
   updateFilterCounts() {
@@ -2917,6 +2999,12 @@ class PopupManager {
     const actionsElement = document.getElementById(`actions-${index}`);
 
     if (!statusElement || !bulkItem) return;
+
+    // Store the status in the torrent data for persistence
+    if (this.bulkData && this.bulkData.torrents && this.bulkData.torrents[index]) {
+      this.bulkData.torrents[index].uploadStatus = status;
+      this.bulkData.torrents[index].uploadMessage = message;
+    }
 
     // Update status text
     statusElement.className = `bulk-item-status ${status}`;
