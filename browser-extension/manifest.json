@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "MediaFusion Torrent Uploader",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Easily contribute torrents to MediaFusion from any torrent site",
   "browser_specific_settings": {
     "gecko": {
