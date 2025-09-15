@@ -2537,6 +2537,20 @@ class PopupManager {
           </div>
         </div>
 
+        <!-- Optional Metadata -->
+        <div class="bulk-metadata">
+          <div class="metadata-section">
+            <label class="metadata-label">Optional Metadata (applies to all selected torrents):</label>
+            <div class="metadata-fields">
+              <div class="metadata-field">
+                <label for="bulk-imdb-id">IMDb ID:</label>
+                <input type="text" id="bulk-imdb-id" placeholder="tt1234567" title="Optional: Apply this IMDb ID to all selected torrents" pattern="tt\\d{7,8}">
+                <small class="field-help">Leave empty for auto-detection. Format: tt1234567</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Selection Actions -->
         <div class="bulk-actions">
           <button id="select-all-btn" class="btn secondary">Select All Visible</button>
@@ -2845,6 +2859,9 @@ class PopupManager {
     const selectedTorrents = this.getSelectedTorrents(bulkData);
     if (selectedTorrents.length === 0) return;
 
+    // Get optional IMDb ID from the bulk interface
+    const bulkImdbId = document.getElementById('bulk-imdb-id')?.value?.trim() || null;
+
     // Show progress interface
     document.getElementById('bulk-progress').style.display = 'block';
     document.getElementById('start-bulk-upload-btn').disabled = true;
@@ -2869,14 +2886,21 @@ class PopupManager {
 
         if (torrent.type === 'magnet') {
           // Use quick upload for magnet links
+          const uploadOptions = {
+            metaType: torrent.contentType,
+            isQuickImport: true
+          };
+
+          // Add IMDb ID if provided
+          if (bulkImdbId) {
+            uploadOptions.metaId = bulkImdbId;
+          }
+
           result = await this.sendMessage({
             action: "quickUpload",
             data: {
               magnetLink: torrent.url,
-              options: {
-                metaType: torrent.contentType,
-                isQuickImport: true
-              }
+              options: uploadOptions
             }
           });
         } else {
@@ -2907,15 +2931,22 @@ class PopupManager {
           this.updateTorrentStatus(torrent.index, 'processing', 'Uploading torrent file...');
 
           // Use quick upload with torrent file data
+          const uploadOptions = {
+            metaType: torrent.contentType,
+            torrentFileData: torrentData.torrentFileData,
+            isQuickImport: true
+          };
+
+          // Add IMDb ID if provided
+          if (bulkImdbId) {
+            uploadOptions.metaId = bulkImdbId;
+          }
+
           result = await this.sendMessage({
             action: "quickUpload",
             data: {
               magnetLink: null,
-              options: {
-                metaType: torrent.contentType,
-                torrentFileData: torrentData.torrentFileData,
-                isQuickImport: true
-              }
+              options: uploadOptions
             }
           });
         }
@@ -3072,19 +3103,29 @@ class PopupManager {
 
     const torrent = this.bulkData.torrents[index];
 
+    // Get optional IMDb ID from the bulk interface
+    const bulkImdbId = document.getElementById('bulk-imdb-id')?.value?.trim() || null;
+
     try {
       this.updateTorrentStatus(index, 'processing', 'Retrying upload...');
 
       let result;
       if (torrent.type === 'magnet') {
+        const uploadOptions = {
+          metaType: torrent.contentType,
+          isQuickImport: true
+        };
+
+        // Add IMDb ID if provided
+        if (bulkImdbId) {
+          uploadOptions.metaId = bulkImdbId;
+        }
+
         result = await this.sendMessage({
           action: "quickUpload",
           data: {
             magnetLink: torrent.url,
-            options: {
-              metaType: torrent.contentType,
-              isQuickImport: true
-            }
+            options: uploadOptions
           }
         });
       } else {
@@ -3110,15 +3151,22 @@ class PopupManager {
 
         this.updateTorrentStatus(index, 'processing', 'Retrying upload...');
 
+        const uploadOptions = {
+          metaType: torrent.contentType,
+          torrentFileData: torrentFileData,
+          isQuickImport: true
+        };
+
+        // Add IMDb ID if provided
+        if (bulkImdbId) {
+          uploadOptions.metaId = bulkImdbId;
+        }
+
         result = await this.sendMessage({
           action: "quickUpload",
           data: {
             magnetLink: null,
-            options: {
-              metaType: torrent.contentType,
-              torrentFileData: torrentFileData,
-              isQuickImport: true
-            }
+            options: uploadOptions
           }
         });
       }

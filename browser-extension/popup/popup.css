@@ -1469,6 +1469,67 @@ body {
   border-color: var(--primary-hover);
 }
 
+.bulk-metadata {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.metadata-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.metadata-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.metadata-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.metadata-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metadata-field label {
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.metadata-field input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.metadata-field input:focus {
+  outline: none;
+  border-color: var(--border-color-focus);
+  box-shadow: 0 0 0 2px var(--focus-shadow);
+}
+
+.field-help {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
 .bulk-actions {
   display: flex;
   gap: 12px;
@@ -1999,6 +2060,16 @@ body {
   .filter-btn {
     padding: 5px 10px;
     font-size: 11px;
+  }
+
+  .bulk-metadata {
+    margin: 12px 0;
+    padding: 12px;
+  }
+
+  .metadata-field input {
+    padding: 6px 10px;
+    font-size: 13px;
   }
 
   .bulk-actions {

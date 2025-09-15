@@ -277,6 +277,11 @@ class MediaFusionAPI {
         isQuickImport: true,
       };
 
+      // Add optional metadata
+      if (options.metaId) {
+        uploadData.metaId = options.metaId;
+      }
+
       // Add either magnet link or torrent file data
       if (magnetLink) {
         uploadData.magnetLink = magnetLink;
