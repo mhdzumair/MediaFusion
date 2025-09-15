@@ -1544,6 +1544,87 @@ body {
 
 .bulk-progress {
   margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.progress-info {
+  flex: 1;
+}
+
+.progress-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#auto-scroll-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+#auto-scroll-toggle:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color-focus);
+}
+
+#auto-scroll-toggle.active {
+  background: var(--accent-primary);
+  color: var(--text-white);
+  border-color: var(--accent-primary);
+}
+
+#auto-scroll-toggle.active:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.auto-scroll-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+#auto-scroll-toggle.active .auto-scroll-icon {
+  transform: rotate(180deg);
+}
+
+.auto-scroll-highlight {
+  animation: highlightPulse 1s ease-out;
+  border-left: 4px solid var(--accent-primary) !important;
+}
+
+@keyframes highlightPulse {
+  0% {
+    background: var(--bg-secondary);
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4);
+  }
+  50% {
+    background: rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 8px rgba(102, 126, 234, 0.1);
+  }
+  100% {
+    background: var(--bg-secondary);
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+  }
 }
 
 .progress-bar {
@@ -2078,6 +2159,25 @@ body {
 
   .bulk-actions .btn {
     min-width: auto;
+  }
+
+  .progress-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .progress-controls {
+    justify-content: center;
+  }
+
+  #auto-scroll-toggle {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .auto-scroll-text {
+    display: none;
   }
 
   .bulk-item {

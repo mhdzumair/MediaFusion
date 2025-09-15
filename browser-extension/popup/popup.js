@@ -2559,10 +2559,22 @@ class PopupManager {
         </div>
 
         <div class="bulk-progress" id="bulk-progress" style="display: none;">
-          <div class="progress-bar">
-            <div class="progress-fill" id="progress-fill"></div>
+          <div class="progress-header">
+            <div class="progress-info">
+              <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+              </div>
+              <div class="progress-text" id="progress-text">0 / 0 completed</div>
+            </div>
+            <div class="progress-controls">
+              <button id="auto-scroll-toggle" class="btn btn-sm btn-outline active" title="Auto-scroll to current upload">
+                <svg class="auto-scroll-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" />
+                </svg>
+                <span class="auto-scroll-text">Auto-scroll</span>
+              </button>
+            </div>
           </div>
-          <div class="progress-text" id="progress-text">0 / 0 completed</div>
         </div>
       </div>
 
@@ -2668,6 +2680,10 @@ class PopupManager {
     this.currentTypeFilter = 'all';
     this.currentContentFilter = 'all';
 
+    // Initialize auto-scroll state
+    this.autoScrollEnabled = true;
+    this.userScrollTimeout = null;
+
     // Select/Deselect all buttons with error handling
     const selectAllBtn = document.getElementById('select-all-btn');
     const deselectAllBtn = document.getElementById('deselect-all-btn');
@@ -2733,6 +2749,17 @@ class PopupManager {
         this.retryTorrentUpload(index);
       });
     });
+
+    // Auto-scroll toggle button
+    const autoScrollToggle = document.getElementById('auto-scroll-toggle');
+    if (autoScrollToggle) {
+      autoScrollToggle.addEventListener('click', () => {
+        this.toggleAutoScroll();
+      });
+    }
+
+    // Detect manual scrolling to disable auto-scroll
+    this.setupScrollDetection();
 
     // Initial button state update
     this.updateBulkUploadButton();
@@ -2855,6 +2882,97 @@ class PopupManager {
     }
   }
 
+  toggleAutoScroll() {
+    this.autoScrollEnabled = !this.autoScrollEnabled;
+    const toggleButton = document.getElementById('auto-scroll-toggle');
+
+    if (toggleButton) {
+      if (this.autoScrollEnabled) {
+        toggleButton.classList.add('active');
+        toggleButton.title = 'Auto-scroll to current upload (enabled)';
+      } else {
+        toggleButton.classList.remove('active');
+        toggleButton.title = 'Auto-scroll to current upload (disabled)';
+      }
+    }
+  }
+
+  setupScrollDetection() {
+    const bulkContainer = document.querySelector('.bulk-upload-container');
+    if (!bulkContainer) return;
+
+    let isScrolling = false;
+
+    bulkContainer.addEventListener('scroll', () => {
+      if (isScrolling) return; // Ignore programmatic scrolling
+
+      // User is manually scrolling, disable auto-scroll temporarily
+      if (this.autoScrollEnabled) {
+        this.autoScrollEnabled = false;
+        this.updateAutoScrollButton();
+
+        // Clear existing timeout
+        if (this.userScrollTimeout) {
+          clearTimeout(this.userScrollTimeout);
+        }
+
+        // Re-enable auto-scroll after 3 seconds of no manual scrolling
+        this.userScrollTimeout = setTimeout(() => {
+          this.autoScrollEnabled = true;
+          this.updateAutoScrollButton();
+        }, 3000);
+      }
+    });
+
+    // Store reference to control programmatic scrolling
+    this.isScrolling = () => isScrolling;
+    this.setScrolling = (value) => { isScrolling = value; };
+  }
+
+  updateAutoScrollButton() {
+    const toggleButton = document.getElementById('auto-scroll-toggle');
+    if (toggleButton) {
+      if (this.autoScrollEnabled) {
+        toggleButton.classList.add('active');
+        toggleButton.title = 'Auto-scroll to current upload (enabled)';
+      } else {
+        toggleButton.classList.remove('active');
+        toggleButton.title = 'Auto-scroll to current upload (disabled) - will re-enable after 3s';
+      }
+    }
+  }
+
+  scrollToTorrent(index) {
+    if (!this.autoScrollEnabled) return;
+
+    const torrentElement = document.querySelector(`[data-index="${index}"]`);
+    const bulkContainer = document.querySelector('.bulk-upload-container');
+
+    if (torrentElement && bulkContainer) {
+      // Set flag to ignore this scroll event
+      if (this.setScrolling) {
+        this.setScrolling(true);
+      }
+
+      // Scroll to the torrent with smooth animation
+      torrentElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+
+      // Add highlight effect
+      torrentElement.classList.add('auto-scroll-highlight');
+      setTimeout(() => {
+        torrentElement.classList.remove('auto-scroll-highlight');
+        // Reset scrolling flag after animation
+        if (this.setScrolling) {
+          this.setScrolling(false);
+        }
+      }, 1000);
+    }
+  }
+
   async startBulkUpload(bulkData) {
     const selectedTorrents = this.getSelectedTorrents(bulkData);
     if (selectedTorrents.length === 0) return;
@@ -2865,6 +2983,10 @@ class PopupManager {
     // Show progress interface
     document.getElementById('bulk-progress').style.display = 'block';
     document.getElementById('start-bulk-upload-btn').disabled = true;
+
+    // Ensure auto-scroll is enabled at the start of bulk upload
+    this.autoScrollEnabled = true;
+    this.updateAutoScrollButton();
 
     const results = {
       total: selectedTorrents.length,
@@ -3035,6 +3157,11 @@ class PopupManager {
     if (this.bulkData && this.bulkData.torrents && this.bulkData.torrents[index]) {
       this.bulkData.torrents[index].uploadStatus = status;
       this.bulkData.torrents[index].uploadMessage = message;
+    }
+
+    // Auto-scroll to torrent when it starts processing
+    if (status === 'processing') {
+      this.scrollToTorrent(index);
     }
 
     // Update status text
