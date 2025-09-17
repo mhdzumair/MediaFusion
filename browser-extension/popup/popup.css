@@ -1469,6 +1469,178 @@ body {
   border-color: var(--primary-hover);
 }
 
+/* Text filter styles */
+.text-filter-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.text-filter-input {
+  flex: 1;
+  padding: 8px 35px 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.text-filter-input:focus {
+  outline: none;
+  border-color: var(--border-color-focus);
+  box-shadow: 0 0 0 2px var(--focus-shadow);
+}
+
+.text-filter-input::placeholder {
+  color: var(--text-muted);
+}
+
+.clear-filter-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  display: none;
+  transition: all 0.2s ease;
+}
+
+.clear-filter-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.filter-help {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+}
+
+.file-help {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+}
+
+/* File filtering styles for annotation modal */
+.file-filter-section {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.filter-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-type-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 80px;
+}
+
+.filter-type-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.filter-type-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-type-btn:hover {
+  background: var(--bg-primary);
+  border-color: var(--primary-color);
+  color: var(--text-primary);
+}
+
+.filter-type-btn.active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+  font-weight: 600;
+}
+
+.filter-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.file-filter-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.file-filter-input:focus {
+  outline: none;
+  border-color: var(--border-color-focus);
+  box-shadow: 0 0 0 2px var(--focus-shadow);
+}
+
+.file-filter-input::placeholder {
+  color: var(--text-muted);
+}
+
+.filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
+}
+
+.filter-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .bulk-metadata {
   margin: 16px 0;
   padding: 16px;

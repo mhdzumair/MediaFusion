@@ -83,8 +83,13 @@ class PopupManager {
 
     // File input handling
     document.getElementById("torrent-file").addEventListener("change", (e) => {
-      if (e.target.files[0]) {
+      if (e.target.files.length > 0) {
         document.getElementById("magnet-input").value = "";
+        
+        // If multiple files selected, switch to bulk mode
+        if (e.target.files.length > 1) {
+          this.handleMultipleTorrentFiles(e.target.files);
+        }
       }
       this.updateClearButtonVisibility();
     });
@@ -170,6 +175,40 @@ class PopupManager {
       .getElementById("confirm-annotation")
       .addEventListener("click", () => {
         this.handleAnnotationConfirm();
+      });
+
+    // File filtering event listeners for annotation modal
+    document
+      .getElementById("include-filter-btn")
+      .addEventListener("click", () => {
+        this.setFileFilterType("include");
+      });
+
+    document
+      .getElementById("exclude-filter-btn")
+      .addEventListener("click", () => {
+        this.setFileFilterType("exclude");
+      });
+
+    document
+      .getElementById("apply-file-filter")
+      .addEventListener("click", () => {
+        this.applyFileFilter();
+      });
+
+    document
+      .getElementById("clear-file-filter")
+      .addEventListener("click", () => {
+        this.clearFileFilter();
+      });
+
+    // Enter key support for filter input
+    document
+      .getElementById("file-filter-input")
+      .addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          this.applyFileFilter();
+        }
       });
   }
 
@@ -347,6 +386,54 @@ class PopupManager {
         "Failed to download torrent file: " + error.message,
         "error"
       );
+    } finally {
+      this.showLoading(false);
+    }
+  }
+
+  async handleMultipleTorrentFiles(fileList) {
+    try {
+      // Show loading overlay
+      this.showLoading(true);
+      this.showMessage("Processing multiple torrent files...", "info");
+
+      const contentType = document.getElementById("content-type").value;
+      const uploaderName = document.getElementById("uploader-name").value || "Anonymous";
+      const bulkTorrents = [];
+
+      // Process each file
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const fileName = file.name.replace(/\.torrent$/i, '');
+        
+        // Create torrent data for bulk interface
+        const torrentData = {
+          title: fileName,
+          url: '', // Will be populated when uploaded
+          type: 'torrent',
+          contentType: contentType,
+          size: file.size,
+          file: file, // Store the actual file object
+          uploader: uploaderName
+        };
+        
+        bulkTorrents.push(torrentData);
+      }
+
+      // Create bulk data structure
+      const bulkData = {
+        torrents: bulkTorrents,
+        pageTitle: `Local Files (${fileList.length} torrents)`,
+        sourceUrl: 'local-files',
+        contentType: contentType
+      };
+
+      // Show bulk upload interface
+      this.showBulkUploadInterface(bulkData);
+      
+      this.showMessage(`Loaded ${fileList.length} torrent files for bulk upload`, "success");
+    } catch (error) {
+      this.showMessage("Failed to process torrent files: " + error.message, "error");
     } finally {
       this.showLoading(false);
     }
@@ -1735,6 +1822,9 @@ class PopupManager {
   showFileAnnotationModal(files, originalTorrentData) {
     this.annotationFiles = files;
     this.originalTorrentData = originalTorrentData;
+    
+    // Initialize file filter state
+    this.currentFileFilterType = 'include';
 
     const modal = document.getElementById("file-annotation-modal");
     const fileList = document.getElementById("file-annotation-list");
@@ -2048,6 +2138,106 @@ class PopupManager {
     modal.classList.add("hidden");
     this.annotationFiles = null;
     this.originalTorrentData = null;
+  }
+
+  setFileFilterType(type) {
+    // Update button states
+    document.querySelectorAll('.filter-type-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.querySelector(`[data-type="${type}"]`).classList.add('active');
+    
+    // Store current filter type
+    this.currentFileFilterType = type;
+  }
+
+  applyFileFilter() {
+    const filterInput = document.getElementById('file-filter-input');
+    const regexMode = document.getElementById('regex-mode').checked;
+    const filterText = filterInput.value.trim();
+    
+    if (!filterText) {
+      this.showMessage("Please enter a search term or pattern", "warning");
+      return;
+    }
+
+    const filterType = this.currentFileFilterType || 'include';
+    let matchedCount = 0;
+    let totalFiles = 0;
+
+    try {
+      // Get all file items
+      const fileItems = document.querySelectorAll('.file-item');
+      
+      fileItems.forEach((fileItem, index) => {
+        const checkbox = fileItem.querySelector('.file-checkbox');
+        const fileName = fileItem.querySelector('.file-name').textContent;
+        
+        if (!checkbox) return;
+        
+        totalFiles++;
+        let matches = false;
+
+        if (regexMode) {
+          // Use regex matching
+          try {
+            const regex = new RegExp(filterText, 'i');
+            matches = regex.test(fileName);
+          } catch (error) {
+            // If regex is invalid, fall back to simple text matching
+            matches = fileName.toLowerCase().includes(filterText.toLowerCase());
+          }
+        } else {
+          // Simple text matching
+          matches = fileName.toLowerCase().includes(filterText.toLowerCase());
+        }
+
+        if (matches) {
+          matchedCount++;
+        }
+
+        // Apply filter based on type
+        if (filterType === 'include') {
+          // Include mode: check only matching files
+          checkbox.checked = matches;
+        } else {
+          // Exclude mode: uncheck matching files
+          if (matches) {
+            checkbox.checked = false;
+          }
+        }
+      });
+
+      // Show result message
+      const action = filterType === 'include' ? 'selected' : 'deselected';
+      this.showMessage(
+        `Filter applied: ${matchedCount} of ${totalFiles} files ${action}`,
+        "success"
+      );
+
+    } catch (error) {
+      this.showMessage("Error applying filter: " + error.message, "error");
+    }
+  }
+
+  clearFileFilter() {
+    // Clear filter input
+    document.getElementById('file-filter-input').value = '';
+    document.getElementById('regex-mode').checked = false;
+    
+    // Reset filter type to include
+    this.setFileFilterType('include');
+    
+    // Select all files
+    const fileItems = document.querySelectorAll('.file-item');
+    fileItems.forEach(fileItem => {
+      const checkbox = fileItem.querySelector('.file-checkbox');
+      if (checkbox) {
+        checkbox.checked = true;
+      }
+    });
+
+    this.showMessage("Filter cleared - all files selected", "info");
   }
 
   async handleAnnotationConfirm() {
@@ -2535,6 +2725,15 @@ class PopupManager {
               <button id="filter-sports" class="filter-btn" data-content="sports">Select Sports (${this.countByContent(bulkData.torrents, 'sports')})</button>
             </div>
           </div>
+
+          <div class="filter-section">
+            <label class="filter-label">Filter by Name:</label>
+            <div class="text-filter-container">
+              <input type="text" id="text-filter-input" class="text-filter-input" placeholder="Search torrents by name..." />
+              <button id="clear-text-filter" class="clear-filter-btn" title="Clear text filter">✕</button>
+            </div>
+            <small class="filter-help">Type to filter torrents by name. Supports partial matches.</small>
+          </div>
         </div>
 
         <!-- Optional Metadata -->
@@ -2679,6 +2878,7 @@ class PopupManager {
     // Store current filter state
     this.currentTypeFilter = 'all';
     this.currentContentFilter = 'all';
+    this.currentTextFilter = '';
 
     // Initialize auto-scroll state
     this.autoScrollEnabled = true;
@@ -2758,6 +2958,30 @@ class PopupManager {
       });
     }
 
+    // Text filter input
+    const textFilterInput = document.getElementById('text-filter-input');
+    const clearTextFilterBtn = document.getElementById('clear-text-filter');
+    
+    if (textFilterInput) {
+      // Add debounced input listener for better performance
+      let textFilterTimeout;
+      textFilterInput.addEventListener('input', (e) => {
+        clearTimeout(textFilterTimeout);
+        textFilterTimeout = setTimeout(() => {
+          this.handleTextFilter(e.target.value);
+        }, 300); // 300ms debounce
+      });
+    }
+    
+    if (clearTextFilterBtn) {
+      clearTextFilterBtn.addEventListener('click', () => {
+        if (textFilterInput) {
+          textFilterInput.value = '';
+          this.handleTextFilter('');
+        }
+      });
+    }
+
     // Detect manual scrolling to disable auto-scroll
     this.setupScrollDetection();
 
@@ -2828,13 +3052,37 @@ class PopupManager {
     this.selectFilteredItems();
   }
 
+  handleTextFilter(searchTerm) {
+    this.currentTextFilter = searchTerm.toLowerCase().trim();
+    
+    // Update clear button visibility
+    const clearBtn = document.getElementById('clear-text-filter');
+    if (clearBtn) {
+      clearBtn.style.display = this.currentTextFilter ? 'block' : 'none';
+    }
+
+    this.applyFilters();
+
+    // Auto-select filtered items if there's a search term
+    if (this.currentTextFilter) {
+      this.selectFilteredItems();
+    }
+  }
+
   applyFilters() {
     document.querySelectorAll('.bulk-item').forEach((item, index) => {
       const torrentData = this.getCurrentBulkData().torrents[index];
       const matchesTypeFilter = this.currentTypeFilter === 'all' || torrentData.type === this.currentTypeFilter;
       const matchesContentFilter = this.currentContentFilter === 'all' || torrentData.contentType === this.currentContentFilter;
+      
+      // Text filter matching - search in title and URL
+      let matchesTextFilter = true;
+      if (this.currentTextFilter) {
+        const searchableText = (torrentData.title + ' ' + torrentData.url).toLowerCase();
+        matchesTextFilter = searchableText.includes(this.currentTextFilter);
+      }
 
-      if (matchesTypeFilter && matchesContentFilter) {
+      if (matchesTypeFilter && matchesContentFilter && matchesTextFilter) {
         item.style.display = 'flex';
       } else {
         item.style.display = 'none';
@@ -3022,6 +3270,41 @@ class PopupManager {
             action: "quickUpload",
             data: {
               magnetLink: torrent.url,
+              options: uploadOptions
+            }
+          });
+        } else if (torrent.file) {
+          // For local files, use the file directly
+          this.updateTorrentStatus(torrent.index, 'processing', 'Processing local torrent file...');
+
+          // Convert file to transmittable format
+          const arrayBuffer = await torrent.file.arrayBuffer();
+          const torrentData = {
+            torrentFileData: {
+              data: Array.from(new Uint8Array(arrayBuffer)),
+              type: torrent.file.type,
+              name: torrent.file.name
+            },
+            metaType: torrent.contentType
+          };
+
+          this.updateTorrentStatus(torrent.index, 'processing', 'Uploading torrent file...');
+
+          // Use quick upload with torrent file data
+          const uploadOptions = {
+            metaType: torrent.contentType,
+            torrentFileData: torrentData.torrentFileData,
+            isQuickImport: true
+          };
+
+          // Add IMDb ID if provided
+          if (bulkImdbId) {
+            uploadOptions.metaId = bulkImdbId;
+          }
+
+          result = await this.sendMessage({
+            action: "quickUpload",
+            data: {
               options: uploadOptions
             }
           });
