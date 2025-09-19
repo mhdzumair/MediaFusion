@@ -437,14 +437,14 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     """
     Convert a size in bytes into a more human-readable format.
     """
-    if size_bytes <= 0:
+    if not size_bytes or size_bytes <= 0:
         return "💾 0 B"
     
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
-    s = size_bytes / p
-    return f"💾 {s:.2g} {size_name[i]}"
+    s = round(size_bytes / p, 2)
+    return f"💾 {s} {size_name[i]}"
 
 
 @functools.lru_cache(maxsize=1024)
