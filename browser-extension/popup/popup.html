@@ -36,8 +36,9 @@
           </div>
 
           <div class="form-group">
-            <label for="torrent-file">Or Upload Torrent File:</label>
-            <input type="file" id="torrent-file" accept=".torrent" />
+            <label for="torrent-file">Or Upload Torrent File(s):</label>
+            <input type="file" id="torrent-file" accept=".torrent" multiple />
+            <small class="file-help">Select multiple files to use bulk import mode</small>
           </div>
 
           <div class="row">
@@ -412,6 +413,32 @@
           </div>
           <div class="modal-body">
             <p>Please set season and episode numbers for each file:</p>
+            
+            <!-- File Filtering Controls -->
+            <div class="file-filter-section">
+              <div class="filter-controls">
+                <div class="filter-group">
+                  <label class="filter-type-label">Filter Type:</label>
+                  <div class="filter-type-buttons">
+                    <button id="include-filter-btn" class="filter-type-btn active" data-type="include">Include</button>
+                    <button id="exclude-filter-btn" class="filter-type-btn" data-type="exclude">Exclude</button>
+                  </div>
+                </div>
+                <div class="filter-input-group">
+                  <input type="text" id="file-filter-input" class="file-filter-input" placeholder="Enter search term or regex pattern..." />
+                  <button id="apply-file-filter" class="btn btn-sm btn-primary">Apply Filter</button>
+                  <button id="clear-file-filter" class="btn btn-sm btn-secondary">Clear</button>
+                </div>
+              </div>
+              <div class="filter-options">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="regex-mode" />
+                  Use Regular Expression
+                </label>
+                <small class="filter-hint">Use include to select only matching files, or exclude to remove matching files from selection.</small>
+              </div>
+            </div>
+            
             <div id="file-annotation-list" class="file-list">
               <!-- Files will be populated here -->
             </div>
