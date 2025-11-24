@@ -16,7 +16,7 @@ dependencies = [
     "pydantic",
     "requests",
     "beautifulsoup4",
-    "beanie==1.30.0",
+    "beanie==2.0.1",
     "motor",
     "pymongo",
     "dnspython",
