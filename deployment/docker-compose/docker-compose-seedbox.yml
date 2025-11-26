@@ -1,0 +1,97 @@
+services:
+  mediafusion:
+    image: mhdzumair/mediafusion:4.3.35
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      # Override gunicorn settings for lower memory usage
+      - GUNICORN_WORKERS=1
+      - GUNICORN_THREADS=2
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 30m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - mediafusion-network
+    # Memory limits to prevent virtual memory exhaustion
+    mem_limit: 1g
+    mem_reservation: 512m
+    memswap_limit: 1g  # Same as mem_limit to disable swap
+    cpus: 1.5
+
+  mongodb:
+    image: mongo:latest
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5", "--nojournal"]
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - mediafusion-network
+    # Limit MongoDB memory usage
+    mem_limit: 512m
+    mem_reservation: 256m
+    memswap_limit: 512m
+    cpus: 1.0
+
+  redis:
+    image: redis:alpine  # Use alpine for smaller footprint
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --save 60 1 --maxmemory 128mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - mediafusion-network
+    # Limit Redis memory usage
+    mem_limit: 256m
+    mem_reservation: 128m
+    memswap_limit: 256m
+    cpus: 0.5
+
+volumes:
+  mongo-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  mediafusion-network:
+    driver: bridge
