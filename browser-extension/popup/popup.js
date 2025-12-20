@@ -407,12 +407,16 @@ class PopupManager {
         const file = fileList[i];
         const fileName = file.name.replace(/\.torrent$/i, "");
 
+        // Detect content type from file name for better accuracy
+        const detectedContentType =
+          this.guessContentTypeFromFileName(fileName) || contentType;
+
         // Create torrent data for bulk interface
         const torrentData = {
           title: fileName,
           url: "", // Will be populated when uploaded
           type: "torrent",
-          contentType: contentType,
+          contentType: detectedContentType,
           size: file.size,
           file: file, // Store the actual file object
           uploader: uploaderName,
@@ -443,6 +447,73 @@ class PopupManager {
       );
     } finally {
       this.showLoading(false);
+    }
+  }
+
+  guessContentTypeFromFileName(fileName) {
+    if (!fileName) return null;
+
+    const fileNameLower = fileName.toLowerCase();
+
+    // 1. Check for SPORTS first (most specific)
+    const sportsPatterns = [
+      /\b(nfl|nba|nhl|mlb|mls|ufc|wwe|aew|f1|formula\s*1)\b/i,
+      /\b(premier\s*league|champions\s*league|europa\s*league)\b/i,
+      /\b(world\s*cup|euro\s*\d+|olympics|olympic)\b/i,
+      /\b(boxing|wrestling|mma|mixed\s*martial\s*arts)\b/i,
+      /\b(football|soccer|basketball|baseball|hockey|tennis|golf)\b/i,
+      /\b(cricket|rugby|volleyball|badminton|swimming|athletics)\b/i,
+      /\b(racing|motogp|nascar|indycar|rally)\b/i,
+      /\bfight\s*night\b/i, // Fight Night
+      /\bpay\s*per\s*view\b/i, // Pay Per View
+      /\bppv\b/i, // PPV
+    ];
+
+    for (const pattern of sportsPatterns) {
+      if (pattern.test(fileNameLower)) {
+        return "sports";
+      }
+    }
+
+    // 2. Check for SERIES (definitive patterns only)
+    const seriesPatterns = [
+      /\bs\d+e\d+\b/i, // S04E15, s1e1
+      /\bseason\s*\d+\b/i, // Season 4
+      /\bs\s*\d+\b/i, // s04, s1
+      /\bepisode\s*\d+\b/i, // Episode 15
+      /\b\d{1,2}x\d{1,2}\b/, // 4x15, 1x01
+      /complete\s+series/i, // Complete Series
+      /season\s+complete/i, // Season Complete
+      /all\s+episodes/i, // All Episodes
+    ];
+
+    for (const pattern of seriesPatterns) {
+      if (pattern.test(fileNameLower)) {
+        return "series";
+      }
+    }
+
+    // 3. Default to MOVIE (no need for complex movie detection)
+    return "movie";
+  }
+
+  async setTorrentFile(file) {
+    try {
+      // Create a new FileList-like object with the file
+      const fileInput = document.getElementById("torrent-file");
+      if (fileInput) {
+        // Create a DataTransfer object to set the file
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+
+        // Trigger change event to update UI
+        const event = new Event("change", { bubbles: true });
+        fileInput.dispatchEvent(event);
+      }
+    } catch (error) {
+      console.error("Error setting torrent file:", error);
+      throw error;
     }
   }
 
@@ -2743,11 +2814,17 @@ class PopupManager {
     // Store bulk data for filter operations
     this.bulkData = bulkData;
 
-    // Hide normal interface
+    // Hide normal interface completely
     const container = document.querySelector(".container");
     if (container) {
       container.style.display = "none";
     }
+
+    // Hide any existing bulk upload containers to prevent duplicates
+    const existingBulkContainers = document.querySelectorAll(
+      ".bulk-upload-container"
+    );
+    existingBulkContainers.forEach((container) => container.remove());
 
     // Create bulk upload interface
     const bulkContainer = document.createElement("div");
@@ -3122,7 +3199,20 @@ class PopupManager {
       select.addEventListener("change", (e) => {
         const index = parseInt(e.target.dataset.index);
         const newContentType = e.target.value;
-        this.handleContentTypeChange(index, newContentType, bulkData);
+
+        // Ensure we have valid bulk data
+        if (
+          !this.bulkData ||
+          !this.bulkData.torrents ||
+          !this.bulkData.torrents[index]
+        ) {
+          console.warn(
+            `Cannot change content type: no torrent data at index ${index}`
+          );
+          return;
+        }
+
+        this.handleContentTypeChange(index, newContentType, this.bulkData);
       });
     });
 
@@ -3286,7 +3376,24 @@ class PopupManager {
 
   applyFilters() {
     document.querySelectorAll(".bulk-item").forEach((item, index) => {
-      const torrentData = this.getCurrentBulkData().torrents[index];
+      const bulkData = this.getCurrentBulkData();
+
+      // Safety check to ensure we have valid torrent data
+      if (!bulkData || !bulkData.torrents || !bulkData.torrents[index]) {
+        console.warn(`No torrent data found for index ${index}`);
+        item.style.display = "none";
+        return;
+      }
+
+      const torrentData = bulkData.torrents[index];
+
+      // Additional safety checks for torrent data properties
+      if (!torrentData.type || !torrentData.contentType) {
+        console.warn(`Invalid torrent data at index ${index}:`, torrentData);
+        item.style.display = "none";
+        return;
+      }
+
       const matchesTypeFilter =
         this.currentTypeFilter === "all" ||
         torrentData.type === this.currentTypeFilter;
@@ -4306,7 +4413,10 @@ class PopupManager {
         // Fallback to original torrent data
         if (torrent.type === "magnet") {
           document.getElementById("magnet-input").value = torrent.url;
-        } else {
+        } else if (torrent.file) {
+          // For local files, set the file directly
+          await this.setTorrentFile(torrent.file);
+        } else if (torrent.url) {
           // For torrent URLs, we need to download and set as file
           await this.handleTorrentUrl(torrent.url);
         }
