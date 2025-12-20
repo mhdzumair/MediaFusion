@@ -437,8 +437,9 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     """
     Convert a size in bytes into a more human-readable format.
     """
-    if not size_bytes:
-        return ""
+    if not size_bytes or size_bytes <= 0:
+        return "💾 0 B"
+    
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
