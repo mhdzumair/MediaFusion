@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from os.path import basename
 from typing import Optional, List, Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from thefuzz import fuzz
 
@@ -296,7 +296,7 @@ async def parse_stream_data(
             addon_name += " 🕵🏼‍♂️"
 
         base_proxy_url_template = (
-            f"{settings.host_url}/streaming_provider/{secret_str}/stream/{{}}"
+            f"{settings.host_url}/streaming_provider/{secret_str}/playback/{{}}"
         )
 
     stream_list = []
@@ -437,8 +437,9 @@ def convert_bytes_to_readable(size_bytes: int) -> str:
     """
     Convert a size in bytes into a more human-readable format.
     """
-    if not size_bytes:
-        return ""
+    if not size_bytes or size_bytes <= 0:
+        return "💾 0 B"
+    
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
@@ -553,6 +554,14 @@ async def process_stream(
     )
 
 
+def get_dlhd_channel_url(stream: TVStreams) -> str:
+    parsed_url = urlparse(stream.url)
+    channel_id = parsed_url.path.split("/")[-2]
+    channel_number = re.search(r"(\d+)", channel_id).group(1)
+    channel_url = config_manager.get_scraper_config("dlhd", "channel_url")
+    return channel_url.format(channel_number=channel_number)
+
+
 def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
     endpoint = (
         "/proxy/mpd/manifest.m3u8" if stream.drm_key else "/proxy/hls/manifest.m3u8"
@@ -560,11 +569,15 @@ def get_proxy_url(stream: TVStreams, mediaflow_config) -> str:
     query_params = {}
     if stream.drm_key:
         query_params = {"key_id": stream.drm_key_id, "key": stream.drm_key}
-    elif "dlhd" in stream.source:
+    elif stream.source == "DaddyLiveHD":
         query_params = {
             "use_request_proxy": False,
-            "key_url": config_manager.get_scraper_config("dlhd", "key_url"),
+            "host": "DLHD",
+            "redirect_stream": True,
         }
+        stream.url = get_dlhd_channel_url(stream)
+        endpoint = "/extractor/video"
+        stream.behaviorHints = {"proxyHeaders": {}}
 
     return encode_mediaflow_proxy_url(
         mediaflow_config.proxy_url,

@@ -321,15 +321,38 @@ function updateContentType() {
     if (metaType === 'movie') {
         setElementDisplay('movieCatalogs', 'block');
         setElementDisplay('metaIdContainer', 'block');
+        setElementDisplay('episodeParserCard', 'none');
     } else if (metaType === 'series') {
         setElementDisplay('seriesCatalogs', 'block');
         setElementDisplay('metaIdContainer', 'block');
+        setElementDisplay('episodeParserCard', 'block');
     } else if (metaType === 'sports') {
         setElementDisplay('sportsCatalogs', 'block');
         setElementDisplay('metaIdContainer', 'none');
+        setElementDisplay('episodeParserCard', 'block');
     }
 }
 
+function showParserExamples() {
+    const examplesDiv = document.getElementById('parserExamples');
+    if (examplesDiv.style.display === 'none') {
+        examplesDiv.style.display = 'block';
+        event.target.innerHTML = '<i class="bi bi-eye-slash"></i> Hide Examples';
+    } else {
+        examplesDiv.style.display = 'none';
+        event.target.innerHTML = '<i class="bi bi-question-circle"></i> Show Examples';
+    }
+}
+
+function clearAllEpisodeTitles() {
+    // Find all episode title inputs in the modal and clear them
+    const titleInputs = document.querySelectorAll('#fileAnnotationModal input[id^="title-"]');
+    titleInputs.forEach(input => {
+        input.value = '';
+    });
+
+    showNotification('All episode titles cleared', 'info');
+}
 
 function parseSeasonsInput(input) {
     const seasons = [];
@@ -837,7 +860,7 @@ async function handleQuickImport() {
         });
 
         const data = await response.json();
-        if (response.ok) {
+        if (data.status === 'success') {
             if (data.matches && data.matches.length > 0) {
                 displayMatchResults(data.matches, data.torrent_data);
             } else {
@@ -845,7 +868,7 @@ async function handleQuickImport() {
                 switchToManualImport(data.torrent_data);
             }
         } else {
-            showNotification(data.detail || 'Failed to analyze torrent', 'error');
+            showNotification(data.message || 'Failed to analyze torrent', 'error');
         }
     } catch (error) {
         showNotification('Error analyzing torrent: ' + error.message, 'error');
@@ -1325,7 +1348,7 @@ const formUtils = {
 
         // Reset basic fields
         const basicFields = ['torrentImdbId', 'metaType', 'title', 'poster', 'background', 'logo',
-            'resolution', 'quality', 'videoCodec', 'createdAt'];
+            'resolution', 'quality', 'videoCodec', 'createdAt', 'episodeNameParser'];
         basicFields.forEach(fieldId => {
             const element = document.getElementById(fieldId);
             if (element) element.value = '';
@@ -1623,6 +1646,12 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
         formData.append('torrent_file', torrentFile);
     }
 
+    // Add episode name parser if provided and applicable
+    const episodeNameParser = document.getElementById('episodeNameParser')?.value;
+    if (episodeNameParser && (metaType === 'series' || metaType === 'sports')) {
+        formData.append('episode_name_parser', episodeNameParser);
+    }
+
     // Add force import and annotated files if present
     if (forceImport) formData.append('force_import', 'true');
     if (annotatedFiles) formData.append('file_data', JSON.stringify(annotatedFiles));
@@ -1656,10 +1685,12 @@ async function handleAddTorrent(submitBtn, loadingSpinner, forceImport = false, 
                 await handleAddTorrent(submitBtn, loadingSpinner, true, annotatedFiles);
                 return;
             }
-        } else if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showSuccessWithImportNew(data.status);
+        } else if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'warning') {
+            showNotification(data.message, 'warning');
+        } else if (data.status === 'success') {
+            showSuccessWithImportNew(data.message);
         }
     } catch (error) {
         console.error('Error submitting torrent:', error);
@@ -1679,10 +1710,10 @@ async function handleAddTvMetadata(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error constructing TV Metadata:', error);
@@ -1724,10 +1755,10 @@ async function handleAddM3uPlaylist(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -1748,10 +1779,10 @@ async function handleUpdateImdbData(submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -1787,10 +1818,10 @@ async function handleMigration(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error migrating ID:', error);
@@ -1819,10 +1850,10 @@ async function handleScrapyParameters(payload, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error submitting scraper form:', error);
@@ -1857,10 +1888,12 @@ async function handleBlockTorrent(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'warning') {
+            showNotification(data.message, 'warning');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
         }
     } catch (error) {
         console.error('Error blocking torrent:', error);
@@ -1906,10 +1939,10 @@ async function handleUpdateImages(apiPassword, submitBtn, loadingSpinner) {
         });
 
         const data = await response.json();
-        if (data.detail) {
-            showNotification(data.detail, 'error');
-        } else {
-            showNotification(data.status, 'success');
+        if (data.status === 'error') {
+            showNotification(data.message, 'error');
+        } else if (data.status === 'success') {
+            showNotification(data.message, 'success');
             // Clear form fields on success
             document.getElementById('imageUpdatePoster').value = '';
             document.getElementById('imageUpdateBackground').value = '';

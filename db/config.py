@@ -40,6 +40,7 @@ class Settings(BaseSettings):
             "qbittorrent",
             "stremthru",
             "easydebrid",
+            "debrider",
         ]
     ] = Field(default_factory=list)
 
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     db_max_connections: int = 50
     redis_url: str = "redis://redis-service:6379"
     redis_max_connections: int = 100
+    redis_retry_attempts: int = 3
+    redis_retry_delay: float = 0.1
+    redis_connection_timeout: int = 10
+    redis_enable_circuit_breaker: bool = True
 
     # External Service URLs
     requests_proxy_url: str | None = None
@@ -81,6 +86,7 @@ class Settings(BaseSettings):
     mediafusion_url: str = "https://mediafusion.elfhosted.com"
     mediafusion_api_password: str | None = None
     sync_debrid_cache_streams: bool = False
+    rss_feed_scrape_interval_hour: int = 3
 
     # Zilean Settings
     is_scrap_from_zilean: bool = False
@@ -119,6 +125,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str | None = None
 
     # Configuration Sources
+    use_config_source: str = "remote"
     remote_config_source: str = (
         "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/json/scraper_config.json"
     )
@@ -153,11 +160,11 @@ class Settings(BaseSettings):
     tamil_blasters_scheduler_crontab: str = "0 */6 * * *"
     disable_tamil_blasters_scheduler: bool = False
     formula_tgx_scheduler_crontab: str = "*/30 * * * *"
-    disable_formula_tgx_scheduler: bool = False
+    disable_formula_tgx_scheduler: bool = True
     nowmetv_scheduler_crontab: str = "0 0 * * 5"
-    disable_nowmetv_scheduler: bool = False
+    disable_nowmetv_scheduler: bool = True
     nowsports_scheduler_crontab: str = "0 10 * * 5"
-    disable_nowsports_scheduler: bool = False
+    disable_nowsports_scheduler: bool = True
     tamilultra_scheduler_crontab: str = "0 8 * * 5"
     disable_tamilultra_scheduler: bool = False
     validate_tv_streams_in_db_crontab: str = "0 0 * * 4"
@@ -167,21 +174,23 @@ class Settings(BaseSettings):
     dlhd_scheduler_crontab: str = "0 0 * * 1"
     disable_dlhd_scheduler: bool = False
     motogp_tgx_scheduler_crontab: str = "0 5 * * *"
-    disable_motogp_tgx_scheduler: bool = False
+    disable_motogp_tgx_scheduler: bool = True
     update_seeders_crontab: str = "0 0 * * 3"
-    disable_update_seeders: bool = False
+    disable_update_seeders: bool = True
     arab_torrents_scheduler_crontab: str = "0 0 * * *"
     disable_arab_torrents_scheduler: bool = False
     wwe_tgx_scheduler_crontab: str = "10 */3 * * *"
-    disable_wwe_tgx_scheduler: bool = False
+    disable_wwe_tgx_scheduler: bool = True
     ufc_tgx_scheduler_crontab: str = "30 */3 * * *"
-    disable_ufc_tgx_scheduler: bool = False
+    disable_ufc_tgx_scheduler: bool = True
     movies_tv_tgx_scheduler_crontab: str = "0 * * * *"
-    disable_movies_tv_tgx_scheduler: bool = False
+    disable_movies_tv_tgx_scheduler: bool = True
     prowlarr_feed_scraper_crontab: str = "0 */3 * * *"
     disable_prowlarr_feed_scraper: bool = False
     jackett_feed_scraper_crontab: str = "0 */3 * * *"
     disable_jackett_feed_scraper: bool = False
+    rss_feed_scraper_crontab: str = "0 */3 * * *"
+    disable_rss_feed_scraper: bool = False
     cleanup_expired_scraper_task_crontab: str = "0 * * * *"
     cleanup_expired_cache_task_crontab: str = "0 0 * * *"
 

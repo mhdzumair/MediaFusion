@@ -13,6 +13,7 @@ from db.models import (
     TorrentStreams,
     TVStreams,
     MediaFusionTVMetaData,
+    RSSFeed,
 )
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
@@ -35,6 +36,7 @@ async def init(allow_index_dropping: bool = False):
                     MediaFusionTVMetaData,
                     TorrentStreams,
                     TVStreams,
+                    RSSFeed,
                 ],
                 multiprocessing_mode=True,
                 allow_index_dropping=allow_index_dropping,

@@ -766,7 +766,9 @@ async def get_existing_metadata(
 ) -> Optional[MediaFusionMovieMetaData | MediaFusionSeriesMetaData]:
     if metadata.get("id"):
         return await model.get(metadata["id"])
-    title = metadata["title"]
+    title = metadata.get("title")
+    if not title:
+        return None
     year = metadata.get("year")
     if isinstance(year, str):
         year = int(year)
@@ -916,6 +918,7 @@ async def get_or_create_metadata(
         if not imdb_data and is_imdb_only:
             return
 
+        imdb_data = imdb_data or {}
         metadata["id"] = (
             imdb_data.get("imdb_id") or metadata.get("id") or f"mf{uuid4().fields[-1]}"
         )

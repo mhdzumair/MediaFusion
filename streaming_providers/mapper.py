@@ -73,6 +73,11 @@ from streaming_providers.easydebrid.utils import (
     get_video_url_from_easydebrid,
     validate_easydebrid_credentials,
 )
+from streaming_providers.debrider.utils import (
+    update_debrider_cache_status,
+    get_video_url_from_debrider,
+    validate_debrider_credentials,
+)
 
 # Define provider-specific cache update functions
 CACHE_UPDATE_FUNCTIONS = {
@@ -87,6 +92,7 @@ CACHE_UPDATE_FUNCTIONS = {
     "qbittorrent": update_qbittorrent_cache_status,
     "stremthru": update_st_cache_status,
     "easydebrid": update_easydebrid_cache_status,
+    "debrider": update_debrider_cache_status,
 }
 
 # Define provider-specific downloaded info hashes fetch functions
@@ -130,6 +136,7 @@ GET_VIDEO_URL_FUNCTIONS = {
     "torbox": get_video_url_from_torbox,
     "stremthru": get_video_url_from_stremthru,
     "easydebrid": get_video_url_from_easydebrid,
+    "debrider": get_video_url_from_debrider,
 }
 
 
@@ -145,4 +152,5 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
     "torbox": validate_torbox_credentials,
     "stremthru": validate_stremthru_credentials,
     "easydebrid": validate_easydebrid_credentials,
+    "debrider": validate_debrider_credentials,
 }

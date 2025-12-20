@@ -306,23 +306,11 @@ class ProwlarrScraper(IndexerBaseScraper):
         if not download_url:
             return None
 
-        try:
-            torrent_data, is_torrent_downloaded = await self.get_torrent_data(
-                download_url, indexer_data.get("indexer"), parsed_data
-            )
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code in [429, 500]:
-                raise error
-            self.logger.error(
-                f"HTTP Error getting torrent data: {download_url}, "
-                f"status code: {error.response.status_code}"
-            )
-            return None
-        except httpx.TimeoutException as error:
-            self.logger.warning("Timeout while getting torrent data")
-            raise error
-        except Exception as e:
-            self.logger.exception(f"Error getting torrent data: {e}")
+        torrent_data, is_torrent_downloaded = await self.get_torrent_data(
+            download_url, parsed_data
+        )
+
+        if not is_torrent_downloaded:
             return None
 
         info_hash = torrent_data.get("info_hash", "").lower()

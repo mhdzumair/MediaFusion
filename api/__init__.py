@@ -8,7 +8,6 @@ from dramatiq.middleware import (
     ShutdownNotifications,
     Callbacks,
     Pipelines,
-    Prometheus,
     CurrentMessage,
 )
 from dramatiq_abort import Abortable
@@ -19,17 +18,19 @@ from db.config import settings
 
 # Setup the broker and the middleware
 redis_broker = RedisBroker(url=settings.redis_url)
+asyncio_middleware = AsyncIO()
 redis_broker.middleware = [
+    asyncio_middleware,
     AgeLimit(),
     TimeLimit(),
     ShutdownNotifications(),
     Callbacks(),
     Pipelines(),
     Retries(),
-    AsyncIO(),
     MaxTasksPerChild(settings.worker_max_tasks_per_child),
     TaskManager(),
     CurrentMessage(),
     Abortable(backend=RedisBackend.from_url(settings.redis_url)),
 ]
 dramatiq.set_broker(redis_broker)
+asyncio_middleware.before_worker_boot(redis_broker, None)

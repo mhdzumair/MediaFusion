@@ -316,6 +316,104 @@
                             <label for="uploaderName" class="form-label">Uploader Name (Optional)</label>
                             <input type="text" class="form-control" id="uploaderName" placeholder="Enter your name or leave blank for Anonymous">
                         </div>
+
+                        <!-- Episode Name Parser Pattern -->
+                        <div class="card mb-4" id="episodeParserCard" style="display: none;">
+                            <div class="card-header">
+                                <h5 class="mb-0">Episode Name Parser (Optional)</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info" role="alert">
+                                    <i class="bi bi-info-circle"></i>
+                                    <strong>Custom Episode Name Parser</strong><br>
+                                    Use regex patterns to extract episode names from filenames. This is especially useful for sports content like Formula 1 races.
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="episodeNameParser" class="form-label">Regex Pattern</label>
+                                    <input type="text" class="form-control font-monospace" id="episodeNameParser"
+                                           placeholder="(?P&lt;episode_name&gt;[^.]+)\.SkyF1HD">
+                                    <div class="form-text">
+                                        Use named groups like <code>(?P&lt;episode_name&gt;...)</code> or <code>(?P&lt;title&gt;...)</code> for better extraction
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="showParserExamples()">
+                                        <i class="bi bi-question-circle"></i> Show Examples
+                                    </button>
+                                </div>
+
+                                <!-- Examples Section (Initially Hidden) -->
+                                <div id="parserExamples" style="display: none;">
+                                    <h6>Common Pattern Examples:</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Filename Example</th>
+                                                    <th>Regex Pattern</th>
+                                                    <th>Extracted Name</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td><code>F1.2025.Canadian.Grand.Prix.Drivers.Press.Conference.SkyF1HD.1080P.mkv</code></td>
+                                                    <td><code>Grand\.Prix\.(?P&lt;episode_name&gt;.*?)\.SkyF1HD</code></td>
+                                                    <td>Drivers Press Conference</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>Attack.on.Titan.S04E15.Above.and.Below.1080p.mkv</code></td>
+                                                    <td><code>S\d+E\d+\.(?P&lt;episode_name&gt;.*?)\.1080p</code></td>
+                                                    <td>Above and Below</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>Naruto.Shippuden.Episode.500.The.Message.720p.mp4</code></td>
+                                                    <td><code>Episode\.\d+\.(?P&lt;episode_name&gt;.*?)\.720p</code></td>
+                                                    <td>The Message</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>Premier.League.2024.Arsenal.vs.Chelsea.Full.Match.1080p.mkv</code></td>
+                                                    <td><code>Premier\.League\.\d+\.(?P&lt;episode_name&gt;.*?)\.Full\.Match</code></td>
+                                                    <td>Arsenal vs Chelsea</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>Documentary.Series.E03.Climate.Change.Effects.HDTV.mkv</code></td>
+                                                    <td><code>E\d+\.(?P&lt;episode_name&gt;.*?)\.HDTV</code></td>
+                                                    <td>Climate Change Effects</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>One.Piece.1089.Luffy.vs.Kaido.Final.Battle.1080p.mkv</code></td>
+                                                    <td><code>One\.Piece\.\d+\.(?P&lt;episode_name&gt;.*?)\.1080p</code></td>
+                                                    <td>Luffy vs Kaido Final Battle</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>Breaking.Bad.S05E14.Ozymandias.WEB-DL.mkv</code></td>
+                                                    <td><code>Breaking\.Bad\.S\d+E\d+\.(?P&lt;episode_name&gt;.*?)\.WEB-DL</code></td>
+                                                    <td>Ozymandias</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>WWE.Monday.Night.Raw.2024.Triple.Threat.Match.HDTV.mp4</code></td>
+                                                    <td><code>WWE\..*?\.2024\.(?P&lt;episode_name&gt;.*?)\.HDTV</code></td>
+                                                    <td>Triple Threat Match</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="alert alert-warning mt-2" role="alert">
+                                        <small class="text-muted">
+                                            <strong>Usage Tips:</strong><br>
+                                            • Use <code>(?P&lt;episode_name&gt;...)</code> for named capture groups<br>
+                                            • Use <code>.*?</code> for non-greedy matching to capture episode names<br>
+                                            • Use <code>\d+</code> to match episode/season numbers<br>
+                                            • Escape special characters like dots with backslash: <code>\.</code><br>
+                                            • Pattern is applied case-insensitively<br>
+                                            • Look for consistent patterns before and after episode names
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Success Alert with Import New Button -->
@@ -665,6 +763,9 @@
                 <div id="fileAnnotationList"></div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-warning" id="clearEpisodeTitles" onclick="clearAllEpisodeTitles()">
+                    <i class="bi bi-eraser"></i> Clear Episode Titles
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="confirmAnnotation">Confirm</button>
             </div>

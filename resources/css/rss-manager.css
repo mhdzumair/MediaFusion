@@ -1,0 +1,912 @@
+/* Login overlay styles */
+.login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0,0,0,0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.login-container {
+    width: 100%;
+    max-width: 400px;
+    background: rgba(20, 20, 35, 0.95);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    padding: 30px;
+    color: #e0e0e0;
+}
+
+.login-form-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.login-form-container .logo {
+    max-width: 80px;
+}
+
+/* Login form dark theme styles */
+.login-container h4 {
+    color: #ffffff;
+}
+
+.login-container .form-label {
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+.login-container .form-control {
+    background: rgba(40, 40, 60, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+.login-container .form-control:focus {
+    background: rgba(50, 50, 70, 0.9);
+    border-color: rgba(74, 71, 163, 0.6);
+    box-shadow: 0 0 0 0.25rem rgba(74, 71, 163, 0.25);
+    color: #ffffff;
+}
+
+
+.login-container .btn-primary {
+    background-color: #4a47a3;
+    border-color: #4a47a3;
+}
+
+.login-container .btn-primary:hover {
+    background-color: #3b388a;
+    border-color: #3b388a;
+}
+
+.login-container .alert-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-color: rgba(220, 53, 69, 0.3);
+    color: #f8d7da;
+}
+
+/* Regular styles */
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.feed-name {
+    font-weight: 500;
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 0;
+}
+
+.code-block {
+    max-height: 400px;
+    overflow-y: auto;
+    background-color: var(--bs-gray-100, #f8f9fa);
+    padding: 15px;
+    border-radius: 4px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9rem;
+}
+
+/* JSON syntax highlighting */
+.json-key {
+    color: #3b82f6;
+}
+.json-string {
+    color: #10b981;
+}
+.json-number {
+    color: #ef4444;
+}
+.json-boolean {
+    color: #6366f1;
+}
+.json-null {
+    color: #94a3b8;
+}
+
+/* Form styles */
+.form-section {
+    margin-bottom: 2rem;
+}
+
+.form-section h6 {
+    color: #ffffff;
+    font-weight: 500;
+    margin-bottom: 1rem;
+}
+
+.card-header-tabs {
+    margin-right: -1rem;
+    margin-left: -1rem;
+    margin-bottom: -1rem;
+}
+
+.pattern-input {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9rem;
+}
+
+.actions-bar {
+    background-color: rgba(74, 71, 163, 0.1);
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(74, 71, 163, 0.2);
+}
+
+/* Table styles */
+.table-responsive {
+    min-height: 200px;
+}
+
+.table th {
+    position: sticky;
+    top: 0;
+    background-color: var(--bs-table-header-bg, #f8f9fa);
+    z-index: 1;
+}
+
+/* Card and Section Styles */
+.card {
+    background: rgba(30, 30, 50, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background: rgba(74, 71, 163, 0.2);
+    border-bottom: 1px solid rgba(74, 71, 163, 0.3);
+    padding: 1rem 1.5rem;
+}
+
+.card-header h5, .card-header h6 {
+    color: #ffffff;
+    font-weight: 500;
+    margin: 0;
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+.card-body p, .card-body li {
+    color: #e0e0e0;
+}
+
+/* Form element styles */
+.form-label {
+    color: #e0e0e0;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.form-text, small.text-muted {
+    color: #b0b0b0 !important;
+    font-size: 0.875rem;
+}
+
+.form-control, .form-select {
+    background: rgba(40, 40, 60, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+
+/* Button styles */
+.btn-primary {
+    background-color: #4a47a3;
+    border-color: #4a47a3;
+}
+
+.btn-primary:hover {
+    background-color: #3b388a;
+    border-color: #3b388a;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268;
+    border-color: #5a6268;
+}
+
+.btn-outline-primary {
+    color: #ffffff;
+    border-color: #4a47a3;
+}
+
+.btn-outline-primary:hover {
+    background-color: #4a47a3;
+    border-color: #4a47a3;
+    color: #ffffff;
+}
+
+.btn-outline-secondary {
+    color: #e0e0e0;
+    border-color: #6c757d;
+}
+
+.btn-outline-secondary:hover {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    color: #ffffff;
+}
+
+/* Alert styles */
+.alert-info {
+    background-color: rgba(74, 71, 163, 0.15);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+.alert-info h6 {
+    color: #ffffff;
+    margin-bottom: 0.75rem;
+}
+
+.alert-info code {
+    background-color: rgba(74, 71, 163, 0.3);
+    color: #ffffff;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.alert-success {
+    background-color: rgba(40, 167, 69, 0.15);
+    border-color: rgba(40, 167, 69, 0.3);
+    color: #e0e0e0;
+}
+
+.alert-danger {
+    background-color: rgba(220, 53, 69, 0.15);
+    border-color: rgba(220, 53, 69, 0.3);
+    color: #e0e0e0;
+}
+
+/* Nav tab styles */
+.nav-tabs {
+    border-bottom-color: rgba(74, 71, 163, 0.3);
+}
+
+.nav-tabs .nav-link {
+    color: #e0e0e0;
+    background: transparent;
+    border: none;
+    padding: 0.75rem 1rem;
+}
+
+.nav-tabs .nav-link:hover {
+    border-color: rgba(74, 71, 163, 0.3);
+    isolation: isolate;
+    color: #ffffff;
+}
+
+.nav-tabs .nav-link.active {
+    color: #ffffff;
+    background: rgba(74, 71, 163, 0.2);
+    border-color: rgba(74, 71, 163, 0.3);
+    border-bottom-color: transparent;
+}
+
+/* Fix for tab content visibility */
+.tab-content > .tab-pane {
+    display: none;
+}
+
+.tab-content > .active {
+    display: block;
+}
+
+/* Common text styles */
+.text-muted {
+    color: #adb5bd !important;
+}
+
+h6 {
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+code {
+    color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+}
+
+/* Table adjustments */
+.table {
+    color: #e0e0e0;
+}
+
+.table th {
+    background-color: rgba(74, 71, 163, 0.2);
+    color: #ffffff;
+    font-weight: 500;
+}
+
+.table td {
+    border-color: rgba(74, 71, 163, 0.1);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(74, 71, 163, 0.1);
+}
+
+/* Table checkbox styles are now handled by the universal overrides below */
+
+/* Link styles */
+a {
+    color: #4a47a3;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #3b388a;
+    text-decoration: underline;
+}
+
+/* Dark mode adjustments - these now apply to both dark mode preference and normal mode */
+body {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+
+.card {
+    background-color: #1e1e1e;
+    border-color: #333;
+}
+
+.card-header {
+    background-color: rgba(74, 71, 163, 0.2);
+    border-bottom-color: #333;
+}
+
+.form-control, .form-select {
+    background-color: #2d2d2d;
+    border-color: #444;
+    color: #e0e0e0;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+}
+
+.code-block {
+    background-color: #252525;
+    color: #e0e0e0;
+}
+
+.actions-bar {
+    background-color: rgba(74, 71, 163, 0.15);
+}
+
+/* JSON syntax highlighting - dark theme */
+.json-key {
+    color: #63b3ed;
+}
+.json-string {
+    color: #84e1bc;
+}
+.json-number {
+    color: #f8b4b4;
+}
+.json-boolean {
+    color: #a5b4fc;
+}
+.json-null {
+    color: #9ca3af;
+}
+
+/* Fix for Bootstrap dark mode */
+[data-bs-theme="dark"] {
+    --bs-table-header-bg: #252525;
+    --bs-body-bg: #121212;
+}
+
+/* Test results card */
+#testResultsCard .card-header {
+    background-color: rgba(74, 71, 163, 0.2);
+}
+
+#testResultsCard .card-header h6 {
+    color: #ffffff;
+}
+
+/* Improve visibility of test results content */
+#testResultsCard .card-body {
+    background: rgba(30, 30, 50, 0.9);
+    color: #e0e0e0;
+}
+
+#testResultsCard .alert-success {
+    background-color: rgba(25, 135, 84, 0.2);
+    border-color: rgba(25, 135, 84, 0.4);
+    color: #d1e7dd;
+}
+
+#testResultsCard .alert-info {
+    background-color: rgba(13, 110, 253, 0.2);
+    border-color: rgba(13, 110, 253, 0.4);
+    color: #b6d4fe;
+}
+
+/* Sample item preview styling */
+.sample-item-preview {
+    background: rgba(40, 40, 60, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.sample-item-preview h6 {
+    color: #ffffff;
+    margin-bottom: 0.75rem;
+}
+
+.sample-item-preview .sample-field {
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.sample-item-preview .field-label {
+    color: #4a47a3;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.sample-item-preview .field-value {
+    color: #e0e0e0;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.85rem;
+    word-break: break-all;
+    margin-top: 0.25rem;
+}
+
+/* Detected patterns styling */
+.detected-patterns {
+    background: rgba(25, 135, 84, 0.1);
+    border: 1px solid rgba(25, 135, 84, 0.3);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Regex test button styling */
+.regex-test-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.regex-test-btn:disabled:hover {
+    background-color: transparent;
+    border-color: #6c757d;
+}
+
+/* Regex match highlighting */
+.regex-match {
+    background-color: #ffeb3b;
+    color: #000;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.detected-patterns h6 {
+    color: #198754;
+    margin-bottom: 0.75rem;
+}
+
+.detected-patterns .pattern-item {
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.detected-patterns .pattern-name {
+    color: #198754;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.detected-patterns .pattern-value {
+    color: #e0e0e0;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+/* Media queries for responsive design */
+@media (max-width: 768px) {
+    .card-body {
+        padding: 1rem;
+    }
+
+    .form-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-section h6 {
+        margin-bottom: 0.75rem;
+    }
+}
+
+/* Custom patterns styles */
+.custom-pattern-item {
+    background: rgba(74, 71, 163, 0.1);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+}
+
+/* URL protection styling */
+.protected-url {
+    font-family: monospace;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    padding: 0.2em 0.4em;
+    position: relative;
+}
+
+.protected-url::after {
+    content: "•••••••";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(30, 30, 50, 0.8);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: 4px;
+}
+
+.protected-url:not(:hover)::after {
+    opacity: 1;
+}
+
+/* Catalog checkboxes styling */
+.catalog-checkbox-container {
+    max-height: 250px;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+/* Regex test modal styling */
+#regexTestResult {
+    background-color: rgba(74, 71, 163, 0.1);
+    border-radius: 4px;
+    padding: 1rem;
+    border: 1px solid rgba(74, 71, 163, 0.3);
+}
+
+#regexMatchResult {
+    font-family: monospace;
+    white-space: pre-wrap;
+}
+
+/* Styles for highlighted matches */
+.regex-match {
+    background-color: rgba(74, 71, 163, 0.3);
+    padding: 0.1em 0.2em;
+    border-radius: 2px;
+    font-weight: bold;
+}
+
+/* Tooltip styles */
+.rss-tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.rss-tooltip .tooltip-text {
+    visibility: hidden;
+    width: 200px;
+    background-color: #4a47a3;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.rss-tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Additional styling for source and torrent type fields */
+#feedSource,
+#torrentType {
+    background: rgba(40, 40, 60, 0.9);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+#feedSource:focus,
+#torrentType:focus {
+    background: rgba(50, 50, 70, 0.9);
+    border-color: rgba(74, 71, 163, 0.6);
+    box-shadow: 0 0 0 0.25rem rgba(74, 71, 163, 0.25);
+    color: #ffffff;
+}
+
+/* Details/summary styling for collapsible JSON */
+details {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #60a5fa;
+    padding: 0.25rem;
+    user-select: none;
+}
+
+details summary:hover {
+    color: #93c5fd;
+}
+
+details[open] summary {
+    margin-bottom: 0.5rem;
+}
+
+/* Dark theme improvements */
+[data-bs-theme="dark"] {
+    background-color: #1a1a2e !important;
+    color: #e0e0e0 !important;
+}
+
+/* Improve modal dark theme */
+[data-bs-theme="dark"] .modal-content {
+    background-color: rgba(30, 30, 50, 0.95);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .modal-header {
+    background-color: rgba(74, 71, 163, 0.2);
+    border-bottom: 1px solid rgba(74, 71, 163, 0.3);
+}
+
+[data-bs-theme="dark"] .modal-title {
+    color: #ffffff;
+}
+
+[data-bs-theme="dark"] .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Fix table dark theme */
+[data-bs-theme="dark"] .table {
+    --bs-table-bg: rgba(30, 30, 50, 0.5);
+    --bs-table-striped-bg: rgba(40, 40, 60, 0.3);
+    --bs-table-hover-bg: rgba(74, 71, 163, 0.1);
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .table th {
+    background-color: rgba(74, 71, 163, 0.2);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #ffffff;
+}
+
+[data-bs-theme="dark"] .table td {
+    border-color: rgba(74, 71, 163, 0.2);
+    color: #e0e0e0;
+}
+
+/* Fix dropdown and select elements */
+[data-bs-theme="dark"] .form-select {
+    background-color: rgba(40, 40, 60, 0.9);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .form-select:focus {
+    background-color: rgba(50, 50, 70, 0.9);
+    border-color: rgba(74, 71, 163, 0.6);
+    box-shadow: 0 0 0 0.25rem rgba(74, 71, 163, 0.25);
+}
+
+/* Fix checkbox styling */
+/* Dark theme checkbox styles are now handled by the universal overrides above */
+
+/* Additional catalog-specific label styling */
+
+
+/* Fix textarea dark theme */
+[data-bs-theme="dark"] textarea.form-control {
+    background-color: rgba(40, 40, 60, 0.9);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] textarea.form-control:focus {
+    background-color: rgba(50, 50, 70, 0.9);
+    border-color: rgba(74, 71, 163, 0.6);
+    box-shadow: 0 0 0 0.25rem rgba(74, 71, 163, 0.25);
+}
+
+/* Fix spinner visibility */
+[data-bs-theme="dark"] .spinner-border {
+    color: #4a47a3;
+}
+
+/* Fix empty state visibility */
+[data-bs-theme="dark"] .empty-state {
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .empty-state i {
+    color: rgba(74, 71, 163, 0.6);
+}
+
+/* Fix input group styling */
+[data-bs-theme="dark"] .input-group-text {
+    background-color: rgba(40, 40, 60, 0.9);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+/* Fix button group styling */
+[data-bs-theme="dark"] .btn-group .btn {
+    border-color: rgba(74, 71, 163, 0.3);
+}
+
+/* Improve status dot visibility */
+.status-dot.bg-success {
+    background-color: #28a745 !important;
+}
+
+.status-dot.bg-secondary {
+    background-color: #6c757d !important;
+}
+
+/* Fix protected URL styling for dark theme */
+[data-bs-theme="dark"] .protected-url::after {
+    color: #e0e0e0;
+    background-color: rgba(30, 30, 50, 0.9);
+}
+
+/* Fix tooltip styling */
+[data-bs-theme="dark"] .rss-tooltip .tooltip-text {
+    background-color: rgba(20, 20, 35, 0.95);
+    color: #e0e0e0;
+    border: 1px solid rgba(74, 71, 163, 0.3);
+}
+
+/* Fix details/summary styling */
+[data-bs-theme="dark"] details summary {
+    background-color: rgba(40, 40, 60, 0.5);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] details summary:hover {
+    background-color: rgba(74, 71, 163, 0.2);
+}
+
+[data-bs-theme="dark"] details[open] summary {
+    background-color: rgba(74, 71, 163, 0.3);
+    color: #ffffff;
+}
+
+/* Fix regex test result styling */
+[data-bs-theme="dark"] #regexTestResult .alert-info {
+    background-color: rgba(74, 71, 163, 0.1);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+/* Fix catalog checkbox container */
+[data-bs-theme="dark"] .catalog-checkboxes-container {
+    background-color: rgba(40, 40, 60, 0.5);
+    border-color: rgba(74, 71, 163, 0.3) !important;
+}
+
+/* Fix small text visibility */
+[data-bs-theme="dark"] small.text-muted {
+    color: #a0a0a0 !important;
+}
+
+/* Fix border utilities for dark theme */
+[data-bs-theme="dark"] .border {
+    border-color: rgba(74, 71, 163, 0.3) !important;
+}
+
+/* Fix text color utilities */
+[data-bs-theme="dark"] .text-muted {
+    color: #a0a0a0 !important;
+}
+
+/* Ensure all form elements have proper contrast */
+[data-bs-theme="dark"] .form-control::placeholder {
+    color: #a0a0a0;
+    opacity: 1;
+}
+
+/* Fix navigation and tab styling if present */
+[data-bs-theme="dark"] .nav-tabs .nav-link {
+    background-color: rgba(40, 40, 60, 0.5);
+    border-color: rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .nav-tabs .nav-link.active {
+    background-color: rgba(74, 71, 163, 0.3);
+    border-color: rgba(74, 71, 163, 0.6);
+    color: #ffffff;
+}
+
+/* Fix code blocks for better visibility */
+[data-bs-theme="dark"] .code-block {
+    background-color: rgba(20, 20, 35, 0.8);
+    border: 1px solid rgba(74, 71, 163, 0.3);
+    color: #e0e0e0;
+}
+
+/* Ensure buttons have proper contrast */
+[data-bs-theme="dark"] .btn-outline-danger {
+    color: #dc3545;
+    border-color: #dc3545;
+}
+
+[data-bs-theme="dark"] .btn-outline-danger:hover {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: #ffffff;
+}
+
+[data-bs-theme="dark"] .btn-outline-success {
+    color: #28a745;
+    border-color: #28a745;
+}
+
+[data-bs-theme="dark"] .btn-outline-success:hover {
+    background-color: #28a745;
+    border-color: #28a745;
+    color: #ffffff;
+}
+
+[data-bs-theme="dark"] .btn-outline-warning {
+    color: #ffc107;
+    border-color: #ffc107;
+}
+
+[data-bs-theme="dark"] .btn-outline-warning:hover {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: #000000;
+}

@@ -272,7 +272,7 @@ class MetadataFetcher:
         year: Optional[int] = None,
         media_type: Optional[str] = None,
         created_at: Optional[str | datetime] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Search for metadata across configured sources with caching support.
         """
@@ -298,7 +298,7 @@ class MetadataFetcher:
             logger.info(f"Cache hit for search: {title}")
             return cached_data
 
-        metadata = None
+        metadata = {}
         sources = self.config.get_source_order()
 
         for source in sources:

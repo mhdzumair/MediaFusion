@@ -65,7 +65,7 @@ async def get_cached_stream_url_and_redirect(
             and user_data.mediaflow_config.proxy_debrid_streams
         ):
             response_headers = {
-                "Content-Disposition": "attachment, filename={}".format(
+                "content-disposition": "attachment, filename={}".format(
                     path.basename(cached_stream_url)
                 )
             }
@@ -153,7 +153,7 @@ def apply_mediaflow_proxy_if_needed(video_url, user_data):
     """
     if user_data.mediaflow_config and user_data.mediaflow_config.proxy_debrid_streams:
         response_headers = {
-            "Content-Disposition": "attachment, filename={}".format(
+            "content-disposition": "attachment, filename={}".format(
                 path.basename(video_url)
             )
         }
@@ -204,22 +204,26 @@ async def get_cached_stream_url(cached_stream_url_key):
     return None
 
 
-@router.head("/{secret_str}/stream/{info_hash}", tags=["streaming_provider"])
-@router.get("/{secret_str}/stream/{info_hash}", tags=["streaming_provider"])
-@router.head("/{secret_str}/stream/{info_hash}/{filename}", tags=["streaming_provider"])
-@router.get("/{secret_str}/stream/{info_hash}/{filename}", tags=["streaming_provider"])
+@router.head("/{secret_str}/playback/{info_hash}", tags=["streaming_provider"])
+@router.get("/{secret_str}/playback/{info_hash}", tags=["streaming_provider"])
 @router.head(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+    "/{secret_str}/playback/{info_hash}/{filename}", tags=["streaming_provider"]
 )
 @router.get(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+    "/{secret_str}/playback/{info_hash}/{filename}", tags=["streaming_provider"]
 )
 @router.head(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}/{filename}",
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+)
+@router.get(
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}", tags=["streaming_provider"]
+)
+@router.head(
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}/{filename}",
     tags=["streaming_provider"],
 )
 @router.get(
-    "/{secret_str}/stream/{info_hash}/{season}/{episode}/{filename}",
+    "/{secret_str}/playback/{info_hash}/{season}/{episode}/{filename}",
     tags=["streaming_provider"],
 )
 @wrappers.exclude_rate_limit

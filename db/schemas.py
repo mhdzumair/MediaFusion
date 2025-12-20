@@ -1,5 +1,6 @@
 import math
-from typing import Literal, Optional
+from datetime import datetime
+from typing import Literal, Optional, List
 
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
@@ -143,6 +144,7 @@ class StreamingProvider(BaseModel):
         "qbittorrent",
         "stremthru",
         "easydebrid",
+        "debrider",
     ] = Field(alias="sv")
     stremthru_store_name: (
         Literal[
@@ -469,6 +471,7 @@ class CacheStatusRequest(BaseModel):
         "pikpak",
         "torbox",
         "easydebrid",
+        "debrider",
     ]
     info_hashes: list[str]
 
@@ -492,6 +495,7 @@ class CacheSubmitRequest(BaseModel):
         "pikpak",
         "torbox",
         "easydebrid",
+        "debrider",
     ]
     info_hashes: list[str]
 
@@ -507,3 +511,119 @@ class MigrateID(BaseModel):
     mediafusion_id: str
     imdb_id: str
     media_type: Literal["movie", "series"]
+
+
+class ParsingPattern(BaseModel):
+    field: str
+    path: str
+    regex: Optional[str] = None
+    regex_group: Optional[int] = 0
+
+
+class RSSFeedParsingPatterns(BaseModel):
+    title: Optional[str] = "title"
+    description: Optional[str] = "description"
+    pubDate: Optional[str] = "pubDate"
+    poster: Optional[str] = None
+    background: Optional[str] = None
+    logo: Optional[str] = None
+    category: Optional[str] = "category"
+
+    # Advanced patterns with regex support
+    magnet: Optional[str] = None
+    magnet_regex: Optional[str] = None
+    torrent: Optional[str] = None
+    torrent_regex: Optional[str] = None
+    size: Optional[str] = None
+    size_regex: Optional[str] = None
+    seeders: Optional[str] = None
+    seeders_regex: Optional[str] = None
+    category_regex: Optional[str] = None
+    episode_name_parser: Optional[str] = None  # New field for episode name parsing
+
+    # Regex group numbers (0 = full match, 1+ = capture groups)
+    magnet_regex_group: int = 1
+    torrent_regex_group: int = 1
+    size_regex_group: int = 1
+    seeders_regex_group: int = 1
+    category_regex_group: int = 1
+
+
+class CatalogPattern(BaseModel):
+    name: str  # Descriptive name for the pattern
+    regex: str  # Regex pattern to match content
+    case_sensitive: bool = False  # Whether the regex is case sensitive
+    enabled: bool = True  # Whether this pattern is active
+    target_catalogs: List[str]  # List of catalog IDs to assign when matched
+
+
+class RSSFeedFilters(BaseModel):
+    title_filter: Optional[str] = None  # Regex pattern for title inclusion
+    title_exclude_filter: Optional[str] = None  # Regex pattern for title exclusion
+    min_size_mb: Optional[int] = None  # Minimum size in MB
+    max_size_mb: Optional[int] = None  # Maximum size in MB
+    min_seeders: Optional[int] = None  # Minimum number of seeders
+    category_filter: Optional[List[str]] = None  # List of allowed categories
+
+
+class RSSFeedMetrics(BaseModel):
+    """RSS Feed scraping metrics"""
+    total_items_found: int = 0
+    total_items_processed: int = 0
+    total_items_skipped: int = 0
+    total_errors: int = 0
+    last_scrape_duration: Optional[float] = None  # in seconds
+    items_processed_last_run: int = 0
+    items_skipped_last_run: int = 0
+    errors_last_run: int = 0
+    skip_reasons: dict[str, int] = Field(default_factory=dict)  # reason -> count
+
+
+class RSSFeed(BaseModel):
+    id: Optional[str] = Field(alias="_id")
+    name: str
+    url: str
+    parsing_patterns: RSSFeedParsingPatterns = Field(default_factory=RSSFeedParsingPatterns)
+    filters: RSSFeedFilters = Field(default_factory=RSSFeedFilters)
+    active: bool = True
+    last_scraped: Optional[datetime] = None
+    source: Optional[str] = None  # New field for source name
+    torrent_type: Optional[str] = "public"  # New field for torrent type (public/private/webseed)
+    auto_detect_catalog: Optional[bool] = False
+    catalog_patterns: Optional[List[CatalogPattern]] = Field(default_factory=list)
+    metrics: Optional[RSSFeedMetrics] = Field(default_factory=RSSFeedMetrics)
+
+
+class RSSFeedCreate(BaseModel):
+    name: str
+    url: str
+    auto_detect_catalog: Optional[bool] = False
+    catalog_patterns: Optional[List[CatalogPattern]] = Field(default_factory=list)
+    parsing_patterns: RSSFeedParsingPatterns = RSSFeedParsingPatterns()
+    filters: RSSFeedFilters = RSSFeedFilters()
+    active: bool = True
+    api_password: Optional[str] = None
+    source: Optional[str] = None  # New field for source name
+    torrent_type: Optional[str] = "public"  # New field for torrent type
+
+
+class RSSFeedUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    parsing_patterns: Optional[RSSFeedParsingPatterns] = None
+    filters: Optional[RSSFeedFilters] = None
+    active: Optional[bool] = None
+    auto_detect_catalog: Optional[bool] = None
+    catalog_patterns: Optional[List[CatalogPattern]] = None
+    source: Optional[str] = None
+    torrent_type: Optional[str] = None
+
+
+class RSSFeedBulkImport(BaseModel):
+    feeds: List[RSSFeedCreate]
+    api_password: str
+
+
+class RSSFeedExamine(BaseModel):
+    url: str
+    api_password: str

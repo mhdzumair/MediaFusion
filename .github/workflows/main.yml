@@ -18,8 +18,11 @@ jobs:
       - name: Extract versions
         id: extract_versions
         run: |
-          # Extract current version from release body
-          BODY="${{ github.event.release.body }}"
+          # Extract current version from release body using here-document to avoid command substitution
+          BODY=$(cat << 'EOF'
+          ${{ github.event.release.body }}
+          EOF
+          )
           if ! PREVIOUS_VERSION=$(echo "$BODY" | grep -o '/compare/.*\.\.\.' | sed 's/\/compare\///' | sed 's/\.\.\.//' || true); then
             echo "Error: Failed to extract previous version from release body"
             exit 1

@@ -44,6 +44,8 @@ class RemoteConfigManager:
 
     def _fetch_config(self) -> Dict[str, Any]:
         """Fetch the configuration from either remote or local source."""
+        if settings.use_config_source == "local":
+            return self._load_local_config(settings.local_config_path)
         if settings.remote_config_source.startswith(("http://", "https://")):
             return self._fetch_remote_config(settings.remote_config_source)
         return self._load_local_config(settings.remote_config_source)

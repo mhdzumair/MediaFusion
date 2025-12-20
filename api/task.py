@@ -15,6 +15,7 @@ from scrapers import (
     feed_scraper,
     background_scraper,
     scraper_tasks,
+    rss_scraper,
 )
 from streaming_providers import cache_helpers
 from utils import validation_helper
