@@ -70,7 +70,6 @@ def downgrade() -> None:
         sa.ForeignKeyConstraint(["catalog_id"], ["catalog.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["media_id"], ["base_metadata.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("media_id", "catalog_id"),
-        postgresql_partition_by="LIST (catalog_id)",
     )
     op.create_index(
         op.f("ix_media_catalog_link_priority"),

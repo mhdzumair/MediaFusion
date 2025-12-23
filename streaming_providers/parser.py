@@ -397,6 +397,14 @@ async def _save_torrent_stream(torrent_stream: TorrentStreamData) -> None:
         "size": torrent_stream.size,
         "updated_at": datetime.now(tz=timezone.utc),
     }
+    
+    # Include known_file_details if present (serialize KnownFile objects to dicts)
+    if torrent_stream.known_file_details:
+        updates["known_file_details"] = [
+            kf.model_dump() if hasattr(kf, 'model_dump') else {"filename": kf.filename, "size": kf.size}
+            for kf in torrent_stream.known_file_details
+        ]
+    
     # Filter out None values except for is_blocked
     updates = {k: v for k, v in updates.items() if v is not None or k == "is_blocked"}
     

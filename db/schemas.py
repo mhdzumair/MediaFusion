@@ -478,6 +478,8 @@ class TorrentStreamData(BaseModel):
     announce_list: List[str] = Field(default_factory=list)
     episode_files: List[EpisodeFileData] = Field(default_factory=list)
     catalog: List[str] = Field(default_factory=list)
+    # Store file details from debrid service for later metadata fixing
+    known_file_details: Optional[List["KnownFile"]] = None
     
     @property
     def info_hash(self) -> str:

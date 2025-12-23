@@ -441,6 +441,8 @@ class TorrentStream(TimestampMixin, table=True):
     uploaded_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     hdr: list[str] | None = Field(default=None, sa_type=JSON)
     torrent_file: bytes | None = Field(default=None)
+    # Store file details from debrid service for later metadata fixing
+    known_file_details: list[dict] | None = Field(default=None, sa_type=JSON)
 
     # For movies only (nullable for series)
     filename: Optional[str] = None
