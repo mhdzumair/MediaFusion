@@ -40,10 +40,27 @@ These settings define the basic configuration and identity of your MediaFusion i
 
 ## Database and Cache Settings
 
-- **mongo_uri** (required): MongoDB connection URI.
-- **db_max_connections** (default: `50`): Maximum database connections.
+### PostgreSQL Settings (Primary Database)
+- **postgres_uri** (required): PostgreSQL connection URI for primary read-write operations.
+  - Format: `postgresql+asyncpg://user:password@host:port/database`
+  - Example: `postgresql+asyncpg://mediafusion:password@localhost:5432/mediafusion`
+- **postgres_read_uri** (optional): PostgreSQL connection URI for read replica.
+  - If not set, reads will use the primary `postgres_uri`.
+  - Use this for scaling read operations in production.
+- **db_max_connections** (default: `50`): Maximum database connections per pool.
+
+### MongoDB Settings (Legacy/Migration)
+- **mongo_uri** (required for migration): MongoDB connection URI.
+  - Only needed during the migration process from MongoDB to PostgreSQL.
+  - Can be removed after successful migration.
+
+### Redis Settings
 - **redis_url** (default: `"redis://redis-service:6379"`): Redis service URL for caching and tasks.
 - **redis_max_connections** (default: `100`): Maximum Redis connections.
+- **redis_retry_attempts** (default: `3`): Number of retry attempts for Redis operations.
+- **redis_retry_delay** (default: `0.1`): Delay in seconds between retry attempts.
+- **redis_connection_timeout** (default: `10`): Connection timeout in seconds.
+- **redis_enable_circuit_breaker** (default: `True`): Enable circuit breaker for Redis operations.
 
 ## External Service Settings
 
@@ -178,8 +195,10 @@ You can configure these settings either through environment variables in your de
 #### Configuration for k8s
 ```yaml
 env:
-  - name: MONGO_URI
-    value: "your_mongo_uri"
+  - name: POSTGRES_URI
+    value: "postgresql+asyncpg://mediafusion:password@postgres:5432/mediafusion"
+  - name: POSTGRES_READ_URI
+    value: "postgresql+asyncpg://mediafusion:password@postgres-read:5432/mediafusion"  # Optional
   - name: DB_MAX_CONNECTIONS
     value: "100"
   # Add other configurations as needed
@@ -188,7 +207,8 @@ env:
 #### Configuration for Docker Compose
 Create or modify `.env` file:
 ```env
-MONGO_URI=your_mongo_uri
+POSTGRES_URI=postgresql+asyncpg://mediafusion:password@postgres:5432/mediafusion
+POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:password@postgres-read:5432/mediafusion  # Optional
 DB_MAX_CONNECTIONS=100
 # Add other configurations as needed
 ```

@@ -4,7 +4,7 @@ from typing import Optional, List
 
 import aiohttp
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
@@ -145,7 +145,7 @@ class OffCloud(DebridClient):
         self,
         request_id: str,
         torrent_info: dict,
-        stream: TorrentStreams,
+        stream: TorrentStreamData,
         filename: Optional[str],
         season: Optional[int],
         episode: Optional[int],

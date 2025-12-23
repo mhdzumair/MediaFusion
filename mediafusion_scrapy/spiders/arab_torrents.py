@@ -60,7 +60,7 @@ class ArabTorrentSpider(scrapy.Spider):
                         data.append((paginated_link, language, video_type))
         return data
 
-    def start_requests(self):
+    async def start(self):
         if self.search_keyword:
             # Construct the search URL and initiate search
             search_url = f"{self.homepage}/index.php?search={self.search_keyword}"

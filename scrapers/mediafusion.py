@@ -5,12 +5,13 @@ import PTT
 import httpx
 
 from db.config import settings
-from db.models import MediaFusionMetaData, TorrentStreams
+from db.schemas import MetadataData, TorrentStreamData
 from db.schemas import UserData
 from scrapers.stremio_addons import StremioScraper
 from utils.crypto import crypto_utils
 from utils.parser import convert_size_to_bytes
 from utils.runtime_const import MEDIAFUSION_SEARCH_TTL
+from utils import const
 
 
 class MediafusionScraper(StremioScraper):
@@ -23,20 +24,21 @@ class MediafusionScraper(StremioScraper):
             logger_name=__name__,
         )
         self.http_client = httpx.AsyncClient(
-            timeout=30, proxy=settings.requests_proxy_url
+            timeout=30, proxy=settings.requests_proxy_url,
+            headers=const.UA_HEADER,
         )
 
     def _generate_url(
         self,
         user_data: UserData,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
     ) -> str:
-        url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}.json"
+        url = f"{self.base_url}/D-/stream/{catalog_type}/{metadata.id}.json"
         if catalog_type == "series":
-            url = f"{self.base_url}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
+            url = f"{self.base_url}/D-/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
         upstream_user_data = UserData(
             api_password=settings.mediafusion_api_password,
             streaming_provider=user_data.streaming_provider,
@@ -53,11 +55,11 @@ class MediafusionScraper(StremioScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         return await super()._scrape_and_parse(
             user_data, metadata, catalog_type, season, episode
         )

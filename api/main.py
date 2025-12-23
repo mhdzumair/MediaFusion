@@ -23,9 +23,9 @@ from starlette.responses import HTMLResponse
 
 from api import middleware
 from api.scheduler import setup_scheduler
-from db import crud, database, schemas, public_schemas, sql_crud
+from db import database, schemas, public_schemas, sql_crud
 from db.config import settings
-from db.database import get_async_session
+from db.database import get_async_session, get_read_session
 from db.enums import MediaType
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import SortingOption
@@ -34,7 +34,7 @@ from kodi.routes import kodi_router
 from metrics.routes import metrics_router
 from api.frontend_api import router as frontend_api_router
 from scrapers.routes import router as scrapers_router
-from scrapers.rpdb import update_rpdb_posters, update_rpdb_poster
+from scrapers.rpdb import update_rpdb_posters
 from api.rss_feeds import router as rss_feeds_router
 from streaming_providers import mapper
 from streaming_providers.routes import router as streaming_provider_router
@@ -255,10 +255,20 @@ async def configure(
 async def get_manifest(
     response: Response,
     user_data: schemas.UserData = Depends(get_user_data),
+    session: AsyncSession = Depends(get_read_session),
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
     catalog_types = ["movie", "series", "tv"]
-    genre_tasks = [crud.get_genres(catalog_type) for catalog_type in catalog_types]
+
+    media_type_map = {
+        "movie": MediaType.MOVIE,
+        "series": MediaType.SERIES,
+        "tv": MediaType.TV,
+    }
+    genre_tasks = [
+        sql_crud.get_genres(session, media_type_map[ct]) for ct in catalog_types
+    ]
+
     try:
         genres_list = await asyncio.gather(*genre_tasks)
     except Exception as e:
@@ -319,15 +329,22 @@ async def get_manifest(
     tags=["catalog"],
 )
 @app.get(
-    "/{secret_str}/catalog/{catalog_type}/{catalog_id}/skip={skip}&genre={genre}.json",
-    response_model=schemas.Metas,
+    "/catalog/{catalog_type}/{catalog_id}/skip={skip}&genre={genre}.json",
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
 )
 @app.get(
     "/{secret_str}/catalog/{catalog_type}/{catalog_id}/genre={genre}&skip={skip}.json",
-    response_model=schemas.Metas,
+    response_model=public_schemas.Metas,
+    response_model_exclude_none=True,
+    response_model_by_alias=False,
+    tags=["catalog"],
+)
+@app.get(
+    "/catalog/{catalog_type}/{catalog_id}/genre={genre}&skip={skip}.json",
+    response_model=public_schemas.Metas,
     response_model_exclude_none=True,
     response_model_by_alias=False,
     tags=["catalog"],
@@ -342,7 +359,8 @@ async def get_catalog(
     skip: int = 0,
     genre: str = None,
     user_data: UserData = Depends(get_user_data),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_read_session),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> public_schemas.Metas:
     """
     Enhanced catalog endpoint with support for watchlists and external services
@@ -382,6 +400,40 @@ async def get_catalog(
                 pass
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
+
+    # Handle MDBList catalogs specially
+    if catalog_id.startswith("mdblist_") and user_data.mdblist_config:
+        # Parse mdblist ID from catalog_id (format: mdblist_{type}_{id})
+        parts = catalog_id.split("_")
+        if len(parts) >= 3:
+            mdblist_id = int(parts[-1])  # Last part is the list ID
+            # Find matching list config
+            list_config = next(
+                (lst for lst in user_data.mdblist_config.lists if lst.id == mdblist_id),
+                None,
+            )
+            if list_config:
+                meta_list = await sql_crud.get_mdblist_meta_list(
+                    session=session,
+                    user_data=user_data,
+                    background_tasks=background_tasks,
+                    list_config=list_config,
+                    catalog_type=catalog_type.value,
+                    genre=genre,
+                    skip=skip,
+                    limit=50,
+                )
+                metas = public_schemas.Metas(metas=meta_list)
+                # Cache result if applicable
+                if cache_key:
+                    await REDIS_ASYNC_CLIENT.set(
+                        cache_key,
+                        metas.model_dump_json(exclude_none=True),
+                        ex=settings.meta_cache_ttl,
+                    )
+                return await update_rpdb_posters(metas, user_data, catalog_type)
+        # If parsing failed, return empty
+        return public_schemas.Metas(metas=[])
 
     # Get metadata list
     metas = await sql_crud.get_catalog_meta_list(
@@ -482,7 +534,7 @@ async def search_meta(
     catalog_id: str,
     search_query: str,
     user_data: UserData = Depends(get_user_data),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_read_session),
 ) -> public_schemas.Metas:
     """
     Enhanced search endpoint with caching and efficient text search
@@ -542,7 +594,7 @@ async def search_meta(
 async def get_meta(
     catalog_type: MediaType,
     meta_id: str,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_read_session),
 ) -> schemas.MetaItem:
     metadata = await sql_crud.get_metadata_by_type(session, catalog_type, meta_id)
     if not metadata:
@@ -621,6 +673,7 @@ async def get_streams(
     episode: int = None,
     user_data: schemas.UserData = Depends(get_user_data),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    session: AsyncSession = Depends(get_read_session),
 ):
     if "p2p" in settings.disabled_providers and not user_data.streaming_provider:
         return {"streams": []}
@@ -667,28 +720,29 @@ async def get_streams(
             else:
                 raise HTTPException(status_code=404, detail="Meta ID not found.")
         else:
-            fetched_streams = await crud.get_movie_streams(
-                user_data, secret_str, video_id, user_ip, background_tasks
+            fetched_streams = await sql_crud.get_movie_streams(
+                session, video_id, user_data, secret_str, user_ip, background_tasks
             )
             fetched_streams.extend(user_feeds)
     elif catalog_type == "series":
-        fetched_streams = await crud.get_series_streams(
-            user_data,
-            secret_str,
+        fetched_streams = await sql_crud.get_series_streams(
+            session,
             video_id,
             season,
             episode,
+            user_data,
+            secret_str,
             user_ip,
             background_tasks,
         )
         fetched_streams.extend(user_feeds)
     elif catalog_type == "events":
-        fetched_streams = await crud.get_event_streams(video_id, user_data)
+        fetched_streams = await sql_crud.get_event_streams(video_id, user_data)
         response.headers.update(const.NO_CACHE_HEADERS)
     else:
         response.headers.update(const.NO_CACHE_HEADERS)
-        fetched_streams = await crud.get_tv_streams(
-            video_id, get_request_namespace(request), user_data
+        fetched_streams = await sql_crud.get_tv_streams_formatted(
+            session, video_id, get_request_namespace(request), user_data
         )
 
     return {"streams": fetched_streams}
@@ -810,6 +864,7 @@ def raise_poster_error(meta_id: str, error_message: str):
 async def get_poster(
     catalog_type: Literal["movie", "series", "tv", "events"],
     mediafusion_id: str,
+    session: AsyncSession = Depends(get_async_session),
 ):
     cache_key = f"{catalog_type}_{mediafusion_id}.jpg"
 
@@ -818,24 +873,52 @@ async def get_poster(
         image_byte_io = BytesIO(cached_image)
         return StreamingResponse(image_byte_io, media_type="image/jpeg")
 
-    # Query the MediaFusion data
+    # Query the MediaFusion data from PostgreSQL
     if catalog_type == "movie":
-        mediafusion_data = await crud.get_movie_data_by_id(mediafusion_id)
+        mediafusion_data = await sql_crud.get_movie_data_by_id(session, mediafusion_id)
     elif catalog_type == "series":
-        mediafusion_data = await crud.get_series_data_by_id(mediafusion_id)
+        mediafusion_data = await sql_crud.get_series_data_by_id(session, mediafusion_id)
     elif catalog_type == "events":
-        mediafusion_data = await crud.get_event_data_by_id(mediafusion_id)
+        mediafusion_data = await sql_crud.get_event_data_by_id(mediafusion_id)
     else:
-        mediafusion_data = await crud.get_tv_data_by_id(mediafusion_id)
+        mediafusion_data = await sql_crud.get_tv_data_by_id(session, mediafusion_id)
 
     if not mediafusion_data:
         return raise_poster_error(mediafusion_id, "MediaFusion ID not found.")
 
-    if mediafusion_data.is_poster_working is False or not mediafusion_data.poster:
+    # Extract poster data based on catalog type
+    # MovieMetadata, SeriesMetadata, TVMetadata (SQLModels) have base_metadata relationship
+    # Events (Pydantic) have attributes directly
+    if catalog_type == "events":
+        # Events are Pydantic models with direct attributes
+        poster_url = mediafusion_data.poster
+        is_poster_working = True  # Events don't track poster status
+        meta_id = mediafusion_data.id
+        title = mediafusion_data.title
+        imdb_rating = None
+    else:
+        # MovieMetadata, SeriesMetadata, TVMetadata - all have base_metadata (eagerly loaded)
+        base = mediafusion_data.base_metadata
+        poster_url = base.poster
+        is_poster_working = base.is_poster_working
+        meta_id = base.id
+        title = base.title
+        # Only Movie and Series have imdb_rating
+        imdb_rating = mediafusion_data.imdb_rating if catalog_type in ("movie", "series") else None
+
+    if is_poster_working is False or not poster_url:
         return raise_poster_error(mediafusion_id, "Poster not found.")
 
     try:
-        image_byte_io = await poster.create_poster(mediafusion_data)
+        # Create poster data using Pydantic model
+        poster_data = schemas.PosterData(
+            id=meta_id,
+            poster=poster_url,
+            title=title,
+            imdb_rating=imdb_rating,
+            is_add_title_to_poster=False,
+        )
+        image_byte_io = await poster.create_poster(poster_data)
         # Convert BytesIO to bytes for Redis
         image_bytes = image_byte_io.getvalue()
         # Save the generated image to Redis. expire in 7 days
@@ -847,18 +930,17 @@ async def get_poster(
         return raise_poster_error(mediafusion_id, "Poster generation timeout.")
     except aiohttp.ClientResponseError as e:
         if e.status == 404 and catalog_type != "events":
-            mediafusion_data.is_poster_working = False
-            await mediafusion_data.save()
+            # Update is_poster_working flag in PostgreSQL
+            await sql_crud.update_poster_working_status(session, mediafusion_id, False)
         return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
     except (ConnectionResetError, ValueError):
-        mediafusion_data.is_poster_working = False
-        await mediafusion_data.save()
+        await sql_crud.update_poster_working_status(session, mediafusion_id, False)
         return raise_poster_error(mediafusion_id, "Poster generation failed}")
     except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
         return raise_poster_error(mediafusion_id, f"Poster generation failed: {e}")
     except Exception as e:
         logging.error(
-            f"Unexpected error while creating poster: {mediafusion_data.poster} {e}",
+            f"Unexpected error while creating poster: {poster_url} {e}",
             exc_info=True,
         )
         return raise_poster_error(mediafusion_id, f"Unexpected error: {e}")
@@ -882,6 +964,7 @@ async def download_info(
     video_id: str,
     user_data: Annotated[schemas.UserData, Depends(get_user_data)],
     background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_read_session),
     season: int = None,
     episode: int = None,
 ):
@@ -894,23 +977,25 @@ async def download_info(
             detail="Download option is not enabled or no streaming provider configured",
         )
 
-    metadata = (
-        await crud.get_movie_data_by_id(video_id)
-        if catalog_type == "movie"
-        else await crud.get_series_data_by_id(video_id)
-    )
+    # Get metadata from PostgreSQL
+    if catalog_type == "movie":
+        metadata = await sql_crud.get_movie_data_by_id(session, video_id)
+    else:
+        metadata = await sql_crud.get_series_data_by_id(session, video_id)
+    
     if not metadata:
         raise HTTPException(status_code=404, detail="Metadata not found")
 
     user_ip = await get_user_public_ip(request, user_data)
 
+    # Get streams from PostgreSQL
     if catalog_type == "movie":
-        streams = await crud.get_movie_streams(
-            user_data, secret_str, video_id, user_ip, background_tasks
+        streams = await sql_crud.get_movie_streams(
+            session, video_id, user_data, secret_str, user_ip, background_tasks
         )
     else:
-        streams = await crud.get_series_streams(
-            user_data, secret_str, video_id, season, episode, user_ip, background_tasks
+        streams = await sql_crud.get_series_streams(
+            session, video_id, season, episode, user_data, secret_str, user_ip, background_tasks
         )
 
     streaming_provider_path = f"{settings.host_url}/streaming_provider/"
@@ -924,20 +1009,24 @@ async def download_info(
         _poster = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{video_id}.jpg?fallback=true"
     else:
         _poster = f"{settings.poster_host_url}/poster/{catalog_type}/{video_id}.jpg"
-    background = (
-        metadata.background
-        if metadata.background
-        else f"{settings.host_url}/static/images/background.jpg"
-    )
+    
+    # Get background from base_metadata for SQL models
+    bg = metadata.base_metadata.background if hasattr(metadata, 'base_metadata') else getattr(metadata, 'background', None)
+    background = bg if bg else f"{settings.host_url}/static/images/background.jpg"
+
+    # Get title, year, description from base_metadata
+    title = metadata.base_metadata.title if hasattr(metadata, 'base_metadata') else metadata.title
+    year = metadata.base_metadata.year if hasattr(metadata, 'base_metadata') else metadata.year
+    description = metadata.base_metadata.description if hasattr(metadata, 'base_metadata') else getattr(metadata, 'description', '')
 
     # Prepare context with all necessary data
     context = {
-        "title": metadata.title,
-        "year": metadata.year,
+        "title": title,
+        "year": year,
         "logo_url": settings.logo_url,
         "poster": _poster,
         "background": background,
-        "description": metadata.description,
+        "description": description,
         "streams": downloadable_streams,
         "catalog_type": catalog_type,
         "season": season,

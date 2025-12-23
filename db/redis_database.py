@@ -486,10 +486,49 @@ REDIS_SYNC_CLIENT = RedisWrapper(redis.Redis(
     connection_pool=redis.ConnectionPool.from_url(settings.redis_url, **pool_settings)
 ))
 
-# Create async client with connection pooling
-REDIS_ASYNC_CLIENT = RedisWrapper(redis.asyncio.Redis(
-    connection_pool=redis.asyncio.ConnectionPool.from_url(
-        settings.redis_url, **pool_settings
-    )
-))
+
+class EventLoopAwareRedisClient:
+    """
+    A Redis client wrapper that automatically creates new connections for different event loops.
+    This prevents "attached to a different loop" errors when using Redis from background tasks.
+    """
+    def __init__(self):
+        self._clients: dict[int, RedisWrapper] = {}
+    
+    def _get_client(self) -> RedisWrapper:
+        """Get or create a Redis client for the current event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop_id = id(loop)
+        except RuntimeError:
+            # No running loop - create a default client
+            loop_id = 0
+        
+        if loop_id not in self._clients:
+            self._clients[loop_id] = RedisWrapper(redis.asyncio.Redis(
+                connection_pool=redis.asyncio.ConnectionPool.from_url(
+                    settings.redis_url, **pool_settings
+                )
+            ))
+        return self._clients[loop_id]
+    
+    def __getattr__(self, name: str):
+        """Proxy all attribute access to the underlying client."""
+        return getattr(self._get_client(), name)
+
+
+# Create event-loop-aware async client
+REDIS_ASYNC_CLIENT = EventLoopAwareRedisClient()
+
+
+def get_redis_async_client() -> RedisWrapper:
+    """
+    Get a fresh async Redis client for the current event loop.
+    Use this in background tasks (e.g., Dramatiq) to avoid event loop conflicts.
+    """
+    return RedisWrapper(redis.asyncio.Redis(
+        connection_pool=redis.asyncio.ConnectionPool.from_url(
+            settings.redis_url, **pool_settings
+        )
+    ))
 

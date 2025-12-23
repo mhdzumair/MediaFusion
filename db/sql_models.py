@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import SQLModel, Field, Relationship
 
-from db.enums import MediaType, IndexerType, NudityStatus
+from db.enums import MediaType, TorrentType, NudityStatus
 
 
 # Base Models and Mixins
@@ -153,6 +153,8 @@ class SeriesEpisode(SQLModel, table=True):
     released: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
     imdb_rating: Optional[float] = None
     thumbnail: Optional[str] = None
+    # Stub episodes created from torrent data - need to be scraped later
+    is_stub: bool = Field(default=False, index=True)
 
     # Relationships
     season: SeriesSeason = Relationship(back_populates="episodes")
@@ -164,7 +166,8 @@ class BaseMetadata(TimestampMixin, table=True):
     __tablename__ = "base_metadata"
     __table_args__ = (
         Index("idx_base_meta_type_title", "type", "title"),
-        UniqueConstraint("title", "year"),
+        # Note: Unique constraint for custom IDs (mf*) only is handled via partial index
+        # in migration 8d55e5e54b6a_fix_unique_constraint_title_year.py
         # Materialized tsvector columns for faster searches with multilingual titles
         Column(
             "title_tsv",
@@ -203,6 +206,8 @@ class BaseMetadata(TimestampMixin, table=True):
         index=True,
         sa_type=DateTime(timezone=True),
     )
+    # Cached aggregate for total streams across all catalogs
+    total_streams: int = Field(default=0, index=True)
 
     # Relationships
     genres: List["Genre"] = Relationship(
@@ -227,6 +232,7 @@ class MovieMetadata(TimestampMixin, table=True):
         primary_key=True, foreign_key="base_metadata.id", ondelete="CASCADE"
     )
     imdb_rating: float | None = Field(default=None, index=True)
+    tmdb_rating: float | None = Field(default=None, index=True)
     parent_guide_nudity_status: NudityStatus = Field(
         default=NudityStatus.UNKNOWN, index=True
     )
@@ -266,6 +272,7 @@ class SeriesMetadata(TimestampMixin, table=True):
     )
     end_year: int | None = Field(default=None, index=True)
     imdb_rating: float | None = Field(default=None, index=True)
+    tmdb_rating: float | None = Field(default=None, index=True)
     parent_guide_nudity_status: NudityStatus = Field(
         default=NudityStatus.UNKNOWN, index=True
     )
@@ -333,6 +340,7 @@ class Catalog(SQLModel, table=True):
 class AkaTitle(SQLModel, table=True):
     __tablename__ = "aka_title"
     __table_args__ = (
+        UniqueConstraint("media_id", "title"),
         # Materialized tsvector columns for faster searches with multilingual titles
         Column(
             "title_tsv",
@@ -426,7 +434,13 @@ class TorrentStream(TimestampMixin, table=True):
     audio: str | None
     seeders: int | None = Field(default=None)
     is_blocked: bool = Field(default=False, index=True)
-    indexer_flag: IndexerType = Field(default=IndexerType.FREELEACH)
+    torrent_type: TorrentType = Field(default=TorrentType.PUBLIC)
+
+    # Additional metadata fields
+    uploader: str | None = Field(default=None)
+    uploaded_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    hdr: list[str] | None = Field(default=None, sa_type=JSON)
+    torrent_file: bytes | None = Field(default=None)
 
     # For movies only (nullable for series)
     filename: Optional[str] = None
@@ -492,3 +506,74 @@ class Namespace(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True)
+
+
+# Catalog Statistics for caching stream counts per catalog per media
+class CatalogStreamStats(SQLModel, table=True):
+    """Cached catalog statistics for efficient catalog listings"""
+
+    __tablename__ = "catalog_stream_stats"
+    __table_args__ = (
+        Index(
+            "idx_catalog_stats_lookup",
+            "catalog_id",
+            "total_streams",
+            "last_stream_added",
+        ),
+    )
+
+    media_id: str = Field(
+        foreign_key="base_metadata.id", primary_key=True, ondelete="CASCADE"
+    )
+    catalog_id: int = Field(
+        foreign_key="catalog.id", primary_key=True, ondelete="CASCADE"
+    )
+    total_streams: int = Field(default=0)
+    last_stream_added: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+
+
+# RSS Feed Models
+class RSSFeed(TimestampMixin, table=True):
+    """RSS Feed configuration for scraping"""
+
+    __tablename__ = "rss_feed"
+    __table_args__ = (UniqueConstraint("url"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    url: str = Field(unique=True)
+    active: bool = Field(default=True, index=True)
+    last_scraped: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    source: str | None = Field(default=None, index=True)
+    torrent_type: str = Field(default="public")
+    auto_detect_catalog: bool = Field(default=False)
+
+    # JSON fields for complex nested structures
+    parsing_patterns: dict | None = Field(default=None, sa_type=JSON)
+    filters: dict | None = Field(default=None, sa_type=JSON)
+    metrics: dict | None = Field(default=None, sa_type=JSON)
+
+    # Relationships
+    catalog_patterns: List["RSSFeedCatalogPattern"] = Relationship(
+        back_populates="rss_feed",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class RSSFeedCatalogPattern(SQLModel, table=True):
+    """RSS Feed catalog patterns for auto-detection"""
+
+    __tablename__ = "rss_feed_catalog_pattern"
+
+    id: int | None = Field(default=None, primary_key=True)
+    rss_feed_id: int = Field(foreign_key="rss_feed.id", index=True, ondelete="CASCADE")
+    name: str | None = None
+    regex: str
+    enabled: bool = Field(default=True)
+    case_sensitive: bool = Field(default=False)
+    target_catalogs: list[str] = Field(default_factory=list, sa_type=JSON)
+
+    # Relationships
+    rss_feed: RSSFeed = Relationship(back_populates="catalog_patterns")

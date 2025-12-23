@@ -7,7 +7,7 @@ from httpx import Response
 from tenacity import RetryError
 
 from db.config import settings
-from db.models import TorrentStreams, MediaFusionMetaData, EpisodeFile
+from db.schemas import TorrentStreamData, MetadataData, EpisodeFileData
 from scrapers.base_scraper import BaseScraper, ScraperError
 from utils.parser import (
     is_contain_18_plus_keywords,
@@ -27,11 +27,11 @@ class ZileanScraper(BaseScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         search_task = asyncio.create_task(
             self.make_request(
                 f"{settings.zilean_url}/dmm/search",
@@ -41,17 +41,19 @@ class ZileanScraper(BaseScraper):
             )
         )
 
-        if metadata.type == "movie":
-            params = {
-                "Query": metadata.title,
-                "Year": metadata.year,
-            }
-        else:
-            params = {
-                "Query": metadata.title,
-                "Season": season,
-                "Episode": episode,
-            }
+        params = {
+            "Query": metadata.title,
+        }
+        if catalog_type == "movie":
+            # For movies, we only need to search by title and year
+            if metadata.year:
+                params["Year"] = metadata.year
+        elif catalog_type == "series":
+            # For series, we need to search by title, season, and episode
+            if season:
+                params["Season"] = season
+            if episode:
+                params["Episode"] = episode
 
         filtered_task = asyncio.create_task(
             self.make_request(
@@ -107,11 +109,11 @@ class ZileanScraper(BaseScraper):
         self,
         response: List[Dict[str, Any]],
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         tasks = [
             self.process_stream(stream, metadata, catalog_type, season, episode)
             for stream in response
@@ -122,11 +124,11 @@ class ZileanScraper(BaseScraper):
     async def process_stream(
         self,
         stream: Dict[str, Any],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> TorrentStreams | None:
+    ) -> TorrentStreamData | None:
         async with self.semaphore:
             try:
                 if is_contain_18_plus_keywords(stream["raw_title"]):
@@ -145,7 +147,7 @@ class ZileanScraper(BaseScraper):
                 ):
                     return None
 
-                torrent_stream = TorrentStreams(
+                torrent_stream = TorrentStreamData(
                     id=stream["info_hash"],
                     meta_id=metadata.id,
                     torrent_name=stream["raw_title"],
@@ -176,14 +178,14 @@ class ZileanScraper(BaseScraper):
 
                     if episodes := torrent_data.get("episodes"):
                         episode_data = [
-                            EpisodeFile(
+                            EpisodeFileData(
                                 season_number=seasons[0], episode_number=episode_number
                             )
                             for episode_number in episodes
                         ]
                     elif seasons:
                         episode_data = [
-                            EpisodeFile(season_number=season_number, episode_number=1)
+                            EpisodeFileData(season_number=season_number, episode_number=1)
                             for season_number in seasons
                         ]
                     else:

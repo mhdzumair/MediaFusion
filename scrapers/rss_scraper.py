@@ -8,17 +8,17 @@ import dramatiq
 import httpx
 import xmltodict
 
-from db.crud import get_or_create_metadata, store_new_torrent_streams
+from db import sql_crud
+from db.database import get_background_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.enums import TorrentType
-from db.models import (
-    RSSFeed,
+from db.schemas import (
     RSSFeedFilters,
-    RSSParsingPatterns,
-    TorrentStreams,
-    MediaFusionMovieMetaData,
-    MediaFusionSeriesMetaData,
+    RSSFeedParsingPatterns as RSSParsingPatterns,
+    TorrentStreamData,
+    MetadataData,
 )
+from db.sql_models import RSSFeed
 from scrapers.base_scraper import BaseScraper
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
@@ -55,12 +55,12 @@ class RssScraper(BaseScraper):
 
     async def _scrape_and_parse(
         self, feed: RSSFeed, *args, **kwargs
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         """Scrape and parse a single RSS feed"""
         results = []
         start_time = time.time()
 
-        feed_id = str(feed.id)
+        feed_id = feed.id  # Keep as int
 
         # Initialize per-run metrics
         items_processed_this_run = 0
@@ -100,7 +100,7 @@ class RssScraper(BaseScraper):
                 processed_info_hashes=processed_info_hashes,
             ):
                 if processed_item:
-                    if isinstance(processed_item, TorrentStreams):
+                    if isinstance(processed_item, TorrentStreamData):
                         collected_streams.append(processed_item)
                         processed_item_ids.append(processed_item.id)
                         self.metrics.record_processed_item()
@@ -119,7 +119,10 @@ class RssScraper(BaseScraper):
 
             # Bulk insert all collected streams
             if collected_streams:
-                await store_new_torrent_streams(collected_streams)
+                async with get_background_session() as session:
+                    await sql_crud.store_new_torrent_streams(
+                        session, [s.model_dump(by_alias=True) for s in collected_streams]
+                    )
                 results.extend(collected_streams)
                 self.logger.info(
                     f"Bulk inserted {len(collected_streams)} streams for feed: {feed.name}"
@@ -330,11 +333,12 @@ class RssScraper(BaseScraper):
             return None
 
     async def process_feed_item(
-        self, item: Dict, feed: RSSFeed, feed_id: str, processed_info_hashes: set
-    ) -> Optional[TorrentStreams | str]:
+        self, item: Dict, feed: RSSFeed, feed_id: int, processed_info_hashes: set
+    ) -> Optional[TorrentStreamData | str]:
         """Process a single RSS feed item"""
         try:
-            patterns = feed.parsing_patterns
+            # Convert dict to Pydantic model for attribute access
+            patterns = RSSParsingPatterns(**(feed.parsing_patterns or {}))
             title = self.extract_value(item, patterns.title)
             if not title:
                 self.logger.debug("Missing title in RSS item")
@@ -371,12 +375,13 @@ class RssScraper(BaseScraper):
             return None
 
     async def process_torrent_feed_item(
-        self, item: Dict, feed: RSSFeed, feed_id: str, processed_info_hashes: set
-    ) -> Optional[TorrentStreams]:
+        self, item: Dict, feed: RSSFeed, feed_id: int, processed_info_hashes: set
+    ) -> Optional[TorrentStreamData]:
         """Process a feed item containing torrent information with integrated filtering"""
         try:
-            patterns = feed.parsing_patterns
-            filters = feed.filters
+            # Convert dicts to Pydantic models for attribute access
+            patterns = RSSParsingPatterns(**(feed.parsing_patterns or {}))
+            filters = RSSFeedFilters(**(feed.filters or {}))
 
             title = self.extract_value(item, patterns.title)
             if not title:
@@ -438,9 +443,7 @@ class RssScraper(BaseScraper):
             )
 
             # Get episode name parser from feed patterns if available
-            episode_name_parser = getattr(
-                feed.parsing_patterns, "episode_name_parser", None
-            )
+            episode_name_parser = (feed.parsing_patterns or {}).get("episode_name_parser")
 
             torrent_data, is_torrent_downloaded = await self.get_torrent_data(
                 torrent_link or magnet_link,
@@ -510,12 +513,14 @@ class RssScraper(BaseScraper):
                 "catalogs": catalog_ids,
             }
 
-            metadata_result = await get_or_create_metadata(
-                metadata,
-                "series" if is_series else "movie",
-                is_search_imdb_title=True,
-                is_imdb_only=False,
-            )
+            async with get_background_session() as session:
+                metadata_result = await sql_crud.get_or_create_metadata(
+                    session,
+                    metadata,
+                    "series" if is_series else "movie",
+                    is_search_imdb_title=True,
+                    is_imdb_only=False,
+                )
 
             if not metadata_result:
                 self.logger.warning(f"Failed to create metadata for: {title}")
@@ -526,7 +531,7 @@ class RssScraper(BaseScraper):
                 meta_id = metadata_result.get("id")
                 # Convert dict to metadata object for process_stream
                 metadata_cls = (
-                    MediaFusionSeriesMetaData if is_series else MediaFusionMovieMetaData
+                    MetadataData if is_series else MetadataData
                 )
                 metadata_obj = metadata_cls(
                     id=meta_id,
@@ -725,18 +730,17 @@ class RssScraper(BaseScraper):
 
         return None
 
-    async def update_feed_last_scraped(self, feed_id: str) -> None:
+    async def update_feed_last_scraped(self, feed_id: int) -> None:
         """Update the lastScraped timestamp for a feed"""
         try:
-            feed = await RSSFeed.get(feed_id)
-            feed.last_scraped = datetime.now()
-            await feed.save()
+            async with get_background_session() as session:
+                await sql_crud.update_rss_feed(session, feed_id, {"last_scraped": datetime.now()})
         except Exception as e:
             self.logger.error(f"Error updating feed last_scraped timestamp: {str(e)}")
 
     async def update_feed_metrics(
         self,
-        feed_id: str,
+        feed_id: int,
         items_found: int,
         items_processed: int,
         items_skipped: int,
@@ -746,27 +750,19 @@ class RssScraper(BaseScraper):
     ) -> None:
         """Update the scraping metrics for a feed"""
         try:
-            feed = await RSSFeed.get(feed_id)
-            if not feed:
-                return
-
-            # Update cumulative metrics
-            feed.metrics.total_items_found += items_found
-            feed.metrics.total_items_processed += items_processed
-            feed.metrics.total_items_skipped += items_skipped
-            feed.metrics.total_errors += errors
-            feed.metrics.last_scrape_duration = duration
-            feed.metrics.items_processed_last_run = items_processed
-            feed.metrics.items_skipped_last_run = items_skipped
-            feed.metrics.errors_last_run = errors
-
-            # Update skip reasons
-            for reason, count in skip_reasons.items():
-                if reason not in feed.metrics.skip_reasons:
-                    feed.metrics.skip_reasons[reason] = 0
-                feed.metrics.skip_reasons[reason] += count
-
-            await feed.save()
+            metrics = {
+                "total_items_found": items_found,
+                "total_items_processed": items_processed,
+                "total_items_skipped": items_skipped,
+                "total_errors": errors,
+                "last_scrape_duration": duration,
+                "items_processed_last_run": items_processed,
+                "items_skipped_last_run": items_skipped,
+                "errors_last_run": errors,
+                "skip_reasons": skip_reasons,
+            }
+            async with get_background_session() as session:
+                await sql_crud.update_rss_feed_metrics(session, feed_id, metrics)
         except Exception as e:
             self.logger.warning(f"Failed to update feed metrics for {feed_id}: {e}")
 
@@ -774,7 +770,8 @@ class RssScraper(BaseScraper):
         """Process all active RSS feeds"""
         try:
             # Get all active feeds
-            feeds = await RSSFeed.find({"active": True}).to_list()
+            async with get_background_session() as session:
+                feeds = list(await sql_crud.list_rss_feeds(session, active_only=True))
 
             if not feeds:
                 return {
@@ -979,8 +976,8 @@ class RssScraper(BaseScraper):
         """
         catalogs = []
 
-        # Get text content for analysis
-        patterns = feed.parsing_patterns
+        # Get text content for analysis - convert dict to Pydantic model
+        patterns = RSSParsingPatterns(**(feed.parsing_patterns or {}))
         title = str(self.extract_value(item, patterns.title) or "")
         description = str(self.extract_value(item, patterns.description) or "")
         category = str(self.extract_value(item, patterns.category) or "")
@@ -989,7 +986,7 @@ class RssScraper(BaseScraper):
         content_text = f"{title} {description} {category}"
 
         # First check custom catalog patterns if defined
-        catalog_patterns = feed.catalog_patterns
+        catalog_patterns = feed.catalog_patterns or []
         for pattern in catalog_patterns:
             if not pattern.enabled:
                 continue

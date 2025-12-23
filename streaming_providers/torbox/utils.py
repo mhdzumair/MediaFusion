@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Iterator
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
@@ -15,7 +15,7 @@ async def get_video_url_from_torbox(
     user_data: UserData,
     filename: str,
     user_ip: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs: Any,
@@ -80,7 +80,7 @@ def divide_chunks(lst: List[Any], n: int) -> Iterator[List[Any]]:
 
 
 async def update_chunk_cache_status(
-    torbox_client: Torbox, streams_chunk: List[TorrentStreams]
+    torbox_client: Torbox, streams_chunk: List[TorrentStreamData]
 ) -> None:
     """Update cache status for a chunk of streams."""
     try:
@@ -99,7 +99,7 @@ async def update_chunk_cache_status(
 
 
 async def update_torbox_cache_status(
-    streams: List[TorrentStreams], user_data: UserData, **kwargs: Any
+    streams: List[TorrentStreamData], user_data: UserData, **kwargs: Any
 ) -> None:
     """Updates the cache status of streams based on Torbox's instant availability."""
     async with Torbox(token=user_data.streaming_provider.token) as torbox_client:
@@ -129,7 +129,7 @@ async def fetch_downloaded_info_hashes_from_torbox(
 async def select_file_id_from_torrent(
     torrent_info: Dict[str, Any],
     filename: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: Optional[int],
     episode: Optional[int],
 ) -> int:

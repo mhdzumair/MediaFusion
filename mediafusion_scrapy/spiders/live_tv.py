@@ -36,7 +36,7 @@ class LiveTVSpider(scrapy.Spider):
         },
     }
 
-    def start_requests(self):
+    async def start(self):
         start_url = config_manager.get_start_url(self.name)
         yield scrapy.Request(start_url, self.parse)
 

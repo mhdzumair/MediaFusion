@@ -5,7 +5,8 @@ from scrapy.http.request import NO_CALLBACK
 from scrapy.utils.defer import maybe_deferred_to_future
 
 from db.config import settings
-from db.crud import get_stream_by_info_hash
+from db import sql_crud
+from db.database import get_async_session
 from utils import torrent
 
 
@@ -61,7 +62,11 @@ class MagnetDownloadAndParsePipeline:
         info_hash, trackers = torrent.parse_magnet(magnet_link)
         if not info_hash:
             raise DropItem(f"Failed to parse info_hash from magnet link: {magnet_link}")
-        if torrent_stream := await get_stream_by_info_hash(info_hash):
+        
+        async for session in get_async_session():
+            torrent_stream = await sql_crud.get_stream_by_info_hash(session, info_hash)
+        
+        if torrent_stream:
             if (
                 item.get("expected_sources")
                 and torrent_stream.source not in item["expected_sources"]
@@ -72,7 +77,8 @@ class MagnetDownloadAndParsePipeline:
                     item["source"],
                     torrent_stream.source,
                 )
-                await torrent_stream.delete()
+                async for session in get_async_session():
+                    await sql_crud.delete_torrent_stream(session, info_hash)
             else:
                 raise DropItem(
                     f"Torrent stream already exists: {torrent_stream.torrent_name} from {torrent_stream.source}"

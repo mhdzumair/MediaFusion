@@ -46,7 +46,8 @@ class Settings(BaseSettings):
 
     # Database and Cache Settings
     mongo_uri: str
-    postgres_uri: str
+    postgres_uri: str  # Primary read-write PostgreSQL URI
+    postgres_read_uri: str | None = None  # Optional read replica URI (if None, uses primary)
     db_max_connections: int = 50
     redis_url: str = "redis://redis-service:6379"
     redis_max_connections: int = 100

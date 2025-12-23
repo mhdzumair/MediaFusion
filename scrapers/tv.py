@@ -1,18 +1,15 @@
-import asyncio
 import difflib
 import logging
 import re
 
 import dramatiq
 import httpx
-from beanie import BulkWriter
-from beanie.odm.operators.update.general import Set
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
 
-from db import schemas, crud
+from db import schemas, sql_crud
 from db.config import settings
-from db.models import TVStreams, MediaFusionTVMetaData
+from db.database import get_async_session
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -36,7 +33,8 @@ async def add_tv_metadata(batch, namespace: str):
             return
 
         metadata.namespace = namespace
-        channel_id = await crud.save_tv_channel_metadata(metadata)
+        async for session in get_async_session():
+            channel_id = await sql_crud.save_tv_channel_metadata(session, metadata)
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
 
 
@@ -131,42 +129,43 @@ def parse_m3u_playlist_background(
 async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
     """Validate TV streams in the database."""
     offset = page * page_size
-    tv_streams = await TVStreams.all().skip(offset).limit(page_size).to_list()
+    
+    async for session in get_async_session():
+        tv_streams = await sql_crud.get_all_tv_streams_paginated(session, offset, page_size)
 
-    if not tv_streams:
-        logging.info(f"No TV streams to validate on page {page}")
-        return
-
-    async def validate_and_update_tv_stream(stream, bw):
-        is_valid = await validate_live_stream_url(
-            stream.url, stream.behaviorHints or {}
-        )
-        logging.info(f"Stream: {stream.name}, Status: {is_valid}")
-        if is_valid:
-            stream.is_working = is_valid
-            stream.test_failure_count = 0
-            await stream.replace(bulk_writer=bw)
+        if not tv_streams:
+            logging.info(f"No TV streams to validate on page {page}")
             return
 
-        stream.test_failure_count += 1
-        if stream.test_failure_count >= 3:
-            await stream.delete(bulk_writer=bw)
-            logging.error(f"{stream.name} has failed 3 times and deleting it.")
-            return
+        updates = []
+        deletes = []
+        
+        for stream in tv_streams:
+            is_valid = await validate_live_stream_url(
+                stream.url, stream.behavior_hints or {}
+            )
+            logging.info(f"Stream: {stream.name}, Status: {is_valid}")
+            
+            if is_valid:
+                updates.append((stream.id, True, 0))
+            else:
+                new_failure_count = (stream.test_failure_count or 0) + 1
+                if new_failure_count >= 3:
+                    deletes.append(stream.id)
+                    logging.error(f"{stream.name} has failed 3 times and deleting it.")
+                else:
+                    updates.append((stream.id, False, new_failure_count))
+                    logging.error(f"Stream failed validation: {stream.name}")
 
-        stream.is_working = is_valid
-        await stream.replace(bulk_writer=bw)
-        logging.error(f"Stream failed validation: {stream.name}")
+        # Apply updates
+        for stream_id, is_working, failure_count in updates:
+            await sql_crud.update_tv_stream_status(session, stream_id, is_working, failure_count)
+        
+        # Apply deletes
+        for stream_id in deletes:
+            await sql_crud.delete_tv_stream(session, stream_id)
 
-    bulk_writer = BulkWriter()
-    tasks = [
-        asyncio.create_task(validate_and_update_tv_stream(stream, bulk_writer))
-        for stream in tv_streams
-    ]
-    await asyncio.gather(*tasks)
-
-    logging.info(f"Committing {len(bulk_writer.operations)} updates to the database")
-    await bulk_writer.commit()
+        logging.info(f"Updated {len(updates)} streams, deleted {len(deletes)} streams")
 
     # Schedule the next batch in 2 minutes
     validate_tv_streams_in_db.send_with_options(
@@ -177,55 +176,51 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)
 async def update_tv_posters_in_db(*args, **kwargs):
     """Validate TV posters in the database."""
-    not_working_posters = await MediaFusionTVMetaData.find(
-        MediaFusionTVMetaData.is_poster_working == False
-    ).to_list()
-    logging.info(f"Found {len(not_working_posters)} TV posters to update.")
+    async for session in get_async_session():
+        not_working_posters = await sql_crud.get_tv_metadata_not_working_posters(session)
+        logging.info(f"Found {len(not_working_posters)} TV posters to update.")
 
-    if not not_working_posters:
-        logging.info("No TV posters to update.")
-        return
+        if not not_working_posters:
+            logging.info("No TV posters to update.")
+            return
 
-    async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
-        response = await client.get(
-            "https://iptv-org.github.io/api/channels.json", timeout=30
-        )
-        iptv_channels = response.json()
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
+            response = await client.get(
+                "https://iptv-org.github.io/api/channels.json", timeout=30
+            )
+            iptv_channels = response.json()
 
-    iptv_org_channel_data = {}
-    for channel in iptv_channels:
-        iptv_org_channel_data[channel["name"].casefold()] = channel
-        if channel.get("alt_names"):
-            for alt_name in channel["alt_names"]:
-                iptv_org_channel_data[alt_name.casefold()] = channel
-    iptv_org_channel_names = iptv_org_channel_data.keys()
+        iptv_org_channel_data = {}
+        for channel in iptv_channels:
+            iptv_org_channel_data[channel["name"].casefold()] = channel
+            if channel.get("alt_names"):
+                for alt_name in channel["alt_names"]:
+                    iptv_org_channel_data[alt_name.casefold()] = channel
+        iptv_org_channel_names = iptv_org_channel_data.keys()
 
-    def get_similar_channel_name(name, cutoff=0.8):
-        name = name.casefold()
-        name = re.sub(r"\s*\[.*?]|\s*\(.*?\)", "", name)
-        name = name.split(" – ")[0]
-        matches = difflib.get_close_matches(
-            name, iptv_org_channel_names, n=1, cutoff=cutoff
-        )
-        return matches[0] if matches else None
+        def get_similar_channel_name(name, cutoff=0.8):
+            name = name.casefold()
+            name = re.sub(r"\s*\[.*?]|\s*\(.*?\)", "", name)
+            name = name.split(" – ")[0]
+            matches = difflib.get_close_matches(
+                name, iptv_org_channel_names, n=1, cutoff=cutoff
+            )
+            return matches[0] if matches else None
 
-    bulk_writer = BulkWriter()
-    for stream in not_working_posters:
-        iptv_org_channel_name = get_similar_channel_name(stream.title, cutoff=0.8)
-        if not iptv_org_channel_name:
-            logging.error(f"Channel not found in iptv-org: {stream.title}")
-            continue
+        updated_count = 0
+        for tv_metadata in not_working_posters:
+            iptv_org_channel_name = get_similar_channel_name(tv_metadata.title, cutoff=0.8)
+            if not iptv_org_channel_name:
+                logging.error(f"Channel not found in iptv-org: {tv_metadata.title}")
+                continue
 
-        iptv_org_channel = iptv_org_channel_data[iptv_org_channel_name]
-        poster = iptv_org_channel.get("logo")
-        if not poster:
-            logging.error(f"Poster not found for channel: {stream.title}")
-            continue
+            iptv_org_channel = iptv_org_channel_data[iptv_org_channel_name]
+            poster = iptv_org_channel.get("logo")
+            if not poster:
+                logging.error(f"Poster not found for channel: {tv_metadata.title}")
+                continue
 
-        await stream.update(
-            Set({"poster": poster, "is_poster_working": True}), bulk_writer=bulk_writer
-        )
+            await sql_crud.update_tv_metadata_poster(session, tv_metadata.id, poster, True)
+            updated_count += 1
 
-    logging.info(f"Committing {len(bulk_writer.operations)} updates to the database")
-    await bulk_writer.commit()
-    logging.info("Updated TV posters in the database.")
+        logging.info(f"Updated {updated_count} TV posters in the database.")

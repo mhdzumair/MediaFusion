@@ -7,11 +7,8 @@ from fastapi import APIRouter, Request, Response
 from prometheus_client import Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from db.config import settings
-from db.crud import fetch_last_run
-from db.models import (
-    MediaFusionMetaData,
-    TorrentStreams,
-)
+from db import sql_crud
+from db.database import get_read_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from metrics.redis_metrics import get_redis_metrics, get_debrid_cache_metrics
 from utils import const
@@ -54,7 +51,8 @@ async def render_dashboard(
 @metrics_router.get("/torrents", tags=["metrics"])
 async def get_torrents_count(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
-    count = await TorrentStreams.get_motor_collection().estimated_document_count()
+    async for session in get_read_session():
+        count = await sql_crud.get_torrent_count(session)
     return {
         "total_torrents": count,
         "total_torrents_readable": humanize.intword(count),
@@ -71,16 +69,8 @@ async def get_torrents_by_sources(response: Response):
     if cached_data:
         return json.loads(cached_data)
 
-    results = await TorrentStreams.aggregate(
-        [
-            {"$group": {"_id": "$source", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 20},  # Limit to top 20 sources
-        ]
-    ).to_list()
-    torrent_sources = [
-        {"name": source["_id"], "count": source["count"]} for source in results
-    ]
+    async for session in get_read_session():
+        torrent_sources = await sql_crud.get_torrents_by_source(session, limit=20)
 
     # Cache the results for 30 minutes
     await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(torrent_sources), ex=1800)
@@ -90,25 +80,15 @@ async def get_torrents_by_sources(response: Response):
 @metrics_router.get("/metadata", tags=["metrics"])
 async def get_total_metadata(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
-    results = await asyncio.gather(
-        MediaFusionMetaData.get_motor_collection().count_documents({"type": "movie"}),
-        MediaFusionMetaData.get_motor_collection().count_documents({"type": "series"}),
-        MediaFusionMetaData.get_motor_collection().count_documents({"type": "tv"}),
-    )
-    movies_count, series_count, tv_channels_count = results
-
-    return {
-        "movies": movies_count,
-        "series": series_count,
-        "tv_channels": tv_channels_count,
-    }
+    async for session in get_read_session():
+        return await sql_crud.get_metadata_counts(session)
 
 
 @metrics_router.get("/scrapy-schedulers", tags=["metrics"])
 async def get_schedulers_last_run(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
     tasks = [
-        fetch_last_run(spider_id, spider_name)
+        sql_crud.fetch_last_run(spider_id, spider_name)
         for spider_id, spider_name in const.SCRAPY_SPIDERS.items()
     ]
     results = await asyncio.gather(*tasks)
@@ -117,18 +97,18 @@ async def get_schedulers_last_run(response: Response):
 
 async def update_metrics(request: Request, response: Response):
     # Define each task as a coroutine
-    count_task = TorrentStreams.count()
+    count_task = get_torrents_count(response)
     torrent_sources_task = get_torrents_by_sources(response)
     total_metadata_task = get_total_metadata(response)
-    schedulers_last_run_task = get_schedulers_last_run(request, response)
+    schedulers_last_run_task = get_schedulers_last_run(response)
 
     # Run all tasks concurrently
-    count, torrent_sources, results, stats = await asyncio.gather(
+    count_result, torrent_sources, results, stats = await asyncio.gather(
         count_task, torrent_sources_task, total_metadata_task, schedulers_last_run_task
     )
 
     # Update torrent count
-    total_torrents_gauge.set(count)
+    total_torrents_gauge.set(count_result["total_torrents"])
 
     # Update torrent sources
     for source in torrent_sources:
@@ -170,24 +150,12 @@ async def debrid_cache_metrics():
 @metrics_router.get("/torrents/uploaders", tags=["metrics"])
 async def get_torrents_by_uploaders(response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
-    results = await TorrentStreams.aggregate(
-        [
-            {"$match": {"uploader": {"$ne": None}}},
-            {"$group": {"_id": "$uploader", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 20},  # Limit to top 20 uploaders
-        ]
-    ).to_list()
-
-    uploader_stats = [
-        {"name": stat["_id"] if stat["_id"] else "Unknown", "count": stat["count"]}
-        for stat in results
-    ]
-    return uploader_stats
+    async for session in get_read_session():
+        return await sql_crud.get_torrents_by_uploader(session, limit=20)
 
 
 @metrics_router.get("/torrents/uploaders/weekly/{week_date}", tags=["metrics"])
-async def get_weekly_top_uploaders(week_date: str, response: Response):
+async def get_weekly_top_uploaders_endpoint(week_date: str, response: Response):
     response.headers.update(const.NO_CACHE_HEADERS)
 
     try:
@@ -203,31 +171,10 @@ async def get_weekly_top_uploaders(week_date: str, response: Response):
         end_of_week = start_of_week + timedelta(days=7)
 
         # Get raw aggregation results
-        raw_results = await TorrentStreams.aggregate(
-            [
-                {
-                    "$match": {
-                        "source": "Contribution Stream",
-                        "$or": [
-                            {
-                                "uploaded_at": {
-                                    "$gte": start_of_week,
-                                    "$lt": end_of_week,
-                                }
-                            },
-                        ],
-                        "is_blocked": {"$ne": True},
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$uploader",
-                        "count": {"$sum": 1},
-                        "latest_upload": {"$max": "$created_at"},
-                    }
-                },
-            ]
-        ).to_list()
+        async for session in get_read_session():
+            raw_results = await sql_crud.get_weekly_top_uploaders(
+                session, start_of_week, end_of_week
+            )
 
         # Process and clean the results (keeping existing logic)
         processed_results = []

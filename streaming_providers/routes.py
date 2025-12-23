@@ -13,14 +13,16 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 
-from db import crud, schemas
+from db import schemas, sql_crud
 from db.config import settings
+from db.database import get_read_session
 from db.schemas import (
     CacheStatusResponse,
     CacheStatusRequest,
     StreamingProvider,
     CacheSubmitResponse,
     CacheSubmitRequest,
+    TorrentStreamData,
 )
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import (
@@ -90,10 +92,13 @@ async def get_cached_stream_url_and_redirect(
 async def fetch_stream_or_404(info_hash):
     """
     Fetches stream by info hash, raises a 404 error if not found.
-    """
-    stream = await crud.get_stream_by_info_hash(info_hash)
-    if stream:
-        return stream
+    Returns TorrentStreamData (Pydantic model) to avoid lazy loading issues.
+    """    
+    async for session in get_read_session():
+        stream = await sql_crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
+        if stream:
+            # Convert to Pydantic model to detach from session
+            return TorrentStreamData.from_pg_model(stream)
 
     raise HTTPException(status_code=400, detail="Stream not found.")
 
@@ -104,7 +109,8 @@ async def get_or_create_video_url(
     """
     Retrieves or generates the video URL based on stream data and user info.
     """
-    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list)
+    # stream is now TorrentStreamData (Pydantic model) with announce_list
+    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list or [])
     episodes = stream.get_episodes(season, episode)
     if not filename:
         episode_data = episodes[0] if episodes else None

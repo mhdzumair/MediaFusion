@@ -19,7 +19,7 @@ from aiowebdav.client import Client as WebDavClient
 from aiowebdav.exceptions import RemoteResourceNotFound, NoConnection
 
 from db.enums import TorrentType
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
@@ -38,7 +38,7 @@ async def add_torrent_or_magnet(
     magnet_link: str,
     info_hash: str,
     user_data: UserData,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
 ):
     """Adds a magnet link to the qbittorrent server."""
     try:
@@ -127,7 +127,7 @@ async def find_file_in_folder_tree(
     webdav: WebDavClient,
     user_data: UserData,
     info_hash: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str],
     season: Optional[int],
     episode: Optional[int],
@@ -261,7 +261,7 @@ async def retrieve_or_download_file(
     play_video_after: int,
     magnet_link: str,
     info_hash: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str],
     season: Optional[int],
     episode: Optional[int],
@@ -315,7 +315,7 @@ async def get_video_url_from_qbittorrent(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str],
     season: Optional[int],
     episode: Optional[int],
@@ -355,7 +355,7 @@ async def get_video_url_from_qbittorrent(
 
 
 async def update_qbittorrent_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on qBittorrent's instant availability."""
     try:

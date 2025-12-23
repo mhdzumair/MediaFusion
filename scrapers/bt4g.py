@@ -9,7 +9,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from db.config import settings
-from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
+from db.schemas import TorrentStreamData, EpisodeFileData, MetadataData
 from scrapers.base_scraper import BaseScraper
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
@@ -46,11 +46,11 @@ class BT4GScraper(BaseScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         results = []
         processed_unique_data = set()
 
@@ -155,12 +155,12 @@ class BT4GScraper(BaseScraper):
     async def scrape_by_query(
         self,
         processed_unique_data: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         search_query: str,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         try:
             # Get first page
             first_page_url = self._get_search_url(search_query, page=1)
@@ -234,12 +234,12 @@ class BT4GScraper(BaseScraper):
     async def fetch_and_process_page(
         self,
         page_url: str,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int],
         episode: Optional[int],
         processed_unique_data: set[str],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Fetch and process a single page of results"""
         try:
             response = await self.make_request(page_url, is_expected_to_fail=True)
@@ -263,12 +263,12 @@ class BT4GScraper(BaseScraper):
     async def process_page_results(
         self,
         results: List[Any],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int],
         episode: Optional[int],
         processed_unique_data: set[str],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Process results from a single page"""
         self.metrics.record_found_items(len(results))
 
@@ -295,12 +295,12 @@ class BT4GScraper(BaseScraper):
     async def process_search_result(
         self,
         result: Any,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         processed_unique_data: set[str],
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> Optional[TorrentStreams]:
+    ) -> Optional[TorrentStreamData]:
         """Process a single search result"""
         try:
             title_element = result.find("h5")
@@ -423,7 +423,7 @@ class BT4GScraper(BaseScraper):
 
             largest_file = max(file_info, key=lambda x: x["file_size"])
 
-            stream = TorrentStreams(
+            stream = TorrentStreamData(
                 id=info_hash,
                 meta_id=metadata.id,
                 torrent_name=torrent_title,
@@ -473,7 +473,7 @@ class BT4GScraper(BaseScraper):
 
     def _process_series_data(
         self,
-        stream: TorrentStreams,
+        stream: TorrentStreamData,
         parsed_data: dict,
         file_info: List[dict],
     ) -> bool:
@@ -484,7 +484,7 @@ class BT4GScraper(BaseScraper):
 
         # Prepare episode data based on detailed file data
         episode_data = [
-            EpisodeFile(
+            EpisodeFileData(
                 season_number=file.get("season_number"),
                 episode_number=file.get("episode_number"),
                 filename=file.get("filename"),

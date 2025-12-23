@@ -31,7 +31,7 @@ class SportVideoSpider(scrapy.Spider):
     def __del__(self):
         self.redis.close()
 
-    def start_requests(self):
+    async def start(self):
         for category, url in self.categories.items():
             yield scrapy.Request(url, self.parse, meta={"category": category})
 

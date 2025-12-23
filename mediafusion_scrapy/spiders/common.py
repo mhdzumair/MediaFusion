@@ -68,7 +68,7 @@ class CommonTamilSpider(scrapy.Spider):
                         data.append((paginated_link, language, video_type))
         return data
 
-    def start_requests(self):
+    async def start(self):
         if self.search_keyword:
             # Construct the search URL and initiate search
             search_url = f"{self.homepage}/index.php?/search/&q={self.search_keyword}&type=forums_topic&search_and_or=or&search_in=titles&sortby=relevancy"

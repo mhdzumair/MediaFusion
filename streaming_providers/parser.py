@@ -8,7 +8,9 @@ from typing import Any, Optional, TypedDict, Tuple, Pattern, Callable
 import PTT
 import dateparser
 
-from db.models import TorrentStreams, EpisodeFile, KnownFile, MediaFusionSeriesMetaData
+from db.schemas import TorrentStreamData, EpisodeFileData, KnownFile
+from db import sql_crud
+from db.database import get_read_session, get_async_session
 from streaming_providers.exceptions import ProviderException
 from utils.lock import acquire_redis_lock
 from utils.runtime_const import DATE_STR_REGEX
@@ -150,8 +152,8 @@ class TorrentFileProcessor:
         self.files = torrent_info[file_key]
         self.file_infos = self._process_files()
         self._video_files: Optional[list[FileInfo]] = None
-        self._episodes: Optional[list[EpisodeFile]] = None
-        self._metadata: Optional[MediaFusionSeriesMetaData] = None
+        self._episodes: Optional[list[EpisodeFileData]] = None
+        self._metadata = None  # SeriesMetadata
 
     def _process_files(self) -> list[FileInfo]:
         """Process all files in the torrent and create FileInfo objects."""
@@ -216,18 +218,20 @@ class TorrentFileProcessor:
 
         if parsed_data.get("date"):
             if not self._metadata:
-                self._metadata = await MediaFusionSeriesMetaData.get(meta_id)
-
-            filtered_episode = next(
-                (
-                    episode
-                    for episode in self._metadata.episodes
-                    if episode.released.strftime("%Y-%m-%d") == parsed_data["date"]
-                ),
-                None,
-            )
-            if filtered_episode:
-                return filtered_episode.season_number, filtered_episode.episode_number
+                async for session in get_read_session():
+                    self._metadata = await sql_crud.get_series_data_by_id(session, meta_id, load_relations=True)
+            
+            if self._metadata and self._metadata.series_episodes:
+                filtered_episode = next(
+                    (
+                        episode
+                        for episode in self._metadata.series_episodes
+                        if episode.released and episode.released.strftime("%Y-%m-%d") == parsed_data["date"]
+                    ),
+                    None,
+                )
+                if filtered_episode:
+                    return filtered_episode.season_number, filtered_episode.episode_number
 
             # if we have date in the title but no metadata, return None to avoid false detection
             return None, None
@@ -273,7 +277,7 @@ class TorrentFileProcessor:
 
     async def parse_all_episodes(
         self, torrent_title: str, meta_id: str, default_season: Optional[int] = None
-    ) -> list[EpisodeFile]:
+    ) -> list[EpisodeFileData]:
         """Parse all episode information from video files."""
         episodes = []
         for file_info in self.get_video_files():
@@ -282,7 +286,7 @@ class TorrentFileProcessor:
             )
             if season and episode:
                 episodes.append(
-                    EpisodeFile(
+                    EpisodeFileData(
                         season_number=season,
                         episode_number=episode,
                         filename=file_info.filename,
@@ -303,7 +307,7 @@ class TorrentFileProcessor:
 
 async def select_file_index_from_torrent(
     torrent_info: dict[str, Any],
-    torrent_stream: TorrentStreams,
+    torrent_stream: TorrentStreamData,
     filename: Optional[str] = None,
     season: Optional[int] = None,
     episode: Optional[int] = None,
@@ -338,7 +342,7 @@ async def select_file_index_from_torrent(
     if not video_files:
         if is_filename_trustable:
             torrent_stream.is_blocked = True
-            await torrent_stream.save()
+            await _save_torrent_stream(torrent_stream)
             raise ProviderException(
                 "No valid video files found in torrent. Torrent has been blocked.",
                 "no_matching_file.mp4",
@@ -384,8 +388,30 @@ async def select_file_index_from_torrent(
     )
 
 
+async def _save_torrent_stream(torrent_stream: TorrentStreamData) -> None:
+    """Save torrent stream updates to PostgreSQL database."""
+    updates = {
+        "is_blocked": torrent_stream.is_blocked,
+        "filename": torrent_stream.filename,
+        "file_index": torrent_stream.file_index,
+        "size": torrent_stream.size,
+        "updated_at": datetime.now(tz=timezone.utc),
+    }
+    # Filter out None values except for is_blocked
+    updates = {k: v for k, v in updates.items() if v is not None or k == "is_blocked"}
+    
+    async for session in get_async_session():
+        await sql_crud.update_torrent_stream(session, torrent_stream.id, updates)
+        
+        # Handle episode files separately if needed
+        if torrent_stream.episode_files:
+            await sql_crud.update_episode_files(
+                session, torrent_stream.id, torrent_stream.episode_files
+            )
+
+
 async def update_torrent_streams_metadata(
-    torrent_stream: TorrentStreams,
+    torrent_stream: TorrentStreamData,
     processor: TorrentFileProcessor,
     season: Optional[int] = None,
     is_index_trustable: bool = False,
@@ -410,7 +436,7 @@ async def update_torrent_streams_metadata(
             file_info = processor.get_largest_video_file()
             if not file_info:
                 torrent_stream.is_blocked = True
-                await torrent_stream.save()
+                await _save_torrent_stream(torrent_stream)
                 logger.error(f"No video files found in torrent {torrent_stream.id}")
                 return False
 
@@ -424,7 +450,7 @@ async def update_torrent_streams_metadata(
             video_files = processor.get_video_files()
             if not video_files:
                 torrent_stream.is_blocked = True
-                await torrent_stream.save()
+                await _save_torrent_stream(torrent_stream)
                 logger.error(f"No video files found in torrent {torrent_stream.id}")
                 return False
 
@@ -452,7 +478,7 @@ async def update_torrent_streams_metadata(
                 torrent_stream.size = total_size
 
         torrent_stream.updated_at = datetime.now(tz=timezone.utc)
-        await torrent_stream.save()
+        await _save_torrent_stream(torrent_stream)
         logger.info(f"Successfully updated {torrent_stream.id} metadata")
         return True
 
@@ -464,12 +490,12 @@ async def update_torrent_streams_metadata(
 
 
 async def _request_annotation(
-    torrent_stream: TorrentStreams, file_infos: list[FileInfo]
+    torrent_stream: TorrentStreamData, file_infos: list[FileInfo]
 ):
     """Request manual annotation for the torrent stream."""
     file_details = [KnownFile(filename=f.filename, size=f.size) for f in file_infos]
     torrent_stream.known_file_details = file_details
-    await torrent_stream.save()
+    await _save_torrent_stream(torrent_stream)
 
     # Notify contributors
     await telegram_notifier.send_file_annotation_request(

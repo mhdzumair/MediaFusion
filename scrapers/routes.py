@@ -13,17 +13,10 @@ from fastapi.responses import RedirectResponse, Response
 
 from db import schemas
 from db.config import settings
-from db.crud import (
-    get_movie_data_by_id,
-    get_series_data_by_id,
-    get_stream_by_info_hash,
-    store_new_torrent_streams,
-    update_metadata,
-    get_or_create_metadata,
-    update_meta_stream,
-)
+from db import sql_crud
+from db.database import get_async_session
 from db.enums import TorrentType
-from db.models import TorrentStreams, EpisodeFile, MediaFusionMetaData
+from db.schemas import TorrentStreamData, EpisodeFileData
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
 from scrapers.scraper_tasks import meta_fetcher
@@ -166,19 +159,23 @@ async def update_imdb_data(
 ):
     response.headers.update(const.NO_CACHE_HEADERS)
 
-    if media_type == "series":
-        series = await get_series_data_by_id(meta_id)
-        if not series:
-            return create_error_response(f"Series with ID {meta_id} not found.")
-    else:
-        movie = await get_movie_data_by_id(meta_id)
-        if not movie:
-            return create_error_response(f"Movie with ID {meta_id} not found.")
+    async for session in get_async_session():
+        if media_type == "series":
+            series = await sql_crud.get_series_data_by_id(session, meta_id)
+            if not series:
+                return create_error_response(f"Series with ID {meta_id} not found.")
+        else:
+            movie = await sql_crud.get_movie_data_by_id(session, meta_id)
+            if not movie:
+                return create_error_response(f"Movie with ID {meta_id} not found.")
 
-    if meta_id.startswith("tt"):
-        await update_metadata([meta_id], media_type)
-    else:
-        await update_meta_stream(meta_id, media_type)
+        if meta_id.startswith("tt"):
+            # Fetch fresh data from IMDB/TMDB and update
+            success = await sql_crud.update_single_imdb_metadata(session, meta_id, media_type)
+            if not success:
+                return create_error_response(f"Failed to update IMDb data for {meta_id}.")
+        else:
+            await sql_crud.update_meta_stream(session, meta_id, media_type)
 
     if redirect_video:
         return RedirectResponse(
@@ -264,22 +261,28 @@ async def add_torrent(
         info_hash = torrent_data.get("info_hash")
 
     # Check if torrent already exists
-    if torrent_stream := await get_stream_by_info_hash(info_hash):
-        if meta_id and meta_id != torrent_stream.meta_id:
-            await torrent_stream.delete()
-        elif meta_type == "movie" and torrent_stream.filename is None:
-            await torrent_stream.delete()
-        elif meta_type == "series" and (
-            not torrent_stream.episode_files
-            or not torrent_stream.episode_files[0].filename
-        ):
-            await torrent_stream.delete()
-        else:
-            return {
-                "status": "warning",
-                "message": f"⚠️ Torrent {info_hash} already exists and is attached to meta ID: {torrent_stream.meta_id}. "
-                f"Thank you for trying to contribute ✨. If the torrent is not visible, please contact support with the Torrent InfoHash."
-            }
+    async for session in get_async_session():
+        torrent_stream = await sql_crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
+        if torrent_stream:
+            should_delete = False
+            if meta_id and meta_id != torrent_stream.meta_id:
+                should_delete = True
+            elif meta_type == "movie" and torrent_stream.filename is None:
+                should_delete = True
+            elif meta_type == "series" and (
+                not torrent_stream.episode_files
+                or not torrent_stream.episode_files[0].filename
+            ):
+                should_delete = True
+            
+            if should_delete:
+                await sql_crud.delete_torrent_stream(session, info_hash)
+            else:
+                return {
+                    "status": "warning",
+                    "message": f"⚠️ Torrent {info_hash} already exists and is attached to meta ID: {torrent_stream.meta_id}. "
+                    f"Thank you for trying to contribute ✨. If the torrent is not visible, please contact support with the Torrent InfoHash."
+                }
 
     # Add technical specifications to torrent_data
     if resolution:
@@ -346,9 +349,10 @@ async def add_torrent(
             "genres": genres,
         }
 
-        metadata_result = await get_or_create_metadata(
-            sports_metadata, meta_type, is_search_imdb_title=False, is_imdb_only=False
-        )
+        async for session in get_async_session():
+            metadata_result = await sql_crud.get_or_create_metadata(
+                session, sports_metadata, meta_type, is_search_imdb_title=False, is_imdb_only=False
+            )
         if not metadata_result:
             return create_error_response("Failed to create metadata for sports content.")
         meta_id = metadata_result["id"]
@@ -372,11 +376,13 @@ async def add_torrent(
                 metadata.update(tmdb_data)
 
         # search for metadata from imdb/tmdb
-        metadata_result = await get_or_create_metadata(
-            metadata,
-            meta_type,
-            is_search_imdb_title=meta_id is None,
-        )
+        async for session in get_async_session():
+            metadata_result = await sql_crud.get_or_create_metadata(
+                session,
+                metadata,
+                meta_type,
+                is_search_imdb_title=meta_id is None,
+            )
         meta_id = metadata_result["id"]
     else:
         # Regular IMDb content validation
@@ -423,32 +429,35 @@ async def add_torrent(
     if torrent_type == TorrentType.PUBLIC:
         torrent_data.pop("torrent_file", None)
 
-    # Add contribution_stream to catalogs if provided
+    # Add contribution catalog based on media type
+    contribution_catalog = f"contribution_{meta_type}s"  # contribution_movies or contribution_series
     if catalog_list:
-        catalog_list.append("contribution_stream")
+        catalog_list.append(contribution_catalog)
         torrent_data["catalog"] = catalog_list
     else:
-        torrent_data["catalog"] = ["contribution_stream"]
+        torrent_data["catalog"] = [contribution_catalog]
 
     validation_errors = []
     seasons_and_episodes = {}
     stream_cache_keys = []
 
     if meta_type == "movie":
-        movie_data = await get_movie_data_by_id(meta_id)
+        async for session in get_async_session():
+            movie_data = await sql_crud.get_movie_data_by_id(session, meta_id)
         if not movie_data:
             return create_error_response(f"Movie with ID {meta_id} not found.")
-        title = movie_data.title
+        title = movie_data.base_metadata.title
+        aka_titles = [t.title for t in (movie_data.base_metadata.aka_titles or [])]
 
         # Title similarity check
         max_similarity_ratio = calculate_max_similarity_ratio(
-            torrent_data.get("title"), movie_data.title, movie_data.aka_titles
+            torrent_data.get("title"), title, aka_titles
         )
         if max_similarity_ratio < 75 and not force_import:
             validation_errors.append(
                 {
                     "type": "title_mismatch",
-                    "message": f"Title mismatch: '{movie_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}",
+                    "message": f"Title mismatch: '{title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}",
                 }
             )
 
@@ -467,20 +476,22 @@ async def add_torrent(
         stream_cache_keys = [f"torrent_streams:{meta_id}"]
 
     else:  # Series
-        series_data = await get_series_data_by_id(meta_id)
+        async for session in get_async_session():
+            series_data = await sql_crud.get_series_data_by_id(session, meta_id)
         if not series_data:
             return create_error_response(f"Series with ID {meta_id} not found.")
-        title = series_data.title
+        title = series_data.base_metadata.title
+        aka_titles = [t.title for t in (series_data.base_metadata.aka_titles or [])]
 
         # Title similarity check
         max_similarity_ratio = calculate_max_similarity_ratio(
-            torrent_data.get("title"), series_data.title, series_data.aka_titles
+            torrent_data.get("title"), title, aka_titles
         )
         if max_similarity_ratio < 75 and not force_import:
             validation_errors.append(
                 {
                     "type": "title_mismatch",
-                    "message": f"Title mismatch: '{series_data.title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}",
+                    "message": f"Title mismatch: '{title}' != '{torrent_data.get('title')}' ratio: {max_similarity_ratio}",
                 }
             )
 
@@ -557,8 +568,13 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
     """
     Handles the store logic for a single torrent stream.
     """
+    # Convert audio from list to string if needed
+    audio = parsed_data.get("audio")
+    if isinstance(audio, list):
+        audio = ", ".join(audio)
+    
     # Create new stream
-    torrent_stream = TorrentStreams(
+    torrent_stream = TorrentStreamData(
         id=info_hash,
         torrent_name=parsed_data.get("torrent_name"),
         announce_list=parsed_data.get("announce_list"),
@@ -569,7 +585,7 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         resolution=parsed_data.get("resolution"),
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
-        audio=parsed_data.get("audio"),
+        audio=audio,
         hdr=parsed_data.get("hdr"),
         source=parsed_data.get("source"),
         uploader=parsed_data.get("uploader"),
@@ -583,7 +599,8 @@ async def handle_movie_stream_store(info_hash, parsed_data, video_id):
         uploaded_at=datetime.now(tz=timezone.utc),
     )
 
-    await store_new_torrent_streams([torrent_stream])
+    async for session in get_async_session():
+        await sql_crud.store_new_torrent_streams(session, [torrent_stream.model_dump(by_alias=True)])
     logging.info(f"Created movies stream {info_hash} for {video_id}")
     return torrent_stream
 
@@ -595,7 +612,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
     """
     # Prepare episode data based on detailed file data or basic episode numbers
     episode_data = [
-        EpisodeFile(
+        EpisodeFileData(
             season_number=file["season_number"],
             episode_number=file["episode_number"],
             filename=file.get("filename"),
@@ -615,8 +632,13 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
     if not episode_data:
         return None
 
+    # Convert audio from list to string if needed
+    audio = parsed_data.get("audio")
+    if isinstance(audio, list):
+        audio = ", ".join(audio)
+
     # Create new stream, initially without episodes
-    torrent_stream = TorrentStreams(
+    torrent_stream = TorrentStreamData(
         id=info_hash,
         torrent_name=parsed_data.get("torrent_name"),
         announce_list=parsed_data.get("announce_list"),
@@ -626,7 +648,7 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
         resolution=parsed_data.get("resolution"),
         codec=parsed_data.get("codec"),
         quality=parsed_data.get("quality"),
-        audio=parsed_data.get("audio"),
+        audio=audio,
         hdr=parsed_data.get("hdr"),
         source=parsed_data.get("source"),
         uploader=parsed_data.get("uploader"),
@@ -640,7 +662,8 @@ async def handle_series_stream_store(info_hash, parsed_data, video_id):
         torrent_file=parsed_data.get("torrent_file"),
         uploaded_at=datetime.now(tz=timezone.utc),
     )
-    await store_new_torrent_streams([torrent_stream])
+    async for session in get_async_session():
+        await sql_crud.store_new_torrent_streams(session, [torrent_stream.model_dump(by_alias=True)])
 
     return torrent_stream
 
@@ -650,40 +673,43 @@ async def block_torrent(block_data: schemas.BlockTorrent):
     validation_result = validate_api_password(block_data.api_password)
     if isinstance(validation_result, dict):
         return validation_result
-    torrent_stream = await TorrentStreams.get(block_data.info_hash)
-    if not torrent_stream:
-        return {
-            "status": "warning",
-            "message": f"Torrent {block_data.info_hash} is already deleted / not found."
-        }
-    if block_data.action == "block" and torrent_stream.is_blocked:
-        return {"status": "warning", "message": f"Torrent {block_data.info_hash} is already blocked."}
-    try:
-        if block_data.action == "delete":
-            await torrent_stream.delete()
-        else:
-            torrent_stream.is_blocked = True
-            await torrent_stream.save()
-        # Send Telegram notification
-        if settings.telegram_bot_token:
-            metadata = await MediaFusionMetaData.get_motor_collection().find_one(
-                {"_id": torrent_stream.meta_id}, projection={"title": 1, "type": 1}
-            )
-            title = metadata.get("title")
-            meta_type = metadata.get("type")
-            poster = f"{settings.poster_host_url}/poster/{meta_type}/{torrent_stream.meta_id}.jpg"
-            await telegram_notifier.send_block_notification(
-                info_hash=block_data.info_hash,
-                action=block_data.action,
-                meta_id=torrent_stream.meta_id,
-                title=title,
-                meta_type=meta_type,
-                poster=poster,
-                torrent_name=torrent_stream.torrent_name,
-            )
+    
+    async for session in get_async_session():
+        torrent_stream = await sql_crud.get_stream_by_info_hash(session, block_data.info_hash)
+        if not torrent_stream:
+            return {
+                "status": "warning",
+                "message": f"Torrent {block_data.info_hash} is already deleted / not found."
+            }
+        if block_data.action == "block" and torrent_stream.is_blocked:
+            return {"status": "warning", "message": f"Torrent {block_data.info_hash} is already blocked."}
+        try:
+            if block_data.action == "delete":
+                await sql_crud.delete_torrent_stream(session, block_data.info_hash)
+            else:
+                await sql_crud.block_torrent_stream(session, block_data.info_hash)
+            # Send Telegram notification
+            if settings.telegram_bot_token:
+                metadata = await sql_crud.get_metadata_by_id(session, torrent_stream.meta_id)
+                if metadata:
+                    title = metadata.title
+                    meta_type = metadata.type.value if metadata.type else "movie"
+                else:
+                    title = "Unknown"
+                    meta_type = "movie"
+                poster = f"{settings.poster_host_url}/poster/{meta_type}/{torrent_stream.meta_id}.jpg"
+                await telegram_notifier.send_block_notification(
+                    info_hash=block_data.info_hash,
+                    action=block_data.action,
+                    meta_id=torrent_stream.meta_id,
+                    title=title,
+                    meta_type=meta_type,
+                    poster=poster,
+                    torrent_name=torrent_stream.torrent_name,
+                )
 
-    except Exception as e:
-        return {"status": "error", "message": f"Failed to block torrent: {str(e)}"}
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to block torrent: {str(e)}"}
 
     return {
         "status": "success",
@@ -693,30 +719,52 @@ async def block_torrent(block_data: schemas.BlockTorrent):
 
 @router.post("/migrate_id", tags=["scraper"])
 async def migrate_id(migrate_data: schemas.MigrateID):
-    # First verify the IMDb metadata exists
-    if migrate_data.media_type == "series":
-        metadata = await get_series_data_by_id(migrate_data.imdb_id)
-    else:
-        metadata = await get_movie_data_by_id(migrate_data.imdb_id)
-    if not metadata:
-        return create_error_response(f"Metadata with ID {migrate_data.imdb_id} not found.")
+    async for session in get_async_session():
+        # First check if the IMDb metadata exists
+        if migrate_data.media_type == "series":
+            metadata = await sql_crud.get_series_data_by_id(session, migrate_data.imdb_id)
+        else:
+            metadata = await sql_crud.get_movie_data_by_id(session, migrate_data.imdb_id)
+        
+        # If IMDb metadata doesn't exist, fetch and create it
+        if not metadata:
+            logging.info(f"Fetching metadata for {migrate_data.imdb_id} from IMDB/TMDB")
+            fetched_metadata = await meta_fetcher.get_metadata(
+                migrate_data.imdb_id, media_type=migrate_data.media_type
+            )
+            if not fetched_metadata:
+                return create_error_response(
+                    f"Could not fetch metadata for {migrate_data.imdb_id} from IMDB/TMDB."
+                )
+            
+            # Create the metadata in database
+            created_id = await sql_crud.get_or_create_metadata(
+                session,
+                fetched_metadata.get("title"),
+                fetched_metadata.get("year"),
+                migrate_data.media_type,
+                imdb_id=migrate_data.imdb_id,
+            )
+            if not created_id:
+                return create_error_response(
+                    f"Failed to create metadata for {migrate_data.imdb_id}."
+                )
+            logging.info(f"Created metadata for {migrate_data.imdb_id}")
 
-    # Get old metadata for notification before deleting
-    old_metadata = await MediaFusionMetaData.get_motor_collection().find_one(
-        {"_id": migrate_data.mediafusion_id}, projection={"title": 1}
-    )
-    if not old_metadata:
-        return create_error_response(f"Metadata with ID {migrate_data.mediafusion_id} not found.")
-    old_title = old_metadata.get("title")
+        # Get old metadata for notification before deleting
+        old_metadata = await sql_crud.get_metadata_by_id(session, migrate_data.mediafusion_id)
+        if not old_metadata:
+            return create_error_response(f"Metadata with ID {migrate_data.mediafusion_id} not found.")
+        old_title = old_metadata.title
 
-    # Perform the migration
-    await TorrentStreams.find({"meta_id": migrate_data.mediafusion_id}).update(
-        {"$set": {"meta_id": migrate_data.imdb_id}}
-    )
-    await MediaFusionMetaData.get_motor_collection().delete_one(
-        {"_id": migrate_data.mediafusion_id}
-    )
-    await update_meta_stream(migrate_data.imdb_id, migrate_data.media_type)
+        # Perform the migration - update torrent streams to point to new ID
+        await sql_crud.migrate_torrent_streams(session, migrate_data.mediafusion_id, migrate_data.imdb_id)
+        
+        # Delete old metadata
+        await sql_crud.delete_metadata(session, migrate_data.mediafusion_id)
+        
+        # Update stream stats for new ID
+        await sql_crud.update_meta_stream(session, migrate_data.imdb_id, migrate_data.media_type)
 
     # Send notification
     if settings.telegram_bot_token:
@@ -867,56 +915,57 @@ async def update_images(
             "At least one image URL (poster, background, or logo) must be provided"
         )
 
-    # Get metadata to validate it exists and get current values
-    metadata = await MediaFusionMetaData.get_motor_collection().find_one(
-        {"_id": meta_id},
-        projection={"title": 1, "type": 1, "poster": 1, "background": 1, "logo": 1},
-    )
+    async for session in get_async_session():
+        # Get metadata to validate it exists and get current values
+        metadata = await sql_crud.get_metadata_by_id(session, meta_id)
 
-    if not metadata:
-        return create_error_response(f"Content with ID {meta_id} not found")
+        if not metadata:
+            return create_error_response(f"Content with ID {meta_id} not found")
 
-    # Build update fields
-    update_fields = {}
-    if poster:
-        update_fields["poster"] = poster
-        update_fields["is_poster_working"] = True
-        if not await validate_image_url(poster):
-            return create_error_response("Invalid poster image URL, Not able to fetch image")
-    if background:
-        update_fields["background"] = background
-        if not await validate_image_url(background):
-            return create_error_response("Invalid background image URL, Not able to fetch image")
-    if logo:
-        update_fields["logo"] = logo
-        if not await validate_image_url(logo):
-            return create_error_response("Invalid logo image URL, Not able to fetch image")
+        old_poster = metadata.poster
+        old_background = metadata.background
+        old_logo = metadata.logo
+        meta_type = metadata.type.value if metadata.type else "movie"
 
-    # Update metadata
-    await MediaFusionMetaData.get_motor_collection().update_one(
-        {"_id": meta_id}, {"$set": update_fields}
-    )
+        # Build update fields
+        update_fields = {}
+        if poster:
+            update_fields["poster"] = poster
+            update_fields["is_poster_working"] = True
+            if not await validate_image_url(poster):
+                return create_error_response("Invalid poster image URL, Not able to fetch image")
+        if background:
+            update_fields["background"] = background
+            if not await validate_image_url(background):
+                return create_error_response("Invalid background image URL, Not able to fetch image")
+        if logo:
+            update_fields["logo"] = logo
+            if not await validate_image_url(logo):
+                return create_error_response("Invalid logo image URL, Not able to fetch image")
 
-    # Send Telegram notification
-    if settings.telegram_bot_token:
-        await telegram_notifier.send_image_update_notification(
-            meta_id=meta_id,
-            title=metadata.get("title"),
-            meta_type=metadata.get("type"),
-            poster=f"{settings.poster_host_url}/poster/{metadata.get('type')}/{meta_id}.jpg",
-            old_poster=metadata.get("poster"),
-            new_poster=poster,
-            old_background=metadata.get("background"),
-            new_background=background,
-            old_logo=metadata.get("logo"),
-            new_logo=logo,
-        )
+        # Update metadata
+        await sql_crud.update_metadata(session, meta_id, update_fields)
 
-    # cleanup redis cache
-    cache_keys = [
-        f"{metadata.get('type')}_{meta_id}.jpg",
-        f"{metadata.get('type')}_data:{meta_id}",
-    ]
+        # Send Telegram notification
+        if settings.telegram_bot_token:
+            await telegram_notifier.send_image_update_notification(
+                meta_id=meta_id,
+                title=metadata.title,
+                meta_type=meta_type,
+                poster=f"{settings.poster_host_url}/poster/{meta_type}/{meta_id}.jpg",
+                old_poster=old_poster,
+                new_poster=poster,
+                old_background=old_background,
+                new_background=background,
+                old_logo=old_logo,
+                new_logo=logo,
+            )
+
+        # cleanup redis cache
+        cache_keys = [
+            f"{meta_type}_{meta_id}.jpg",
+            f"{meta_type}_data:{meta_id}",
+        ]
     await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
     return {"status": "success", "message": f"Successfully updated images for {meta_id}"}

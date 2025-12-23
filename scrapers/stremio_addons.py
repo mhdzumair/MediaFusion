@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 
 from tenacity import RetryError
 
-from db.models import TorrentStreams, MediaFusionMetaData, EpisodeFile
+from db.schemas import TorrentStreamData, MetadataData, EpisodeFileData
 from db.schemas import UserData
 from scrapers.base_scraper import BaseScraper, ScraperError
 from streaming_providers.cache_helpers import store_cached_info_hashes
@@ -22,7 +22,7 @@ class StremioScraper(BaseScraper):
     def _generate_url(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
@@ -32,11 +32,11 @@ class StremioScraper(BaseScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         url = self._generate_url(user_data, metadata, catalog_type, season, episode)
         try:
             response = await self.make_request(url)
@@ -67,11 +67,11 @@ class StremioScraper(BaseScraper):
         self,
         response: Dict[str, Any],
         user_data: UserData,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         tasks = [
             self.process_stream(stream_data, metadata, catalog_type, season, episode)
             for stream_data in response.get("streams", [])
@@ -94,11 +94,11 @@ class StremioScraper(BaseScraper):
     async def process_stream(
         self,
         stream_data: Dict[str, Any],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> tuple[Optional[TorrentStreams], bool]:
+    ) -> tuple[Optional[TorrentStreamData], bool]:
         async with self.semaphore:
             try:
                 adult_content_field = self.get_adult_content_field(stream_data)
@@ -147,9 +147,9 @@ class StremioScraper(BaseScraper):
         self,
         stream_data: Dict[str, Any],
         parsed_data: Dict[str, Any],
-        metadata: MediaFusionMetaData,
-    ) -> TorrentStreams:
-        return TorrentStreams(
+        metadata: MetadataData,
+    ) -> TorrentStreamData:
+        return TorrentStreamData(
             id=parsed_data["info_hash"],
             meta_id=metadata.id,
             torrent_name=parsed_data["torrent_name"],
@@ -175,7 +175,7 @@ class StremioScraper(BaseScraper):
 
     def process_series_data(
         self,
-        stream: TorrentStreams,
+        stream: TorrentStreamData,
         parsed_data: Dict[str, Any],
         season: int,
         episode: int,
@@ -185,7 +185,7 @@ class StremioScraper(BaseScraper):
 
         if parsed_data.get("episodes"):
             episode_data = [
-                EpisodeFile(
+                EpisodeFileData(
                     season_number=season_number,
                     episode_number=episode_number,
                     file_index=(
@@ -198,7 +198,7 @@ class StremioScraper(BaseScraper):
             ]
         else:
             episode_data = [
-                EpisodeFile(
+                EpisodeFileData(
                     season_number=season_number,
                     episode_number=episode,
                     file_index=stream_data.get("fileIdx"),

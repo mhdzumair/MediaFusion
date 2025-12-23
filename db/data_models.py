@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional, Callable, Any
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
-from db.enums import MediaType, NudityStatus, IndexerType
+from db.enums import MediaType, NudityStatus, TorrentType
 
 
 def create_string_list_validator(attribute_name: str = "name") -> Callable:
@@ -93,6 +93,7 @@ class MovieData(BasePydanticModel):
     base_metadata: BaseMediaData | None = None
     type: MediaType = MediaType.MOVIE
     imdb_rating: Optional[float] = None
+    tmdb_rating: Optional[float] = None
     parent_guide_nudity_status: NudityStatus = NudityStatus.UNKNOWN
     stars: List[str] = Field(default_factory=list)
     parental_certificates: List[str] = Field(default_factory=list)
@@ -131,6 +132,7 @@ class SeriesData(BasePydanticModel):
     type: MediaType = MediaType.SERIES
     end_year: Optional[int] = None
     imdb_rating: Optional[float] = None
+    tmdb_rating: Optional[float] = None
     parent_guide_nudity_status: NudityStatus = NudityStatus.UNKNOWN
     stars: List[str] = Field(default_factory=list)
     parental_certificates: List[str] = Field(default_factory=list)
@@ -182,7 +184,10 @@ class TorrentStreamData(BasePydanticModel):
     audio: Optional[str] = None
     seeders: Optional[int] = None
     is_blocked: bool = False
-    indexer_flag: IndexerType = IndexerType.FREELEACH
+    torrent_type: TorrentType = TorrentType.PUBLIC
+    uploader: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
+    hdr: Optional[List[str]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
