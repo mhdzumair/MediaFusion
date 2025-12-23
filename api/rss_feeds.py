@@ -2,18 +2,19 @@ import logging
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException, Depends, Request, Body, Query
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import HTMLResponse
-from beanie.operators import In
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
-from db.models import RSSFeed
-from db.schemas import RSSFeedCreate, RSSFeedUpdate, RSSFeedBulkImport
+from db.database import get_async_session, get_read_session
+from db import sql_crud
+from db.schemas import RSSFeedCreate, RSSFeedUpdate, RSSFeedBulkImport, RSSFeedSchema
 from scrapers.rss_scraper import run_rss_feed_scraper
 from utils import const
 from utils.validation_helper import api_password_dependency
 from utils.runtime_const import TEMPLATES
-import re  # Add this import at the top of the file
+import re
 
 router = APIRouter()
 
@@ -46,96 +47,112 @@ async def get_rss_manager(
         },
     )
 
-@router.get("/feeds", response_model=List[RSSFeed])
+
+@router.get("/feeds", response_model=List[RSSFeedSchema])
 async def get_all_rss_feeds(
-    _: str = Depends(api_password_dependency)
-) -> List[RSSFeed]:
+    _: str = Depends(api_password_dependency),
+    session: AsyncSession = Depends(get_read_session)
+) -> List[RSSFeedSchema]:
     """Get all RSS feeds"""
-    return await RSSFeed.find_all().to_list()
+    feeds = await sql_crud.list_rss_feeds(session)
+    return [RSSFeedSchema.from_sql_model(feed) for feed in feeds]
 
 
-@router.get("/feeds/{feed_id}", response_model=RSSFeed)
+@router.get("/feeds/{feed_id}", response_model=RSSFeedSchema)
 async def get_rss_feed(
-    feed_id: str, _: str = Depends(api_password_dependency)
-) -> RSSFeed:
+    feed_id: int,
+    _: str = Depends(api_password_dependency),
+    session: AsyncSession = Depends(get_read_session)
+) -> RSSFeedSchema:
     """Get a specific RSS feed by ID"""
-    existing_feed = await RSSFeed.get(feed_id)
+    existing_feed = await sql_crud.get_rss_feed(session, feed_id)
     if not existing_feed:
         raise HTTPException(status_code=404, detail=f"RSS feed with ID {feed_id} not found")
-    return existing_feed
+    return RSSFeedSchema.from_sql_model(existing_feed)
 
 
-@router.post("/feeds", response_model=RSSFeed)
+@router.post("/feeds", response_model=RSSFeedSchema)
 async def create_rss_feed(
-    feed: RSSFeedCreate, _: str = Depends(api_password_dependency)
-) -> RSSFeed:
+    feed: RSSFeedCreate,
+    _: str = Depends(api_password_dependency),
+    session: AsyncSession = Depends(get_async_session)
+) -> RSSFeedSchema:
     """Create a new RSS feed"""
     try:
         # Check if a feed with the same URL already exists
-        existing_feed = await RSSFeed.find_one({"url": feed.url})
+        existing_feed = await sql_crud.get_rss_feed_by_url(session, feed.url)
         if existing_feed:
             raise HTTPException(
                 status_code=400, detail=f"RSS feed with URL {feed.url} already exists"
             )
 
-        # Create new feed model (catalog_ids no longer used)
-        new_feed = RSSFeed(
-            name=feed.name,
-            url=feed.url,
-            parsing_patterns=feed.parsing_patterns.model_dump(),
-            filters=feed.filters.model_dump(),
-            active=feed.active,
-            auto_detect_catalog=feed.auto_detect_catalog,
-            catalog_patterns=[pattern.model_dump() for pattern in (feed.catalog_patterns or [])],
-            source=feed.source,
-            torrent_type=feed.torrent_type,
-        )
+        # Create new feed model
+        feed_data = {
+            "name": feed.name,
+            "url": feed.url,
+            "parsing_patterns": feed.parsing_patterns.model_dump() if feed.parsing_patterns else None,
+            "filters": feed.filters.model_dump() if feed.filters else None,
+            "active": feed.active,
+            "auto_detect_catalog": feed.auto_detect_catalog,
+            "catalog_patterns": [pattern.model_dump() for pattern in (feed.catalog_patterns or [])],
+            "source": feed.source,
+            "torrent_type": feed.torrent_type,
+        }
+        new_feed = await sql_crud.create_rss_feed(session, feed_data)
 
-        await new_feed.insert()
-        return new_feed
+        return RSSFeedSchema.from_sql_model(new_feed)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Failed to create RSS feed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create RSS feed: {str(e)}")
 
 
-@router.put("/feeds/{feed_id}", response_model=RSSFeed)
-async def update_rss_feed(
-    feed_id: str, feed_update: RSSFeedUpdate, _: str = Depends(api_password_dependency)
-) -> RSSFeed:
+@router.put("/feeds/{feed_id}", response_model=RSSFeedSchema)
+async def update_rss_feed_endpoint(
+    feed_id: int,
+    feed_update: RSSFeedUpdate,
+    _: str = Depends(api_password_dependency),
+    session: AsyncSession = Depends(get_async_session)
+) -> RSSFeedSchema:
     """Update an existing RSS feed"""
-    existing_feed = await RSSFeed.get(feed_id)
+    existing_feed = await sql_crud.get_rss_feed(session, feed_id)
     if not existing_feed:
         raise HTTPException(status_code=404, detail=f"RSS feed with ID {feed_id} not found")
 
     # Update fields if provided
     update_data = feed_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(existing_feed, field, value)
-
-    await existing_feed.save()
-    return existing_feed
+    updated_feed = await sql_crud.update_rss_feed(session, feed_id, update_data)
+    return RSSFeedSchema.from_sql_model(updated_feed)
 
 
 @router.delete("/feeds/{feed_id}")
-async def delete_rss_feed(feed_id: str, _: str = Depends(api_password_dependency)):
+async def delete_rss_feed(
+    feed_id: int,
+    _: str = Depends(api_password_dependency),
+    session: AsyncSession = Depends(get_async_session)
+):
     """Delete an RSS feed"""
-    existing_feed = await RSSFeed.get(feed_id)
+    existing_feed = await sql_crud.get_rss_feed(session, feed_id)
     if not existing_feed:
         raise HTTPException(status_code=404, detail=f"RSS feed with ID {feed_id} not found")
 
-    await existing_feed.delete()
+    await sql_crud.delete_rss_feed(session, feed_id)
     return {"detail": f"RSS feed {feed_id} deleted successfully"}
 
 
-
 @router.post("/feeds/bulk-import")
-async def bulk_import_rss_feeds(import_data: RSSFeedBulkImport):
+async def bulk_import_rss_feeds(
+    import_data: RSSFeedBulkImport,
+    session: AsyncSession = Depends(get_async_session)
+):
     """Import multiple RSS feeds at once"""
     if import_data.api_password != settings.api_password:
         raise HTTPException(status_code=401, detail="Invalid API password")
 
     try:
-        existing_feed_urls = [feed.url for feed in await RSSFeed.find_all().to_list()]
+        existing_feeds = await sql_crud.list_rss_feeds(session)
+        existing_feed_urls = [feed.url for feed in existing_feeds]
 
         imported_feeds = []
         skipped_feeds = []
@@ -146,14 +163,14 @@ async def bulk_import_rss_feeds(import_data: RSSFeedBulkImport):
                 skipped_feeds.append(feed_data.url)
                 continue
 
-            new_feed = RSSFeed(
-                name=feed_data.name,
-                url=feed_data.url,
-                parsing_patterns=feed_data.parsing_patterns,
-                active=feed_data.active,
-            )
+            feed_dict = {
+                "name": feed_data.name,
+                "url": feed_data.url,
+                "parsing_patterns": feed_data.parsing_patterns,
+                "active": feed_data.active,
+            }
+            new_feed = await sql_crud.create_rss_feed(session, feed_dict)
 
-            await new_feed.insert()
             imported_feeds.append(str(new_feed.id))
             existing_feed_urls.append(feed_data.url)
 
@@ -265,14 +282,16 @@ async def test_rss_feed(
 
 @router.post("/feeds/activate-deactivate-feeds")
 async def activate_deactivate_feeds(
-    feed_ids: List[str], activate: bool, _: str = Depends(api_password_dependency)
+    feed_ids: List[int],
+    activate: bool,
+    _: str = Depends(api_password_dependency),
+    session: AsyncSession = Depends(get_async_session)
 ):
     """Activate or deactivate multiple RSS feeds at once"""
     try:
-        result = await RSSFeed.find(In(RSSFeed.id, feed_ids)).update({"$set": {"active": activate}})
+        updated_count = await sql_crud.bulk_update_rss_feed_status(session, feed_ids, activate)
         action = "activated" if activate else "deactivated"
-        return {"detail": f"Successfully {action} {result.modified_count} RSS feeds"}
+        return {"detail": f"Successfully {action} {updated_count} RSS feeds"}
     except Exception as e:
         logger.exception(f"Failed to update RSS feeds: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update RSS feeds: {str(e)}")
-

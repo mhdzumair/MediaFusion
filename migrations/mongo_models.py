@@ -391,6 +391,7 @@ class TVStreams(Document):
     externalUrl: str | None = None
     behaviorHints: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     country: str | None = None
     is_working: Optional[bool] = True
     test_failure_count: int = 0

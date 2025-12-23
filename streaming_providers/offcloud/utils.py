@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Optional
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.client import OffCloud
@@ -11,7 +11,7 @@ async def get_video_url_from_offcloud(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str] = None,
     season: Optional[int] = None,
     episode: Optional[int] = None,
@@ -64,7 +64,7 @@ async def get_video_url_from_offcloud(
 
 
 async def update_oc_cache_status(
-    streams: List[TorrentStreams], user_data: UserData, **kwargs
+    streams: List[TorrentStreamData], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on OffCloud's instant availability."""
     try:

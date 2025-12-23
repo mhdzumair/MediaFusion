@@ -6,8 +6,16 @@ from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 
 from db.config import settings
 from db.enums import NudityStatus
-from db.models import TorrentStreams
 from utils import const
+
+
+class PosterData(BaseModel):
+    """Data required for poster generation"""
+    id: str
+    poster: str
+    title: str
+    imdb_rating: Optional[float] = None
+    is_add_title_to_poster: bool = False
 
 
 class Catalog(BaseModel):
@@ -390,7 +398,244 @@ class TVMetaData(BaseModel):
 
 
 class TorrentStreamsList(BaseModel):
-    streams: list[TorrentStreams]
+    streams: list["TorrentStreamData"]
+
+
+class KnownFile(BaseModel):
+    """File information for known files in a torrent"""
+    size: int
+    filename: str
+
+
+class SeriesEpisodeData(BaseModel):
+    """Series episode metadata from IMDb"""
+    season_number: int
+    episode_number: int
+    title: Optional[str] = None
+    overview: Optional[str] = None
+    released: Optional[datetime] = None
+    imdb_rating: Optional[float] = None
+    tmdb_rating: Optional[float] = None
+    thumbnail: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_title(self):
+        if not self.title:
+            self.title = f"Episode {self.episode_number}"
+        return self
+
+
+class CatalogStats(BaseModel):
+    """Catalog statistics for metadata"""
+    catalog: str
+    total_streams: int = 0
+    last_stream_added: Optional[datetime] = None
+
+
+class EpisodeFileData(BaseModel):
+    """Database-agnostic episode file representation"""
+    season_number: int
+    episode_number: int
+    file_index: Optional[int] = None
+    filename: Optional[str] = None
+    size: Optional[int] = None
+    title: Optional[str] = None
+    released: Optional[datetime] = None
+    thumbnail: Optional[str] = None
+    overview: Optional[str] = None
+
+
+class TorrentStreamData(BaseModel):
+    """Database-agnostic torrent stream representation for parser compatibility.
+    
+    Note: The `id` field stores the torrent info_hash (40-character hex string).
+    Use `info_hash` property as an alias for clarity when needed.
+    """
+    model_config = {"extra": "allow"}
+    
+    # id is the torrent info_hash (40-char hex string), used as primary key
+    id: str = Field(description="Torrent info_hash (40-character hex string)")
+    meta_id: str
+    torrent_name: str
+    size: int
+    source: str
+    resolution: Optional[str] = None
+    codec: Optional[str] = None
+    quality: Optional[str] = None
+    audio: Optional[List[str]] = None
+    seeders: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    uploaded_at: Optional[datetime] = None
+    uploader: Optional[str] = None
+    is_blocked: bool = False
+    filename: Optional[str] = None
+    file_index: Optional[int] = None
+    hdr: Optional[List[str]] = None
+    torrent_file: Optional[bytes] = None
+    torrent_type: Optional[str] = "public"  # TorrentType enum value
+    languages: List[str] = Field(default_factory=list)
+    announce_list: List[str] = Field(default_factory=list)
+    episode_files: List[EpisodeFileData] = Field(default_factory=list)
+    catalog: List[str] = Field(default_factory=list)
+    # Store file details from debrid service for later metadata fixing
+    known_file_details: Optional[List["KnownFile"]] = None
+    
+    @property
+    def info_hash(self) -> str:
+        """Alias for id - returns the torrent info_hash."""
+        return self.id
+    
+    @field_validator("audio", mode="before")
+    @classmethod
+    def parse_audio(cls, v):
+        """Convert string audio to list, handling both comma and pipe separators"""
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Handle both comma and pipe separators
+            if "|" in v:
+                return [a.strip() for a in v.split("|") if a.strip()]
+            elif "," in v:
+                return [a.strip() for a in v.split(",") if a.strip()]
+            return [v] if v.strip() else None
+        return None
+    
+    def __hash__(self):
+        """Make TorrentStreamData hashable by its info_hash (id field)."""
+        return hash(self.id)
+    
+    def __eq__(self, other):
+        """Equality based on info_hash (id field) for deduplication."""
+        if isinstance(other, TorrentStreamData):
+            return self.id == other.id
+        return False
+    
+    def get_episodes(self, season_number: int, episode_number: int) -> List[EpisodeFileData]:
+        """Returns episode files for the given season and episode, sorted by size descending"""
+        episodes = [
+            ep for ep in self.episode_files
+            if ep.season_number == season_number and ep.episode_number == episode_number
+        ]
+        return sorted(episodes, key=lambda ep: ep.size or 0, reverse=True)
+    
+    @classmethod
+    def from_pg_model(cls, pg_stream) -> "TorrentStreamData":
+        """Create from PostgreSQL TorrentStream model"""
+        # audio is stored as comma-separated string in DB, validator will convert to list
+        return cls(
+            id=pg_stream.id,
+            meta_id=pg_stream.meta_id,
+            torrent_name=pg_stream.torrent_name,
+            size=pg_stream.size,
+            source=pg_stream.source,
+            resolution=pg_stream.resolution,
+            codec=pg_stream.codec,
+            quality=pg_stream.quality,
+            audio=pg_stream.audio,  # Validator converts string to list
+            seeders=pg_stream.seeders,
+            created_at=pg_stream.created_at,
+            updated_at=pg_stream.updated_at,
+            uploaded_at=pg_stream.uploaded_at,
+            uploader=pg_stream.uploader,
+            is_blocked=pg_stream.is_blocked,
+            filename=pg_stream.filename,
+            file_index=pg_stream.file_index,
+            hdr=pg_stream.hdr,
+            torrent_file=pg_stream.torrent_file,
+            torrent_type=pg_stream.torrent_type,
+            languages=[lang.name for lang in pg_stream.languages] if pg_stream.languages else [],
+            announce_list=[url.name for url in pg_stream.announce_urls] if pg_stream.announce_urls else [],
+            episode_files=[
+                EpisodeFileData(
+                    season_number=ef.season_number,
+                    episode_number=ef.episode_number,
+                    file_index=ef.file_index,
+                    filename=ef.filename,
+                    size=ef.size,
+                )
+                for ef in pg_stream.episode_files
+            ] if pg_stream.episode_files else [],
+            catalog=[],
+        )
+
+
+class MetadataData(BaseModel):
+    """Database-agnostic metadata representation for scraper compatibility"""
+    model_config = {"extra": "allow"}
+    
+    id: str
+    title: str
+    year: Optional[int] = None
+    end_year: Optional[int] = None  # For series
+    poster: Optional[str] = None
+    background: Optional[str] = None
+    description: Optional[str] = None
+    runtime: Optional[str] = None
+    imdb_rating: Optional[float] = None
+    aka_titles: List[str] = Field(default_factory=list)
+    genres: List[str] = Field(default_factory=list)
+    parent_guide_nudity_status: Optional[str] = None
+    type: Optional[str] = None  # 'movie' or 'series'
+    
+    @classmethod
+    def from_pg_movie(cls, pg_movie) -> "MetadataData":
+        """Convert PostgreSQL MovieMetadata to adapter model"""
+        base = pg_movie.base_metadata
+        return cls(
+            id=pg_movie.id,
+            title=base.title if base else "",
+            year=base.year if base else None,
+            end_year=None,  # Movies don't have end_year
+            poster=base.poster if base else None,
+            background=base.background if base else None,
+            description=base.description if base else None,
+            runtime=base.runtime if base else None,
+            imdb_rating=pg_movie.imdb_rating,
+            aka_titles=[aka.title for aka in base.aka_titles] if base and base.aka_titles else [],
+            genres=[g.name for g in base.genres] if base and base.genres else [],
+            parent_guide_nudity_status=pg_movie.parent_guide_nudity_status,
+            type="movie",
+        )
+    
+    @classmethod
+    def from_pg_series(cls, pg_series) -> "MetadataData":
+        """Convert PostgreSQL SeriesMetadata to adapter model"""
+        base = pg_series.base_metadata
+        return cls(
+            id=pg_series.id,
+            title=base.title if base else "",
+            year=base.year if base else None,
+            end_year=pg_series.end_year,  # Series have end_year
+            poster=base.poster if base else None,
+            background=base.background if base else None,
+            description=base.description if base else None,
+            runtime=base.runtime if base else None,
+            imdb_rating=pg_series.imdb_rating,
+            aka_titles=[aka.title for aka in base.aka_titles] if base and base.aka_titles else [],
+            genres=[g.name for g in base.genres] if base and base.genres else [],
+            parent_guide_nudity_status=pg_series.parent_guide_nudity_status,
+            type="series",
+        )
+
+
+class MediaFusionEventsMetaData(BaseModel):
+    """Events metadata stored in Redis"""
+    id: str
+    title: str
+    description: Optional[str] = None
+    poster: Optional[str] = None
+    background: Optional[str] = None
+    logo: Optional[str] = None
+    website: Optional[str] = None
+    country: Optional[str] = None
+    genres: List[str] = Field(default_factory=list)
+    year: Optional[int] = None
+    is_add_title_to_poster: bool = False
+    event_start_timestamp: Optional[int] = None
+    streams: List["TVStreams"] = Field(default_factory=list)
 
 
 class ScraperTask(BaseModel):
@@ -627,3 +872,65 @@ class RSSFeedBulkImport(BaseModel):
 class RSSFeedExamine(BaseModel):
     url: str
     api_password: str
+
+
+class RSSFeedCatalogPatternSchema(BaseModel):
+    """Schema for RSS feed catalog pattern from SQL model"""
+    id: int
+    name: Optional[str] = None
+    regex: str
+    enabled: bool = True
+    case_sensitive: bool = False
+    target_catalogs: List[str] = Field(default_factory=list)
+    
+    model_config = {"from_attributes": True}
+
+
+class RSSFeedSchema(BaseModel):
+    """Schema for RSS feed response from SQL model"""
+    id: int
+    name: str
+    url: str
+    parsing_patterns: Optional[RSSFeedParsingPatterns] = None
+    filters: Optional[RSSFeedFilters] = None
+    active: bool = True
+    last_scraped: Optional[datetime] = None
+    source: Optional[str] = None
+    torrent_type: str = "public"
+    auto_detect_catalog: bool = False
+    catalog_patterns: List[RSSFeedCatalogPatternSchema] = Field(default_factory=list)
+    metrics: Optional[RSSFeedMetrics] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    model_config = {"from_attributes": True}
+    
+    @classmethod
+    def from_sql_model(cls, feed) -> "RSSFeedSchema":
+        """Create from SQL model RSSFeed"""
+        return cls(
+            id=feed.id,
+            name=feed.name,
+            url=feed.url,
+            parsing_patterns=RSSFeedParsingPatterns(**feed.parsing_patterns) if feed.parsing_patterns else None,
+            filters=RSSFeedFilters(**feed.filters) if feed.filters else None,
+            active=feed.active,
+            last_scraped=feed.last_scraped,
+            source=feed.source,
+            torrent_type=feed.torrent_type,
+            auto_detect_catalog=feed.auto_detect_catalog,
+            catalog_patterns=[
+                RSSFeedCatalogPatternSchema(
+                    id=p.id,
+                    name=p.name,
+                    regex=p.regex,
+                    enabled=p.enabled,
+                    case_sensitive=p.case_sensitive,
+                    target_catalogs=p.target_catalogs,
+                )
+                for p in (feed.catalog_patterns or [])
+            ],
+            metrics=RSSFeedMetrics(**feed.metrics) if feed.metrics else None,
+            created_at=feed.created_at,
+            updated_at=feed.updated_at,
+        )

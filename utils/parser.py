@@ -13,7 +13,7 @@ from thefuzz import fuzz
 
 from db.config import settings
 from db.enums import TorrentType
-from db.models import TorrentStreams, TVStreams
+from db.schemas import TorrentStreamData, TVStreams
 from db.schemas import Stream, UserData, SortingOption
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import (
@@ -29,11 +29,11 @@ from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 
 async def filter_and_sort_streams(
-    streams: list[TorrentStreams],
+    streams: list[TorrentStreamData],
     user_data: UserData,
     stremio_video_id: str,
     user_ip: str | None = None,
-) -> tuple[list[TorrentStreams], dict]:
+) -> tuple[list[TorrentStreamData], dict]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
     quality_filter_set = set(
@@ -167,7 +167,7 @@ async def filter_and_sort_streams(
             filtered_streams = cached_filtered_streams
 
     # Step 3: Dynamically sort streams based on user preferences
-    def dynamic_sort_key(torrent_stream: TorrentStreams) -> tuple:
+    def dynamic_sort_key(torrent_stream: TorrentStreamData) -> tuple:
         def key_value(sorting_option: SortingOption) -> Any:
             key = sorting_option.key
             multiplier = 1 if sorting_option.direction == "asc" else -1
@@ -240,7 +240,7 @@ async def filter_and_sort_streams(
 
 
 async def parse_stream_data(
-    streams: list[TorrentStreams],
+    streams: list[TorrentStreamData],
     user_data: UserData,
     secret_str: str,
     season: int = None,

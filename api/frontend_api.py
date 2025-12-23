@@ -1,11 +1,11 @@
-import math
 from typing import Dict, List, Optional, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
-from db import crud, schemas
+from db import schemas, sql_crud
 from db.config import settings
+from db.database import get_read_session
 from utils import const
 from utils.network import get_user_data, get_user_public_ip
 
@@ -171,24 +171,26 @@ async def get_download_info(
             detail="Download option is not enabled or no streaming provider configured",
         )
 
-    metadata = (
-        await crud.get_movie_data_by_id(video_id)
-        if catalog_type == "movie"
-        else await crud.get_series_data_by_id(video_id)
-    )
+    async for session in get_read_session():
+        metadata = (
+            await sql_crud.get_movie_data_by_id(session, video_id)
+            if catalog_type == "movie"
+            else await sql_crud.get_series_data_by_id(session, video_id)
+        )
     if not metadata:
         raise HTTPException(status_code=404, detail="Metadata not found")
 
     user_ip = await get_user_public_ip(request, user_data)
 
-    if catalog_type == "movie":
-        streams = await crud.get_movie_streams(
-            user_data, secret_str, video_id, user_ip, background_tasks
-        )
-    else:
-        streams = await crud.get_series_streams(
-            user_data, secret_str, video_id, season, episode, user_ip, background_tasks
-        )
+    async for session in get_read_session():
+        if catalog_type == "movie":
+            streams = await sql_crud.get_movie_streams(
+                session, video_id, user_data, secret_str, user_ip, background_tasks
+            )
+        else:
+            streams = await sql_crud.get_series_streams(
+                session, video_id, season, episode, user_data, secret_str, user_ip, background_tasks
+            )
 
     streaming_provider_path = f"{settings.host_url}/streaming_provider/"
     downloadable_streams = [
@@ -202,18 +204,20 @@ async def get_download_info(
     else:
         _poster = f"{settings.poster_host_url}/poster/{catalog_type}/{video_id}.jpg"
 
+    # Access base_metadata for title, year, background, description
+    base = metadata.base_metadata
     background = (
-        metadata.background
-        if metadata.background
+        base.background
+        if base and base.background
         else f"{settings.host_url}/static/images/background.jpg"
     )
 
     return {
-        "title": metadata.title,
-        "year": metadata.year,
+        "title": base.title if base else "",
+        "year": base.year if base else None,
         "poster": _poster,
         "background": background,
-        "description": metadata.description,
+        "description": base.description if base else None,
         "streams": downloadable_streams,
         "catalog_type": catalog_type,
         "season": season,

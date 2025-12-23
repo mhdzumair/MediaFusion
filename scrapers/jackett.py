@@ -6,10 +6,7 @@ import httpx
 
 from db.config import settings
 from db.enums import TorrentType
-from db.models import (
-    TorrentStreams,
-    MediaFusionMetaData,
-)
+from db.schemas import TorrentStreamData, MetadataData
 from scrapers.base_scraper import IndexerBaseScraper
 from utils.network import CircuitBreaker
 from utils.runtime_const import JACKETT_SEARCH_TTL
@@ -83,11 +80,11 @@ class JackettScraper(IndexerBaseScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         """Scrape and parse Jackett indexers for torrent streams"""
         return await super()._scrape_and_parse(
             user_data, metadata, catalog_type, season, episode

@@ -5,7 +5,7 @@ services:
       - "8000:8000"
     env_file: .env
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -70,6 +70,54 @@ services:
     networks:
       - mediafusion-network
 
+  # PostgreSQL - Primary database
+  postgres:
+    image: postgres:18-alpine
+    container_name: mediafusion-postgres
+    environment:
+      POSTGRES_USER: mediafusion
+      POSTGRES_PASSWORD: mediafusion
+      POSTGRES_DB: mediafusion
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "effective_cache_size=384MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=8MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "max_connections=100"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediafusion -d mediafusion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
   redis:
     image: redis:latest
     ports:
@@ -93,6 +141,8 @@ services:
 
 volumes:
   mongo-data:
+    driver: local
+  postgres-data:
     driver: local
   redis-data:
     driver: local

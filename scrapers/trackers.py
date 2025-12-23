@@ -2,16 +2,18 @@ import logging
 from datetime import datetime, timedelta
 
 import dramatiq
-from beanie import BulkWriter
 from pyasynctracker import batch_scrape_info_hashes, find_max_seeders
 from pydantic import BaseModel, Field
+from sqlmodel import select
 
-from db.models import TorrentStreams
+from db import sql_crud
+from db.database import get_async_session
+from db.sql_models import TorrentStream
 from utils.runtime_const import TRACKERS
 
 
 class TorrentProjection(BaseModel):
-    info_hash: str = Field(alias="_id")
+    info_hash: str = Field(alias="id")
     announce_list: list[str]
 
 
@@ -19,43 +21,44 @@ class TorrentProjection(BaseModel):
 async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
     # Calculate offset for pagination
     offset = page * page_size
-    # Fetch torrents which updated_at is more than 1 day, limited by pagination
-    torrents = (
-        await TorrentStreams.find(
-            {
-                "seeders": None,
-                "updated_at": {"$lt": datetime.now() - timedelta(days=7)},
-            },
-            skip=offset,
-            limit=page_size,
+    
+    async for session in get_async_session():
+        # Fetch torrents where seeders is null and updated_at is more than 7 days old
+        query = (
+            select(TorrentStream.id, TorrentStream.announce_urls)
+            .where(TorrentStream.seeders.is_(None))
+            .where(TorrentStream.updated_at < datetime.now() - timedelta(days=7))
+            .offset(offset)
+            .limit(page_size)
         )
-        .project(TorrentProjection)
-        .to_list()
-    )
+        
+        result = await session.exec(query)
+        torrents = result.all()
 
-    if not torrents:
-        logging.info(f"No torrents to update on page {page}")
-        return
+        if not torrents:
+            logging.info(f"No torrents to update on page {page}")
+            return
 
-    data_list = [
-        (torrent.info_hash, torrent.announce_list or TRACKERS) for torrent in torrents
-    ]
-    results = await batch_scrape_info_hashes(data_list, timeout=30)
-    max_seeders_data = find_max_seeders(results)
+        # Prepare data for batch scraping
+        data_list = []
+        for torrent in torrents:
+            info_hash = torrent[0]
+            announce_urls = torrent[1] if torrent[1] else []
+            # Extract URL strings from announce_urls relationship
+            urls = [url.name for url in announce_urls] if announce_urls else TRACKERS
+            data_list.append((info_hash, urls))
+        
+        results = await batch_scrape_info_hashes(data_list, timeout=30)
+        max_seeders_data = find_max_seeders(results)
 
-    # Perform update in the database
-    bulk_writer = BulkWriter()
-    for torrent_id, max_seeders in max_seeders_data.items():
-        await TorrentStreams.find({"_id": torrent_id}).update(
-            {"$set": {"seeders": max_seeders, "updated_at": datetime.now()}},
-            bulk_writer=bulk_writer,
-        )
-        logging.info(
-            f"Updating seeders for torrent {torrent_id} with max seeders: {max_seeders}"
-        )
+        # Perform batch updates
+        for torrent_id, max_seeders in max_seeders_data.items():
+            await sql_crud.update_torrent_seeders(session, torrent_id, max_seeders)
+            logging.info(
+                f"Updating seeders for torrent {torrent_id} with max seeders: {max_seeders}"
+            )
 
-    logging.info(f"Committing {len(max_seeders_data)} updates to the database")
-    await bulk_writer.commit()
+        logging.info(f"Updated {len(max_seeders_data)} torrents")
 
     # Schedule the next batch
     update_torrent_seeders.send_with_options(

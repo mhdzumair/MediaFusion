@@ -5,12 +5,13 @@ import PTT
 import httpx
 
 from db.config import settings
-from db.models import MediaFusionMetaData, TorrentStreams
+from db.schemas import MetadataData, TorrentStreamData
 from db.schemas import UserData
 from scrapers.stremio_addons import StremioScraper
 from utils.parser import (
     convert_size_to_bytes,
 )
+from utils import const
 from utils.runtime_const import TORRENTIO_SEARCH_TTL
 
 SUPPORTED_DEBRID_SERVICE = {
@@ -33,13 +34,14 @@ class TorrentioScraper(StremioScraper):
             logger_name=__name__,
         )
         self.http_client = httpx.AsyncClient(
-            timeout=30, proxy=settings.requests_proxy_url
+            timeout=30, proxy=settings.requests_proxy_url, 
+            headers=const.UA_HEADER,
         )
 
     def _generate_url(
         self,
         user_data: UserData,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
@@ -59,11 +61,11 @@ class TorrentioScraper(StremioScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         return await super()._scrape_and_parse(
             user_data, metadata, catalog_type, season, episode
         )

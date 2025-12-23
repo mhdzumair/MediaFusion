@@ -2,7 +2,7 @@ import asyncio
 from os.path import basename
 from typing import Any, Optional
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
@@ -26,7 +26,7 @@ async def create_or_get_folder_id(pm_client: Premiumize, info_hash: str):
 
 
 async def add_new_torrent(
-    pm_client: Premiumize, magnet_link: str, stream: TorrentStreams, info_hash: str
+    pm_client: Premiumize, magnet_link: str, stream: TorrentStreamData, info_hash: str
 ) -> dict:
     # Check if the torrent is already cached
     instant_availability_data = await pm_client.get_torrent_instant_availability(
@@ -55,7 +55,7 @@ async def get_video_url_from_premiumize(
     magnet_link: str,
     user_data: UserData,
     user_ip: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str],
     season: Optional[int],
     episode: Optional[int],
@@ -113,7 +113,7 @@ async def fetch_downloaded_folder_data(
 async def get_stream_link(
     torrent_info: dict[str, Any],
     filename: Optional[str],
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: Optional[int] = None,
     episode: Optional[int] = None,
 ) -> str:
@@ -130,7 +130,7 @@ async def get_stream_link(
 
 
 async def update_pm_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on Premiumize's instant availability."""
 

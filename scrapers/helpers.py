@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import httpx
 
 from db.config import settings
-from db.models import TorrentStreams, EpisodeFile
+from db.schemas import TorrentStreamData, EpisodeFileData
 from utils.torrent import info_hashes_to_torrent_metadata
 
 # set httpx logging level

@@ -222,8 +222,8 @@ function displayRssFeeds(feeds) {
         row.innerHTML = `
             <td>
                 <div class="form-check">
-                    <input class="form-check-input feed-checkbox" type="checkbox" value="${feed._id}" id="feed_${feed._id}">
-                    <label class="form-check-label" for="feed_${feed._id}"></label>
+                    <input class="form-check-input feed-checkbox" type="checkbox" value="${feed.id}" id="feed_${feed.id}">
+                    <label class="form-check-label" for="feed_${feed.id}"></label>
                 </div>
             </td>
             <td>
@@ -241,13 +241,13 @@ function displayRssFeeds(feeds) {
             <td>${lastScraped}</td>
             <td>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-sm btn-outline-primary" onclick="editFeed('${feed._id}')">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editFeed('${feed.id}')">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFeed('${feed._id}')">
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFeed('${feed.id}')">
                         <i class="bi bi-trash"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-${feed.active ? 'warning' : 'success'}" onclick="toggleFeedStatus('${feed._id}', ${!feed.active})">
+                    <button class="btn btn-sm btn-outline-${feed.active ? 'warning' : 'success'}" onclick="toggleFeedStatus('${feed.id}', ${!feed.active})">
                         <i class="bi bi-${feed.active ? 'pause-fill' : 'play-fill'}"></i>
                     </button>
                 </div>
@@ -378,7 +378,7 @@ async function editFeed(feedId) {
         const feed = await response.json();
 
         // Populate basic form fields
-        document.getElementById('feedId').value = feed._id;
+        document.getElementById('feedId').value = feed.id;
         document.getElementById('feedName').value = feed.name;
         document.getElementById('feedUrl').value = feed.url;
         document.getElementById('feedActive').checked = feed.active;

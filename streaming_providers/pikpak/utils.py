@@ -7,7 +7,7 @@ import httpx
 from pikpakapi import PikPakApi, PikpakException
 
 from db.config import settings
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
@@ -123,7 +123,7 @@ async def find_file_in_folder_tree(
     my_pack_folder_id: str,
     info_hash: str,
     filename: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: int | None,
     episode: int | None,
 ) -> dict | None:
@@ -274,7 +274,7 @@ async def retrieve_or_download_file(
     filename: str,
     magnet_link: str,
     info_hash: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: int | None,
     episode: int | None,
     max_retries: int,
@@ -336,7 +336,7 @@ async def get_video_url_from_pikpak(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: str,
     season: int | None,
     episode: int | None,
@@ -396,7 +396,7 @@ async def validate_medialink(media_link: str) -> bool:
 
 
 async def update_pikpak_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on PikPak's instant availability."""
     async with initialize_pikpak(user_data) as pikpak:

@@ -145,3 +145,4 @@ kodi/build/
 kodi/*.zip
 !kodi/**/lib/
 .vscode/
+*.sql

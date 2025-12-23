@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: mediafusion
-        image: mhdzumair/mediafusion:4.3.35
+        image: mhdzumair/mediafusion:latest
         ports:
         - containerPort: 8000
         resources:
@@ -28,10 +28,25 @@ spec:
             cpu: "200m"
           limits:
             memory: "800Mi"
-            cpu: "200m"
+            cpu: "400m"
         env:
+          # MongoDB (kept for migration)
           - name: MONGO_URI
             value: "mongodb://mongodb-service:27017/mediafusion"
+          # PostgreSQL Primary (read-write)
+          - name: POSTGRES_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_URI
+                optional: true
+          # PostgreSQL Read Replica (optional)
+          - name: POSTGRES_READ_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_READ_URI
+                optional: true
           - name: SECRET_KEY
             valueFrom:
               secretKeyRef:
@@ -42,20 +57,31 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PREMIUMIZE_OAUTH_CLIENT_ID
+                optional: true
           - name: PREMIUMIZE_OAUTH_CLIENT_SECRET
             valueFrom:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PREMIUMIZE_OAUTH_CLIENT_SECRET
+                optional: true
           - name: PROWLARR_API_KEY
             valueFrom:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
+                optional: true
           - name: HOST_URL
             value: "https://mediafusion.local"
           - name: POSTER_HOST_URL
             value: "https://mediafusion.local"
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
+          - name: PROWLARR_URL
+            value: "http://prowlarr-service:9696"
+          - name: FLARESOLVERR_URL
+            value: "http://flaresolverr-service:8191/v1"
+          - name: PLAYWRIGHT_CDP_URL
+            value: "ws://browserless:3000?blockAds=true&stealth=true"
           - name: ENABLE_TAMILMV_SEARCH_SCRAPER
             value: "false"
           - name: PROWLARR_IMMEDIATE_MAX_PROCESS
@@ -97,9 +123,16 @@ spec:
     spec:
       containers:
       - name: mongodb
-        image: mongo
+        image: mongo:latest
         ports:
         - containerPort: 27017
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         volumeMounts:
         - name: mongo-storage
           mountPath: /data/db
@@ -108,6 +141,87 @@ spec:
         persistentVolumeClaim:
           claimName: mongo-pvc
 ---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:18-alpine
+        ports:
+        - containerPort: 5432
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_DB
+            value: "mediafusion"
+        args:
+          - "-c"
+          - "shared_buffers=256MB"
+          - "-c"
+          - "effective_cache_size=768MB"
+          - "-c"
+          - "maintenance_work_mem=128MB"
+          - "-c"
+          - "checkpoint_completion_target=0.9"
+          - "-c"
+          - "wal_buffers=16MB"
+          - "-c"
+          - "random_page_cost=1.1"
+          - "-c"
+          - "effective_io_concurrency=200"
+          - "-c"
+          - "work_mem=16MB"
+          - "-c"
+          - "max_connections=200"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+
+---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -124,13 +238,27 @@ spec:
     spec:
       containers:
       - name: dramatiq-worker
-        image: mhdzumair/mediafusion:4.3.35
+        image: mhdzumair/mediafusion:latest
         command: ["dramatiq", "api.task", "-p", "1", "-t", "1"]
         env:
           - name: HOST_URL
             value: "https://mediafusion.local"
           - name: MONGO_URI
             value: "mongodb://mongodb-service:27017/mediafusion"
+          - name: POSTGRES_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_URI
+                optional: true
+          - name: POSTGRES_READ_URI
+            valueFrom:
+              secretKeyRef:
+                name: mediafusion-secrets
+                key: POSTGRES_READ_URI
+                optional: true
+          - name: REDIS_URL
+            value: "redis://redis-service:6379"
           - name: SECRET_KEY
             valueFrom:
               secretKeyRef:
@@ -141,13 +269,14 @@ spec:
               secretKeyRef:
                 name: mediafusion-secrets
                 key: PROWLARR_API_KEY
+                optional: true
         resources:
           requests:
             memory: "500Mi"
             cpu: "200m"
           limits:
             memory: "1Gi"
-            cpu: "200m"
+            cpu: "400m"
 
 ---
 
@@ -274,36 +403,27 @@ spec:
         image: redis:latest
         ports:
         - containerPort: 6379
-
----
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: proxybroker-deployment
-spec:
-  replicas: 0
-  selector:
-    matchLabels:
-      app: proxybroker
-  template:
-    metadata:
-      labels:
-        app: proxybroker
-    spec:
-      containers:
-      - name: proxybroker
-        image: bluet/proxybroker2:latest
-        args: ["serve", "--host", "0.0.0.0", "--port", "8888", "--types", "HTTP", "HTTPS", "--lvl", "High", "--min-queue", "5"]
-        ports:
-        - containerPort: 8888
         resources:
           requests:
-            cpu: "100m"
-            memory: "100Mi"
+            memory: "64Mi"
+            cpu: "50m"
           limits:
+            memory: "256Mi"
             cpu: "200m"
-            memory: "200Mi"
+        command:
+          - redis-server
+          - --appendonly
+          - "yes"
+          - --save
+          - "60"
+          - "1"
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
 
 ---
 
@@ -372,7 +492,7 @@ spec:
         - containerPort: 3000
         env:
         - name: TIMEOUT
-          value: "'-1'"
+          value: "-1"
         resources:
           requests:
             memory: "200Mi"
@@ -421,6 +541,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  name: postgres-service
+spec:
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
   name: prowlarr-service
 spec:
   selector:
@@ -443,32 +577,6 @@ spec:
     - protocol: TCP
       port: 6379
       targetPort: 6379
-
----
-
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mongo-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: proxybroker-service
-spec:
-  selector:
-    app: proxybroker
-  ports:
-    - protocol: TCP
-      port: 8888
-      targetPort: 8888
 
 ---
 
@@ -500,19 +608,69 @@ spec:
 
 ---
 
-apiVersion: autoscaling/v1
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: mediafusion-hpa
-  namespace: default
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: mediafusion-deployment
   minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 50
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
 
 ---
 

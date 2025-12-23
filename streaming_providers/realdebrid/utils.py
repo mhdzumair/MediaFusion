@@ -1,7 +1,7 @@
 import asyncio
 from typing import Optional
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
@@ -17,7 +17,7 @@ async def create_download_link(
     filename: Optional[str],
     episode: Optional[int],
     season: Optional[int],
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     max_retries: int,
     retry_interval: int,
 ) -> str:
@@ -74,7 +74,7 @@ async def get_video_url_from_realdebrid(
     user_data: UserData,
     user_ip: str,
     filename: Optional[str],
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     max_retries=5,
     retry_interval=5,
     episode: Optional[int] = None,
@@ -162,7 +162,7 @@ async def add_new_torrent(rd_client, magnet_link, info_hash, stream):
 
 
 async def update_rd_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, user_ip: str, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, user_ip: str, **kwargs
 ):
     """Updates the cache status of streams based on user's downloaded torrents in RealDebrid."""
 

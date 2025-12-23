@@ -23,6 +23,21 @@ Ensure the following tools are installed:
 - **Docker Compose**: For multi-container Docker applications. [Installation guide](https://docs.docker.com/compose/install/).
 - **mkcert**: For generating self-signed SSL certificates. [Installation guide](https://github.com/FiloSottile/mkcert?tab=readme-ov-file#installation).
 
+## Database Options 📊
+
+MediaFusion supports both MongoDB and PostgreSQL. The deployment includes both databases during the migration period:
+
+- **MongoDB**: Legacy database (kept for migration compatibility)
+- **PostgreSQL**: New primary database with better performance and replica support
+
+### Available Compose Files
+
+| File | Description |
+|------|-------------|
+| `docker-compose.yml` | Full deployment with single PostgreSQL instance |
+| `docker-compose-minimal.yml` | Minimal setup (databases only) for development |
+| `docker-compose-postgres-ha.yml` | PostgreSQL High Availability with read replicas |
+
 ## Configuration 📝
 
 Rename `.env-sample` to `.env` and update the variables.
@@ -113,17 +128,60 @@ $env:FLARESOLVERR_HOST = "http://flaresolverr:8191"
 
 ## Deployment 🚢
 
+### Standard Deployment (Single PostgreSQL Instance)
+
 Deploy MediaFusion using Docker Compose:
 
 ```bash
 docker compose -f docker-compose.yml up -d
 ```
 
+### High Availability Deployment (PostgreSQL with Read Replicas)
+
+For production environments with high read workloads, use the HA configuration:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose-postgres-ha.yml up -d
+```
+
+This setup includes:
+- PostgreSQL primary (read-write)
+- PostgreSQL read replica (read-only)
+- PgBouncer connection pooling for both primary and replica
+
+### Development Setup (Databases Only)
+
+For local development where you run the app separately:
+
+```bash
+docker compose -f docker-compose-minimal.yml up -d
+```
+
 > [!WARNING]
 > Note: If you have lower than armv8-2 architecture, you may not be able to run the mongodb container. In that case, you can use MongoDB Atlas Cluster. 
 
-### Configuring MongoDB Atlas Cluster (Optional) (Not needed for local deployment) 🌐
-If you want to use MongoDB atlas Cluster instead of local MongoDB, follow the documentation [here](/deployment/mongo/README.md).
+## Database Configuration 🗄️
+
+### PostgreSQL Configuration
+
+The default PostgreSQL credentials are:
+- **User**: `mediafusion`
+- **Password**: `mediafusion`
+- **Database**: `mediafusion`
+
+To use custom credentials, update your `.env` file:
+
+```dotenv
+# Single PostgreSQL instance
+POSTGRES_URI=postgresql+asyncpg://user:password@postgres:5432/mediafusion
+
+# With read replica (optional)
+POSTGRES_READ_URI=postgresql+asyncpg://user:password@postgres-replica:5432/mediafusion
+```
+
+### Configuring MongoDB Atlas Cluster (Optional) 🌐
+
+If you want to use MongoDB Atlas Cluster instead of local MongoDB, follow the documentation [here](/deployment/mongo/README.md).
 
 - Replace the `MONGO_URI` in the `.env` file with the connection string you copied from the previous step.
 - Make sure to add the Database name in the connection string. Example Database name is `mediafusion`.
@@ -131,6 +189,17 @@ If you want to use MongoDB atlas Cluster instead of local MongoDB, follow the do
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster-url>/<database-name>?retryWrites=true&w=majority
 ```
 - Remove the `mongodb` container and `depends_on` from the `docker-compose.yml` file.
+
+### Managed PostgreSQL Services (Recommended for Production)
+
+For production deployments, consider using managed PostgreSQL services:
+- **AWS RDS for PostgreSQL**
+- **Google Cloud SQL**
+- **Azure Database for PostgreSQL**
+- **DigitalOcean Managed Databases**
+- **Supabase**
+
+Update your `.env` file with the connection strings from your managed service.
 
 
 ## Accessing MediaFusion 🌍

@@ -8,7 +8,8 @@ import scrapy
 from scrapy_playwright.page import PageMethod
 
 from db.config import settings
-from db.models import TorrentStreams
+from db import sql_crud
+from db.database import get_async_session
 from utils.config import config_manager
 from utils.parser import convert_size_to_bytes
 from utils.runtime_const import SPORTS_ARTIFACTS
@@ -38,7 +39,7 @@ class TgxSpider(scrapy.Spider):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.redis.aclose()
 
-    def start_requests(self):
+    async def start(self):
         for uploader_profile in self.uploader_profiles:
             parse_url = f"https://{random.choice(self.allowed_domains)}/profile/{uploader_profile}/torrents/0"
             yield scrapy.Request(
@@ -200,9 +201,8 @@ class TgxSpider(scrapy.Spider):
 
             if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
                 self.logger.info(f"Torrent already scraped: {torrent_name}")
-                await TorrentStreams.find_one({"_id": info_hash}).update(
-                    {"$set": {"seeders": seeders}},
-                )
+                async for session in get_async_session():
+                    await sql_crud.update_torrent_seeders(session, info_hash, seeders)
             else:
                 yield response.follow(
                     torrent_page_link,

@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError, ImageStat
 from aiohttp_socks import ProxyConnector
 
 from db.config import settings
-from db.models import MediaFusionMetaData
+from db.schemas import PosterData
 from scrapers.imdb_data import get_imdb_rating
 from utils import const
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -44,18 +44,19 @@ async def fetch_poster_image(url: str) -> bytes:
 
 # Synchronous function for CPU-bound task: image processing
 def process_poster_image(
-    content: bytes, mediafusion_data: MediaFusionMetaData
+    content: bytes, mediafusion_data: PosterData
 ) -> BytesIO:
     try:
         image = Image.open(BytesIO(content)).convert("RGB")
         image = image.resize((300, 450))
-        imdb_rating = None
+        imdb_rating = getattr(mediafusion_data, 'imdb_rating', None)
 
         # The add_elements_to_poster function would be synchronous
         image = add_elements_to_poster(image, imdb_rating)
-        if mediafusion_data.is_add_title_to_poster:
+        if getattr(mediafusion_data, 'is_add_title_to_poster', False):
             # The add_title_to_poster function would also be synchronous
-            image = add_title_to_poster(image, mediafusion_data.title)
+            title = getattr(mediafusion_data, 'title', '')
+            image = add_title_to_poster(image, title)
 
         image = image.convert("RGB")
 
@@ -65,16 +66,20 @@ def process_poster_image(
 
         return byte_io
     except UnidentifiedImageError:
-        raise ValueError(f"Cannot identify image from URL: {mediafusion_data.poster}")
+        poster_url = getattr(mediafusion_data, 'poster', 'unknown')
+        raise ValueError(f"Cannot identify image from URL: {poster_url}")
 
 
-async def create_poster(mediafusion_data: MediaFusionMetaData) -> BytesIO:
+async def create_poster(mediafusion_data: PosterData) -> BytesIO:
     content = await fetch_poster_image(mediafusion_data.poster)
-    if mediafusion_data.id.startswith("tt") and mediafusion_data.imdb_rating is None:
-        imdb_rating = await get_imdb_rating(mediafusion_data.id)
+    
+    # Check if we need to fetch IMDb rating
+    meta_id = getattr(mediafusion_data, 'id', '')
+    if meta_id and meta_id.startswith("tt") and mediafusion_data.imdb_rating is None:
+        imdb_rating = await get_imdb_rating(meta_id)
         if imdb_rating:
             mediafusion_data.imdb_rating = imdb_rating
-            await mediafusion_data.save()
+            # Note: Rating update is handled separately via SQL CRUD if needed
 
     loop = asyncio.get_event_loop()
     byte_io = await asyncio.wait_for(

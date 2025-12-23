@@ -1,0 +1,131 @@
+# PostgreSQL Primary + Read Replica - Local Testing Only
+#
+# Ports: Primary=5442, Replica=5443 (to avoid conflict with existing postgres on 5432)
+#
+# Usage:
+#   docker compose -f docker-compose-postgres-replica-test.yml up -d
+#
+#   # Restore backup (tar format)
+#   docker exec -i pg-primary pg_restore -U mediafusion -d mediafusion -v < mediafusion.sql
+#
+#   # Check replication status
+#   docker exec pg-primary psql -U mediafusion -d mediafusion -c "SELECT * FROM pg_stat_replication;"
+#
+#   # Query replica to verify sync
+#   docker exec pg-replica psql -U mediafusion -d mediafusion -c "SELECT COUNT(*) FROM base_metadata;"
+#
+# Connection strings:
+#   Primary:  postgresql+asyncpg://mediafusion:mediafusion@localhost:5442/mediafusion
+#   Replica:  postgresql+asyncpg://mediafusion:mediafusion@localhost:5443/mediafusion
+
+services:
+  # PostgreSQL Primary (read-write)
+  pg-primary:
+    image: postgres:18-alpine
+    container_name: pg-primary
+    environment:
+      POSTGRES_USER: mediafusion
+      POSTGRES_PASSWORD: mediafusion
+      POSTGRES_DB: mediafusion
+    volumes:
+      - pg-primary-data:/var/lib/postgresql/data
+    ports:
+      - "5442:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediafusion -d mediafusion"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pg-network
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Create custom pg_hba.conf allowing replication
+        cat > /tmp/pg_hba.conf << 'HBAEOF'
+        # TYPE  DATABASE        USER            ADDRESS                 METHOD
+        local   all             all                                     trust
+        host    all             all             127.0.0.1/32            trust
+        host    all             all             ::1/128                 trust
+        host    all             all             0.0.0.0/0               md5
+        host    replication     all             0.0.0.0/0               md5
+        HBAEOF
+        
+        exec docker-entrypoint.sh postgres \
+          -c wal_level=replica \
+          -c max_wal_senders=5 \
+          -c max_replication_slots=5 \
+          -c hot_standby=on \
+          -c shared_buffers=256MB \
+          -c effective_cache_size=768MB \
+          -c max_connections=100 \
+          -c hba_file=/tmp/pg_hba.conf
+
+  # PostgreSQL Read Replica
+  pg-replica:
+    image: postgres:18-alpine
+    container_name: pg-replica
+    # NO POSTGRES_* env vars - we don't want automatic initialization
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        
+        # Ensure data directory exists with correct permissions
+        mkdir -p /var/lib/postgresql/data
+        chown -R postgres:postgres /var/lib/postgresql/data
+        chmod 700 /var/lib/postgresql/data
+        
+        echo "Waiting for primary to be ready..."
+        until pg_isready -h pg-primary -p 5432 -U mediafusion; do
+          sleep 2
+        done
+        echo "Primary is ready!"
+        
+        # Check if we need to initialize
+        if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+          echo "Initializing replica from primary..."
+          
+          # Take base backup from primary (run as postgres user)
+          # -R flag creates standby.signal and postgresql.auto.conf
+          rm -rf /var/lib/postgresql/data/*
+          su postgres -c "PGPASSWORD=mediafusion pg_basebackup \
+            -h pg-primary \
+            -U mediafusion \
+            -D /var/lib/postgresql/data \
+            -Fp -Xs -P -R"
+          
+          echo "Replica base backup complete!"
+        fi
+        
+        echo "Starting replica in standby mode..."
+        exec su postgres -c "postgres \
+          -D /var/lib/postgresql/data \
+          -c hot_standby=on \
+          -c hot_standby_feedback=on \
+          -c shared_buffers=128MB"
+    volumes:
+      - pg-replica-data:/var/lib/postgresql/data
+    ports:
+      - "5443:5432"
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediafusion -d mediafusion"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    networks:
+      - pg-network
+
+volumes:
+  pg-primary-data:
+  pg-replica-data:
+
+networks:
+  pg-network:
+    driver: bridge

@@ -34,7 +34,7 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
         self.channels_data = {}  # Will store IPTV-org channels data
         self.min_match_ratio = 85  # Minimum ratio for fuzzy matching
 
-    def start_requests(self):
+    async def start(self):
         # First fetch IPTV-org channels data
         yield scrapy.Request(
             self.iptv_org_api,

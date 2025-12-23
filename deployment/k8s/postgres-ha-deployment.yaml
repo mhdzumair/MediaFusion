@@ -1,0 +1,375 @@
+# PostgreSQL High Availability Deployment for Kubernetes
+# This deployment supports read-write primary and read-only replicas
+#
+# For production, consider using:
+# - CloudNative-PG operator
+# - Zalando Postgres Operator
+# - Or managed PostgreSQL services (AWS RDS, CloudSQL, Azure Database for PostgreSQL)
+#
+# Connection strings:
+#   Primary:  postgresql+asyncpg://mediafusion:<password>@postgres-primary:5432/mediafusion
+#   Replica:  postgresql+asyncpg://mediafusion:<password>@postgres-replica:5432/mediafusion
+
+---
+# ConfigMap for pg_hba.conf (allows replication connections)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-hba-config
+data:
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            trust
+    host    all             all             ::1/128                 trust
+    host    all             all             0.0.0.0/0               md5
+    host    replication     all             0.0.0.0/0               md5
+
+---
+# ConfigMap for PostgreSQL configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+data:
+  # Primary-specific settings (applied via command args)
+  PRIMARY_ARGS: >-
+    -c wal_level=replica
+    -c max_wal_senders=5
+    -c max_replication_slots=5
+    -c hot_standby=on
+    -c synchronous_commit=on
+    -c shared_buffers=512MB
+    -c effective_cache_size=1536MB
+    -c maintenance_work_mem=256MB
+    -c checkpoint_completion_target=0.9
+    -c wal_buffers=32MB
+    -c random_page_cost=1.1
+    -c effective_io_concurrency=200
+    -c work_mem=32MB
+    -c max_connections=200
+    -c hba_file=/etc/postgresql/pg_hba.conf
+  
+  # Replica-specific settings
+  REPLICA_ARGS: >-
+    -c hot_standby=on
+    -c hot_standby_feedback=on
+    -c max_standby_streaming_delay=30s
+    -c wal_receiver_status_interval=10s
+    -c shared_buffers=256MB
+    -c effective_cache_size=768MB
+
+---
+# PostgreSQL Primary StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+spec:
+  serviceName: postgres-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: primary
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:18-alpine
+        ports:
+        - containerPort: 5432
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        env:
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_DB
+            value: "mediafusion"
+          - name: PGDATA
+            value: /var/lib/postgresql/data/pgdata
+        command:
+          - /bin/sh
+          - -c
+          - |
+            # Copy pg_hba.conf to writable location
+            cp /etc/postgresql-config/pg_hba.conf /tmp/pg_hba.conf
+            
+            exec docker-entrypoint.sh postgres \
+              -c wal_level=replica \
+              -c max_wal_senders=5 \
+              -c max_replication_slots=5 \
+              -c hot_standby=on \
+              -c synchronous_commit=on \
+              -c shared_buffers=512MB \
+              -c effective_cache_size=1536MB \
+              -c maintenance_work_mem=256MB \
+              -c checkpoint_completion_target=0.9 \
+              -c wal_buffers=32MB \
+              -c random_page_cost=1.1 \
+              -c effective_io_concurrency=200 \
+              -c work_mem=32MB \
+              -c max_connections=200 \
+              -c hba_file=/tmp/pg_hba.conf
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-hba
+          mountPath: /etc/postgresql-config
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: postgres-hba
+        configMap:
+          name: postgres-hba-config
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+# PostgreSQL Read Replica StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-replica
+spec:
+  serviceName: postgres-replica
+  replicas: 2
+  selector:
+    matchLabels:
+      app: postgres
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: replica
+    spec:
+      initContainers:
+      - name: setup-replica
+        image: postgres:18-alpine
+        command:
+          - /bin/sh
+          - -c
+          - |
+            set -e
+            
+            # Ensure data directory exists with correct permissions
+            mkdir -p /var/lib/postgresql/data/pgdata
+            chown -R postgres:postgres /var/lib/postgresql/data
+            chmod 700 /var/lib/postgresql/data/pgdata
+            
+            # Wait for primary to be ready
+            echo "Waiting for primary to be ready..."
+            until pg_isready -h postgres-primary -p 5432 -U mediafusion; do
+              sleep 2
+            done
+            echo "Primary is ready!"
+            
+            # Check if we need to initialize
+            if [ ! -f /var/lib/postgresql/data/pgdata/PG_VERSION ]; then
+              echo "Initializing replica from primary..."
+              
+              # Remove any partial data
+              rm -rf /var/lib/postgresql/data/pgdata/*
+              
+              # Take base backup from primary
+              # -R flag creates standby.signal and postgresql.auto.conf
+              su postgres -c "PGPASSWORD=$POSTGRES_PASSWORD pg_basebackup \
+                -h postgres-primary \
+                -U $POSTGRES_USER \
+                -D /var/lib/postgresql/data/pgdata \
+                -Fp -Xs -P -R"
+              
+              echo "Replica base backup complete!"
+            else
+              echo "Data directory already initialized, skipping base backup"
+            fi
+        env:
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets
+                key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      containers:
+      - name: postgres
+        image: postgres:18-alpine
+        ports:
+        - containerPort: 5432
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        env:
+          - name: PGDATA
+            value: /var/lib/postgresql/data/pgdata
+        command:
+          - /bin/sh
+          - -c
+          - |
+            exec su postgres -c "postgres \
+              -D /var/lib/postgresql/data/pgdata \
+              -c hot_standby=on \
+              -c hot_standby_feedback=on \
+              -c max_standby_streaming_delay=30s \
+              -c wal_receiver_status_interval=10s \
+              -c shared_buffers=256MB \
+              -c effective_cache_size=768MB"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          failureThreshold: 3
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+# Service for PostgreSQL Primary (read-write)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  labels:
+    app: postgres
+    role: primary
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+    role: primary
+
+---
+# Service for PostgreSQL Replicas (read-only)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica
+  labels:
+    app: postgres
+    role: replica
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+    role: replica
+
+---
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+
+---
+# PodDisruptionBudget for PostgreSQL
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres
+
+---
+# Secrets (DO NOT commit real passwords - use sealed-secrets or external-secrets in production)
+# Create with: kubectl create secret generic postgres-secrets \
+#   --from-literal=POSTGRES_USER=mediafusion \
+#   --from-literal=POSTGRES_PASSWORD=<secure-password>
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secrets
+type: Opaque
+stringData:
+  POSTGRES_USER: mediafusion
+  POSTGRES_PASSWORD: changeme-in-production
+
+---
+# Secret with PostgreSQL connection strings for MediaFusion
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mediafusion-postgres-config
+type: Opaque
+stringData:
+  # Primary (read-write) connection string
+  POSTGRES_URI: postgresql+asyncpg://mediafusion:changeme-in-production@postgres-primary:5432/mediafusion
+  # Replica (read-only) connection string
+  POSTGRES_READ_URI: postgresql+asyncpg://mediafusion:changeme-in-production@postgres-replica:5432/mediafusion

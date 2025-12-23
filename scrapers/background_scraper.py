@@ -1,12 +1,13 @@
 import asyncio
 import logging
-from datetime import timedelta
 from typing import List
 
 import dramatiq
 
 from db.config import settings
-from db.models import MediaFusionMovieMetaData, MediaFusionSeriesMetaData
+from db import sql_crud
+from db.database import get_async_session
+from db.schemas import MetadataData
 from scrapers.base_scraper import IndexerBaseScraper, BackgroundScraperManager
 from scrapers.jackett import JackettScraper
 from scrapers.prowlarr import ProwlarrScraper
@@ -38,7 +39,12 @@ class BackgroundSearchWorker:
             await self.manager.mark_as_processing(meta_id)
 
             try:
-                metadata = await MediaFusionMovieMetaData.get(meta_id)
+                metadata = None
+                async for session in get_async_session():
+                    pg_metadata = await sql_crud.get_movie_data_by_id(session, meta_id, load_relations=True)
+                    if pg_metadata:
+                        # Convert to MetadataData while session is active (for lazy-loaded relations)
+                        metadata = MetadataData.from_pg_movie(pg_metadata)
                 if not metadata:
                     continue
 
@@ -123,7 +129,12 @@ class BackgroundSearchWorker:
             await self.manager.mark_as_processing(key)
 
             try:
-                metadata = await MediaFusionSeriesMetaData.get(meta_id)
+                metadata = None
+                async for session in get_async_session():
+                    pg_metadata = await sql_crud.get_series_data_by_id(session, meta_id, load_relations=True)
+                    if pg_metadata:
+                        # Convert to MetadataData while session is active (for lazy-loaded relations)
+                        metadata = MetadataData.from_pg_series(pg_metadata)
                 if not metadata:
                     continue
 

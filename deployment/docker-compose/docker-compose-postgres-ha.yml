@@ -1,0 +1,225 @@
+# PostgreSQL High Availability setup with primary and read replicas
+# This is an EXTENSION to the main docker-compose.yml
+# 
+# Usage: docker compose -f docker-compose.yml -f docker-compose-postgres-ha.yml up -d
+#
+# Connection strings:
+#   Primary (via PgBouncer):  postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
+#   Replica (via PgBouncer):  postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+#
+# For production, consider using:
+# - Patroni for automatic failover
+# - Or managed PostgreSQL services (AWS RDS, CloudSQL, etc.)
+
+services:
+  # Override the primary postgres to enable replication
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: mediafusion
+      POSTGRES_PASSWORD: mediafusion
+      POSTGRES_DB: mediafusion
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Create custom pg_hba.conf allowing replication connections
+        cat > /tmp/pg_hba.conf << 'HBAEOF'
+        # TYPE  DATABASE        USER            ADDRESS                 METHOD
+        local   all             all                                     trust
+        host    all             all             127.0.0.1/32            trust
+        host    all             all             ::1/128                 trust
+        host    all             all             0.0.0.0/0               md5
+        host    replication     all             0.0.0.0/0               md5
+        HBAEOF
+        
+        exec docker-entrypoint.sh postgres \
+          -c wal_level=replica \
+          -c max_wal_senders=5 \
+          -c max_replication_slots=5 \
+          -c hot_standby=on \
+          -c synchronous_commit=on \
+          -c shared_buffers=512MB \
+          -c effective_cache_size=1536MB \
+          -c maintenance_work_mem=256MB \
+          -c checkpoint_completion_target=0.9 \
+          -c wal_buffers=32MB \
+          -c random_page_cost=1.1 \
+          -c effective_io_concurrency=200 \
+          -c work_mem=32MB \
+          -c max_connections=200 \
+          -c hba_file=/tmp/pg_hba.conf
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # Read replica 1
+  postgres-replica-1:
+    image: postgres:18-alpine
+    # NO POSTGRES_* env vars - we don't want automatic initialization
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        
+        # Ensure data directory exists with correct permissions
+        mkdir -p /var/lib/postgresql/data
+        chown -R postgres:postgres /var/lib/postgresql/data
+        chmod 700 /var/lib/postgresql/data
+        
+        echo "Waiting for primary to be ready..."
+        until pg_isready -h postgres -p 5432 -U mediafusion; do
+          sleep 2
+        done
+        echo "Primary is ready!"
+        
+        # Check if we need to initialize
+        if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+          echo "Initializing replica from primary..."
+          
+          # Take base backup from primary (run as postgres user)
+          # -R flag creates standby.signal and postgresql.auto.conf
+          rm -rf /var/lib/postgresql/data/*
+          su postgres -c "PGPASSWORD=mediafusion pg_basebackup \
+            -h postgres \
+            -U mediafusion \
+            -D /var/lib/postgresql/data \
+            -Fp -Xs -P -R"
+          
+          echo "Replica base backup complete!"
+        fi
+        
+        echo "Starting replica in standby mode..."
+        exec su postgres -c "postgres \
+          -D /var/lib/postgresql/data \
+          -c hot_standby=on \
+          -c hot_standby_feedback=on \
+          -c max_standby_streaming_delay=30s \
+          -c wal_receiver_status_interval=10s \
+          -c shared_buffers=256MB \
+          -c effective_cache_size=768MB"
+    volumes:
+      - postgres-replica-1-data:/var/lib/postgresql/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediafusion -d mediafusion"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # PgBouncer for connection pooling to primary
+  pgbouncer:
+    image: bitnami/pgbouncer:latest
+    environment:
+      - POSTGRESQL_HOST=postgres
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USERNAME=mediafusion
+      - POSTGRESQL_PASSWORD=mediafusion
+      - POSTGRESQL_DATABASE=mediafusion
+      - PGBOUNCER_DATABASE=mediafusion
+      - PGBOUNCER_POOL_MODE=transaction
+      - PGBOUNCER_MAX_CLIENT_CONN=1000
+      - PGBOUNCER_DEFAULT_POOL_SIZE=50
+      - PGBOUNCER_MIN_POOL_SIZE=10
+      - PGBOUNCER_RESERVE_POOL_SIZE=10
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # PgBouncer for read replicas
+  pgbouncer-read:
+    image: bitnami/pgbouncer:latest
+    environment:
+      - POSTGRESQL_HOST=postgres-replica-1
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USERNAME=mediafusion
+      - POSTGRESQL_PASSWORD=mediafusion
+      - POSTGRESQL_DATABASE=mediafusion
+      - PGBOUNCER_DATABASE=mediafusion
+      - PGBOUNCER_POOL_MODE=transaction
+      - PGBOUNCER_MAX_CLIENT_CONN=2000
+      - PGBOUNCER_DEFAULT_POOL_SIZE=100
+      - PGBOUNCER_MIN_POOL_SIZE=20
+      - PGBOUNCER_RESERVE_POOL_SIZE=20
+    ports:
+      - "6433:6432"
+    depends_on:
+      postgres-replica-1:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mediafusion-network
+
+  # Override mediafusion to use PgBouncer
+  mediafusion:
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/mediafusion
+      # Use PgBouncer for write operations
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
+      # Use read replica PgBouncer for read operations
+      - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      pgbouncer-read:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Override dramatiq-worker to use PgBouncer
+  dramatiq-worker:
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/mediafusion
+      - POSTGRES_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer:6432/mediafusion
+      - POSTGRES_READ_URI=postgresql+asyncpg://mediafusion:mediafusion@pgbouncer-read:6432/mediafusion
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-replica-1-data:
+    driver: local

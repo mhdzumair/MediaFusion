@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 import dramatiq
 
 from db.config import settings
-from db.models import TorrentStreams, MediaFusionMetaData
+from db.schemas import TorrentStreamData, MetadataData
 from db.schemas import UserData
 from scrapers.base_scraper import BaseScraper
 from scrapers.bt4g import BT4GScraper
@@ -54,11 +54,11 @@ CACHED_DATA = [
 
 async def run_scrapers(
     user_data: UserData,
-    metadata: MediaFusionMetaData,
+    metadata: MetadataData,
     catalog_type: str,
     season: int = None,
     episode: int = None,
-) -> set[TorrentStreams]:
+) -> set[TorrentStreamData]:
     """Run all enabled scrapers and return unique streams"""
     all_streams = []
     failed_scrapers = []

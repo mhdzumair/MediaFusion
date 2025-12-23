@@ -6,12 +6,8 @@ import dramatiq
 import httpx
 
 from db.config import settings
-from db.crud import (
-    get_movie_data_by_id,
-    get_series_data_by_id,
-    store_new_torrent_streams,
-    get_or_create_metadata,
-)
+from db import sql_crud
+from db.database import get_async_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from scrapers.base_scraper import IndexerBaseScraper
 from scrapers.jackett import JackettScraper
@@ -170,7 +166,10 @@ class FeedScraper(ABC):
                 item, metadata, media_type, processed_info_hashes=processed_info_hashes
             )
             if stream:
-                await store_new_torrent_streams([stream])
+                async for session in get_async_session():
+                    await sql_crud.store_new_torrent_streams(
+                        session, [stream.model_dump(by_alias=True)]
+                    )
                 scraper.metrics.record_quality(stream.quality)
                 scraper.metrics.record_source(stream.source)
                 return item_id
@@ -224,9 +223,10 @@ class FeedScraper(ABC):
 
         parsed_title_data["created_at"] = scraper.get_created_at(item)
 
-        metadata = await get_or_create_metadata(
-            parsed_title_data, media_type, is_search_imdb_title=True, is_imdb_only=True
-        )
+        async for session in get_async_session():
+            metadata = await sql_crud.get_or_create_metadata(
+                session, parsed_title_data, media_type, is_search_imdb_title=True, is_imdb_only=True
+            )
 
         if not metadata:
             return None
@@ -264,9 +264,14 @@ class JackettFeedScraper(FeedScraper):
 
 async def get_metadata_by_id(imdb_id: str, media_type: str):
     """Get metadata by IMDB ID"""
-    if media_type == "movie":
-        return await get_movie_data_by_id(imdb_id)
-    return await get_series_data_by_id(imdb_id)
+    from db.schemas import MetadataData
+    
+    async for session in get_async_session():
+        if media_type == "movie":
+            pg_data = await sql_crud.get_movie_data_by_id(session, imdb_id)
+            return MetadataData.from_pg_movie(pg_data) if pg_data else None
+        pg_data = await sql_crud.get_series_data_by_id(session, imdb_id)
+        return MetadataData.from_pg_series(pg_data) if pg_data else None
 
 
 # Dramatiq actors for scheduling

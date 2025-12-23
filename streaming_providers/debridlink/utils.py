@@ -1,7 +1,7 @@
 import asyncio
 from typing import Optional
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.debridlink.client import DebridLink
 from streaming_providers.exceptions import ProviderException
@@ -12,7 +12,7 @@ from streaming_providers.parser import (
 
 async def get_download_link(
     torrent_info: dict,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str],
     episode: Optional[int],
     season: Optional[int],
@@ -39,7 +39,7 @@ async def get_video_url_from_debridlink(
     magnet_link: str,
     user_data: UserData,
     filename: Optional[str],
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     episode: Optional[int],
     season: Optional[int] = None,
     user_ip: Optional[str] = None,
@@ -86,7 +86,7 @@ async def get_video_url_from_debridlink(
 
 
 async def update_dl_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, **kwargs
 ):
     """Updates the cache status of streams based on DebridLink's instant availability."""
 

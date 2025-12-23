@@ -21,15 +21,8 @@ from torf import Magnet, MagnetError
 
 from db.config import settings
 from db.enums import TorrentType
-from db.models import (
-    MediaFusionMovieMetaData,
-    MediaFusionSeriesMetaData,
-    EpisodeFile,
-    TorrentStreams,
-    MediaFusionMetaData,
-)
 from db.redis_database import REDIS_ASYNC_CLIENT
-from db.schemas import UserData
+from db.schemas import UserData, TorrentStreamData, EpisodeFileData, MetadataData
 from scrapers import torrent_info
 from scrapers.imdb_data import get_episode_by_date
 from utils.network import batch_process_with_circuit_breaker, CircuitBreaker
@@ -40,7 +33,7 @@ from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metad
 @dataclass
 class ScraperMetrics:
     scraper_name: str
-    meta_data: MediaFusionMetaData = None
+    meta_data: MetadataData = None
     season: int = None
     episode: int = None
     start_time: datetime = field(default_factory=datetime.now)
@@ -286,13 +279,13 @@ class BaseScraper(abc.ABC):
     async def scrape_and_parse(
         self,
         user_data: UserData,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> list[TorrentStreams] | list | None:
+    ) -> list[TorrentStreamData] | list | None:
         """
-        Scrape data and parse it into TorrentStreams objects.
+        Scrape data and parse it into TorrentStreamData objects.
         """
         self.metrics.start()
         self.metrics.meta_data = metadata
@@ -317,13 +310,13 @@ class BaseScraper(abc.ABC):
 
     async def process_streams(
         self,
-        *stream_generators: AsyncGenerator[TorrentStreams, None],
+        *stream_generators: AsyncGenerator[TorrentStreamData, None],
         max_process: int = None,
         max_process_time: int = None,
         catalog_type: str = None,
         season: int = None,
         episode: int = None,
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """
         Process streams from multiple generators and yield them as they become available.
         """
@@ -356,7 +349,7 @@ class BaseScraper(abc.ABC):
                         active_generators,
                     )
                 elif (
-                    isinstance(item, TorrentStreams)
+                    isinstance(item, TorrentStreamData)
                     and item.id not in processed_info_hashes
                 ):
                     processed_info_hashes.add(item.id)
@@ -410,7 +403,7 @@ class BaseScraper(abc.ABC):
         )
 
     @abc.abstractmethod
-    async def _scrape_and_parse(self, *args, **kwargs) -> List[TorrentStreams]:
+    async def _scrape_and_parse(self, *args, **kwargs) -> List[TorrentStreamData]:
         """
         Internal method for actual scraping implementation.
         This should be implemented by each scraper.
@@ -505,27 +498,27 @@ class BaseScraper(abc.ABC):
         self,
         response: Dict[str, Any],
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         """
-        Parse the response into TorrentStreams objects.
+        Parse the response into TorrentStreamData objects.
         :param response: Response dictionary
         :param user_data: UserData object
-        :param metadata: MediaFusionMetaData object
+        :param metadata: MetadataData object
         :param catalog_type: Catalog type (movie, series)
         :param season: Season number (for series)
         :param episode: Episode number (for series)
-        :return: List of TorrentStreams objects
+        :return: List of TorrentStreamData objects
         """
         pass
 
     def get_cache_key(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: str = None,
         episode: str = None,
@@ -550,7 +543,7 @@ class BaseScraper(abc.ABC):
     def validate_title_and_year(
         self,
         parsed_data: dict,
-        metadata: MediaFusionMovieMetaData | MediaFusionSeriesMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         torrent_title: str,
         expected_ratio: int = 87,
@@ -558,7 +551,7 @@ class BaseScraper(abc.ABC):
         """
         Validate the title and year of the parsed data against the metadata.
         :param parsed_data: Parsed data dictionary
-        :param metadata: MediaFusionMetaData object
+        :param metadata: MetadataData object
         :param catalog_type: Catalog type (movie, series)
         :param torrent_title: Torrent title
         :param expected_ratio: Expected similarity ratio
@@ -618,14 +611,18 @@ class BaseScraper(abc.ABC):
         return True
 
     @staticmethod
-    async def store_streams(streams: List[TorrentStreams]):
+    async def store_streams(streams: List[TorrentStreamData]):
         """
         Store the parsed streams in the database.
-        :param streams: List of TorrentStreams objects
+        :param streams: List of TorrentStreamData objects
         """
-        from db.crud import store_new_torrent_streams
+        from db import sql_crud
+        from db.database import get_async_session
 
-        await store_new_torrent_streams(streams)
+        async for session in get_async_session():
+            await sql_crud.store_new_torrent_streams(
+                session, [s.model_dump(by_alias=True) for s in streams]
+            )
 
     @property
     def search_query_timeout(self) -> int:
@@ -699,12 +696,12 @@ class BaseScraper(abc.ABC):
     async def process_stream(
         self,
         stream_data: Dict[str, Any],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         processed_info_hashes: set[str],
         season: int = None,
         episode: int = None,
-    ) -> Optional[TorrentStreams]:
+    ) -> Optional[TorrentStreamData]:
         """Common process stream implementation for all indexers"""
         try:
             torrent_title = self.get_title(stream_data)
@@ -737,7 +734,7 @@ class BaseScraper(abc.ABC):
 
             torrent_type = self.get_torrent_type(stream_data)
 
-            torrent_stream = TorrentStreams(
+            torrent_stream = TorrentStreamData(
                 id=parsed_data["info_hash"],
                 meta_id=metadata.id,
                 torrent_name=parsed_data["torrent_name"],
@@ -777,7 +774,7 @@ class BaseScraper(abc.ABC):
                 episode_files = []
                 if parsed_data.get("file_data"):
                     episode_files = [
-                        EpisodeFile(
+                        EpisodeFileData(
                             season_number=file["season_number"],
                             episode_number=file["episode_number"],
                             filename=file.get("filename"),
@@ -788,9 +785,9 @@ class BaseScraper(abc.ABC):
                         if file.get("episode_number") is not None
                         and file.get("season_number") is not None
                     ]
-                elif episodes := parsed_data.get("episodes") and seasons:
+                elif (episodes := parsed_data.get("episodes")) and seasons:
                     episode_files = [
-                        EpisodeFile(season_number=seasons[0], episode_number=ep)
+                        EpisodeFileData(season_number=seasons[0], episode_number=ep)
                         for ep in episodes
                     ]
                 elif parsed_data.get("date"):
@@ -806,7 +803,7 @@ class BaseScraper(abc.ABC):
                             f"Episode found by {episode_date} date for {parsed_data.get('title')} ({metadata.id})"
                         )
                         episode_files = [
-                            EpisodeFile(
+                            EpisodeFileData(
                                 season_number=int(imdb_episode.season),
                                 episode_number=int(imdb_episode.episode),
                                 title=imdb_episode.title,
@@ -821,7 +818,7 @@ class BaseScraper(abc.ABC):
                     if torrent_data:
                         torrent_file_metadata = torrent_data[0]
                         episode_files = [
-                            EpisodeFile(
+                            EpisodeFileData(
                                 season_number=file["season_number"],
                                 episode_number=file["episode_number"],
                                 filename=file.get("filename"),
@@ -835,7 +832,7 @@ class BaseScraper(abc.ABC):
                     elif seasons:
                         # Some pack contains few episodes. We can't determine exact episode number
                         episode_files = [
-                            EpisodeFile(season_number=season_number, episode_number=1)
+                            EpisodeFileData(season_number=season_number, episode_number=1)
                             for season_number in seasons
                         ]
 
@@ -1012,11 +1009,11 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def _scrape_and_parse(
         self,
         user_data: UserData,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         results = []
         processed_info_hashes: set[str] = set()
 
@@ -1065,9 +1062,9 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def scrape_movie(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         indexer_chunks: List[List[dict]],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Common movie scraping logic"""
         search_generators = []
 
@@ -1116,11 +1113,11 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def scrape_series(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         season: int,
         episode: int,
         indexer_chunks: List[List[dict]],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Common series scraping logic"""
         search_generators = []
 
@@ -1278,9 +1275,9 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def scrape_movie_by_imdb(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         indexers: List[dict],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Scrape movie using IMDB ID"""
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -1296,10 +1293,10 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def scrape_movie_by_title(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         search_query: str,
         indexers: List[dict],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Scrape movie using title search"""
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -1316,11 +1313,11 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def scrape_series_by_imdb(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         season: int,
         episode: int,
         indexers: List[dict],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Scrape series using IMDB ID"""
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -1338,12 +1335,12 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def scrape_series_by_title(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         season: int,
         episode: int,
         search_query: str,
         indexers: List[dict],
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Scrape series using title search"""
         async for stream in self.run_scrape_and_parse(
             processed_info_hashes=processed_info_hashes,
@@ -1398,7 +1395,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def run_scrape_and_parse(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         search_type: Literal["search", "tvsearch", "movie"],
         categories: list[int],
         catalog_type: str,
@@ -1407,7 +1404,7 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
         episode: int = None,
         search_query: str = None,
         requires_imdb: bool = False,
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Common method to run scraping and parsing process"""
         # Filter indexers based on capabilities
         filtered_indexers = self.filter_indexers_by_capability(
@@ -1456,12 +1453,12 @@ class IndexerBaseScraper(BaseScraper, abc.ABC):
     async def parse_streams(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         search_results: List[Dict[str, Any]],
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> AsyncGenerator[TorrentStreams, None]:
+    ) -> AsyncGenerator[TorrentStreamData, None]:
         """Parse stream results with circuit breaker"""
         circuit_breaker = CircuitBreaker(
             failure_threshold=2, recovery_timeout=10, half_open_attempts=3

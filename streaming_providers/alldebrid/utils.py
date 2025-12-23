@@ -1,6 +1,6 @@
 from typing import Optional
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
@@ -21,7 +21,7 @@ async def get_torrent_info(ad_client, info_hash):
 
 
 async def add_new_torrent(
-    ad_client: AllDebrid, magnet_link: str, stream: TorrentStreams
+    ad_client: AllDebrid, magnet_link: str, stream: TorrentStreamData
 ):
     if stream.torrent_file:
         response_data = await ad_client.add_torrent_file(
@@ -106,7 +106,7 @@ async def get_video_url_from_alldebrid(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str],
     user_ip: str,
     season: Optional[int] = None,
@@ -137,7 +137,7 @@ async def get_video_url_from_alldebrid(
 
 
 async def update_ad_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, user_ip: str, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, user_ip: str, **kwargs
 ):
     """Updates the cache status of streams based on AllDebrid's instant availability."""
 

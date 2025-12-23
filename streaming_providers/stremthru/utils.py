@@ -1,6 +1,6 @@
 import asyncio
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
@@ -56,7 +56,7 @@ async def get_video_url_from_stremthru(
     magnet_link: str,
     user_data: UserData,
     filename: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: int = None,
     episode: int = None,
     max_retries=5,
@@ -79,7 +79,7 @@ async def get_video_url_from_stremthru(
 
 
 async def update_st_cache_status(
-    streams: list[TorrentStreams], user_data: UserData, stremio_video_id: str, **kwargs
+    streams: list[TorrentStreamData], user_data: UserData, stremio_video_id: str, **kwargs
 ) -> str | None:
     """Updates the cache status of streams based on StremThru's instant availability."""
 

@@ -2,7 +2,7 @@ from datetime import timedelta
 from typing import List, Dict, Any, Optional
 
 import PTT
-from db.models import TorrentStreams, MediaFusionMetaData
+from db.schemas import TorrentStreamData, MetadataData
 from scrapers.base_scraper import BaseScraper
 from utils.runtime_const import YTS_SEARCH_TTL
 
@@ -19,11 +19,11 @@ class YTSScraper(BaseScraper):
     async def _scrape_and_parse(
         self,
         user_data,
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         catalog_type: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         # YTS is only for movies
         if catalog_type != "movie":
             self.metrics.record_skip("Not a movie")
@@ -80,9 +80,9 @@ class YTSScraper(BaseScraper):
     async def parse_movie_torrents(
         self,
         processed_info_hashes: set[str],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         movie: Dict[str, Any],
-    ) -> List[TorrentStreams]:
+    ) -> List[TorrentStreamData]:
         streams = []
 
         for torrent in movie.get("torrents", []):
@@ -104,9 +104,9 @@ class YTSScraper(BaseScraper):
         self,
         movie: Dict[str, Any],
         torrent: Dict[str, Any],
-        metadata: MediaFusionMetaData,
+        metadata: MetadataData,
         processed_info_hashes: set[str],
-    ) -> Optional[TorrentStreams]:
+    ) -> Optional[TorrentStreamData]:
         try:
             # Skip if we've already processed this info hash
             info_hash = torrent.get("hash", "").lower()
@@ -134,7 +134,7 @@ class YTSScraper(BaseScraper):
             ):
                 return None
 
-            stream = TorrentStreams(
+            stream = TorrentStreamData(
                 id=info_hash,
                 meta_id=metadata.id,
                 torrent_name=torrent_title,

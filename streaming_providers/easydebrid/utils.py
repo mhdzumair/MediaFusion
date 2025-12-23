@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Iterator
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.easydebrid.client import EasyDebrid
 from streaming_providers.exceptions import ProviderException
@@ -14,7 +14,7 @@ async def get_video_url_from_easydebrid(
     user_data: UserData,
     filename: str,
     user_ip: str,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     season: Optional[int] = None,
     episode: Optional[int] = None,
     **kwargs: Any,
@@ -51,7 +51,7 @@ def divide_chunks(lst: List[Any], n: int) -> Iterator[List[Any]]:
 
 
 async def update_chunk_cache_status(
-    easydebrid_client: EasyDebrid, streams_chunk: List[TorrentStreams]
+    easydebrid_client: EasyDebrid, streams_chunk: List[TorrentStreamData]
 ) -> None:
     """Update cache status for a chunk of streams."""
     try:
@@ -69,7 +69,7 @@ async def update_chunk_cache_status(
 
 
 async def update_easydebrid_cache_status(
-    streams: List[TorrentStreams], user_data: UserData, user_ip: str, **kwargs: Any
+    streams: List[TorrentStreamData], user_data: UserData, user_ip: str, **kwargs: Any
 ) -> None:
     """Updates the cache status of streams based on Easydebrid's instant availability."""
     async with EasyDebrid(

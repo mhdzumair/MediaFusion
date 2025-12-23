@@ -5,12 +5,8 @@ from uuid import uuid4
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
-from db import crud
-from db.crud import organize_episodes
-from db.models import (
-    TorrentStreams,
-    MediaFusionSeriesMetaData,
-)
+from db import sql_crud
+from db.database import get_async_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import TVMetaData
 
@@ -68,53 +64,75 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
             logging.warning(f"title not found in item: {item}")
             raise DropItem(f"title not found in item: {item}")
 
-        series = await MediaFusionSeriesMetaData.find_one({"title": item["title"]})
-
-        if not series:
-            meta_id = f"mf{uuid4().fields[-1]}"
-
-            # Create an initial entry for the series
-            series = MediaFusionSeriesMetaData(
-                id=meta_id,
-                title=item["title"],
-                year=item["year"],
-                poster=item.get("poster"),
-                background=item.get("background"),
-                is_poster_working=bool(item.get("poster")),
-                is_add_title_to_poster=item.get("is_add_title_to_poster", False),
+        async for session in get_async_session():
+            # Get or create series metadata
+            metadata = {
+                "id": None,
+                "title": item["title"],
+                "year": item["year"],
+                "poster": item.get("poster"),
+                "background": item.get("background"),
+                "is_poster_working": bool(item.get("poster")),
+                "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
+            }
+            
+            series_result = await sql_crud.get_or_create_metadata(
+                session, metadata, "series", is_search_imdb_title=False
             )
-            await series.insert()
-            logging.info("Added series %s", series.title)
+            
+            if not series_result:
+                raise DropItem(f"Failed to create series metadata for: {item['title']}")
+            
+            meta_id = series_result["id"]
+            logging.info("Using series %s with id %s", item["title"], meta_id)
 
-        torrent_stream = await TorrentStreams.find_one({"_id": item["info_hash"]})
-        if not torrent_stream:
-            torrent_stream = TorrentStreams(
-                id=item["info_hash"],
-                meta_id=series.id,
-                torrent_name=item["torrent_name"],
-                announce_list=item["announce_list"],
-                size=item["total_size"],
-                languages=item["languages"],
-                resolution=item.get("resolution"),
-                codec=item.get("codec"),
-                quality=item.get("quality"),
-                audio=item.get("audio"),
-                hdr=item.get("hdr"),
-                source=item["source"],
-                uploader=item.get("uploader"),
-                catalog=item["catalog"],
-                created_at=item["created_at"],
-                episode_files=item.get("episodes"),
-                seeders=item["seeders"],
-            )
-            await torrent_stream.insert()
-            logging.info(
-                "Added torrent stream %s for series %s",
-                torrent_stream.torrent_name,
-                series.title,
-            )
+            # Check if torrent stream exists
+            existing_stream = await sql_crud.get_stream_by_info_hash(session, item["info_hash"])
+            
+            if not existing_stream:
+                # Prepare episode files
+                episode_files = []
+                if item.get("episodes"):
+                    for ep in item["episodes"]:
+                        episode_files.append({
+                            "season_number": ep.get("season_number", 1),
+                            "episode_number": ep.get("episode_number", 1),
+                            "filename": ep.get("filename"),
+                            "size": ep.get("size"),
+                            "file_index": ep.get("file_index"),
+                        })
 
-        await organize_episodes(series.id)
+                # Create torrent stream
+                stream_data = {
+                    "id": item["info_hash"],
+                    "meta_id": meta_id,
+                    "torrent_name": item["torrent_name"],
+                    "announce_urls": item.get("announce_list", []),
+                    "size": item["total_size"],
+                    "languages": item.get("languages", []),
+                    "resolution": item.get("resolution"),
+                    "codec": item.get("codec"),
+                    "quality": item.get("quality"),
+                    "audio": item.get("audio"),
+                    "hdr": item.get("hdr"),
+                    "source": item["source"],
+                    "uploader": item.get("uploader"),
+                    "catalogs": item.get("catalog", []),
+                    "created_at": item.get("created_at"),
+                    "seeders": item.get("seeders"),
+                    "episode_files": episode_files,
+                }
+                
+                await sql_crud.store_new_torrent_streams(session, [stream_data])
+                logging.info(
+                    "Added torrent stream %s for series %s",
+                    item["torrent_name"],
+                    item["title"],
+                )
+
+            # Organize episodes
+            await sql_crud.organize_episodes(session, meta_id)
+            
         await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
 
         return item
@@ -127,7 +145,8 @@ class TVStorePipeline(QueueBasedPipeline):
             raise DropItem(f"title not found in item: {item}")
 
         tv_metadata = TVMetaData.model_validate(item)
-        await crud.save_tv_channel_metadata(tv_metadata)
+        async for session in get_async_session():
+            await sql_crud.save_tv_channel_metadata(session, tv_metadata)
         return item
 
 
@@ -147,7 +166,8 @@ class MovieStorePipeline(QueueBasedPipeline):
         if item.get("type") != "movie":
             return item
 
-        await crud.save_movie_metadata(item, item.get("is_search_imdb_title", True))
+        async for session in get_async_session():
+            await sql_crud.scraper_save_movie_metadata(session, item, item.get("is_search_imdb_title", True))
         return item
 
 
@@ -166,7 +186,8 @@ class SeriesStorePipeline(QueueBasedPipeline):
 
         if item.get("type") != "series":
             return item
-        await crud.save_series_metadata(item)
+        async for session in get_async_session():
+            await sql_crud.scraper_save_series_metadata(session, item)
         if "scraped_info_hash_key" in item:
             await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
         return item
@@ -185,7 +206,8 @@ class LiveEventStorePipeline(QueueBasedPipeline):
         if "title" not in item:
             raise DropItem(f"name not found in item: {item}")
 
-        await crud.save_events_data(item)
+        async for session in get_async_session():
+            await sql_crud.save_events_data(session, item)
         if "scraped_info_hash_key" in item:
             await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
         return item

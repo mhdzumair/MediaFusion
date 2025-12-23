@@ -12,9 +12,7 @@ from thefuzz import fuzz
 from typedload.exceptions import TypedloadValueError
 
 from db.config import settings
-from db.models import (
-    SeriesEpisode,
-)
+from db.schemas import SeriesEpisodeData
 from utils.const import UA_HEADER
 
 
@@ -138,7 +136,7 @@ async def get_imdb_title_data(imdb_id: str, media_type: str) -> Optional[dict]:
     episodes = []
     if imdb_title.type_id in ["tvSeries", "tvMiniSeries"]:
         episodes = [
-            SeriesEpisode(
+            SeriesEpisodeData(
                 season_number=episode.season,
                 episode_number=episode.episode,
                 title=episode.title,
@@ -366,7 +364,7 @@ async def get_episode_by_date(
     return filtered_episode[0]
 
 
-async def get_all_episodes(series_id: str, series_title: str) -> list[SeriesEpisode]:
+async def get_all_episodes(series_id: str, series_title: str) -> list[SeriesEpisodeData]:
     imdb_title = TVSeries(imdb_id=series_id, title=series_title)
     await web.update_title_async(
         imdb_title,
@@ -375,7 +373,7 @@ async def get_all_episodes(series_id: str, series_title: str) -> list[SeriesEpis
         paginate_result=True,
     )
     return [
-        SeriesEpisode(
+        SeriesEpisodeData(
             season_number=episode.season,
             episode_number=episode.episode,
             title=episode.title,

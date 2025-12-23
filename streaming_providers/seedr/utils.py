@@ -10,7 +10,7 @@ from typing import Optional, Dict, List, Any, Tuple, AsyncGenerator
 from aioseedrcc import Seedr
 from aioseedrcc.exception import SeedrException
 
-from db.models import TorrentStreams
+from db.schemas import TorrentStreamData
 from db.schemas import UserData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
@@ -119,7 +119,7 @@ async def ensure_space_available(seedr: Seedr, required_space: int | float) -> N
 
 
 async def add_torrent(
-    seedr: Seedr, magnet_link: str, info_hash: str, stream: TorrentStreams
+    seedr: Seedr, magnet_link: str, info_hash: str, stream: TorrentStreamData
 ) -> None:
     """Add a new torrent to Seedr."""
     await seedr.add_folder(info_hash)
@@ -204,7 +204,7 @@ async def get_video_url_from_seedr(
     info_hash: str,
     magnet_link: str,
     user_data: UserData,
-    stream: TorrentStreams,
+    stream: TorrentStreamData,
     filename: Optional[str] = None,
     season: Optional[int] = None,
     episode: Optional[int] = None,
@@ -250,7 +250,7 @@ async def get_video_url_from_seedr(
 
 
 async def update_seedr_cache_status(
-    streams: List[TorrentStreams], user_data: UserData, **kwargs
+    streams: List[TorrentStreamData], user_data: UserData, **kwargs
 ) -> None:
     """Update cache status for multiple streams."""
     try:

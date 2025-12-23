@@ -8,10 +8,13 @@ import httpx
 import humanize
 import pytz
 from dateutil import parser as date_parser
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
-from db.models import MediaFusionTVMetaData, TVStreams, MediaFusionEventsMetaData
+from db.schemas import TVMetaData, TVStreams, MediaFusionEventsMetaData
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db import sql_crud
+from db.sql_models import TVMetadata
 from utils import crypto
 from utils.config import config_manager
 from utils.runtime_const import SPORTS_ARTIFACTS
@@ -181,10 +184,10 @@ class DLHDScheduleService:
             return None
 
     async def find_tv_channel(
-        self, channel_name: str
-    ) -> Optional[MediaFusionTVMetaData]:
+        self, session: AsyncSession, channel_name: str
+    ) -> Optional[TVMetadata]:
         """Find TV channel in database"""
-        return await MediaFusionTVMetaData.find_one({"title": channel_name})
+        return await sql_crud.find_tv_channel_by_title(session, channel_name)
 
     def create_stream(
         self,
@@ -219,6 +222,7 @@ class DLHDScheduleService:
 
     async def _process_single_channel(
         self,
+        session: AsyncSession,
         client: httpx.AsyncClient,
         channel: dict,
         meta_id: str,
@@ -235,22 +239,28 @@ class DLHDScheduleService:
                 stats["failed"] += 1
                 return None
 
-            tv_channel = await self.find_tv_channel(channel_name)
+            tv_channel = await self.find_tv_channel(session, channel_name)
             if (
                 tv_channel and not is_sd
             ):  # Only look for existing streams for HD channels
                 try:
-                    channel_streams = await TVStreams.find(
-                        {
-                            "meta_id": tv_channel.id,
-                            "namespaces": "mediafusion",
-                            "is_working": True,
-                        }
-                    ).to_list(None)
-
+                    channel_streams = await sql_crud.get_tv_streams_by_meta_id(
+                        session, tv_channel.id, namespace="mediafusion", is_working=True
+                    )
+                    # Convert SQL models to Pydantic schemas
                     if channel_streams:
-                        stats["found"] += len(channel_streams)
-                        return channel_streams
+                        pydantic_streams = [
+                            TVStreams(
+                                meta_id=s.meta_id,
+                                name=s.name,
+                                source=s.source,
+                                url=s.url,
+                                behaviorHints=s.behavior_hints,
+                            )
+                            for s in channel_streams
+                        ]
+                        stats["found"] += len(pydantic_streams)
+                        return pydantic_streams
 
                 except Exception as e:
                     logging.error(
@@ -312,7 +322,7 @@ class DLHDScheduleService:
             return None
 
     async def _process_channel_list(
-        self, channels: list | dict, meta_id: str, is_sd: bool, stats: dict
+        self, session: AsyncSession, channels: list | dict, meta_id: str, is_sd: bool, stats: dict
     ) -> List[TVStreams]:
         """Process a list or dictionary of channels"""
         streams = []
@@ -332,7 +342,7 @@ class DLHDScheduleService:
 
             for channel in channel_items:
                 channel_streams = await self._process_single_channel(
-                    client, channel, meta_id, is_sd, stats
+                    session, client, channel, meta_id, is_sd, stats
                 )
                 if channel_streams:
                     streams.extend(channel_streams)
@@ -343,7 +353,7 @@ class DLHDScheduleService:
         await client.aclose()
         return streams
 
-    async def get_event_streams(self, event: dict, meta_id: str) -> list[TVStreams]:
+    async def get_event_streams(self, session: AsyncSession, event: dict, meta_id: str) -> list[TVStreams]:
         """Get all available streams for an event"""
         stats = {
             "found": 0,  # Number of existing streams found
@@ -356,14 +366,14 @@ class DLHDScheduleService:
         # Process main channels (HD)
         if "channels" in event:
             hd_streams = await self._process_channel_list(
-                event["channels"], meta_id, is_sd=False, stats=stats
+                session, event["channels"], meta_id, is_sd=False, stats=stats
             )
             streams.extend(hd_streams)
 
         # Process SD channels
         if "channels2" in event:
             sd_streams = await self._process_channel_list(
-                event["channels2"], meta_id, is_sd=True, stats=stats
+                session, event["channels2"], meta_id, is_sd=True, stats=stats
             )
             streams.extend(sd_streams)
 
@@ -419,7 +429,7 @@ class DLHDScheduleService:
                 f"events:genre:{genre}", {event_key: event.event_start_timestamp}
             )
 
-    async def parse_and_cache_schedule(self) -> List[MediaFusionEventsMetaData]:
+    async def parse_and_cache_schedule(self, session: AsyncSession) -> List[MediaFusionEventsMetaData]:
         """Parse schedule and cache it in Redis"""
         schedule_data = await self.fetch_and_parse_schedule()
         if not schedule_data:
@@ -444,7 +454,7 @@ class DLHDScheduleService:
                         skipped_count += 1
                         continue
 
-                    metadata.streams = await self.get_event_streams(event, metadata.id)
+                    metadata.streams = await self.get_event_streams(session, event, metadata.id)
                     await self.cache_event(metadata)
 
                     metadata.poster = (
@@ -463,6 +473,7 @@ class DLHDScheduleService:
 
     async def get_scheduled_events(
         self,
+        session: AsyncSession,
         force_refresh: bool = False,
         genre: Optional[str] = None,
         skip: int = 0,
@@ -511,7 +522,7 @@ class DLHDScheduleService:
                 return events
 
         # If we need to refresh or don't have enough cached events, fetch new data
-        all_events = await self.parse_and_cache_schedule()
+        all_events = await self.parse_and_cache_schedule(session)
         filtered_events = [
             event for event in all_events if not genre or genre in event.genres
         ]
