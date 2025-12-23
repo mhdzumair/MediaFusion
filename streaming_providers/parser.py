@@ -221,17 +221,12 @@ class TorrentFileProcessor:
                 async for session in get_read_session():
                     self._metadata = await sql_crud.get_series_data_by_id(session, meta_id, load_relations=True)
             
-            if self._metadata and self._metadata.series_episodes:
-                filtered_episode = next(
-                    (
-                        episode
-                        for episode in self._metadata.series_episodes
-                        if episode.released and episode.released.strftime("%Y-%m-%d") == parsed_data["date"]
-                    ),
-                    None,
-                )
-                if filtered_episode:
-                    return filtered_episode.season_number, filtered_episode.episode_number
+            if self._metadata and self._metadata.seasons:
+                # Search through all seasons and their episodes
+                for season in self._metadata.seasons:
+                    for episode in season.episodes:
+                        if episode.released and episode.released.strftime("%Y-%m-%d") == parsed_data["date"]:
+                            return season.season_number, episode.episode_number
 
             # if we have date in the title but no metadata, return None to avoid false detection
             return None, None
