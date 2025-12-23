@@ -26,7 +26,7 @@ class TimestampMixin(SQLModel):
     )
     updated_at: datetime | None = Field(
         default=None,
-        sa_column_kwargs={"onupdate": datetime.now(pytz.UTC)},
+        sa_column_kwargs={"onupdate": lambda: datetime.now(pytz.UTC)},
         index=True,
         sa_type=DateTime(timezone=True),
     )

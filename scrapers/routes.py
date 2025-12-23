@@ -738,14 +738,14 @@ async def migrate_id(migrate_data: schemas.MigrateID):
                 )
             
             # Create the metadata in database
-            created_id = await sql_crud.get_or_create_metadata(
+            created_metadata = await sql_crud.get_or_create_metadata(
                 session,
-                fetched_metadata.get("title"),
-                fetched_metadata.get("year"),
+                fetched_metadata,
                 migrate_data.media_type,
-                imdb_id=migrate_data.imdb_id,
+                is_search_imdb_title=False,
+                is_imdb_only=True,
             )
-            if not created_id:
+            if not created_metadata:
                 return create_error_response(
                     f"Failed to create metadata for {migrate_data.imdb_id}."
                 )

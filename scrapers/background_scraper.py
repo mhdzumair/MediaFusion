@@ -39,13 +39,14 @@ class BackgroundSearchWorker:
             await self.manager.mark_as_processing(meta_id)
 
             try:
+                metadata = None
                 async for session in get_async_session():
                     pg_metadata = await sql_crud.get_movie_data_by_id(session, meta_id, load_relations=True)
-                if not pg_metadata:
+                    if pg_metadata:
+                        # Convert to MetadataData while session is active (for lazy-loaded relations)
+                        metadata = MetadataData.from_pg_movie(pg_metadata)
+                if not metadata:
                     continue
-                
-                # Convert to MetadataData for scraper compatibility
-                metadata = MetadataData.from_pg_movie(pg_metadata)
 
                 # Process each scraper sequentially for complete scraping
                 processed_info_hashes: set[str] = set()
@@ -128,13 +129,14 @@ class BackgroundSearchWorker:
             await self.manager.mark_as_processing(key)
 
             try:
+                metadata = None
                 async for session in get_async_session():
                     pg_metadata = await sql_crud.get_series_data_by_id(session, meta_id, load_relations=True)
-                if not pg_metadata:
+                    if pg_metadata:
+                        # Convert to MetadataData while session is active (for lazy-loaded relations)
+                        metadata = MetadataData.from_pg_series(pg_metadata)
+                if not metadata:
                     continue
-                
-                # Convert to MetadataData for scraper compatibility
-                metadata = MetadataData.from_pg_series(pg_metadata)
 
                 # Process each scraper sequentially for complete scraping
                 processed_info_hashes: set[str] = set()

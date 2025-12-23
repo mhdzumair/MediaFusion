@@ -142,7 +142,7 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
         
         for stream in tv_streams:
             is_valid = await validate_live_stream_url(
-                stream.url, stream.behavior_hints or {}
+                stream.url, stream.behaviorHints or {}
             )
             logging.info(f"Stream: {stream.name}, Status: {is_valid}")
             

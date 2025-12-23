@@ -785,7 +785,7 @@ class BaseScraper(abc.ABC):
                         if file.get("episode_number") is not None
                         and file.get("season_number") is not None
                     ]
-                elif episodes := parsed_data.get("episodes") and seasons:
+                elif (episodes := parsed_data.get("episodes")) and seasons:
                     episode_files = [
                         EpisodeFileData(season_number=seasons[0], episode_number=ep)
                         for ep in episodes

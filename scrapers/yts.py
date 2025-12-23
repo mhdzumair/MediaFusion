@@ -9,7 +9,7 @@ from utils.runtime_const import YTS_SEARCH_TTL
 
 class YTSScraper(BaseScraper):
     cache_key_prefix = "yts"
-    yts_url = "https://www.yts-official.cc"
+    yts_url = "https://yts.mx"
 
     def __init__(self):
         super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)

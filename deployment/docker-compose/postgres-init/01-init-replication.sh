@@ -1,13 +1,16 @@
 #!/bin/bash
 set -e
 
+# Use environment variable for replicator password with fallback to default
+REPLICATOR_PWD="${REPLICATOR_PASSWORD:-replicator_password}"
+
 # Create replication user for read replicas
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- Create replication user if it doesn't exist
     DO \$\$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'replicator') THEN
-            CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'replicator_password';
+            CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '$REPLICATOR_PWD';
         END IF;
     END
     \$\$;

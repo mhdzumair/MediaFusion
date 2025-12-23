@@ -44,11 +44,11 @@ class Meta(BaseModel):
     @model_validator(mode="after")
     def parse_meta(self) -> "Meta":
         if self.releaseInfo:
-            self.releaseInfo = (
-                f"{self.releaseInfo}-" + str(self.end_year)
-                if self.end_year
-                else "" if self.type == "series" else str(self.releaseInfo)
-            )
+            if self.type == "series":
+                # For series: "2020-2023" or "2020-" (ongoing)
+                self.releaseInfo = f"{self.releaseInfo}-{self.end_year if self.end_year else ''}"
+            else:
+                self.releaseInfo = str(self.releaseInfo)
         if self.imdbRating:
             self.imdbRating = str(self.imdbRating)
         if self.poster is None:
