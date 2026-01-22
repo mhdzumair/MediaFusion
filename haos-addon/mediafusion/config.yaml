@@ -1,0 +1,54 @@
+---
+name: MediaFusion
+version: "4.3.35"
+slug: mediafusion
+description: MediaFusion - Debrid-based streaming provider for Stremio with Cloudflare Tunnel support
+url: https://github.com/mhdzumair/MediaFusion
+arch:
+  - amd64
+init: false
+startup: application
+boot: auto
+hassio_api: true
+hassio_role: default
+auth_api: false
+ingress: false
+panel_icon: mdi:movie-open
+ports:
+  8000/tcp: 8000
+ports_description:
+  8000/tcp: MediaFusion Web UI and API
+map:
+  - data:rw
+options:
+  host_url: "http://homeassistant.local:8000"
+  secret_key: ""
+  api_password: ""
+  enable_vpn: false
+  vpn_config: ""
+  cloudflare_tunnel_enabled: false
+  cloudflare_tunnel_token: ""
+  postgres_max_connections: 20
+  metadata_cache_ttl: 300
+  enable_prowlarr: false
+  prowlarr_url: ""
+  prowlarr_api_key: ""
+  log_level: "info"
+schema:
+  host_url: str
+  secret_key: password
+  api_password: password?
+  enable_vpn: bool
+  vpn_config: str?
+  vpn_fail_closed: bool?
+  cloudflare_tunnel_enabled: bool
+  cloudflare_tunnel_token: password?
+  postgres_max_connections: int(10,100)?
+  metadata_cache_ttl: int(60,600)?
+  enable_prowlarr: bool
+  prowlarr_url: str?
+  prowlarr_api_key: password?
+  premiumize_client_id: str?
+  premiumize_client_secret: password?
+  log_level: list(debug|info|warning|error)?
+image: ghcr.io/{arch}/addon-mediafusion

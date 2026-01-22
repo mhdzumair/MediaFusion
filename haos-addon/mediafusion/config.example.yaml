@@ -1,0 +1,146 @@
+# MediaFusion Add-on Example Configuration
+# Copy values from this file to your add-on configuration
+
+# ===== REQUIRED SETTINGS =====
+
+# URL where MediaFusion will be accessible
+# Examples:
+#   - Local only: http://homeassistant.local:8000
+#   - With Cloudflare: https://mediafusion.yourdomain.com
+host_url: "http://homeassistant.local:8000"
+
+# Secret key for encryption (32+ characters)
+# Generate with: openssl rand -hex 16
+# NEVER share this key!
+secret_key: "YOUR_GENERATED_SECRET_KEY_HERE"
+
+# ===== OPTIONAL SETTINGS =====
+
+# API password (recommended for public instances)
+# Leave empty for no password protection
+api_password: ""
+
+# ===== VPN SETTINGS =====
+
+# Enable WireGuard VPN routing
+enable_vpn: false
+
+# Your WireGuard configuration
+# Paste your full wg0.conf content here
+vpn_config: |
+  [Interface]
+  PrivateKey = YOUR_PRIVATE_KEY
+  Address = 10.64.0.2/32
+  DNS = 1.1.1.1
+
+  [Peer]
+  PublicKey = SERVER_PUBLIC_KEY
+  Endpoint = vpn.server.com:51820
+  AllowedIPs = 0.0.0.0/0
+
+# Stop all traffic if VPN fails (recommended: true)
+vpn_fail_closed: true
+
+# ===== CLOUDFLARE TUNNEL SETTINGS =====
+
+# Enable Cloudflare Tunnel for remote access
+cloudflare_tunnel_enabled: false
+
+# Cloudflare Tunnel token (get from Cloudflare dashboard)
+cloudflare_tunnel_token: ""
+
+# ===== PERFORMANCE SETTINGS =====
+
+# PostgreSQL max connections (10-100)
+# Lower = less memory usage
+# Recommended for MacBook Air: 20
+postgres_max_connections: 20
+
+# Metadata cache TTL in seconds (60-600)
+# Higher = better performance, more memory
+# Recommended: 300 (5 minutes)
+metadata_cache_ttl: 300
+
+# ===== PROWLARR INTEGRATION =====
+
+# Enable Prowlarr for advanced indexer management
+enable_prowlarr: false
+
+# Prowlarr URL (if using Prowlarr add-on: http://homeassistant.local:9696)
+prowlarr_url: ""
+
+# Prowlarr API key (get from Prowlarr settings)
+prowlarr_api_key: ""
+
+# ===== PREMIUMIZE OAUTH (optional) =====
+
+# Premiumize OAuth client ID
+premiumize_client_id: ""
+
+# Premiumize OAuth client secret
+premiumize_client_secret: ""
+
+# ===== LOGGING =====
+
+# Log level: debug, info, warning, error
+# debug: Verbose logging for troubleshooting
+# info: Normal logging (recommended)
+# warning: Only warnings and errors
+# error: Only errors
+log_level: "info"
+
+# ===== EXAMPLE CONFIGURATIONS =====
+
+# --- Configuration 1: Local Only (Basic) ---
+# host_url: "http://homeassistant.local:8000"
+# secret_key: "3f8a9c7e2d1b6f4a8c9e7d5b3a1f8e6c"
+# enable_vpn: false
+# cloudflare_tunnel_enabled: false
+# log_level: "info"
+
+# --- Configuration 2: Local with VPN ---
+# host_url: "http://homeassistant.local:8000"
+# secret_key: "3f8a9c7e2d1b6f4a8c9e7d5b3a1f8e6c"
+# enable_vpn: true
+# vpn_config: |
+#   [Interface]
+#   PrivateKey = YOUR_KEY
+#   Address = 10.64.0.2/32
+#   DNS = 1.1.1.1
+#   [Peer]
+#   PublicKey = SERVER_KEY
+#   Endpoint = vpn.server.com:51820
+#   AllowedIPs = 0.0.0.0/0
+# vpn_fail_closed: true
+# log_level: "info"
+
+# --- Configuration 3: Remote with Cloudflare Tunnel ---
+# host_url: "https://mediafusion.yourdomain.com"
+# secret_key: "3f8a9c7e2d1b6f4a8c9e7d5b3a1f8e6c"
+# api_password: "strong_password_here"
+# cloudflare_tunnel_enabled: true
+# cloudflare_tunnel_token: "eyJhIjoiZXhhbXBsZSJ9..."
+# log_level: "info"
+
+# --- Configuration 4: Full Setup (VPN + Cloudflare + Prowlarr) ---
+# host_url: "https://mediafusion.yourdomain.com"
+# secret_key: "3f8a9c7e2d1b6f4a8c9e7d5b3a1f8e6c"
+# api_password: "strong_password_here"
+# enable_vpn: true
+# vpn_config: |
+#   [Interface]
+#   PrivateKey = YOUR_KEY
+#   Address = 10.64.0.2/32
+#   [Peer]
+#   PublicKey = SERVER_KEY
+#   Endpoint = vpn.server.com:51820
+#   AllowedIPs = 0.0.0.0/0
+# vpn_fail_closed: true
+# cloudflare_tunnel_enabled: true
+# cloudflare_tunnel_token: "eyJhIjoiZXhhbXBsZSJ9..."
+# enable_prowlarr: true
+# prowlarr_url: "http://homeassistant.local:9696"
+# prowlarr_api_key: "your_prowlarr_api_key"
+# postgres_max_connections: 20
+# metadata_cache_ttl: 300
+# log_level: "info"

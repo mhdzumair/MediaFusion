@@ -1,0 +1,10 @@
+---
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:3.20
+labels:
+  org.opencontainers.image.title: "MediaFusion for Home Assistant"
+  org.opencontainers.image.description: "Debrid-based streaming provider for Stremio"
+  org.opencontainers.image.source: "https://github.com/mhdzumair/MediaFusion"
+  org.opencontainers.image.licenses: "MIT"
+args:
+  PYTHON_VERSION: "3.12"
