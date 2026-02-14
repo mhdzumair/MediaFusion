@@ -7,10 +7,8 @@ without requiring a separate download client.
 
 import hashlib
 import logging
-import re
 from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import Any
 
 import PTT
 

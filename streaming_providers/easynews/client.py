@@ -1,7 +1,7 @@
 """Easynews API client for direct Usenet streaming."""
 
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import aiohttp
 

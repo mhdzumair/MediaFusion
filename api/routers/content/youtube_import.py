@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 import pytz
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Depends, Form
 from pydantic import BaseModel, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -23,7 +23,6 @@ from db.enums import ContributionStatus, MediaType
 from db.models import Contribution, Media, User
 from db.models.streams import (
     StreamLanguageLink,
-    StreamType,
     YouTubeStream,
 )
 from utils.youtube import analyze_youtube_video

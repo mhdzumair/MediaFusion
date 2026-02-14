@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 async def check_forwarded_content(user_id: str | None = None, chat_id: str | None = None):
     """Check for forwarded Telegram content in the database."""
-    from db import crud
     from db.database import get_async_session_context
     from db.models import TelegramStream
     from sqlmodel import select

@@ -9,9 +9,8 @@ from datetime import datetime
 from typing import Any
 
 import pytz
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Depends, Form
 from pydantic import BaseModel, Field, field_validator
-from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
@@ -29,9 +28,7 @@ from db.enums import ContributionStatus, MediaType
 from db.models import Contribution, Media, User
 from db.models.providers import MediaImage
 from db.models.streams import (
-    AceStreamStream,
     StreamLanguageLink,
-    StreamType,
 )
 
 logger = logging.getLogger(__name__)

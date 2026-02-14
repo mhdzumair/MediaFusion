@@ -703,7 +703,6 @@ async def get_table_data(
             """Build a single filter clause and return (clause, params_dict)."""
             col_type = col_types.get(col, "").lower()
             is_array = "array" in col_type or col_type.startswith("_")
-            is_json = "json" in col_type
             param_name = f"filter_value_{param_idx}"
             local_params = {}
 

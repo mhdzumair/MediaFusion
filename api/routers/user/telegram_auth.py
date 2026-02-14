@@ -5,7 +5,6 @@ Handles linking Telegram user accounts to MediaFusion user accounts.
 """
 
 import logging
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel

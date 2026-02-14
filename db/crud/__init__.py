@@ -572,6 +572,19 @@ __all__ = [
     "update_user_rss_feed_by_uuid",
     "delete_user_rss_feed",
     "bulk_update_user_rss_feed_status",
+    # Telegram streams
+    "create_telegram_stream",
+    "get_telegram_stream_by_chat_message",
+    "get_telegram_stream_by_file_id",
+    "get_telegram_stream_by_file_unique_id",
+    "get_telegram_streams_for_media",
+    "telegram_stream_exists",
+    "update_telegram_stream_file_id",
+    # Telegram user forwards
+    "create_telegram_user_forward",
+    "delete_telegram_user_forwards_for_stream",
+    "delete_telegram_user_forwards_for_user",
+    "get_telegram_user_forward",
     # Stream services (Stremio API)
     "get_movie_streams",
     "get_series_streams",

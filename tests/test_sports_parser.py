@@ -21,7 +21,6 @@ from utils.sports_parser import (
     GENERAL_SPORTS_KEYWORDS,
     SPORTS_CATEGORIES,
     SPORTS_CATEGORY_KEYWORDS,
-    SportsParsedTitle,
     clean_sports_event_title,
     detect_sports_category,
     extract_date_from_title,

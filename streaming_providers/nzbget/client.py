@@ -126,21 +126,7 @@ class NZBGet:
         Returns:
             NZB ID of added download
         """
-        # NZBGet append method: (NZBFilename, NZBContent, Category, Priority, DupeKey, DupeScore, DupeMode, AddTop, AddPaused, Parameters)
-        params = [
-            name or "",  # NZBFilename
-            "",  # NZBContent (empty for URL)
-            category,  # Category
-            priority,  # Priority
-            "",  # DupeKey
-            0,  # DupeScore
-            "SCORE",  # DupeMode
-            False,  # AddTop
-            False,  # AddPaused
-            [{"*Unpack:": "yes"}],  # Parameters
-        ]
-
-        # Use URL method instead
+        # Use URL method instead of NZBContent-based append
         result = await self._make_request(
             "append",
             [

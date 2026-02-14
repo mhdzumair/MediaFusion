@@ -1,6 +1,5 @@
 """Easynews utility functions for Usenet streaming."""
 
-import logging
 import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager

@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from db.schemas.config import SortingOption, UserData
+from db.schemas.config import UserData
 from db.schemas.media import TorrentStreamData
 from utils.parser import filter_and_sort_streams
 

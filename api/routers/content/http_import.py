@@ -4,15 +4,13 @@ Supports MediaFlow extractor URLs, custom headers, and DRM-protected MPD streams
 """
 
 import logging
-import re
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
 import pytz
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Depends, Form
 from pydantic import BaseModel, Field
-from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
@@ -24,9 +22,7 @@ from db.database import get_async_session
 from db.enums import ContributionStatus, MediaType
 from db.models import Contribution, Media, User
 from db.models.streams import (
-    HTTPStream,
     StreamLanguageLink,
-    StreamType,
 )
 
 logger = logging.getLogger(__name__)
@@ -435,7 +431,7 @@ async def import_http_stream(
             "url": url,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title or f"HTTP Stream",
+            "title": title or "HTTP Stream",
             "extractor_name": extractor_name,
             "request_headers": parsed_request_headers,
             "response_headers": parsed_response_headers,
