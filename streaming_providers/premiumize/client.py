@@ -1,4 +1,3 @@
-from typing import Optional
 from urllib.parse import quote_plus
 from uuid import uuid4
 
@@ -18,22 +17,18 @@ class Premiumize(DebridClient):
     OAUTH_CLIENT_ID = settings.premiumize_oauth_client_id
     OAUTH_CLIENT_SECRET = settings.premiumize_oauth_client_secret
 
-    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+    def __init__(self, token: str | None = None, user_ip: str | None = None):
         self.user_ip = user_ip
         super().__init__(token)
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
-    async def _make_request(
-        self, method: str, url: str, params: Optional[dict] = None, **kwargs
-    ) -> dict | list:
+    async def _make_request(self, method: str, url: str, params: dict | None = None, **kwargs) -> dict | list:
         params = params or {}
         if self.is_private_token:
             params["apikey"] = self.token
-        return await super()._make_request(
-            method=method, url=url, params=params, **kwargs
-        )
+        return await super()._make_request(method=method, url=url, params=params, **kwargs)
 
     async def initialize_headers(self):
         self.headers = {}
@@ -70,9 +65,7 @@ class Premiumize(DebridClient):
             data={"src": magnet_link, "folder_id": folder_id},
         )
 
-    async def add_torrent_file(
-        self, torrent_file: bytes, torrent_name: Optional[str], folder_id: str = None
-    ):
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: str | None, folder_id: str = None):
         data = aiohttp.FormData()
         data.add_field(
             "file",
@@ -88,9 +81,7 @@ class Premiumize(DebridClient):
         )
 
     async def create_direct_download(self, magnet_link: str):
-        return await self._make_request(
-            "POST", f"{self.BASE_URL}/transfer/directdl", data={"src": magnet_link}
-        )
+        return await self._make_request("POST", f"{self.BASE_URL}/transfer/directdl", data={"src": magnet_link})
 
     async def create_folder(self, name, parent_id=None):
         data = {"name": name}
@@ -108,11 +99,7 @@ class Premiumize(DebridClient):
     async def get_torrent_info(self, torrent_id):
         transfer_list = await self.get_transfer_list()
         torrent_info = next(
-            (
-                torrent
-                for torrent in transfer_list["transfers"]
-                if torrent["id"] == torrent_id
-            ),
+            (torrent for torrent in transfer_list["transfers"] if torrent["id"] == torrent_id),
             None,
         )
         return torrent_info
@@ -125,19 +112,13 @@ class Premiumize(DebridClient):
         )
 
     async def delete_folder(self, folder_id: str):
-        return await self._make_request(
-            "POST", f"{self.BASE_URL}/folder/delete", data={"id": folder_id}
-        )
+        return await self._make_request("POST", f"{self.BASE_URL}/folder/delete", data={"id": folder_id})
 
     async def delete_torrent(self, torrent_id):
-        return await self._make_request(
-            "POST", f"{self.BASE_URL}/transfer/delete", data={"id": torrent_id}
-        )
+        return await self._make_request("POST", f"{self.BASE_URL}/transfer/delete", data={"id": torrent_id})
 
     async def get_torrent_instant_availability(self, torrent_hashes: list[str]):
-        results = await self._make_request(
-            "GET", f"{self.BASE_URL}/cache/check", params={"items[]": torrent_hashes}
-        )
+        results = await self._make_request("GET", f"{self.BASE_URL}/cache/check", params={"items[]": torrent_hashes})
         if results.get("status") != "success":
             raise ProviderException(
                 "Failed to get instant availability from Premiumize",

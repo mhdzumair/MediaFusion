@@ -11,6 +11,21 @@
 #   Replica:  postgresql+asyncpg://mediafusion:<password>@postgres-replica:5432/mediafusion
 
 ---
+# ConfigMap for PostgreSQL initialization scripts
+# These scripts run after the database is created
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+data:
+  01-extensions.sql: |
+    -- Create required PostgreSQL extensions for MediaFusion
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    
+    -- Log successful initialization
+    DO $$ BEGIN RAISE NOTICE 'MediaFusion PostgreSQL extensions initialized successfully'; END $$;
+
+---
 # ConfigMap for pg_hba.conf (allows replication connections)
 apiVersion: v1
 kind: ConfigMap
@@ -133,6 +148,8 @@ spec:
           mountPath: /var/lib/postgresql/data
         - name: postgres-hba
           mountPath: /etc/postgresql-config
+        - name: postgres-init
+          mountPath: /docker-entrypoint-initdb.d
         livenessProbe:
           exec:
             command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
@@ -149,6 +166,9 @@ spec:
       - name: postgres-hba
         configMap:
           name: postgres-hba-config
+      - name: postgres-init
+        configMap:
+          name: postgres-init-scripts
   volumeClaimTemplates:
   - metadata:
       name: postgres-storage

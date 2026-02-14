@@ -1,14 +1,14 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Type
 
 import dramatiq
 import httpx
 
+from db import crud
 from db.config import settings
-from db import sql_crud
 from db.database import get_async_session
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.schemas import MetadataData
 from scrapers.base_scraper import IndexerBaseScraper
 from scrapers.jackett import JackettScraper
 from scrapers.prowlarr import ProwlarrScraper
@@ -21,24 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 class FeedScraper(ABC):
-    def __init__(
-        self, name: str, scraper_class: Type[ProwlarrScraper | JackettScraper]
-    ):
+    def __init__(self, name: str, scraper_class: type[ProwlarrScraper | JackettScraper]):
         self.name = name
         self.scraper = scraper_class()
         self.processed_items_key = f"{name}_feed_scraper:processed_items"
         self.processed_items_expiry = 60 * 60 * 24 * 3  # 3 days
 
     async def is_item_processed(self, item_id: str) -> bool:
-        return bool(
-            await REDIS_ASYNC_CLIENT.sismember(self.processed_items_key, item_id)
-        )
+        return bool(await REDIS_ASYNC_CLIENT.sismember(self.processed_items_key, item_id))
 
     async def mark_item_as_processed(self, item_id: str):
         await REDIS_ASYNC_CLIENT.sadd(self.processed_items_key, item_id)
-        await REDIS_ASYNC_CLIENT.expire(
-            self.processed_items_key, self.processed_items_expiry
-        )
+        await REDIS_ASYNC_CLIENT.expire(self.processed_items_key, self.processed_items_expiry)
 
     async def scrape_feed(self):
         """Main feed scraping logic"""
@@ -47,14 +41,10 @@ class FeedScraper(ABC):
         try:
             healthy_indexers = await self.scraper.get_healthy_indexers()
             if not healthy_indexers:
-                logger.warning(
-                    f"No healthy indexers available for {self.name} feed scraping"
-                )
+                logger.warning(f"No healthy indexers available for {self.name} feed scraping")
                 return
 
-            indexer_chunks = list(
-                self.scraper.split_indexers_into_chunks(healthy_indexers, 3)
-            )
+            indexer_chunks = list(self.scraper.split_indexers_into_chunks(healthy_indexers, 3))
             logger.info(
                 f"Starting {self.name} feed scraper with {len(healthy_indexers)} indexers "
                 f"in {len(indexer_chunks)} chunks"
@@ -78,9 +68,7 @@ class FeedScraper(ABC):
             logger.info(f"Total items scraped from all chunks: {len(all_results)}")
 
             # Process items with circuit breaker
-            circuit_breaker = CircuitBreaker(
-                failure_threshold=5, recovery_timeout=30, half_open_attempts=3
-            )
+            circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=30, half_open_attempts=3)
 
             async for processed_item in batch_process_with_circuit_breaker(
                 self.process_feed_item,
@@ -95,9 +83,7 @@ class FeedScraper(ABC):
                 if processed_item:
                     await self.mark_item_as_processed(processed_item)
                     self.scraper.metrics.record_processed_item()
-                    logger.info(
-                        f"Successfully processed {self.name} feed item: {processed_item}"
-                    )
+                    logger.info(f"Successfully processed {self.name} feed item: {processed_item}")
 
         except Exception as e:
             self.scraper.metrics.record_error("feed_scraping_error")
@@ -107,17 +93,15 @@ class FeedScraper(ABC):
             self.scraper.metrics.log_summary(logger)
 
     @abstractmethod
-    async def get_chunk_results(self, indexer_ids: List) -> List[dict]:
+    async def get_chunk_results(self, indexer_ids: list) -> list[dict]:
         """Get results for a specific indexer chunk"""
         pass
 
-    def handle_chunk_error(self, error: Exception, chunk: List):
+    def handle_chunk_error(self, error: Exception, chunk: list):
         """Handle errors during chunk processing"""
         if isinstance(error, httpx.ReadTimeout):
             self.scraper.metrics.record_error("timeout")
-            logger.warning(
-                f"Timeout while fetching results from {self.name} indexer chunk {chunk}"
-            )
+            logger.warning(f"Timeout while fetching results from {self.name} indexer chunk {chunk}")
         elif isinstance(error, httpx.HTTPStatusError):
             self.scraper.metrics.record_error("http_error")
             logger.error(
@@ -130,12 +114,10 @@ class FeedScraper(ABC):
 
     async def process_feed_item(
         self, item: dict, scraper: IndexerBaseScraper, processed_info_hashes: set
-    ) -> Optional[str]:
+    ) -> str | None:
         """Process a single feed item"""
         try:
-            item_id = scraper.get_info_hash(item) or get_text_hash(
-                scraper.get_guid(item), full_hash=True
-            )
+            item_id = scraper.get_info_hash(item) or get_text_hash(scraper.get_guid(item), full_hash=True)
             title = scraper.get_title(item)
 
             if await self.is_item_processed(item_id):
@@ -154,9 +136,7 @@ class FeedScraper(ABC):
                 scraper.metrics.record_skip("Unsupported category")
                 return item_id
 
-            metadata = await self.get_item_metadata(
-                item, parsed_title_data, media_type, scraper
-            )
+            metadata = await self.get_item_metadata(item, parsed_title_data, media_type, scraper)
             if not metadata:
                 logger.info(f"Unable to find or create metadata for {title}")
                 scraper.metrics.record_skip("Unable to find or create metadata")
@@ -167,9 +147,8 @@ class FeedScraper(ABC):
             )
             if stream:
                 async for session in get_async_session():
-                    await sql_crud.store_new_torrent_streams(
-                        session, [stream.model_dump(by_alias=True)]
-                    )
+                    await crud.store_new_torrent_streams(session, [stream.model_dump(by_alias=True)])
+                    await session.commit()
                 scraper.metrics.record_quality(stream.quality)
                 scraper.metrics.record_source(stream.source)
                 return item_id
@@ -181,9 +160,7 @@ class FeedScraper(ABC):
             logger.exception(f"Error processing {self.name} feed item: {e}")
             return None
 
-    def validate_item(
-        self, title: str, parsed_title_data: dict, scraper: IndexerBaseScraper
-    ) -> bool:
+    def validate_item(self, title: str, parsed_title_data: dict, scraper: IndexerBaseScraper) -> bool:
         """Validate feed item"""
 
         if is_contain_18_plus_keywords(title):
@@ -192,9 +169,7 @@ class FeedScraper(ABC):
             return False
         return True
 
-    def get_media_type(
-        self, item: dict, parsed_title_data: dict, scraper: IndexerBaseScraper
-    ) -> Optional[str]:
+    def get_media_type(self, item: dict, parsed_title_data: dict, scraper: IndexerBaseScraper) -> str | None:
         category_ids = scraper.get_category_ids(item)
 
         if any(cat in category_ids for cat in self.scraper.MOVIE_CATEGORY_IDS):
@@ -202,9 +177,7 @@ class FeedScraper(ABC):
         elif any(cat in category_ids for cat in self.scraper.SERIES_CATEGORY_IDS):
             return "series"
         elif any(cat in category_ids for cat in self.scraper.OTHER_CATEGORY_IDS):
-            if not scraper.validate_category_with_title(
-                item, category_ids, is_filter_with_blocklist=False
-            ):
+            if not scraper.validate_category_with_title(item, category_ids, is_filter_with_blocklist=False):
                 return None
             return "series" if parsed_title_data.get("seasons") else "movie"
         return None
@@ -224,8 +197,12 @@ class FeedScraper(ABC):
         parsed_title_data["created_at"] = scraper.get_created_at(item)
 
         async for session in get_async_session():
-            metadata = await sql_crud.get_or_create_metadata(
-                session, parsed_title_data, media_type, is_search_imdb_title=True, is_imdb_only=True
+            metadata = await crud.get_or_create_metadata(
+                session,
+                parsed_title_data,
+                media_type,
+                is_search_imdb_title=True,
+                is_imdb_only=True,
             )
 
         if not metadata:
@@ -238,7 +215,7 @@ class ProwlarrFeedScraper(FeedScraper):
     def __init__(self):
         super().__init__("prowlarr", ProwlarrScraper)
 
-    async def get_chunk_results(self, indexer_ids: List) -> List[dict]:
+    async def get_chunk_results(self, indexer_ids: list) -> list[dict]:
         params = {
             "type": "search",
             "categories": [2000, 5000, 8000],  # Movies, TV, and Other categories
@@ -252,7 +229,7 @@ class JackettFeedScraper(FeedScraper):
     def __init__(self):
         super().__init__("jackett", JackettScraper)
 
-    async def get_chunk_results(self, indexer_ids: List) -> List[dict]:
+    async def get_chunk_results(self, indexer_ids: list) -> list[dict]:
         params = {
             "t": "search",
             "cat": [2000, 5000, 8000],  # Movies, TV, and Other categories
@@ -264,14 +241,12 @@ class JackettFeedScraper(FeedScraper):
 
 async def get_metadata_by_id(imdb_id: str, media_type: str):
     """Get metadata by IMDB ID"""
-    from db.schemas import MetadataData
-    
     async for session in get_async_session():
         if media_type == "movie":
-            pg_data = await sql_crud.get_movie_data_by_id(session, imdb_id)
-            return MetadataData.from_pg_movie(pg_data) if pg_data else None
-        pg_data = await sql_crud.get_series_data_by_id(session, imdb_id)
-        return MetadataData.from_pg_series(pg_data) if pg_data else None
+            media = await crud.get_movie_data_by_id(session, imdb_id)
+            return MetadataData.from_db(media) if media else None
+        media = await crud.get_series_data_by_id(session, imdb_id)
+        return MetadataData.from_db(media) if media else None
 
 
 # Dramatiq actors for scheduling

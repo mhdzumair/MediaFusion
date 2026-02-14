@@ -1,6 +1,7 @@
 from db import schemas
 from db.enums import MediaType
 
+
 async def update_rpdb_posters(
     metas: schemas.Metas, user_data: schemas.UserData, catalog_type: MediaType
 ) -> schemas.Metas:
@@ -11,7 +12,9 @@ async def update_rpdb_posters(
     ]:
         return metas
 
-    rpdb_poster_base = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{{}}.jpg?fallback=true"
+    rpdb_poster_base = (
+        f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/imdb/poster-default/{{}}.jpg?fallback=true"
+    )
 
     # Update meta items with new poster URLs
     for meta in metas.metas:

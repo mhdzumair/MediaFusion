@@ -8,9 +8,15 @@ from scrapy.exceptions import DropItem
 from scrapers.scraper_tasks import meta_fetcher
 from scrapers.tmdb_data import search_tmdb
 from utils.runtime_const import SPORTS_ARTIFACTS
+from utils.sports_parser import DATE_PATTERNS, extract_date_from_title
 
 
 class BaseParserPipeline:
+    """Base pipeline for parsing sports content (WWE, UFC).
+
+    Uses shared sports parser utilities for date extraction.
+    """
+
     name_parser_patterns = [
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}\.\d{{2}}\.\d{{2}})[.\s](?P<Resolution>\d{{3,4}}[pi])[.\s]",
         r"{event}[.\s](?P<Event>[\w\s.]+)[.\s](?P<Date>\d{{4}}\.\d{{2}}\.\d{{2}})[.\s]",
@@ -26,13 +32,10 @@ class BaseParserPipeline:
     ]
     imdb_cache = {}
 
-    def __init__(
-        self, event_name, known_imdb_ids=None, static_poster=None, static_logo=None
-    ):
+    def __init__(self, event_name, known_imdb_ids=None, static_poster=None, static_logo=None):
         self.event_name = event_name.lower()
         self.name_parser_patterns = [
-            re.compile(pattern.format(event=event_name), re.IGNORECASE)
-            for pattern in self.name_parser_patterns
+            re.compile(pattern.format(event=event_name), re.IGNORECASE) for pattern in self.name_parser_patterns
         ]
         self.known_imdb_ids = known_imdb_ids or {}
         self.static_poster = static_poster or {}
@@ -64,27 +67,30 @@ class BaseParserPipeline:
                 event_title = f"{self.event_name.upper()} {event}"
                 date_str = data.get("Date", data.get("Year", ""))
 
-                # Determine the date format and parse accordingly
-                if re.match(r"\d{4}\.\d{2}\.\d{2}", date_str):
-                    date = datetime.strptime(date_str, "%Y.%m.%d").date()
-                elif re.match(r"\d{2}\.\d{2}\.\d{4}", date_str):
-                    date = datetime.strptime(date_str, "%d.%m.%Y").date()
-                elif re.match(r"\d{4}-\d{2}-\d{2}", date_str):
-                    date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                else:
-                    date = torrent_data[
-                        "created_at"
-                    ].date()  # Fallback to created_at date if no valid date is found
+                # Try to parse date using shared patterns
+                date = None
+                for pattern_str, date_format in DATE_PATTERNS:
+                    if re.match(pattern_str, date_str):
+                        try:
+                            date = datetime.strptime(date_str, date_format).date()
+                            break
+                        except ValueError:
+                            continue
+
+                # Fallback: try shared date extraction from full title
+                if not date:
+                    extracted, _ = extract_date_from_title(title)
+                    date = extracted
+
+                # Final fallback to created_at date
+                if not date:
+                    date = torrent_data["created_at"].date()
 
                 torrent_data.update(
                     {
                         "title": f"{event_title} {date_str}".strip(),
                         "date": date,
-                        "resolution": (
-                            data.get("Resolution").replace("i", "p")
-                            if data.get("Resolution")
-                            else None
-                        ),
+                        "resolution": (data.get("Resolution").replace("i", "p") if data.get("Resolution") else None),
                         "event": event_title,
                         "year": date.year,
                     }
@@ -124,15 +130,11 @@ class BaseParserPipeline:
         if not imdb_id:
             result = self.imdb_cache.get(f"{title}_{year}")
             if not result:
-                result = await meta_fetcher.search_metadata(
-                    title, year, torrent_data["date"]
-                )
+                result = await meta_fetcher.search_metadata(title, year, torrent_data["date"])
             if not result:
                 logging.warning(f"Failed to find IMDb title for {title}")
                 if not torrent_data["poster"]:
-                    torrent_data["poster"] = random.choice(
-                        SPORTS_ARTIFACTS[self.event_name.upper()]["poster"]
-                    )
+                    torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
                 return
 
             imdb_id = result.get("imdb_id")
@@ -164,18 +166,12 @@ class BaseParserPipeline:
             result = await meta_fetcher.get_metadata(imdb_id, "series")
 
         filtered_episode = [
-            episode
-            for episode in result["episodes"]
-            if episode["released"].date() == torrent_data["date"]
+            episode for episode in result["episodes"] if episode["released"].date() == torrent_data["date"]
         ]
         if not filtered_episode:
-            logging.warning(
-                f"Failed to find episode for {title} on {torrent_data['date']}"
-            )
+            logging.warning(f"Failed to find episode for {title} on {torrent_data['date']}")
             if not torrent_data["poster"]:
-                torrent_data["poster"] = random.choice(
-                    SPORTS_ARTIFACTS[self.event_name.upper()]["poster"]
-                )
+                torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
             return
         episode = filtered_episode[0]
 
@@ -200,9 +196,7 @@ class WWEParserPipeline(BaseParserPipeline):
             "wwe main event": "tt2659152",
             "wwe nxt": "tt1601141",
         }
-        static_poster = {
-            "wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg"
-        }
+        static_poster = {"wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg"}
         static_logo = {
             "wwe raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
             "wwe monday night raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
@@ -225,9 +219,7 @@ class UFCParserPipeline(BaseParserPipeline):
         tmdb_data = await search_tmdb(title, year)
         if not tmdb_data:
             if not torrent_data["poster"]:
-                torrent_data["poster"] = random.choice(
-                    SPORTS_ARTIFACTS[self.event_name.upper()]["poster"]
-                )
+                torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
             return
         torrent_data.update(
             dict(

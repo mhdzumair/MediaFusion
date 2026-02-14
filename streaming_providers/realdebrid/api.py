@@ -11,9 +11,7 @@ router = APIRouter()
 @router.get("/get-device-code")
 async def get_device_code():
     async with RealDebrid() as rd_client:
-        return JSONResponse(
-            content=await rd_client.get_device_code(), headers=const.NO_CACHE_HEADERS
-        )
+        return JSONResponse(content=await rd_client.get_device_code(), headers=const.NO_CACHE_HEADERS)
 
 
 @router.post("/authorize")

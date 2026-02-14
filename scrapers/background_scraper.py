@@ -1,14 +1,13 @@
 import asyncio
 import logging
-from typing import List
 
 import dramatiq
 
+from db import crud
 from db.config import settings
-from db import sql_crud
 from db.database import get_async_session
 from db.schemas import MetadataData
-from scrapers.base_scraper import IndexerBaseScraper, BackgroundScraperManager
+from scrapers.base_scraper import BackgroundScraperManager, IndexerBaseScraper
 from scrapers.jackett import JackettScraper
 from scrapers.prowlarr import ProwlarrScraper
 
@@ -19,7 +18,7 @@ class BackgroundSearchWorker:
     def __init__(self):
         self.manager = BackgroundScraperManager()
         # Initialize scrapers based on settings
-        self.scrapers: List[IndexerBaseScraper] = []
+        self.scrapers: list[IndexerBaseScraper] = []
         if settings.is_scrap_from_jackett:
             self.scrapers.append(JackettScraper())
         if settings.is_scrap_from_prowlarr:
@@ -41,10 +40,10 @@ class BackgroundSearchWorker:
             try:
                 metadata = None
                 async for session in get_async_session():
-                    pg_metadata = await sql_crud.get_movie_data_by_id(session, meta_id, load_relations=True)
-                    if pg_metadata:
-                        # Convert to MetadataData while session is active (for lazy-loaded relations)
-                        metadata = MetadataData.from_pg_movie(pg_metadata)
+                    media = await crud.get_movie_data_by_id(session, meta_id, load_relations=True)
+                    if media:
+                        # Convert to MetadataData while session is active
+                        metadata = MetadataData.from_db(media)
                 if not metadata:
                     continue
 
@@ -57,9 +56,7 @@ class BackgroundSearchWorker:
                         continue
 
                     # Split indexers into chunks
-                    indexer_chunks = list(
-                        scraper.split_indexers_into_chunks(healthy_indexers, 3)
-                    )
+                    indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
 
                     # Start metrics collection
                     scraper.metrics.start()
@@ -69,9 +66,7 @@ class BackgroundSearchWorker:
                     title_streams_generators = []
                     for chunk in indexer_chunks:
                         for query_template in scraper.MOVIE_SEARCH_QUERY_TEMPLATES:
-                            search_query = query_template.format(
-                                title=metadata.title, year=metadata.year
-                            )
+                            search_query = query_template.format(title=metadata.title, year=metadata.year)
                             title_streams_generators.append(
                                 scraper.scrape_movie_by_title(
                                     processed_info_hashes,
@@ -106,9 +101,7 @@ class BackgroundSearchWorker:
             except Exception as e:
                 logger.exception(f"Error processing movie {meta_id}: {e}")
             finally:
-                await self.manager.mark_as_completed(
-                    meta_id, self.manager.movie_hash_key
-                )
+                await self.manager.mark_as_completed(meta_id, self.manager.movie_hash_key)
 
     async def process_series_batch(self):
         """Process a batch of pending series episodes with complete scraping"""
@@ -117,9 +110,7 @@ class BackgroundSearchWorker:
             return
 
         pending_series = await self.manager.get_pending_items("series")
-        logger.info(
-            f"Background search found {len(pending_series)} series episodes to process"
-        )
+        logger.info(f"Background search found {len(pending_series)} series episodes to process")
 
         for item in pending_series:
             key = item["key"]
@@ -131,26 +122,23 @@ class BackgroundSearchWorker:
             try:
                 metadata = None
                 async for session in get_async_session():
-                    pg_metadata = await sql_crud.get_series_data_by_id(session, meta_id, load_relations=True)
-                    if pg_metadata:
-                        # Convert to MetadataData while session is active (for lazy-loaded relations)
-                        metadata = MetadataData.from_pg_series(pg_metadata)
+                    media = await crud.get_series_data_by_id(session, meta_id, load_relations=True)
+                    if media:
+                        # Convert to MetadataData while session is active
+                        metadata = MetadataData.from_db(media)
                 if not metadata:
                     continue
 
                 # Process each scraper sequentially for complete scraping
                 processed_info_hashes: set[str] = set()
                 for scraper in self.scrapers:
-
                     # Get healthy indexers
                     healthy_indexers = await scraper.get_healthy_indexers()
                     if not healthy_indexers:
                         continue
 
                     # Split indexers into chunks
-                    indexer_chunks = list(
-                        scraper.split_indexers_into_chunks(healthy_indexers, 3)
-                    )
+                    indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
 
                     # Start metrics collection
                     scraper.metrics.start()
@@ -162,9 +150,7 @@ class BackgroundSearchWorker:
                     title_streams_generators = []
                     for chunk in indexer_chunks:
                         for query_template in scraper.SERIES_SEARCH_QUERY_TEMPLATES:
-                            search_query = query_template.format(
-                                title=metadata.title, season=season, episode=episode
-                            )
+                            search_query = query_template.format(title=metadata.title, season=season, episode=episode)
                             title_streams_generators.append(
                                 scraper.scrape_series_by_title(
                                     processed_info_hashes,
@@ -192,9 +178,7 @@ class BackgroundSearchWorker:
                         scraper.metrics.log_summary(scraper.logger)
 
             except Exception as e:
-                logger.exception(
-                    f"Error processing series {meta_id} S{season}E{episode}: {e}"
-                )
+                logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
             finally:
                 await self.manager.mark_as_completed(key, self.manager.series_hash_key)
 

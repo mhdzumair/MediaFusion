@@ -1,8 +1,6 @@
 import asyncio
-from typing import Optional
 
-from db.schemas import TorrentStreamData
-from db.schemas import UserData
+from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
     select_file_index_from_torrent,
@@ -14,9 +12,9 @@ async def create_download_link(
     rd_client: RealDebrid,
     magnet_link: str,
     torrent_info: dict,
-    filename: Optional[str],
-    episode: Optional[int],
-    season: Optional[int],
+    filename: str | None,
+    episode: int | None,
+    season: int | None,
     stream: TorrentStreamData,
     max_retries: int,
     retry_interval: int,
@@ -37,9 +35,7 @@ async def create_download_link(
     relevant_file = torrent_info["files"][selected_file_index]
     selected_files = [file for file in torrent_info["files"] if file["selected"] == 1]
 
-    if relevant_file.get("selected") != 1 or len(selected_files) != len(
-        torrent_info["links"]
-    ):
+    if relevant_file.get("selected") != 1 or len(selected_files) != len(torrent_info["links"]):
         await rd_client.delete_torrent(torrent_info["id"])
         torrent_id = (await rd_client.add_magnet_link(magnet_link)).get("id")
         torrent_info = await rd_client.wait_for_status(
@@ -49,9 +45,7 @@ async def create_download_link(
             torrent_info["id"],
             file_ids=torrent_info["files"][selected_file_index]["id"],
         )
-        torrent_info = await rd_client.wait_for_status(
-            torrent_id, "downloaded", max_retries, retry_interval
-        )
+        torrent_info = await rd_client.wait_for_status(torrent_id, "downloaded", max_retries, retry_interval)
         link_index = 0
     else:
         link_index = selected_files.index(relevant_file)
@@ -71,25 +65,21 @@ async def create_download_link(
 async def get_video_url_from_realdebrid(
     info_hash: str,
     magnet_link: str,
-    user_data: UserData,
+    streaming_provider: StreamingProvider,
     user_ip: str,
-    filename: Optional[str],
+    filename: str | None,
     stream: TorrentStreamData,
     max_retries=5,
     retry_interval=5,
-    episode: Optional[int] = None,
-    season: Optional[int] = None,
+    episode: int | None = None,
+    season: int | None = None,
     **kwargs,
 ) -> str:
-    async with RealDebrid(
-        token=user_data.streaming_provider.token, user_ip=user_ip
-    ) as rd_client:
+    async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
         torrent_info = await rd_client.get_available_torrent(info_hash)
 
         if not torrent_info:
-            torrent_info = await add_new_torrent(
-                rd_client, magnet_link, info_hash, stream
-            )
+            torrent_info = await add_new_torrent(rd_client, magnet_link, info_hash, stream)
 
         torrent_id = torrent_info["id"]
         status = torrent_info["status"]
@@ -116,13 +106,9 @@ async def get_video_url_from_realdebrid(
                 )
             except ProviderException as error:
                 await rd_client.delete_torrent(torrent_id)
-                raise ProviderException(
-                    f"Failed to start torrent download, {error}", "transfer_error.mp4"
-                )
+                raise ProviderException(f"Failed to start torrent download, {error}", "transfer_error.mp4")
 
-        torrent_info = await rd_client.wait_for_status(
-            torrent_id, "downloaded", max_retries, retry_interval
-        )
+        torrent_info = await rd_client.wait_for_status(torrent_id, "downloaded", max_retries, retry_interval)
 
         return await create_download_link(
             rd_client,
@@ -140,13 +126,9 @@ async def get_video_url_from_realdebrid(
 async def add_new_torrent(rd_client, magnet_link, info_hash, stream):
     response = await rd_client.get_active_torrents()
     if response["limit"] == response["nb"]:
-        raise ProviderException(
-            "Torrent limit reached. Please try again later.", "torrent_limit.mp4"
-        )
+        raise ProviderException("Torrent limit reached. Please try again later.", "torrent_limit.mp4")
     if info_hash in response["list"]:
-        raise ProviderException(
-            "Torrent is already being downloading", "torrent_not_downloaded.mp4"
-        )
+        raise ProviderException("Torrent is already being downloading", "torrent_not_downloaded.mp4")
 
     if stream.torrent_file:
         torrent_id = (await rd_client.add_torrent_file(stream.torrent_file)).get("id")
@@ -154,55 +136,94 @@ async def add_new_torrent(rd_client, magnet_link, info_hash, stream):
         torrent_id = (await rd_client.add_magnet_link(magnet_link)).get("id")
 
     if not torrent_id:
-        raise ProviderException(
-            "Failed to add magnet link to Real-Debrid", "transfer_error.mp4"
-        )
+        raise ProviderException("Failed to add magnet link to Real-Debrid", "transfer_error.mp4")
 
     return await rd_client.get_torrent_info(torrent_id)
 
 
 async def update_rd_cache_status(
-    streams: list[TorrentStreamData], user_data: UserData, user_ip: str, **kwargs
+    streams: list[TorrentStreamData], streaming_provider: StreamingProvider, user_ip: str, **kwargs
 ):
     """Updates the cache status of streams based on user's downloaded torrents in RealDebrid."""
 
     try:
-        downloaded_hashes = set(
-            await fetch_downloaded_info_hashes_from_rd(user_data, user_ip, **kwargs)
-        )
+        downloaded_hashes = set(await fetch_downloaded_info_hashes_from_rd(streaming_provider, user_ip, **kwargs))
         if not downloaded_hashes:
             return
         for stream in streams:
-            stream.cached = stream.id in downloaded_hashes
+            stream.cached = stream.info_hash in downloaded_hashes
 
     except ProviderException:
         pass
 
 
 async def fetch_downloaded_info_hashes_from_rd(
-    user_data: UserData, user_ip: str, **kwargs
+    streaming_provider: StreamingProvider, user_ip: str, **kwargs
 ) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the RealDebrid account."""
     try:
-        async with RealDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as rd_client:
+        async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
             available_torrents = await rd_client.get_user_torrent_list()
-            return [
-                torrent["hash"]
-                for torrent in available_torrents
-                if torrent["status"] == "downloaded"
-            ]
+            return [torrent["hash"] for torrent in available_torrents if torrent["status"] == "downloaded"]
 
     except ProviderException:
         return []
 
 
-async def delete_all_watchlist_rd(user_data: UserData, user_ip: str, **kwargs):
+async def fetch_torrent_details_from_rd(streaming_provider: StreamingProvider, user_ip: str, **kwargs) -> list[dict]:
+    """
+    Fetches detailed torrent information from the RealDebrid account.
+    Returns torrent details including files for import functionality.
+    """
+    try:
+        async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
+            available_torrents = await rd_client.get_user_torrent_list()
+            result = []
+            for torrent in available_torrents:
+                if torrent["status"] != "downloaded":
+                    continue
+                # Get detailed info for each torrent to get file list
+                try:
+                    torrent_info = await rd_client.get_torrent_info(torrent["id"])
+                    files = []
+                    for f in torrent_info.get("files", []):
+                        if f.get("selected", 0) == 1:
+                            files.append(
+                                {
+                                    "id": f.get("id"),
+                                    "path": f.get("path", ""),
+                                    "size": f.get("bytes", 0),
+                                }
+                            )
+                    result.append(
+                        {
+                            "id": torrent["id"],
+                            "hash": torrent["hash"].lower(),
+                            "filename": torrent.get("filename", ""),
+                            "size": torrent.get("bytes", 0),
+                            "files": files,
+                        }
+                    )
+                except Exception:
+                    # If we can't get detailed info, still include basic info
+                    result.append(
+                        {
+                            "id": torrent["id"],
+                            "hash": torrent["hash"].lower(),
+                            "filename": torrent.get("filename", ""),
+                            "size": torrent.get("bytes", 0),
+                            "files": [],
+                        }
+                    )
+            return result
+
+    except ProviderException:
+        return []
+
+
+async def delete_all_watchlist_rd(streaming_provider: StreamingProvider, user_ip: str, **kwargs):
     """Deletes all torrents from the RealDebrid watchlist."""
-    async with RealDebrid(
-        token=user_data.streaming_provider.token, user_ip=user_ip
-    ) as rd_client:
+    async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
         torrents = await rd_client.get_user_torrent_list()
         semaphore = asyncio.Semaphore(3)
 
@@ -216,12 +237,24 @@ async def delete_all_watchlist_rd(user_data: UserData, user_ip: str, **kwargs):
         )
 
 
-async def validate_realdebrid_credentials(user_data: UserData, user_ip: str) -> dict:
+async def delete_torrent_from_rd(streaming_provider: StreamingProvider, user_ip: str, info_hash: str, **kwargs) -> bool:
+    """Deletes a specific torrent from RealDebrid by info_hash."""
+    try:
+        async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
+            torrents = await rd_client.get_user_torrent_list()
+            for torrent in torrents:
+                if torrent["hash"].lower() == info_hash.lower():
+                    await rd_client.delete_torrent(torrent["id"])
+                    return True
+            return False
+    except ProviderException:
+        return False
+
+
+async def validate_realdebrid_credentials(streaming_provider: StreamingProvider, user_ip: str, **kwargs) -> dict:
     """Validates the RealDebrid credentials."""
     try:
-        async with RealDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as rd_client:
+        async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
             await rd_client.get_user_info()
             return {"status": "success"}
     except ProviderException as error:

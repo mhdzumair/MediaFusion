@@ -6,9 +6,9 @@ from pyasynctracker import batch_scrape_info_hashes, find_max_seeders
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
-from db import sql_crud
+from db import crud
 from db.database import get_async_session
-from db.sql_models import TorrentStream
+from db.models import TorrentStream
 from utils.runtime_const import TRACKERS
 
 
@@ -21,7 +21,7 @@ class TorrentProjection(BaseModel):
 async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
     # Calculate offset for pagination
     offset = page * page_size
-    
+
     async for session in get_async_session():
         # Fetch torrents where seeders is null and updated_at is more than 7 days old
         query = (
@@ -31,7 +31,7 @@ async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
             .offset(offset)
             .limit(page_size)
         )
-        
+
         result = await session.exec(query)
         torrents = result.all()
 
@@ -47,16 +47,14 @@ async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
             # Extract URL strings from announce_urls relationship
             urls = [url.name for url in announce_urls] if announce_urls else TRACKERS
             data_list.append((info_hash, urls))
-        
+
         results = await batch_scrape_info_hashes(data_list, timeout=30)
         max_seeders_data = find_max_seeders(results)
 
         # Perform batch updates
         for torrent_id, max_seeders in max_seeders_data.items():
-            await sql_crud.update_torrent_seeders(session, torrent_id, max_seeders)
-            logging.info(
-                f"Updating seeders for torrent {torrent_id} with max seeders: {max_seeders}"
-            )
+            await crud.update_torrent_seeders(session, torrent_id, max_seeders)
+            logging.info(f"Updating seeders for torrent {torrent_id} with max seeders: {max_seeders}")
 
         logging.info(f"Updated {len(max_seeders_data)} torrents")
 

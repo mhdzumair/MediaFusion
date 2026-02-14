@@ -6,7 +6,6 @@ from utils.const import QUALITY_GROUPS
 
 
 class MovieTVParserPipeline:
-
     async def process_item(self, item, spider):
         data = item.copy()
         title = data["torrent_title"]

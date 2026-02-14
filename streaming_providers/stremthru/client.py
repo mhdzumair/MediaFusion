@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urljoin
 
 from streaming_providers.debrid_client import DebridClient
@@ -35,38 +35,26 @@ class StremThru(DebridClient):
             self.headers["Proxy-Authorization"] = f"Basic {self.auth}"
         elif isinstance(self.auth, dict):
             self.headers["X-StremThru-Store-Name"] = self.auth["store"]
-            self.headers["X-StremThru-Store-Authorization"] = (
-                f"Bearer {self.auth['token']}"
-            )
+            self.headers["X-StremThru-Store-Authorization"] = f"Bearer {self.auth['token']}"
 
     def __del__(self):
         pass
 
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         if error_data.get("error"):
-            error = error_data.get(
-                "error", {"message": "unknown error", "code": "UNKNOWN"}
-            )
+            error = error_data.get("error", {"message": "unknown error", "code": "UNKNOWN"})
             error_code = error.get("code")
             match error_code:
                 case "FORBIDDEN" | "UNAUTHORIZED":
-                    raise ProviderException(
-                        "Invalid Token / Permission Denied", "invalid_token.mp4"
-                    )
+                    raise ProviderException("Invalid Token / Permission Denied", "invalid_token.mp4")
                 case "PAYMENT_REQUIRED":
                     raise ProviderException("Need to upgrade plan", "need_premium.mp4")
                 case "TOO_MANY_REQUESTS":
-                    raise ProviderException(
-                        "Too many requests", "too_many_requests.mp4"
-                    )
+                    raise ProviderException("Too many requests", "too_many_requests.mp4")
                 case "UNAVAILABLE_FOR_LEGAL_REASONS":
-                    raise ProviderException(
-                        "Content marked as infringing", "content_infringing.mp4"
-                    )
+                    raise ProviderException("Content marked as infringing", "content_infringing.mp4")
                 case "STORE_LIMIT_EXCEEDED":
-                    raise ProviderException(
-                        "Hit max limit", "exceed_remote_traffic_limit.mp4"
-                    )
+                    raise ProviderException("Hit max limit", "exceed_remote_traffic_limit.mp4")
                 case _:
                     raise ProviderException(
                         f"StremThru Error: {str(error)}",
@@ -84,7 +72,7 @@ class StremThru(DebridClient):
         self,
         method: str,
         url: str,
-        params: Optional[dict] = None,
+        params: dict | None = None,
         is_http_response: bool = False,
         is_expected_to_fail: bool = False,
         **kwargs,
@@ -104,9 +92,7 @@ class StremThru(DebridClient):
         return response.get("data")
 
     async def add_magnet_link(self, magnet_link):
-        response_data = await self._make_request(
-            "POST", "/v0/store/magnets", json={"magnet": magnet_link}
-        )
+        response_data = await self._make_request("POST", "/v0/store/magnets", json={"magnet": magnet_link})
         return response_data
 
     async def get_user_torrent_list(self):
@@ -158,6 +144,4 @@ class StremThru(DebridClient):
         )
 
     async def get_user_info(self, is_http_response: bool = False):
-        return await self._make_request(
-            "GET", "/v0/store/user", is_http_response=is_http_response
-        )
+        return await self._make_request("GET", "/v0/store/user", is_http_response=is_http_response)

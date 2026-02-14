@@ -1,14 +1,10 @@
 import json
 import logging
-from datetime import datetime
 
-import dramatiq
-from bs4 import BeautifulSoup
 import httpx
+from bs4 import BeautifulSoup
 
 from db.config import settings
-from db.schemas import TorrentStreamData, EpisodeFileData
-from utils.torrent import info_hashes_to_torrent_metadata
 
 # set httpx logging level
 logging.getLogger("httpx").setLevel(logging.WARNING)

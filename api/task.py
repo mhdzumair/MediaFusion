@@ -1,24 +1,10 @@
 import asyncio
 
 from db import database
-
 from utils import torrent
 
 # import background actors
 # noqa: F401
-from mediafusion_scrapy import task
-from scrapers import (
-    tv,
-    trackers,
-    helpers,
-    prowlarr,
-    feed_scraper,
-    background_scraper,
-    scraper_tasks,
-    rss_scraper,
-)
-from streaming_providers import cache_helpers
-from utils import validation_helper
 
 
 async def async_setup():

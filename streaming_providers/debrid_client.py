@@ -1,9 +1,8 @@
 import asyncio
 import traceback
 from abc import abstractmethod
-from base64 import b64encode, b64decode
+from base64 import b64decode, b64encode
 from contextlib import AsyncContextDecorator
-from typing import Optional, Dict, Union
 
 import aiohttp
 from aiohttp import ClientResponse, ClientTimeout, ContentTypeError, FormData
@@ -14,11 +13,11 @@ from streaming_providers.exceptions import ProviderException
 
 
 class DebridClient(AsyncContextDecorator):
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: str | None = None):
         self.token = token
         self.is_private_token = False
-        self.headers: Dict[str, str] = {}
-        self._session: Optional[aiohttp.ClientSession] = None
+        self.headers: dict[str, str] = {}
+        self._session: aiohttp.ClientSession | None = None
         self._timeout = ClientTimeout(total=15)  # Stremio timeout is 20s
 
     @property
@@ -27,9 +26,7 @@ class DebridClient(AsyncContextDecorator):
             connector = aiohttp.TCPConnector(ttl_dns_cache=300)
             if settings.requests_proxy_url:
                 connector = ProxyConnector.from_url(settings.requests_proxy_url)
-            self._session = aiohttp.ClientSession(
-                timeout=self._timeout, connector=connector
-            )
+            self._session = aiohttp.ClientSession(timeout=self._timeout, connector=connector)
         return self._session
 
     async def __aenter__(self):
@@ -60,9 +57,9 @@ class DebridClient(AsyncContextDecorator):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str | FormData] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
+        data: dict | str | FormData | None = None,
+        json: dict | None = None,
+        params: dict | None = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
         is_http_response: bool = False,
@@ -73,9 +70,7 @@ class DebridClient(AsyncContextDecorator):
                 method, url, data=data, json=json, params=params, headers=self.headers
             ) as response:
                 await self._check_response_status(response, is_expected_to_fail)
-                return await self._parse_response(
-                    response, is_return_none, is_expected_to_fail, is_http_response
-                )
+                return await self._parse_response(response, is_return_none, is_expected_to_fail, is_http_response)
 
         except ProviderException as error:
             raise error
@@ -98,9 +93,7 @@ class DebridClient(AsyncContextDecorator):
         except Exception as error:
             await self._handle_request_error(error)
 
-    async def _check_response_status(
-        self, response: ClientResponse, is_expected_to_fail: bool
-    ):
+    async def _check_response_status(self, response: ClientResponse, is_expected_to_fail: bool):
         """Check response status and handle HTTP errors."""
         try:
             response.raise_for_status()
@@ -118,9 +111,7 @@ class DebridClient(AsyncContextDecorator):
                 raise ProviderException("Invalid token", "invalid_token.mp4")
 
             if error.status in [502, 503, 504]:
-                raise ProviderException(
-                    "Debrid service is down.", "debrid_service_down_error.mp4"
-                )
+                raise ProviderException("Debrid service is down.", "debrid_service_down_error.mp4")
 
             formatted_traceback = "".join(traceback.format_exception(error))
             raise ProviderException(
@@ -133,9 +124,7 @@ class DebridClient(AsyncContextDecorator):
         if isinstance(error, asyncio.TimeoutError):
             raise ProviderException("Request timed out.", "torrent_not_downloaded.mp4")
         elif isinstance(error, aiohttp.ClientConnectorError):
-            raise ProviderException(
-                "Failed to connect to Debrid service.", "debrid_service_down_error.mp4"
-            )
+            raise ProviderException("Failed to connect to Debrid service.", "debrid_service_down_error.mp4")
         raise ProviderException(f"Request error: {str(error)}", "api_error.mp4")
 
     @abstractmethod
@@ -151,7 +140,7 @@ class DebridClient(AsyncContextDecorator):
         is_return_none: bool,
         is_expected_to_fail: bool,
         is_http_response: bool = False,
-    ) -> Union[dict, list, str]:
+    ) -> dict | list | str:
         if is_return_none:
             return {}
         try:
@@ -182,10 +171,10 @@ class DebridClient(AsyncContextDecorator):
     async def wait_for_status(
         self,
         torrent_id: str,
-        target_status: Union[str, int],
+        target_status: str | int,
         max_retries: int,
         retry_interval: int,
-        torrent_info: Optional[dict] = None,
+        torrent_info: dict | None = None,
     ) -> dict:
         """Wait for the torrent to reach a particular status."""
         # if torrent_info is available, check the status from it
@@ -213,7 +202,7 @@ class DebridClient(AsyncContextDecorator):
         return b64encode(token.encode()).decode()
 
     @staticmethod
-    def decode_token_str(token: str) -> Optional[str]:
+    def decode_token_str(token: str) -> str | None:
         try:
             _, code = b64decode(token).decode().split(":")
         except (ValueError, UnicodeDecodeError):

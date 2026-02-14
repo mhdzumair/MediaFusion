@@ -52,7 +52,7 @@
   - 📺 **M3U Playlist Import**: Import M3U playlists for a more personalized streaming experience.
   - ✨ **Manual Scraper Triggering UI**: Manage your scraping sources with a manual trigger UI for a more hands-on approach.
   - 🗑️ **Delete Watchlist**: Delete your watchlist from the stremio for quick control over your content.
-  - 🔍 **Prowlarr Indexer Support**: Use [MediaFusion as an indexer in Prowlarr](/resources/yaml/mediafusion.yaml) for searching movies and TV shows with Radarr and Sonarr.
+  - 🔍 **Torznab API & Prowlarr Support**: Native [Torznab API](/resources/yaml/mediafusion.yaml) for direct integration with Prowlarr, Sonarr, and Radarr as an indexer.
   - 🔞 **Parental Controls**: Filter content based on nudity and certification ratings.
   - 🎬 **IMDb Integration**: Display IMDb ratings with the logo for quick quality assessment.
   - 🕰️ **Sports Event Timing**: View the time for sports events directly on the poster for better planning.

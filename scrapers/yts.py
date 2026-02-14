@@ -1,15 +1,16 @@
 from datetime import timedelta
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 import PTT
-from db.schemas import TorrentStreamData, MetadataData
+
+from db.schemas import MetadataData, TorrentStreamData
 from scrapers.base_scraper import BaseScraper
 from utils.runtime_const import YTS_SEARCH_TTL
 
 
 class YTSScraper(BaseScraper):
     cache_key_prefix = "yts"
-    yts_url = "https://yts.mx"
+    yts_url = "https://yts.lt"
 
     def __init__(self):
         super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
@@ -21,18 +22,25 @@ class YTSScraper(BaseScraper):
         user_data,
         metadata: MetadataData,
         catalog_type: str,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
-    ) -> List[TorrentStreamData]:
+        season: int | None = None,
+        episode: int | None = None,
+    ) -> list[TorrentStreamData]:
         # YTS is only for movies
         if catalog_type != "movie":
             self.metrics.record_skip("Not a movie")
             return []
 
+        # YTS requires IMDb ID
+        imdb_id = metadata.get_imdb_id()
+        if not imdb_id:
+            self.metrics.record_skip("No IMDb ID available")
+            self.logger.debug(f"Skipping YTS for {metadata.title} - no IMDb ID")
+            return []
+
         try:
             response = await self.make_request(
                 f"{self.yts_url}/api/v2/movie_details.json",
-                params={"imdb_id": metadata.id},
+                params={"imdb_id": imdb_id},
                 timeout=15,
             )
 
@@ -54,8 +62,7 @@ class YTSScraper(BaseScraper):
 
             self.metrics.record_found_items(len(torrents))
             self.logger.info(
-                f"Found {len(torrents)} torrents for {metadata.title} "
-                f"({metadata.year}) with IMDB ID {metadata.id}"
+                f"Found {len(torrents)} torrents for {metadata.title} ({metadata.year}) with IMDB ID {imdb_id}"
             )
 
             return await self.parse_movie_torrents(
@@ -69,7 +76,7 @@ class YTSScraper(BaseScraper):
             self.logger.error(f"Error searching movie: {e}")
             return []
 
-    def validate_response(self, response: Dict[str, Any]) -> bool:
+    def validate_response(self, response: dict[str, Any]) -> bool:
         return (
             isinstance(response, dict)
             and response.get("status") == "ok"
@@ -81,15 +88,13 @@ class YTSScraper(BaseScraper):
         self,
         processed_info_hashes: set[str],
         metadata: MetadataData,
-        movie: Dict[str, Any],
-    ) -> List[TorrentStreamData]:
+        movie: dict[str, Any],
+    ) -> list[TorrentStreamData]:
         streams = []
 
         for torrent in movie.get("torrents", []):
             try:
-                stream = await self.process_torrent(
-                    movie, torrent, metadata, processed_info_hashes
-                )
+                stream = await self.process_torrent(movie, torrent, metadata, processed_info_hashes)
                 if stream:
                     streams.append(stream)
 
@@ -102,11 +107,11 @@ class YTSScraper(BaseScraper):
 
     async def process_torrent(
         self,
-        movie: Dict[str, Any],
-        torrent: Dict[str, Any],
+        movie: dict[str, Any],
+        torrent: dict[str, Any],
         metadata: MetadataData,
         processed_info_hashes: set[str],
-    ) -> Optional[TorrentStreamData]:
+    ) -> TorrentStreamData | None:
         try:
             # Skip if we've already processed this info hash
             info_hash = torrent.get("hash", "").lower()
@@ -134,21 +139,29 @@ class YTSScraper(BaseScraper):
             ):
                 return None
 
+            # Parse using PTT for consistent quality attributes
+            ptt_parsed = PTT.parse_title(torrent_title, True)
+
             stream = TorrentStreamData(
-                id=info_hash,
-                meta_id=metadata.id,
-                torrent_name=torrent_title,
+                info_hash=info_hash,
+                meta_id=metadata.get_canonical_id(),
+                name=torrent_title,
                 size=int(torrent.get("size_bytes", 0)),
-                languages=PTT.parse.translate_langs([movie.get("language")]),
-                resolution=torrent["quality"],
-                codec=torrent.get("codec", ""),
-                quality=torrent["quality"],
-                audio=torrent.get("audio"),
                 source="YTS",
-                catalog=["yts_streams", "yts_movies"],
                 seeders=int(torrent.get("seeds", 0)),
                 announce_list=[],
                 created_at=torrent.get("date_uploaded"),
+                # Single-value quality attributes
+                resolution=torrent["quality"],
+                codec=torrent.get("codec") or ptt_parsed.get("codec"),
+                quality=torrent["quality"],
+                bit_depth=ptt_parsed.get("bit_depth"),
+                release_group=ptt_parsed.get("group"),
+                # Multi-value quality attributes
+                audio_formats=ptt_parsed.get("audio", []) if isinstance(ptt_parsed.get("audio"), list) else [],
+                channels=ptt_parsed.get("channels", []) if isinstance(ptt_parsed.get("channels"), list) else [],
+                hdr_formats=ptt_parsed.get("hdr", []) if isinstance(ptt_parsed.get("hdr"), list) else [],
+                languages=PTT.parse.translate_langs([movie.get("language")]),
             )
 
             # Record metrics

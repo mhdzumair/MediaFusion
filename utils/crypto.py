@@ -4,8 +4,7 @@ import logging
 import secrets
 import time
 import zlib
-from base64 import urlsafe_b64encode, urlsafe_b64decode
-from typing import Tuple
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
@@ -50,7 +49,7 @@ class CryptoUtils:
             length = secrets.randbelow(14) + 5  # Random length between 5-18
         return secrets.token_urlsafe(length)[:length]
 
-    def _compress_and_encrypt(self, data: str) -> Tuple[bytes, bytes]:
+    def _compress_and_encrypt(self, data: str) -> tuple[bytes, bytes]:
         """Compress and encrypt data, returning both IV and final data"""
         # First compress the data
         compressed_data = zlib.compress(data.encode("utf-8"))
@@ -72,9 +71,7 @@ class CryptoUtils:
         unpadded_data = unpad(decrypted_data, AES.block_size)
         return zlib.decompress(unpadded_data).decode("utf-8")
 
-    async def process_user_data(
-        self, user_data: UserData, expire_seconds: int = 2592000
-    ) -> str:
+    async def process_user_data(self, user_data: UserData, expire_seconds: int = 2592000) -> str:
         """
         Process user data with optimized compression and encryption
         Returns prefixed string indicating storage method used
@@ -157,7 +154,7 @@ class CryptoUtils:
         try:
             json_str = from_urlsafe(encoded_user_data)
             return UserData.model_validate_json(json_str)
-        except Exception as e:
+        except Exception:
             raise ValueError("Invalid user data")
 
     def encode_user_data(self, user_data: UserData) -> str:
@@ -171,7 +168,7 @@ class CryptoUtils:
                 by_alias=True,
             )
             return make_urlsafe(json_str.encode("utf-8"))
-        except Exception as e:
+        except Exception:
             raise ValueError("Failed to encode user data")
 
     async def retrieve_and_decrypt(self, storage_id: str) -> UserData:
@@ -186,7 +183,8 @@ class CryptoUtils:
 
             # Get data and update expiry
             encrypted_data = await REDIS_ASYNC_CLIENT.getex(
-                storage_key, ex=2592000  # Reset expiry to 30 days on access
+                storage_key,
+                ex=2592000,  # Reset expiry to 30 days on access
             )
 
             if not encrypted_data:
@@ -212,9 +210,7 @@ def encrypt_text(text: str, secret_key: str | bytes) -> str:
         secret_key = secret_key.encode("utf-8")
     cipher = AES.new(secret_key.ljust(32)[:32], AES.MODE_CBC, iv)
     encoded_text = text.encode("utf-8")
-    encrypted_data = cipher.encrypt(
-        encoded_text + b"\0" * (16 - len(encoded_text) % 16)
-    )
+    encrypted_data = cipher.encrypt(encoded_text + b"\0" * (16 - len(encoded_text) % 16))
     compressed_data = zlib.compress(iv + encrypted_data)
     encrypted_str = urlsafe_b64encode(compressed_data).decode("utf-8")
     return encrypted_str
@@ -238,9 +234,7 @@ def get_text_hash(text: str, full_hash: bool = False) -> str:
     return hash_str if full_hash else hash_str[:10]
 
 
-def encrypt_data(
-    secret_key: str, data: dict, expiration: int = None, ip: str = None
-) -> str:
+def encrypt_data(secret_key: str, data: dict, expiration: int = None, ip: str = None) -> str:
     if expiration:
         data["exp"] = int(time.time()) + expiration
     if ip:

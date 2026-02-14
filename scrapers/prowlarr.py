@@ -1,27 +1,42 @@
 import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional, Literal
-
-import httpx
+import hashlib
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 from db.config import settings
 from db.enums import TorrentType
-from db.schemas import TorrentStreamData, MetadataData
+from db.schemas import MetadataData, TorrentStreamData
 from scrapers.base_scraper import IndexerBaseScraper
 from utils.network import CircuitBreaker
 from utils.runtime_const import PROWLARR_SEARCH_TTL
 
 
 class ProwlarrScraper(IndexerBaseScraper):
-
     cache_key_prefix = "prowlarr"
 
-    def __init__(self):
-        self.headers = {"X-Api-Key": settings.prowlarr_api_key}
+    def __init__(self, base_url: str | None = None, api_key: str | None = None):
+        """Initialize ProwlarrScraper with optional custom URL and API key.
+
+        Args:
+            base_url: Custom Prowlarr URL. If None, uses global settings.
+            api_key: Custom API key. If None, uses global settings.
+        """
+        self._custom_url = base_url
+        self._custom_api_key = api_key
+        self._api_key = api_key or settings.prowlarr_api_key
+        self.headers = {"X-Api-Key": self._api_key}
         super().__init__(
-            cache_key_prefix=self.cache_key_prefix,
-            base_url=settings.prowlarr_url,
+            cache_key_prefix=self._get_cache_prefix(),
+            base_url=base_url or settings.prowlarr_url,
         )
+
+    def _get_cache_prefix(self) -> str:
+        """Generate cache prefix, including URL hash for user-specific instances."""
+        if self._custom_url:
+            # Create a short hash of the URL to separate caches per instance
+            url_hash = hashlib.md5(self._custom_url.encode()).hexdigest()[:8]
+            return f"prowlarr:{url_hash}"
+        return "prowlarr"
 
     @IndexerBaseScraper.cache(ttl=PROWLARR_SEARCH_TTL)
     @IndexerBaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
@@ -32,11 +47,9 @@ class ProwlarrScraper(IndexerBaseScraper):
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreamData]:
+    ) -> list[TorrentStreamData]:
         """Scrape and parse Prowlarr indexers for torrent streams"""
-        return await super()._scrape_and_parse(
-            user_data, metadata, catalog_type, season, episode
-        )
+        return await super()._scrape_and_parse(user_data, metadata, catalog_type, season, episode)
 
     @property
     def live_title_search_enabled(self) -> bool:
@@ -72,7 +85,7 @@ class ProwlarrScraper(IndexerBaseScraper):
         if imdb_id:
             return f"tt{imdb_id}"
 
-    def get_category_ids(self, item: dict) -> List[int]:
+    def get_category_ids(self, item: dict) -> list[int]:
         return [category["id"] for category in item["categories"]]
 
     def get_magent_link(self, item: dict) -> str:
@@ -100,20 +113,14 @@ class ProwlarrScraper(IndexerBaseScraper):
     def get_created_at(self, item: dict) -> datetime:
         return datetime.fromisoformat(item.get("publishDate"))
 
-    async def get_healthy_indexers(self) -> List[dict]:
+    async def get_healthy_indexers(self) -> list[dict]:
         """Fetch and return list of healthy Prowlarr indexers with their capabilities"""
         try:
             # Fetch both indexer configurations and their current status
-            indexers_future = self.http_client.get(
-                f"{self.base_url}/api/v1/indexer", headers=self.headers
-            )
-            statuses_future = self.http_client.get(
-                f"{self.base_url}/api/v1/indexerstatus", headers=self.headers
-            )
+            indexers_future = self.http_client.get(f"{self.base_url}/api/v1/indexer", headers=self.headers)
+            statuses_future = self.http_client.get(f"{self.base_url}/api/v1/indexerstatus", headers=self.headers)
 
-            responses = await asyncio.gather(
-                indexers_future, statuses_future, return_exceptions=True
-            )
+            responses = await asyncio.gather(indexers_future, statuses_future, return_exceptions=True)
 
             if any(isinstance(response, Exception) for response in responses):
                 self.logger.error("Failed to fetch indexer data or status")
@@ -124,12 +131,10 @@ class ProwlarrScraper(IndexerBaseScraper):
             statuses_response.raise_for_status()
 
             indexers = indexers_response.json()
-            status_data = {
-                status["indexerId"]: status for status in statuses_response.json()
-            }
+            status_data = {status["indexerId"]: status for status in statuses_response.json()}
 
             healthy_indexers = []
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now(UTC)
 
             for indexer in indexers:
                 indexer_id = indexer.get("id")
@@ -143,9 +148,7 @@ class ProwlarrScraper(IndexerBaseScraper):
                 # Convert disabled_till to datetime if it exists
                 if disabled_till:
                     try:
-                        disabled_till = datetime.fromisoformat(
-                            disabled_till.replace("Z", "+00:00")
-                        )
+                        disabled_till = datetime.fromisoformat(disabled_till.replace("Z", "+00:00"))
                     except ValueError:
                         disabled_till = None
 
@@ -220,9 +223,9 @@ class ProwlarrScraper(IndexerBaseScraper):
     async def fetch_search_results(
         self,
         params: dict,
-        indexer_ids: List[str],
-        timeout: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        indexer_ids: list[str],
+        timeout: int | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch search results from Prowlarr indexers"""
         results = []
         timeout = timeout or self.search_query_timeout
@@ -252,9 +255,7 @@ class ProwlarrScraper(IndexerBaseScraper):
 
                     # Record success
                     circuit_breaker.record_success()
-                    self.metrics.record_indexer_success(
-                        indexer_name, len(indexer_results)
-                    )
+                    self.metrics.record_indexer_success(indexer_name, len(indexer_results))
                     results.extend(indexer_results)
 
                 except Exception as e:
@@ -266,18 +267,13 @@ class ProwlarrScraper(IndexerBaseScraper):
 
                     if not circuit_breaker.is_closed():
                         self.logger.warning(
-                            f"Circuit breaker opened for indexer {indexer_name}. "
-                            f"Status: {circuit_breaker.get_status()}"
+                            f"Circuit breaker opened for indexer {indexer_name}. Status: {circuit_breaker.get_status()}"
                         )
                         indexer_status["is_healthy"] = False
                         self.indexer_status[indexer_id] = indexer_status
             else:
-                self.logger.debug(
-                    f"Skipping indexer {indexer_name} - circuit breaker is {circuit_breaker.state}"
-                )
-                self.metrics.record_indexer_error(
-                    indexer_name, f"Circuit breaker {circuit_breaker.state}"
-                )
+                self.logger.debug(f"Skipping indexer {indexer_name} - circuit breaker is {circuit_breaker.state}")
+                self.metrics.record_indexer_error(indexer_name, f"Circuit breaker {circuit_breaker.state}")
 
         return results
 
@@ -288,9 +284,15 @@ class ProwlarrScraper(IndexerBaseScraper):
         categories: list[int],
         search_query: str = None,
     ) -> dict:
-        """Build search parameters for Prowlarr API"""
-        if search_type in ["movie", "tvsearch"]:
+        """Build search parameters for Prowlarr API.
+
+        Uses IMDb ID for movie/tvsearch if available (video_id starts with 'tt'),
+        otherwise falls back to title-based search.
+        """
+        # Only use IMDb search if video_id is actually an IMDb ID
+        if search_type in ["movie", "tvsearch"] and video_id and video_id.startswith("tt"):
             search_query = f"{{IMDbId:{video_id}}}"
+        # If no IMDb ID, search_query should already be set to the title
 
         return {
             "query": search_query,
@@ -298,17 +300,13 @@ class ProwlarrScraper(IndexerBaseScraper):
             "type": search_type,
         }
 
-    async def parse_indexer_data(
-        self, indexer_data: dict, catalog_type: str, parsed_data: dict
-    ) -> Optional[dict]:
+    async def parse_indexer_data(self, indexer_data: dict, catalog_type: str, parsed_data: dict) -> dict | None:
         """Parse Prowlarr-specific indexer data"""
         download_url = await self.get_download_url(indexer_data)
         if not download_url:
             return None
 
-        torrent_data, is_torrent_downloaded = await self.get_torrent_data(
-            download_url, parsed_data
-        )
+        torrent_data, is_torrent_downloaded = await self.get_torrent_data(download_url, parsed_data)
 
         if not is_torrent_downloaded:
             return None
@@ -326,8 +324,7 @@ class ProwlarrScraper(IndexerBaseScraper):
                     "prowlarr_streams",
                     f"prowlarr_{catalog_type.rstrip('s')}s",
                 ],
-                "total_size": torrent_data.get("total_size")
-                or indexer_data.get("size"),
+                "total_size": torrent_data.get("total_size") or indexer_data.get("size"),
                 **parsed_data,
             }
         )

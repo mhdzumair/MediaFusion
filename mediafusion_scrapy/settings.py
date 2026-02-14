@@ -84,9 +84,7 @@ AUTOTHROTTLE_TARGET_CONCURRENCY = 1.0
 # Enable and configure HTTP caching (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html#httpcache-middleware-settings
 HTTPCACHE_ENABLED = True
-HTTPCACHE_EXPIRATION_SECS = (
-    900  # 15 minutes to avoid a multiple scraping task of same time.
-)
+HTTPCACHE_EXPIRATION_SECS = 900  # 15 minutes to avoid a multiple scraping task of same time.
 HTTPCACHE_DIR = "/tmp/httpcache"
 HTTPCACHE_IGNORE_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408, 429]
 HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"

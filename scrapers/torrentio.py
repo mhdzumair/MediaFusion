@@ -1,17 +1,16 @@
 from datetime import timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-import PTT
 import httpx
+import PTT
 
 from db.config import settings
-from db.schemas import MetadataData, TorrentStreamData
-from db.schemas import UserData
+from db.schemas import MetadataData, TorrentStreamData, UserData
 from scrapers.stremio_addons import StremioScraper
+from utils import const
 from utils.parser import (
     convert_size_to_bytes,
 )
-from utils import const
 from utils.runtime_const import TORRENTIO_SEARCH_TTL
 
 SUPPORTED_DEBRID_SERVICE = {
@@ -34,7 +33,8 @@ class TorrentioScraper(StremioScraper):
             logger_name=__name__,
         )
         self.http_client = httpx.AsyncClient(
-            timeout=30, proxy=settings.requests_proxy_url, 
+            timeout=30,
+            proxy=settings.requests_proxy_url,
             headers=const.UA_HEADER,
         )
 
@@ -43,17 +43,23 @@ class TorrentioScraper(StremioScraper):
         user_data: UserData,
         metadata: MetadataData,
         catalog_type: str,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
+        season: int | None = None,
+        episode: int | None = None,
     ) -> str:
+        # Torrentio requires IMDb ID
+        imdb_id = metadata.get_imdb_id()
+        if not imdb_id:
+            raise ValueError(f"Torrentio requires IMDb ID, but none available for {metadata.title}")
+
+        primary_provider = user_data.get_primary_provider()
         user_data_str = (
-            f"/{user_data.streaming_provider.service}={user_data.streaming_provider.token.rstrip('=')}"
-            if user_data.streaming_provider.service in SUPPORTED_DEBRID_SERVICE
+            f"/{primary_provider.service}={primary_provider.token.rstrip('=')}"
+            if primary_provider and primary_provider.service in SUPPORTED_DEBRID_SERVICE
             else ""
         )
-        url = f"{self.base_url}{user_data_str}/stream/{catalog_type}/{metadata.id}.json"
+        url = f"{self.base_url}{user_data_str}/stream/{catalog_type}/{imdb_id}.json"
         if catalog_type == "series":
-            url = f"{self.base_url}{user_data_str}/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
+            url = f"{self.base_url}{user_data_str}/stream/{catalog_type}/{imdb_id}:{season}:{episode}.json"
         return url
 
     @StremioScraper.cache(ttl=TORRENTIO_SEARCH_TTL)
@@ -65,12 +71,10 @@ class TorrentioScraper(StremioScraper):
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreamData]:
-        return await super()._scrape_and_parse(
-            user_data, metadata, catalog_type, season, episode
-        )
+    ) -> list[TorrentStreamData]:
+        return await super()._scrape_and_parse(user_data, metadata, catalog_type, season, episode)
 
-    def get_adult_content_field(self, stream_data: Dict[str, Any]) -> str:
+    def get_adult_content_field(self, stream_data: dict[str, Any]) -> str:
         return stream_data["title"]
 
     def get_scraper_name(self) -> str:
@@ -92,9 +96,7 @@ class TorrentioScraper(StremioScraper):
                 {
                     "source": source,
                     "info_hash": info_hash,
-                    "size": convert_size_to_bytes(
-                        self.extract_size_string(descriptions)
-                    ),
+                    "size": convert_size_to_bytes(self.extract_size_string(descriptions)),
                     "torrent_name": torrent_name,
                     "seeders": self.extract_seeders(descriptions),
                     "filename": stream.get("behaviorHints", {}).get("filename"),

@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Iterator
+from collections.abc import Iterator
+from typing import Any
 
-from db.schemas import TorrentStreamData
-from db.schemas import UserData
+from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.easydebrid.client import EasyDebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
@@ -11,16 +11,16 @@ from streaming_providers.parser import select_file_index_from_torrent
 
 async def get_video_url_from_easydebrid(
     magnet_link: str,
-    user_data: UserData,
+    streaming_provider: StreamingProvider,
     filename: str,
     user_ip: str,
     stream: TorrentStreamData,
-    season: Optional[int] = None,
-    episode: Optional[int] = None,
+    season: int | None = None,
+    episode: int | None = None,
     **kwargs: Any,
 ) -> str:
     async with EasyDebrid(
-        token=user_data.streaming_provider.token,
+        token=streaming_provider.token,
         user_ip=user_ip,
     ) as easydebrid_client:
         torrent_info = await easydebrid_client.create_download_link(magnet_link)
@@ -44,52 +44,44 @@ async def get_video_url_from_easydebrid(
         return torrent_info["files"][file_index]["url"]
 
 
-def divide_chunks(lst: List[Any], n: int) -> Iterator[List[Any]]:
+def divide_chunks(lst: list[Any], n: int) -> Iterator[list[Any]]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
 
 
-async def update_chunk_cache_status(
-    easydebrid_client: EasyDebrid, streams_chunk: List[TorrentStreamData]
-) -> None:
+async def update_chunk_cache_status(easydebrid_client: EasyDebrid, streams_chunk: list[TorrentStreamData]) -> None:
     """Update cache status for a chunk of streams."""
     try:
-        instant_availability_data = (
-            await easydebrid_client.get_torrent_instant_availability(
-                [f"magnet:?xt=urn:btih:{stream.id}" for stream in streams_chunk]
-            )
+        instant_availability_data = await easydebrid_client.get_torrent_instant_availability(
+            [f"magnet:?xt=urn:btih:{stream.info_hash}" for stream in streams_chunk]
         )
-        for stream, instant_availability in zip(
-            streams_chunk, instant_availability_data
-        ):
+        for stream, instant_availability in zip(streams_chunk, instant_availability_data):
             stream.cached = instant_availability
     except ProviderException as e:
         logging.error(f"Failed to get cached status from easydebrid for a chunk: {e}")
 
 
 async def update_easydebrid_cache_status(
-    streams: List[TorrentStreamData], user_data: UserData, user_ip: str, **kwargs: Any
+    streams: list[TorrentStreamData], streaming_provider: StreamingProvider, user_ip: str, **kwargs: Any
 ) -> None:
     """Updates the cache status of streams based on Easydebrid's instant availability."""
     async with EasyDebrid(
-        token=user_data.streaming_provider.token,
+        token=streaming_provider.token,
         user_ip=user_ip,
     ) as easydebrid_client:
         chunks = list(divide_chunks(streams, 50))
-        update_tasks = [
-            update_chunk_cache_status(easydebrid_client, chunk) for chunk in chunks
-        ]
+        update_tasks = [update_chunk_cache_status(easydebrid_client, chunk) for chunk in chunks]
         await asyncio.gather(*update_tasks)
 
 
 async def validate_easydebrid_credentials(
-    user_data: UserData, user_ip: str, **kwargs: Any
-) -> Dict[str, str]:
+    streaming_provider: StreamingProvider, user_ip: str, **kwargs: Any
+) -> dict[str, str]:
     """Validates the EasyDebrid credentials."""
     try:
         async with EasyDebrid(
-            token=user_data.streaming_provider.token,
+            token=streaming_provider.token,
             user_ip=user_ip,
         ) as easydebrid_client:
             await easydebrid_client.get_user_info()

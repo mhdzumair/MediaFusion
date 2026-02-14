@@ -36,7 +36,7 @@ ANTHROPIC_VERSION ?= 2023-06-01
 SUBREDDIT ?= MediaFusion
 REDDIT_POST_TITLE ?= "MediaFusion $(VERSION_NEW) Update - What's New?"
 
-.PHONY: build tag push prompt update-version generate-notes generate-reddit-post
+.PHONY: build tag push prompt update-version generate-notes generate-reddit-post frontend-install frontend-build frontend-dev dev backend-dev
 
 build:
 	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f deployment/Dockerfile .
@@ -177,5 +177,23 @@ endif
 		--data "{\"model\":\"$(CLAUDE_MODEL)\",\"max_tokens\":$(MAX_TOKENS),\"messages\":[{\"role\":\"user\",\"content\":$$PROMPT_CONTENT}]}" > $$temp_file; \
 	jq -r '.content[] | select(.type=="text") | .text' $$temp_file || { echo "Failed to generate Reddit post using Claude AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
 	rm $$temp_file
+
+# Frontend build targets
+frontend-install:
+	cd frontend && npm ci
+
+frontend-build: frontend-install
+	cd frontend && npm run build
+
+frontend-dev:
+	cd frontend && npm run dev
+
+# Development targets
+backend-dev:
+	uvicorn api.main:app --reload --port 8000
+
+dev:
+	@echo "Starting backend and frontend in development mode..."
+	@echo "Run 'make backend-dev' in one terminal and 'make frontend-dev' in another"
 
 all: build-multi

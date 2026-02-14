@@ -1,12 +1,11 @@
-from datetime import timedelta, datetime
-from typing import List, Dict, Any, Literal, Optional
+import hashlib
+from datetime import datetime, timedelta
+from typing import Any, Literal
 from xml.etree import ElementTree
-
-import httpx
 
 from db.config import settings
 from db.enums import TorrentType
-from db.schemas import TorrentStreamData, MetadataData
+from db.schemas import MetadataData, TorrentStreamData
 from scrapers.base_scraper import IndexerBaseScraper
 from utils.network import CircuitBreaker
 from utils.runtime_const import JACKETT_SEARCH_TTL
@@ -16,11 +15,28 @@ class JackettScraper(IndexerBaseScraper):
     cache_key_prefix = "jackett"
     search_url = "/api/v2.0/indexers/all/results"
 
-    def __init__(self):
+    def __init__(self, base_url: str | None = None, api_key: str | None = None):
+        """Initialize JackettScraper with optional custom URL and API key.
+
+        Args:
+            base_url: Custom Jackett URL. If None, uses global settings.
+            api_key: Custom API key. If None, uses global settings.
+        """
+        self._custom_url = base_url
+        self._custom_api_key = api_key
+        self._api_key = api_key or settings.jackett_api_key
         super().__init__(
-            cache_key_prefix=self.cache_key_prefix,
-            base_url=settings.jackett_url,
+            cache_key_prefix=self._get_cache_prefix(),
+            base_url=base_url or settings.jackett_url,
         )
+
+    def _get_cache_prefix(self) -> str:
+        """Generate cache prefix, including URL hash for user-specific instances."""
+        if self._custom_url:
+            # Create a short hash of the URL to separate caches per instance
+            url_hash = hashlib.md5(self._custom_url.encode()).hexdigest()[:8]
+            return f"jackett:{url_hash}"
+        return "jackett"
 
     @property
     def live_title_search_enabled(self) -> bool:
@@ -54,7 +70,7 @@ class JackettScraper(IndexerBaseScraper):
     def get_imdb_id(self, item: dict) -> str:
         return item.get("Imdb")
 
-    def get_category_ids(self, item: dict) -> List[int]:
+    def get_category_ids(self, item: dict) -> list[int]:
         return item["Category"]
 
     def get_magent_link(self, item: dict) -> str:
@@ -84,19 +100,17 @@ class JackettScraper(IndexerBaseScraper):
         catalog_type: str,
         season: int = None,
         episode: int = None,
-    ) -> List[TorrentStreamData]:
+    ) -> list[TorrentStreamData]:
         """Scrape and parse Jackett indexers for torrent streams"""
-        return await super()._scrape_and_parse(
-            user_data, metadata, catalog_type, season, episode
-        )
+        return await super()._scrape_and_parse(user_data, metadata, catalog_type, season, episode)
 
-    async def get_healthy_indexers(self) -> List[dict]:
+    async def get_healthy_indexers(self) -> list[dict]:
         """Fetch and return list of healthy Jackett indexers with their capabilities"""
         try:
             response = await self.http_client.get(
                 f"{self.base_url}/api/v2.0/indexers/!status:failing/results/torznab/api",
                 params={
-                    "apikey": settings.jackett_api_key,
+                    "apikey": self._api_key,
                     "t": "indexers",
                     "configured": "true",
                 },
@@ -116,11 +130,7 @@ class JackettScraper(IndexerBaseScraper):
 
                 # Get basic indexer info
                 title = indexer.find("title").text
-                description = (
-                    indexer.find("description").text
-                    if indexer.find("description") is not None
-                    else ""
-                )
+                description = indexer.find("description").text if indexer.find("description") is not None else ""
 
                 # Get searching capabilities
                 caps = indexer.find("caps")
@@ -146,13 +156,8 @@ class JackettScraper(IndexerBaseScraper):
                 search_caps = {}
                 for search_type in ["search", "tv-search", "movie-search"]:
                     search_elem = searching.find(search_type)
-                    if (
-                        search_elem is not None
-                        and search_elem.get("available") == "yes"
-                    ):
-                        supported_params = search_elem.get("supportedParams", "").split(
-                            ","
-                        )
+                    if search_elem is not None and search_elem.get("available") == "yes":
+                        supported_params = search_elem.get("supportedParams", "").split(",")
                         search_caps[search_type] = supported_params
 
                 indexer_info = {
@@ -189,9 +194,9 @@ class JackettScraper(IndexerBaseScraper):
     async def fetch_search_results(
         self,
         params: dict,
-        indexer_ids: List[int],
-        timeout: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        indexer_ids: list[int],
+        timeout: int | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch search results from Jackett indexers with circuit breaker handling"""
         results = []
         timeout = timeout or self.search_query_timeout
@@ -212,7 +217,7 @@ class JackettScraper(IndexerBaseScraper):
                     search_params = {
                         **params,
                         "Tracker[]": [indexer_id],
-                        "apikey": settings.jackett_api_key,
+                        "apikey": self._api_key,
                     }
                     response = await self.http_client.get(
                         f"{self.base_url}{self.search_url}",
@@ -223,9 +228,7 @@ class JackettScraper(IndexerBaseScraper):
                     indexer_results = response.json().get("Results", [])
 
                     circuit_breaker.record_success()
-                    self.metrics.record_indexer_success(
-                        indexer_name, len(indexer_results)
-                    )
+                    self.metrics.record_indexer_success(indexer_name, len(indexer_results))
                     results.extend(indexer_results)
 
                 except Exception as e:
@@ -237,18 +240,13 @@ class JackettScraper(IndexerBaseScraper):
 
                     if not circuit_breaker.is_closed():
                         self.logger.warning(
-                            f"Circuit breaker opened for indexer {indexer_name}. "
-                            f"Status: {circuit_breaker.get_status()}"
+                            f"Circuit breaker opened for indexer {indexer_name}. Status: {circuit_breaker.get_status()}"
                         )
                         indexer_status["is_healthy"] = False
                         self.indexer_status[indexer_id] = indexer_status
             else:
-                self.logger.debug(
-                    f"Skipping indexer {indexer_name} - circuit breaker is {circuit_breaker.state}"
-                )
-                self.metrics.record_indexer_error(
-                    indexer_name, f"Circuit breaker {circuit_breaker.state}"
-                )
+                self.logger.debug(f"Skipping indexer {indexer_name} - circuit breaker is {circuit_breaker.state}")
+                self.metrics.record_indexer_error(indexer_name, f"Circuit breaker {circuit_breaker.state}")
 
         return results
 
@@ -259,21 +257,25 @@ class JackettScraper(IndexerBaseScraper):
         categories: list[int],
         search_query: str = None,
     ) -> dict:
-        """Build search parameters for Jackett API"""
+        """Build search parameters for Jackett API.
+
+        Uses IMDb ID for movie/tvsearch if available (video_id starts with 'tt'),
+        otherwise falls back to title-based search.
+        """
         params = {
             "Category[]": categories,
         }
 
-        if search_type in ["movie", "tvsearch"]:
+        # Only use IMDb search if video_id is actually an IMDb ID
+        if search_type in ["movie", "tvsearch"] and video_id and video_id.startswith("tt"):
             params["imdbid"] = video_id
         else:
-            params["Query"] = search_query
+            # Fall back to title-based search
+            params["Query"] = search_query or video_id
 
         return params
 
-    async def parse_indexer_data(
-        self, indexer_data: dict, catalog_type: str, parsed_data: dict
-    ) -> dict | None:
+    async def parse_indexer_data(self, indexer_data: dict, catalog_type: str, parsed_data: dict) -> dict | None:
         """Parse Jackett-specific indexer data"""
         if not self.validate_category_with_title(indexer_data):
             return None
@@ -285,9 +287,7 @@ class JackettScraper(IndexerBaseScraper):
         if not download_url:
             return None
 
-        torrent_data, is_torrent_downloaded = await self.get_torrent_data(
-            download_url, parsed_data
-        )
+        torrent_data, is_torrent_downloaded = await self.get_torrent_data(download_url, parsed_data)
 
         if not is_torrent_downloaded:
             return None
@@ -306,8 +306,7 @@ class JackettScraper(IndexerBaseScraper):
                     "jackett_streams",
                     f"jackett_{catalog_type.rstrip('s')}s",
                 ],
-                "total_size": torrent_data.get("total_size")
-                or indexer_data.get("Size"),
+                "total_size": torrent_data.get("total_size") or indexer_data.get("Size"),
                 **parsed_data,
             }
         )

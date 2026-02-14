@@ -1,0 +1,2 @@
+export { IntegrationsPage } from './IntegrationsPage'
+

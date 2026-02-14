@@ -1,22 +1,22 @@
 import logging
 from datetime import datetime
-from typing import Optional, Any
+from typing import Any
 
 import pytz
 from beanie import (
-    Document,
-    Save,
-    after_event,
-    Insert,
     Delete,
-    before_event,
-    Update,
+    Document,
+    Insert,
     Replace,
+    Save,
+    Update,
+    after_event,
+    before_event,
 )
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from pymongo import IndexModel, ASCENDING, DESCENDING, TEXT
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pymongo import ASCENDING, DESCENDING, TEXT, IndexModel
 
-from db.enums import TorrentType, NudityStatus
+from db.enums import NudityStatus, TorrentType
 from db.redis_database import REDIS_ASYNC_CLIENT
 
 
@@ -42,17 +42,17 @@ class MediaFusionMetaData(Document):
     id: str
     title: str
     is_custom: bool = Field(default=False)
-    aka_titles: Optional[list[str]] = Field(default_factory=list)
-    year: Optional[int] = None
-    poster: Optional[str] = None
-    is_poster_working: Optional[bool] = True
-    is_add_title_to_poster: Optional[bool] = False
-    background: Optional[str] = None
+    aka_titles: list[str] | None = Field(default_factory=list)
+    year: int | None = None
+    poster: str | None = None
+    is_poster_working: bool | None = True
+    is_add_title_to_poster: bool | None = False
+    background: str | None = None
     type: str
-    description: Optional[str] = None
-    runtime: Optional[str] = None
-    website: Optional[str] = None
-    genres: Optional[list[str]] = Field(default_factory=list)
+    description: str | None = None
+    runtime: str | None = None
+    website: str | None = None
+    genres: list[str] | None = Field(default_factory=list)
     last_updated_at: datetime = Field(default_factory=datetime.now)
 
     catalog_stats: list[CatalogStats] = Field(default_factory=list)
@@ -107,26 +107,26 @@ class TorrentStreams(Document):
     torrent_name: str
     size: int
     episode_files: list[EpisodeFile] | None = Field(default_factory=list)
-    filename: Optional[str] = None
-    file_index: Optional[int] = None
+    filename: str | None = None
+    file_index: int | None = None
     announce_list: list[str]
     languages: list[str]
     source: str
-    uploader: Optional[str] = None
+    uploader: str | None = None
     catalog: list[str]
     created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: Optional[datetime] = None
-    uploaded_at: Optional[datetime] = None
-    resolution: Optional[str] = None
-    codec: Optional[str] = None
-    quality: Optional[str] = None
+    updated_at: datetime | None = None
+    uploaded_at: datetime | None = None
+    resolution: str | None = None
+    codec: str | None = None
+    quality: str | None = None
     audio: list[str] | str | None = None
     hdr: list[str] | None = None
-    seeders: Optional[int] = None
-    torrent_type: Optional[TorrentType] = TorrentType.PUBLIC
-    is_blocked: Optional[bool] = False
+    seeders: int | None = None
+    torrent_type: TorrentType | None = TorrentType.PUBLIC
+    is_blocked: bool | None = False
     torrent_file: bytes | None = None
-    known_file_details: Optional[list[KnownFile]] = None
+    known_file_details: list[KnownFile] | None = None
 
     @after_event(Insert)
     async def update_metadata_on_create(self):
@@ -172,10 +172,7 @@ class TorrentStreams(Document):
         if self.episode_files:
             series_data = await MediaFusionSeriesMetaData.get(self.meta_id)
             if series_data:
-                existing_episodes = {
-                    (ep.season_number, ep.episode_number): ep
-                    for ep in series_data.episodes
-                }
+                existing_episodes = {(ep.season_number, ep.episode_number): ep for ep in series_data.episodes}
 
                 new_episodes = []
                 for ep in self.episode_files:
@@ -194,18 +191,12 @@ class TorrentStreams(Document):
 
                 if new_episodes:
                     update_ops["$push"] = update_ops.get("$push", {})
-                    update_ops["$push"]["episodes"] = {
-                        "$each": [ep.model_dump() for ep in new_episodes]
-                    }
-                    cache_keys = await REDIS_ASYNC_CLIENT.keys(
-                        f"series_{self.meta_id}_meta*"
-                    )
+                    update_ops["$push"]["episodes"] = {"$each": [ep.model_dump() for ep in new_episodes]}
+                    cache_keys = await REDIS_ASYNC_CLIENT.keys(f"series_{self.meta_id}_meta*")
                     cache_keys.append(f"series_data:{self.meta_id}")
                     await REDIS_ASYNC_CLIENT.delete(*cache_keys)
 
-        await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": self.meta_id}, update_ops
-        )
+        await MediaFusionMetaData.get_motor_collection().update_one({"_id": self.meta_id}, update_ops)
         logging.info(f"Added stream {self.id} to metadata {self.meta_id}")
 
     @after_event(Delete)
@@ -230,24 +221,14 @@ class TorrentStreams(Document):
             },
         ]
 
-        remaining_streams = (
-            await TorrentStreams.get_motor_collection()
-            .aggregate(pipeline)
-            .to_list(None)
-        )
+        remaining_streams = await TorrentStreams.get_motor_collection().aggregate(pipeline).to_list(None)
         remaining_catalogs = {stream["_id"] for stream in remaining_streams}
 
         # Build update operations
         update_ops = {
             "$inc": {"total_streams": -1},
             "$pull": {
-                "catalog_stats": {
-                    "catalog": {
-                        "$in": [
-                            cat for cat in self.catalog if cat not in remaining_catalogs
-                        ]
-                    }
-                }
+                "catalog_stats": {"catalog": {"$in": [cat for cat in self.catalog if cat not in remaining_catalogs]}}
             },
         }
 
@@ -258,26 +239,18 @@ class TorrentStreams(Document):
                 {
                     "$set": {
                         "catalog_stats.$.total_streams": stream["total_streams"],
-                        "catalog_stats.$.last_stream_added": stream[
-                            "last_stream_added"
-                        ],
+                        "catalog_stats.$.last_stream_added": stream["last_stream_added"],
                     }
                 },
             )
 
         # Update last_stream_added
         if remaining_streams:
-            update_ops["$set"] = {
-                "last_stream_added": max(
-                    stream["last_stream_added"] for stream in remaining_streams
-                )
-            }
+            update_ops["$set"] = {"last_stream_added": max(stream["last_stream_added"] for stream in remaining_streams)}
         else:
             update_ops["$set"] = {"last_stream_added": None}
 
-        await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": self.meta_id}, update_ops
-        )
+        await MediaFusionMetaData.get_motor_collection().update_one({"_id": self.meta_id}, update_ops)
         logging.info(f"Removed stream {self.id} from metadata {self.meta_id}")
 
     @before_event([Update, Save])
@@ -302,9 +275,7 @@ class TorrentStreams(Document):
         if not series_data:
             return
 
-        existing_episodes = {
-            (ep.season_number, ep.episode_number): ep for ep in series_data.episodes
-        }
+        existing_episodes = {(ep.season_number, ep.episode_number): ep for ep in series_data.episodes}
 
         new_episodes = []
         for ep in self.episode_files:
@@ -322,11 +293,7 @@ class TorrentStreams(Document):
         if new_episodes:
             await MediaFusionMetaData.get_motor_collection().update_one(
                 {"_id": self.meta_id},
-                {
-                    "$push": {
-                        "episodes": {"$each": [ep.model_dump() for ep in new_episodes]}
-                    }
-                },
+                {"$push": {"episodes": {"$each": [ep.model_dump() for ep in new_episodes]}}},
             )
             cache_keys = await REDIS_ASYNC_CLIENT.keys(f"series_{self.meta_id}_meta*")
             cache_keys.append(f"series_data:{self.meta_id}")
@@ -367,9 +334,7 @@ class TorrentStreams(Document):
             IndexModel([("uploader", ASCENDING)]),
         ]
 
-    def get_episodes(
-        self, season_number: int, episode_number: int
-    ) -> list[EpisodeFile]:
+    def get_episodes(self, season_number: int, episode_number: int) -> list[EpisodeFile]:
         """
         Returns a list of Episode objects for the given season and episode number,
         sorted by size in descending order if size is available.
@@ -393,7 +358,7 @@ class TVStreams(Document):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     country: str | None = None
-    is_working: Optional[bool] = True
+    is_working: bool | None = True
     test_failure_count: int = 0
     namespaces: list[str] = Field(default_factory=lambda: ["mediafusion"])
     drm_key_id: str | None = None
@@ -407,9 +372,7 @@ class TVStreams(Document):
                 "$inc": {"total_streams": 1},
                 "$set": {"last_stream_added": self.created_at},
             }
-            await MediaFusionMetaData.get_motor_collection().update_one(
-                {"_id": self.meta_id}, update_data
-            )
+            await MediaFusionMetaData.get_motor_collection().update_one({"_id": self.meta_id}, update_data)
             logging.info(f"Added stream {self.id} to metadata {self.meta_id}")
 
     @after_event(Delete)
@@ -429,9 +392,7 @@ class TVStreams(Document):
         if self.is_working:
             update_data["$set"] = {"last_stream_added": datetime.now()}
 
-        await MediaFusionMetaData.get_motor_collection().update_one(
-            {"_id": self.meta_id}, update_data
-        )
+        await MediaFusionMetaData.get_motor_collection().update_one({"_id": self.meta_id}, update_data)
 
     def __eq__(self, other):
         if not isinstance(other, TVStreams):
@@ -445,9 +406,7 @@ class TVStreams(Document):
         )
 
     def __hash__(self):
-        return hash(
-            (self.url, self.ytId, self.externalUrl, self.drm_key_id, self.drm_key)
-        )
+        return hash((self.url, self.ytId, self.externalUrl, self.drm_key_id, self.drm_key))
 
     class Settings:
         indexes = [
@@ -470,11 +429,11 @@ class TVStreams(Document):
 
 class MediaFusionMovieMetaData(MediaFusionMetaData):
     type: str = "movie"
-    imdb_rating: Optional[float] = None
-    tmdb_rating: Optional[float] = None
-    parent_guide_nudity_status: Optional[NudityStatus] = NudityStatus.UNKNOWN
-    parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
-    stars: Optional[list[str]] = Field(default_factory=list)
+    imdb_rating: float | None = None
+    tmdb_rating: float | None = None
+    parent_guide_nudity_status: NudityStatus | None = NudityStatus.UNKNOWN
+    parent_guide_certificates: list[str] | None = Field(default_factory=list)
+    stars: list[str] | None = Field(default_factory=list)
 
 
 class SeriesEpisode(BaseModel):
@@ -483,11 +442,11 @@ class SeriesEpisode(BaseModel):
     season_number: int
     episode_number: int
     title: str | None = None
-    overview: Optional[str] = None
+    overview: str | None = None
     released: datetime | None = None
-    imdb_rating: Optional[float] = None
-    tmdb_rating: Optional[float] = None
-    thumbnail: Optional[str] = None
+    imdb_rating: float | None = None
+    tmdb_rating: float | None = None
+    thumbnail: str | None = None
 
     @model_validator(mode="after")
     def validate_title(self):
@@ -498,12 +457,12 @@ class SeriesEpisode(BaseModel):
 
 class MediaFusionSeriesMetaData(MediaFusionMetaData):
     type: str = "series"
-    end_year: Optional[int] = None
-    imdb_rating: Optional[float] = None
-    tmdb_rating: Optional[float] = None
-    parent_guide_nudity_status: Optional[str] = "None"
-    parent_guide_certificates: Optional[list[str]] = Field(default_factory=list)
-    stars: Optional[list[str]] = Field(default_factory=list)
+    end_year: int | None = None
+    imdb_rating: float | None = None
+    tmdb_rating: float | None = None
+    parent_guide_nudity_status: str | None = "None"
+    parent_guide_certificates: list[str] | None = Field(default_factory=list)
+    stars: list[str] | None = Field(default_factory=list)
     episodes: list[SeriesEpisode] = Field(default_factory=list)
 
 
@@ -511,13 +470,13 @@ class MediaFusionTVMetaData(MediaFusionMetaData):
     type: str = "tv"
     country: str | None = None
     tv_language: str | None = None
-    logo: Optional[str] = None
+    logo: str | None = None
 
 
 class MediaFusionEventsMetaData(MediaFusionMetaData):
     type: str = "events"
-    event_start_timestamp: Optional[int] = None
-    logo: Optional[str] = None
+    event_start_timestamp: int | None = None
+    logo: str | None = None
     streams: list[TVStreams]
 
 
@@ -561,15 +520,17 @@ class RSSFeedFilters(BaseModel):
 
 class RSSFeedMetrics(BaseModel):
     """RSS Feed scraping metrics"""
+
     total_items_found: int = 0
     total_items_processed: int = 0
     total_items_skipped: int = 0
     total_errors: int = 0
-    last_scrape_duration: Optional[float] = None  # in seconds
+    last_scrape_duration: float | None = None  # in seconds
     items_processed_last_run: int = 0
     items_skipped_last_run: int = 0
     errors_last_run: int = 0
     skip_reasons: dict[str, int] = Field(default_factory=dict)  # reason -> count
+
 
 class RSSCatalogPattern(BaseModel):
     regex: str
@@ -582,21 +543,17 @@ class RSSCatalogPattern(BaseModel):
 class RSSFeed(Document):
     name: str
     url: str
-    parsing_patterns: Optional[RSSParsingPatterns] = Field(
-        default_factory=RSSParsingPatterns
-    )
-    filters: Optional[RSSFeedFilters] = Field(
-        default_factory=RSSFeedFilters
-    )
+    parsing_patterns: RSSParsingPatterns | None = Field(default_factory=RSSParsingPatterns)
+    filters: RSSFeedFilters | None = Field(default_factory=RSSFeedFilters)
     active: bool = True
-    last_scraped: Optional[datetime] = None
-    source: Optional[str] = None
-    torrent_type: Optional[str] = "public"
-    auto_detect_catalog: Optional[bool] = False
-    catalog_patterns: Optional[list[RSSCatalogPattern]] = Field(default_factory=list)
+    last_scraped: datetime | None = None
+    source: str | None = None
+    torrent_type: str | None = "public"
+    auto_detect_catalog: bool | None = False
+    catalog_patterns: list[RSSCatalogPattern] | None = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-    metrics: Optional[RSSFeedMetrics] = Field(default_factory=RSSFeedMetrics)
+    metrics: RSSFeedMetrics | None = Field(default_factory=RSSFeedMetrics)
 
     class Settings:
         collection = "rss_feeds"

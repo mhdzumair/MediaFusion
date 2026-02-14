@@ -21,16 +21,10 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.start_urls = [config_manager.get_scraper_config(self.name, "channels_url")]
-        self.m3u8_base_url = config_manager.get_scraper_config(
-            self.name, "m3u8_base_url"
-        )
+        self.m3u8_base_url = config_manager.get_scraper_config(self.name, "m3u8_base_url")
         self.referer = config_manager.get_scraper_config(self.name, "referer")
-        self.category_map = config_manager.get_scraper_config(
-            self.name, "category_mapping"
-        )
-        self.server_lookup_url = config_manager.get_scraper_config(
-            self.name, "server_lookup_url"
-        )
+        self.category_map = config_manager.get_scraper_config(self.name, "category_mapping")
+        self.server_lookup_url = config_manager.get_scraper_config(self.name, "server_lookup_url")
         self.channels_data = {}  # Will store IPTV-org channels data
         self.min_match_ratio = 85  # Minimum ratio for fuzzy matching
 
@@ -135,31 +129,20 @@ class DaddyLiveHDChannelsSpider(scrapy.Spider):
 
             # fetch server url data from server_lookup_url
             server_type = "premium"
-            server_url = self.server_lookup_url.format(
-                server_type=server_type, channel_id=channel_id
-            )
+            server_url = self.server_lookup_url.format(server_type=server_type, channel_id=channel_id)
             server_request = scrapy.Request(
                 server_url,
                 headers={"Referer": f"{self.referer}{server_type}tv/daddylivehd.php?id={channel_id}"},
             )
-            server_response = await maybe_deferred_to_future(
-                self.crawler.engine.download(server_request)
-            )
-            if (
-                server_response.status != 200
-                and server_response.headers.get("Content-Type") != "application/json"
-            ):
-                logging.error(
-                    f"Failed to fetch server data for channel: {title} ({channel_id})"
-                )
+            server_response = await maybe_deferred_to_future(self.crawler.engine.download(server_request))
+            if server_response.status != 200 and server_response.headers.get("Content-Type") != "application/json":
+                logging.error(f"Failed to fetch server data for channel: {title} ({channel_id})")
                 continue
 
             server_data = server_response.json()
             server_key = server_data.get("server_key")
             if not server_key:
-                logging.error(
-                    f"Failed to find server key for channel: {title} ({channel_id})"
-                )
+                logging.error(f"Failed to find server key for channel: {title} ({channel_id})")
                 continue
 
             # Build stream URL

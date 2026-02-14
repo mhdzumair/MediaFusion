@@ -21,9 +21,7 @@ if not SECRET_STR:
         "MediaFusion is not configured. Please configure the addon",
         xbmcgui.NOTIFICATION_INFO,
     )
-    xbmc.executebuiltin(
-        f"RunScript(special://home/addons/{ADDON_ID}/lib/custom_settings_window.py)"
-    )
+    xbmc.executebuiltin(f"RunScript(special://home/addons/{ADDON_ID}/lib/custom_settings_window.py)")
     sys.exit(0)
 
 
@@ -35,25 +33,17 @@ def fetch_data(url):
         return response.json()
     except requests.ConnectionError as e:
         xbmc.log(f"Connection failed: {e}", xbmc.LOGERROR)
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "Connection failed", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "Connection failed", xbmcgui.NOTIFICATION_ERROR)
     except requests.Timeout as e:
         xbmc.log(f"Request timed out: {e}", xbmc.LOGERROR)
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "Request timed out", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "Request timed out", xbmcgui.NOTIFICATION_ERROR)
     except requests.RequestException as e:
         if e.response is None:
             xbmc.log(f"Request failed: {e}", xbmc.LOGERROR)
-            xbmcgui.Dialog().notification(
-                "MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR
-            )
+            xbmcgui.Dialog().notification("MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR)
         elif e.response.status_code == 401:
             xbmc.log("Unauthorized request", xbmc.LOGERROR)
-            xbmcgui.Dialog().notification(
-                "MediaFusion", "Unauthorized request", xbmcgui.NOTIFICATION_ERROR
-            )
+            xbmcgui.Dialog().notification("MediaFusion", "Unauthorized request", xbmcgui.NOTIFICATION_ERROR)
         elif e.response.status_code == 429:
             xbmc.log("Too many requests, Try again in few seconds", xbmc.LOGERROR)
             xbmcgui.Dialog().notification(
@@ -63,14 +53,10 @@ def fetch_data(url):
             )
         else:
             xbmc.log(f"Request failed: {e}", xbmc.LOGERROR)
-            xbmcgui.Dialog().notification(
-                "MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR
-            )
+            xbmcgui.Dialog().notification("MediaFusion", "Request failed", xbmcgui.NOTIFICATION_ERROR)
     except Exception as e:
         xbmc.log(f"Failed to fetch data: {e}", xbmc.LOGERROR)
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "Failed to fetch data", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "Failed to fetch data", xbmcgui.NOTIFICATION_ERROR)
 
 
 def build_url(action, **params):

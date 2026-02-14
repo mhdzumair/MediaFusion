@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 
@@ -10,7 +10,7 @@ class AllDebrid(DebridClient):
     BASE_URL = "https://api.alldebrid.com/v4.1"
     AGENT = "mediafusion"
 
-    def __init__(self, token: str, user_ip: Optional[str] = None):
+    def __init__(self, token: str, user_ip: str | None = None):
         self.user_ip = user_ip
         super().__init__(token)
 
@@ -23,17 +23,13 @@ class AllDebrid(DebridClient):
     async def _handle_service_specific_errors(self, error_data: dict, status_code: int):
         pass
 
-    async def _make_request(
-        self, method: str, url: str, params: Optional[dict] = None, **kwargs
-    ) -> dict:
+    async def _make_request(self, method: str, url: str, params: dict | None = None, **kwargs) -> dict:
         params = params or {}
         params["agent"] = self.AGENT
         if self.user_ip:
             params["ip"] = self.user_ip
         full_url = self.BASE_URL + url
-        return await super()._make_request(
-            method=method, url=full_url, params=params, **kwargs
-        )
+        return await super()._make_request(method=method, url=full_url, params=params, **kwargs)
 
     @staticmethod
     def _validate_error_response(response_data):
@@ -41,26 +37,18 @@ class AllDebrid(DebridClient):
             error_code = response_data.get("error", {}).get("code")
             match error_code:
                 case "AUTH_BAD_APIKEY":
-                    raise ProviderException(
-                        "Invalid AllDebrid API key", "invalid_token.mp4"
-                    )
+                    raise ProviderException("Invalid AllDebrid API key", "invalid_token.mp4")
                 case "NO_SERVER":
                     raise ProviderException(
                         f"Failed to add magnet link to AllDebrid {response_data}",
                         "transfer_error.mp4",
                     )
                 case "AUTH_BLOCKED":
-                    raise ProviderException(
-                        "API got blocked on AllDebrid", "alldebrid_api_blocked.mp4"
-                    )
+                    raise ProviderException("API got blocked on AllDebrid", "alldebrid_api_blocked.mp4")
                 case "MAGNET_MUST_BE_PREMIUM":
-                    raise ProviderException(
-                        "Torrent must be premium on AllDebrid", "need_premium.mp4"
-                    )
+                    raise ProviderException("Torrent must be premium on AllDebrid", "need_premium.mp4")
                 case "MAGNET_TOO_MANY_ACTIVE" | "MAGNET_TOO_MANY":
-                    raise ProviderException(
-                        "Too many active torrents on AllDebrid", "torrent_limit.mp4"
-                    )
+                    raise ProviderException("Too many active torrents on AllDebrid", "torrent_limit.mp4")
                 case _:
                     raise ProviderException(
                         f"Failed to add magnet link to AllDebrid {response_data}",
@@ -68,9 +56,7 @@ class AllDebrid(DebridClient):
                     )
 
     async def add_magnet_link(self, magnet_link):
-        response_data = await self._make_request(
-            "POST", "/magnet/upload", data={"magnets[]": magnet_link}
-        )
+        response_data = await self._make_request("POST", "/magnet/upload", data={"magnets[]": magnet_link})
         self._validate_error_response(response_data)
         return response_data
 
@@ -79,15 +65,9 @@ class AllDebrid(DebridClient):
         data.add_field(
             "files[]",
             torrent_file,
-            filename=(
-                torrent_name
-                if torrent_name.endswith(".torrent")
-                else torrent_name + ".torrent"
-            ),
+            filename=(torrent_name if torrent_name.endswith(".torrent") else torrent_name + ".torrent"),
         )
-        response_data = await self._make_request(
-            "POST", "/magnet/upload/file", data=data
-        )
+        response_data = await self._make_request("POST", "/magnet/upload/file", data=data)
         self._validate_error_response(response_data)
         return response_data
 
@@ -113,7 +93,7 @@ class AllDebrid(DebridClient):
         )
         return response.get("data", {}).get("files")
 
-    async def get_available_torrent(self, info_hash) -> Optional[dict[str, Any]]:
+    async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = await self.get_user_torrent_list()
         self._validate_error_response(available_torrents)
         if not available_torrents.get("data"):

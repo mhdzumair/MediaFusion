@@ -74,6 +74,7 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: mediafusion-postgres
+    shm_size: 256mb  # Must be >= shared_buffers (128MB) + overhead
     environment:
       POSTGRES_USER: mediafusion
       POSTGRES_PASSWORD: mediafusion

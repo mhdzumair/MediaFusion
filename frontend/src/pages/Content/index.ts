@@ -1,0 +1,2 @@
+export { ContentDetailPage } from './ContentDetailPage'
+

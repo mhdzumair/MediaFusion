@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import scrapy
 
@@ -132,14 +132,10 @@ class LiveTVSpider(scrapy.Spider):
         content_type = response.headers.get("Content-Type", b"").decode().lower()
         is_image = "image" in content_type
 
-        is_allowed_url = any(
-            url in response.url for url in self.exclude_validation_urls
-        )
+        is_allowed_url = any(url in response.url for url in self.exclude_validation_urls)
 
         if is_image or is_allowed_url:
-            yield from self.process_player_options(
-                original_response, channel_data, player_api_base, player_api_method
-            )
+            yield from self.process_player_options(original_response, channel_data, player_api_base, player_api_method)
         else:
             self.logger.error(f"Invalid poster URL: {response.url}")
 
@@ -173,9 +169,7 @@ class LiveTVSpider(scrapy.Spider):
 
         if admin_ajax_url:
             # Correctly format and return the full URL
-            admin_ajax_full_url = urljoin(
-                response.url, admin_ajax_url.replace("\\/", "/")
-            )
+            admin_ajax_full_url = urljoin(response.url, admin_ajax_url.replace("\\/", "/"))
             return admin_ajax_full_url, admin_ajax_method
         else:
             self.logger.error("Admin AJAX URL not found for TamilUltra.")
@@ -192,17 +186,11 @@ class LiveTVSpider(scrapy.Spider):
             country_name = get_country_name(country_code)
         return stream_title, country_name
 
-    def process_player_options(
-        self, response, channel_data, player_api_base, player_api_method
-    ):
+    def process_player_options(self, response, channel_data, player_api_base, player_api_method):
         for element in response.css("#playeroptionsul > li.dooplay_player_option"):
-            yield from self.process_player_option(
-                element, channel_data, player_api_base, player_api_method
-            )
+            yield from self.process_player_option(element, channel_data, player_api_base, player_api_method)
 
-    def process_player_option(
-        self, element, channel_data, player_api_base, player_api_method
-    ):
+    def process_player_option(self, element, channel_data, player_api_base, player_api_method):
         """Processes each player option element to yield API request."""
         stream_title, country_name = self.extract_stream_details(element)
         data_post, data_nume, data_type = (
@@ -249,12 +237,8 @@ class LiveTVSpider(scrapy.Spider):
         # Deserialize JSON response
         api_data = response.json()
         if not api_data.get("embed_url"):
-            self.logger.error(
-                f"Embed URL not found for {stream_title} on channel page: {response.url}"
-            )
-        iframe_url = urljoin(
-            response.url, api_data.get("embed_url").replace("\\/", "/")
-        )
+            self.logger.error(f"Embed URL not found for {stream_title} on channel page: {response.url}")
+        iframe_url = urljoin(response.url, api_data.get("embed_url").replace("\\/", "/"))
 
         if iframe_url:
             yield scrapy.Request(
@@ -273,10 +257,7 @@ class LiveTVSpider(scrapy.Spider):
         parsed_url = urlparse(response.url)
         parsed_query = parse_qs(parsed_url.query)
 
-        if (
-            response.headers.get("Content-Type", b"").decode().lower()
-            in const.IPTV_VALID_CONTENT_TYPES[:2]
-        ):
+        if response.headers.get("Content-Type", b"").decode().lower() in const.IPTV_VALID_CONTENT_TYPES[:2]:
             # If the content type is M3U8, return the URL directly
             return [{"url": response.url, "type": "m3u8"}], {}
 
@@ -334,9 +315,7 @@ class LiveTVSpider(scrapy.Spider):
                 if url.endswith(".mpd"):
                     drm_data = self.extract_drm_keys(response.text, channel_id)
                     if not drm_data:
-                        self.logger.error(
-                            f"Clearkeys not found for MPD URL: {url} on channel page: {response.url}"
-                        )
+                        self.logger.error(f"Clearkeys not found for MPD URL: {url} on channel page: {response.url}")
                         continue
                     stream_info.update(drm_data)
 
@@ -431,9 +410,7 @@ class LiveTVSpider(scrapy.Spider):
             )
             yield updated_channel_data
         else:
-            self.logger.error(
-                f"Invalid M3U8 URL: {meta['full_url']} with Content-Type: {content_type}"
-            )
+            self.logger.error(f"Invalid M3U8 URL: {meta['full_url']} with Content-Type: {content_type}")
 
     def handle_m3u8_or_mpd_failure(self, failure):
         self.logger.error(
@@ -466,9 +443,7 @@ class LiveTVSpider(scrapy.Spider):
             channel_data = channel_match.group(0)
 
             # Pattern for clearkeys
-            clearkey_pattern = (
-                r'["\']?clearkeys["\']?\s*:\s*{\s*["\'](.+?)["\']\s*:\s*["\'](.+?)["\']'
-            )
+            clearkey_pattern = r'["\']?clearkeys["\']?\s*:\s*{\s*["\'](.+?)["\']\s*:\s*["\'](.+?)["\']'
             clearkey_match = re.search(clearkey_pattern, channel_data, re.DOTALL)
 
             # Pattern for k1 and k2

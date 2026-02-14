@@ -1,6 +1,6 @@
-from typing import Literal, Optional
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from db.config import settings
 
@@ -66,11 +66,11 @@ class Metas(BaseModel):
 
 
 class StreamBehaviorHints(BaseModel):
-    notWebReady: Optional[bool] = None
-    bingeGroup: Optional[str] = None
-    proxyHeaders: Optional[dict[Literal["request", "response"], dict]] = None
-    filename: Optional[str] = None
-    videoSize: Optional[int] = None
+    notWebReady: bool | None = None
+    bingeGroup: str | None = None
+    proxyHeaders: dict[Literal["request", "response"], dict] | None = None
+    filename: str | None = None
+    videoSize: int | None = None
 
 
 class Stream(BaseModel):
@@ -86,4 +86,4 @@ class Stream(BaseModel):
 
 
 class Streams(BaseModel):
-    streams: Optional[list[Stream]] = Field(default_factory=list)
+    streams: list[Stream] | None = Field(default_factory=list)

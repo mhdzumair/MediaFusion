@@ -3,8 +3,8 @@ from urllib.parse import urlparse
 
 import scrapy
 
-from utils.config import config_manager
 from db.redis_database import REDIS_SYNC_CLIENT
+from utils.config import config_manager
 from utils.const import CATALOG_DATA
 from utils.runtime_const import SPORTS_ARTIFACTS
 
@@ -42,15 +42,11 @@ class SportVideoSpider(scrapy.Spider):
 
         if self.scrape_all:
             # Navigate through the pagination
-            page_links = set(
-                response.css("div[id^='wb_Pagination'] ul li a::attr(href)").getall()
-            )
+            page_links = set(response.css("div[id^='wb_Pagination'] ul li a::attr(href)").getall())
             for link in page_links:
                 # Ensure the link is not just a 'Next' or 'Prev' button
                 if current_category_base in link:
-                    yield response.follow(
-                        link, self.parse_page, meta={"category": category}
-                    )
+                    yield response.follow(link, self.parse_page, meta={"category": category})
         # Only scrape the first page
         yield from self.parse_page(response)
 
@@ -94,9 +90,7 @@ class SportVideoSpider(scrapy.Spider):
                 torrent_page_link = response.urljoin(torrent_page_link)
                 # Check if URL has been scraped before
                 if self.redis.sismember(self.scraped_urls_key, torrent_page_link):
-                    self.logger.info(
-                        f"Skipping already scraped URL: {torrent_page_link}"
-                    )
+                    self.logger.info(f"Skipping already scraped URL: {torrent_page_link}")
                     continue
 
                 torrent_data["webpage_url"] = torrent_page_link
@@ -124,13 +118,7 @@ class SportVideoSpider(scrapy.Spider):
 
         table_rows = response.css("table tr")
         for row in table_rows:
-            header = (
-                row.css("td.cell0 strong::text")
-                .extract_first(default="")
-                .strip()
-                .lower()
-                .replace(" ", "_")
-            )
+            header = row.css("td.cell0 strong::text").extract_first(default="").strip().lower().replace(" ", "_")
             value = " ".join(row.css("td.cell0:nth-child(2) *::text").extract()).strip()
 
             # When encountering a 'description', it means a new torrent metadata block starts

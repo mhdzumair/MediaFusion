@@ -7,12 +7,12 @@ import httpx
 from ipytv import playlist
 from ipytv.channel import IPTVAttr
 
-from db import schemas, sql_crud
+from db import crud, schemas
 from db.config import settings
 from db.database import get_async_session
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
-from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.validation_helper import validate_live_stream_url
 
 
@@ -34,7 +34,7 @@ async def add_tv_metadata(batch, namespace: str):
 
         metadata.namespace = namespace
         async for session in get_async_session():
-            channel_id = await sql_crud.save_tv_channel_metadata(session, metadata)
+            channel_id = await crud.save_tv_channel_metadata(session, metadata)
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
 
 
@@ -70,22 +70,17 @@ async def parse_m3u_playlist(
         country = channel.attributes.get(IPTVAttr.TVG_COUNTRY.value)
         stream_title = channel.attributes.get(IPTVAttr.TVG_NAME.value, channel_name)
         poster, background, logo = [
-            channel.attributes.get(attr)
-            for attr in [IPTVAttr.TVG_LOGO_SMALL, IPTVAttr.TVG_LOGO, IPTVAttr.TVG_LOGO]
+            channel.attributes.get(attr) for attr in [IPTVAttr.TVG_LOGO_SMALL, IPTVAttr.TVG_LOGO, IPTVAttr.TVG_LOGO]
         ]
         genres = [
             re.sub(r"\s+", " ", genre).strip()
-            for genre in re.split(
-                "[,;|]", channel.attributes.get(IPTVAttr.GROUP_TITLE.value, "")
-            )
+            for genre in re.split("[,;|]", channel.attributes.get(IPTVAttr.GROUP_TITLE.value, ""))
         ]
 
         metadata = schemas.TVMetaData(
             title=channel_name,
             poster=validation_helper.is_valid_url(poster) and poster or None,
-            background=validation_helper.is_valid_url(background)
-            and background
-            or None,
+            background=validation_helper.is_valid_url(background) and background or None,
             logo=validation_helper.is_valid_url(logo) and logo or None,
             country=country,
             tv_language=channel.attributes.get(IPTVAttr.TVG_LANGUAGE.value),
@@ -129,9 +124,9 @@ def parse_m3u_playlist_background(
 async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
     """Validate TV streams in the database."""
     offset = page * page_size
-    
+
     async for session in get_async_session():
-        tv_streams = await sql_crud.get_all_tv_streams_paginated(session, offset, page_size)
+        tv_streams = await crud.get_all_tv_streams_paginated(session, offset, page_size)
 
         if not tv_streams:
             logging.info(f"No TV streams to validate on page {page}")
@@ -139,13 +134,11 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
 
         updates = []
         deletes = []
-        
+
         for stream in tv_streams:
-            is_valid = await validate_live_stream_url(
-                stream.url, stream.behaviorHints or {}
-            )
+            is_valid = await validate_live_stream_url(stream.url, stream.behaviorHints or {})
             logging.info(f"Stream: {stream.name}, Status: {is_valid}")
-            
+
             if is_valid:
                 updates.append((stream.id, True, 0))
             else:
@@ -158,26 +151,24 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
                     logging.error(f"Stream failed validation: {stream.name}")
 
         # Apply updates
-        for stream_id, is_working, failure_count in updates:
-            await sql_crud.update_tv_stream_status(session, stream_id, is_working, failure_count)
-        
+        for stream_id, is_active, failure_count in updates:
+            await crud.update_tv_stream_status(session, stream_id, is_active, failure_count)
+
         # Apply deletes
         for stream_id in deletes:
-            await sql_crud.delete_tv_stream(session, stream_id)
+            await crud.delete_tv_stream(session, stream_id)
 
         logging.info(f"Updated {len(updates)} streams, deleted {len(deletes)} streams")
 
     # Schedule the next batch in 2 minutes
-    validate_tv_streams_in_db.send_with_options(
-        args=(page + 1, page_size), delay=2 * 6000
-    )
+    validate_tv_streams_in_db.send_with_options(args=(page + 1, page_size), delay=2 * 6000)
 
 
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)
 async def update_tv_posters_in_db(*args, **kwargs):
     """Validate TV posters in the database."""
     async for session in get_async_session():
-        not_working_posters = await sql_crud.get_tv_metadata_not_working_posters(session)
+        not_working_posters = await crud.get_tv_metadata_not_working_posters(session)
         logging.info(f"Found {len(not_working_posters)} TV posters to update.")
 
         if not not_working_posters:
@@ -185,9 +176,7 @@ async def update_tv_posters_in_db(*args, **kwargs):
             return
 
         async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
-            response = await client.get(
-                "https://iptv-org.github.io/api/channels.json", timeout=30
-            )
+            response = await client.get("https://iptv-org.github.io/api/channels.json", timeout=30)
             iptv_channels = response.json()
 
         iptv_org_channel_data = {}
@@ -202,9 +191,7 @@ async def update_tv_posters_in_db(*args, **kwargs):
             name = name.casefold()
             name = re.sub(r"\s*\[.*?]|\s*\(.*?\)", "", name)
             name = name.split(" – ")[0]
-            matches = difflib.get_close_matches(
-                name, iptv_org_channel_names, n=1, cutoff=cutoff
-            )
+            matches = difflib.get_close_matches(name, iptv_org_channel_names, n=1, cutoff=cutoff)
             return matches[0] if matches else None
 
         updated_count = 0
@@ -220,7 +207,7 @@ async def update_tv_posters_in_db(*args, **kwargs):
                 logging.error(f"Poster not found for channel: {tv_metadata.title}")
                 continue
 
-            await sql_crud.update_tv_metadata_poster(session, tv_metadata.id, poster, True)
+            await crud.update_tv_metadata_poster(session, tv_metadata.id, poster, True)
             updated_count += 1
 
         logging.info(f"Updated {updated_count} TV posters in the database.")

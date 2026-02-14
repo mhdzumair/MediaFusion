@@ -2,7 +2,6 @@ import asyncio
 import logging
 import time
 
-from redis.asyncio import Redis
 from redis.exceptions import LockNotOwnedError
 
 from db.redis_database import REDIS_ASYNC_CLIENT
@@ -21,9 +20,7 @@ async def acquire_scheduler_lock():
         return False, None  # Scheduler is still active, do not acquire lock
 
     # Attempt to acquire the lock
-    acquired, lock = await acquire_redis_lock(
-        scheduler_lock_key, timeout=heartbeat_timeout, block=False
-    )
+    acquired, lock = await acquire_redis_lock(scheduler_lock_key, timeout=heartbeat_timeout, block=False)
     if acquired:
         logging.info("Acquired scheduler lock")
         await REDIS_ASYNC_CLIENT.set(heartbeat_key, current_time)

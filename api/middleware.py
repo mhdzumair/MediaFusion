@@ -3,15 +3,16 @@ import logging
 import os
 import signal
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from functools import lru_cache
 from threading import Lock
-from typing import Callable, Optional, Dict
 
 import dramatiq
 from apscheduler.triggers.cron import CronTrigger
-from dramatiq.middleware import Retries as OriginalRetries, Shutdown, SkipMessage
+from dramatiq.middleware import Retries as OriginalRetries
+from dramatiq.middleware import Shutdown, SkipMessage
 from fastapi.requests import Request
 from fastapi.responses import Response
 from pydantic import ValidationError
@@ -20,7 +21,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Match
 
 from db.config import settings
-from db.redis_database import REDIS_SYNC_CLIENT, REDIS_ASYNC_CLIENT
+from db.redis_database import REDIS_ASYNC_CLIENT, REDIS_SYNC_CLIENT
 from db.schemas import UserData
 from utils import const
 from utils.crypto import crypto_utils
@@ -28,7 +29,7 @@ from utils.network import get_client_ip
 from utils.parser import create_exception_stream
 
 
-async def find_route_handler(app, request: Request) -> Optional[Callable]:
+async def find_route_handler(app, request: Request) -> Callable | None:
     for route in app.routes:
         match, scope = route.matches(request.scope)
         if match == Match.FULL:
@@ -50,16 +51,10 @@ class SecureLoggingMiddleware(BaseHTTPMiddleware):
         url_path = request.url.path
         process_time = response.headers.get("X-Process-Time", "")
         if request.path_params.get("secret_str"):
-            url_path = url_path.replace(
-                request.path_params.get("secret_str"), "*MASKED*"
-            )
+            url_path = url_path.replace(request.path_params.get("secret_str"), "*MASKED*")
         if request.path_params.get("existing_secret_str"):
-            url_path = url_path.replace(
-                request.path_params.get("existing_secret_str"), "*MASKED*"
-            )
-        logging.info(
-            f'{ip} - "{request.method} {url_path} HTTP/1.1" {response.status_code} {process_time}'
-        )
+            url_path = url_path.replace(request.path_params.get("existing_secret_str"), "*MASKED*")
+        logging.info(f'{ip} - "{request.method} {url_path} HTTP/1.1" {response.status_code} {process_time}')
 
 
 class UserDataMiddleware(BaseHTTPMiddleware):
@@ -132,13 +127,82 @@ class UserDataMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Validate API key for private instances.
+
+    On private instances (is_public_instance=false), this middleware validates
+    the X-API-Key header against the configured api_password for non-exempt paths.
+    Stremio endpoints have their own api_password validation in UserData.
+    """
+
+    # Paths that don't require API key validation
+    EXEMPT_PATH_PREFIXES = (
+        "/api/v1/instance/",  # Must be accessible to know if key is needed
+        "/api/v1/telegram/webhook",  # Telegram webhook - uses secret token authentication instead
+        "/api/v1/telegram/login",  # Telegram login - uses login token authentication instead
+        "/api/v1/kodi/qr-code/",  # QR code image - secured by short-lived Redis code
+        "/api/v1/kodi/get-manifest/",  # Kodi addon poll - secured by short-lived one-time Redis code
+        "/api/v1/kodi/generate-setup-code",  # Kodi addon - validates api_password from secret_str body
+        "/health",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/favicon.ico",
+        "/static/",  # Static resources
+        "/app/",  # React SPA
+        "/app",
+        # Stremio endpoints use secret_str with embedded api_password
+        "/manifest.json",
+        "/{secret_str}/",
+        "/streaming_provider/",
+        "/poster/",  # Poster endpoints
+        "/torznab",  # Torznab API handles its own authentication
+    )
+
+    async def dispatch(self, request: Request, call_next: Callable):
+        # Skip for public instances - no API key required
+        if settings.is_public_instance:
+            return await call_next(request)
+
+        path = request.url.path
+
+        # Skip exempt paths
+        if any(path.startswith(prefix) for prefix in self.EXEMPT_PATH_PREFIXES):
+            return await call_next(request)
+
+        # Skip for home page
+        if path == "/":
+            return await call_next(request)
+
+        # Check for secret_str in path - Stremio addon URLs contain encrypted user data
+        path_params = request.scope.get("path_params", {})
+        if path_params.get("secret_str"):
+            return await call_next(request)
+
+        # Validate API key from header
+        api_key = request.headers.get("X-API-Key")
+        if not api_key or api_key != settings.api_password:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing API key"},
+                headers=const.NO_CACHE_HEADERS,
+            )
+
+        return await call_next(request)
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable):
-        # Skip rate limiting for exempt paths
+        # Skip rate limiting if disabled
         if not settings.enable_rate_limit:
+            return await call_next(request)
+
+        # Skip rate limiting entirely for private instances
+        # Private instance users have authenticated via API key
+        if not settings.is_public_instance:
             return await call_next(request)
 
         # Retrieve the endpoint function from the request
@@ -174,22 +238,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def generate_identifier(ip: str, user_data: UserData) -> str:
         raw_identifier = f"{ip}"
-        if user_data.streaming_provider:
-            provider_profile = (
-                user_data.streaming_provider.token or user_data.streaming_provider.email
-            )
+        primary_provider = user_data.get_primary_provider()
+        if primary_provider:
+            provider_profile = primary_provider.token or primary_provider.email
             raw_identifier += f"-{provider_profile}"
         return hashlib.md5(raw_identifier.encode()).hexdigest()
 
     @staticmethod
     async def check_rate_limit_with_redis(key: str, limit: int, window: int) -> bool:
         try:
-            results = await (
-                REDIS_ASYNC_CLIENT.pipeline(transaction=True)
-                .incr(key)
-                .expire(key, window)
-                .execute()
-            )
+            results = await REDIS_ASYNC_CLIENT.pipeline(transaction=True).incr(key).expire(key, window).execute()
             current_count = results[0]
             if current_count > limit:
                 return False  # Rate limit exceeded
@@ -210,9 +268,7 @@ class MaxTasksPerChild(dramatiq.Middleware):
     def before_process_message(self, broker, message):
         with self.counter_mu:
             if self.counter <= 0:
-                self.logger.warning(
-                    "Counter reached zero. Schedule message to be run later."
-                )
+                self.logger.warning("Counter reached zero. Schedule message to be run later.")
                 broker.enqueue(message, delay=30000)
 
     def after_process_message(self, broker, message, *, result=None, exception=None):
@@ -231,9 +287,7 @@ class Retries(OriginalRetries):
             message.fail()
             return
 
-        return super().after_process_message(
-            broker, message, result=result, exception=exception
-        )
+        return super().after_process_message(broker, message, result=result, exception=exception)
 
 
 @dataclass
@@ -247,7 +301,7 @@ class TaskInfo:
 class TaskManager(dramatiq.Middleware):
     def __init__(self, processing_time_buffer: int = 10):
         self.processing_time_buffer = processing_time_buffer
-        self._task_info_cache: Dict[str, TaskInfo] = {}
+        self._task_info_cache: dict[str, TaskInfo] = {}
 
     @staticmethod
     @lru_cache(maxsize=128)
@@ -257,9 +311,7 @@ class TaskManager(dramatiq.Middleware):
         specified by a crontab expression.
         """
         cron_trigger = CronTrigger.from_crontab(crontab_expression)
-        next_time = cron_trigger.get_next_fire_time(
-            None, datetime.now(tz=cron_trigger.timezone)
-        )
+        next_time = cron_trigger.get_next_fire_time(None, datetime.now(tz=cron_trigger.timezone))
         second_next_time = cron_trigger.get_next_fire_time(next_time, next_time)
         return second_next_time - next_time
 
@@ -272,7 +324,7 @@ class TaskManager(dramatiq.Middleware):
         kwargs_str = "_".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
         return f"background_tasks:{task_name}:{args_str}_{kwargs_str}".rstrip("_")
 
-    def get_task_info(self, broker, message) -> Optional[TaskInfo]:
+    def get_task_info(self, broker, message) -> TaskInfo | None:
         """
         Get task information with caching for better performance.
         """
@@ -294,9 +346,7 @@ class TaskManager(dramatiq.Middleware):
         elif min_interval:
             set_cache_expiry = True
         else:
-            logging.debug(
-                f"No restriction set for task {task_name} with args {args} and kwargs {kwargs}"
-            )
+            logging.debug(f"No restriction set for task {task_name} with args {args} and kwargs {kwargs}")
             return None
 
         task_key = self._generate_task_key(task_name, args, kwargs)
@@ -306,9 +356,7 @@ class TaskManager(dramatiq.Middleware):
         self._task_info_cache[message_id] = task_info
         return task_info
 
-    def _check_and_update_redis(
-        self, task_info: TaskInfo, operation: str = "check"
-    ) -> Optional[bool]:
+    def _check_and_update_redis(self, task_info: TaskInfo, operation: str = "check") -> bool | None:
         """
         Handle Redis operations with error handling and logging.
         """
@@ -318,9 +366,7 @@ class TaskManager(dramatiq.Middleware):
                 if last_run is not None:
                     last_run = datetime.fromtimestamp(float(last_run))
                     difference = datetime.now() - last_run
-                    min_interval = task_info.min_interval - timedelta(
-                        seconds=self.processing_time_buffer
-                    )
+                    min_interval = task_info.min_interval - timedelta(seconds=self.processing_time_buffer)
 
                     if difference < min_interval:
                         logging.warning(
@@ -330,11 +376,7 @@ class TaskManager(dramatiq.Middleware):
                         return True
 
             # Update Redis with new timestamp
-            ex_time = (
-                int(task_info.min_interval.total_seconds())
-                if task_info.set_cache_expiry
-                else None
-            )
+            ex_time = int(task_info.min_interval.total_seconds()) if task_info.set_cache_expiry else None
             REDIS_SYNC_CLIENT.set(
                 task_info.task_key,
                 datetime.now().timestamp(),
@@ -343,9 +385,7 @@ class TaskManager(dramatiq.Middleware):
             logging.debug(f"Task key {task_info.task_key} updated in Redis")
 
         except Exception as e:
-            logging.error(
-                f"Redis operation failed for task {task_info.task_key}: {str(e)}"
-            )
+            logging.error(f"Redis operation failed for task {task_info.task_key}: {str(e)}")
             # Don't skip the message if Redis fails
             return False
 

@@ -31,9 +31,7 @@ class LiveStreamResolverPipeline:
                 )
             )
         )
-        content_type = response_headers.get(
-            "Content-Type", response.headers.get("Content-Type", b"").decode().lower()
-        )
+        content_type = response_headers.get("Content-Type", response.headers.get("Content-Type", b"").decode().lower())
 
         if response.status == 200 and content_type in const.IPTV_VALID_CONTENT_TYPES:
             stream_headers.update(

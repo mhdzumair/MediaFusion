@@ -1,6 +1,5 @@
 import asyncio
 from os import path
-from typing import Optional, List
 
 import aiohttp
 
@@ -25,28 +24,22 @@ class OffCloud(DebridClient):
         if status_code == 403:
             raise ProviderException("Invalid OffCloud API key", "invalid_token.mp4")
         if status_code == 429:
-            raise ProviderException(
-                "OffCloud rate limit exceeded", "too_many_requests.mp4"
-            )
+            raise ProviderException("OffCloud rate limit exceeded", "too_many_requests.mp4")
 
     async def _make_request(
         self,
         method: str,
         url: str,
-        params: Optional[dict] = None,
+        params: dict | None = None,
         **kwargs,
     ) -> dict | list:
         params = params or {}
         params["key"] = self.token
         full_url = self.BASE_URL + url
-        return await super()._make_request(
-            method=method, url=full_url, params=params, **kwargs
-        )
+        return await super()._make_request(method=method, url=full_url, params=params, **kwargs)
 
     async def add_magnet_link(self, magnet_link: str) -> dict:
-        response_data = await self._make_request(
-            "POST", "/api/cloud", data={"url": magnet_link}
-        )
+        response_data = await self._make_request("POST", "/api/cloud", data={"url": magnet_link})
 
         if "requestId" not in response_data:
             if "not_available" in response_data:
@@ -60,9 +53,7 @@ class OffCloud(DebridClient):
             )
         return response_data
 
-    async def add_torrent_file(
-        self, torrent_file: bytes, torrent_name: Optional[str]
-    ) -> dict:
+    async def add_torrent_file(self, torrent_file: bytes, torrent_name: str | None) -> dict:
         data = aiohttp.FormData()
         data.add_field(
             "file",
@@ -78,22 +69,18 @@ class OffCloud(DebridClient):
             )
         return await self.add_magnet_link(response_data["url"])
 
-    async def get_user_torrent_list(self) -> List[dict]:
+    async def get_user_torrent_list(self) -> list[dict]:
         return await self._make_request("GET", "/api/cloud/history")
 
     async def get_torrent_info(self, request_id: str) -> dict:
-        response = await self._make_request(
-            "POST", "/api/cloud/status", data={"requestIds": [request_id]}
-        )
+        response = await self._make_request("POST", "/api/cloud/status", data={"requestIds": [request_id]})
         return response.get("requests", [{}])[0]
 
-    async def get_torrent_instant_availability(self, magnet_links: List[str]) -> dict:
-        response = await self._make_request(
-            "POST", "/api/cache", data={"hashes": magnet_links}
-        )
+    async def get_torrent_instant_availability(self, magnet_links: list[str]) -> dict:
+        response = await self._make_request("POST", "/api/cache", data={"hashes": magnet_links})
         return response.get("cachedItems", {})
 
-    async def get_available_torrent(self, info_hash: str) -> Optional[dict]:
+    async def get_available_torrent(self, info_hash: str) -> dict | None:
         available_torrents = await self.get_user_torrent_list()
         return next(
             (
@@ -104,7 +91,7 @@ class OffCloud(DebridClient):
             None,
         )
 
-    async def explore_folder_links(self, request_id: str) -> List[str]:
+    async def explore_folder_links(self, request_id: str) -> list[str]:
         return await self._make_request("GET", f"/api/cloud/explore/{request_id}")
 
     async def update_file_sizes(self, files_data: list[dict]):
@@ -119,7 +106,7 @@ class OffCloud(DebridClient):
             where the HEAD request was successful.
         """
 
-        async def get_file_size(file_data: dict) -> tuple[dict, Optional[int]]:
+        async def get_file_size(file_data: dict) -> tuple[dict, int | None]:
             """Helper function to get file size for a single file."""
             try:
                 async with self.session.head(
@@ -129,7 +116,7 @@ class OffCloud(DebridClient):
                 ) as response:
                     if response.status == 200:
                         return file_data, int(response.headers.get("Content-Length", 0))
-            except (aiohttp.ClientError, asyncio.TimeoutError):
+            except (TimeoutError, aiohttp.ClientError):
                 pass
             return file_data, 0
 
@@ -146,12 +133,14 @@ class OffCloud(DebridClient):
         request_id: str,
         torrent_info: dict,
         stream: TorrentStreamData,
-        filename: Optional[str],
-        season: Optional[int],
-        episode: Optional[int],
+        filename: str | None,
+        season: int | None,
+        episode: int | None,
     ) -> str:
         if not torrent_info["isDirectory"]:
-            return f"https://{torrent_info['server']}.offcloud.com/cloud/download/{request_id}/{torrent_info['fileName']}"
+            return (
+                f"https://{torrent_info['server']}.offcloud.com/cloud/download/{request_id}/{torrent_info['fileName']}"
+            )
 
         links = await self.explore_folder_links(request_id)
         files_data = [{"name": path.basename(link), "link": link} for link in links]

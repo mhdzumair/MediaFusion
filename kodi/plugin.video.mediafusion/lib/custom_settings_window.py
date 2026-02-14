@@ -55,9 +55,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
             self.close()
 
     def edit_base_url(self):
-        new_base_url = xbmcgui.Dialog().input(
-            "Enter MediaFusion Base URL", self.base_url
-        )
+        new_base_url = xbmcgui.Dialog().input("Enter MediaFusion Base URL", self.base_url)
         if new_base_url:
             self.base_url = new_base_url
             self.addon.setSetting("base_url", self.base_url)
@@ -76,9 +74,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
 
     def update_url_display(self):
         if self.base_url:
-            display_url = (
-                self.base_url[:30] + "..." if len(self.base_url) > 33 else self.base_url
-            )
+            display_url = self.base_url[:30] + "..." if len(self.base_url) > 33 else self.base_url
             self.base_url_control.setLabel(display_url)
         else:
             self.base_url_control.setLabel("Click to set Base URL")
@@ -101,9 +97,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
     def configure_secret(self):
         try:
             data = self.secret_string if self.secret_string else ""
-            response = requests.post(
-                urljoin(self.base_url, "kodi/generate_setup_code"), json=data
-            )
+            response = requests.post(urljoin(self.base_url, "api/v1/kodi/generate-setup-code"), json=data)
             response.raise_for_status()
             data = response.json()
             code = data["code"]
@@ -123,9 +117,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
                 minutes, seconds = divmod(remaining_time, 60)
 
                 self.setup_code_label.setLabel(f"Setup Code: {code}")
-                self.time_remaining_label.setLabel(
-                    f"Time remaining: {minutes:02d}:{seconds:02d}"
-                )
+                self.time_remaining_label.setLabel(f"Time remaining: {minutes:02d}:{seconds:02d}")
 
                 if current_time - last_poll_time >= self.poll_interval:
                     if self.poll_for_secret(code):
@@ -157,7 +149,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
 
     def poll_for_secret(self, code):
         try:
-            response = requests.get(urljoin(self.base_url, f"kodi/get_manifest/{code}"))
+            response = requests.get(urljoin(self.base_url, f"api/v1/kodi/get-manifest/{code}"))
             if response.status_code == 200:
                 data = response.json()
                 new_secret_string = data["secret_string"]
@@ -202,9 +194,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
 def open_settings():
     addon = xbmcaddon.Addon("plugin.video.mediafusion")
     addon_path = addon.getAddonInfo("path")
-    window = CustomSettingsWindow(
-        "custom_settings_window.xml", addon_path, "default", "1080i"
-    )
+    window = CustomSettingsWindow("custom_settings_window.xml", addon_path, "default", "1080i")
     window.doModal()
     del window
 

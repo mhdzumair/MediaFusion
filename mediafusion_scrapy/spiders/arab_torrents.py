@@ -32,17 +32,13 @@ class ArabTorrentSpider(scrapy.Spider):
         self.start_page = start_page
         self.search_keyword = search_keyword
         if scrap_catalog_id != "all" and "_" not in scrap_catalog_id:
-            self.logger.error(
-                f"Invalid catalog ID: {scrap_catalog_id}. Expected format: <language>_<video_type>"
-            )
+            self.logger.error(f"Invalid catalog ID: {scrap_catalog_id}. Expected format: <language>_<video_type>")
             return
         self.scrap_catalog_id = scrap_catalog_id
         logging.info(f"Scraping catalog ID: {self.scrap_catalog_id}")
         self.catalogs = config_manager.get_scraper_config(self.name, "catalogs")
         self.homepage = config_manager.get_scraper_config(self.name, "homepage")
-        self.supported_search_forums = config_manager.get_scraper_config(
-            self.name, "supported_search_forums"
-        )
+        self.supported_search_forums = config_manager.get_scraper_config(self.name, "supported_search_forums")
 
     def generate_forum_data(self):
         data = []
@@ -87,10 +83,7 @@ class ArabTorrentSpider(scrapy.Spider):
                     return
 
                 forum_links = (
-                    [
-                        f"{self.homepage}/index.php?cat={forum_id}"
-                        for forum_id in forum_ids
-                    ]
+                    [f"{self.homepage}/index.php?cat={forum_id}" for forum_id in forum_ids]
                     if isinstance(forum_ids, list)
                     else [f"{self.homepage}/index.php?cat={forum_ids}"]
                 )

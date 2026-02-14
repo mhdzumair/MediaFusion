@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urljoin
 
 import dramatiq
@@ -19,17 +18,14 @@ def get_cache_service_name(streaming_provider: StreamingProvider):
     """
     get service name to use for redis cache retrieval
     """
-    if (
-        streaming_provider.service == "stremthru"
-        and streaming_provider.stremthru_store_name
-    ):
+    if streaming_provider.service == "stremthru" and streaming_provider.stremthru_store_name:
         return streaming_provider.stremthru_store_name
     return streaming_provider.service
 
 
 async def store_cached_info_hashes(
     streaming_provider: StreamingProvider,
-    info_hashes: List[str],
+    info_hashes: list[str],
     service_override: str | None = None,
 ) -> None:
     """
@@ -44,10 +40,7 @@ async def store_cached_info_hashes(
     if not info_hashes:
         return
 
-    if (
-        streaming_provider.service == "stremthru"
-        and not settings.store_stremthru_magnet_cache
-    ):
+    if streaming_provider.service == "stremthru" and not settings.store_stremthru_magnet_cache:
         # Don't cache info hashes for StremThru
         return
 
@@ -56,29 +49,23 @@ async def store_cached_info_hashes(
     try:
         # Store in local Redis
         cache_key = f"{CACHE_KEY_PREFIX}{service}"
-        timestamp = int(
-            (datetime.now(tz=timezone.utc) + timedelta(days=EXPIRY_DAYS)).timestamp()
-        )
+        timestamp = int((datetime.now(tz=UTC) + timedelta(days=EXPIRY_DAYS)).timestamp())
 
         # Create mapping of info_hash to expiry timestamp
-        cache_data = {hash_: timestamp for hash_ in info_hashes}
+        cache_data = dict.fromkeys(info_hashes, timestamp)
 
         # Store all hashes with their expiry timestamps in one operation
         await REDIS_ASYNC_CLIENT.hset(cache_key, mapping=cache_data)
 
         # Submit to MediaFusion
         if settings.sync_debrid_cache_streams:
-            await mediafusion_client.submit_cached_hashes(
-                streaming_provider, info_hashes
-            )
+            await mediafusion_client.submit_cached_hashes(streaming_provider, info_hashes)
 
     except Exception as e:
         logging.error(f"Error storing cached info hashes for {service}: {e}")
 
 
-async def get_cached_status(
-    streaming_provider: StreamingProvider, info_hashes: List[str]
-) -> Dict[str, bool]:
+async def get_cached_status(streaming_provider: StreamingProvider, info_hashes: list[str]) -> dict[str, bool]:
     """
     Get cached status for multiple info hashes from both local Redis and MediaFusion.
     If a hash isn't found in Redis or is expired, checks MediaFusion Public Host.
@@ -98,7 +85,7 @@ async def get_cached_status(
     try:
         # First check local Redis cache
         cache_key = f"{CACHE_KEY_PREFIX}{service}"
-        current_time = int(datetime.now(tz=timezone.utc).timestamp())
+        current_time = int(datetime.now(tz=UTC).timestamp())
 
         # Get all timestamps in one operation
         timestamps = await REDIS_ASYNC_CLIENT.hmget(cache_key, info_hashes)
@@ -143,7 +130,7 @@ async def get_cached_status(
 
     except Exception as e:
         logging.error(f"Error getting cached status for {service}: {e}")
-        return {hash_: False for hash_ in info_hashes}
+        return dict.fromkeys(info_hashes, False)
 
 
 async def cleanup_service_cache(service: str) -> None:
@@ -156,13 +143,15 @@ async def cleanup_service_cache(service: str) -> None:
     """
     try:
         cache_key = f"{CACHE_KEY_PREFIX}{service}"
-        current_time = int(datetime.now(tz=timezone.utc).timestamp())
+        current_time = int(datetime.now(tz=UTC).timestamp())
         cursor = 0
         expired_hashes = []
 
         while True:
             cursor, data = await REDIS_ASYNC_CLIENT.hscan(
-                cache_key, cursor, count=1000  # Process in chunks of 1000
+                cache_key,
+                cursor,
+                count=1000,  # Process in chunks of 1000
             )
 
             # Check for expired entries in this chunk
@@ -178,9 +167,7 @@ async def cleanup_service_cache(service: str) -> None:
                 await REDIS_ASYNC_CLIENT.hdel(cache_key, *expired_hashes)
                 expired_count = len(expired_hashes)
                 expired_hashes = []
-                logging.info(
-                    f"Cleaned up {expired_count} expired entries for {service}"
-                )
+                logging.info(f"Cleaned up {expired_count} expired entries for {service}")
 
             # Exit if we've processed all entries
             if cursor == 0:
@@ -215,9 +202,7 @@ class MediaFusionCacheClient:
         self.base_url = settings.mediafusion_url
         self.timeout = httpx.Timeout(30.0)  # 30 second timeout
 
-    async def fetch_cache_status(
-        self, provider: StreamingProvider, info_hashes: List[str]
-    ) -> Dict[str, bool]:
+    async def fetch_cache_status(self, provider: StreamingProvider, info_hashes: list[str]) -> dict[str, bool]:
         """
         Fetch cache status from MediaFusion for given info hashes.
 
@@ -244,11 +229,7 @@ class MediaFusionCacheClient:
                 data = response.json()
 
                 # Store any cached hashes we learn about
-                cached_hashes = [
-                    hash_
-                    for hash_, is_cached in data["cached_status"].items()
-                    if is_cached
-                ]
+                cached_hashes = [hash_ for hash_, is_cached in data["cached_status"].items() if is_cached]
                 if cached_hashes:
                     await store_cached_info_hashes(provider, cached_hashes)
 
@@ -258,9 +239,7 @@ class MediaFusionCacheClient:
             logging.error(f"Error fetching cache status from MediaFusion: {str(e)}")
             return {}
 
-    async def submit_cached_hashes(
-        self, provider: StreamingProvider, info_hashes: List[str]
-    ) -> bool:
+    async def submit_cached_hashes(self, provider: StreamingProvider, info_hashes: list[str]) -> bool:
         """
         Submit cached info hashes to MediaFusion.
 

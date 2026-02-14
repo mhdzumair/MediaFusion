@@ -1,7 +1,4 @@
-from typing import Optional
-
-from db.schemas import TorrentStreamData
-from db.schemas import UserData
+from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.alldebrid.client import AllDebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import (
@@ -20,13 +17,9 @@ async def get_torrent_info(ad_client, info_hash):
     return torrent_info
 
 
-async def add_new_torrent(
-    ad_client: AllDebrid, magnet_link: str, stream: TorrentStreamData
-):
+async def add_new_torrent(ad_client: AllDebrid, magnet_link: str, stream: TorrentStreamData):
     if stream.torrent_file:
-        response_data = await ad_client.add_torrent_file(
-            stream.torrent_file, stream.torrent_name or "torrent"
-        )
+        response_data = await ad_client.add_torrent_file(stream.torrent_file, stream.name or "torrent")
         return response_data["data"]["files"][0]["id"]
     else:
         response_data = await ad_client.add_magnet_link(magnet_link)
@@ -82,9 +75,7 @@ async def wait_for_download_and_get_link(
     max_retries,
     retry_interval,
 ):
-    torrent_info = await ad_client.wait_for_status(
-        torrent_id, "Ready", max_retries, retry_interval
-    )
+    torrent_info = await ad_client.wait_for_status(torrent_id, "Ready", max_retries, retry_interval)
     files_data = {"files": flatten_files(torrent_info["files"])}
 
     file_index = await select_file_index_from_torrent(
@@ -96,28 +87,24 @@ async def wait_for_download_and_get_link(
         is_filename_trustable=True,
     )
 
-    response = await ad_client.create_download_link(
-        files_data["files"][file_index]["link"]
-    )
+    response = await ad_client.create_download_link(files_data["files"][file_index]["link"])
     return response["data"]["link"]
 
 
 async def get_video_url_from_alldebrid(
     info_hash: str,
     magnet_link: str,
-    user_data: UserData,
+    streaming_provider: StreamingProvider,
     stream: TorrentStreamData,
-    filename: Optional[str],
+    filename: str | None,
     user_ip: str,
-    season: Optional[int] = None,
-    episode: Optional[int] = None,
+    season: int | None = None,
+    episode: int | None = None,
     max_retries=5,
     retry_interval=5,
     **kwargs,
 ) -> str:
-    async with AllDebrid(
-        token=user_data.streaming_provider.token, user_ip=user_ip
-    ) as ad_client:
+    async with AllDebrid(token=streaming_provider.token, user_ip=user_ip) as ad_client:
         torrent_info = await get_torrent_info(ad_client, info_hash)
         if not torrent_info:
             torrent_id = await add_new_torrent(ad_client, magnet_link, stream)
@@ -137,32 +124,28 @@ async def get_video_url_from_alldebrid(
 
 
 async def update_ad_cache_status(
-    streams: list[TorrentStreamData], user_data: UserData, user_ip: str, **kwargs
+    streams: list[TorrentStreamData], streaming_provider: StreamingProvider, user_ip: str, **kwargs
 ):
     """Updates the cache status of streams based on AllDebrid's instant availability."""
 
     try:
-        downloaded_hashes = set(
-            await fetch_downloaded_info_hashes_from_ad(user_data, user_ip, **kwargs)
-        )
+        downloaded_hashes = set(await fetch_downloaded_info_hashes_from_ad(streaming_provider, user_ip, **kwargs))
         if not downloaded_hashes:
             return
 
         for stream in streams:
-            stream.cached = stream.id in downloaded_hashes
+            stream.cached = stream.info_hash in downloaded_hashes
 
     except ProviderException:
         pass
 
 
 async def fetch_downloaded_info_hashes_from_ad(
-    user_data: UserData, user_ip: str, **kwargs
+    streaming_provider: StreamingProvider, user_ip: str, **kwargs
 ) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the AllDebrid account."""
     try:
-        async with AllDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as ad_client:
+        async with AllDebrid(token=streaming_provider.token, user_ip=user_ip) as ad_client:
             available_torrents = await ad_client.get_user_torrent_list(status="ready")
             if not available_torrents.get("data"):
                 return []
@@ -175,11 +158,51 @@ async def fetch_downloaded_info_hashes_from_ad(
         return []
 
 
-async def delete_all_torrents_from_ad(user_data: UserData, user_ip: str, **kwargs):
+async def fetch_torrent_details_from_ad(streaming_provider: StreamingProvider, user_ip: str, **kwargs) -> list[dict]:
+    """
+    Fetches detailed torrent information from the AllDebrid account.
+    Returns torrent details including files for import functionality.
+    """
+    try:
+        async with AllDebrid(token=streaming_provider.token, user_ip=user_ip) as ad_client:
+            available_torrents = await ad_client.get_user_torrent_list(status="ready")
+            if not available_torrents.get("data"):
+                return []
+            magnets = available_torrents["data"]["magnets"]
+            if isinstance(magnets, dict):
+                magnets = list(magnets.values())
+
+            result = []
+            for magnet in magnets:
+                files = []
+                # AllDebrid has nested file structure, flatten it
+                flat_files = flatten_files(magnet.get("files", []))
+                for f in flat_files:
+                    files.append(
+                        {
+                            "id": None,
+                            "path": f.get("name", ""),
+                            "size": f.get("size", 0),
+                        }
+                    )
+                result.append(
+                    {
+                        "id": magnet.get("id"),
+                        "hash": magnet.get("hash", "").lower(),
+                        "filename": magnet.get("filename", ""),
+                        "size": magnet.get("size", 0),
+                        "files": files,
+                    }
+                )
+            return result
+
+    except ProviderException:
+        return []
+
+
+async def delete_all_torrents_from_ad(streaming_provider: StreamingProvider, user_ip: str, **kwargs):
     """Deletes all torrents from the AllDebrid account."""
-    async with AllDebrid(
-        token=user_data.streaming_provider.token, user_ip=user_ip
-    ) as ad_client:
+    async with AllDebrid(token=streaming_provider.token, user_ip=user_ip) as ad_client:
         torrents = await ad_client.get_user_torrent_list()
         magnet_ids = [torrent["id"] for torrent in torrents["data"]["magnets"]]
         if not magnet_ids:
@@ -192,12 +215,29 @@ async def delete_all_torrents_from_ad(user_data: UserData, user_ip: str, **kwarg
             )
 
 
-async def validate_alldebrid_credentials(user_data: UserData, user_ip: str) -> dict:
+async def delete_torrent_from_ad(streaming_provider: StreamingProvider, user_ip: str, info_hash: str, **kwargs) -> bool:
+    """Deletes a specific torrent from AllDebrid by info_hash."""
+    try:
+        async with AllDebrid(token=streaming_provider.token, user_ip=user_ip) as ad_client:
+            torrents = await ad_client.get_user_torrent_list()
+            if not torrents.get("data"):
+                return False
+            magnets = torrents["data"]["magnets"]
+            if isinstance(magnets, dict):
+                magnets = list(magnets.values())
+            for magnet in magnets:
+                if magnet.get("hash", "").lower() == info_hash.lower():
+                    await ad_client.delete_torrents([magnet["id"]])
+                    return True
+            return False
+    except ProviderException:
+        return False
+
+
+async def validate_alldebrid_credentials(streaming_provider: StreamingProvider, user_ip: str, **kwargs) -> dict:
     """Validates the AllDebrid credentials."""
     try:
-        async with AllDebrid(
-            token=user_data.streaming_provider.token, user_ip=user_ip
-        ) as ad_client:
+        async with AllDebrid(token=streaming_provider.token, user_ip=user_ip) as ad_client:
             response = await ad_client.get_user_info()
             if response.get("status") == "success":
                 return {"status": "success"}

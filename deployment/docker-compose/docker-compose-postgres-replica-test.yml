@@ -23,6 +23,7 @@ services:
   pg-primary:
     image: postgres:18-alpine
     container_name: pg-primary
+    shm_size: 512mb  # Must be >= shared_buffers (256MB) + overhead
     environment:
       POSTGRES_USER: mediafusion
       POSTGRES_PASSWORD: mediafusion
@@ -66,6 +67,7 @@ services:
   pg-replica:
     image: postgres:18-alpine
     container_name: pg-replica
+    shm_size: 256mb  # Must be >= shared_buffers (128MB) + overhead
     # NO POSTGRES_* env vars - we don't want automatic initialization
     entrypoint:
       - /bin/sh

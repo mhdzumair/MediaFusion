@@ -3,8 +3,8 @@ import re
 
 import scrapy
 
-from utils.config import config_manager
 from db.redis_database import REDIS_SYNC_CLIENT
+from utils.config import config_manager
 
 
 class CommonTamilSpider(scrapy.Spider):
@@ -35,9 +35,7 @@ class CommonTamilSpider(scrapy.Spider):
         self.start_page = start_page
         self.search_keyword = search_keyword
         if scrap_catalog_id != "all" and "_" not in scrap_catalog_id:
-            self.logger.error(
-                f"Invalid catalog ID: {scrap_catalog_id}. Expected format: <language>_<video_type>"
-            )
+            self.logger.error(f"Invalid catalog ID: {scrap_catalog_id}. Expected format: <language>_<video_type>")
             return
         self.scrap_catalog_id = scrap_catalog_id
         logging.info(f"Scraping catalog ID: {self.scrap_catalog_id}")
@@ -45,9 +43,7 @@ class CommonTamilSpider(scrapy.Spider):
         self.scraped_urls_key = f"{self.name}_scraped_urls"
         self.catalogs = config_manager.get_scraper_config(self.name, "catalogs")
         self.homepage = config_manager.get_scraper_config(self.name, "homepage")
-        self.supported_search_forums = config_manager.get_scraper_config(
-            self.name, "supported_search_forums"
-        )
+        self.supported_search_forums = config_manager.get_scraper_config(self.name, "supported_search_forums")
 
     def __del__(self):
         self.redis.close()
@@ -99,10 +95,7 @@ class CommonTamilSpider(scrapy.Spider):
                     return
 
                 forum_links = (
-                    [
-                        f"{self.homepage}/index.php?/forums/forum/{forum_id}"
-                        for forum_id in forum_ids
-                    ]
+                    [f"{self.homepage}/index.php?/forums/forum/{forum_id}" for forum_id in forum_ids]
                     if isinstance(forum_ids, list)
                     else [f"{self.homepage}/index.php?/forums/forum/{forum_ids}"]
                 )
@@ -154,9 +147,7 @@ class CommonTamilSpider(scrapy.Spider):
             if not self.check_scraped_urls(movie_page_link):
                 item = response.meta["item"].copy()
                 item["webpage_url"] = movie_page_link
-                yield response.follow(
-                    movie_page_link, self.parse_movie_page, meta={"item": item}
-                )
+                yield response.follow(movie_page_link, self.parse_movie_page, meta={"item": item})
 
     def check_scraped_urls(self, page_link):
         if self.redis.sismember(self.scraped_urls_key, page_link):
@@ -194,9 +185,7 @@ class CommonTamilSpider(scrapy.Spider):
             torrent_item = item.copy()
             torrent_item.update(
                 {
-                    "type": (
-                        "series" if torrent_item["video_type"] == "series" else "movie"
-                    ),
+                    "type": ("series" if torrent_item["video_type"] == "series" else "movie"),
                     "poster": poster,
                     "created_at": created_at,
                     "language": torrent_item["language"].title(),
