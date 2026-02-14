@@ -149,7 +149,7 @@ jobs:
 
       - name: Generate Release Notes
         run: |
-          make generate-notes VERSION_OLD=${{ needs.update_version.outputs.previous_version }} VERSION_NEW=${{ github.ref_name }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} > release_notes.md
+          make generate-notes VERSION_OLD=${{ needs.update_version.outputs.previous_version }} VERSION_NEW=${{ github.ref_name }} GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} > release_notes.md
 
       - name: Update Release Notes
         uses: softprops/action-gh-release@v2
