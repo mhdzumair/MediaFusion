@@ -14,15 +14,12 @@ class CloseSpiderExtended(CloseSpider):
             self.items_in_period = 0
         else:
             spider.logger.info(
-                f"Closing spider since no items were produced in the last "
-                f"{self.timeout_no_item} seconds."
+                f"Closing spider since no items were produced in the last {self.timeout_no_item} seconds."
             )
             self.shutdown_signal_count += 1
             dramatiq_message = CurrentMessage.get_current_message()
             if dramatiq_message:
-                spider.logger.info(
-                    f"Aborting message {dramatiq_message.message_id} due to no items produced."
-                )
+                spider.logger.info(f"Aborting message {dramatiq_message.message_id} due to no items produced.")
                 abort(dramatiq_message.message_id, abort_ttl=0)
             assert self.crawler.engine
             self.crawler.engine.close_spider(spider, "closespider_timeout_no_item")

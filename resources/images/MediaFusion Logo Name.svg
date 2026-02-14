@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 2274 245" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(1,0,0,1,-130.191406,-1882.184091)">
+        <g id="MediaFusion-Text" serif:id="MediaFusion Text">
+            <g transform="matrix(6.252568,0,0,6.252568,-2517.696615,-9914.128146)">
+                <g transform="matrix(53.311427,0,0,53.311427,594.459477,1924.79611)">
+                </g>
+                <text x="419.714px" y="1924.796px" style="font-family:'Arial-Black', 'Arial Black', sans-serif;font-weight:900;font-size:53.311px;fill:url(#_Linear1);">Media</text>
+            </g>
+            <g transform="matrix(6.252568,0,0,6.252568,-1404.861328,-9912.128146)">
+                <text x="419.714px" y="1924.796px" style="font-family:'Arial-Black', 'Arial Black', sans-serif;font-weight:900;font-size:53.311px;fill:url(#_Linear2);">Fusion</text>
+            </g>
+        </g>
+    </g>
+    <defs>
+        <linearGradient id="_Linear1" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0,56.616735,-56.616735,0,518.618349,1877.169143)"><stop offset="0" style="stop-color:rgb(193,94,253);stop-opacity:1"/><stop offset="0.48" style="stop-color:rgb(69,35,114);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(32,17,72);stop-opacity:1"/></linearGradient>
+        <linearGradient id="_Linear2" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.319869,52.469141,-73.194714,0.446218,517.205284,1886.914438)"><stop offset="0" style="stop-color:rgb(242,166,64);stop-opacity:1"/><stop offset="0.17" style="stop-color:rgb(224,101,57);stop-opacity:1"/><stop offset="0.36" style="stop-color:rgb(201,84,73);stop-opacity:1"/><stop offset="0.58" style="stop-color:rgb(143,41,115);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(103,42,122);stop-opacity:1"/></linearGradient>
+    </defs>
+</svg>

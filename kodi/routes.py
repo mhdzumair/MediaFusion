@@ -3,7 +3,7 @@ from io import BytesIO
 from typing import Annotated
 
 import qrcode
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import JSONResponse
 from qrcode.image.styledpil import StyledPilImage
 from qrcode.image.styles.colormasks import RadialGradiantColorMask
@@ -11,9 +11,9 @@ from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
 from starlette.responses import StreamingResponse
 
 from db.config import settings
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import KodiConfig
 from utils import const
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 kodi_router = APIRouter()
 
@@ -25,9 +25,7 @@ async def generate_setup_code(secret_str: Annotated[str, Body()]):
     qr_code_url = f"{settings.host_url}/kodi/qr_code{'/' + secret_str if secret_str else ''}/{code}"
 
     # Store code in Redis
-    await REDIS_ASYNC_CLIENT.set(
-        f"setup_code:{code}", "1", ex=300
-    )  # 5 minutes expiration
+    await REDIS_ASYNC_CLIENT.set(f"setup_code:{code}", "1", ex=300)  # 5 minutes expiration
 
     return JSONResponse(
         content={
@@ -60,9 +58,7 @@ async def get_qr_code(code: str, secret_str: str = None):
     img = qr.make_image(
         image_factory=StyledPilImage,
         module_drawer=RoundedModuleDrawer(),
-        color_mask=RadialGradiantColorMask(
-            center_color=(255, 0, 0), edge_color=(0, 0, 255)
-        ),
+        color_mask=RadialGradiantColorMask(center_color=(255, 0, 0), edge_color=(0, 0, 255)),
     )
 
     # Resize the image to 300x300

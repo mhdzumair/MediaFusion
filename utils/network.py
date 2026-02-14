@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import re
+from collections.abc import AsyncGenerator, Callable
 from ipaddress import ip_address
-from typing import Callable, AsyncGenerator, Any, Tuple, Dict
+from typing import Any
 from urllib import parse
 from urllib.parse import urlencode, urlparse
 
@@ -12,10 +13,7 @@ from fastapi.requests import Request
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
-from utils import crypto
-from utils.crypto import encrypt_data
-from utils import runtime_const
-from db.redis_database import REDIS_ASYNC_CLIENT
+from utils import crypto, runtime_const
 
 
 class CircuitBreakerOpenException(Exception):
@@ -68,9 +66,7 @@ class CircuitBreaker:
         ):
             self.state = "HALF-OPEN"
             self.failures = 0
-            self.successful_attempts = (
-                0  # Reset success counter when entering HALF-OPEN
-            )
+            self.successful_attempts = 0  # Reset success counter when entering HALF-OPEN
             return True
 
         return False
@@ -109,15 +105,14 @@ class CircuitBreaker:
             self.failures = 0
             self.successful_attempts = 0
 
-    async def call(self, func: Callable, item: Any, *args, **kwargs) -> Tuple[Any, Any]:
+    async def call(self, func: Callable, item: Any, *args, **kwargs) -> tuple[Any, Any]:
         """
         Execute the given function with circuit breaker protection.
         Returns a tuple of (item, result/exception).
         """
         if not self.is_closed():
             return item, CircuitBreakerOpenException(
-                f"Circuit breaker is OPEN. Failures: {self.failures}, "
-                f"Last failure: {self.last_failure_time}"
+                f"Circuit breaker is OPEN. Failures: {self.failures}, Last failure: {self.last_failure_time}"
             )
 
         try:
@@ -128,7 +123,7 @@ class CircuitBreaker:
             self.record_failure()
             return item, e
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get detailed current status of the circuit breaker"""
         return {
             "state": self.state,
@@ -168,10 +163,7 @@ async def batch_process_with_circuit_breaker(
             retry_batch = []  # Reset retry list for this iteration
 
             async with asyncio.TaskGroup() as tg:  # Using TaskGroup to manage tasks
-                task_data = [
-                    tg.create_task(cb.call(process_func, item, *args, **kwargs))
-                    for item in batch
-                ]
+                task_data = [tg.create_task(cb.call(process_func, item, *args, **kwargs)) for item in batch]
 
                 # Process results as soon as they complete
                 for task in asyncio.as_completed(task_data):
@@ -179,9 +171,7 @@ async def batch_process_with_circuit_breaker(
                     if isinstance(result, Exception):
                         if isinstance(result, retry_exceptions):
                             retry_batch.append(item)
-                            logging.info(
-                                f"Retryable exception occurred for item {item}: {result}"
-                            )
+                            logging.info(f"Retryable exception occurred for item {item}: {result}")
                         else:
                             logging.exception(
                                 f"Unexpected error during batch processing {result}",
@@ -193,9 +183,7 @@ async def batch_process_with_circuit_breaker(
 
             if retry_batch:
                 if batch_retries >= max_retries:
-                    logging.info(
-                        f"Reached maximum number of retries ({max_retries}) for this batch."
-                    )
+                    logging.info(f"Reached maximum number of retries ({max_retries}) for this batch.")
                     break  # Move to the next batch
                 else:
                     batch_retries += 1
@@ -204,9 +192,7 @@ async def batch_process_with_circuit_breaker(
                         f"Retrying {len(retry_batch)} items due to circuit breaker. Retry attempt {batch_retries}"
                     )
                     batch = retry_batch  # Retry only failed items
-                    await asyncio.sleep(
-                        cb.recovery_timeout
-                    )  # Wait for breaker to close
+                    await asyncio.sleep(cb.recovery_timeout)  # Wait for breaker to close
             else:
                 break  # Exit loop if all items in the batch have been processed successfully
 
@@ -224,7 +210,7 @@ async def get_redirector_url(url: str, headers: dict) -> str | None:
         async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
             response = await client.head(url, headers=headers, follow_redirects=True)
             return str(response.url)
-    except httpx.HTTPError as e:
+    except httpx.HTTPError:
         return
 
 
@@ -284,23 +270,39 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
         logging.error(f"Request error occurred: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-    raise Exception(
-        f"Failed to get MediaFlow proxy public IP address. {mediaflow_config.proxy_url}"
-    )
+    raise Exception(f"Failed to get MediaFlow proxy public IP address. {mediaflow_config.proxy_url}")
 
 
 async def get_user_public_ip(
-    request: Request, user_data: UserData | None = None
+    request: Request,
+    user_data: UserData | None = None,
+    streaming_provider=None,
 ) -> str | None:
-    # Check if user has mediaflow config
-    if (
-        user_data
-        and user_data.mediaflow_config
-        and user_data.mediaflow_config.proxy_debrid_streams
-    ):
-        public_ip = await get_mediaflow_proxy_public_ip(user_data.mediaflow_config)
-        if public_ip:
-            return public_ip
+    """
+    Get the public IP address to use for debrid services.
+
+    If MediaFlow is configured and the provider has use_mediaflow enabled,
+    return the MediaFlow proxy's public IP. Otherwise, return the user's IP.
+
+    Args:
+        request: The FastAPI request object
+        user_data: User's configuration data
+        streaming_provider: Optional specific provider to check for MediaFlow setting
+
+    Returns:
+        The public IP to use for debrid services, or None to use server IP
+    """
+    # Check if MediaFlow is configured
+    if user_data and user_data.mediaflow_config:
+        # Check if MediaFlow proxy URL and password are set
+        if user_data.mediaflow_config.proxy_url and user_data.mediaflow_config.api_password:
+            # If a specific provider is given, check its use_mediaflow setting
+            # Otherwise, return MediaFlow IP if any provider might use it
+            should_use_mediaflow = streaming_provider is None or streaming_provider.use_mediaflow
+            if should_use_mediaflow:
+                public_ip = await get_mediaflow_proxy_public_ip(user_data.mediaflow_config)
+                if public_ip:
+                    return public_ip
     # Get the user's public IP address
     user_ip = get_client_ip(request)
     # check if the user's IP address is a private IP address
@@ -359,23 +361,67 @@ def encode_mediaflow_proxy_url(
 
     # Add headers if provided
     if request_headers:
-        query_params.update(
-            {f"h_{key}": value for key, value in request_headers.items()}
-        )
+        query_params.update({f"h_{key}": value for key, value in request_headers.items()})
     if response_headers:
-        query_params.update(
-            {f"r_{key}": value for key, value in response_headers.items()}
-        )
+        query_params.update({f"r_{key}": value for key, value in response_headers.items()})
 
     if encryption_api_password:
         if "api_password" not in query_params:
             query_params["api_password"] = encryption_api_password
-        encrypted_token = crypto.encrypt_data(
-            encryption_api_password, query_params, expiration, ip
-        )
+        encrypted_token = crypto.encrypt_data(encryption_api_password, query_params, expiration, ip)
         encoded_params = urlencode({"token": encrypted_token})
     else:
         encoded_params = urlencode(query_params)
+
+    # Construct the full URL
+    base_url = parse.urljoin(mediaflow_proxy_url, endpoint)
+    return f"{base_url}?{encoded_params}"
+
+
+def encode_mediaflow_acestream_url(
+    mediaflow_proxy_url: str,
+    content_id: str | None = None,
+    info_hash: str | None = None,
+    api_password: str | None = None,
+) -> str:
+    """
+    Generate MediaFlow proxy URL for AceStream content (MPEG-TS stream endpoint).
+
+    The frontend appends `transcode=true` for browser playback, which tells
+    MediaFlow to transcode the MPEG-TS stream into a browser-compatible format.
+
+    The URL is constructed with plain query parameters (no token encryption)
+    since AceStream URLs are user-facing and need to work directly with
+    MediaFlow proxy.
+
+    Args:
+        mediaflow_proxy_url: Base MediaFlow proxy URL
+        content_id: AceStream content ID (40-char hex)
+        info_hash: Torrent info hash (40-char hex)
+        api_password: MediaFlow API password (sent as plain query param)
+
+    Returns:
+        MediaFlow proxy URL for the AceStream content
+
+    Raises:
+        ValueError: If neither content_id nor info_hash is provided
+    """
+    if not content_id and not info_hash:
+        raise ValueError("At least one of content_id or info_hash is required")
+
+    endpoint = "/proxy/acestream/stream"
+
+    # Build query params - prefer content_id if both provided
+    query_params = {}
+    if content_id:
+        query_params["id"] = content_id
+    elif info_hash:
+        query_params["infohash"] = info_hash
+
+    if api_password:
+        query_params["api_password"] = api_password
+
+    encoded_params = urlencode(query_params)
 
     # Construct the full URL
     base_url = parse.urljoin(mediaflow_proxy_url, endpoint)

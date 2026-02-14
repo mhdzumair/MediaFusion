@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import Optional, Dict, List
 
 import httpx
 
@@ -23,8 +22,8 @@ class MDBListScraper:
         self,
         list_config: schemas.MDBListItem,
         offset: int = 0,
-        genre: Optional[str] = None,
-    ) -> Optional[Dict]:
+        genre: str | None = None,
+    ) -> dict | None:
         """Fetch a list from MDBList API"""
         params = {
             "apikey": self.api_key,
@@ -45,9 +44,7 @@ class MDBListScraper:
             return json.loads(cached_data)
 
         try:
-            response = await self.client.get(
-                f"{self.base_url}/lists/{list_config.id}/items", params=params
-            )
+            response = await self.client.get(f"{self.base_url}/lists/{list_config.id}/items", params=params)
             if response.status_code == 200:
                 # Cache raw API response for 60 minutes
                 await REDIS_ASYNC_CLIENT.set(cache_key, response.text, ex=3600)
@@ -59,7 +56,7 @@ class MDBListScraper:
             return None
 
     @staticmethod
-    def _convert_to_meta(item: Dict, media_type: str) -> schemas.Meta:
+    def _convert_to_meta(item: dict, media_type: str) -> schemas.Meta:
         """Convert MDBList item to Meta object"""
         genres = item.get("genre", [])
         if genres and genres[0] is None:
@@ -78,8 +75,8 @@ class MDBListScraper:
     async def get_all_list_items(
         self,
         list_config: schemas.MDBListItem,
-        genre: Optional[str] = None,
-    ) -> List[str]:
+        genre: str | None = None,
+    ) -> list[str]:
         """
         Fetch all IMDb IDs from a list until no more results are available.
         Used for filtered results to ensure complete dataset.
@@ -99,18 +96,12 @@ class MDBListScraper:
                 break
 
             # Get the correct list based on media type
-            items = batch.get(
-                "movies" if list_config.catalog_type == "movie" else "shows", []
-            )
+            items = batch.get("movies" if list_config.catalog_type == "movie" else "shows", [])
             if not items:
                 break
 
             # Filter valid IMDb IDs for the specific media type
-            new_ids = [
-                item["imdb_id"]
-                for item in items
-                if item.get("imdb_id", "").startswith("tt")
-            ]
+            new_ids = [item["imdb_id"] for item in items if item.get("imdb_id", "").startswith("tt")]
 
             if not new_ids:
                 break
@@ -137,9 +128,9 @@ class MDBListScraper:
         list_config: schemas.MDBListItem,
         skip: int = 0,
         limit: int = 25,
-        genre: Optional[str] = None,
+        genre: str | None = None,
         use_filters: bool = True,
-    ) -> List[str] | List[schemas.Meta]:
+    ) -> list[str] | list[schemas.Meta]:
         """
         Get items from a MDBList list.
         For filtered results (use_filters=True), fetches all available items.
@@ -154,9 +145,7 @@ class MDBListScraper:
         if not batch:
             return []
 
-        items = batch.get(
-            "movies" if list_config.catalog_type == "movie" else "shows", []
-        )
+        items = batch.get("movies" if list_config.catalog_type == "movie" else "shows", [])
         meta_list = [
             self._convert_to_meta(item, list_config.catalog_type)
             for item in items

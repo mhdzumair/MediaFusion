@@ -1,6 +1,8 @@
+from collections.abc import Callable
 from datetime import datetime
-from typing import List, Optional, Callable, Any
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from db.enums import MediaType, NudityStatus, TorrentType
 
@@ -16,7 +18,7 @@ def create_string_list_validator(attribute_name: str = "name") -> Callable:
         Callable: A validator function that converts input to List[str]
     """
 
-    def validator(v: Any) -> List[str]:
+    def validator(v: Any) -> list[str]:
         if not v:
             return []
 
@@ -58,29 +60,25 @@ class BaseMediaData(BasePydanticModel):
     id: str
     title: str
     type: str
-    year: Optional[int] = None
-    poster: Optional[str] = None
+    year: int | None = None
+    poster: str | None = None
     is_poster_working: bool = True
     is_add_title_to_poster: bool = False
-    background: Optional[str] = None
-    description: Optional[str] = None
-    runtime: Optional[str] = None
-    website: Optional[str] = None
+    background: str | None = None
+    description: str | None = None
+    runtime: str | None = None
+    website: str | None = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
     # Common relationship fields
-    genres: List[str] = Field(default_factory=list)
-    catalogs: List[str] = Field(default_factory=list)
-    alternate_titles: List[str] = Field(default_factory=list)
+    genres: list[str] = Field(default_factory=list)
+    catalogs: list[str] = Field(default_factory=list)
+    alternate_titles: list[str] = Field(default_factory=list)
 
     # Validators using the helper function
-    _validate_genres = field_validator("genres", mode="before")(
-        create_string_list_validator()
-    )
-    _validate_catalogs = field_validator("catalogs", mode="before")(
-        create_string_list_validator()
-    )
+    _validate_genres = field_validator("genres", mode="before")(create_string_list_validator())
+    _validate_catalogs = field_validator("catalogs", mode="before")(create_string_list_validator())
     _validate_alternate_titles = field_validator("alternate_titles", mode="before")(
         create_string_list_validator("title")
     )
@@ -92,18 +90,14 @@ class MovieData(BasePydanticModel):
     id: str
     base_metadata: BaseMediaData | None = None
     type: MediaType = MediaType.MOVIE
-    imdb_rating: Optional[float] = None
-    tmdb_rating: Optional[float] = None
+    imdb_rating: float | None = None
+    tmdb_rating: float | None = None
     parent_guide_nudity_status: NudityStatus = NudityStatus.UNKNOWN
-    stars: List[str] = Field(default_factory=list)
-    parental_certificates: List[str] = Field(default_factory=list)
+    stars: list[str] = Field(default_factory=list)
+    parental_certificates: list[str] = Field(default_factory=list)
 
-    _validate_stars = field_validator("stars", mode="before")(
-        create_string_list_validator()
-    )
-    _validate_certificates = field_validator("parental_certificates", mode="before")(
-        create_string_list_validator()
-    )
+    _validate_stars = field_validator("stars", mode="before")(create_string_list_validator())
+    _validate_certificates = field_validator("parental_certificates", mode="before")(create_string_list_validator())
 
 
 class SeriesEpisodeData(BasePydanticModel):
@@ -111,17 +105,17 @@ class SeriesEpisodeData(BasePydanticModel):
 
     episode_number: int
     title: str
-    overview: Optional[str] = None
-    released: Optional[datetime] = None
-    imdb_rating: Optional[float] = None
-    thumbnail: Optional[str] = None
+    overview: str | None = None
+    released: datetime | None = None
+    imdb_rating: float | None = None
+    thumbnail: str | None = None
 
 
 class SeriesSeasonData(BasePydanticModel):
     """Series season data model"""
 
     season_number: int
-    episodes: List[SeriesEpisodeData] = []
+    episodes: list[SeriesEpisodeData] = []
 
 
 class SeriesData(BasePydanticModel):
@@ -130,22 +124,18 @@ class SeriesData(BasePydanticModel):
     id: str
     base_metadata: BaseMediaData | None = None
     type: MediaType = MediaType.SERIES
-    end_year: Optional[int] = None
-    imdb_rating: Optional[float] = None
-    tmdb_rating: Optional[float] = None
+    end_year: int | None = None
+    imdb_rating: float | None = None
+    tmdb_rating: float | None = None
     parent_guide_nudity_status: NudityStatus = NudityStatus.UNKNOWN
-    stars: List[str] = Field(default_factory=list)
-    parental_certificates: List[str] = Field(default_factory=list)
+    stars: list[str] = Field(default_factory=list)
+    parental_certificates: list[str] = Field(default_factory=list)
 
-    seasons: List[SeriesSeasonData] = []
+    seasons: list[SeriesSeasonData] = []
 
     # Validators using the helper function
-    _validate_stars = field_validator("stars", mode="before")(
-        create_string_list_validator()
-    )
-    _validate_certificates = field_validator("parental_certificates", mode="before")(
-        create_string_list_validator()
-    )
+    _validate_stars = field_validator("stars", mode="before")(create_string_list_validator())
+    _validate_certificates = field_validator("parental_certificates", mode="before")(create_string_list_validator())
 
 
 class TVData(BasePydanticModel):
@@ -154,9 +144,9 @@ class TVData(BasePydanticModel):
     id: str
     base_metadata: BaseMediaData | None = None
     type: MediaType = MediaType.TV
-    country: Optional[str] = None
-    tv_language: Optional[str] = None
-    logo: Optional[str] = None
+    country: str | None = None
+    tv_language: str | None = None
+    logo: str | None = None
 
 
 class EpisodeFileData(BasePydanticModel):
@@ -164,9 +154,9 @@ class EpisodeFileData(BasePydanticModel):
 
     season_number: int
     episode_number: int
-    file_index: Optional[int] = None
-    filename: Optional[str] = None
-    size: Optional[int] = None
+    file_index: int | None = None
+    filename: str | None = None
+    size: int | None = None
 
 
 class TorrentStreamData(BasePydanticModel):
@@ -175,23 +165,23 @@ class TorrentStreamData(BasePydanticModel):
     id: str
     torrent_name: str
     size: int
-    filename: Optional[str] = None
-    file_index: Optional[int] = None
+    filename: str | None = None
+    file_index: int | None = None
     source: str
-    resolution: Optional[str] = None
-    codec: Optional[str] = None
-    quality: Optional[str] = None
-    audio: Optional[str] = None
-    seeders: Optional[int] = None
+    resolution: str | None = None
+    codec: str | None = None
+    quality: str | None = None
+    audio: str | None = None
+    seeders: int | None = None
     is_blocked: bool = False
     torrent_type: TorrentType = TorrentType.PUBLIC
-    uploader: Optional[str] = None
-    uploaded_at: Optional[datetime] = None
-    hdr: Optional[List[str]] = None
+    uploader: str | None = None
+    uploaded_at: datetime | None = None
+    hdr: list[str] | None = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
-    episode_files: List[EpisodeFileData] = []
+    episode_files: list[EpisodeFileData] = []
 
 
 class TVStreamData(BasePydanticModel):
@@ -199,14 +189,15 @@ class TVStreamData(BasePydanticModel):
 
     id: int
     name: str
-    url: Optional[str] = None
-    ytId: Optional[str] = None
-    externalUrl: Optional[str] = None
+    url: str | None = None
+    ytId: str | None = None
+    externalUrl: str | None = None
     source: str
-    country: Optional[str] = None
-    is_working: bool = True
+    country: str | None = None
+    is_active: bool = True
+    is_blocked: bool = False
     test_failure_count: int = 0
-    drm_key_id: Optional[str] = None
-    drm_key: Optional[str] = None
+    drm_key_id: str | None = None
+    drm_key: str | None = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None

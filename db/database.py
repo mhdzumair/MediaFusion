@@ -1,10 +1,10 @@
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
@@ -77,6 +77,21 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
             logger.warning(f"Error closing write session: {e}")
 
 
+@asynccontextmanager
+async def get_async_session_context() -> AsyncGenerator[AsyncSession, None]:
+    """Get a read-write session as a context manager for background tasks.
+    Use this when you need a session outside of FastAPI dependency injection.
+    """
+    session = AsyncSession(ASYNC_ENGINE, expire_on_commit=False)
+    try:
+        yield session
+    finally:
+        try:
+            await session.close()
+        except Exception as e:
+            logger.warning(f"Error closing session: {e}")
+
+
 async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
     """Get a read-only session optimized for read operations.
     Uses read replica if configured, otherwise falls back to primary.
@@ -92,9 +107,42 @@ async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
             logger.warning(f"Error closing read session: {e}")
 
 
+def _friendly_db_error(exc: BaseException) -> RuntimeError | None:
+    """Return a user-friendly RuntimeError for known connection failures, or None."""
+    cause = exc
+    while cause is not None:
+        if isinstance(cause, ConnectionRefusedError):
+            msg = (
+                "Cannot connect to PostgreSQL: connection refused. "
+                "Check that PostgreSQL is running and that the host/port in POSTGRES_URI are correct."
+            )
+            err = RuntimeError(msg)
+            err.__cause__ = exc
+            return err
+        if isinstance(cause, OSError) and getattr(cause, "errno", None) == 61:
+            msg = (
+                "Cannot connect to PostgreSQL: connection refused (errno 61). "
+                "Check that PostgreSQL is running and that the host/port in POSTGRES_URI are correct."
+            )
+            err = RuntimeError(msg)
+            err.__cause__ = exc
+            return err
+        if isinstance(cause, asyncio.TimeoutError):
+            msg = (
+                "Cannot connect to PostgreSQL: connection timed out. "
+                "Check that PostgreSQL is running, reachable, and that the host/port in POSTGRES_URI are correct."
+            )
+            err = RuntimeError(msg)
+            err.__cause__ = exc
+            return err
+        cause = getattr(cause, "__cause__", None)
+    return None
+
+
 async def init():
     """Initialize PostgreSQL connection and verify connectivity"""
     retries = 5
+    last_exception: BaseException | None = None
     for i in range(retries):
         try:
             async with ASYNC_ENGINE.begin() as conn:
@@ -106,17 +154,25 @@ async def init():
                     await conn.execute(text("SELECT 1"))
                 logger.info("PostgreSQL read replica connection initialized successfully.")
 
-            break
+            return
         except Exception as e:
+            last_exception = e
             if i < retries - 1:
                 wait_time = 2**i
-                logger.exception(
-                    f"Error initializing PostgreSQL: {e}, retrying in {wait_time} seconds..."
+                logger.warning(
+                    "PostgreSQL connection failed (%s), retrying in %s seconds...",
+                    e,
+                    wait_time,
                 )
                 await asyncio.sleep(wait_time)
             else:
-                logger.error("Failed to initialize PostgreSQL after several attempts.")
-                raise e
+                break
+
+    logger.error("Failed to initialize PostgreSQL after %d attempts.", retries)
+    friendly = _friendly_db_error(last_exception) if last_exception else None
+    if friendly is not None:
+        raise friendly
+    raise last_exception
 
 
 async def close():

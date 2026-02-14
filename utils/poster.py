@@ -4,14 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
 import aiohttp
-from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError, ImageStat
 from aiohttp_socks import ProxyConnector
+from PIL import Image, ImageDraw, ImageFont, ImageStat, UnidentifiedImageError
 
 from db.config import settings
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import PosterData
 from scrapers.imdb_data import get_imdb_rating
 from utils import const
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
@@ -31,9 +31,7 @@ async def fetch_poster_image(url: str) -> bytes:
         async with session.get(url, timeout=10, headers=const.UA_HEADER) as response:
             response.raise_for_status()
             if not response.headers["Content-Type"].lower().startswith("image/"):
-                raise ValueError(
-                    f"Unexpected content type: {response.headers['Content-Type']} for URL: {url}"
-                )
+                raise ValueError(f"Unexpected content type: {response.headers['Content-Type']} for URL: {url}")
             content = await response.read()
 
             # Cache the image in Redis for 1 hour
@@ -43,19 +41,17 @@ async def fetch_poster_image(url: str) -> bytes:
 
 
 # Synchronous function for CPU-bound task: image processing
-def process_poster_image(
-    content: bytes, mediafusion_data: PosterData
-) -> BytesIO:
+def process_poster_image(content: bytes, mediafusion_data: PosterData) -> BytesIO:
     try:
         image = Image.open(BytesIO(content)).convert("RGB")
         image = image.resize((300, 450))
-        imdb_rating = getattr(mediafusion_data, 'imdb_rating', None)
+        imdb_rating = getattr(mediafusion_data, "imdb_rating", None)
 
         # The add_elements_to_poster function would be synchronous
         image = add_elements_to_poster(image, imdb_rating)
-        if getattr(mediafusion_data, 'is_add_title_to_poster', False):
+        if getattr(mediafusion_data, "is_add_title_to_poster", False):
             # The add_title_to_poster function would also be synchronous
-            title = getattr(mediafusion_data, 'title', '')
+            title = getattr(mediafusion_data, "title", "")
             image = add_title_to_poster(image, title)
 
         image = image.convert("RGB")
@@ -66,15 +62,15 @@ def process_poster_image(
 
         return byte_io
     except UnidentifiedImageError:
-        poster_url = getattr(mediafusion_data, 'poster', 'unknown')
+        poster_url = getattr(mediafusion_data, "poster", "unknown")
         raise ValueError(f"Cannot identify image from URL: {poster_url}")
 
 
 async def create_poster(mediafusion_data: PosterData) -> BytesIO:
     content = await fetch_poster_image(mediafusion_data.poster)
-    
+
     # Check if we need to fetch IMDb rating
-    meta_id = getattr(mediafusion_data, 'id', '')
+    meta_id = getattr(mediafusion_data, "id", "")
     if meta_id and meta_id.startswith("tt") and mediafusion_data.imdb_rating is None:
         imdb_rating = await get_imdb_rating(meta_id)
         if imdb_rating:
@@ -90,9 +86,7 @@ async def create_poster(mediafusion_data: PosterData) -> BytesIO:
     return byte_io
 
 
-def add_elements_to_poster(
-    image: Image.Image, imdb_rating: float = None
-) -> Image.Image:
+def add_elements_to_poster(image: Image.Image, imdb_rating: float = None) -> Image.Image:
     draw = ImageDraw.Draw(image, "RGBA")
     margin = 10
     padding = 5
@@ -124,9 +118,7 @@ def add_elements_to_poster(
         )
 
         # Place the IMDb Logo
-        image.paste(
-            imdb_logo, (rectangle_x0 + padding, rectangle_y0 + padding), imdb_logo
-        )
+        image.paste(imdb_logo, (rectangle_x0 + padding, rectangle_y0 + padding), imdb_logo)
 
         # Now draw the rating text
         draw.text(
@@ -154,9 +146,7 @@ def add_elements_to_poster(
 
 def load_font(font_path, font_size):
     if (font_path, font_size) not in font_cache:
-        font_cache[(font_path, font_size)] = ImageFont.truetype(
-            font_path, size=font_size
-        )
+        font_cache[(font_path, font_size)] = ImageFont.truetype(font_path, size=font_size)
     return font_cache[(font_path, font_size)]
 
 
@@ -167,12 +157,8 @@ def split_title(title, font, draw, max_width):
         return []
 
     # Calculate character width for common characters
-    char_widths = {
-        char: draw.textbbox((0, 0), char, font=font)[2] for char in set(title)
-    }
-    average_character_width = (
-        sum(char_widths.values()) / len(char_widths) if char_widths else 10
-    )
+    char_widths = {char: draw.textbbox((0, 0), char, font=font)[2] for char in set(title)}
+    average_character_width = sum(char_widths.values()) / len(char_widths) if char_widths else 10
 
     lines = []
     current_line = []
@@ -206,9 +192,7 @@ def split_title(title, font, draw, max_width):
     return lines
 
 
-def adjust_font_and_split(
-    title, font_path, max_width, max_lines, initial_font_size, draw, min_font_size=10
-):
+def adjust_font_and_split(title, font_path, max_width, max_lines, initial_font_size, draw, min_font_size=10):
     # Start with the largest font size and try to fit within max_lines
     # If that doesn't work, reduce font size
 
@@ -231,9 +215,7 @@ def adjust_font_and_split(
 
     # If we still have too many lines, truncate and add ellipsis to the last line
     if len(lines) > max_lines:
-        truncated_lines = lines[
-            : max_lines - 1
-        ]  # Leave room for last line with ellipsis
+        truncated_lines = lines[: max_lines - 1]  # Leave room for last line with ellipsis
 
         # Handle the last line: try to add ellipsis
         last_line = lines[max_lines - 1]
@@ -267,9 +249,7 @@ def get_average_color(image, bbox):
 
 def text_color_based_on_background(average_color):
     # Calculate the perceived brightness of the average color
-    brightness = sum(
-        [average_color[i] * v for i, v in enumerate([0.299, 0.587, 0.114])]
-    )
+    brightness = sum([average_color[i] * v for i, v in enumerate([0.299, 0.587, 0.114])])
     if brightness > 128:
         return "black", "white"  # Dark text, light outline
     else:
@@ -320,9 +300,9 @@ def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
 
     # Calculate the total height of the text block
     line_spacing = 10  # Additional space between lines
-    text_block_height = sum(
-        draw.textbbox((0, 0), line, font=font)[3] for line in lines
-    ) + (line_spacing * (len(lines) - 1))
+    text_block_height = sum(draw.textbbox((0, 0), line, font=font)[3] for line in lines) + (
+        line_spacing * (len(lines) - 1)
+    )
 
     # Ensure y is not negative or too close to the top
     y = max(0, (image.height - text_block_height) // 2)
@@ -350,8 +330,6 @@ def add_title_to_poster(image: Image.Image, title_text: str) -> Image.Image:
         line_height = bbox[3] - bbox[1]
         x = (image.width - line_width) // 2  # Center horizontally
         draw_text_with_outline(draw, (x, y), line, font, text_color, outline_color)
-        y += (
-            line_height + line_spacing
-        )  # Move y position for next line, adding line spacing
+        y += line_height + line_spacing  # Move y position for next line, adding line spacing
 
     return image

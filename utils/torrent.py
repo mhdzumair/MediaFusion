@@ -1,20 +1,22 @@
 import hashlib
 import logging
-from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import datetime, timezone
-from os.path import basename
 import re
-from typing import Awaitable, Iterable, AsyncIterator, Optional, TypeVar, OrderedDict
+from collections import OrderedDict
+from collections.abc import AsyncIterator, Awaitable, Iterable
+from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import UTC, datetime
+from os.path import basename
+from typing import TypeVar
 from urllib.parse import quote
 
-import PTT
 import anyio
 import bencodepy
 import httpx
+import PTT
 from anyio import (
-    create_task_group,
-    create_memory_object_stream,
     CapacityLimiter,
+    create_memory_object_stream,
+    create_task_group,
 )
 from anyio.streams.memory import MemoryObjectSendStream
 from demagnetize.core import Demagnetizer
@@ -31,7 +33,10 @@ logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
 
 def extract_torrent_metadata(
-    content: bytes, parsed_data: dict = None, is_raise_error: bool = False, episode_name_parser: str = None
+    content: bytes,
+    parsed_data: dict = None,
+    is_raise_error: bool = False,
+    episode_name_parser: str = None,
 ) -> dict:
     try:
         torrent_data: OrderedDict = bencodepy.decode(content)
@@ -46,9 +51,7 @@ def extract_torrent_metadata(
         total_size = sum(file[b"length"] for file in files)
         created_at = torrent_data.get(b"creation date", 0)
 
-        announce_list = [
-            tracker[0].decode() for tracker in torrent_data.get(b"announce-list", []) if tracker
-        ]
+        announce_list = [tracker[0].decode() for tracker in torrent_data.get(b"announce-list", []) if tracker]
         torrent_name = info.get(b"name", b"").decode()
         if not torrent_name:
             logging.warning("Torrent name is empty. Skipping")
@@ -69,16 +72,14 @@ def extract_torrent_metadata(
             metadata.update(PTT.parse_title(torrent_name, True))
 
         if is_contain_18_plus_keywords(torrent_name):
-            logging.warning(
-                f"Torrent name contains 18+ keywords: {torrent_name}. Skipping"
-            )
+            logging.warning(f"Torrent name contains 18+ keywords: {torrent_name}. Skipping")
             if is_raise_error:
                 raise ValueError("Torrent name contains 18+ keywords")
             return {}
 
         if created_at:
             # Convert to UTC datetime
-            metadata["created_at"] = datetime.fromtimestamp(created_at, tz=timezone.utc)
+            metadata["created_at"] = datetime.fromtimestamp(created_at, tz=UTC)
 
         file_data = []
         seasons = set()
@@ -94,11 +95,7 @@ def extract_torrent_metadata(
                 episode_pattern = None
 
         for idx, file in enumerate(files):
-            full_path = (
-                "/".join([p.decode() for p in file[b"path"]])
-                if b"files" in info
-                else None
-            )
+            full_path = "/".join([p.decode() for p in file[b"path"]]) if b"files" in info else None
             filename = basename(full_path) if full_path else file[b"name"].decode()
             if not is_video_file(filename):
                 continue
@@ -108,27 +105,11 @@ def extract_torrent_metadata(
             episode_parsed_data = PTT.parse_title(filename)
             seasons.update(episode_parsed_data.get("seasons", []))
             episodes.update(episode_parsed_data.get("episodes", []))
-            season_number = (
-                episode_parsed_data["seasons"][0]
-                if episode_parsed_data.get("seasons")
-                else None
-            )
-            if (
-                season_number is None
-                and metadata.get("seasons")
-                and len(metadata["seasons"]) == 1
-            ):
+            season_number = episode_parsed_data["seasons"][0] if episode_parsed_data.get("seasons") else None
+            if season_number is None and metadata.get("seasons") and len(metadata["seasons"]) == 1:
                 season_number = metadata["seasons"][0]
-            episode_number = (
-                episode_parsed_data["episodes"][0]
-                if episode_parsed_data.get("episodes")
-                else None
-            )
-            if (
-                episode_number is None
-                and metadata.get("episodes")
-                and len(metadata["episodes"]) == 1
-            ):
+            episode_number = episode_parsed_data["episodes"][0] if episode_parsed_data.get("episodes") else None
+            if episode_number is None and metadata.get("episodes") and len(metadata["episodes"]) == 1:
                 episode_number = metadata["episodes"][0]
 
             # Extract episode title using custom parser if provided
@@ -141,10 +122,10 @@ def extract_torrent_metadata(
                         groups = match.groupdict()
                         # Look for common episode name patterns
                         extracted_name = (
-                            groups.get("episode_name") or
-                            groups.get("title") or
-                            groups.get("name") or
-                            groups.get("event")
+                            groups.get("episode_name")
+                            or groups.get("title")
+                            or groups.get("name")
+                            or groups.get("event")
                         )
                         if extracted_name:
                             # Clean up the episode name by replacing dots with spaces
@@ -167,9 +148,7 @@ def extract_torrent_metadata(
                 }
             )
         if not file_data:
-            logging.warning(
-                f"No video files found in torrent. Skipping. Found: {files}"
-            )
+            logging.warning(f"No video files found in torrent. Skipping. Found: {files}")
             if is_raise_error:
                 raise ValueError("No video files found in torrent")
             return {}
@@ -214,7 +193,7 @@ T = TypeVar("T")
 @asynccontextmanager
 async def acollect(
     coros: Iterable[Awaitable[T]],
-    limit: Optional[CapacityLimiter] = None,
+    limit: CapacityLimiter | None = None,
     timeout: int = 30,
 ) -> AsyncIterator[AsyncIterator[T]]:
     async with create_task_group() as tg:
@@ -228,7 +207,7 @@ async def acollect(
 
 async def _acollect_pipe(
     coro: Awaitable[T],
-    limit: Optional[CapacityLimiter],
+    limit: CapacityLimiter | None,
     sender: MemoryObjectSendStream[T],
     timeout: int,
 ) -> None:
@@ -246,7 +225,10 @@ async def _acollect_pipe(
 
 
 async def info_hashes_to_torrent_metadata(
-    info_hashes: list[str], trackers: list[str], episode_name_parser: str = None, is_raise_error: bool = False
+    info_hashes: list[str],
+    trackers: list[str],
+    episode_name_parser: str = None,
+    is_raise_error: bool = False,
 ) -> list[dict]:
     torrents_data = []
 
@@ -258,10 +240,7 @@ async def info_hashes_to_torrent_metadata(
 
     demagnetizer = Demagnetizer()
     async with acollect(
-        coros=[
-            demagnetizer.demagnetize(Magnet(xt=info_hash, tr=trackers or TRACKERS))
-            for info_hash in info_hashes
-        ],
+        coros=[demagnetizer.demagnetize(Magnet(xt=info_hash, tr=trackers or TRACKERS)) for info_hash in info_hashes],
         limit=CapacityLimiter(10),
         timeout=60,
     ) as async_iterator:
@@ -271,7 +250,11 @@ async def info_hashes_to_torrent_metadata(
                     pass
                 else:
                     torrents_data.append(
-                        extract_torrent_metadata(torrent_result.dump(), is_raise_error=is_raise_error, episode_name_parser=episode_name_parser)
+                        extract_torrent_metadata(
+                            torrent_result.dump(),
+                            is_raise_error=is_raise_error,
+                            episode_name_parser=episode_name_parser,
+                        )
                     )
             except Exception as e:
                 if is_raise_error:
@@ -295,9 +278,7 @@ async def init_best_trackers():
                 utils.runtime_const.TRACKERS.extend(trackers)
                 utils.runtime_const.TRACKERS = list(set(utils.runtime_const.TRACKERS))
 
-                logging.info(
-                    f"Loaded {len(trackers)} trackers. Total: {len(utils.runtime_const.TRACKERS)}"
-                )
+                logging.info(f"Loaded {len(trackers)} trackers. Total: {len(utils.runtime_const.TRACKERS)}")
             else:
                 logging.error(f"Failed to load trackers: {response.status_code}")
     except (httpx.ConnectTimeout, Exception) as e:

@@ -4,11 +4,17 @@ import re
 
 from scrapy.exceptions import DropItem
 
-from db.schemas import EpisodeFileData
+from db.schemas import StreamFileData
 from utils.runtime_const import SPORTS_ARTIFACTS
+from utils.sports_parser import RESOLUTION_MAP
 
 
 class MotoGPParserPipeline:
+    """Pipeline for parsing MotoGP content from smcgill1969.
+
+    Uses shared sports parser utilities for resolution normalization.
+    """
+
     def __init__(self):
         self.name_parser_patterns = {
             "smcgill1969": [
@@ -33,9 +39,10 @@ class MotoGPParserPipeline:
         }
         self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["poster"])
 
+        # Use shared RESOLUTION_MAP with local overrides
         self.smcgill1969_resolutions = {
-            "4K": "4k",
-            "SD": "576p",
+            "4K": RESOLUTION_MAP.get("4K", "4k"),
+            "SD": RESOLUTION_MAP.get("SD", "576p"),
             "1080p": "1080p",
         }
         self.known_countries_first_words = ["San", "Great"]
@@ -74,9 +81,7 @@ class MotoGPParserPipeline:
             if match:
                 data = match.groupdict()
                 series = "MotoGP"
-                event, episode_name = self.event_and_episode_name_parser(
-                    data["EventAndEpisodeName"]
-                )
+                event, episode_name = self.event_and_episode_name_parser(data["EventAndEpisodeName"])
 
                 torrent_data.update(
                     {
@@ -92,9 +97,7 @@ class MotoGPParserPipeline:
                             )
                         ),
                         "year": int(data["Year"]),
-                        "resolution": self.smcgill1969_resolutions.get(
-                            data["Resolution"]
-                        ),
+                        "resolution": self.smcgill1969_resolutions.get(data["Resolution"]),
                         "event": event,
                         "episode_name": episode_name,
                     }
@@ -115,17 +118,16 @@ class MotoGPParserPipeline:
 
         episodes = []
         for index, file_detail in enumerate(torrent_data.get("file_data", [])):
-            file_name = file_detail.get("filename")
+            file_name = file_detail.get("filename", "")
 
             episodes.append(
-                EpisodeFileData(
+                StreamFileData(
                     season_number=1,
                     episode_number=index + 1,
                     filename=file_name,
-                    size=file_detail.get("size"),
+                    size=file_detail.get("size", 0),
                     file_index=index,
-                    title=" ".join(file_name.split(".")[1:-1]),
-                    released=torrent_data.get("created_at"),
+                    file_type="video",
                 )
             )
 

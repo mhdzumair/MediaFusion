@@ -1,5 +1,3 @@
-from typing import Optional
-
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
 
@@ -7,14 +5,14 @@ from streaming_providers.exceptions import ProviderException
 class EasyDebrid(DebridClient):
     BASE_URL = "https://easydebrid.com/api/v1"
 
-    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+    def __init__(self, token: str | None = None, user_ip: str | None = None):
         self.user_ip = user_ip
         super().__init__(token)
 
     async def initialize_headers(self):
         self.headers = {"Authorization": f"Bearer {self.token}"}
         if self.user_ip:
-            self.headers['X-Forwarded-For'] = self.user_ip
+            self.headers["X-Forwarded-For"] = self.user_ip
 
     async def disable_access_token(self):
         pass
@@ -29,9 +27,9 @@ class EasyDebrid(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict | str] = None,
-        json: Optional[dict] = None,
-        params: Optional[dict] = None,
+        data: dict | str | None = None,
+        json: dict | None = None,
+        params: dict | None = None,
         is_return_none: bool = False,
         is_expected_to_fail: bool = False,
         is_http_response: bool = False,
@@ -39,9 +37,7 @@ class EasyDebrid(DebridClient):
     ) -> dict:
         params = params or {}
         url = self.BASE_URL + url
-        return await super()._make_request(
-            method, url, data, json, params, is_return_none, is_expected_to_fail
-        )
+        return await super()._make_request(method, url, data, json, params, is_return_none, is_expected_to_fail)
 
     async def get_torrent_instant_availability(self, urls: list[str]):
         response = await self._make_request(
@@ -56,13 +52,11 @@ class EasyDebrid(DebridClient):
             "POST",
             "/link/generate",
             json={"url": magnet},
-            is_expected_to_fail=True, # If it's not cached, we expect it to fail.
+            is_expected_to_fail=True,  # If it's not cached, we expect it to fail.
         )
         return response
 
-    async def add_torrent_file(
-        self, magnet
-    ):
+    async def add_torrent_file(self, magnet):
         response = await self._make_request(
             "POST",
             "/link/request",

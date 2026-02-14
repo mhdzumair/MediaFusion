@@ -12,9 +12,143 @@ class MediaFusionContentScript {
   }
 
   async init() {
+    // Check if we're on the extension auth page first
+    if (this.checkExtensionAuthPage()) {
+      return; // Don't process torrent links on auth page
+    }
+    
     this.loadSiteHandlers();
     this.startObserving();
     this.processPage();
+  }
+
+  // Check if we're on the MediaFusion extension auth page and capture auth data
+  checkExtensionAuthPage() {
+    const pathname = window.location.pathname;
+    
+    // Check if we're on the extension-auth page
+    if (!pathname.includes('/app/extension-auth')) {
+      return false;
+    }
+
+    console.log('[MediaFusion Extension] Detected extension auth page');
+
+    // Listen for the authorization event from the page
+    window.addEventListener('mediafusion-extension-authorized', (event) => {
+      console.log('[MediaFusion Extension] Authorization event received');
+      this.handleAuthData(event.detail);
+    });
+
+    // Also listen for the ready event (for auto-capture)
+    window.addEventListener('mediafusion-extension-auth-ready', (event) => {
+      console.log('[MediaFusion Extension] Auth ready event received');
+      // Don't auto-capture, wait for user to click authorize
+    });
+
+    // Check for existing auth data element (in case page already loaded)
+    this.checkForExistingAuthData();
+
+    // Set up observer for auth data element
+    const observer = new MutationObserver((mutations) => {
+      this.checkForExistingAuthData();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-ready']
+    });
+
+    return true;
+  }
+
+  checkForExistingAuthData() {
+    const authElement = document.getElementById('mediafusion-extension-auth');
+    if (authElement && authElement.getAttribute('data-ready') === 'true') {
+      // Auth data is available but wait for user to click authorize
+      console.log('[MediaFusion Extension] Auth data element found, waiting for authorization');
+    }
+  }
+
+  async handleAuthData(authData) {
+    if (!authData || !authData.token) {
+      console.error('[MediaFusion Extension] Invalid auth data received');
+      return;
+    }
+
+    console.log('[MediaFusion Extension] Saving auth data for user:', authData.user?.email);
+
+    try {
+      // Send auth data to background script to save
+      const response = await this.sendMessage({
+        action: 'saveAuthFromWebsite',
+        data: {
+          token: authData.token,
+          user: authData.user,
+          apiKey: authData.apiKey,
+          instanceUrl: window.location.origin
+        }
+      });
+
+      if (response && response.success) {
+        console.log('[MediaFusion Extension] Auth data saved successfully');
+        
+        // Show success feedback on the page
+        this.showAuthSuccessFeedback();
+      } else {
+        console.error('[MediaFusion Extension] Failed to save auth data');
+      }
+    } catch (error) {
+      console.error('[MediaFusion Extension] Error saving auth data:', error);
+    }
+  }
+
+  showAuthSuccessFeedback() {
+    // Create a success banner on the page
+    const banner = document.createElement('div');
+    banner.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      padding: 16px 24px;
+      border-radius: 12px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      z-index: 999999;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      animation: slideIn 0.3s ease-out;
+    `;
+    banner.innerHTML = `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z" />
+      </svg>
+      <span>Extension connected! You can close this tab.</span>
+    `;
+
+    // Add animation styles
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(banner);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      banner.style.animation = 'slideIn 0.3s ease-out reverse';
+      setTimeout(() => banner.remove(), 300);
+    }, 5000);
   }
 
   loadSiteHandlers() {

@@ -2,13 +2,13 @@
 import dramatiq
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import (
-    AsyncIO,
     AgeLimit,
-    TimeLimit,
-    ShutdownNotifications,
+    AsyncIO,
     Callbacks,
-    Pipelines,
     CurrentMessage,
+    Pipelines,
+    ShutdownNotifications,
+    TimeLimit,
 )
 from dramatiq_abort import Abortable
 from dramatiq_abort.backends import RedisBackend

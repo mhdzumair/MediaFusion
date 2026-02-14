@@ -142,6 +142,22 @@ spec:
           claimName: mongo-pvc
 ---
 
+---
+# ConfigMap for PostgreSQL initialization scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+data:
+  01-extensions.sql: |
+    -- Create required PostgreSQL extensions for MediaFusion
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    
+    -- Log successful initialization
+    DO $$ BEGIN RAISE NOTICE 'MediaFusion PostgreSQL extensions initialized successfully'; END $$;
+
+---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -203,6 +219,8 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        - name: postgres-init
+          mountPath: /docker-entrypoint-initdb.d
         livenessProbe:
           exec:
             command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]
@@ -219,6 +237,9 @@ spec:
       - name: postgres-storage
         persistentVolumeClaim:
           claimName: postgres-pvc
+      - name: postgres-init
+        configMap:
+          name: postgres-init-scripts
 
 ---
 

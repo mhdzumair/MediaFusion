@@ -1,16 +1,15 @@
 import asyncio
 
-from db.schemas import TorrentStreamData
-from db.schemas import UserData
+from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
 from streaming_providers.stremthru.client import StremThru
 
 
-def _get_client(user_data: UserData) -> StremThru:
+def _get_client(streaming_provider: StreamingProvider) -> StremThru:
     return StremThru(
-        url=str(user_data.streaming_provider.url),
-        token=user_data.streaming_provider.token,
+        url=str(streaming_provider.url),
+        token=streaming_provider.token,
     )
 
 
@@ -36,9 +35,7 @@ async def wait_for_download_and_get_link(
     max_retries,
     retry_interval,
 ):
-    torrent_info = await st_client.wait_for_status(
-        torrent_id, "downloaded", max_retries, retry_interval
-    )
+    torrent_info = await st_client.wait_for_status(torrent_id, "downloaded", max_retries, retry_interval)
     file_index = await select_file_index_from_torrent(
         torrent_info=torrent_info,
         torrent_stream=stream,
@@ -46,15 +43,13 @@ async def wait_for_download_and_get_link(
         season=season,
         episode=episode,
     )
-    response = await st_client.create_download_link(
-        torrent_info["files"][file_index]["link"]
-    )
+    response = await st_client.create_download_link(torrent_info["files"][file_index]["link"])
     return response["link"]
 
 
 async def get_video_url_from_stremthru(
     magnet_link: str,
-    user_data: UserData,
+    streaming_provider: StreamingProvider,
     filename: str,
     stream: TorrentStreamData,
     season: int = None,
@@ -63,7 +58,7 @@ async def get_video_url_from_stremthru(
     retry_interval=5,
     **kwargs,
 ) -> str:
-    async with _get_client(user_data) as st_client:
+    async with _get_client(streaming_provider) as st_client:
         torrent_id = await add_new_torrent(st_client, magnet_link)
 
         return await wait_for_download_and_get_link(
@@ -79,23 +74,24 @@ async def get_video_url_from_stremthru(
 
 
 async def update_st_cache_status(
-    streams: list[TorrentStreamData], user_data: UserData, stremio_video_id: str, **kwargs
+    streams: list[TorrentStreamData],
+    streaming_provider: StreamingProvider,
+    stremio_video_id: str,
+    **kwargs,
 ) -> str | None:
     """Updates the cache status of streams based on StremThru's instant availability."""
 
     try:
-        async with _get_client(user_data) as st_client:
+        async with _get_client(streaming_provider) as st_client:
             res = await st_client.get_torrent_instant_availability(
-                [stream.id for stream in streams],
+                [stream.info_hash for stream in streams],
                 stremio_video_id=stremio_video_id,
                 is_http_response=True,
             )
             instant_items = res.body.get("data", {}).get("items", [])
             for stream in streams:
                 stream.cached = any(
-                    torrent["status"] == "cached"
-                    for torrent in instant_items
-                    if torrent.get("hash") == stream.id
+                    torrent["status"] == "cached" for torrent in instant_items if torrent.get("hash") == stream.info_hash
                 )
             store_name = res.headers.get("X-StremThru-Store-Name", None)
             return store_name
@@ -103,12 +99,10 @@ async def update_st_cache_status(
         pass
 
 
-async def fetch_downloaded_info_hashes_from_st(
-    user_data: UserData, **kwargs
-) -> list[str]:
+async def fetch_downloaded_info_hashes_from_st(streaming_provider: StreamingProvider, **kwargs) -> list[str]:
     """Fetches the info_hashes of all torrents downloaded in the StremThru account."""
     try:
-        async with _get_client(user_data) as st_client:
+        async with _get_client(streaming_provider) as st_client:
             available_torrents = await st_client.get_user_torrent_list()
             return [torrent["hash"] for torrent in available_torrents["items"]]
 
@@ -116,25 +110,22 @@ async def fetch_downloaded_info_hashes_from_st(
         return []
 
 
-async def delete_all_torrents_from_st(user_data: UserData, **kwargs):
+async def delete_all_torrents_from_st(streaming_provider: StreamingProvider, **kwargs):
     """Deletes all torrents from the StremThru account."""
-    async with _get_client(user_data) as st_client:
+    async with _get_client(streaming_provider) as st_client:
         torrents = await st_client.get_user_torrent_list()
-        await asyncio.gather(
-            *[st_client.delete_torrent(torrent["id"]) for torrent in torrents["items"]]
-        )
+        await asyncio.gather(*[st_client.delete_torrent(torrent["id"]) for torrent in torrents["items"]])
 
 
-async def validate_stremthru_credentials(user_data: UserData, **kwargs) -> dict:
+async def validate_stremthru_credentials(streaming_provider: StreamingProvider, **kwargs) -> dict:
     """Validates the StremThru credentials."""
     try:
-        async with _get_client(user_data) as client:
+        async with _get_client(streaming_provider) as client:
             response = await client.get_user_info(is_http_response=True)
             if response:
                 if (
-                    user_data.streaming_provider.stremthru_store_name
-                    and user_data.streaming_provider.stremthru_store_name
-                    != response.headers.get("X-StremThru-Store-Name")
+                    streaming_provider.stremthru_store_name
+                    and streaming_provider.stremthru_store_name != response.headers.get("X-StremThru-Store-Name")
                 ):
                     return {
                         "status": "error",

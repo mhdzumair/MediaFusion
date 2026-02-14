@@ -1,19 +1,17 @@
 {
   "manifest_version": 2,
   "name": "MediaFusion Torrent Uploader",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "description": "Easily contribute torrents to MediaFusion from any torrent site",
   "browser_specific_settings": {
     "gecko": {
       "id": "mediafusion-uploader@mediafusion.dev"
     }
   },
-  "permissions": ["storage", "activeTab", "https://*/*", "http://*/*"],
-
-  "optional_permissions": ["tabs"],
+  "permissions": ["storage", "activeTab", "tabs", "https://*/*", "http://*/*"],
 
   "browser_action": {
-    "default_popup": "popup/popup.html",
+    "default_popup": "popup/index.html",
     "default_title": "MediaFusion Uploader",
     "default_icon": {
       "16": "icons/icon16.png",

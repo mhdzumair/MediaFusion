@@ -1,20 +1,18 @@
 import asyncio
-import math
-from datetime import timedelta, datetime
-from typing import List, Any, Optional, AsyncGenerator, Tuple
-from urllib.parse import quote
+import re
+import xml.etree.ElementTree as ET
+from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta
+from urllib.parse import quote, unquote
 
-import PTT
 import httpx
-from bs4 import BeautifulSoup
+import PTT
 
 from db.config import settings
-from db.schemas import TorrentStreamData, EpisodeFileData, MetadataData
+from db.schemas import MetadataData, StreamFileData, TorrentStreamData
 from scrapers.base_scraper import BaseScraper
-from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
 from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
 from utils.runtime_const import BT4G_SEARCH_TTL
-from utils.validation_helper import is_video_file
 
 
 class BT4GScraper(BaseScraper):
@@ -27,17 +25,17 @@ class BT4GScraper(BaseScraper):
         "{title} S{season:02d}",  # Season-only format
         "{title}",  # Title only
     ]
-    ITEMS_PER_PAGE = 15  # BT4G shows 15 items per page
     cache_key_prefix = "bt4g"
 
     def __init__(self):
         super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
-        self.semaphore = asyncio.Semaphore(10)
+        # Limit concurrent requests to avoid rate limiting (429 errors)
+        self.semaphore = asyncio.Semaphore(3)
         self.http_client = httpx.AsyncClient(
             proxy=settings.requests_proxy_url,
             timeout=settings.bt4g_search_timeout,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
             },
         )
 
@@ -48,21 +46,19 @@ class BT4GScraper(BaseScraper):
         user_data,
         metadata: MetadataData,
         catalog_type: str,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
-    ) -> List[TorrentStreamData]:
+        season: int | None = None,
+        episode: int | None = None,
+    ) -> list[TorrentStreamData]:
         results = []
-        processed_unique_data = set()
+        processed_info_hashes = set()
 
         search_generators = []
         if catalog_type == "movie":
             for query_template in self.MOVIE_SEARCH_QUERY_TEMPLATES:
-                search_query = query_template.format(
-                    title=metadata.title, year=metadata.year
-                )
+                search_query = query_template.format(title=metadata.title, year=metadata.year)
                 search_generators.append(
                     self.scrape_by_query(
-                        processed_unique_data,
+                        processed_info_hashes,
                         metadata,
                         search_query,
                         catalog_type,
@@ -72,7 +68,7 @@ class BT4GScraper(BaseScraper):
                 for aka_title in metadata.aka_titles:
                     search_generators.append(
                         self.scrape_by_query(
-                            processed_unique_data,
+                            processed_info_hashes,
                             metadata,
                             aka_title,
                             catalog_type,
@@ -87,7 +83,7 @@ class BT4GScraper(BaseScraper):
                 )
                 search_generators.append(
                     self.scrape_by_query(
-                        processed_unique_data,
+                        processed_info_hashes,
                         metadata,
                         search_query,
                         catalog_type,
@@ -99,7 +95,7 @@ class BT4GScraper(BaseScraper):
                 for aka_title in metadata.aka_titles:
                     search_generators.append(
                         self.scrape_by_query(
-                            processed_unique_data,
+                            processed_info_hashes,
                             metadata,
                             aka_title,
                             catalog_type,
@@ -125,196 +121,138 @@ class BT4GScraper(BaseScraper):
         return results
 
     @staticmethod
-    def _get_search_url(search_query: str, page: int = 1) -> str:
+    def _get_rss_url(search_query: str) -> str:
+        """Generate RSS feed URL for BT4G search (bypasses Cloudflare)"""
         encoded_query = quote(search_query)
-        return (
-            f"{settings.bt4g_url}/search"
-            f"?q={encoded_query}"
-            f"&category=movie"
-            f"&p={page}"
-        )
+        return f"{settings.bt4g_url}/search?q={encoded_query}&page=rss"
 
-    async def parse_first_page(self, html: str) -> Tuple[List[Any], Optional[int]]:
-        """Parse first page and return results and total results count"""
-        soup = BeautifulSoup(html, "html.parser")
+    def _parse_rss_description(self, description: str) -> tuple[int | None, str | None]:
+        """Parse RSS description to extract size and info_hash.
 
-        # Find total results count
-        total_results = None
-        results_text = soup.find("span", {"class": "badge"})
-        if results_text:
-            try:
-                total_text = results_text.get_text()
-                total_results = int(total_text)
-            except (ValueError, AttributeError):
-                self.logger.warning("Could not parse total results count")
+        Description format: "Title<br>Size<br>Category<br>InfoHash"
+        Example: "Stranger.Things.S01E01...<br>3.31GB<br>Movie<br>ae9a85ce..."
+        """
+        try:
+            # Split by <br> tag
+            parts = description.split("<br>")
+            if len(parts) >= 4:
+                size_str = parts[1].strip()
+                info_hash = parts[3].strip().lower()
+                size = convert_size_to_bytes(size_str)
+                return size, info_hash
+            elif len(parts) >= 2:
+                # Try to extract just size
+                size_str = parts[1].strip()
+                size = convert_size_to_bytes(size_str)
+                return size, None
+        except Exception as e:
+            self.logger.debug(f"Error parsing RSS description: {e}")
+        return None, None
 
-        # Find search results
-        results = soup.find_all("div", class_="result-item")
-        return results, total_results
+    def _extract_info_hash_from_magnet(self, magnet_link: str) -> str | None:
+        """Extract info_hash from magnet link."""
+        try:
+            match = re.search(r"btih:([a-fA-F0-9]{40})", magnet_link)
+            if match:
+                return match.group(1).lower()
+        except Exception:
+            pass
+        return None
+
+    def _extract_trackers_from_magnet(self, magnet_link: str) -> list[str]:
+        """Extract tracker URLs from magnet link."""
+        trackers = []
+        try:
+            # Find all tr= parameters
+            matches = re.findall(r"tr=([^&]+)", magnet_link)
+            for match in matches:
+                tracker = unquote(match)
+                if tracker not in trackers:
+                    trackers.append(tracker)
+        except Exception:
+            pass
+        return trackers
 
     async def scrape_by_query(
         self,
-        processed_unique_data: set[str],
+        processed_info_hashes: set[str],
         metadata: MetadataData,
         search_query: str,
         catalog_type: str,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
+        season: int | None = None,
+        episode: int | None = None,
     ) -> AsyncGenerator[TorrentStreamData, None]:
+        """Scrape BT4G using RSS feed (bypasses Cloudflare protection)."""
         try:
-            # Get first page
-            first_page_url = self._get_search_url(search_query, page=1)
-            response = await self.make_request(first_page_url, is_expected_to_fail=True)
+            # Use semaphore to limit concurrent requests and avoid rate limiting
+            async with self.semaphore:
+                rss_url = self._get_rss_url(search_query)
+                # Add small delay between requests to avoid hammering the server
+                await asyncio.sleep(0.5)
+                response = await self.make_request(rss_url, is_expected_to_fail=True)
 
-            # Parse first page
-            first_page_results, total_results = await self.parse_first_page(
-                response.text
-            )
-            if not first_page_results:
+            if not response.text or "cloudflare" in response.text.lower():
+                self.logger.warning(f"Cloudflare blocked RSS request for: {search_query}")
                 return
 
-            # Calculate needed pages based on max_process and items per page
-            max_process = settings.bt4g_immediate_max_process
-            if total_results:
-                total_pages = min(
-                    math.ceil(max_process / self.ITEMS_PER_PAGE),
-                    math.ceil(total_results / self.ITEMS_PER_PAGE),
+            # Parse RSS XML
+            try:
+                root = ET.fromstring(response.text)
+            except ET.ParseError as e:
+                self.logger.error(f"Failed to parse RSS XML: {e}")
+                return
+
+            # Find all items in the RSS feed
+            items = root.findall(".//item")
+            if not items:
+                self.logger.debug(f"No results found in RSS for: {search_query}")
+                return
+
+            self.logger.info(f"Found {len(items)} results for '{search_query}' in BT4G RSS feed")
+            self.metrics.record_found_items(len(items))
+
+            for item in items:
+                stream = await self._process_rss_item(
+                    item,
+                    metadata,
+                    catalog_type,
+                    season,
+                    episode,
+                    processed_info_hashes,
                 )
-            else:
-                total_pages = math.ceil(max_process / self.ITEMS_PER_PAGE)
-
-            self.logger.info(
-                f"Found {total_results if total_results else 'unknown'} results "
-                f"for {search_query} in BT4G site, processing only {total_pages} pages"
-            )
-
-            # Process first page results
-            async for stream in self.process_page_results(
-                first_page_results,
-                metadata,
-                catalog_type,
-                season,
-                episode,
-                processed_unique_data,
-            ):
-                yield stream
-
-            # Fetch and process additional pages if needed
-            if total_pages > 1:
-                tasks = []
-                for page in range(2, total_pages + 1):
-                    page_url = self._get_search_url(search_query, page)
-                    # Fetch all pages concurrently
-                    tasks.append(self.make_request(page_url, is_expected_to_fail=True))
-
-                # Process all additional pages
-                try:
-                    responses = await asyncio.gather(*tasks)
-                    for response in responses:
-                        soup = BeautifulSoup(response.text, "html.parser")
-                        results = soup.find_all("div", class_="result-item")
-
-                        async for stream in self.process_page_results(
-                            results,
-                            metadata,
-                            catalog_type,
-                            season,
-                            episode,
-                            processed_unique_data,
-                        ):
-                            yield stream
-
-                except Exception as e:
-                    self.logger.error(f"Error processing additional pages: {e}")
+                if stream:
+                    yield stream
 
         except Exception as e:
             self.metrics.record_error("search_error")
-            self.logger.exception(f"Error searching BT4G: {e}")
+            self.logger.exception(f"Error searching BT4G RSS: {e}")
 
-    async def fetch_and_process_page(
+    async def _process_rss_item(
         self,
-        page_url: str,
+        item: ET.Element,
         metadata: MetadataData,
         catalog_type: str,
-        season: Optional[int],
-        episode: Optional[int],
-        processed_unique_data: set[str],
-    ) -> AsyncGenerator[TorrentStreamData, None]:
-        """Fetch and process a single page of results"""
+        season: int | None,
+        episode: int | None,
+        processed_info_hashes: set[str],
+    ) -> TorrentStreamData | None:
+        """Process a single RSS item and return a TorrentStreamData if valid."""
         try:
-            response = await self.make_request(page_url, is_expected_to_fail=True)
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            results = soup.find_all("div", class_="result-item")
-
-            async for stream in self.process_page_results(
-                results,
-                metadata,
-                catalog_type,
-                season,
-                episode,
-                processed_unique_data,
-            ):
-                yield stream
-
-        except Exception as e:
-            self.logger.error(f"Error fetching page {page_url}: {e}")
-
-    async def process_page_results(
-        self,
-        results: List[Any],
-        metadata: MetadataData,
-        catalog_type: str,
-        season: Optional[int],
-        episode: Optional[int],
-        processed_unique_data: set[str],
-    ) -> AsyncGenerator[TorrentStreamData, None]:
-        """Process results from a single page"""
-        self.metrics.record_found_items(len(results))
-
-        circuit_breaker = CircuitBreaker(
-            failure_threshold=2, recovery_timeout=10, half_open_attempts=3
-        )
-
-        async for result in batch_process_with_circuit_breaker(
-            self.process_search_result,
-            results,
-            5,  # batch_size
-            3,  # max_concurrent_batches
-            circuit_breaker,
-            5,  # max_retries
-            metadata=metadata,
-            catalog_type=catalog_type,
-            season=season,
-            episode=episode,
-            processed_unique_data=processed_unique_data,
-        ):
-            if result:
-                yield result
-
-    async def process_search_result(
-        self,
-        result: Any,
-        metadata: MetadataData,
-        catalog_type: str,
-        processed_unique_data: set[str],
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
-    ) -> Optional[TorrentStreamData]:
-        """Process a single search result"""
-        try:
-            title_element = result.find("h5")
-            if not title_element:
+            # Extract title
+            title_elem = item.find("title")
+            if title_elem is None or not title_elem.text:
                 return None
+            torrent_title = title_elem.text.strip()
 
-            torrent_title = title_element.get_text(strip=True)
-
+            # Check for adult content
             if is_contain_18_plus_keywords(torrent_title):
                 self.metrics.record_skip("Adult content")
                 return None
 
+            # Parse title
             parsed_data = PTT.parse_title(torrent_title, True)
 
+            # Validate title and year
             if not self.validate_title_and_year(
                 parsed_data,
                 metadata,
@@ -323,140 +261,127 @@ class BT4GScraper(BaseScraper):
             ):
                 return None
 
-            info_elements = result.find("p").find_all("span")
+            # Extract magnet link
+            link_elem = item.find("link")
+            if link_elem is None or not link_elem.text:
+                self.metrics.record_skip("No magnet link")
+                return None
+            magnet_link = link_elem.text.strip()
 
-            created_date = info_elements[2].get_text()
-            # example: 'Creation Time:\xa02024-03-23'
-            created_date = datetime.strptime(
-                created_date.split(":")[1].strip(), "%Y-%m-%d"
-            )
-            seeders = int(result.find("b", {"id": "seeders"}).get_text())
-
-            # Drop if seeders are less than 1 and created date is older than 30 days
-            if seeders < 1 and created_date < datetime.now() - timedelta(days=30):
-                self.metrics.record_skip("Old torrent with no seeders")
+            # Extract info_hash from magnet
+            info_hash = self._extract_info_hash_from_magnet(magnet_link)
+            if not info_hash:
+                self.metrics.record_skip("Invalid magnet link")
                 return None
 
-            total_size = info_elements[4].get_text()
-            # example: 'Total Size:4.23GB'
-            total_size = convert_size_to_bytes(total_size.split(":")[1].strip())
+            # Check for duplicates
+            if info_hash in processed_info_hashes:
+                self.metrics.record_skip("Duplicate info_hash")
+                return None
+            processed_info_hashes.add(info_hash)
 
-            page_url = title_element.find("a", href=True)["href"]
+            # Extract trackers
+            trackers = self._extract_trackers_from_magnet(magnet_link)
 
-            if page_url in processed_unique_data:
-                self.metrics.record_skip("Duplicate page URL")
+            # Extract size and info_hash from description
+            description_elem = item.find("description")
+            description = description_elem.text if description_elem is not None else ""
+            size, _ = self._parse_rss_description(description)
+
+            # Extract publish date
+            pub_date_elem = item.find("pubDate")
+            created_date = None
+            if pub_date_elem is not None and pub_date_elem.text:
+                try:
+                    # Parse RSS date format: "Tue,25 Nov 2025 20:25:35 -0000"
+                    date_str = pub_date_elem.text.strip()
+                    # Handle various RSS date formats
+                    for fmt in [
+                        "%a,%d %b %Y %H:%M:%S %z",
+                        "%a, %d %b %Y %H:%M:%S %z",
+                        "%a,%d %b %Y %H:%M:%S -0000",
+                        "%a, %d %b %Y %H:%M:%S -0000",
+                    ]:
+                        try:
+                            created_date = datetime.strptime(date_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+
+            # For RSS, we don't have seeders info, so we use a default
+            # We can skip old torrents based on date if needed
+            if created_date and created_date.replace(tzinfo=None) < datetime.now() - timedelta(days=365 * 2):
+                # Skip very old torrents (2+ years) as they likely have no seeders
+                self.metrics.record_skip("Very old torrent")
                 return None
 
-            # Add page URL to the processed set to avoid duplicates scraping the same page
-            processed_unique_data.add(page_url)
-            response = await self.make_request(
-                settings.bt4g_url + page_url, is_expected_to_fail=True
-            )
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            magnet_element = soup.find("a", {"class": "btn-info"})
-            if not magnet_element:
-                self.metrics.record_skip("Cloudflare protection")
-                return None
-
-            magnet_link = magnet_element["href"]
-            info_hash = magnet_link.split("btih:")[1].split("&")[0].lower()
-
-            file_info_elements = soup.find_all("div", {"class": "card-body"})[
-                -1
-            ].find_all("li")
-            file_info = []
-            seasons = set()
-            episodes = set()
-            for index, element in enumerate(file_info_elements):
-                if not element.contents or element.contents[0] is None:
-                    self.logger.warning(f"Skipping empty or invalid element: {element}")
-                    continue
-
-                file_name = element.contents[0].strip()
-                file_size = convert_size_to_bytes(
-                    element.find("b", {"class": "cpill"}).get_text(strip=True)
+            # Build file info from parsed title (RSS doesn't provide file list)
+            files = []
+            if catalog_type == "series":
+                # For series, create a file entry based on parsed data
+                season_num = parsed_data.get("seasons", [None])[0] if parsed_data.get("seasons") else season
+                episode_num = parsed_data.get("episodes", [None])[0] if parsed_data.get("episodes") else episode
+                files.append(
+                    StreamFileData(
+                        file_index=0,
+                        filename=torrent_title,
+                        size=size or 0,
+                        file_type="video",
+                        season_number=season_num,
+                        episode_number=episode_num,
+                    )
                 )
-                if (
-                    not is_video_file(file_name)
-                    or file_size < settings.min_scraping_video_size
-                ):
-                    continue
-                file_parsed_data = PTT.parse_title(file_name)
-                seasons.update(file_parsed_data.get("seasons", []))
-                episodes.update(file_parsed_data.get("episodes", []))
-                season_number = (
-                    file_parsed_data.get("seasons")[0]
-                    if file_parsed_data.get("seasons")
-                    else None
+            else:
+                files.append(
+                    StreamFileData(
+                        file_index=0,
+                        filename=torrent_title,
+                        size=size or 0,
+                        file_type="video",
+                    )
                 )
-                if (
-                    season_number is None
-                    and parsed_data.get("seasons")
-                    and len(parsed_data["seasons"]) == 1
-                ):
-                    season_number = parsed_data["seasons"][0]
-                episode_number = (
-                    file_parsed_data.get("episodes")[0]
-                    if file_parsed_data.get("episodes")
-                    else None
-                )
-                if (
-                    episode_number is None
-                    and parsed_data.get("episodes")
-                    and len(parsed_data["episodes"]) == 1
-                ):
-                    episode_number = parsed_data["episodes"][0]
-                file_info.append(
-                    {
-                        "filename": file_name,
-                        "file_size": file_size,
-                        "index": index,
-                        "season_number": season_number,
-                        "episode_number": episode_number,
-                    }
-                )
-
-            if not file_info:
-                self.metrics.record_skip("No valid video files")
-                return None
-
-            largest_file = max(file_info, key=lambda x: x["file_size"])
 
             stream = TorrentStreamData(
-                id=info_hash,
-                meta_id=metadata.id,
-                torrent_name=torrent_title,
-                filename=largest_file["filename"] if catalog_type == "movie" else None,
-                file_index=largest_file["index"] if catalog_type == "movie" else None,
-                size=total_size,
-                languages=parsed_data["languages"],
+                info_hash=info_hash,
+                meta_id=metadata.get_canonical_id(),
+                name=torrent_title,
+                size=size or 0,
+                source="BT4G",
+                seeders=0,  # RSS doesn't provide seeders
+                announce_list=trackers,
+                files=files,
+                # Single-value quality attributes
                 resolution=parsed_data.get("resolution"),
                 codec=parsed_data.get("codec"),
                 quality=parsed_data.get("quality"),
-                audio=parsed_data.get("audio"),
-                hdr=parsed_data.get("hdr"),
-                source="BT4G",
-                catalog=["bt4g_streams"],
-                seeders=seeders,
-                announce_list=[],
+                bit_depth=parsed_data.get("bit_depth"),
+                release_group=parsed_data.get("group"),
+                # Multi-value quality attributes (from PTT)
+                audio_formats=parsed_data.get("audio", []) if isinstance(parsed_data.get("audio"), list) else [],
+                channels=parsed_data.get("channels", []) if isinstance(parsed_data.get("channels"), list) else [],
+                hdr_formats=parsed_data.get("hdr", []) if isinstance(parsed_data.get("hdr"), list) else [],
+                languages=parsed_data.get("languages", []),
+                # Release flags
+                is_remastered=parsed_data.get("remastered", False),
+                is_upscaled=parsed_data.get("upscaled", False),
+                is_proper=parsed_data.get("proper", False),
+                is_repack=parsed_data.get("repack", False),
+                is_extended=parsed_data.get("extended", False),
+                is_complete=parsed_data.get("complete", False),
+                is_dubbed=parsed_data.get("dubbed", False),
+                is_subbed=parsed_data.get("subbed", False),
             )
 
+            # Validate series data
             if catalog_type == "series":
-                if not parsed_data["seasons"]:
-                    parsed_data["seasons"] = list(seasons)
-                if not parsed_data["episodes"]:
-                    parsed_data["episodes"] = list(episodes)
-                if not self._process_series_data(stream, parsed_data, file_info):
+                if not self._validate_series_data(stream, parsed_data, season, episode):
                     return None
-            else:
-                # For the Movies, should not have seasons and episodes
-                if (
-                    parsed_data.get("seasons")
-                    or parsed_data.get("episodes")
-                    or seasons
-                    or episodes
-                ):
+
+            # Validate movie data
+            if catalog_type == "movie":
+                if parsed_data.get("seasons") or parsed_data.get("episodes"):
                     self.metrics.record_skip("Unexpected season/episode info")
                     return None
 
@@ -468,37 +393,36 @@ class BT4GScraper(BaseScraper):
 
         except Exception as e:
             self.metrics.record_error("result_processing_error")
-            self.logger.exception(f"Error processing search result: {e}")
+            self.logger.exception(f"Error processing RSS item: {e}")
             return None
 
-    def _process_series_data(
+    def _validate_series_data(
         self,
         stream: TorrentStreamData,
         parsed_data: dict,
-        file_info: List[dict],
+        target_season: int | None,
+        target_episode: int | None,
     ) -> bool:
-        """Process series-specific data and validate season/episode information"""
-        if not parsed_data.get("seasons"):
+        """Validate series data matches the requested season/episode."""
+        seasons = parsed_data.get("seasons", [])
+        episodes = parsed_data.get("episodes", [])
+
+        # Must have season info
+        if not seasons:
             self.metrics.record_skip("Missing season info")
             return False
 
-        # Prepare episode data based on detailed file data
-        episode_data = [
-            EpisodeFileData(
-                season_number=file.get("season_number"),
-                episode_number=file.get("episode_number"),
-                filename=file.get("filename"),
-                size=file.get("file_size"),
-                file_index=file.get("index"),
-            )
-            for file in file_info
-            if file.get("season_number") is not None
-            and file.get("episode_number") is not None
-        ]
+        # If we're looking for a specific season, check it matches
+        if target_season is not None:
+            if target_season not in seasons:
+                self.metrics.record_skip("Season mismatch")
+                return False
 
-        if not episode_data:
-            self.metrics.record_skip("No valid episodes")
-            return False
+        # If we're looking for a specific episode, check it matches
+        # (or it's a season pack without specific episodes)
+        if target_episode is not None and episodes:
+            if target_episode not in episodes:
+                self.metrics.record_skip("Episode mismatch")
+                return False
 
-        stream.episode_files = episode_data
         return True

@@ -1,82 +1,129 @@
 from streaming_providers.alldebrid.utils import (
-    update_ad_cache_status,
-    fetch_downloaded_info_hashes_from_ad,
     delete_all_torrents_from_ad,
+    delete_torrent_from_ad,
+    fetch_downloaded_info_hashes_from_ad,
+    fetch_torrent_details_from_ad,
     get_video_url_from_alldebrid,
+    update_ad_cache_status,
     validate_alldebrid_credentials,
 )
+from streaming_providers.debrider.utils import (
+    get_video_url_from_debrider,
+    get_video_url_from_usenet_debrider,
+    update_debrider_cache_status,
+    update_debrider_usenet_cache_status,
+    validate_debrider_credentials,
+)
 from streaming_providers.debridlink.utils import (
-    update_dl_cache_status,
-    fetch_downloaded_info_hashes_from_dl,
     delete_all_torrents_from_dl,
+    delete_torrent_from_dl,
+    fetch_downloaded_info_hashes_from_dl,
+    fetch_torrent_details_from_dl,
     get_video_url_from_debridlink,
+    update_dl_cache_status,
     validate_debridlink_credentials,
 )
+from streaming_providers.easydebrid.utils import (
+    get_video_url_from_easydebrid,
+    update_easydebrid_cache_status,
+    validate_easydebrid_credentials,
+)
+from streaming_providers.easynews.utils import (
+    delete_all_usenet_from_easynews,
+    delete_usenet_from_easynews,
+    fetch_downloaded_usenet_hashes_from_easynews,
+    get_video_url_from_easynews,
+    update_easynews_cache_status,
+    validate_easynews_credentials,
+)
+from streaming_providers.nzbget.utils import (
+    delete_all_usenet_from_nzbget,
+    delete_usenet_from_nzbget,
+    fetch_downloaded_usenet_hashes_from_nzbget,
+    get_video_url_from_nzbget,
+    update_nzbget_cache_status,
+    validate_nzbget_credentials,
+)
 from streaming_providers.offcloud.utils import (
-    update_oc_cache_status,
-    fetch_downloaded_info_hashes_from_oc,
     delete_all_torrents_from_oc,
+    delete_torrent_from_oc,
+    fetch_downloaded_info_hashes_from_oc,
+    fetch_torrent_details_from_oc,
     get_video_url_from_offcloud,
+    update_oc_cache_status,
     validate_offcloud_credentials,
 )
 from streaming_providers.pikpak.utils import (
-    update_pikpak_cache_status,
-    fetch_downloaded_info_hashes_from_pikpak,
     delete_all_torrents_from_pikpak,
+    delete_torrent_from_pikpak,
+    fetch_downloaded_info_hashes_from_pikpak,
+    fetch_torrent_details_from_pikpak,
     get_video_url_from_pikpak,
+    update_pikpak_cache_status,
     validate_pikpak_credentials,
 )
 from streaming_providers.premiumize.utils import (
-    update_pm_cache_status,
-    fetch_downloaded_info_hashes_from_premiumize,
     delete_all_torrents_from_pm,
+    delete_torrent_from_pm,
+    fetch_downloaded_info_hashes_from_premiumize,
+    fetch_torrent_details_from_premiumize,
     get_video_url_from_premiumize,
+    update_pm_cache_status,
     validate_premiumize_credentials,
 )
 from streaming_providers.qbittorrent.utils import (
-    update_qbittorrent_cache_status,
-    fetch_info_hashes_from_webdav,
     delete_all_torrents_from_qbittorrent,
+    fetch_info_hashes_from_webdav,
     get_video_url_from_qbittorrent,
+    update_qbittorrent_cache_status,
     validate_qbittorrent_credentials,
 )
 from streaming_providers.realdebrid.utils import (
-    update_rd_cache_status,
-    fetch_downloaded_info_hashes_from_rd,
     delete_all_watchlist_rd,
+    delete_torrent_from_rd,
+    fetch_downloaded_info_hashes_from_rd,
+    fetch_torrent_details_from_rd,
     get_video_url_from_realdebrid,
+    update_rd_cache_status,
     validate_realdebrid_credentials,
 )
+from streaming_providers.sabnzbd.utils import (
+    delete_all_usenet_from_sabnzbd,
+    delete_usenet_from_sabnzbd,
+    fetch_downloaded_usenet_hashes_from_sabnzbd,
+    get_video_url_from_sabnzbd,
+    update_sabnzbd_cache_status,
+    validate_sabnzbd_credentials,
+)
 from streaming_providers.seedr.utils import (
-    update_seedr_cache_status,
-    fetch_downloaded_info_hashes_from_seedr,
     delete_all_torrents_from_seedr,
+    delete_torrent_from_seedr,
+    fetch_downloaded_info_hashes_from_seedr,
+    fetch_torrent_details_from_seedr,
     get_video_url_from_seedr,
+    update_seedr_cache_status,
     validate_seedr_credentials,
 )
-from streaming_providers.torbox.utils import (
-    update_torbox_cache_status,
-    fetch_downloaded_info_hashes_from_torbox,
-    delete_all_torrents_from_torbox,
-    get_video_url_from_torbox,
-    validate_torbox_credentials,
-)
 from streaming_providers.stremthru.utils import (
-    update_st_cache_status,
-    fetch_downloaded_info_hashes_from_st,
     delete_all_torrents_from_st,
+    fetch_downloaded_info_hashes_from_st,
     get_video_url_from_stremthru,
+    update_st_cache_status,
     validate_stremthru_credentials,
 )
-from streaming_providers.easydebrid.utils import (
-    update_easydebrid_cache_status,
-    get_video_url_from_easydebrid,
-    validate_easydebrid_credentials,
-)
-from streaming_providers.debrider.utils import (
-    update_debrider_cache_status,
-    get_video_url_from_debrider,
-    validate_debrider_credentials,
+from streaming_providers.torbox.utils import (
+    delete_all_torrents_from_torbox,
+    delete_all_usenet_from_torbox,
+    delete_torrent_from_torbox,
+    delete_usenet_from_torbox,
+    fetch_downloaded_info_hashes_from_torbox,
+    fetch_downloaded_usenet_hashes_from_torbox,
+    fetch_torrent_details_from_torbox,
+    get_video_url_from_torbox,
+    get_video_url_from_usenet_torbox,
+    update_torbox_cache_status,
+    update_torbox_usenet_cache_status,
+    validate_torbox_credentials,
 )
 
 # Define provider-specific cache update functions
@@ -109,6 +156,18 @@ FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS = {
     "stremthru": fetch_downloaded_info_hashes_from_st,
 }
 
+# Define provider-specific torrent details fetch functions (for watchlist import)
+FETCH_TORRENT_DETAILS_FUNCTIONS = {
+    "alldebrid": fetch_torrent_details_from_ad,
+    "debridlink": fetch_torrent_details_from_dl,
+    "offcloud": fetch_torrent_details_from_oc,
+    "pikpak": fetch_torrent_details_from_pikpak,
+    "premiumize": fetch_torrent_details_from_premiumize,
+    "realdebrid": fetch_torrent_details_from_rd,
+    "seedr": fetch_torrent_details_from_seedr,
+    "torbox": fetch_torrent_details_from_torbox,
+}
+
 
 DELETE_ALL_WATCHLIST_FUNCTIONS = {
     "alldebrid": delete_all_torrents_from_ad,
@@ -121,6 +180,18 @@ DELETE_ALL_WATCHLIST_FUNCTIONS = {
     "offcloud": delete_all_torrents_from_oc,
     "torbox": delete_all_torrents_from_torbox,
     "stremthru": delete_all_torrents_from_st,
+}
+
+# Define provider-specific single torrent delete functions
+DELETE_TORRENT_FUNCTIONS = {
+    "alldebrid": delete_torrent_from_ad,
+    "debridlink": delete_torrent_from_dl,
+    "offcloud": delete_torrent_from_oc,
+    "pikpak": delete_torrent_from_pikpak,
+    "premiumize": delete_torrent_from_pm,
+    "realdebrid": delete_torrent_from_rd,
+    "seedr": delete_torrent_from_seedr,
+    "torbox": delete_torrent_from_torbox,
 }
 
 
@@ -153,4 +224,58 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
     "stremthru": validate_stremthru_credentials,
     "easydebrid": validate_easydebrid_credentials,
     "debrider": validate_debrider_credentials,
+    # Usenet-only providers
+    "sabnzbd": validate_sabnzbd_credentials,
+    "nzbget": validate_nzbget_credentials,
+    "easynews": validate_easynews_credentials,
+}
+
+
+# =========================================================================
+# Usenet/NZB Provider Mappings
+# =========================================================================
+
+# Providers that support Usenet content
+USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "easynews"}
+
+# Define provider-specific Usenet cache update functions
+USENET_CACHE_UPDATE_FUNCTIONS = {
+    "torbox": update_torbox_usenet_cache_status,
+    "debrider": update_debrider_usenet_cache_status,
+    "sabnzbd": update_sabnzbd_cache_status,
+    "nzbget": update_nzbget_cache_status,
+    "easynews": update_easynews_cache_status,
+}
+
+# Define provider-specific Usenet video URL functions
+USENET_GET_VIDEO_URL_FUNCTIONS = {
+    "torbox": get_video_url_from_usenet_torbox,
+    "debrider": get_video_url_from_usenet_debrider,
+    "sabnzbd": get_video_url_from_sabnzbd,
+    "nzbget": get_video_url_from_nzbget,
+    "easynews": get_video_url_from_easynews,
+}
+
+# Define provider-specific Usenet downloaded hashes fetch functions
+USENET_FETCH_DOWNLOADED_HASHES_FUNCTIONS = {
+    "torbox": fetch_downloaded_usenet_hashes_from_torbox,
+    "sabnzbd": fetch_downloaded_usenet_hashes_from_sabnzbd,
+    "nzbget": fetch_downloaded_usenet_hashes_from_nzbget,
+    "easynews": fetch_downloaded_usenet_hashes_from_easynews,
+}
+
+# Define provider-specific Usenet delete all functions
+USENET_DELETE_ALL_FUNCTIONS = {
+    "torbox": delete_all_usenet_from_torbox,
+    "sabnzbd": delete_all_usenet_from_sabnzbd,
+    "nzbget": delete_all_usenet_from_nzbget,
+    "easynews": delete_all_usenet_from_easynews,
+}
+
+# Define provider-specific single Usenet delete functions
+USENET_DELETE_FUNCTIONS = {
+    "torbox": delete_usenet_from_torbox,
+    "sabnzbd": delete_usenet_from_sabnzbd,
+    "nzbget": delete_usenet_from_nzbget,
+    "easynews": delete_usenet_from_easynews,
 }

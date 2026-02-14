@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -18,7 +18,7 @@ class RemoteConfigManager:
     def __init__(self):
         self.redis_client = REDIS_SYNC_CLIENT
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """
         Retrieve the configuration, first checking Redis cache,
         then fetching from remote or local source if necessary.
@@ -35,14 +35,14 @@ class RemoteConfigManager:
             logger.error(f"Error fetching config: {e}")
             return self._load_local_fallback()
 
-    def _get_cached_config(self) -> Optional[Dict[str, Any]]:
+    def _get_cached_config(self) -> dict[str, Any] | None:
         """Retrieve the configuration from Redis cache if available."""
         cached_config = self.redis_client.get(self.CACHE_KEY)
         if cached_config:
             return json.loads(cached_config)
         return None
 
-    def _fetch_config(self) -> Dict[str, Any]:
+    def _fetch_config(self) -> dict[str, Any]:
         """Fetch the configuration from either remote or local source."""
         if settings.use_config_source == "local":
             return self._load_local_config(settings.local_config_path)
@@ -50,12 +50,12 @@ class RemoteConfigManager:
             return self._fetch_remote_config(settings.remote_config_source)
         return self._load_local_config(settings.remote_config_source)
 
-    def _cache_config(self, config: Dict[str, Any]) -> None:
+    def _cache_config(self, config: dict[str, Any]) -> None:
         """Cache the configuration in Redis."""
         self.redis_client.setex(self.CACHE_KEY, self.CACHE_TTL, json.dumps(config))
 
     @staticmethod
-    def _fetch_remote_config(config_url: str) -> Dict[str, Any]:
+    def _fetch_remote_config(config_url: str) -> dict[str, Any]:
         """Fetch the configuration from a remote URL."""
         try:
             response = httpx.get(config_url, timeout=10)
@@ -69,7 +69,7 @@ class RemoteConfigManager:
             raise
 
     @staticmethod
-    def _load_local_config(config_path: str) -> Dict[str, Any]:
+    def _load_local_config(config_path: str) -> dict[str, Any]:
         """Load the configuration from a local file."""
         path = Path(config_path)
         if not path.is_file():
@@ -81,7 +81,7 @@ class RemoteConfigManager:
             logger.error(f"Invalid JSON in local config file: {e}")
             raise
 
-    def _load_local_fallback(self) -> Dict[str, Any]:
+    def _load_local_fallback(self) -> dict[str, Any]:
         """Load the local fallback configuration."""
         try:
             return self._load_local_config(settings.local_config_path)
@@ -89,7 +89,7 @@ class RemoteConfigManager:
             logger.error(f"Failed to load local fallback config: {e}")
             return {}
 
-    def get_start_url(self, spider_name: str) -> Optional[str]:
+    def get_start_url(self, spider_name: str) -> str | None:
         """Get the start URL for a specific spider."""
         config = self.get_config()
         return config.get("start_urls", {}).get(spider_name)

@@ -1,3 +1,12 @@
+# Frontend build stage
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Python builder stage
 FROM python:3.13-slim-bookworm AS builder
 
 WORKDIR /mediafusion
@@ -27,6 +36,7 @@ RUN --mount=type=cache,target=/mediafusion/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project --compile-bytecode
 
+# Runtime stage
 FROM python:3.13-slim-bookworm AS runtime
 
 ARG VERSION
@@ -35,7 +45,7 @@ WORKDIR /mediafusion
 
 # Install runtime dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends curl postgresql-client && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -50,6 +60,9 @@ ENV PATH="/mediafusion/.venv/bin:$PATH"
 ENV VERSION=${VERSION}
 
 COPY --chown=mediafusion:mediafusion . /mediafusion
+
+# Copy the frontend build from the frontend-builder stage
+COPY --from=frontend-builder --chown=mediafusion:mediafusion /app/frontend/dist /mediafusion/frontend/dist
 
 USER mediafusion
 

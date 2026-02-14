@@ -37,13 +37,9 @@ def parse_torrent_downloads(soup, torrent_info, url):
         torrent_info["magnetUrl"] = magnet_link.get("href")
         torrent_info["downloadUrl"] = None
 
-    info_hash_span = soup.find("div", id="main_wrapper").find(
-        "span", string=re.compile("Infohash:")
-    )
+    info_hash_span = soup.find("div", id="main_wrapper").find("span", string=re.compile("Infohash:"))
     if info_hash_span:
-        info_hash = (
-            info_hash_span.find_parent("p").text.replace("Infohash:", "").strip()
-        )
+        info_hash = info_hash_span.find_parent("p").text.replace("Infohash:", "").strip()
         torrent_info["infoHash"] = info_hash
 
     return torrent_info

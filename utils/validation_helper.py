@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import Depends, HTTPException
@@ -9,9 +9,9 @@ from fastapi.security import APIKeyHeader
 
 from db import schemas
 from db.config import settings
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils import const
 from utils.network import is_private_ip
-from db.redis_database import REDIS_ASYNC_CLIENT
 
 # API Key Header for authentication
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -39,9 +39,7 @@ def is_valid_url(url: str) -> bool:
 async def does_url_exist(url: str) -> bool:
     async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
         try:
-            response = await client.head(
-                url, timeout=10, headers=const.UA_HEADER, follow_redirects=True
-            )
+            response = await client.head(url, timeout=10, headers=const.UA_HEADER, follow_redirects=True)
             response.raise_for_status()
             return response.status_code == 200
         except httpx.HTTPStatusError as err:
@@ -56,18 +54,14 @@ async def validate_image_url(url: str) -> bool:
     return is_valid_url(url) and await does_url_exist(url)
 
 
-async def validate_live_stream_url(
-    url: str, behaviour_hint: dict, validate_url: bool = False
-) -> bool:
+async def validate_live_stream_url(url: str, behaviour_hint: dict, validate_url: bool = False) -> bool:
     if validate_url and not is_valid_url(url):
         return False
 
     headers = behaviour_hint.get("proxyHeaders", {}).get("request", {})
     async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
         try:
-            response = await client.head(
-                url, timeout=10, headers=headers, follow_redirects=True
-            )
+            response = await client.head(url, timeout=10, headers=headers, follow_redirects=True)
             response.raise_for_status()
             content_type = (
                 behaviour_hint.get("proxyHeaders", {})
@@ -126,11 +120,7 @@ async def validate_tv_metadata(metadata: schemas.TVMetaData) -> list[schemas.TVS
             stream_validation_tasks.append(
                 validate_live_stream_url(
                     stream.url,
-                    (
-                        stream.behaviorHints.model_dump(exclude_none=True)
-                        if stream.behaviorHints
-                        else {}
-                    ),
+                    (stream.behaviorHints.model_dump(exclude_none=True) if stream.behaviorHints else {}),
                     validate_url=True,
                 )
             )
@@ -268,10 +258,7 @@ def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
         return False
 
     # Skip validation if filters are disabled
-    if (
-        "Disable" in user_data.nudity_filter
-        and "Disable" in user_data.certification_filter
-    ):
+    if "Disable" in user_data.nudity_filter and "Disable" in user_data.certification_filter:
         return True
 
     # Check nudity status filter
@@ -289,8 +276,7 @@ def validate_parent_guide_nudity(metadata, user_data: schemas.UserData) -> bool:
                 return False
 
         if metadata.parent_guide_certificates and any(
-            certificate in filter_certification_values
-            for certificate in metadata.parent_guide_certificates
+            certificate in filter_certification_values for certificate in metadata.parent_guide_certificates
         ):
             return False
 
@@ -362,9 +348,7 @@ async def validate_rpdb_token(user_data: schemas.UserData) -> dict:
     if not user_data.rpdb_config:
         return {"status": "success", "message": "RPDB is not enabled."}
 
-    validation_url = (
-        f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/isValid"
-    )
+    validation_url = f"https://api.ratingposterdb.com/{user_data.rpdb_config.api_key}/isValid"
     return await validate_service(
         url=validation_url,
         invalid_creds_message="Invalid RPDB API Key. Please check your RPDB API Key.",
@@ -375,9 +359,7 @@ async def validate_mdblist_token(user_data: schemas.UserData) -> dict:
     if not user_data.mdblist_config:
         return {"status": "success", "message": "MDBList is not enabled."}
 
-    validation_url = (
-        f"https://api.mdblist.com/user?apikey={user_data.mdblist_config.api_key}"
-    )
+    validation_url = f"https://api.mdblist.com/user?apikey={user_data.mdblist_config.api_key}"
     return await validate_service(
         url=validation_url,
         invalid_creds_message="Invalid MDBList API Key. Please check your MDBList API Key.",

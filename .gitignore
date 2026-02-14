@@ -14,7 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -62,7 +61,6 @@ db.sqlite3
 db.sqlite3-journal
 
 # Flask stuff:
-instance/
 .webassets-cache
 
 # Scrapy stuff:
@@ -143,6 +141,6 @@ mediafusion.local*
 .lock
 kodi/build/
 kodi/*.zip
-!kodi/**/lib/
 .vscode/
 *.sql
+.cursor/

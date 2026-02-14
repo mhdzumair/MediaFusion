@@ -86,6 +86,7 @@ services:
   # PostgreSQL - Primary (read-write)
   postgres:
     image: postgres:18-alpine
+    shm_size: 512mb  # Must be >= shared_buffers (256MB) + overhead
     environment:
       POSTGRES_USER: mediafusion
       POSTGRES_PASSWORD: mediafusion
@@ -128,6 +129,7 @@ services:
       - "max_parallel_maintenance_workers=2"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     restart: unless-stopped

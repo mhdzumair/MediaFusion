@@ -1,38 +1,59 @@
 #!/bin/bash
 
 # MediaFusion Browser Extension - Universal Build Script
-# This script builds the extension for all supported browsers
+# This script builds the React popup and packages for all browsers
 
 set -e  # Exit on any error
 
-echo "🚀 MediaFusion Extension Universal Builder"
-echo "=========================================="
+echo "🚀 MediaFusion Extension Universal Builder v2.0"
+echo "================================================"
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Clean previous builds
 echo "🧹 Cleaning previous builds..."
 rm -rf dist/
-mkdir -p dist
 
-# Create base structure
-echo "📁 Creating base structure..."
+# Build React popup
+echo "⚛️  Building React popup..."
+npm run build
+
+# Create browser-specific directories
+echo "📁 Creating browser structure..."
 mkdir -p dist/firefox
 mkdir -p dist/chrome
 mkdir -p dist/edge
 
-# Copy common files to all builds
+# Copy popup build to all browsers
+copy_popup() {
+    local target_dir=$1
+    echo "📋 Copying popup to $target_dir..."
+    
+    # Create popup directory
+    mkdir -p "$target_dir/popup"
+    
+    # Copy built popup files
+    if [ -d "dist/popup" ]; then
+        cp -r dist/popup/* "$target_dir/popup/"
+    fi
+}
+
+# Copy common extension files
 copy_common_files() {
     local target_dir=$1
-    echo "📋 Copying common files to $target_dir..."
+    echo "📋 Copying extension files to $target_dir..."
 
     cp -r background "$target_dir/"
     cp -r content "$target_dir/"
-    cp -r popup "$target_dir/"
     cp -r icons "$target_dir/"
 }
 
 # Build Firefox version
 echo ""
 echo "🦊 Building Firefox version..."
+copy_popup "dist/firefox"
 copy_common_files "dist/firefox"
 cp manifest.json dist/firefox/manifest.json
 echo "✅ Firefox build completed"
@@ -40,6 +61,7 @@ echo "✅ Firefox build completed"
 # Build Chrome version
 echo ""
 echo "🔵 Building Chrome version..."
+copy_popup "dist/chrome"
 copy_common_files "dist/chrome"
 cp manifest_chrome.json dist/chrome/manifest.json
 echo "✅ Chrome build completed"
@@ -47,6 +69,7 @@ echo "✅ Chrome build completed"
 # Build Edge version (same as Chrome)
 echo ""
 echo "🟦 Building Edge version..."
+copy_popup "dist/edge"
 copy_common_files "dist/edge"
 cp manifest_chrome.json dist/edge/manifest.json
 echo "✅ Edge build completed"

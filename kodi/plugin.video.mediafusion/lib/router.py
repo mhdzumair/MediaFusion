@@ -6,16 +6,16 @@ import xbmc
 import xbmcgui
 import xbmcplugin
 
-from .parser import parse_stream_info, format_stream_label
+from .parser import format_stream_label, parse_stream_info
 from .utils import (
-    fetch_data,
-    build_url,
     ADDON_HANDLE,
     BASE_URL,
     SECRET_STR,
-    log,
+    build_url,
     convert_info_hash_to_magnet,
+    fetch_data,
     is_elementum_installed_and_enabled,
+    log,
 )
 
 
@@ -50,9 +50,7 @@ def list_categories():
 
         url = build_url(action, catalog_type=catalog["type"], catalog_id=catalog["id"])
         li = xbmcgui.ListItem(label=label)
-        xbmcplugin.addDirectoryItem(
-            handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
-        )
+        xbmcplugin.addDirectoryItem(handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True)
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
 
@@ -68,14 +66,10 @@ def process_videos(videos, action, catalog_type, catalog_id):
                 video_id=video["id"],
             )
         else:
-            url = build_url(
-                "get_streams", video_id=video["id"], catalog_type=catalog_type
-            )
+            url = build_url("get_streams", video_id=video["id"], catalog_type=catalog_type)
         li = xbmcgui.ListItem(label=video["name"])
         tags = li.getVideoInfoTag()
-        tags.setUniqueID(
-            video["id"], type="imdb" if video["id"].startswith("tt") else "mf"
-        )
+        tags.setUniqueID(video["id"], type="imdb" if video["id"].startswith("tt") else "mf")
         if video["id"].startswith("tt"):
             tags.setIMDBNumber(video["id"])
             tags.setUniqueID(video["id"], type="imdb")
@@ -100,9 +94,7 @@ def process_videos(videos, action, catalog_type, catalog_id):
             }
         )
 
-        xbmcplugin.addDirectoryItem(
-            handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
-        )
+        xbmcplugin.addDirectoryItem(handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True)
 
 
 def list_catalog(params):
@@ -118,9 +110,7 @@ def list_catalog(params):
 
     videos = response.get("metas", [])
     if not videos:
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "No videos available", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "No videos available", xbmcgui.NOTIFICATION_ERROR)
         return
 
     content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
@@ -136,9 +126,7 @@ def list_catalog(params):
             skip=skip + len(videos),
         )
         li = xbmcgui.ListItem(label="Next Page")
-        xbmcplugin.addDirectoryItem(
-            handle=ADDON_HANDLE, url=next_url, listitem=li, isFolder=True
-        )
+        xbmcplugin.addDirectoryItem(handle=ADDON_HANDLE, url=next_url, listitem=li, isFolder=True)
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
@@ -158,16 +146,12 @@ def search_catalog(params):
 
     videos = response.get("metas", [])
     if not videos:
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "No results found", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "No results found", xbmcgui.NOTIFICATION_ERROR)
         return
 
     content_type = "movies" if params["catalog_type"] == "movie" else "tvshows"
     xbmcplugin.setContent(ADDON_HANDLE, content_type)
-    process_videos(
-        videos, "search_catalog", params["catalog_type"], params["catalog_id"]
-    )
+    process_videos(videos, "search_catalog", params["catalog_type"], params["catalog_id"])
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
@@ -184,9 +168,7 @@ def list_seasons(params):
     meta_data = response.get("meta", {})
     videos = meta_data.get("videos", [])
     if not videos:
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "No seasons available", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "No seasons available", xbmcgui.NOTIFICATION_ERROR)
         return
 
     available_seasons = set(video["season"] for video in videos)
@@ -226,9 +208,7 @@ def list_seasons(params):
             }
         )
 
-        xbmcplugin.addDirectoryItem(
-            handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
-        )
+        xbmcplugin.addDirectoryItem(handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True)
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
@@ -245,9 +225,7 @@ def list_episodes(params):
     meta_data = response.get("meta", {})
     videos = meta_data.get("videos", [])
     if not videos:
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "No episodes available", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "No episodes available", xbmcgui.NOTIFICATION_ERROR)
         return
 
     for video in videos:
@@ -287,9 +265,7 @@ def list_episodes(params):
             }
         )
 
-        xbmcplugin.addDirectoryItem(
-            handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True
-        )
+        xbmcplugin.addDirectoryItem(handle=ADDON_HANDLE, url=url, listitem=li, isFolder=True)
 
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
@@ -305,9 +281,7 @@ def get_streams(params):
 
     streams = response.get("streams", [])
     if not streams:
-        xbmcgui.Dialog().notification(
-            "MediaFusion", "No streams available", xbmcgui.NOTIFICATION_ERROR
-        )
+        xbmcgui.Dialog().notification("MediaFusion", "No streams available", xbmcgui.NOTIFICATION_ERROR)
         return
 
     is_imdb = params["video_id"].startswith("tt")
@@ -317,12 +291,8 @@ def get_streams(params):
         video_id, season, episode = params["video_id"], None, None
 
     for stream in streams:
-        main_label, detail_label = format_stream_label(
-            stream["name"], stream["description"]
-        )
-        video_info = parse_stream_info(
-            stream["name"], stream["description"], stream.get("behaviorHints", {})
-        )
+        main_label, detail_label = format_stream_label(stream["name"], stream["description"])
+        video_info = parse_stream_info(stream["name"], stream["description"], stream.get("behaviorHints", {}))
 
         li = xbmcgui.ListItem(label=main_label, offscreen=True)
         tags = li.getVideoInfoTag()
@@ -364,20 +334,14 @@ def get_streams(params):
                     xbmcgui.NOTIFICATION_ERROR,
                 )
                 return
-            magnet_link = convert_info_hash_to_magnet(
-                stream.get("infoHash"), stream.get("sources", [])
-            )
+            magnet_link = convert_info_hash_to_magnet(stream.get("infoHash"), stream.get("sources", []))
             video_url = f"plugin://plugin.video.elementum/play?uri={parse.quote_plus(magnet_link)}"
         else:
             continue
 
         playback_params = {
             "video_url": video_url,
-            "headers": parse.urlencode(
-                stream.get("behaviorHints", {})
-                      .get("proxyHeaders", {})
-                      .get("request", {})
-            ),
+            "headers": parse.urlencode(stream.get("behaviorHints", {}).get("proxyHeaders", {}).get("request", {})),
         }
         if is_imdb:
             playback_params["imdb"] = video_id
@@ -421,8 +385,8 @@ def play_video(params):
         li.setInfo("video", {"season": season, "episode": episode})
     if imdb:
         li.setInfo("video", {"imdbnumber": imdb})
-        ids = json.dumps({u'imdb': imdb})
-        xbmcgui.Window(10000).setProperty('script.trakt.ids', ids)
+        ids = json.dumps({"imdb": imdb})
+        xbmcgui.Window(10000).setProperty("script.trakt.ids", ids)
 
     xbmcplugin.setResolvedUrl(ADDON_HANDLE, True, li)
 

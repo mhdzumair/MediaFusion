@@ -1,41 +1,50 @@
 // MediaFusion Browser Extension - Background Script
 // Handles API communication and cross-origin requests
+// Updated for v2.0 with React popup and new API endpoints
+
+const STORAGE_KEY = "mediafusion_settings";
+const PREFILLED_KEY = "mediafusion_prefilled_data";
 
 class MediaFusionAPI {
   constructor() {
-    this.baseUrl = "https://mediafusion.elfhosted.com";
-    this.uploaderName = "Anonymous";
+    this.baseUrl = "";
+    this.authToken = null;
+    this.apiKey = null;
     this.init();
   }
 
   async init() {
     // Load settings from storage
     const settings = await this.getSettings();
-    this.baseUrl = settings.baseUrl || "https://mediafusion.elfhosted.com";
-    this.uploaderName = settings.uploaderName || "Anonymous";
+    this.baseUrl = settings.instanceUrl || "";
+    this.authToken = settings.authToken || null;
+    this.apiKey = settings.apiKey || null;
   }
 
   async getSettings() {
     return new Promise((resolve) => {
       const defaultSettings = {
-        baseUrl: "https://mediafusion.elfhosted.com",
-        uploaderName: "Anonymous",
-        theme: "auto",
+        instanceUrl: "",
+        authToken: null,
+        defaultContentType: "movie",
+        autoAnalyze: true,
       };
 
       if (typeof browser !== "undefined" && browser.storage) {
         // Firefox
         browser.storage.sync
-          .get(["baseUrl", "uploaderName", "theme"])
+          .get([STORAGE_KEY])
           .then((result) => {
-            resolve({ ...defaultSettings, ...result });
+            const stored = result[STORAGE_KEY] || {};
+            resolve({ ...defaultSettings, ...stored });
           });
       } else if (typeof chrome !== "undefined" && chrome.storage) {
         // Chrome
         chrome.storage.sync.get(
-          ["baseUrl", "uploaderName", "theme"],
+          [STORAGE_KEY],
           (result) => {
-            resolve({ ...defaultSettings, ...result });
+            const stored = result[STORAGE_KEY] || {};
+            resolve({ ...defaultSettings, ...stored });
           }
         );
       } else {
@@ -48,10 +57,10 @@ class MediaFusionAPI {
     return new Promise((resolve) => {
       if (typeof browser !== "undefined" && browser.storage) {
         // Firefox
-        browser.storage.sync.set(settings).then(resolve);
+        browser.storage.sync.set({ [STORAGE_KEY]: settings }).then(resolve);
       } else if (typeof chrome !== "undefined" && chrome.storage) {
         // Chrome
-        chrome.storage.sync.set(settings, resolve);
+        chrome.storage.sync.set({ [STORAGE_KEY]: settings }, resolve);
       } else {
         resolve();
       }
@@ -59,9 +68,41 @@ class MediaFusionAPI {
   }
 
   async updateSettings(newSettings) {
-    await this.saveSettings(newSettings);
-    this.baseUrl = newSettings.baseUrl || this.baseUrl;
-    this.uploaderName = newSettings.uploaderName || this.uploaderName;
+    const current = await this.getSettings();
+    const updated = { ...current, ...newSettings };
+    await this.saveSettings(updated);
+    this.baseUrl = updated.instanceUrl || this.baseUrl;
+    this.authToken = updated.authToken || this.authToken;
+    this.apiKey = updated.apiKey || this.apiKey;
+  }
+
+  // Save prefilled data for the popup
+  async savePrefilledData(data) {
+    return new Promise((resolve) => {
+      const storageData = { [PREFILLED_KEY]: data };
+      if (typeof browser !== "undefined" && browser.storage) {
+        browser.storage.local.set(storageData).then(resolve);
+      } else if (typeof chrome !== "undefined" && chrome.storage) {
+        chrome.storage.local.set(storageData, resolve);
+      } else {
+        resolve();
+      }
+    });
+  }
+
+  // Get authorization headers
+  getAuthHeaders() {
+    const headers = {
+      "Accept": "application/json",
+    };
+    if (this.authToken) {
+      headers["Authorization"] = `Bearer ${this.authToken}`;
+    }
+    // Include API key for private instances
+    if (this.apiKey) {
+      headers["X-API-Key"] = this.apiKey;
+    }
+    return headers;
   }
 
   validateUrl(url) {
@@ -83,11 +124,9 @@ class MediaFusionAPI {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/scraper/`, {
+      const response = await fetch(`${this.baseUrl}/health`, {
         method: "GET",
-        headers: {
-          "Content-Type": "text/html",
-        },
+        headers: this.getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -345,29 +384,21 @@ const handleMessage = async (message, sender, sendResponse) => {
           const popupData = message.data;
 
           // Use URL parameters only (simpler and more reliable)
+          // Save prefilled data to storage for the React popup to read
+          await mediaFusionAPI.savePrefilledData({
+            magnetLink: popupData.magnetLink,
+            torrentUrl: popupData.torrentUrl,
+            contentType: popupData.contentType,
+            pageUrl: popupData.sourceUrl,
+            pageTitle: popupData.title,
+          });
+
           const popupUrl =
             typeof browser !== "undefined" && browser.runtime
-              ? browser.runtime.getURL("popup/popup.html")
-              : chrome.runtime.getURL("popup/popup.html");
-          const params = new URLSearchParams();
+              ? browser.runtime.getURL("popup/index.html")
+              : chrome.runtime.getURL("popup/index.html");
 
-          if (popupData.magnetLink) {
-            params.append("magnet", encodeURIComponent(popupData.magnetLink));
-          }
-          if (popupData.torrentUrl) {
-            params.append("torrent", encodeURIComponent(popupData.torrentUrl));
-          }
-          if (popupData.contentType) {
-            params.append("type", popupData.contentType);
-          }
-          if (popupData.sourceUrl) {
-            params.append("source", encodeURIComponent(popupData.sourceUrl));
-          }
-          if (popupData.title) {
-            params.append("title", encodeURIComponent(popupData.title));
-          }
-
-          const fullUrl = `${popupUrl}?${params.toString()}`;
+          const fullUrl = popupUrl;
 
           // Try to open in a popup window, fallback to new tab if windows API is not available
           let windowOpened = false;
@@ -446,6 +477,42 @@ const handleMessage = async (message, sender, sendResponse) => {
         }
         break;
 
+      case "saveAuthFromWebsite":
+        try {
+          const authData = message.data;
+          
+          // Get current settings
+          const currentSettings = await mediaFusionAPI.getSettings();
+          
+          // Update settings with auth data
+          const updatedSettings = {
+            ...currentSettings,
+            instanceUrl: authData.instanceUrl || currentSettings.instanceUrl,
+            authToken: authData.token,
+            user: authData.user,
+          };
+          
+          // If API key was provided, we might want to store it
+          // (though typically the website handles this)
+          if (authData.apiKey) {
+            updatedSettings.apiKey = authData.apiKey;
+          }
+          
+          await mediaFusionAPI.saveSettings(updatedSettings);
+          
+          // Update the API instance
+          mediaFusionAPI.baseUrl = updatedSettings.instanceUrl;
+          mediaFusionAPI.authToken = updatedSettings.authToken;
+          
+          console.log('[MediaFusion Background] Auth saved for user:', authData.user?.email);
+          
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('[MediaFusion Background] Error saving auth:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       case "openBulkUploadPopup":
         try {
           const bulkData = message.data;
@@ -453,8 +520,8 @@ const handleMessage = async (message, sender, sendResponse) => {
           // Create bulk upload popup URL with data
           const popupUrl =
             typeof browser !== "undefined" && browser.runtime
-              ? browser.runtime.getURL("popup/popup.html")
-              : chrome.runtime.getURL("popup/popup.html");
+              ? browser.runtime.getURL("popup/index.html")
+              : chrome.runtime.getURL("popup/index.html");
 
           const params = new URLSearchParams();
           params.append("bulk", "true");

@@ -1,17 +1,16 @@
 from datetime import timedelta
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-import PTT
 import httpx
+import PTT
 
 from db.config import settings
-from db.schemas import MetadataData, TorrentStreamData
-from db.schemas import UserData
+from db.schemas import MetadataData, TorrentStreamData, UserData
 from scrapers.stremio_addons import StremioScraper
+from utils import const
 from utils.crypto import crypto_utils
 from utils.parser import convert_size_to_bytes
 from utils.runtime_const import MEDIAFUSION_SEARCH_TTL
-from utils import const
 
 
 class MediafusionScraper(StremioScraper):
@@ -24,7 +23,8 @@ class MediafusionScraper(StremioScraper):
             logger_name=__name__,
         )
         self.http_client = httpx.AsyncClient(
-            timeout=30, proxy=settings.requests_proxy_url,
+            timeout=30,
+            proxy=settings.requests_proxy_url,
             headers=const.UA_HEADER,
         )
 
@@ -33,21 +33,24 @@ class MediafusionScraper(StremioScraper):
         user_data: UserData,
         metadata: MetadataData,
         catalog_type: str,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
+        season: int | None = None,
+        episode: int | None = None,
     ) -> str:
-        url = f"{self.base_url}/D-/stream/{catalog_type}/{metadata.id}.json"
+        # MediaFusion requires IMDb ID
+        imdb_id = metadata.get_imdb_id()
+        if not imdb_id:
+            raise ValueError(f"MediaFusion requires IMDb ID, but none available for {metadata.title}")
+
+        url = f"{self.base_url}/D-/stream/{catalog_type}/{imdb_id}.json"
         if catalog_type == "series":
-            url = f"{self.base_url}/D-/stream/{catalog_type}/{metadata.id}:{season}:{episode}.json"
+            url = f"{self.base_url}/D-/stream/{catalog_type}/{imdb_id}:{season}:{episode}.json"
         upstream_user_data = UserData(
             api_password=settings.mediafusion_api_password,
-            streaming_provider=user_data.streaming_provider,
+            streaming_provider=user_data.get_primary_provider(),
             nudity_filter=user_data.nudity_filter,
             certification_filter=user_data.certification_filter,
         )
-        self.http_client.headers.update(
-            {"encoded_user_data": crypto_utils.encode_user_data(upstream_user_data)}
-        )
+        self.http_client.headers.update({"encoded_user_data": crypto_utils.encode_user_data(upstream_user_data)})
         return url
 
     @StremioScraper.cache(ttl=MEDIAFUSION_SEARCH_TTL)
@@ -57,14 +60,12 @@ class MediafusionScraper(StremioScraper):
         user_data,
         metadata: MetadataData,
         catalog_type: str,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
-    ) -> List[TorrentStreamData]:
-        return await super()._scrape_and_parse(
-            user_data, metadata, catalog_type, season, episode
-        )
+        season: int | None = None,
+        episode: int | None = None,
+    ) -> list[TorrentStreamData]:
+        return await super()._scrape_and_parse(user_data, metadata, catalog_type, season, episode)
 
-    def get_adult_content_field(self, stream_data: Dict[str, Any]) -> str:
+    def get_adult_content_field(self, stream_data: dict[str, Any]) -> str:
         return stream_data["description"]
 
     def get_scraper_name(self) -> str:
@@ -87,9 +88,7 @@ class MediafusionScraper(StremioScraper):
             {
                 "source": source,
                 "info_hash": info_hash,
-                "size": convert_size_to_bytes(
-                    self.extract_size_string(stream["description"])
-                ),
+                "size": convert_size_to_bytes(self.extract_size_string(stream["description"])),
                 "torrent_name": torrent_name,
                 "seeders": self.extract_seeders(stream["description"]),
                 "filename": stream.get("behaviorHints", {}).get("filename"),

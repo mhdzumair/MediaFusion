@@ -4,10 +4,16 @@ from datetime import datetime
 
 from scrapy.exceptions import DropItem
 
-from db.schemas import EpisodeFileData
+from db.schemas import StreamFileData
+from utils.sports_parser import RESOLUTION_MAP
 
 
 class FormulaParserPipeline:
+    """Pipeline for parsing Formula 1/2/3 content from various uploaders.
+
+    Uses shared sports parser utilities for resolution normalization.
+    """
+
     def __init__(self):
         self.name_parser_patterns = {
             "egortech": [
@@ -152,9 +158,10 @@ class FormulaParserPipeline:
 
         self.default_poster = "https://i.postimg.cc/DZP4x8kM/Poster1.jpg"
 
+        # Use shared RESOLUTION_MAP with local overrides
         self.smcgill1969_resolutions = {
-            "4K": "4k",
-            "SD": "576p",
+            "4K": RESOLUTION_MAP.get("4K", "4k"),
+            "SD": RESOLUTION_MAP.get("SD", "576p"),
             "1080p": "1080p",
         }
 
@@ -197,9 +204,7 @@ class FormulaParserPipeline:
                 series = f"Formula {data['Series']}"
                 formula_round = f"R{data['Round']}" if data.get("Round") else None
                 formula_event = (
-                    data.get("Event").replace(".", " ").replace(" Grand Prix", "")
-                    if data.get("Event")
-                    else None
+                    data.get("Event").replace(".", " ").replace(" Grand Prix", "") if data.get("Event") else None
                 )
                 torrent_data.update(
                     {
@@ -239,9 +244,7 @@ class FormulaParserPipeline:
             if match:
                 data = match.groupdict()
                 series = f"Formula {data['Series']}"
-                event, episode_name = self.event_and_episode_name_parser(
-                    data["EventAndEpisodeName"]
-                )
+                event, episode_name = self.event_and_episode_name_parser(data["EventAndEpisodeName"])
 
                 formula_round = f"R{data['Round']}" if data.get("Round") else None
 
@@ -277,9 +280,7 @@ class FormulaParserPipeline:
             if match:
                 data = match.groupdict()
                 series = f"Formula {data['Series']}"
-                event, episode_name = self.event_and_episode_name_parser(
-                    data["EventAndEpisodeName"]
-                )
+                event, episode_name = self.event_and_episode_name_parser(data["EventAndEpisodeName"])
                 formula_round = f"R{data['Round']}" if data.get("Round") else None
 
                 torrent_data.update(
@@ -297,9 +298,7 @@ class FormulaParserPipeline:
                             )
                         ),
                         "year": int(data["Year"]),
-                        "resolution": self.smcgill1969_resolutions.get(
-                            data["Resolution"]
-                        ),
+                        "resolution": self.smcgill1969_resolutions.get(data["Resolution"]),
                         "event": event,
                         "episode_name": episode_name,
                     }
@@ -328,48 +327,36 @@ class FormulaParserPipeline:
         episodes = []
 
         if contains_index != -1:
-            contents_section = torrent_description[
-                contains_index + len("Contains:") :
-            ].strip()
+            contents_section = torrent_description[contains_index + len("Contains:") :].strip()
 
-            events = [
-                item.strip()
-                for item in re.split(r"\r?\n", contents_section)
-                if item.strip()
-            ]
+            events = [item.strip() for item in re.split(r"\r?\n", contents_section) if item.strip()]
 
             for index, (event, file_detail) in enumerate(zip(events, file_data)):
-                data = self.episode_name_parser_egortech(
-                    event, torrent_data["created_at"]
-                )
+                # Parse event name (result used for side effects in parser)
+                self.episode_name_parser_egortech(event, torrent_data["created_at"])
                 episodes.append(
-                    EpisodeFileData(
+                    StreamFileData(
                         season_number=1,
                         episode_number=index + 1,
-                        filename=file_detail.get("filename"),
+                        filename=file_detail.get("filename", ""),
                         size=file_detail["size"],
                         file_index=index,
-                        title=data["title"],
-                        released=data["date"],
+                        file_type="video",
                     )
                 )
         else:
             # logic to parse episode details directly from file details when description does not contain "Contains:"
             for index, file_detail in enumerate(file_data):
-                file_name = file_detail.get("filename")
-                data = self.episode_name_parser_egortech(
-                    file_name, torrent_data["created_at"]
-                )
+                file_name = file_detail.get("filename", "")
 
                 episodes.append(
-                    EpisodeFileData(
+                    StreamFileData(
                         season_number=1,
                         episode_number=index + 1,
                         filename=file_name,
-                        size=file_detail.get("size"),
+                        size=file_detail.get("size", 0),
                         file_index=index,
-                        title=data["title"],
-                        released=data["date"],
+                        file_type="video",
                     )
                 )
 
@@ -406,14 +393,13 @@ class FormulaParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         torrent_data["episodes"] = [
-            EpisodeFileData(
+            StreamFileData(
                 season_number=1,
                 episode_number=1,
-                filename=file_data[0].get("filename"),
-                size=torrent_data.get("total_size"),
-                title=torrent_data.get("episode_name"),
-                released=torrent_data.get("created_at"),
-                file_index=1,
+                filename=file_data[0].get("filename", ""),
+                size=torrent_data.get("total_size", 0),
+                file_index=0,
+                file_type="video",
             )
         ]
 
@@ -433,17 +419,16 @@ class FormulaParserPipeline:
 
         episodes = []
         for index, file_detail in enumerate(file_data):
-            file_name = file_detail.get("filename")
+            file_name = file_detail.get("filename", "")
 
             episodes.append(
-                EpisodeFileData(
+                StreamFileData(
                     season_number=1,
                     episode_number=index + 1,
                     filename=file_name,
-                    size=file_detail.get("size"),
+                    size=file_detail.get("size", 0),
                     file_index=index,
-                    title=" ".join(file_name.split(".")[1:-1]),
-                    released=torrent_data.get("created_at"),
+                    file_type="video",
                 )
             )
 

@@ -1,30 +1,40 @@
 import logging
 import re
 import time
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import dramatiq
 import httpx
 import xmltodict
 
-from db import sql_crud
-from db.database import get_background_session
-from db.redis_database import REDIS_ASYNC_CLIENT
-from db.enums import TorrentType
-from db.schemas import (
-    RSSFeedFilters,
-    RSSFeedParsingPatterns as RSSParsingPatterns,
-    TorrentStreamData,
-    MetadataData,
-)
-from db.sql_models import RSSFeed
-from scrapers.base_scraper import BaseScraper
-from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
-from utils.parser import convert_size_to_bytes, is_contain_18_plus_keywords
-from utils.wrappers import minimum_run_interval
-from utils.const import CATALOG_DATA
+from db import crud
 from db.config import settings
+from db.database import get_background_session
+from db.enums import TorrentType
+from db.models import RSSFeed
+from db.redis_database import REDIS_ASYNC_CLIENT
+from db.schemas import (
+    MetadataData,
+    RSSFeedFilters,
+    TorrentStreamData,
+)
+from db.schemas import (
+    RSSFeedParsingPatterns as RSSParsingPatterns,
+)
+from scrapers.base_scraper import BaseScraper
+from utils.const import CATALOG_DATA
+from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
+from utils.parser import (
+    calculate_max_similarity_ratio,
+    convert_size_to_bytes,
+    is_contain_18_plus_keywords,
+)
+from utils.sports_parser import (
+    GENERAL_SPORTS_KEYWORDS,
+    detect_sports_category,
+)
+from utils.wrappers import minimum_run_interval
 
 logger = logging.getLogger(__name__)
 
@@ -35,27 +45,62 @@ class RssScraper(BaseScraper):
         self.processed_items_key = "rss_scraper:processed_items"
         self.processed_items_expiry = 60 * 60 * 24 * 7  # 7 days
 
+    def validate_title_and_year(
+        self,
+        parsed_data: dict,
+        metadata: MetadataData,
+        catalog_type: str,
+        torrent_title: str,
+        expected_ratio: int = 60,  # Lower threshold for RSS feeds
+    ) -> bool:
+        """
+        Override validation for RSS feeds with a lower threshold.
+        For RSS feeds, metadata is often created from the torrent title itself,
+        so strict validation is not needed. Also skip year validation for
+        MediaFusion internal IDs since they may not have accurate year info.
+        """
+        # For MediaFusion internal IDs, skip strict validation
+        if metadata.external_id.startswith("mf"):
+            return True
+
+        # Check similarity ratios with lower threshold
+        max_similarity_ratio = calculate_max_similarity_ratio(
+            parsed_data["title"], metadata.title, getattr(metadata, "aka_titles", [])
+        )
+
+        if max_similarity_ratio < expected_ratio:
+            self.metrics.record_skip("Title mismatch")
+            self.logger.debug(
+                f"RSS title mismatch: '{parsed_data['title']}' vs. '{metadata.title}'. Ratio: {max_similarity_ratio}"
+            )
+            return False
+
+        # For movies from IMDB, still validate year but be lenient (±1 year)
+        if catalog_type == "movie" and not metadata.external_id.startswith("mf"):
+            parsed_year = parsed_data.get("year")
+            meta_year = metadata.year
+            if parsed_year and meta_year and abs(parsed_year - meta_year) > 1:
+                self.metrics.record_skip("Year mismatch")
+                self.logger.debug(f"RSS year mismatch: {parsed_year} vs. {meta_year}")
+                return False
+
+        return True
+
     async def is_item_processed(self, item_id: str) -> bool:
         """Check if an item has already been processed"""
-        return bool(
-            await REDIS_ASYNC_CLIENT.sismember(self.processed_items_key, item_id)
-        )
+        return bool(await REDIS_ASYNC_CLIENT.sismember(self.processed_items_key, item_id))
 
     async def mark_item_as_processed(self, item_id: str):
         """Mark an item as processed"""
         await REDIS_ASYNC_CLIENT.sadd(self.processed_items_key, item_id)
-        await REDIS_ASYNC_CLIENT.expire(
-            self.processed_items_key, self.processed_items_expiry
-        )
+        await REDIS_ASYNC_CLIENT.expire(self.processed_items_key, self.processed_items_expiry)
 
     def contains_blocklist_keywords(self, title: str, description: str = "") -> bool:
         """Check if title or description contains blocklist keywords"""
         content = f"{title} {description}".lower()
         return any(keyword.lower() in content for keyword in self.blocklist_keywords)
 
-    async def _scrape_and_parse(
-        self, feed: RSSFeed, *args, **kwargs
-    ) -> List[TorrentStreamData]:
+    async def _scrape_and_parse(self, feed: RSSFeed, *args, **kwargs) -> list[TorrentStreamData]:
         """Scrape and parse a single RSS feed"""
         results = []
         start_time = time.time()
@@ -73,18 +118,14 @@ class RssScraper(BaseScraper):
             items = await self.fetch_feed(feed.url, feed.name)
             if not items:
                 self.logger.warning(f"No items found in feed: {feed.name}")
-                await self.update_feed_metrics(
-                    feed_id, 0, 0, 0, 0, time.time() - start_time, {}
-                )
+                await self.update_feed_metrics(feed_id, 0, 0, 0, 0, time.time() - start_time, {})
                 return []
 
             items_found = len(items)
             self.metrics.record_found_items(items_found)
 
             # Process items with circuit breaker
-            circuit_breaker = CircuitBreaker(
-                failure_threshold=3, recovery_timeout=10, half_open_attempts=2
-            )
+            circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=10, half_open_attempts=2)
             processed_info_hashes = set()
             collected_streams = []
             processed_item_ids = []
@@ -102,31 +143,26 @@ class RssScraper(BaseScraper):
                 if processed_item:
                     if isinstance(processed_item, TorrentStreamData):
                         collected_streams.append(processed_item)
-                        processed_item_ids.append(processed_item.id)
+                        processed_item_ids.append(processed_item.info_hash)
                         self.metrics.record_processed_item()
                         items_processed_this_run += 1
-                    elif (
-                        isinstance(processed_item, dict)
-                        and "skip_reason" in processed_item
-                    ):
+                    elif isinstance(processed_item, dict) and "skip_reason" in processed_item:
                         # Track skip reason
                         reason = processed_item["skip_reason"]
-                        skip_reasons_this_run[reason] = (
-                            skip_reasons_this_run.get(reason, 0) + 1
-                        )
+                        skip_reasons_this_run[reason] = skip_reasons_this_run.get(reason, 0) + 1
                     else:
                         processed_item_ids.append(processed_item)
 
             # Bulk insert all collected streams
             if collected_streams:
                 async with get_background_session() as session:
-                    await sql_crud.store_new_torrent_streams(
-                        session, [s.model_dump(by_alias=True) for s in collected_streams]
+                    await crud.store_new_torrent_streams(
+                        session,
+                        [s.model_dump(by_alias=True) for s in collected_streams],
                     )
+                    await session.commit()
                 results.extend(collected_streams)
-                self.logger.info(
-                    f"Bulk inserted {len(collected_streams)} streams for feed: {feed.name}"
-                )
+                self.logger.info(f"Bulk inserted {len(collected_streams)} streams for feed: {feed.name}")
 
             # Mark all processed items as processed
             for item_id in processed_item_ids:
@@ -169,7 +205,7 @@ class RssScraper(BaseScraper):
             )
             return []
 
-    async def fetch_feed(self, url: str, name: str) -> List[Dict]:
+    async def fetch_feed(self, url: str, name: str) -> list[dict]:
         """Fetch and parse an RSS feed"""
         try:
             # Fetch the feed content
@@ -198,7 +234,7 @@ class RssScraper(BaseScraper):
             self.logger.error(f"Error fetching RSS feed {name}: {str(e)}")
             return []
 
-    def extract_value(self, item: Dict, path: str) -> Any:
+    def extract_value(self, item: dict, path: str) -> Any:
         """
         Extract value from an item using a dotted path notation.
         Supports:
@@ -240,7 +276,7 @@ class RssScraper(BaseScraper):
                 return None
         return current
 
-    def _extract_with_array_search(self, item: Dict, path: str) -> Any:
+    def _extract_with_array_search(self, item: dict, path: str) -> Any:
         """
         Extract value using array search pattern like: torznab:attr[@name="seeders"]@value
         """
@@ -281,9 +317,7 @@ class RssScraper(BaseScraper):
             if not search_key.startswith("@"):
                 search_key = "@" + search_key
 
-            self.logger.debug(
-                f"Search params: search_key='{search_key}', search_value='{search_value}'"
-            )
+            self.logger.debug(f"Search params: search_key='{search_key}', search_value='{search_value}'")
 
             # Navigate to the array
             current = item
@@ -298,34 +332,24 @@ class RssScraper(BaseScraper):
 
             # Search in the array
             if not isinstance(current, list):
-                self.logger.debug(
-                    f"Expected array for path '{base_path}' but got {type(current)}"
-                )
+                self.logger.debug(f"Expected array for path '{base_path}' but got {type(current)}")
                 return None
 
-            self.logger.debug(
-                f"Searching in array of {len(current)} items for {search_key}='{search_value}'"
-            )
+            self.logger.debug(f"Searching in array of {len(current)} items for {search_key}='{search_value}'")
 
             for i, array_item in enumerate(current):
                 if isinstance(array_item, dict):
                     # Check if this item matches our search condition
                     item_value = array_item.get(search_key)
-                    self.logger.debug(
-                        f"Item {i}: {search_key} = '{item_value}' (looking for '{search_value}')"
-                    )
+                    self.logger.debug(f"Item {i}: {search_key} = '{item_value}' (looking for '{search_value}')")
 
                     if item_value == search_value:
                         # Return the target field from this item
                         result = array_item.get(target_field)
-                        self.logger.debug(
-                            f"Found match! Returning {target_field} = '{result}'"
-                        )
+                        self.logger.debug(f"Found match! Returning {target_field} = '{result}'")
                         return result
 
-            self.logger.debug(
-                f"No matching item found for {search_key}='{search_value}'"
-            )
+            self.logger.debug(f"No matching item found for {search_key}='{search_value}'")
             return None
 
         except (ValueError, AttributeError, KeyError) as e:
@@ -333,8 +357,8 @@ class RssScraper(BaseScraper):
             return None
 
     async def process_feed_item(
-        self, item: Dict, feed: RSSFeed, feed_id: int, processed_info_hashes: set
-    ) -> Optional[TorrentStreamData | str]:
+        self, item: dict, feed: RSSFeed, feed_id: str, processed_info_hashes: set
+    ) -> TorrentStreamData | str | None:
         """Process a single RSS feed item"""
         try:
             # Convert dict to Pydantic model for attribute access
@@ -361,13 +385,13 @@ class RssScraper(BaseScraper):
             has_torrent_info = bool(
                 patterns.magnet
                 or patterns.torrent
+                or patterns.info_hash
                 or patterns.magnet_regex
                 or patterns.torrent_regex
+                or patterns.info_hash_regex
             )
             if has_torrent_info:
-                return await self.process_torrent_feed_item(
-                    item, feed, feed_id, processed_info_hashes
-                )
+                return await self.process_torrent_feed_item(item, feed, feed_id, processed_info_hashes)
             return None
         except Exception as e:
             self.metrics.record_error("item_processing_error")
@@ -375,8 +399,8 @@ class RssScraper(BaseScraper):
             return None
 
     async def process_torrent_feed_item(
-        self, item: Dict, feed: RSSFeed, feed_id: int, processed_info_hashes: set
-    ) -> Optional[TorrentStreamData]:
+        self, item: dict, feed: RSSFeed, feed_id: str, processed_info_hashes: set
+    ) -> TorrentStreamData | None:
         """Process a feed item containing torrent information with integrated filtering"""
         try:
             # Convert dicts to Pydantic models for attribute access
@@ -404,11 +428,7 @@ class RssScraper(BaseScraper):
             )
 
             publish_date_str = self.extract_value(item, patterns.pubDate)
-            publish_date = (
-                datetime.strptime(publish_date_str, "%a, %d %b %Y %H:%M:%S %z")
-                if publish_date_str
-                else None
-            )
+            publish_date = datetime.strptime(publish_date_str, "%a, %d %b %Y %H:%M:%S %z") if publish_date_str else None
 
             # Extract category for filtering
             category = self.extract_value(item, patterns.category)
@@ -445,19 +465,44 @@ class RssScraper(BaseScraper):
             # Get episode name parser from feed patterns if available
             episode_name_parser = (feed.parsing_patterns or {}).get("episode_name_parser")
 
-            torrent_data, is_torrent_downloaded = await self.get_torrent_data(
-                torrent_link or magnet_link,
-                parsed_data,
-                episode_name_parser=episode_name_parser,
+            # Try to extract info_hash directly first (avoids downloading torrent file)
+            direct_info_hash = self.extract_field_with_patterns(
+                item,
+                patterns,
+                "info_hash",
+                fallback_fields=["description", "link", "content"],
             )
 
-            if not is_torrent_downloaded:
-                return None
+            torrent_data = {}
+            if direct_info_hash:
+                # We have direct info_hash, no need to download torrent
+                info_hash = (
+                    direct_info_hash.lower() if isinstance(direct_info_hash, str) else str(direct_info_hash).lower()
+                )
+                torrent_data = {"info_hash": info_hash, "announce_list": []}
+                self.logger.debug(f"Using directly extracted info_hash: {info_hash}")
+            else:
+                # Fall back to downloading magnet/torrent
+                download_url = magnet_link or torrent_link
+                if not download_url:
+                    self.logger.debug(f"No magnet, torrent, or info_hash found for: {title}")
+                    self.metrics.record_skip("No download link")
+                    return {"skip_reason": "No download link"}
+
+                torrent_data, is_torrent_downloaded = await self.get_torrent_data(
+                    download_url,
+                    parsed_data,
+                    episode_name_parser=episode_name_parser,
+                )
+
+                if not is_torrent_downloaded:
+                    return None
 
             info_hash = torrent_data.get("info_hash")
             if not info_hash:
                 self.logger.debug(f"Could not extract info hash from: {title}")
-                return None
+                self.metrics.record_skip("No info hash")
+                return {"skip_reason": "No info hash"}
 
             # Check if already processed in this run
             if info_hash in processed_info_hashes:
@@ -488,60 +533,113 @@ class RssScraper(BaseScraper):
 
             # Use catalog detection if enabled
             if feed.auto_detect_catalog:
-                detected_catalogs = self.detect_catalog_from_content(
-                    item, feed, parsed_data
-                )
+                detected_catalogs = self.detect_catalog_from_content(item, feed, parsed_data)
                 if detected_catalogs:
                     # Filter detected catalogs to only include valid ones from CATALOG_DATA
-                    valid_catalogs = [
-                        cat for cat in detected_catalogs if cat in CATALOG_DATA
-                    ]
+                    valid_catalogs = [cat for cat in detected_catalogs if cat in CATALOG_DATA]
                     catalog_ids = valid_catalogs if valid_catalogs else []
-                    self.logger.debug(
-                        f"Auto-detected catalogs for '{title}': {catalog_ids}"
-                    )
+                    self.logger.debug(f"Auto-detected catalogs for '{title}': {catalog_ids}")
 
             # Always add appropriate RSS feed catalog
             rss_catalog = "rss_feed_series" if is_series else "rss_feed_movies"
             final_catalogs = catalog_ids + [rss_catalog]
             torrent_data["catalog"] = final_catalogs
 
-            # Get or create metadata
-            metadata = {
-                "title": parsed_data.get("title", title),
-                "year": parsed_data.get("year"),
-                "catalogs": catalog_ids,
-            }
+            # Get or create metadata - first search for IMDB/TMDB match
+            from scrapers.scraper_tasks import meta_fetcher
+            from utils.crypto import get_text_hash
 
-            async with get_background_session() as session:
-                metadata_result = await sql_crud.get_or_create_metadata(
-                    session,
-                    metadata,
-                    "series" if is_series else "movie",
-                    is_search_imdb_title=True,
-                    is_imdb_only=False,
+            parsed_title = parsed_data.get("title", title)
+            parsed_year = parsed_data.get("year")
+            media_type_str = "series" if is_series else "movie"
+
+            # Try to find existing metadata by searching IMDB/TMDB
+            metadata_result = None
+            try:
+                search_results = await meta_fetcher.search_multiple_results(
+                    title=parsed_title,
+                    year=parsed_year,
+                    media_type=media_type_str,
+                    limit=5,
+                    min_similarity=80,
                 )
+            except Exception as e:
+                self.logger.debug(f"IMDB/TMDB search failed for '{parsed_title}': {e}")
+                search_results = []
+
+            if search_results:
+                self.logger.debug(
+                    f"Found IMDB/TMDB match for '{parsed_title}': {search_results[0].get('imdb_id') or search_results[0].get('id')}"
+                )
+                # Use the best match
+                best_match = search_results[0]
+                external_id = best_match.get("imdb_id") or best_match.get("id")
+
+                if external_id:
+                    metadata = {
+                        "id": external_id,
+                        "title": best_match.get("title", parsed_title),
+                        "year": best_match.get("year", parsed_year),
+                        "catalogs": catalog_ids,
+                        "poster": best_match.get("poster"),
+                        "background": best_match.get("background"),
+                        "description": best_match.get("description"),
+                        "genres": best_match.get("genres", []),
+                    }
+
+                    async with get_background_session() as session:
+                        metadata_result = await crud.get_or_create_metadata(
+                            session,
+                            metadata,
+                            media_type_str,
+                            is_search_imdb_title=False,
+                            is_imdb_only=False,
+                        )
+                        await session.commit()
+
+            # If no IMDB/TMDB match, create with MediaFusion internal ID
+            if not metadata_result:
+                # Generate a unique MediaFusion ID
+                clean_title = parsed_title.lower().replace(" ", "_").replace(".", "_")[:50]
+                year_suffix = f"_{parsed_year}" if parsed_year else ""
+                mf_id = f"mf{media_type_str[0]}_{get_text_hash(f'{clean_title}{year_suffix}', full_hash=False)}"
+
+                self.logger.debug(f"No IMDB/TMDB match for '{parsed_title}', creating with internal ID: {mf_id}")
+
+                metadata = {
+                    "id": mf_id,
+                    "title": parsed_title,
+                    "year": parsed_year,
+                    "catalogs": catalog_ids,
+                }
+
+                async with get_background_session() as session:
+                    metadata_result = await crud.get_or_create_metadata(
+                        session,
+                        metadata,
+                        media_type_str,
+                        is_search_imdb_title=False,
+                        is_imdb_only=False,
+                    )
+                    await session.commit()
 
             if not metadata_result:
                 self.logger.warning(f"Failed to create metadata for: {title}")
-                return None
+                self.metrics.record_skip("Metadata creation failed")
+                return {"skip_reason": "Metadata creation failed"}
 
-            # Handle different return formats from get_or_create_metadata
-            if isinstance(metadata_result, dict):
-                meta_id = metadata_result.get("id")
-                # Convert dict to metadata object for process_stream
-                metadata_cls = (
-                    MetadataData if is_series else MetadataData
-                )
-                metadata_obj = metadata_cls(
-                    id=meta_id,
-                    title=metadata_result.get("title"),
-                    year=metadata_result.get("year"),
-                    type="series" if is_series else "movie",
-                )
-            else:
-                # If it's a document object, use it directly
-                metadata_obj = metadata_result
+            # Convert Media object to MetadataData for process_stream
+            # get_or_create_metadata returns a Media SQLModel object
+            metadata_obj = MetadataData(
+                id=metadata_result.id,
+                external_id=metadata_result.external_id,
+                title=metadata_result.title,
+                year=metadata_result.year,
+                type=metadata_result.type.value
+                if hasattr(metadata_result.type, "value")
+                else str(metadata_result.type),
+                description=metadata_result.description,
+            )
 
             # Create a fake RSS item data structure for process_stream
             rss_item_data = {
@@ -575,19 +673,15 @@ class RssScraper(BaseScraper):
             if stream:
                 # Add to processed_info_hashes to avoid processing again in this run
                 processed_info_hashes.add(info_hash)
-                self.logger.info(
-                    f"Successfully created torrent stream: {info_hash} for {title}"
-                )
+                self.logger.info(f"Successfully created torrent stream: {info_hash} for {title}")
                 return stream
             else:
-                self.logger.warning(
-                    f"Failed to create stream for: {info_hash} for {title}"
-                )
+                self.logger.warning(f"Failed to create stream for: {info_hash} for {title}")
                 return None
         except (httpx.TimeoutException, httpx.ConnectTimeout):
-            self.metrics.record_error("network_timeout")
+            self.metrics.record_skip("Network timeout")
             self.logger.warning("Network timeout processing RSS torrent feed item")
-            return None
+            return {"skip_reason": "Network timeout"}
         except Exception as e:
             self.metrics.record_error("torrent_processing_error")
             self.logger.exception(f"Error processing RSS torrent feed item: {str(e)}")
@@ -611,9 +705,7 @@ class RssScraper(BaseScraper):
                     self.metrics.record_skip("Title filter")
                     return False
             except re.error:
-                self.logger.warning(
-                    f"Invalid title filter regex: {filters.title_filter}"
-                )
+                self.logger.warning(f"Invalid title filter regex: {filters.title_filter}")
 
         # Title exclude filter
         if filters.title_exclude_filter:
@@ -623,42 +715,28 @@ class RssScraper(BaseScraper):
                     self.metrics.record_skip("Title exclude filter")
                     return False
             except re.error:
-                self.logger.warning(
-                    f"Invalid title exclude filter regex: {filters.title_exclude_filter}"
-                )
+                self.logger.warning(f"Invalid title exclude filter regex: {filters.title_exclude_filter}")
 
         # Size filters
         if filters.min_size_mb and size_mb > 0 and size_mb < filters.min_size_mb:
-            self.logger.debug(
-                f"Item '{title}' too small: {size_mb}MB < {filters.min_size_mb}MB"
-            )
+            self.logger.debug(f"Item '{title}' too small: {size_mb}MB < {filters.min_size_mb}MB")
             self.metrics.record_skip("Size too small")
             return False
 
         if filters.max_size_mb and size_mb > 0 and size_mb > filters.max_size_mb:
-            self.logger.debug(
-                f"Item '{title}' too large: {size_mb}MB > {filters.max_size_mb}MB"
-            )
+            self.logger.debug(f"Item '{title}' too large: {size_mb}MB > {filters.max_size_mb}MB")
             self.metrics.record_skip("Size too large")
             return False
 
         # Seeders filter
         if filters.min_seeders and seeders > 0 and seeders < filters.min_seeders:
-            self.logger.debug(
-                f"Item '{title}' has too few seeders: {seeders} < {filters.min_seeders}"
-            )
+            self.logger.debug(f"Item '{title}' has too few seeders: {seeders} < {filters.min_seeders}")
             self.metrics.record_skip("Too few seeders")
             return False
 
         # Category filter
-        if (
-            filters.category_filter
-            and category
-            and str(category) not in filters.category_filter
-        ):
-            self.logger.debug(
-                f"Item '{title}' category '{category}' not in allowed list"
-            )
+        if filters.category_filter and category and str(category) not in filters.category_filter:
+            self.logger.debug(f"Item '{title}' category '{category}' not in allowed list")
             self.metrics.record_skip("Category not allowed")
             return False
 
@@ -666,10 +744,10 @@ class RssScraper(BaseScraper):
 
     def extract_field_with_patterns(
         self,
-        item: Dict,
+        item: dict,
         patterns: RSSParsingPatterns,
         field_name: str,
-        fallback_fields: List[str] = None,
+        fallback_fields: list[str] = None,
     ) -> Any:
         """
         Extract a field using both direct path and regex patterns with proper group handling.
@@ -702,53 +780,52 @@ class RssScraper(BaseScraper):
                     try:
                         match = re.search(regex_pattern, str(direct_value))
                         if match:
-                            return (
-                                match.group(regex_group)
-                                if regex_group <= len(match.groups())
-                                else match.group(0)
-                            )
+                            return match.group(regex_group) if regex_group <= len(match.groups()) else match.group(0)
                     except (re.error, IndexError, AttributeError):
                         pass
 
             # Try regex on fallback fields
             if fallback_fields:
                 for fallback_field in fallback_fields:
-                    field_value = self.extract_value(
-                        item, getattr(patterns, fallback_field, fallback_field)
-                    )
+                    field_value = self.extract_value(item, getattr(patterns, fallback_field, fallback_field))
                     if field_value:
                         try:
                             match = re.search(regex_pattern, str(field_value))
                             if match:
                                 return (
-                                    match.group(regex_group)
-                                    if regex_group <= len(match.groups())
-                                    else match.group(0)
+                                    match.group(regex_group) if regex_group <= len(match.groups()) else match.group(0)
                                 )
                         except (re.error, IndexError, AttributeError):
                             continue
 
         return None
 
-    async def update_feed_last_scraped(self, feed_id: int) -> None:
-        """Update the lastScraped timestamp for a feed"""
+    async def update_feed_last_scraped(self, feed_id: str) -> None:
+        """Update the lastScraped timestamp for a user feed"""
         try:
             async with get_background_session() as session:
-                await sql_crud.update_rss_feed(session, feed_id, {"last_scraped": datetime.now()})
+                # Use None for user_id to skip ownership check (background task)
+                await crud.update_user_rss_feed(
+                    session,
+                    feed_id,
+                    None,
+                    {"last_scraped_at": datetime.now(UTC)},
+                )
         except Exception as e:
             self.logger.error(f"Error updating feed last_scraped timestamp: {str(e)}")
 
     async def update_feed_metrics(
         self,
-        feed_id: int,
+        feed_id: str,
         items_found: int,
         items_processed: int,
         items_skipped: int,
         errors: int,
         duration: float,
         skip_reasons: dict,
+        is_user_feed: bool = True,
     ) -> None:
-        """Update the scraping metrics for a feed"""
+        """Update the scraping metrics for a user feed"""
         try:
             metrics = {
                 "total_items_found": items_found,
@@ -762,18 +839,19 @@ class RssScraper(BaseScraper):
                 "skip_reasons": skip_reasons,
             }
             async with get_background_session() as session:
-                await sql_crud.update_rss_feed_metrics(session, feed_id, metrics)
+                await crud.update_user_rss_feed_metrics(session, feed_id, metrics)
         except Exception as e:
             self.logger.warning(f"Failed to update feed metrics for {feed_id}: {e}")
 
-    async def process_all_feeds(self) -> Dict:
-        """Process all active RSS feeds"""
+    async def process_all_feeds(self) -> dict:
+        """Process all active RSS feeds from RSSFeed model"""
         try:
-            # Get all active feeds
+            # Get all active user feeds
             async with get_background_session() as session:
-                feeds = list(await sql_crud.list_rss_feeds(session, active_only=True))
+                user_feeds = list(await crud.list_all_active_user_rss_feeds(session))
 
-            if not feeds:
+            if not user_feeds:
+                self.logger.info("No active RSS feeds found")
                 return {
                     "success": True,
                     "message": "No active feeds found",
@@ -786,7 +864,7 @@ class RssScraper(BaseScraper):
             processed_count = 0
             error_count = 0
 
-            for feed in feeds:
+            for feed in user_feeds:
                 self.logger.info(f"Processing RSS feed: {feed.name} ({feed.url})")
                 try:
                     # Use _scrape_and_parse directly to process each feed
@@ -800,6 +878,18 @@ class RssScraper(BaseScraper):
                         "errors": 0,
                     }
                     processed_count += len(streams)
+
+                    # Update metrics for user feed
+                    await self.update_feed_metrics(
+                        feed_id=feed.id,
+                        items_found=len(streams),
+                        items_processed=len(streams),
+                        items_skipped=0,
+                        errors=0,
+                        duration=0,
+                        skip_reasons={},
+                        is_user_feed=True,
+                    )
                 except Exception as e:
                     error_count += 1
                     self.logger.exception(f"Error processing feed {feed.name}: {e}")
@@ -817,7 +907,7 @@ class RssScraper(BaseScraper):
 
             return {
                 "success": True,
-                "message": f"Processed {processed_count} items with {error_count} errors from {len(feeds)} feeds",
+                "message": f"Processed {processed_count} items with {error_count} errors from {len(user_feeds)} feeds",
                 "results": results,
             }
         except Exception as e:
@@ -884,9 +974,7 @@ class RssScraper(BaseScraper):
         """Get seeders from RSS item data"""
         return item.get("seeders", 0)
 
-    async def parse_indexer_data(
-        self, indexer_data: dict, catalog_type: str, parsed_data: dict
-    ) -> dict:
+    async def parse_indexer_data(self, indexer_data: dict, catalog_type: str, parsed_data: dict) -> dict:
         """Parse RSS-specific data and return processed data"""
         # For RSS scraper, we already have the processed data
         info_hash = indexer_data.get("info_hash")
@@ -918,7 +1006,7 @@ class RssScraper(BaseScraper):
 
         return parsed_data
 
-    def detect_feed_patterns(self, sample_item: Dict) -> Dict[str, Any]:
+    def detect_feed_patterns(self, sample_item: dict) -> dict[str, Any]:
         """
         Analyze a sample RSS item to detect common field patterns.
         Returns suggested field mappings for parsing patterns.
@@ -967,9 +1055,7 @@ class RssScraper(BaseScraper):
 
         return patterns
 
-    def detect_catalog_from_content(
-        self, item: Dict, feed: RSSFeed, parsed_data: Dict
-    ) -> List[str]:
+    def detect_catalog_from_content(self, item: dict, feed: RSSFeed, parsed_data: dict) -> list[str]:
         """
         Auto-detect catalog based on content analysis using parsed data.
         Returns list of catalog IDs that this item should be assigned to.
@@ -1003,13 +1089,9 @@ class RssScraper(BaseScraper):
                 if re.search(regex_pattern, content_text, flags):
                     target_catalogs = pattern.target_catalogs
                     catalogs.extend(target_catalogs)
-                    self.logger.debug(
-                        f"Pattern '{pattern.name}' matched, adding catalogs: {target_catalogs}"
-                    )
+                    self.logger.debug(f"Pattern '{pattern.name}' matched, adding catalogs: {target_catalogs}")
             except re.error as e:
-                self.logger.warning(
-                    f"Invalid regex pattern '{regex_pattern}' in pattern '{pattern.name}': {e}"
-                )
+                self.logger.warning(f"Invalid regex pattern '{regex_pattern}' in pattern '{pattern.name}': {e}")
 
         # If custom patterns matched, return those results
         if catalogs:
@@ -1021,75 +1103,13 @@ class RssScraper(BaseScraper):
         is_series = bool(parsed_data.get("seasons") or parsed_data.get("episodes"))
         content_lower = content_text.lower()
 
-        # Sports detection (high priority) - use specific sport catalogs
-        sports_detection = {
-            # American Football
-            "american_football": ["nfl", "american football", "super bowl"],
-            # Baseball
-            "baseball": ["mlb", "baseball", "world series"],
-            # Basketball
-            "basketball": ["nba", "basketball"],
-            # Football (Soccer)
-            "football": [
-                "football",
-                "soccer",
-                "fifa",
-                "uefa",
-                "premier league",
-                "champions league",
-                "world cup",
-                "efl",
-            ],
-            # Formula Racing
-            "formula_racing": ["formula", "f1", "grand prix", "f2", "f3"],
-            # Hockey
-            "hockey": ["nhl", "hockey", "stanley cup"],
-            # MotoGP Racing
-            "motogp_racing": ["motogp", "moto gp", "motorcycle", "racing"],
-            # Rugby
-            "rugby": ["rugby", "afl", "australian football", "nrl"],
-            # Fighting (WWE, UFC)
-            "fighting": [
-                "ufc",
-                "wwe",
-                "wrestling",
-                "boxing",
-                "mma",
-                "raw",
-                "smackdown",
-                "wrestlemania",
-            ],
-        }
+        # Sports detection (high priority) - use centralized sports parser
+        sports_category = detect_sports_category(content_text)
+        if sports_category:
+            return [sports_category]
 
-        # Check for specific sports
-        for sport_catalog, keywords in sports_detection.items():
-            if any(keyword in content_lower for keyword in keywords):
-                return [sport_catalog]  # Specific sport catalog
-
-        # General sports fallback
-        general_sports_keywords = [
-            "sport",
-            "sports",
-            "match",
-            "game",
-            "vs",
-            "versus",
-            "highlights",
-            "replay",
-            "tournament",
-            "championship",
-            "league",
-            "espn",
-            "sky sports",
-            "bt sport",
-            "bein",
-            "fox sports",
-            "nbc sports",
-            "match of the day",
-            "motd",
-        ]
-
-        if any(keyword in content_lower for keyword in general_sports_keywords):
+        # General sports fallback using shared keywords
+        if any(keyword in content_lower for keyword in GENERAL_SPORTS_KEYWORDS):
             return ["other_sports"]
 
         # Map language and content type to catalogs
@@ -1108,11 +1128,7 @@ class RssScraper(BaseScraper):
                 "TC",
                 "TS",
             ]
-            quality_value = (
-                "tcrip"
-                if any(tc_qual in quality for tc_qual in tc_qualities)
-                else "hdrip"
-            )
+            quality_value = "tcrip" if any(tc_qual in quality for tc_qual in tc_qualities) else "hdrip"
             catalogs = [f"{lang.lower()}_{quality_value}" for lang in languages]
             return catalogs
 
@@ -1125,13 +1141,8 @@ async def run_rss_feed_scraper(**kwargs):
     scraper = RssScraper()
     result = await scraper.process_all_feeds()
 
-    total_processed = sum(
-        r.get("processed", 0) for r in result.get("results", {}).values()
-    )
+    total_processed = sum(r.get("processed", 0) for r in result.get("results", {}).values())
     total_errors = sum(r.get("errors", 0) for r in result.get("results", {}).values())
 
-    logger.info(
-        f"RSS feed scraper completed. "
-        f"Processed {total_processed} items with {total_errors} errors"
-    )
+    logger.info(f"RSS feed scraper completed. Processed {total_processed} items with {total_errors} errors")
     return result

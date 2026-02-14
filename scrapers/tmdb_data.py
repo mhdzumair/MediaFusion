@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import math
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -18,7 +18,7 @@ TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/"
 
 async def get_tmdb_data(
     tmdb_id: str, media_type: str, max_retries: int = 3, load_episodes: bool = True
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Enhanced TMDB data fetcher with retry logic and better error handling
     """
@@ -26,42 +26,36 @@ async def get_tmdb_data(
         logging.error("TMDB API key is not configured")
         return None
 
-    endpoint = f'{"movie" if media_type == "movie" else "tv"}/{tmdb_id}'
+    endpoint = f"{'movie' if media_type == 'movie' else 'tv'}/{tmdb_id}"
     params = {
         "api_key": settings.tmdb_api_key,
-        "append_to_response": "credits,content_ratings,alternative_titles,external_ids,videos",
+        "append_to_response": "credits,content_ratings,alternative_titles,external_ids,videos,keywords",
     }
 
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient(
-                proxy=settings.requests_proxy_url, timeout=10
-            ) as client:
-                response = await client.get(
-                    urljoin(TMDB_BASE_URL, endpoint), params=params, headers=UA_HEADER
-                )
+            async with httpx.AsyncClient(proxy=settings.requests_proxy_url, timeout=10) as client:
+                response = await client.get(urljoin(TMDB_BASE_URL, endpoint), params=params, headers=UA_HEADER)
                 response.raise_for_status()
                 data = response.json()
 
                 episodes = []
                 if media_type == "series" and load_episodes:
-                    for season_number in range(1, data.get("number_of_seasons", 0) + 1):
-                        episodes.extend(
-                            await get_tmdb_season_episodes(
-                                str(data["id"]), season_number
-                            )
-                        )
+                    # Start from season 0 (specials) through all numbered seasons
+                    # TMDB uses season 0 for special episodes
+                    for season_number in range(0, data.get("number_of_seasons", 0) + 1):
+                        season_episodes = await get_tmdb_season_episodes(str(data["id"]), season_number)
+                        if season_episodes:
+                            episodes.extend(season_episodes)
                 return format_tmdb_response(data, media_type, episodes)
 
         except httpx.TimeoutException:
-            logging.warning(
-                f"TMDB request timeout (attempt {attempt + 1}/{max_retries})"
-            )
+            logging.warning(f"TMDB request timeout (attempt {attempt + 1}/{max_retries})")
             if attempt == max_retries - 1:
                 raise
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                logging.warning(f"TMDB ID {tmdb_id} not found")
+                logging.exception(f"TMDB ID {tmdb_id} not found")
                 return None
             if e.response.status_code == 429:  # Rate limit
                 await asyncio.sleep(2**attempt)  # Exponential backoff
@@ -75,14 +69,14 @@ async def get_tmdb_data(
     return None
 
 
-async def get_imdb_id_from_tmdb(tmdb_id: str, media_type: str) -> Optional[str]:
+async def get_imdb_id_from_tmdb(tmdb_id: str, media_type: str) -> str | None:
     """
     Fetch IMDB ID from TMDB data
     """
     if TMDB_API_KEY is None:
         logging.error("TMDB API key is not set")
         return None
-    endpoint = f'{"movie" if media_type == "movie" else "tv"}/{tmdb_id}'
+    endpoint = f"{'movie' if media_type == 'movie' else 'tv'}/{tmdb_id}"
     params = {"api_key": TMDB_API_KEY, "append_to_response": "external_ids"}
 
     try:
@@ -102,9 +96,7 @@ async def get_imdb_id_from_tmdb(tmdb_id: str, media_type: str) -> Optional[str]:
         return None
 
 
-async def get_tmdb_season_episodes(
-    tmdb_id: str, season_number: int
-) -> List[Dict[str, Any]]:
+async def get_tmdb_season_episodes(tmdb_id: str, season_number: int) -> list[dict[str, Any]]:
     """Fetch episode data for a specific season"""
     if not settings.tmdb_api_key:
         return []
@@ -113,12 +105,8 @@ async def get_tmdb_season_episodes(
     params = {"api_key": settings.tmdb_api_key}
 
     try:
-        async with httpx.AsyncClient(
-            proxy=settings.requests_proxy_url, timeout=10
-        ) as client:
-            response = await client.get(
-                urljoin(TMDB_BASE_URL, endpoint), params=params, headers=UA_HEADER
-            )
+        async with httpx.AsyncClient(proxy=settings.requests_proxy_url, timeout=10) as client:
+            response = await client.get(urljoin(TMDB_BASE_URL, endpoint), params=params, headers=UA_HEADER)
             response.raise_for_status()
             season_data = response.json()
 
@@ -136,9 +124,7 @@ async def get_tmdb_season_episodes(
                         "tmdb_rating": episode.get("vote_average"),
                         "imdb_rating": None,
                         "thumbnail": (
-                            f"{TMDB_IMAGE_BASE_URL}w500{episode['still_path']}"
-                            if episode.get("still_path")
-                            else None
+                            f"{TMDB_IMAGE_BASE_URL}w500{episode['still_path']}" if episode.get("still_path") else None
                         ),
                     }
                 )
@@ -148,82 +134,210 @@ async def get_tmdb_season_episodes(
         return []
 
 
-def format_tmdb_response(
-    data: Dict[str, Any], media_type: str, episodes: list
-) -> Dict[str, Any]:
+def format_tmdb_response(data: dict[str, Any], media_type: str, episodes: list) -> dict[str, Any]:
     """
-    Format TMDB API response into standardized metadata format
+    Format TMDB API response into standardized metadata format.
+
+    Extracts comprehensive metadata including cast, crew, ratings, images,
+    and movie/series-specific data like budget, revenue, networks.
     """
     is_movie = media_type == "movie"
     release_date = data.get("release_date" if is_movie else "first_air_date")
 
+    # Parse cast with full details
+    cast_list = []
+    for cast_member in data.get("credits", {}).get("cast", [])[:20]:  # Top 20 cast
+        cast_list.append(
+            {
+                "name": cast_member.get("name"),
+                "tmdb_id": cast_member.get("id"),
+                "character": cast_member.get("character"),
+                "order": cast_member.get("order", 0),
+                "profile_path": (
+                    f"{TMDB_IMAGE_BASE_URL}w185{cast_member['profile_path']}"
+                    if cast_member.get("profile_path")
+                    else None
+                ),
+            }
+        )
+
+    # Parse crew by department
+    crew_list = []
+    important_jobs = {
+        "Director",
+        "Writer",
+        "Screenplay",
+        "Producer",
+        "Executive Producer",
+        "Composer",
+        "Director of Photography",
+        "Editor",
+    }
+    for crew_member in data.get("credits", {}).get("crew", []):
+        if crew_member.get("job") in important_jobs:
+            crew_list.append(
+                {
+                    "name": crew_member.get("name"),
+                    "tmdb_id": crew_member.get("id"),
+                    "department": crew_member.get("department"),
+                    "job": crew_member.get("job"),
+                    "profile_path": (
+                        f"{TMDB_IMAGE_BASE_URL}w185{crew_member['profile_path']}"
+                        if crew_member.get("profile_path")
+                        else None
+                    ),
+                }
+            )
+
+    # Build images list with multiple sizes
+    images = []
+    if data.get("poster_path"):
+        images.append(
+            {
+                "type": "poster",
+                "url": f"{TMDB_IMAGE_BASE_URL}w500{data['poster_path']}",
+                "provider": "tmdb",
+                "is_primary": True,
+            }
+        )
+        images.append(
+            {
+                "type": "poster",
+                "url": f"{TMDB_IMAGE_BASE_URL}original{data['poster_path']}",
+                "provider": "tmdb",
+                "is_primary": False,
+            }
+        )
+    if data.get("backdrop_path"):
+        images.append(
+            {
+                "type": "background",
+                "url": f"{TMDB_IMAGE_BASE_URL}original{data['backdrop_path']}",
+                "provider": "tmdb",
+                "is_primary": True,
+            }
+        )
+
+    # Parse keywords
+    keywords = [kw.get("name") for kw in data.get("keywords", {}).get("keywords" if is_movie else "results", [])]
+
+    # Parse videos/trailers with full URLs
+    videos = []
+    for video in data.get("videos", {}).get("results", []):
+        if video.get("site") == "YouTube" and video.get("type") in [
+            "Trailer",
+            "Teaser",
+            "Clip",
+            "Featurette",
+        ]:
+            video_key = video.get("key")
+            videos.append(
+                {
+                    "name": video.get("name"),
+                    "key": video_key,
+                    "type": video.get("type"),
+                    "site": video.get("site"),
+                    "official": video.get("official", False),
+                    "url": f"https://www.youtube.com/watch?v={video_key}" if video_key else None,
+                    "embed_url": f"https://www.youtube.com/embed/{video_key}" if video_key else None,
+                    "thumbnail": f"https://img.youtube.com/vi/{video_key}/maxresdefault.jpg" if video_key else None,
+                }
+            )
+
     formatted = {
         "tmdb_id": str(data["id"]),
-        "imdb_id": data.get("external_ids", {}).get("imdb_id") or f"mftmdb{data['id']}",
+        "imdb_id": data.get("external_ids", {}).get("imdb_id"),  # None if not available
         "title": data.get("title" if is_movie else "name"),
         "original_title": data.get("original_title" if is_movie else "original_name"),
         "year": int(release_date[:4]) if release_date else None,
-        "poster": (
-            f"{TMDB_IMAGE_BASE_URL}w500{data['poster_path']}"
-            if data.get("poster_path")
-            else None
-        ),
-        "background": (
-            f"{TMDB_IMAGE_BASE_URL}original{data['backdrop_path']}"
-            if data.get("backdrop_path")
-            else None
-        ),
+        "release_date": release_date,  # Full date string
+        "poster": (f"{TMDB_IMAGE_BASE_URL}w500{data['poster_path']}" if data.get("poster_path") else None),
+        "background": (f"{TMDB_IMAGE_BASE_URL}original{data['backdrop_path']}" if data.get("backdrop_path") else None),
         "description": data.get("overview"),
-        "countries": [
-            country["name"] for country in data.get("production_countries", [])
-        ],
+        "tagline": data.get("tagline"),
+        "countries": [country["name"] for country in data.get("production_countries", [])],
+        "country_codes": [country["iso_3166_1"] for country in data.get("production_countries", [])],
         "languages": [lang["name"] for lang in data.get("spoken_languages", [])],
+        "language_codes": [lang["iso_639_1"] for lang in data.get("spoken_languages", [])],
+        "original_language": data.get("original_language"),
         "genres": [genre["name"] for genre in data.get("genres", [])],
         "tmdb_rating": data.get("vote_average"),
+        "tmdb_vote_count": data.get("vote_count"),
+        "popularity": data.get("popularity"),
         "runtime": f"{data.get('runtime')} min" if data.get("runtime") else None,
+        "runtime_minutes": data.get("runtime"),
         "aka_titles": [
-            title["title"]
-            for title in data.get("alternative_titles", {}).get(
-                "titles" if is_movie else "results", []
-            )
+            title["title"] for title in data.get("alternative_titles", {}).get("titles" if is_movie else "results", [])
         ],
         "stars": [
             star["name"] for star in data.get("credits", {}).get("cast", [])[:10]
-        ],
+        ],  # Keep for backward compatibility
+        "cast": cast_list,
+        "crew": crew_list,
+        "images": images,
+        "keywords": keywords,
+        "videos": videos,
         "imdb_rating": None,
         "type": "movie" if is_movie else "series",
+        "adult": data.get("adult", False),
+        "status": data.get("status"),
+        "homepage": data.get("homepage"),
         "parent_guide_nudity_status": "Unknown",
         "parent_guide_certificates": list(
-            {
-                result["rating"]
-                for result in data.get("content_ratings", {}).get("results", [])
-            }
+            {result["rating"] for result in data.get("content_ratings", {}).get("results", [])}
         ),
+        # External IDs - only metadata providers (not social media)
+        "external_ids": {
+            "imdb": data.get("external_ids", {}).get("imdb_id"),
+            "tvdb": data.get("external_ids", {}).get("tvdb_id"),
+        },
+        # Keep tvdb_id at root for backward compatibility
+        "tvdb_id": data.get("external_ids", {}).get("tvdb_id"),
     }
 
-    # Add TV series specific data
-    if not is_movie:
-        last_air_date = data.get("last_air_date")
+    # Add movie-specific data
+    if is_movie:
         formatted.update(
             {
-                "end_year": (
-                    int(last_air_date[:4])
-                    if last_air_date and data.get("status") == "Ended"
-                    else None
-                ),
-                "number_of_seasons": data.get("number_of_seasons"),
-                "number_of_episodes": data.get("number_of_episodes"),
-                "status": data.get("status"),
+                "budget": data.get("budget"),
+                "revenue": data.get("revenue"),
+                "production_companies": [
+                    {
+                        "name": c["name"],
+                        "logo": f"{TMDB_IMAGE_BASE_URL}w92{c['logo_path']}" if c.get("logo_path") else None,
+                    }
+                    for c in data.get("production_companies", [])
+                ],
             }
         )
-        formatted["episodes"] = episodes
+    else:
+        # Add TV series specific data
+        last_air_date = data.get("last_air_date")
+        networks = [
+            {
+                "name": n["name"],
+                "logo": f"{TMDB_IMAGE_BASE_URL}w92{n['logo_path']}" if n.get("logo_path") else None,
+            }
+            for n in data.get("networks", [])
+        ]
+        formatted.update(
+            {
+                "end_year": (int(last_air_date[:4]) if last_air_date and data.get("status") == "Ended" else None),
+                "end_date": last_air_date,
+                "number_of_seasons": data.get("number_of_seasons"),
+                "number_of_episodes": data.get("number_of_episodes"),
+                "networks": networks,
+                "network": networks[0]["name"] if networks else None,  # Primary network
+                "created_by": [{"name": c["name"], "tmdb_id": c["id"]} for c in data.get("created_by", [])],
+                "in_production": data.get("in_production", False),
+                "episodes": episodes,
+            }
+        )
 
     return formatted
 
 
-async def get_tmdb_data_by_imdb(
-    imdb_id: str, media_type: str
-) -> Optional[Dict[str, Any]]:
+async def get_tmdb_data_by_imdb(imdb_id: str, media_type: str) -> dict[str, Any] | None:
     """
     Fetch TMDB data using an IMDB ID.
     """
@@ -261,9 +375,7 @@ async def get_tmdb_data_by_imdb(
         return None
 
 
-def calculate_year_score(
-    result: Dict[str, Any], year: int, created_year: int
-) -> Tuple[bool, float]:
+def calculate_year_score(result: dict[str, Any], year: int, created_year: int) -> tuple[bool, float]:
     """Calculate year match score and validity"""
     try:
         result_date = result.get("release_date") or result.get("first_air_date")
@@ -289,9 +401,7 @@ def calculate_year_score(
                     end_year = math.inf if result_year <= year else None
 
                 if end_year is not None:
-                    return (result_year <= year <= end_year), (
-                        0 if (result_year <= year <= end_year) else float("inf")
-                    )
+                    return (result_year <= year <= end_year), (0 if (result_year <= year <= end_year) else float("inf"))
                 return False, float("inf")
             else:
                 return result_year == year, (0 if result_year == year else float("inf"))
@@ -307,9 +417,7 @@ def calculate_year_score(
 
                 if end_year is None:
                     return True, abs(result_year - created_year)
-                return True, min(
-                    abs(result_year - created_year), abs(end_year - created_year)
-                )
+                return True, min(abs(result_year - created_year), abs(end_year - created_year))
             else:
                 return True, abs(result_year - created_year)
 
@@ -326,7 +434,7 @@ async def search_tmdb(
     media_type: str = None,
     max_retries: int = 3,
     created_year: int | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Search for a movie or TV show on TMDB with strict year validation.
     When year is provided, only exact matches are considered.
@@ -346,9 +454,7 @@ async def search_tmdb(
         "api_key": TMDB_API_KEY,
         "query": title,
         "year": year if media_type == "movie" and year is not None else None,
-        "first_air_date_year": (
-            year if media_type == "tv" and year is not None else None
-        ),
+        "first_air_date_year": (year if media_type == "tv" and year is not None else None),
     }
 
     params = {k: v for k, v in params.items() if v is not None}
@@ -372,15 +478,10 @@ async def search_tmdb(
                 candidates = []
                 for result in results:
                     result_title = result.get("name") or result.get("title")
-                    if (
-                        not result_title
-                        or fuzz.ratio(result_title.lower(), title.lower()) < 85
-                    ):
+                    if not result_title or fuzz.ratio(result_title.lower(), title.lower()) < 85:
                         continue
 
-                    valid_year, year_score = calculate_year_score(
-                        result, year, created_year
-                    )
+                    valid_year, year_score = calculate_year_score(result, year, created_year)
                     if not valid_year:
                         continue
                     candidates.append((result, year_score))
@@ -392,22 +493,16 @@ async def search_tmdb(
                 if candidates:
                     best_match = candidates[0][0]
                     try:
-                        return await get_tmdb_data(
-                            str(best_match["id"]), best_match.get("media_type")
-                        )
+                        return await get_tmdb_data(str(best_match["id"]), best_match.get("media_type"))
                     except Exception as err:
-                        logging.error(
-                            f"TMDB search: Error fetching best match data: {err}"
-                        )
+                        logging.error(f"TMDB search: Error fetching best match data: {err}")
 
                 return {}
 
         except Exception as e:
             logging.debug(f"Error in attempt {attempt + 1}: {e}")
             if attempt == max_retries - 1:
-                logging.warning(
-                    "TMDB Search: Max retries reached. Returning empty dictionary."
-                )
+                logging.warning("TMDB Search: Max retries reached. Returning empty dictionary.")
                 return {}
 
     return {}
@@ -416,32 +511,33 @@ async def search_tmdb(
 async def search_multiple_tmdb(
     title: str,
     limit: int = 5,
-    year: Optional[int] = None,
-    media_type: Optional[str] = None,
-    created_year: Optional[int] = None,
+    year: int | None = None,
+    media_type: str | None = None,
+    created_year: int | None = None,
     min_similarity: int = 60,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search for multiple matching titles on TMDB.
     Similar to existing search_tmdb but returns multiple results.
     """
     if not settings.tmdb_api_key:
-        logging.error("TMDB API key is not set")
+        logging.warning("TMDB API key is not set")
         return []
 
+    # Convert media_type for TMDB API search endpoint
+    # Keep original for later use with get_tmdb_data
+    search_media_type = None
     if media_type:
-        media_type = "movie" if media_type == "movie" else "tv"
-        endpoint = f"search/{media_type}"
+        search_media_type = "movie" if media_type == "movie" else "tv"
+        endpoint = f"search/{search_media_type}"
     else:
         endpoint = "search/multi"
 
     params = {
         "api_key": settings.tmdb_api_key,
         "query": title,
-        "year": year if media_type == "movie" and year is not None else None,
-        "first_air_date_year": (
-            year if media_type == "tv" and year is not None else None
-        ),
+        "year": year if search_media_type == "movie" and year is not None else None,
+        "first_air_date_year": (year if search_media_type == "tv" and year is not None else None),
     }
     params = {k: v for k, v in params.items() if v is not None}
 
@@ -467,9 +563,7 @@ async def search_multiple_tmdb(
                 if similarity < min_similarity:
                     continue
 
-                valid_year, year_score = calculate_year_score(
-                    result, year, created_year
-                )
+                valid_year, year_score = calculate_year_score(result, year, created_year)
                 if not valid_year:
                     continue
 
@@ -486,10 +580,28 @@ async def search_multiple_tmdb(
             full_results = []
             for candidate, _ in top_candidates:
                 try:
-                    result = await get_tmdb_data(
-                        str(candidate["id"]), media_type, load_episodes=False
-                    )
-                    full_results.append(result)
+                    # Determine media type for get_tmdb_data
+                    # It expects "movie" or "series", not "tv"
+                    candidate_media_type = media_type  # Use original media_type
+                    if candidate_media_type is None or search_media_type is None:
+                        # For multi search, determine type from result
+                        result_type = candidate.get("media_type")
+                        if result_type == "movie":
+                            candidate_media_type = "movie"
+                        elif result_type == "tv":
+                            candidate_media_type = "series"
+                        else:
+                            # Skip non-movie/tv results (like person)
+                            continue
+                    elif candidate_media_type == "tv":
+                        # Normalize "tv" to "series" for get_tmdb_data
+                        candidate_media_type = "series"
+
+                    result = await get_tmdb_data(str(candidate["id"]), candidate_media_type, load_episodes=False)
+                    if result:
+                        # Add source provider marker
+                        result["_source_provider"] = "tmdb"
+                        full_results.append(result)
                 except Exception as err:
                     logging.error(f"Error fetching TMDB data for candidate: {err}")
 

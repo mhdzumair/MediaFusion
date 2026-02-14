@@ -1,7 +1,6 @@
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import Optional, List
 from urllib.parse import urljoin
 
 import httpx
@@ -10,39 +9,31 @@ import pytz
 from dateutil import parser as date_parser
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from db import crud
 from db.config import settings
-from db.schemas import TVMetaData, TVStreams, MediaFusionEventsMetaData
+from db.models import TVMetadata
 from db.redis_database import REDIS_ASYNC_CLIENT
-from db import sql_crud
-from db.sql_models import TVMetadata
+from db.schemas import MediaFusionEventsMetaData, TVStreams
 from utils import crypto
 from utils.config import config_manager
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class DLHDScheduleService:
-    def __init__(
-        self, start_within_next_hours: int = 1, started_within_hours_ago: int = 6
-    ):
+    def __init__(self, start_within_next_hours: int = 1, started_within_hours_ago: int = 6):
         self.name = "dlhd"
         self.schedule_url = config_manager.get_scraper_config(self.name, "schedule_url")
-        self.m3u8_base_url = config_manager.get_scraper_config(
-            self.name, "m3u8_base_url"
-        )
-        self.server_lookup_url = config_manager.get_scraper_config(
-            self.name, "server_lookup_url"
-        )
+        self.m3u8_base_url = config_manager.get_scraper_config(self.name, "m3u8_base_url")
+        self.server_lookup_url = config_manager.get_scraper_config(self.name, "server_lookup_url")
         self.referer = config_manager.get_scraper_config(self.name, "referer")
         self.gmt = pytz.timezone("Etc/GMT")
         self.start_within_next_hours = start_within_next_hours
         self.started_within_hours_ago = started_within_hours_ago
-        self.category_map = config_manager.get_scraper_config(
-            self.name, "category_mapping"
-        )
+        self.category_map = config_manager.get_scraper_config(self.name, "category_mapping")
         self.last_scrape_key = "dlhd:last_scrape_time"
         self._category_max_times = {}
 
-    async def get_last_scrape_time(self) -> Optional[float]:
+    async def get_last_scrape_time(self) -> float | None:
         """Get the timestamp of the last schedule scrape"""
         last_scrape = await REDIS_ASYNC_CLIENT.get(self.last_scrape_key)
         return float(last_scrape) if last_scrape else None
@@ -62,9 +53,7 @@ class DLHDScheduleService:
             return True
 
         current_time = datetime.now(tz=self.gmt).timestamp()
-        refresh_threshold = (
-            self.start_within_next_hours * 3600
-        ) / 2  # Half of the window in seconds
+        refresh_threshold = (self.start_within_next_hours * 3600) / 2  # Half of the window in seconds
         return (current_time - last_scrape) > refresh_threshold
 
     def format_event_time(self, event_timestamp: int) -> str:
@@ -107,7 +96,7 @@ class DLHDScheduleService:
 
     def create_event_metadata(
         self, event: dict, date_str: str, mapped_category: str
-    ) -> Optional[MediaFusionEventsMetaData]:
+    ) -> MediaFusionEventsMetaData | None:
         """
         Create event metadata from schedule data with corrected date handling.
         All times are handled in UK time (GMT) to match the schedule format.
@@ -140,9 +129,7 @@ class DLHDScheduleService:
                     )
                 else:
                     # Update max time if current time is equal or greater
-                    self._category_max_times[mapped_category] = max(
-                        max_time, event_time
-                    )
+                    self._category_max_times[mapped_category] = max(max_time, event_time)
                     logging.debug(
                         f"Updated max time for {mapped_category} to {self._category_max_times[mapped_category]}"
                     )
@@ -172,9 +159,7 @@ class DLHDScheduleService:
                 genres=[mapped_category],
                 event_start_timestamp=event_start_timestamp,
                 poster=random.choice(SPORTS_ARTIFACTS[mapped_category]["poster"]),
-                background=random.choice(
-                    SPORTS_ARTIFACTS[mapped_category]["background"]
-                ),
+                background=random.choice(SPORTS_ARTIFACTS[mapped_category]["background"]),
                 logo=random.choice(SPORTS_ARTIFACTS[mapped_category]["logo"]),
                 is_add_title_to_poster=True,
                 streams=[],
@@ -183,11 +168,9 @@ class DLHDScheduleService:
             logging.error(f"Error creating event metadata: {str(e)}")
             return None
 
-    async def find_tv_channel(
-        self, session: AsyncSession, channel_name: str
-    ) -> Optional[TVMetadata]:
+    async def find_tv_channel(self, session: AsyncSession, channel_name: str) -> TVMetadata | None:
         """Find TV channel in database"""
-        return await sql_crud.find_tv_channel_by_title(session, channel_name)
+        return await crud.find_tv_channel_by_title(session, channel_name)
 
     def create_stream(
         self,
@@ -228,7 +211,7 @@ class DLHDScheduleService:
         meta_id: str,
         is_sd: bool,
         stats: dict,
-    ) -> Optional[list[TVStreams]]:
+    ) -> list[TVStreams] | None:
         """Process a single channel and create/find its streams"""
         try:
             channel_name = channel.get("channel_name")
@@ -240,11 +223,9 @@ class DLHDScheduleService:
                 return None
 
             tv_channel = await self.find_tv_channel(session, channel_name)
-            if (
-                tv_channel and not is_sd
-            ):  # Only look for existing streams for HD channels
+            if tv_channel and not is_sd:  # Only look for existing streams for HD channels
                 try:
-                    channel_streams = await sql_crud.get_tv_streams_by_meta_id(
+                    channel_streams = await crud.get_tv_streams_by_meta_id(
                         session, tv_channel.id, namespace="mediafusion", is_working=True
                     )
                     # Convert SQL models to Pydantic schemas
@@ -263,14 +244,10 @@ class DLHDScheduleService:
                         return pydantic_streams
 
                 except Exception as e:
-                    logging.error(
-                        f"Error finding existing streams for channel {channel_name}: {str(e)}"
-                    )
+                    logging.error(f"Error finding existing streams for channel {channel_name}: {str(e)}")
 
             server_type = "bet" if is_sd else "premium"
-            server_url = self.server_lookup_url.format(
-                server_type=server_type, channel_id=channel_id
-            )
+            server_url = self.server_lookup_url.format(server_type=server_type, channel_id=channel_id)
 
             server_response = await client.get(
                 server_url,
@@ -280,39 +257,26 @@ class DLHDScheduleService:
                 },
             )
 
-            if (
-                server_response.status_code != 200
-                or server_response.headers.get("Content-Type") != "application/json"
-            ):
-                logging.error(
-                    f"Failed to fetch server data for channel: {channel_name} ({channel_id})"
-                )
+            if server_response.status_code != 200 or server_response.headers.get("Content-Type") != "application/json":
+                logging.error(f"Failed to fetch server data for channel: {channel_name} ({channel_id})")
                 stats["failed"] += 1
                 return None
 
             server_data = server_response.json()
             server_key = server_data.get("server_key")
             if not server_key:
-                logging.error(
-                    f"Failed to find server key for channel: {channel_name} ({channel_id})"
-                )
+                logging.error(f"Failed to find server key for channel: {channel_name} ({channel_id})")
                 stats["failed"] += 1
                 return None
 
             # Create new stream if no existing streams found or if it's SD
-            channel_name += (
-                "\n⚠️ Stream only available during the event" if is_sd else ""
-            )
+            channel_name += "\n⚠️ Stream only available during the event" if is_sd else ""
             try:
-                stream = self.create_stream(
-                    server_key, channel_id, channel_name, meta_id, server_type
-                )
+                stream = self.create_stream(server_key, channel_id, channel_name, meta_id, server_type)
                 stats["created"] += 1
                 return [stream]
             except Exception as e:
-                logging.error(
-                    f"Error creating stream for channel {channel_name}: {str(e)}"
-                )
+                logging.error(f"Error creating stream for channel {channel_name}: {str(e)}")
                 stats["failed"] += 1
                 return None
 
@@ -322,8 +286,13 @@ class DLHDScheduleService:
             return None
 
     async def _process_channel_list(
-        self, session: AsyncSession, channels: list | dict, meta_id: str, is_sd: bool, stats: dict
-    ) -> List[TVStreams]:
+        self,
+        session: AsyncSession,
+        channels: list | dict,
+        meta_id: str,
+        is_sd: bool,
+        stats: dict,
+    ) -> list[TVStreams]:
         """Process a list or dictionary of channels"""
         streams = []
 
@@ -341,9 +310,7 @@ class DLHDScheduleService:
                 return streams
 
             for channel in channel_items:
-                channel_streams = await self._process_single_channel(
-                    session, client, channel, meta_id, is_sd, stats
-                )
+                channel_streams = await self._process_single_channel(session, client, channel, meta_id, is_sd, stats)
                 if channel_streams:
                     streams.extend(channel_streams)
 
@@ -365,22 +332,16 @@ class DLHDScheduleService:
 
         # Process main channels (HD)
         if "channels" in event:
-            hd_streams = await self._process_channel_list(
-                session, event["channels"], meta_id, is_sd=False, stats=stats
-            )
+            hd_streams = await self._process_channel_list(session, event["channels"], meta_id, is_sd=False, stats=stats)
             streams.extend(hd_streams)
 
         # Process SD channels
         if "channels2" in event:
-            sd_streams = await self._process_channel_list(
-                session, event["channels2"], meta_id, is_sd=True, stats=stats
-            )
+            sd_streams = await self._process_channel_list(session, event["channels2"], meta_id, is_sd=True, stats=stats)
             streams.extend(sd_streams)
 
         if stats["failed"] > 0:
-            logging.warning(
-                "Event %s: %d channels failed to process", meta_id, stats["failed"]
-            )
+            logging.warning("Event %s: %d channels failed to process", meta_id, stats["failed"])
 
         logging.debug(
             "Event %s: Found %s existing streams, created %s new streams, failed %s streams",
@@ -403,33 +364,20 @@ class DLHDScheduleService:
 
         if event_time > current_time:
             # Future event: TTL = time until event + buffer after start
-            ttl = int(
-                (event_time - current_time).total_seconds()
-                + self.started_within_hours_ago * 3600
-            )
+            ttl = int((event_time - current_time).total_seconds() + self.started_within_hours_ago * 3600)
         else:
             # Past event: TTL = remaining time in the window
-            ttl = int(
-                (
-                    event_time
-                    + timedelta(hours=self.started_within_hours_ago)
-                    - current_time
-                ).total_seconds()
-            )
+            ttl = int((event_time + timedelta(hours=self.started_within_hours_ago) - current_time).total_seconds())
 
         # Ensure minimum TTL of 1 hour
         ttl = max(3600, ttl)
 
         await REDIS_ASYNC_CLIENT.set(event_key, event_json, ex=ttl)
-        await REDIS_ASYNC_CLIENT.zadd(
-            "events:all", {event_key: event.event_start_timestamp}
-        )
+        await REDIS_ASYNC_CLIENT.zadd("events:all", {event_key: event.event_start_timestamp})
         for genre in event.genres:
-            await REDIS_ASYNC_CLIENT.zadd(
-                f"events:genre:{genre}", {event_key: event.event_start_timestamp}
-            )
+            await REDIS_ASYNC_CLIENT.zadd(f"events:genre:{genre}", {event_key: event.event_start_timestamp})
 
-    async def parse_and_cache_schedule(self, session: AsyncSession) -> List[MediaFusionEventsMetaData]:
+    async def parse_and_cache_schedule(self, session: AsyncSession) -> list[MediaFusionEventsMetaData]:
         """Parse schedule and cache it in Redis"""
         schedule_data = await self.fetch_and_parse_schedule()
         if not schedule_data:
@@ -447,9 +395,7 @@ class DLHDScheduleService:
                 sport = sport.replace("</span>", "")
                 mapped_category = self.category_map.get(sport, "Other Sports")
                 for event in events:
-                    metadata = self.create_event_metadata(
-                        event, date_section, mapped_category
-                    )
+                    metadata = self.create_event_metadata(event, date_section, mapped_category)
                     if not metadata:
                         skipped_count += 1
                         continue
@@ -457,15 +403,11 @@ class DLHDScheduleService:
                     metadata.streams = await self.get_event_streams(session, event, metadata.id)
                     await self.cache_event(metadata)
 
-                    metadata.poster = (
-                        f"{settings.poster_host_url}/poster/events/{metadata.id}.jpg"
-                    )
+                    metadata.poster = f"{settings.poster_host_url}/poster/events/{metadata.id}.jpg"
                     events_metadata.append(metadata)
                     processed_count += 1
 
-        logging.info(
-            f"Processed {processed_count} events, skipped {skipped_count} events outside time window"
-        )
+        logging.info(f"Processed {processed_count} events, skipped {skipped_count} events outside time window")
 
         # Update last scrape time after successful processing
         await self.update_last_scrape_time()
@@ -475,33 +417,25 @@ class DLHDScheduleService:
         self,
         session: AsyncSession,
         force_refresh: bool = False,
-        genre: Optional[str] = None,
+        genre: str | None = None,
         skip: int = 0,
         limit: int = 25,
-    ) -> List[MediaFusionEventsMetaData]:
+    ) -> list[MediaFusionEventsMetaData]:
         """Get scheduled events with pagination and genre filtering"""
         events = []
         current_time = datetime.now(tz=self.gmt)
-        min_time = int(
-            (current_time - timedelta(hours=self.started_within_hours_ago)).timestamp()
-        )
-        max_time = int(
-            (current_time + timedelta(hours=self.start_within_next_hours)).timestamp()
-        )
+        min_time = int((current_time - timedelta(hours=self.started_within_hours_ago)).timestamp())
+        max_time = int((current_time + timedelta(hours=self.start_within_next_hours)).timestamp())
 
         # Check if we need to refresh based on last scrape time
         should_refresh = await self.should_refresh_schedule()
 
         if not force_refresh and not should_refresh:
-            cache_key = f"events:all" if not genre else f"events:genre:{genre}"
-            event_keys = await REDIS_ASYNC_CLIENT.zrevrangebyscore(
-                cache_key, max_time, min_time, start=skip, num=limit
-            )
+            cache_key = "events:all" if not genre else f"events:genre:{genre}"
+            event_keys = await REDIS_ASYNC_CLIENT.zrevrangebyscore(cache_key, max_time, min_time, start=skip, num=limit)
 
             if not event_keys and genre and skip != 0:
-                logging.info(
-                    "No events found in cache for the specified time window, pagination or genre"
-                )
+                logging.info("No events found in cache for the specified time window, pagination or genre")
                 return []
 
             logging.info(f"Found {len(event_keys)} events in cache")
@@ -509,9 +443,7 @@ class DLHDScheduleService:
                 event_json = await REDIS_ASYNC_CLIENT.get(event_key)
                 if event_json:
                     event = MediaFusionEventsMetaData.model_validate_json(event_json)
-                    event.poster = (
-                        f"{settings.poster_host_url}/poster/events/{event.id}.jpg"
-                    )
+                    event.poster = f"{settings.poster_host_url}/poster/events/{event.id}.jpg"
                     event.description = f"🎬 {event.title} - ⏰ {self.format_event_time(event.event_start_timestamp)}"
                     events.append(event)
                 else:
@@ -523,9 +455,7 @@ class DLHDScheduleService:
 
         # If we need to refresh or don't have enough cached events, fetch new data
         all_events = await self.parse_and_cache_schedule(session)
-        filtered_events = [
-            event for event in all_events if not genre or genre in event.genres
-        ]
+        filtered_events = [event for event in all_events if not genre or genre in event.genres]
         filtered_events.sort(key=lambda x: x.event_start_timestamp, reverse=True)
 
         start_idx = min(skip, len(filtered_events))

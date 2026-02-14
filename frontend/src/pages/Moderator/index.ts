@@ -1,0 +1,2 @@
+export { ModeratorDashboardPage } from './ModeratorDashboardPage'
+

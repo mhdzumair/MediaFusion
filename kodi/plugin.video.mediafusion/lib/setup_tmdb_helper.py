@@ -1,8 +1,8 @@
 import os.path
 
+import xbmc
 import xbmcaddon
 import xbmcgui
-import xbmc
 import xbmcvfs
 
 addon = xbmcaddon.Addon("plugin.video.mediafusion")
@@ -13,16 +13,12 @@ try:
     xbmcaddon.Addon("plugin.video.themoviedb.helper")
 except Exception:
     xbmc.log("TMDB Helper is not installed", xbmc.LOGERROR)
-    xbmcgui.Dialog().notification(
-        "MediaFusion", "TMDB Helper is not installed", xbmcgui.NOTIFICATION_ERROR
-    )
+    xbmcgui.Dialog().notification("MediaFusion", "TMDB Helper is not installed", xbmcgui.NOTIFICATION_ERROR)
     exit()
 
 # Check if MediaFusion player is installed "mediafusion.select.json" in
 home_path = xbmcvfs.translatePath("special://home")
-player_path = os.path.join(
-    home_path, "userdata/addon_data/plugin.video.themoviedb.helper/players"
-)
+player_path = os.path.join(home_path, "userdata/addon_data/plugin.video.themoviedb.helper/players")
 player_file = os.path.join(player_path, "mediafusion.select.json")
 if os.path.exists(player_path):
     if os.path.exists(player_file):

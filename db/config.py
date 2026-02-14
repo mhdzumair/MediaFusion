@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import model_validator, Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -8,18 +8,15 @@ class Settings(BaseSettings):
     # Core Application Settings
     addon_name: str = "MediaFusion"
     version: str = "1.0.0"
-    description: str = (
-        "Universal Stremio Add-on for Movies, Series, Live TV & Sports Events. Source: https://github.com/mhdzumair/MediaFusion"
-    )
+    description: str = "The Ultimate Open-source Streaming Platform for Movies, Series, Live TV. Source: https://github.com/mhdzumair/MediaFusion"
     branding_description: str = ""
+    branding_svg: str | None = None  # Optional partner/host SVG logo URL
     contact_email: str = "mhdzumair@gmail.com"
     host_url: str
     secret_key: str = Field(..., max_length=32, min_length=32)
     api_password: str
     logging_level: str = "INFO"
-    logo_url: str = (
-        "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
-    )
+    logo_url: str = "https://raw.githubusercontent.com/mhdzumair/MediaFusion/main/resources/images/mediafusion_logo.png"
     is_public_instance: bool = False
     poster_host_url: str | None = None
     min_scraping_video_size: int = 26214400  # 25 MB in bytes
@@ -63,6 +60,7 @@ class Settings(BaseSettings):
 
     # External Service API Keys
     tmdb_api_key: str | None = None
+    tvdb_api_key: str | None = None
 
     # Prowlarr Settings
     is_scrap_from_prowlarr: bool = True
@@ -121,9 +119,26 @@ class Settings(BaseSettings):
     premiumize_oauth_client_id: str | None = None
     premiumize_oauth_client_secret: str | None = None
 
-    # Telegram Settings
+    # Telegram Settings (Notifications)
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    telegram_webhook_secret_token: str | None = None  # Secret token for webhook security (optional but recommended)
+
+    # Telegram Scraper Settings
+    is_scrap_from_telegram: bool = False  # Master toggle for Telegram scraping
+    # Telethon credentials for channel scraping (get from https://my.telegram.org)
+    telegram_api_id: int | None = None  # API ID from my.telegram.org
+    telegram_api_hash: str | None = None  # API Hash from my.telegram.org
+    telegram_session_string: str | None = None  # Telethon session string (StringSession)
+    telegram_scraping_channels: list[str] = []  # Admin-configured channel list (@username or chat_id)
+    telegram_scrape_interval_hour: int = 6  # How often to scrape channels
+    telegram_scrape_message_limit: int = 100  # Max messages to fetch per channel per scrape
+    telegram_file_url_ttl: int = 1800  # 30 minutes - Telegram file URLs expire
+
+    # Telegram Backup Channel (for content redundancy)
+    # Private channel where contributed content is forwarded for backup
+    # If the bot gets suspended, content can be recovered via new bot using file_unique_id
+    telegram_backup_channel_id: str | None = None  # e.g., "-1001234567890"
 
     # Configuration Sources
     use_config_source: str = "remote"
@@ -139,6 +154,26 @@ class Settings(BaseSettings):
     is_scrap_from_yts: bool = True
     scrape_with_aka_titles: bool = True
     enable_fetching_torrent_metadata_from_p2p: bool = True
+
+    # Exception Tracking
+    enable_exception_tracking: bool = False
+    exception_tracking_ttl: int = 259200  # 3 days in seconds
+    exception_tracking_max_entries: int = 500
+
+    # IPTV Import Settings
+    enable_iptv_import: bool = True  # Master toggle for M3U/Xtream import feature
+    allow_public_iptv_sharing: bool = True  # If False, all imported streams are private to user profile only
+
+    # Torznab API Settings
+    enable_torznab_api: bool = True  # Master toggle for Torznab API endpoint
+
+    # External Platform Integration Settings (Trakt, Simkl, etc.)
+    # Get Trakt credentials from: https://trakt.tv/oauth/applications
+    trakt_client_id: str | None = None
+    trakt_client_secret: str | None = None
+    # Get Simkl credentials from: https://simkl.com/settings/developer/
+    simkl_client_id: str | None = None
+    simkl_client_secret: str | None = None
 
     # Content Filtering
     adult_content_regex_keywords: str = (

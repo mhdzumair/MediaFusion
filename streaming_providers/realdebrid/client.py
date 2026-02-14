@@ -1,6 +1,6 @@
-from base64 import b64encode, b64decode
+from base64 import b64decode, b64encode
 from binascii import Error as BinasciiError
-from typing import Any, Optional
+from typing import Any
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
@@ -11,7 +11,7 @@ class RealDebrid(DebridClient):
     OAUTH_URL = "https://api.real-debrid.com/oauth/v2"
     OPENSOURCE_CLIENT_ID = "X245A4XAIBGVM"
 
-    def __init__(self, token: Optional[str] = None, user_ip: Optional[str] = None):
+    def __init__(self, token: str | None = None, user_ip: str | None = None):
         self.user_ip = user_ip
         super().__init__(token)
 
@@ -19,21 +19,15 @@ class RealDebrid(DebridClient):
         error_code = error_data.get("error_code")
         match error_code:
             case 9:
-                raise ProviderException(
-                    "Real-Debrid Permission denied", "invalid_token.mp4"
-                )
+                raise ProviderException("Real-Debrid Permission denied", "invalid_token.mp4")
             case 22:
                 raise ProviderException("IP address not allowed", "ip_not_allowed.mp4")
             case 34:
                 raise ProviderException("Too many requests", "too_many_requests.mp4")
             case 35:
-                raise ProviderException(
-                    "Content marked as infringing", "content_infringing.mp4"
-                )
+                raise ProviderException("Content marked as infringing", "content_infringing.mp4")
             case 21:
-                raise ProviderException(
-                    "Active torrents limit reached", "torrent_limit.mp4"
-                )
+                raise ProviderException("Active torrents limit reached", "torrent_limit.mp4")
             case 30:
                 raise ProviderException("Invalid magnet link", "transfer_error.mp4")
 
@@ -41,7 +35,7 @@ class RealDebrid(DebridClient):
         self,
         method: str,
         url: str,
-        data: Optional[dict | bytes] = None,
+        data: dict | bytes | None = None,
         **kwargs,
     ) -> dict:
         if method in ["POST", "PUT"] and self.user_ip:
@@ -54,9 +48,7 @@ class RealDebrid(DebridClient):
         if self.token:
             token_data = self.decode_token_str(self.token)
             if "private_token" in token_data:
-                self.headers = {
-                    "Authorization": f"Bearer {token_data['private_token']}"
-                }
+                self.headers = {"Authorization": f"Bearer {token_data['private_token']}"}
                 self.is_private_token = True
             else:
                 access_token_data = await self.get_token(
@@ -64,14 +56,10 @@ class RealDebrid(DebridClient):
                     token_data["client_secret"],
                     token_data["code"],
                 )
-                self.headers = {
-                    "Authorization": f"Bearer {access_token_data['access_token']}"
-                }
+                self.headers = {"Authorization": f"Bearer {access_token_data['access_token']}"}
 
     @staticmethod
-    def encode_token_data(
-        code: str, client_id: str = None, client_secret: str = None, *args, **kwargs
-    ):
+    def encode_token_data(code: str, client_id: str = None, client_secret: str = None, *args, **kwargs):
         token = f"{client_id}:{client_secret}:{code}"
         return b64encode(str(token).encode()).decode()
 
@@ -113,9 +101,7 @@ class RealDebrid(DebridClient):
         if "client_secret" not in response_data:
             return response_data
 
-        token_data = await self.get_token(
-            response_data["client_id"], response_data["client_secret"], device_code
-        )
+        token_data = await self.get_token(response_data["client_id"], response_data["client_secret"], device_code)
 
         if "access_token" in token_data:
             token = self.encode_token_data(
@@ -128,9 +114,7 @@ class RealDebrid(DebridClient):
             return token_data
 
     async def add_magnet_link(self, magnet_link):
-        return await self._make_request(
-            "POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link}
-        )
+        return await self._make_request("POST", f"{self.BASE_URL}/torrents/addMagnet", data={"magnet": magnet_link})
 
     async def add_torrent_file(self, torrent_file: bytes):
         return await self._make_request(
@@ -149,9 +133,7 @@ class RealDebrid(DebridClient):
         return await self._make_request("GET", f"{self.BASE_URL}/downloads")
 
     async def get_torrent_info(self, torrent_id):
-        return await self._make_request(
-            "GET", f"{self.BASE_URL}/torrents/info/{torrent_id}"
-        )
+        return await self._make_request("GET", f"{self.BASE_URL}/torrents/info/{torrent_id}")
 
     async def disable_access_token(self):
         return await self._make_request(
@@ -169,7 +151,7 @@ class RealDebrid(DebridClient):
             is_return_none=True,
         )
 
-    async def get_available_torrent(self, info_hash) -> Optional[dict[str, Any]]:
+    async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
         available_torrents = await self.get_user_torrent_list()
         for torrent in available_torrents:
             if torrent["hash"] == info_hash:
@@ -187,13 +169,11 @@ class RealDebrid(DebridClient):
             return response
 
         if "error_code" in response:
+            if response["error_code"] == 19:
+                raise ProviderException("Hoster temporarily unavailable", "debrid_service_down_error.mp4")
             if response["error_code"] == 23:
-                raise ProviderException(
-                    "Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4"
-                )
-        raise ProviderException(
-            f"Failed to create download link. response: {response}", "api_error.mp4"
-        )
+                raise ProviderException("Exceed remote traffic limit", "exceed_remote_traffic_limit.mp4")
+        raise ProviderException(f"Failed to create download link. response: {response}", "api_error.mp4")
 
     async def delete_torrent(self, torrent_id) -> dict:
         return await self._make_request(

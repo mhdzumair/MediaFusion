@@ -22,9 +22,7 @@ def parse_stream_info(name, description, behaviour_hint):
         "resolution": "",
         "width": 0,
         "height": 0,
-        "cache_status": (
-            "CACHED" if "⚡️" in name else "NOT CACHED" if "⏳" in name else ""
-        ),
+        "cache_status": ("CACHED" if "⚡️" in name else "NOT CACHED" if "⏳" in name else ""),
         "size": behaviour_hint.get("videoSize"),
         "language": "",
         "source": "",
@@ -35,9 +33,7 @@ def parse_stream_info(name, description, behaviour_hint):
     }
 
     # Extract quality from name
-    resolution_match = re.search(
-        r"(4K|2160p|1440p|1080p|720p|576p|480p|360p|240p)", name, re.IGNORECASE
-    )
+    resolution_match = re.search(r"(4K|2160p|1440p|1080p|720p|576p|480p|360p|240p)", name, re.IGNORECASE)
     if resolution_match:
         resolution = resolution_match.group(1).upper()
         info["resolution"] = resolution

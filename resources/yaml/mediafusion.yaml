@@ -1,96 +1,156 @@
-id: mediafusion-elfhosted
-name: MediaFusion - ElfHosted
-description: "MediaFusion - ElfHosted Free Public Indexer"
+# MediaFusion Prowlarr Indexer Definition (Cardigann/YML format)
+#
+# ============================================================================
+# SETUP GUIDE FOR PROWLARR
+# ============================================================================
+#
+# Option A: Native Torznab (Recommended)
+# ----------------------------------------
+# MediaFusion exposes a native Torznab API. This is the simplest and most
+# reliable way to integrate with Prowlarr, Sonarr, and Radarr.
+#
+# 1. In Prowlarr, go to Indexers → Add → Generic → Torznab (Generic)
+# 2. Configure:
+#    - Name:     MediaFusion
+#    - URL:      https://your-mediafusion-url.com/torznab
+#    - API Key:  <your-user-uuid>
+#                (If API password is set on the server, use: <password>:<user-uuid>)
+#    - Categories:
+#        Movies:  2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060
+#        TV:      5000, 5010, 5020, 5030, 5040, 5045, 5060, 5070
+# 3. Click "Test" to verify the connection.
+# 4. Save the indexer.
+#
+# Option B: Custom Indexer Definition (this file)
+# -------------------------------------------------
+# If you prefer to use Prowlarr's custom indexer YAML format, copy this file
+# into Prowlarr's custom definitions directory:
+#
+#   Docker:  /config/Definitions/Custom/mediafusion.yaml
+#   Linux:   ~/.config/Prowlarr/Definitions/Custom/mediafusion.yaml
+#   Windows: %AppData%\Prowlarr\Definitions\Custom\mediafusion.yaml
+#
+# Then restart Prowlarr and add "MediaFusion" from the indexer list.
+#
+# ============================================================================
+# API KEY FORMAT
+# ============================================================================
+#
+# - Without server API password: Your user UUID (e.g., "a1b2c3d4-...")
+# - With server API password:    "password:user-uuid" (e.g., "mypass:a1b2c3d4-...")
+#
+# You can find your User UUID in the MediaFusion web UI under Settings/Profile.
+#
+# ============================================================================
+# TORZNAB API ENDPOINTS
+# ============================================================================
+#
+# Base URL:    {host}/torznab
+# Alt URL:     {host}/torznab/api
+#
+# Capabilities (no auth):  GET /torznab?t=caps
+# Movie search:            GET /torznab?t=movie&imdbid=tt0110357&apikey=YOUR_KEY
+# TV search:               GET /torznab?t=tvsearch&imdbid=tt0959621&season=1&ep=1&apikey=YOUR_KEY
+# General search:          GET /torznab?t=search&q=query&apikey=YOUR_KEY
+#
+# Supported params: q, imdbid, tmdbid, season, ep, cat, limit, offset
+#
+# ============================================================================
+
+id: mediafusion
+name: MediaFusion
+description: "MediaFusion Torznab Indexer - Open-source Streaming Platform"
 language: en-US
-type: public
+type: semi-private
 encoding: UTF-8
 followredirect: false
 testlinktorrent: false
 requestDelay: 2
 links:
+  - https://mediafusion.elfhosted.com/torznab
+
+legacylinks:
   - https://mediafusion.elfhosted.com
+
 caps:
   categories:
-    Movies: Movies
-    TV: TV
+    2000: Movies
+    2010: Movies/Foreign
+    2020: Movies/Other
+    2030: Movies/SD
+    2040: Movies/HD
+    2045: Movies/UHD
+    2050: Movies/BluRay
+    2060: Movies/3D
+    5000: TV
+    5010: TV/Foreign
+    5020: TV/SD
+    5030: TV/HD
+    5040: TV/Other
+    5045: TV/UHD
+    5060: TV/Sport
+    5070: TV/Anime
 
   modes:
     search: [q]
-    movie-search: [q, imdbid]
-    tv-search: [q, imdbid, season, ep]
+    movie-search: [q, imdbid, tmdbid]
+    tv-search: [q, imdbid, tmdbid, season, ep]
   allowrawsearch: false
 
 settings:
-  - name: mediafusion_note
-    type: info
-    label: MediaFusion Note
-    default: "Please update the original link with your self-hosted one to avoid putting load on the main instance."
-  - name: validate_imdb_movie
+  - name: apikey
     type: text
-    label: IMDB ID of the movie for Radarr validation (required)
-    default: "tt0110357" # The Lion King
-  - name: validate_imdb_tv
-    type: text
-    label: IMDB ID of the TV show for Sonarr validation (required)
-    default: "tt0959621" # Breaking Bad S01E01
+    label: API Key
+    default: ""
+    tooltip: "Your MediaFusion User UUID. If the server has an API password set, use the format: password:user-uuid"
 
 search:
-  headers:
-    User-Agent:
-      [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0",
-      ]
   paths:
-    - path: "stream/movie/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_movie }}{{ end }}.json"
-      method: get
+    - path: "?t={{ if eq .Categories.0 \"Movies\" }}movie{{ else if eq .Categories.0 \"TV\" }}tvsearch{{ else }}search{{ end }}&apikey={{ .Config.apikey }}&q={{ .Keywords }}&limit=100{{ if .Query.IMDBID }}&imdbid={{ .Query.IMDBID }}{{ end }}{{ if .Query.TMDBID }}&tmdbid={{ .Query.TMDBID }}{{ end }}{{ if .Query.Season }}&season={{ .Query.Season }}{{ end }}{{ if .Query.Ep }}&ep={{ .Query.Ep }}{{ end }}"
       response:
-        type: json
-        noResultsMessage: '"streams": []'
-      categories: [Movies]
-    - path: "stream/series/{{ if .Query.IMDBID }}{{ .Query.IMDBID }}{{ else }}{{ .Config.validate_imdb_tv }}{{ end }}:{{ if .Query.Season }}{{ .Query.Season }}{{ else }}1{{ end }}:{{ if .Query.Ep }}{{ .Query.Ep }}{{ else }}1{{ end }}.json"
-      method: get
-      response:
-        type: json
-        noResultsMessage: '"streams": []'
-      categories: [TV]
+        type: xml
 
+  # Torznab native XML response parsing
   rows:
-    selector: streams
-    missingAttributeEqualsNoResults: true
+    selector: rss channel item
 
   fields:
     title:
-      selector: description
-      filters:
-        - name: split
-          args: ["\n", 0]
-    year:
-      selector: description
-      filters:
-        - name: regexp
-          args: "(\\b(19|20)\\d\\d\\b)"
-    category_is_tv_show:
-      text: "{{ .Result.title }}"
-      filters:
-        - name: regexp
-          args: "\\b(S\\d+(?:E\\d+)?)\\b"
+      selector: title
     category:
-      text: "{{ if .Result.category_is_tv_show }}TV{{ else }}Movies{{ end }}"
+      selector: "torznab:attr[name='category']"
+      attribute: value
     infohash:
-      selector: infoHash
+      selector: "torznab:attr[name='infohash']"
+      attribute: value
+    magneturl:
+      selector: "torznab:attr[name='magneturl']"
+      attribute: value
     magnet:
-      selector: infoHash
-      filters:
-        - name: prepend
-          args: "magnet:?xt=urn:btih:"
+      selector: "torznab:attr[name='magneturl']"
+      attribute: value
     size:
-      selector: description
-      filters:
-        - name: regexp
-          args: "\\b(\\d+(?:\\.\\d+)? [MG]B)\\b"
+      selector: size
     seeders:
-      text: "1"
+      selector: "torznab:attr[name='seeders']"
+      attribute: value
+      optional: true
     leechers:
-      text: "1"
+      selector: "torznab:attr[name='peers']"
+      attribute: value
+      optional: true
+    imdbid:
+      selector: "torznab:attr[name='imdb']"
+      attribute: value
+      optional: true
+    tmdbid:
+      selector: "torznab:attr[name='tmdbid']"
+      attribute: value
+      optional: true
+    date:
+      selector: pubDate
+      optional: true
     details:
-      text: "{{ .Config.sitelink }}{{ if .Result.category_is_tv_show }}/stream/series/{{ .Query.IMDBID }}:{{ .Query.Season}}:{{ .Query.Ep }}.json{{ else }}/stream/movie/{{ .Query.IMDBID }}.json{{ end }}"
+      selector: guid
+    download:
+      selector: link

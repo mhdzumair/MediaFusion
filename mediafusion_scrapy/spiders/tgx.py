@@ -7,13 +7,13 @@ import PTT
 import scrapy
 from scrapy_playwright.page import PageMethod
 
+from db import crud
 from db.config import settings
-from db import sql_crud
 from db.database import get_async_session
+from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.config import config_manager
 from utils.parser import convert_size_to_bytes
 from utils.runtime_const import SPORTS_ARTIFACTS
-from db.redis_database import REDIS_ASYNC_CLIENT
 from utils.torrent import parse_magnet
 
 
@@ -28,9 +28,7 @@ class TgxSpider(scrapy.Spider):
     keyword_patterns: re.Pattern
     scraped_info_hash_key: str
 
-    def __init__(
-        self, scrape_all: str = "False", total_pages: int = None, *args, **kwargs
-    ):
+    def __init__(self, scrape_all: str = "False", total_pages: int = None, *args, **kwargs):
         super(TgxSpider, self).__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
         self.total_pages = total_pages
@@ -90,9 +88,7 @@ class TgxSpider(scrapy.Spider):
         if "galaxyfence.php" in response.url:
             self.logger.warning("Encountered galaxyfence.php. Retrying")
             parse_url = response.meta.get("parse_url")
-            yield scrapy.Request(
-                parse_url, self.parse, meta=response.meta, dont_filter=True, priority=10
-            )
+            yield scrapy.Request(parse_url, self.parse, meta=response.meta, dont_filter=True, priority=10)
             return
 
         uploader_profile_name = response.meta.get("uploader_profile")
@@ -101,40 +97,32 @@ class TgxSpider(scrapy.Spider):
             self.logger.info(f"Scraping torrents from {uploader_profile_name}")
             # Extract the last page number only once at the beginning
             if self.scrape_all and response.url.endswith("/0"):
-                last_page_number = response.css(
-                    "ul.pagination li.page-item:not(.disabled) a::attr(href)"
-                ).re(r"/profile/.*/torrents/(\d+)")[-2]
-                last_page_number = (
-                    int(last_page_number) if last_page_number.isdigit() else 0
-                )
+                last_page_number = response.css("ul.pagination li.page-item:not(.disabled) a::attr(href)").re(
+                    r"/profile/.*/torrents/(\d+)"
+                )[-2]
+                last_page_number = int(last_page_number) if last_page_number.isdigit() else 0
 
                 if self.total_pages:
                     last_page_number = min(last_page_number, self.total_pages)
 
                 # Generate requests for all pages
                 for page_number in range(1, last_page_number + 1):
-                    next_page_url = (
-                        f"{response.url.split('/torrents/')[0]}/torrents/{page_number}"
-                    )
+                    next_page_url = f"{response.url.split('/torrents/')[0]}/torrents/{page_number}"
                     response.meta["parse_url"] = next_page_url
                     yield response.follow(next_page_url, self.parse, meta=response.meta)
         else:
             if self.scrape_all and response.url.endswith("page=0"):
-                last_page_number = response.css(
-                    "ul.pagination li.page-item:not(.disabled) a::attr(href)"
-                ).re(r"/torrents.php.*page=(\d+)")[-2]
-                last_page_number = (
-                    int(last_page_number) if last_page_number.isdigit() else 0
-                )
+                last_page_number = response.css("ul.pagination li.page-item:not(.disabled) a::attr(href)").re(
+                    r"/torrents.php.*page=(\d+)"
+                )[-2]
+                last_page_number = int(last_page_number) if last_page_number.isdigit() else 0
 
                 if self.total_pages:
                     last_page_number = min(last_page_number, self.total_pages)
 
                 # Generate requests for all pages
                 for page_number in range(1, last_page_number + 1):
-                    next_page_url = (
-                        f"{response.url.replace('page=0', '')}page={page_number}"
-                    )
+                    next_page_url = f"{response.url.replace('page=0', '')}page={page_number}"
                     response.meta["parse_url"] = next_page_url
                     yield response.follow(next_page_url, self.parse, meta=response.meta)
             self.logger.info(f"Scraping torrents from search query: {response.url}")
@@ -160,20 +148,14 @@ class TgxSpider(scrapy.Spider):
 
             tgx_unique_id = torrent_page_relative_link.split("/")[-2]
             torrent_page_link = response.urljoin(torrent_page_relative_link)
-            torrent_link = torrent.css(
-                'a[href*="watercache.nanobytes.org"]::attr(href)'
-            ).get()
+            torrent_link = torrent.css('a[href*="watercache.nanobytes.org"]::attr(href)').get()
             magnet_link = torrent.css('a[href^="magnet:?"]::attr(href)').get()
             info_hash, announce_list = parse_magnet(magnet_link)
             if not info_hash:
-                self.logger.warning(
-                    f"Failed to parse magnet link: {response.url}, {torrent_name}"
-                )
+                self.logger.warning(f"Failed to parse magnet link: {response.url}, {torrent_name}")
                 continue
 
-            seeders = torrent.css(
-                "div.tgxtablecell span[title='Seeders/Leechers'] font[color='green'] b::text"
-            ).get()
+            seeders = torrent.css("div.tgxtablecell span[title='Seeders/Leechers'] font[color='green'] b::text").get()
 
             seeders = int(seeders) if seeders and seeders.isdigit() else None
             imdb_id = torrent.css("a[href*='search=tt']::attr(href)").re_first(r"tt\d+")
@@ -202,7 +184,7 @@ class TgxSpider(scrapy.Spider):
             if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
                 self.logger.info(f"Torrent already scraped: {torrent_name}")
                 async for session in get_async_session():
-                    await sql_crud.update_torrent_seeders(session, info_hash, seeders)
+                    await crud.update_torrent_seeders(session, info_hash, seeders)
             else:
                 yield response.follow(
                     torrent_page_link,
@@ -227,13 +209,8 @@ class TgxSpider(scrapy.Spider):
                 )
 
     async def parse_torrent_details(self, response):
-        if (
-            response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]")
-            or "galaxyfence.php" in response.url
-        ):
-            self.logger.warning(
-                f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}"
-            )
+        if response.xpath("//blockquote[contains(., 'GALAXY CHECKPOINT')]") or "galaxyfence.php" in response.url:
+            self.logger.warning(f"Encountered GALAXY CHECKPOINT. Retrying: {response.url}")
             yield self.retry_request(response)
             return
 
@@ -241,9 +218,7 @@ class TgxSpider(scrapy.Spider):
 
         # Extracting file details and sizes if available
         file_data = []
-        file_list = response.xpath(
-            '//button[contains(@class, "flist")]//em/text()'
-        ).get()
+        file_list = response.xpath('//button[contains(@class, "flist")]//em/text()').get()
         file_count = int(file_list.strip("()")) if file_list else 0
         for row in response.xpath('//table[contains(@class, "table-striped")]//tr'):
             file_name = row.xpath('td[@class="table_col1"]/text()').get()
@@ -287,33 +262,23 @@ class TgxSpider(scrapy.Spider):
         )
         torrent_data["description"] = torrent_description.replace("\xa0", " ")
 
-        total_size = response.xpath(
-            "//div[b='Total Size:']/following-sibling::div/text()"
-        ).get()
+        total_size = response.xpath("//div[b='Total Size:']/following-sibling::div/text()").get()
         if total_size:
             torrent_data["total_size"] = convert_size_to_bytes(total_size)
 
         # Extracting date created
-        date_created = response.xpath(
-            "//div[b[contains(., 'Added:')]]/following-sibling::div/text()"
-        ).get()
+        date_created = response.xpath("//div[b[contains(., 'Added:')]]/following-sibling::div/text()").get()
         if date_created:
             # Processing to extract the date and time
-            torrent_data["created_at"] = datetime.strptime(
-                date_created.strip(), "%d-%m-%Y %H:%M"
-            )
+            torrent_data["created_at"] = datetime.strptime(date_created.strip(), "%d-%m-%Y %H:%M")
 
         # Extracting language
-        language = response.xpath(
-            "//div[b='Language:']/following-sibling::div/text()"
-        ).get()
+        language = response.xpath("//div[b='Language:']/following-sibling::div/text()").get()
         if language:
             torrent_data["languages"] = [language.strip()]
 
         # Extracting type
-        title_type = response.xpath(
-            "//div[b='Category:']/following-sibling::div/a/text()"
-        ).get()
+        title_type = response.xpath("//div[b='Category:']/following-sibling::div/a/text()").get()
         if title_type:
             title_type = title_type.strip().lower()
             torrent_data["type"] = "series" if title_type == "tv" else "movie"
@@ -328,9 +293,7 @@ class TgxSpider(scrapy.Spider):
         retry_count = request.meta.get("retry_count", 0)
         torrent_page_link = request.meta.get("torrent_page_link")
         if retry_count < 3:  # Set your retry limit
-            new_url = torrent_page_link.replace(
-                request.url.split("/")[2], random.choice(self.allowed_domains)
-            )
+            new_url = torrent_page_link.replace(request.url.split("/")[2], random.choice(self.allowed_domains))
             self.logger.info(f"Retrying with new URL: {new_url}")
             return scrapy.Request(
                 url=new_url,
