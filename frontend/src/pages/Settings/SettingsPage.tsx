@@ -1,17 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  User,
-  Settings,
-  Lock,
-  Eye,
-  EyeOff,
-  Save,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  UserCog,
-} from 'lucide-react'
+import { User, Settings, Lock, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, UserCog } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,9 +18,7 @@ export function SettingsPage() {
 
   // Account details form state
   const [username, setUsername] = useState(user?.username || '')
-  const [contributeAnonymously, setContributeAnonymously] = useState(
-    user?.contribute_anonymously ?? false
-  )
+  const [contributeAnonymously, setContributeAnonymously] = useState(user?.contribute_anonymously ?? false)
 
   // Password change form state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -122,8 +109,7 @@ export function SettingsPage() {
   }
 
   const hasAccountChanges =
-    username !== (user?.username || '') ||
-    contributeAnonymously !== (user?.contribute_anonymously ?? false)
+    username !== (user?.username || '') || contributeAnonymously !== (user?.contribute_anonymously ?? false)
 
   return (
     <div className="container max-w-4xl py-8 space-y-8">
@@ -131,9 +117,7 @@ export function SettingsPage() {
         <Settings className="h-8 w-8" />
         <div>
           <h1 className="text-3xl font-bold">Account Settings</h1>
-          <p className="text-muted-foreground">
-            Manage your account details and preferences
-          </p>
+          <p className="text-muted-foreground">Manage your account details and preferences</p>
         </div>
       </div>
 
@@ -144,9 +128,7 @@ export function SettingsPage() {
             <User className="h-5 w-5" />
             <CardTitle>Account Details</CardTitle>
           </div>
-          <CardDescription>
-            Update your account information
-          </CardDescription>
+          <CardDescription>Update your account information</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {accountMessage && (
@@ -166,16 +148,8 @@ export function SettingsPage() {
           <div className="grid gap-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={user?.email || ''}
-                disabled
-                className="bg-muted"
-              />
-              <p className="text-xs text-muted-foreground">
-                Email address cannot be changed
-              </p>
+              <Input id="email" type="email" value={user?.email || ''} disabled className="bg-muted" />
+              <p className="text-xs text-muted-foreground">Email address cannot be changed</p>
             </div>
 
             <div className="space-y-2">
@@ -187,38 +161,25 @@ export function SettingsPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter a username"
               />
-              <p className="text-xs text-muted-foreground">
-                Your public display name
-              </p>
+              <p className="text-xs text-muted-foreground">Your public display name</p>
             </div>
 
             <div className="space-y-2">
               <Label>Role</Label>
-              <Input
-                value={user?.role || 'user'}
-                disabled
-                className="bg-muted capitalize"
-              />
+              <Input value={user?.role || 'user'} disabled className="bg-muted capitalize" />
             </div>
 
             <div className="space-y-2">
               <Label>Member Since</Label>
               <Input
-                value={
-                  user?.created_at
-                    ? new Date(user.created_at).toLocaleDateString()
-                    : 'Unknown'
-                }
+                value={user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
                 disabled
                 className="bg-muted"
               />
             </div>
           </div>
 
-          <Button
-            onClick={handleSaveAccount}
-            disabled={!hasAccountChanges || updateAccountMutation.isPending}
-          >
+          <Button onClick={handleSaveAccount} disabled={!hasAccountChanges || updateAccountMutation.isPending}>
             {updateAccountMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -241,9 +202,7 @@ export function SettingsPage() {
             <UserCog className="h-5 w-5" />
             <CardTitle>Contribution Preferences</CardTitle>
           </div>
-          <CardDescription>
-            Configure how your contributions are displayed
-          </CardDescription>
+          <CardDescription>Configure how your contributions are displayed</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between rounded-lg border p-4">
@@ -252,8 +211,8 @@ export function SettingsPage() {
                 Contribute Anonymously by Default
               </Label>
               <p className="text-sm text-muted-foreground">
-                When enabled, your contributions (imports, uploads) will not show your
-                username by default. You can still override this per contribution.
+                When enabled, your contributions (imports, uploads) will not show your username by default. You can
+                still override this per contribution.
               </p>
             </div>
             <Switch
@@ -272,10 +231,7 @@ export function SettingsPage() {
             </ul>
           </div>
 
-          <Button
-            onClick={handleSaveAccount}
-            disabled={!hasAccountChanges || updateAccountMutation.isPending}
-          >
+          <Button onClick={handleSaveAccount} disabled={!hasAccountChanges || updateAccountMutation.isPending}>
             {updateAccountMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -300,9 +256,7 @@ export function SettingsPage() {
             <Lock className="h-5 w-5" />
             <CardTitle>Change Password</CardTitle>
           </div>
-          <CardDescription>
-            Update your account password
-          </CardDescription>
+          <CardDescription>Update your account password</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {passwordMessage && (
@@ -370,9 +324,7 @@ export function SettingsPage() {
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Must be at least 8 characters
-              </p>
+              <p className="text-xs text-muted-foreground">Must be at least 8 characters</p>
             </div>
 
             <div className="space-y-2">
@@ -389,12 +341,7 @@ export function SettingsPage() {
 
           <Button
             onClick={handleChangePassword}
-            disabled={
-              !currentPassword ||
-              !newPassword ||
-              !confirmPassword ||
-              changePasswordMutation.isPending
-            }
+            disabled={!currentPassword || !newPassword || !confirmPassword || changePasswordMutation.isPending}
           >
             {changePasswordMutation.isPending ? (
               <>
@@ -425,9 +372,7 @@ export function SettingsPage() {
             </div>
             <div className="rounded-lg border p-4">
               <p className="text-sm text-muted-foreground">Level</p>
-              <p className="text-2xl font-bold capitalize">
-                {user?.contribution_level ?? 'New'}
-              </p>
+              <p className="text-2xl font-bold capitalize">{user?.contribution_level ?? 'New'}</p>
             </div>
           </div>
         </CardContent>

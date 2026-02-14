@@ -24,19 +24,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { 
-  FileVideo, 
-  Tv, 
-  MoreVertical, 
-  RefreshCw, 
-  Trash2, 
-  Edit, 
+  FileVideo,
+  Tv,
+  MoreVertical,
+  RefreshCw,
+  Trash2,
+  Edit,
   Clock,
   CheckCircle,
   XCircle,
@@ -78,7 +73,7 @@ export function IPTVSourcesPage() {
   const [editImportLive, setEditImportLive] = useState(true)
   const [editImportVod, setEditImportVod] = useState(true)
   const [editImportSeries, setEditImportSeries] = useState(true)
-  
+
   // Track active sync jobs by source ID
   const [syncJobs, setSyncJobs] = useState<Record<number, string>>({})
   const [completedJobs, setCompletedJobs] = useState<Record<number, ImportJobStatus | null>>({})
@@ -87,19 +82,19 @@ export function IPTVSourcesPage() {
   const updateSource = useUpdateIPTVSource()
   const deleteSource = useDeleteIPTVSource()
   const syncSource = useSyncIPTVSource()
-  
+
   // Get the currently active job ID (only one at a time for polling)
-  const activeSourceId = Object.keys(syncJobs).find(id => syncJobs[parseInt(id)]) 
-    ? parseInt(Object.keys(syncJobs).find(id => syncJobs[parseInt(id)])!)
+  const activeSourceId = Object.keys(syncJobs).find((id) => syncJobs[parseInt(id)])
+    ? parseInt(Object.keys(syncJobs).find((id) => syncJobs[parseInt(id)])!)
     : null
   const activeJobId = activeSourceId ? syncJobs[activeSourceId] : null
-  
+
   // Poll for job status
   const { data: jobStatus } = useImportJobStatus(activeJobId, {
     onComplete: (status) => {
       if (activeSourceId) {
-        setCompletedJobs(prev => ({ ...prev, [activeSourceId]: status }))
-        setSyncJobs(prev => {
+        setCompletedJobs((prev) => ({ ...prev, [activeSourceId]: status }))
+        setSyncJobs((prev) => {
           const next = { ...prev }
           delete next[activeSourceId]
           return next
@@ -110,8 +105,8 @@ export function IPTVSourcesPage() {
     },
     onError: (status) => {
       if (activeSourceId) {
-        setCompletedJobs(prev => ({ ...prev, [activeSourceId]: status }))
-        setSyncJobs(prev => {
+        setCompletedJobs((prev) => ({ ...prev, [activeSourceId]: status }))
+        setSyncJobs((prev) => {
           const next = { ...prev }
           delete next[activeSourceId]
           return next
@@ -119,7 +114,7 @@ export function IPTVSourcesPage() {
       }
     },
   })
-  
+
   // Clear completed job notification after 5 seconds
   useEffect(() => {
     const completedIds = Object.keys(completedJobs).map(Number)
@@ -141,7 +136,7 @@ export function IPTVSourcesPage() {
 
   const handleSaveEdit = async () => {
     if (!editingSource) return
-    
+
     await updateSource.mutateAsync({
       sourceId: editingSource.id,
       data: {
@@ -156,7 +151,7 @@ export function IPTVSourcesPage() {
 
   const handleDelete = async () => {
     if (!deletingSourceId) return
-    
+
     await deleteSource.mutateAsync(deletingSourceId)
     setDeletingSourceId(null)
   }
@@ -164,10 +159,10 @@ export function IPTVSourcesPage() {
   const handleSync = async (sourceId: number) => {
     try {
       const result = await syncSource.mutateAsync(sourceId)
-      
+
       // Check if it's a background task
       if (result.status === 'processing' && result.job_id) {
-        setSyncJobs(prev => ({ ...prev, [sourceId]: result.job_id! }))
+        setSyncJobs((prev) => ({ ...prev, [sourceId]: result.job_id! }))
       } else if (result.status === 'success') {
         // Immediate sync completed, refetch sources
         refetch()
@@ -190,9 +185,7 @@ export function IPTVSourcesPage() {
             </div>
             IPTV Sources
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your saved IPTV sources for easy re-sync
-          </p>
+          <p className="text-muted-foreground mt-1">Manage your saved IPTV sources for easy re-sync</p>
         </div>
         <Button asChild className="rounded-xl bg-gradient-to-r from-primary to-primary/80">
           <Link to="/dashboard/import">
@@ -233,7 +226,7 @@ export function IPTVSourcesPage() {
             const currentJobId = syncJobs[source.id]
             const isActiveJob = currentJobId && activeJobId === currentJobId
             const completedJob = completedJobs[source.id]
-            
+
             return (
               <Card key={source.id} className="glass border-border/50">
                 <CardContent className="flex flex-col gap-3 p-4">
@@ -242,7 +235,7 @@ export function IPTVSourcesPage() {
                     <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
                       <Icon className="h-6 w-6 text-primary" />
                     </div>
-                    
+
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -262,10 +255,12 @@ export function IPTVSourcesPage() {
                           </Badge>
                         )}
                         {!source.is_active && (
-                          <Badge variant="destructive" className="text-xs">Inactive</Badge>
+                          <Badge variant="destructive" className="text-xs">
+                            Inactive
+                          </Badge>
                         )}
                       </div>
-                      
+
                       {/* Import types */}
                       <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                         {source.import_live && (
@@ -284,24 +279,30 @@ export function IPTVSourcesPage() {
                           </span>
                         )}
                       </div>
-                      
+
                       {/* Last sync stats */}
                       {source.last_sync_stats && !isSyncing && (
                         <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                          Last sync: 
+                          Last sync:
                           {source.last_sync_stats.tv !== undefined && (
-                            <Badge variant="outline" className="text-xs">{source.last_sync_stats.tv} TV</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {source.last_sync_stats.tv} TV
+                            </Badge>
                           )}
                           {source.last_sync_stats.movie !== undefined && (
-                            <Badge variant="outline" className="text-xs">{source.last_sync_stats.movie} Movies</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {source.last_sync_stats.movie} Movies
+                            </Badge>
                           )}
                           {source.last_sync_stats.series !== undefined && (
-                            <Badge variant="outline" className="text-xs">{source.last_sync_stats.series} Series</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {source.last_sync_stats.series} Series
+                            </Badge>
                           )}
                         </div>
                       )}
                     </div>
-                    
+
                     {/* Last synced */}
                     <div className="flex-shrink-0 text-right text-sm text-muted-foreground">
                       {source.last_synced_at ? (
@@ -313,7 +314,7 @@ export function IPTVSourcesPage() {
                         <span>Never synced</span>
                       )}
                     </div>
-                    
+
                     {/* Actions */}
                     <div className="flex-shrink-0 flex items-center gap-2">
                       <Button
@@ -323,14 +324,10 @@ export function IPTVSourcesPage() {
                         onClick={() => handleSync(source.id)}
                         disabled={isSyncing || !source.is_active}
                       >
-                        {isSyncing ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-4 w-4" />
-                        )}
+                        {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                         <span className="ml-2">Sync</span>
                       </Button>
-                      
+
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="rounded-xl">
@@ -342,10 +339,7 @@ export function IPTVSourcesPage() {
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            onClick={() => setDeletingSourceId(source.id)}
-                            className="text-destructive"
-                          >
+                          <DropdownMenuItem onClick={() => setDeletingSourceId(source.id)} className="text-destructive">
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
                           </DropdownMenuItem>
@@ -353,7 +347,7 @@ export function IPTVSourcesPage() {
                       </DropdownMenu>
                     </div>
                   </div>
-                  
+
                   {/* Sync Progress */}
                   {isActiveJob && jobStatus && (
                     <div className="ml-16 space-y-2">
@@ -362,40 +356,32 @@ export function IPTVSourcesPage() {
                           Syncing... {jobStatus.progress} / {jobStatus.total}
                         </span>
                         <span className="text-muted-foreground">
-                          {jobStatus.total > 0 
-                            ? Math.round((jobStatus.progress / jobStatus.total) * 100) 
-                            : 0}%
+                          {jobStatus.total > 0 ? Math.round((jobStatus.progress / jobStatus.total) * 100) : 0}%
                         </span>
                       </div>
-                      <Progress 
-                        value={jobStatus.total > 0 
-                          ? (jobStatus.progress / jobStatus.total) * 100 
-                          : 0} 
+                      <Progress
+                        value={jobStatus.total > 0 ? (jobStatus.progress / jobStatus.total) * 100 : 0}
                         className="h-2"
                       />
                       {jobStatus.stats && (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          {jobStatus.stats.tv !== undefined && (
-                            <span>TV: {jobStatus.stats.tv}</span>
-                          )}
-                          {jobStatus.stats.movie !== undefined && (
-                            <span>Movies: {jobStatus.stats.movie}</span>
-                          )}
-                          {jobStatus.stats.skipped !== undefined && (
-                            <span>Skipped: {jobStatus.stats.skipped}</span>
-                          )}
+                          {jobStatus.stats.tv !== undefined && <span>TV: {jobStatus.stats.tv}</span>}
+                          {jobStatus.stats.movie !== undefined && <span>Movies: {jobStatus.stats.movie}</span>}
+                          {jobStatus.stats.skipped !== undefined && <span>Skipped: {jobStatus.stats.skipped}</span>}
                         </div>
                       )}
                     </div>
                   )}
-                  
+
                   {/* Completed notification */}
                   {completedJob && (
-                    <div className={`ml-16 p-2 rounded-lg text-sm ${
-                      completedJob.status === 'completed'
-                        ? 'bg-emerald-500/10 text-emerald-600'
-                        : 'bg-red-500/10 text-red-600'
-                    }`}>
+                    <div
+                      className={`ml-16 p-2 rounded-lg text-sm ${
+                        completedJob.status === 'completed'
+                          ? 'bg-emerald-500/10 text-emerald-600'
+                          : 'bg-red-500/10 text-red-600'
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         {completedJob.status === 'completed' ? (
                           <CheckCircle className="h-4 w-4" />
@@ -405,8 +391,7 @@ export function IPTVSourcesPage() {
                         <span>
                           {completedJob.status === 'completed'
                             ? `Sync complete! Added ${completedJob.stats?.tv || 0} TV, ${completedJob.stats?.movie || 0} movies`
-                            : `Sync failed: ${completedJob.error || 'Unknown error'}`
-                          }
+                            : `Sync failed: ${completedJob.error || 'Unknown error'}`}
                         </span>
                       </div>
                     </div>
@@ -420,11 +405,13 @@ export function IPTVSourcesPage() {
 
       {/* Sync Result Toast - only show for immediate (non-background) sync results */}
       {syncSource.isSuccess && syncSource.data && syncSource.data.status !== 'processing' && (
-        <div className={`fixed bottom-4 right-4 p-4 rounded-xl shadow-lg z-50 ${
-          syncSource.data.status === 'success' 
-            ? 'bg-emerald-500/10 border border-emerald-500/20' 
-            : 'bg-red-500/10 border border-red-500/20'
-        }`}>
+        <div
+          className={`fixed bottom-4 right-4 p-4 rounded-xl shadow-lg z-50 ${
+            syncSource.data.status === 'success'
+              ? 'bg-emerald-500/10 border border-emerald-500/20'
+              : 'bg-red-500/10 border border-red-500/20'
+          }`}
+        >
           <div className="flex items-center gap-3">
             {syncSource.data.status === 'success' ? (
               <CheckCircle className="h-5 w-5 text-emerald-500" />
@@ -443,11 +430,9 @@ export function IPTVSourcesPage() {
         <DialogContent className="glass border-border/50">
           <DialogHeader>
             <DialogTitle>Edit Source</DialogTitle>
-            <DialogDescription>
-              Update source settings
-            </DialogDescription>
+            <DialogDescription>Update source settings</DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name</Label>
@@ -458,54 +443,41 @@ export function IPTVSourcesPage() {
                 className="rounded-xl"
               />
             </div>
-            
+
             <div className="space-y-3">
               <Label>Import Types</Label>
-              
+
               <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30">
                 <div className="flex items-center gap-2">
                   <Tv className="h-4 w-4 text-blue-500" />
                   <span>Live TV</span>
                 </div>
-                <Switch
-                  checked={editImportLive}
-                  onCheckedChange={setEditImportLive}
-                />
+                <Switch checked={editImportLive} onCheckedChange={setEditImportLive} />
               </div>
-              
+
               <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30">
                 <div className="flex items-center gap-2">
                   <Film className="h-4 w-4 text-emerald-500" />
                   <span>Movies</span>
                 </div>
-                <Switch
-                  checked={editImportVod}
-                  onCheckedChange={setEditImportVod}
-                />
+                <Switch checked={editImportVod} onCheckedChange={setEditImportVod} />
               </div>
-              
+
               <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30">
                 <div className="flex items-center gap-2">
                   <MonitorPlay className="h-4 w-4 text-primary" />
                   <span>Series</span>
                 </div>
-                <Switch
-                  checked={editImportSeries}
-                  onCheckedChange={setEditImportSeries}
-                />
+                <Switch checked={editImportSeries} onCheckedChange={setEditImportSeries} />
               </div>
             </div>
           </div>
 
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setEditingSource(null)}
-              disabled={updateSource.isPending}
-            >
+            <Button variant="outline" onClick={() => setEditingSource(null)} disabled={updateSource.isPending}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSaveEdit}
               disabled={updateSource.isPending}
               className="bg-gradient-to-r from-primary to-primary/80"
@@ -532,7 +504,7 @@ export function IPTVSourcesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteSource.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDelete}
               disabled={deleteSource.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -550,4 +522,3 @@ export function IPTVSourcesPage() {
     </div>
   )
 }
-

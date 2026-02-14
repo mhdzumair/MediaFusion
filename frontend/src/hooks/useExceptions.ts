@@ -3,10 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  exceptionsApi,
-  type ExceptionListParams,
-} from '@/lib/api/exceptions'
+import { exceptionsApi, type ExceptionListParams } from '@/lib/api/exceptions'
 
 export const exceptionKeys = {
   all: ['exceptions'] as const,

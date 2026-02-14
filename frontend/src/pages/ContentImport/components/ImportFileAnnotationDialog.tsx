@@ -13,17 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Info,
   Play,
@@ -45,13 +36,7 @@ import {
   Layers,
   AlertCircle,
 } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useCombinedMetadataSearch, getBestExternalId, type CombinedSearchResult } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
@@ -139,36 +124,43 @@ function MetadataSearchPopover({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const debouncedQuery = useDebounce(searchQuery, 300)
 
-  const { data: searchResults = [], isLoading, isFetching } = useCombinedMetadataSearch(
+  const {
+    data: searchResults = [],
+    isLoading,
+    isFetching,
+  } = useCombinedMetadataSearch(
     {
       query: debouncedQuery,
       type: metaType,
       limit: 15,
     },
-    { enabled: debouncedQuery.length >= 2 && !showManualId }
+    { enabled: debouncedQuery.length >= 2 && !showManualId },
   )
 
-  const handleSelect = useCallback((result: CombinedSearchResult) => {
-    onSelect(result)
-    setOpen(false)
-    setSearchQuery('')
-    setShowManualId(false)
-  }, [onSelect])
+  const handleSelect = useCallback(
+    (result: CombinedSearchResult) => {
+      onSelect(result)
+      setOpen(false)
+      setSearchQuery('')
+      setShowManualId(false)
+    },
+    [onSelect],
+  )
 
   // Handle manual ID submission - fetches metadata from provider
   const handleManualIdSubmit = useCallback(async () => {
     if (!manualId.trim()) return
-    
+
     setIsLoadingPreview(true)
     setPreviewError(null)
-    
+
     try {
       const preview = await userMetadataApi.previewImport({
         provider: manualProvider,
         external_id: manualId.trim(),
         media_type: metaType,
       })
-      
+
       const manualResult: CombinedSearchResult = {
         id: `manual-${manualProvider}-${manualId.trim()}`,
         title: preview.title,
@@ -183,7 +175,7 @@ function MetadataSearchPopover({
         provider: manualProvider,
         description: preview.description,
       }
-      
+
       onSelect(manualResult)
       setOpen(false)
       setShowManualId(false)
@@ -196,7 +188,7 @@ function MetadataSearchPopover({
     }
   }, [manualId, manualProvider, metaType, onSelect])
 
-  const currentProviderOption = PROVIDER_OPTIONS.find(p => p.value === manualProvider)
+  const currentProviderOption = PROVIDER_OPTIONS.find((p) => p.value === manualProvider)
 
   if (value?.id) {
     return (
@@ -214,11 +206,7 @@ function MetadataSearchPopover({
           <X className="h-3 w-3" />
         </Button>
         {value.poster ? (
-          <img
-            src={value.poster}
-            alt=""
-            className="w-6 h-8 rounded object-cover flex-shrink-0"
-          />
+          <img src={value.poster} alt="" className="w-6 h-8 rounded object-cover flex-shrink-0" />
         ) : (
           <div className="w-6 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
             {value.type === 'series' ? (
@@ -234,12 +222,15 @@ function MetadataSearchPopover({
   }
 
   return (
-    <Popover open={open} onOpenChange={(isOpen) => {
-      setOpen(isOpen)
-      if (!isOpen) {
-        setShowManualId(false)
-      }
-    }}>
+    <Popover
+      open={open}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen)
+        if (!isOpen) {
+          setShowManualId(false)
+        }
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -270,7 +261,7 @@ function MetadataSearchPopover({
                 Back
               </Button>
             </div>
-            
+
             {/* Provider selector */}
             <Select value={manualProvider} onValueChange={(v) => setManualProvider(v as ImportProvider)}>
               <SelectTrigger className="h-7 text-xs">
@@ -284,7 +275,7 @@ function MetadataSearchPopover({
                 ))}
               </SelectContent>
             </Select>
-            
+
             {/* ID input */}
             <Input
               placeholder={currentProviderOption?.placeholder || 'Enter ID'}
@@ -299,7 +290,7 @@ function MetadataSearchPopover({
             <p className="text-[10px] text-muted-foreground">
               Example: <code className="bg-muted px-0.5 rounded">{currentProviderOption?.example}</code>
             </p>
-            
+
             {/* Error message */}
             {previewError && (
               <div className="flex items-start gap-1.5 p-1.5 rounded bg-destructive/10 text-destructive text-[10px]">
@@ -307,7 +298,7 @@ function MetadataSearchPopover({
                 <span>{previewError}</span>
               </div>
             )}
-            
+
             <Button
               className="w-full h-7 text-xs"
               size="sm"
@@ -356,12 +347,7 @@ function MetadataSearchPopover({
               {!isLoading && !isFetching && searchQuery.length >= 2 && searchResults.length === 0 && (
                 <div className="py-4 text-center">
                   <p className="text-xs text-muted-foreground mb-2">No results</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-[10px]"
-                    onClick={() => setShowManualId(true)}
-                  >
+                  <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => setShowManualId(true)}>
                     Enter ID manually
                   </Button>
                 </div>
@@ -386,11 +372,7 @@ function MetadataSearchPopover({
                       className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted cursor-pointer text-left"
                     >
                       {result.poster ? (
-                        <img
-                          src={result.poster}
-                          alt=""
-                          className="w-8 h-12 rounded object-cover flex-shrink-0"
-                        />
+                        <img src={result.poster} alt="" className="w-8 h-12 rounded object-cover flex-shrink-0" />
                       ) : (
                         <div className="w-8 h-12 rounded bg-muted flex items-center justify-center flex-shrink-0">
                           {result.type === 'series' ? (
@@ -411,10 +393,12 @@ function MetadataSearchPopover({
                             <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
                               In Library
                             </Badge>
-                          ) : result.provider && (
-                            <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                              {result.provider.toUpperCase()}
-                            </Badge>
+                          ) : (
+                            result.provider && (
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                {result.provider.toUpperCase()}
+                              </Badge>
+                            )
                           )}
                         </div>
                       </div>
@@ -454,7 +438,7 @@ export function ImportFileAnnotationDialog({
         a.filename.localeCompare(b.filename, undefined, {
           numeric: true,
           sensitivity: 'base',
-        })
+        }),
       )
       setEditedFiles(
         sorted.map((f, idx) => ({
@@ -476,7 +460,7 @@ export function ImportFileAnnotationDialog({
           meta_title: undefined,
           meta_poster: undefined,
           meta_type: undefined,
-        }))
+        })),
       )
       // Reset mode when dialog opens
       setAnnotationMode('episode')
@@ -484,34 +468,31 @@ export function ImportFileAnnotationDialog({
   }, [open, files])
 
   // Update file metadata link
-  const updateFileMetadata = useCallback(
-    (index: number, result: CombinedSearchResult | null) => {
-      setEditedFiles((prev) =>
-        prev.map((f, idx) => {
-          if (idx !== index) return f
-          if (!result) {
-            return {
-              ...f,
-              meta_id: undefined,
-              meta_title: undefined,
-              meta_poster: undefined,
-              meta_type: undefined,
-              isModified: true,
-            }
-          }
+  const updateFileMetadata = useCallback((index: number, result: CombinedSearchResult | null) => {
+    setEditedFiles((prev) =>
+      prev.map((f, idx) => {
+        if (idx !== index) return f
+        if (!result) {
           return {
             ...f,
-            meta_id: getBestExternalId(result),
-            meta_title: result.title,
-            meta_poster: result.poster || undefined,
-            meta_type: result.type as 'movie' | 'series',
+            meta_id: undefined,
+            meta_title: undefined,
+            meta_poster: undefined,
+            meta_type: undefined,
             isModified: true,
           }
-        })
-      )
-    },
-    []
-  )
+        }
+        return {
+          ...f,
+          meta_id: getBestExternalId(result),
+          meta_title: result.title,
+          meta_poster: result.poster || undefined,
+          meta_type: result.type as 'movie' | 'series',
+          isModified: true,
+        }
+      }),
+    )
+  }, [])
 
   // Clear all metadata links
   const clearAllMetadataLinks = useCallback(() => {
@@ -523,35 +504,26 @@ export function ImportFileAnnotationDialog({
         meta_poster: undefined,
         meta_type: undefined,
         isModified: true,
-      }))
+      })),
     )
   }, [])
 
-  const updateFile = useCallback(
-    (index: number, field: keyof EditedFile, value: number | string | null | boolean) => {
-      setEditedFiles((prev) =>
-        prev.map((f, idx) => {
-          if (idx !== index) return f
-          const updated = { ...f, [field]: value, isModified: true }
-          return updated
-        })
-      )
-    },
-    []
-  )
+  const updateFile = useCallback((index: number, field: keyof EditedFile, value: number | string | null | boolean) => {
+    setEditedFiles((prev) =>
+      prev.map((f, idx) => {
+        if (idx !== index) return f
+        const updated = { ...f, [field]: value, isModified: true }
+        return updated
+      }),
+    )
+  }, [])
 
   const toggleFileInclusion = useCallback((index: number) => {
-    setEditedFiles((prev) =>
-      prev.map((f, idx) =>
-        idx === index ? { ...f, included: !f.included } : f
-      )
-    )
+    setEditedFiles((prev) => prev.map((f, idx) => (idx === index ? { ...f, included: !f.included } : f)))
   }, [])
 
   const toggleAllFiles = useCallback((include: boolean) => {
-    setEditedFiles((prev) =>
-      prev.map((f) => ({ ...f, included: include }))
-    )
+    setEditedFiles((prev) => prev.map((f) => ({ ...f, included: include })))
   }, [])
 
   const clearAllEpisodeData = useCallback(() => {
@@ -562,73 +534,74 @@ export function ImportFileAnnotationDialog({
         episode_number: null,
         episode_end: null,
         isModified: true,
-      }))
+      })),
     )
   }, [])
 
   // Apply same season to all following files
-  const applySeasonToFollowing = useCallback((startIndex: number) => {
-    const startFile = editedFiles[startIndex]
-    if (!startFile || startFile.season_number === null) return
+  const applySeasonToFollowing = useCallback(
+    (startIndex: number) => {
+      const startFile = editedFiles[startIndex]
+      if (!startFile || startFile.season_number === null) return
 
-    const seasonNum = startFile.season_number
-    const indicesToHighlight: number[] = []
+      const seasonNum = startFile.season_number
+      const indicesToHighlight: number[] = []
 
-    setEditedFiles((prev) =>
-      prev.map((f, idx) => {
-        if (idx < startIndex || !f.included) return f
-        indicesToHighlight.push(idx)
-        return {
-          ...f,
-          season_number: seasonNum,
-          isModified: true,
-        }
-      })
-    )
+      setEditedFiles((prev) =>
+        prev.map((f, idx) => {
+          if (idx < startIndex || !f.included) return f
+          indicesToHighlight.push(idx)
+          return {
+            ...f,
+            season_number: seasonNum,
+            isModified: true,
+          }
+        }),
+      )
 
-    setHighlightedIndices(new Set(indicesToHighlight))
-    setTimeout(() => setHighlightedIndices(new Set()), 1500)
-  }, [editedFiles])
+      setHighlightedIndices(new Set(indicesToHighlight))
+      setTimeout(() => setHighlightedIndices(new Set()), 1500)
+    },
+    [editedFiles],
+  )
 
   // Apply consecutive episode numbering
-  const applyEpisodeNumbering = useCallback((startIndex: number) => {
-    const startFile = editedFiles[startIndex]
-    let episodeCounter = startFile?.episode_number ?? 1
-    let lastSeason: number | null = null
-    const indicesToHighlight: number[] = []
+  const applyEpisodeNumbering = useCallback(
+    (startIndex: number) => {
+      const startFile = editedFiles[startIndex]
+      let episodeCounter = startFile?.episode_number ?? 1
+      let lastSeason: number | null = null
+      const indicesToHighlight: number[] = []
 
-    setEditedFiles((prev) =>
-      prev.map((f, idx) => {
-        if (idx < startIndex || !f.included) return f
+      setEditedFiles((prev) =>
+        prev.map((f, idx) => {
+          if (idx < startIndex || !f.included) return f
 
-        // Reset episode counter if season changes
-        const currentSeason = f.season_number
-        if (
-          idx !== startIndex &&
-          lastSeason !== null &&
-          currentSeason !== null &&
-          currentSeason !== lastSeason
-        ) {
-          episodeCounter = 1
-        }
+          // Reset episode counter if season changes
+          const currentSeason = f.season_number
+          if (idx !== startIndex && lastSeason !== null && currentSeason !== null && currentSeason !== lastSeason) {
+            episodeCounter = 1
+          }
 
-        indicesToHighlight.push(idx)
-        const newEpisodeNumber = episodeCounter++
-        if (currentSeason !== null) {
-          lastSeason = currentSeason
-        }
+          indicesToHighlight.push(idx)
+          const newEpisodeNumber = episodeCounter++
+          if (currentSeason !== null) {
+            lastSeason = currentSeason
+          }
 
-        return {
-          ...f,
-          episode_number: newEpisodeNumber,
-          isModified: true,
-        }
-      })
-    )
+          return {
+            ...f,
+            episode_number: newEpisodeNumber,
+            isModified: true,
+          }
+        }),
+      )
 
-    setHighlightedIndices(new Set(indicesToHighlight))
-    setTimeout(() => setHighlightedIndices(new Set()), 1500)
-  }, [editedFiles])
+      setHighlightedIndices(new Set(indicesToHighlight))
+      setTimeout(() => setHighlightedIndices(new Set()), 1500)
+    },
+    [editedFiles],
+  )
 
   const handleConfirm = () => {
     const annotatedFiles: FileAnnotation[] = editedFiles
@@ -655,10 +628,7 @@ export function ImportFileAnnotationDialog({
   }
 
   // Count files with metadata links
-  const linkedCount = useMemo(
-    () => editedFiles.filter((f) => f.included && f.meta_id).length,
-    [editedFiles]
-  )
+  const linkedCount = useMemo(() => editedFiles.filter((f) => f.included && f.meta_id).length, [editedFiles])
 
   const includedCount = editedFiles.filter((f) => f.included).length
 
@@ -703,8 +673,8 @@ export function ImportFileAnnotationDialog({
                           variant="ghost"
                           size="sm"
                           className={cn(
-                            "h-7 px-2.5 text-xs",
-                            annotationMode === 'episode' && "bg-primary/20 text-primary"
+                            'h-7 px-2.5 text-xs',
+                            annotationMode === 'episode' && 'bg-primary/20 text-primary',
                           )}
                           onClick={() => setAnnotationMode('episode')}
                         >
@@ -722,8 +692,8 @@ export function ImportFileAnnotationDialog({
                           variant="ghost"
                           size="sm"
                           className={cn(
-                            "h-7 px-2.5 text-xs",
-                            annotationMode === 'multi-content' && "bg-primary/20 text-primary"
+                            'h-7 px-2.5 text-xs',
+                            annotationMode === 'multi-content' && 'bg-primary/20 text-primary',
                           )}
                           onClick={() => setAnnotationMode('multi-content')}
                         >
@@ -745,10 +715,7 @@ export function ImportFileAnnotationDialog({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className={cn(
-                          "h-7 px-2",
-                          viewMode === 'filename' && "bg-primary/20"
-                        )}
+                        className={cn('h-7 px-2', viewMode === 'filename' && 'bg-primary/20')}
                         onClick={() => setViewMode('filename')}
                       >
                         <FileText className="h-3.5 w-3.5" />
@@ -763,10 +730,7 @@ export function ImportFileAnnotationDialog({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className={cn(
-                          "h-7 px-2",
-                          viewMode === 'full' && "bg-primary/20"
-                        )}
+                        className={cn('h-7 px-2', viewMode === 'full' && 'bg-primary/20')}
                         onClick={() => setViewMode('full')}
                       >
                         <FolderTree className="h-3.5 w-3.5" />
@@ -776,17 +740,12 @@ export function ImportFileAnnotationDialog({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              
+
               {/* Selection buttons */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => toggleAllFiles(true)}
-                    >
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => toggleAllFiles(true)}>
                       <CheckSquare className="h-3.5 w-3.5 mr-1" />
                       All
                     </Button>
@@ -794,7 +753,7 @@ export function ImportFileAnnotationDialog({
                   <TooltipContent>Select all files</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
+
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -811,7 +770,7 @@ export function ImportFileAnnotationDialog({
                   <TooltipContent>Deselect all files</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
+
               {/* Clear all button */}
               <TooltipProvider>
                 <Tooltip>
@@ -856,13 +815,14 @@ export function ImportFileAnnotationDialog({
             <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
             {annotationMode === 'episode' ? (
               <span>
-                Use <kbd className="px-1 py-0.5 rounded bg-blue-500/20 text-[10px]">↓</kbd> to apply season to following files, 
-                and <kbd className="px-1 py-0.5 rounded bg-blue-500/20 text-[10px]">▶</kbd> for consecutive episode numbering.
+                Use <kbd className="px-1 py-0.5 rounded bg-blue-500/20 text-[10px]">↓</kbd> to apply season to following
+                files, and <kbd className="px-1 py-0.5 rounded bg-blue-500/20 text-[10px]">▶</kbd> for consecutive
+                episode numbering.
               </span>
             ) : (
               <span>
-                Search and link each file to different movies or series. This is useful for multi-movie collections or torrents 
-                containing content from different titles.
+                Search and link each file to different movies or series. This is useful for multi-movie collections or
+                torrents containing content from different titles.
               </span>
             )}
           </div>
@@ -874,7 +834,7 @@ export function ImportFileAnnotationDialog({
             {editedFiles.map((file, index) => {
               const filename = getFilenameOnly(file.filename)
               const folderPath = getFolderPath(file.filename)
-              
+
               return (
                 <div
                   key={file.index}
@@ -883,7 +843,7 @@ export function ImportFileAnnotationDialog({
                     !file.included && 'opacity-40 bg-muted/20',
                     file.isModified && file.included && 'border-primary/50 bg-primary/5',
                     highlightedIndices.has(index) && 'ring-2 ring-primary/50',
-                    file.included && !file.isModified && 'border-border/40 bg-background/50 hover:border-border'
+                    file.included && !file.isModified && 'border-border/40 bg-background/50 hover:border-border',
                   )}
                 >
                   {/* Header Row */}
@@ -893,24 +853,22 @@ export function ImportFileAnnotationDialog({
                       onCheckedChange={() => toggleFileInclusion(index)}
                       className="data-[state=checked]:bg-primary scale-90 flex-shrink-0"
                     />
-                    
+
                     {/* File size badge - positioned before filename to avoid clipping */}
                     {file.size != null && file.size > 0 && (
-                      <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-normal text-muted-foreground flex-shrink-0 whitespace-nowrap"
+                      >
                         {formatFileSize(file.size)}
                       </Badge>
                     )}
-                    
+
                     <div className="flex-1 min-w-0">
                       {viewMode === 'full' && folderPath && (
-                        <p className="text-[10px] text-muted-foreground/60 font-mono break-all">
-                          {folderPath}
-                        </p>
+                        <p className="text-[10px] text-muted-foreground/60 font-mono break-all">{folderPath}</p>
                       )}
-                      <p className={cn(
-                        "font-mono break-all",
-                        viewMode === 'filename' ? "text-sm" : "text-xs"
-                      )}>
+                      <p className={cn('font-mono break-all', viewMode === 'filename' ? 'text-sm' : 'text-xs')}>
                         {filename}
                       </p>
                     </div>
@@ -918,7 +876,7 @@ export function ImportFileAnnotationDialog({
 
                   {/* Input Row - Episode Mode */}
                   {annotationMode === 'episode' && (
-                    <div className={cn("grid gap-2", isSports ? "grid-cols-4" : "grid-cols-3")}>
+                    <div className={cn('grid gap-2', isSports ? 'grid-cols-4' : 'grid-cols-3')}>
                       {/* Season */}
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
@@ -1000,8 +958,8 @@ export function ImportFileAnnotationDialog({
                                 <TooltipContent className="max-w-xs">
                                   <p className="font-medium">Multi-episode files</p>
                                   <p className="text-muted-foreground mt-1">
-                                    If a single file contains multiple episodes (e.g., E01-E03), 
-                                    set Episode End to the last episode number.
+                                    If a single file contains multiple episodes (e.g., E01-E03), set Episode End to the
+                                    last episode number.
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
@@ -1040,16 +998,18 @@ export function ImportFileAnnotationDialog({
                   {/* Input Row - Multi-Content Mode */}
                   {annotationMode === 'multi-content' && (
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">
-                        Link to Metadata
-                      </Label>
+                      <Label className="text-[10px] text-muted-foreground">Link to Metadata</Label>
                       <MetadataSearchPopover
-                        value={file.meta_id ? {
-                          id: file.meta_id,
-                          title: file.meta_title || file.meta_id,
-                          poster: file.meta_poster,
-                          type: file.meta_type,
-                        } : undefined}
+                        value={
+                          file.meta_id
+                            ? {
+                                id: file.meta_id,
+                                title: file.meta_title || file.meta_id,
+                                poster: file.meta_poster,
+                                type: file.meta_type,
+                              }
+                            : undefined
+                        }
                         onSelect={(result) => updateFileMetadata(index, result)}
                         onClear={() => updateFileMetadata(index, null)}
                         disabled={!file.included}
@@ -1100,11 +1060,7 @@ export function ImportFileAnnotationDialog({
               )}
             </div>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                className="rounded-lg"
-              >
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-lg">
                 Cancel
               </Button>
               <Button
@@ -1131,4 +1087,3 @@ export function ImportFileAnnotationDialog({
     </Dialog>
   )
 }
-

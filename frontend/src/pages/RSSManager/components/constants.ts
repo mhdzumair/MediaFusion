@@ -44,11 +44,7 @@ export const CATALOG_OPTIONS = {
 }
 
 // All catalogs in a flat list
-export const ALL_CATALOGS = [
-  ...CATALOG_OPTIONS.movies,
-  ...CATALOG_OPTIONS.series,
-  ...CATALOG_OPTIONS.sports,
-]
+export const ALL_CATALOGS = [...CATALOG_OPTIONS.movies, ...CATALOG_OPTIONS.series, ...CATALOG_OPTIONS.sports]
 
 // Parsing pattern fields configuration
 export const PARSING_PATTERN_FIELDS = [
@@ -61,10 +57,20 @@ export const PARSING_PATTERN_FIELDS = [
   { key: 'category', label: 'Category', placeholder: 'category', hasRegex: true },
   { key: 'magnet', label: 'Magnet Link', placeholder: 'torznab:attr[@name="magneturl"]@value', hasRegex: true },
   { key: 'torrent', label: 'Torrent Link', placeholder: 'enclosure.@url or link', hasRegex: true },
-  { key: 'info_hash', label: 'Info Hash (direct)', placeholder: 'torznab:attr[@name="infohash"]@value', hasRegex: true },
+  {
+    key: 'info_hash',
+    label: 'Info Hash (direct)',
+    placeholder: 'torznab:attr[@name="infohash"]@value',
+    hasRegex: true,
+  },
   { key: 'size', label: 'Size', placeholder: 'size or torznab:attr[@name="size"]@value', hasRegex: true },
   { key: 'seeders', label: 'Seeders', placeholder: 'torznab:attr[@name="seeders"]@value', hasRegex: true },
-  { key: 'episode_name_parser', label: 'Episode Name Parser', placeholder: 'Regex for episode parsing', hasRegex: false },
+  {
+    key: 'episode_name_parser',
+    label: 'Episode Name Parser',
+    placeholder: 'Regex for episode parsing',
+    hasRegex: false,
+  },
 ] as const
 
 // Filter fields configuration
@@ -76,7 +82,3 @@ export const FILTER_FIELDS = [
   { key: 'min_seeders', label: 'Minimum Seeders', placeholder: '0', type: 'number' },
   { key: 'category_filter', label: 'Category Filter', placeholder: 'Movies, Series (comma separated)', type: 'text' },
 ] as const
-
-
-
-

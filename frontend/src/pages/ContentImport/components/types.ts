@@ -18,14 +18,14 @@ export interface TorrentImportFormData {
   // Content type
   contentType: ContentType
   sportsCategory?: SportsCategory
-  
+
   // Metadata
   metaId?: string
   title?: string
   poster?: string
   background?: string
   logo?: string
-  
+
   // Technical specs
   resolution?: string
   quality?: string
@@ -33,18 +33,18 @@ export interface TorrentImportFormData {
   audio?: string[]
   hdr?: string[]
   languages?: string[]
-  
+
   // Catalogs
   catalogs?: string[]
-  
+
   // Series/Sports specific
   episodeNameParser?: string
   releaseDate?: string
-  
+
   // Import options
   forceImport?: boolean
-  isAnonymous?: boolean  // Whether to contribute anonymously
-  
+  isAnonymous?: boolean // Whether to contribute anonymously
+
   // File annotations for series
   fileData?: FileAnnotation[]
 }
@@ -64,10 +64,10 @@ export interface FileAnnotation {
   thumbnail?: string
   release_date?: string
   // Per-file metadata linking (for multi-content torrents)
-  meta_id?: string  // External ID (e.g., tt1234567) or internal ID
-  meta_title?: string  // Display title for the linked metadata
-  meta_poster?: string  // Poster URL for display
-  meta_type?: 'movie' | 'series'  // Type of the linked metadata
+  meta_id?: string // External ID (e.g., tt1234567) or internal ID
+  meta_title?: string // Display title for the linked metadata
+  meta_poster?: string // Poster URL for display
+  meta_type?: 'movie' | 'series' // Type of the linked metadata
 }
 
 // Selected match from analysis
@@ -86,4 +86,3 @@ export interface SelectedMatch extends TorrentMatch {
   aka_titles?: string[]
   is_add_title_to_poster?: boolean
 }
-

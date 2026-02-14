@@ -8,15 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { 
-  MoreVertical,
-  Trash2,
-  ExternalLink,
-  Edit,
-  Play,
-  Heart,
-  Loader2,
-} from 'lucide-react'
+import { MoreVertical, Trash2, ExternalLink, Edit, Play, Heart, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useContentLikes, useLikeContent, useUnlikeContent } from '@/hooks'
 import { useRpdb } from '@/contexts/RpdbContext'
@@ -31,15 +23,15 @@ import { RatingsDisplay, CertificationBadge } from './RatingsDisplay'
 // ============================================
 
 export interface ContentCardData {
-  id: number  // Internal database ID (media_id) - used for navigation and API calls
-  external_ids: ExternalIds  // All external IDs (imdb, tmdb, tvdb, mal)
+  id: number // Internal database ID (media_id) - used for navigation and API calls
+  external_ids: ExternalIds // All external IDs (imdb, tmdb, tvdb, mal)
   title: string
   type: CatalogType
   year?: number
   poster?: string
   runtime?: string
-  imdb_rating?: number  // Backward compatibility
-  ratings?: AllRatings  // New multi-provider ratings
+  imdb_rating?: number // Backward compatibility
+  ratings?: AllRatings // New multi-provider ratings
   genres?: string[]
   likes_count?: number // Pre-loaded likes count from catalog response
   certification?: string // Age rating category (All Ages, Teens, Adults, etc.)
@@ -65,7 +57,7 @@ export interface ContentCardProps {
 // ============================================
 
 interface QuickLikeProps {
-  mediaId: number  // Internal media ID
+  mediaId: number // Internal media ID
   className?: string
   size?: 'sm' | 'default'
   initialLikesCount?: number // Pre-loaded count from catalog response to avoid N+1 queries
@@ -76,10 +68,10 @@ export function QuickLike({ mediaId, className, size = 'sm', initialLikesCount }
   const { data: likesSummary, isFetched } = useContentLikes(mediaId)
   const likeContent = useLikeContent()
   const unlikeContent = useUnlikeContent()
-  
+
   const userLiked = likesSummary?.user_liked || false
   // Use fetched count if available, otherwise fall back to initial count
-  const likesCount = isFetched ? (likesSummary?.likes_count || 0) : (initialLikesCount ?? likesSummary?.likes_count ?? 0)
+  const likesCount = isFetched ? likesSummary?.likes_count || 0 : (initialLikesCount ?? likesSummary?.likes_count ?? 0)
   const isLiking = likeContent.isPending || unlikeContent.isPending
 
   const handleLike = async (e: React.MouseEvent) => {
@@ -100,7 +92,7 @@ export function QuickLike({ mediaId, className, size = 'sm', initialLikesCount }
         className={cn(
           'gap-1 transition-all',
           size === 'sm' ? 'h-7 px-2' : 'h-8 px-3',
-          userLiked && 'bg-rose-500 hover:bg-rose-600 text-white'
+          userLiked && 'bg-rose-500 hover:bg-rose-600 text-white',
         )}
         onClick={handleLike}
         disabled={isLiking}
@@ -144,12 +136,12 @@ function GridCard({
   const metaId = item.external_ids?.imdb || `mf:${item.id}`
 
   return (
-    <div 
+    <div
       ref={cardRef}
       className={cn(
         'group relative rounded-2xl transition-all duration-300',
         isSelected && 'ring-2 ring-primary shadow-lg shadow-primary/40 z-10 p-2 -m-2 bg-primary/5',
-        className
+        className,
       )}
     >
       <Link to={contentPath} onClick={handleLinkClick}>
@@ -162,7 +154,7 @@ function GridCard({
             title={item.title}
             className="h-full w-full rounded-xl transition-transform group-hover:scale-105"
           />
-          
+
           {/* Hover overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
             {/* Top actions */}
@@ -233,16 +225,16 @@ function GridCard({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            
+
             {/* Bottom info */}
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <RatingsDisplay 
-                  ratings={item.ratings} 
+                <RatingsDisplay
+                  ratings={item.ratings}
                   imdbRating={item.imdb_rating}
                   size="sm"
                   maxExternalRatings={2}
-                  showCommunity={false}  // Community shown via QuickLike
+                  showCommunity={false} // Community shown via QuickLike
                 />
                 {item.certification && (
                   <CertificationBadge certification={item.certification} size="sm" showIcon={false} />
@@ -257,12 +249,10 @@ function GridCard({
             </div>
           </div>
         </div>
-        
+
         {/* Title and info */}
         <div className="mt-2 space-y-1">
-          <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-            {item.title}
-          </p>
+          <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{item.title}</p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {item.year && <span>{item.year}</span>}
             {item.runtime && <span>• {item.runtime}</span>}
@@ -301,14 +291,14 @@ function ListCard({
   const metaId = item.external_ids?.imdb || `mf:${item.id}`
 
   return (
-    <div 
+    <div
       ref={cardRef}
       className={cn(
         'flex items-center gap-4 p-4 rounded-xl border transition-all duration-300 group',
-        isSelected 
-          ? 'border-primary shadow-lg shadow-primary/30 bg-primary/10' 
+        isSelected
+          ? 'border-primary shadow-lg shadow-primary/30 bg-primary/10'
           : 'border-border/50 hover:border-primary/30',
-        className
+        className,
       )}
     >
       <Link to={contentPath} onClick={handleLinkClick} className="flex items-center gap-4 flex-1 min-w-0">
@@ -321,14 +311,12 @@ function ListCard({
           className="flex-shrink-0"
         />
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate group-hover:text-primary transition-colors">
-            {item.title}
-          </p>
+          <p className="font-medium truncate group-hover:text-primary transition-colors">{item.title}</p>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1 flex-wrap">
             {item.year && <span>{item.year}</span>}
             {item.runtime && <span>• {item.runtime}</span>}
-            <RatingsDisplay 
-              ratings={item.ratings} 
+            <RatingsDisplay
+              ratings={item.ratings}
               imdbRating={item.imdb_rating}
               size="sm"
               maxExternalRatings={2}
@@ -342,7 +330,7 @@ function ListCard({
           </div>
           {item.genres && item.genres.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
-              {item.genres.slice(0, 3).map(g => (
+              {item.genres.slice(0, 3).map((g) => (
                 <Badge key={g} variant="outline" className="text-xs">
                   {g}
                 </Badge>
@@ -351,7 +339,7 @@ function ListCard({
           )}
         </div>
       </Link>
-      
+
       {/* Actions */}
       <div className="flex items-center gap-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         {onPlay && (
@@ -371,11 +359,7 @@ function ListCard({
         {showLike && <QuickLike mediaId={item.id} initialLikesCount={item.likes_count} />}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-lg"
-            >
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -404,10 +388,7 @@ function ListCard({
             {onRemove && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => onRemove(item)}
-                >
+                <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Remove
                 </DropdownMenuItem>
@@ -426,11 +407,11 @@ function ListCard({
 
 export function ContentCard(props: ContentCardProps) {
   const { variant = 'grid' } = props
-  
+
   if (variant === 'list') {
     return <ListCard {...props} />
   }
-  
+
   return <GridCard {...props} />
 }
 
@@ -445,10 +426,7 @@ interface ContentGridProps {
 
 export function ContentGrid({ children, className }: ContentGridProps) {
   return (
-    <div className={cn(
-      'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4',
-      className
-    )}>
+    <div className={cn('grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4', className)}>
       {children}
     </div>
   )
@@ -460,10 +438,5 @@ interface ContentListProps {
 }
 
 export function ContentList({ children, className }: ContentListProps) {
-  return (
-    <div className={cn('space-y-3', className)}>
-      {children}
-    </div>
-  )
+  return <div className={cn('space-y-3', className)}>{children}</div>
 }
-

@@ -1,14 +1,13 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  type ReactNode,
-} from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getInstanceInfo, getStoredApiKey, setStoredApiKey, clearStoredApiKey, apiClient, type InstanceInfo } from '@/lib/api'
+import {
+  getInstanceInfo,
+  getStoredApiKey,
+  setStoredApiKey,
+  clearStoredApiKey,
+  apiClient,
+  type InstanceInfo,
+} from '@/lib/api'
 
 interface InstanceContextType {
   instanceInfo: InstanceInfo | null
@@ -78,23 +77,32 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
   const isApiKeySet = useMemo(() => !!apiKey, [apiKey])
 
   // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = useMemo<InstanceContextType>(() => ({
-    instanceInfo: instanceInfo ?? null,
-    isLoading,
-    error: error as Error | null,
-    apiKey,
-    isApiKeyRequired,
-    isApiKeySet,
-    setApiKey: handleSetApiKey,
-    clearApiKey: handleClearApiKey,
-    refetchInstanceInfo: handleRefetch,
-  }), [instanceInfo, isLoading, error, apiKey, isApiKeyRequired, isApiKeySet, handleSetApiKey, handleClearApiKey, handleRefetch])
-
-  return (
-    <InstanceContext.Provider value={contextValue}>
-      {children}
-    </InstanceContext.Provider>
+  const contextValue = useMemo<InstanceContextType>(
+    () => ({
+      instanceInfo: instanceInfo ?? null,
+      isLoading,
+      error: error as Error | null,
+      apiKey,
+      isApiKeyRequired,
+      isApiKeySet,
+      setApiKey: handleSetApiKey,
+      clearApiKey: handleClearApiKey,
+      refetchInstanceInfo: handleRefetch,
+    }),
+    [
+      instanceInfo,
+      isLoading,
+      error,
+      apiKey,
+      isApiKeyRequired,
+      isApiKeySet,
+      handleSetApiKey,
+      handleClearApiKey,
+      handleRefetch,
+    ],
   )
+
+  return <InstanceContext.Provider value={contextValue}>{children}</InstanceContext.Provider>
 }
 
 export function useInstance() {
@@ -104,4 +112,3 @@ export function useInstance() {
   }
   return context
 }
-

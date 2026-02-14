@@ -11,23 +11,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
-  Alert,
-  AlertDescription,
-} from '@/components/ui/alert'
-import { 
-  Ban,
-  CheckCircle,
-  Loader2,
-  AlertTriangle,
-  ShieldAlert,
-} from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Ban, CheckCircle, Loader2, AlertTriangle, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/lib/api'
@@ -53,10 +39,10 @@ export function BlockContentButton({
 }: BlockContentButtonProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  
+
   const [blockDialogOpen, setBlockDialogOpen] = useState(false)
   const [reason, setReason] = useState('')
-  
+
   // Block mutation
   const blockMutation = useMutation({
     mutationFn: () => adminApi.blockMedia(mediaId, { reason: reason || undefined }),
@@ -78,7 +64,7 @@ export function BlockContentButton({
       })
     },
   })
-  
+
   // Unblock mutation
   const unblockMutation = useMutation({
     mutationFn: () => adminApi.unblockMedia(mediaId),
@@ -102,7 +88,7 @@ export function BlockContentButton({
   const handleBlock = () => {
     blockMutation.mutate()
   }
-  
+
   const handleUnblock = () => {
     unblockMutation.mutate()
   }
@@ -113,14 +99,11 @@ export function BlockContentButton({
         {isBlocked ? (
           <>
             {/* Blocked indicator */}
-            <Badge 
-              variant="destructive" 
-              className="gap-1.5 bg-red-500/20 text-red-500 border-red-500/30"
-            >
+            <Badge variant="destructive" className="gap-1.5 bg-red-500/20 text-red-500 border-red-500/30">
               <ShieldAlert className="h-3 w-3" />
               Blocked
             </Badge>
-            
+
             {/* Unblock button */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -141,11 +124,7 @@ export function BlockContentButton({
               </TooltipTrigger>
               <TooltipContent>
                 <p>Make this content visible to users again</p>
-                {blockReason && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Blocked for: {blockReason}
-                  </p>
-                )}
+                {blockReason && <p className="text-xs text-muted-foreground mt-1">Blocked for: {blockReason}</p>}
               </TooltipContent>
             </Tooltip>
           </>
@@ -168,7 +147,7 @@ export function BlockContentButton({
                 <p>Hide this content from users</p>
               </TooltipContent>
             </Tooltip>
-            
+
             {/* Block Dialog */}
             <Dialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>
               <DialogContent className="sm:max-w-[425px]">
@@ -178,11 +157,11 @@ export function BlockContentButton({
                     Block Content
                   </DialogTitle>
                   <DialogDescription>
-                    This will hide "{mediaTitle}" from all regular users.
-                    Only moderators and admins will be able to see it.
+                    This will hide "{mediaTitle}" from all regular users. Only moderators and admins will be able to see
+                    it.
                   </DialogDescription>
                 </DialogHeader>
-                
+
                 <div className="space-y-4 py-4">
                   <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
                     <AlertTriangle className="h-4 w-4" />
@@ -190,7 +169,7 @@ export function BlockContentButton({
                       Blocked content will not appear in catalog listings or search results for regular users.
                     </AlertDescription>
                   </Alert>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="reason">Reason for blocking (optional)</Label>
                     <Input
@@ -205,13 +184,9 @@ export function BlockContentButton({
                     </p>
                   </div>
                 </div>
-                
+
                 <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setBlockDialogOpen(false)}
-                    className="rounded-xl"
-                  >
+                  <Button variant="outline" onClick={() => setBlockDialogOpen(false)} className="rounded-xl">
                     Cancel
                   </Button>
                   <Button
@@ -240,4 +215,3 @@ export function BlockContentButton({
     </TooltipProvider>
   )
 }
-

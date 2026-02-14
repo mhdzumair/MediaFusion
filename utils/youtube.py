@@ -112,9 +112,7 @@ def _fetch_video_info_sync(video_id: str) -> dict[str, Any]:
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(
-            f"https://www.youtube.com/watch?v={video_id}", download=False
-        )
+        return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
 
 
 async def analyze_youtube_video(video_id: str) -> YouTubeVideoInfo:
@@ -150,9 +148,7 @@ async def analyze_youtube_video(video_id: str) -> YouTubeVideoInfo:
     thumbnails = info.get("thumbnails", [])
     if thumbnails:
         # Sort by preference/width and get the best one
-        sorted_thumbnails = sorted(
-            thumbnails, key=lambda x: x.get("preference", 0), reverse=True
-        )
+        sorted_thumbnails = sorted(thumbnails, key=lambda x: x.get("preference", 0), reverse=True)
         thumbnail = sorted_thumbnails[0].get("url") if sorted_thumbnails else None
 
     return YouTubeVideoInfo(

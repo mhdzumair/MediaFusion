@@ -2,15 +2,15 @@ import { apiClient } from './client'
 
 // Types
 export type SuggestionStatus = 'pending' | 'approved' | 'rejected' | 'auto_approved'
-export type EditableField = 
-  | 'title' 
-  | 'description' 
-  | 'year' 
-  | 'poster' 
-  | 'background' 
-  | 'runtime' 
-  | 'genres' 
-  | 'country' 
+export type EditableField =
+  | 'title'
+  | 'description'
+  | 'year'
+  | 'poster'
+  | 'background'
+  | 'runtime'
+  | 'genres'
+  | 'country'
   | 'language'
   | 'aka_titles'
   | 'cast'
@@ -32,10 +32,10 @@ export interface SuggestionReviewRequest {
 }
 
 export interface Suggestion {
-  id: string  // UUID
+  id: string // UUID
   user_id: number
   username: string | null
-  media_id: number  // Internal media ID
+  media_id: number // Internal media ID
   media_title: string | null
   field_name: string
   current_value: string | null
@@ -43,7 +43,7 @@ export interface Suggestion {
   reason: string | null
   status: SuggestionStatus
   was_auto_approved: boolean
-  reviewed_by: string | null  // UUID
+  reviewed_by: string | null // UUID
   reviewed_at: string | null
   review_notes: string | null
   created_at: string
@@ -94,10 +94,7 @@ export interface PendingSuggestionParams {
 // API functions
 export const suggestionsApi = {
   // Create a suggestion
-  create: async (
-    mediaId: number,
-    data: SuggestionCreateRequest
-  ): Promise<Suggestion> => {
+  create: async (mediaId: number, data: SuggestionCreateRequest): Promise<Suggestion> => {
     return apiClient.post<Suggestion>(`/metadata/${mediaId}/suggest`, data)
   },
 
@@ -134,10 +131,7 @@ export const suggestionsApi = {
   },
 
   // Review suggestion (moderator)
-  review: async (
-    suggestionId: string,
-    data: SuggestionReviewRequest
-  ): Promise<Suggestion> => {
+  review: async (suggestionId: string, data: SuggestionReviewRequest): Promise<Suggestion> => {
     return apiClient.put<Suggestion>(`/suggestions/${suggestionId}/review`, data)
   },
 
@@ -146,4 +140,3 @@ export const suggestionsApi = {
     return apiClient.get<SuggestionStats>('/suggestions/stats')
   },
 }
-

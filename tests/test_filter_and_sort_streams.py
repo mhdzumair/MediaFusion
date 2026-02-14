@@ -46,7 +46,7 @@ def make_stream(
     created_at: datetime | None = None,
 ) -> TorrentStreamData:
     """Create a minimal TorrentStreamData for testing.
-    
+
     Note: quality values must match entries in const.QUALITY_GROUPS exactly:
     - BluRay/UHD group: "BluRay", "BluRay REMUX", "BRRip", "BDRip", "UHDRip", "REMUX", "BLURAY"
     - WEB/HD group: "WEB-DL", "WEB-DLRip", "WEBRip", "HDRip", "WEBMux"
@@ -333,8 +333,8 @@ class TestFileSizeFiltering:
         """Both min and max size filters applied together."""
         streams = [
             make_stream(name="S.Tiny", size=500 * 1024 * 1024),  # 500 MB - too small
-            make_stream(name="S.Good", size=5 * GB),              # 5 GB - in range
-            make_stream(name="S.Huge", size=100 * GB),            # 100 GB - too big
+            make_stream(name="S.Good", size=5 * GB),  # 5 GB - in range
+            make_stream(name="S.Huge", size=100 * GB),  # 100 GB - too big
         ]
         user_data = make_user_data(mns=1 * GB, ms=50 * GB)
         result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
@@ -352,10 +352,7 @@ class TestFileSizeFiltering:
 class TestMaxStreamsPerResolution:
     @pytest.mark.asyncio
     async def test_limits_per_resolution(self):
-        streams = [
-            make_stream(name=f"S.1080p.{i}", resolution="1080p", info_hash=f"{'a' * 39}{i}")
-            for i in range(5)
-        ]
+        streams = [make_stream(name=f"S.1080p.{i}", resolution="1080p", info_hash=f"{'a' * 39}{i}") for i in range(5)]
         user_data = make_user_data(mspr=3)
         result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
         assert len(result) == 3
@@ -363,12 +360,8 @@ class TestMaxStreamsPerResolution:
     @pytest.mark.asyncio
     async def test_different_resolutions_have_separate_limits(self):
         streams = [
-            make_stream(name=f"S.1080p.{i}", resolution="1080p", info_hash=f"{'a' * 39}{i}")
-            for i in range(5)
-        ] + [
-            make_stream(name=f"S.720p.{i}", resolution="720p", info_hash=f"{'b' * 39}{i}")
-            for i in range(5)
-        ]
+            make_stream(name=f"S.1080p.{i}", resolution="1080p", info_hash=f"{'a' * 39}{i}") for i in range(5)
+        ] + [make_stream(name=f"S.720p.{i}", resolution="720p", info_hash=f"{'b' * 39}{i}") for i in range(5)]
         user_data = make_user_data(mspr=2)
         result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
         # 2 per 1080p + 2 per 720p = 4
@@ -387,10 +380,7 @@ class TestMaxStreamsPerResolution:
 class TestMaxTotalStreams:
     @pytest.mark.asyncio
     async def test_total_cap_applied(self):
-        streams = [
-            make_stream(name=f"S.{i}", resolution="1080p", info_hash=f"{'c' * 39}{i}")
-            for i in range(20)
-        ]
+        streams = [make_stream(name=f"S.{i}", resolution="1080p", info_hash=f"{'c' * 39}{i}") for i in range(20)]
         user_data = make_user_data(mxs=5, mspr=50)
         result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
         assert len(result) == 5
@@ -399,12 +389,8 @@ class TestMaxTotalStreams:
     async def test_total_cap_after_per_resolution(self):
         """Total cap is applied after per-resolution limiting."""
         streams = [
-            make_stream(name=f"S.1080p.{i}", resolution="1080p", info_hash=f"{'d' * 39}{i}")
-            for i in range(10)
-        ] + [
-            make_stream(name=f"S.720p.{i}", resolution="720p", info_hash=f"{'e' * 39}{i}")
-            for i in range(10)
-        ]
+            make_stream(name=f"S.1080p.{i}", resolution="1080p", info_hash=f"{'d' * 39}{i}") for i in range(10)
+        ] + [make_stream(name=f"S.720p.{i}", resolution="720p", info_hash=f"{'e' * 39}{i}") for i in range(10)]
         # Per-resolution = 5, total cap = 7
         user_data = make_user_data(mspr=5, mxs=7)
         result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
@@ -513,23 +499,55 @@ class TestIntegration:
     async def test_full_pipeline(self):
         """Test the full filter + sort pipeline with realistic data."""
         streams = [
-            make_stream(name="Big.BluRay.4k", resolution="4k", quality="BluRay", size=80 * GB, languages=["English"], seeders=50),
-            make_stream(name="Good.WEB.1080p", resolution="1080p", quality="WEB-DL", size=4 * GB, languages=["English"], seeders=100),
-            make_stream(name="Small.WEB.720p", resolution="720p", quality="WEB-DL", size=1 * GB, languages=["Hindi"], seeders=30),
-            make_stream(name="Tiny.CAM.480p", resolution="480p", quality="CAM", size=500 * 1024 * 1024, languages=["English"], seeders=5),
-            make_stream(name="Hindi.WEB.1080p", resolution="1080p", quality="WEB-DL", size=3 * GB, languages=["Hindi"], seeders=80),
-            make_stream(name="French.WEB.1080p", resolution="1080p", quality="WEB-DL", size=4 * GB, languages=["French"], seeders=40),
+            make_stream(
+                name="Big.BluRay.4k", resolution="4k", quality="BluRay", size=80 * GB, languages=["English"], seeders=50
+            ),
+            make_stream(
+                name="Good.WEB.1080p",
+                resolution="1080p",
+                quality="WEB-DL",
+                size=4 * GB,
+                languages=["English"],
+                seeders=100,
+            ),
+            make_stream(
+                name="Small.WEB.720p", resolution="720p", quality="WEB-DL", size=1 * GB, languages=["Hindi"], seeders=30
+            ),
+            make_stream(
+                name="Tiny.CAM.480p",
+                resolution="480p",
+                quality="CAM",
+                size=500 * 1024 * 1024,
+                languages=["English"],
+                seeders=5,
+            ),
+            make_stream(
+                name="Hindi.WEB.1080p",
+                resolution="1080p",
+                quality="WEB-DL",
+                size=3 * GB,
+                languages=["Hindi"],
+                seeders=80,
+            ),
+            make_stream(
+                name="French.WEB.1080p",
+                resolution="1080p",
+                quality="WEB-DL",
+                size=4 * GB,
+                languages=["French"],
+                seeders=40,
+            ),
         ]
         user_data = make_user_data(
-            sr=["1080p", "720p"],       # Only 1080p and 720p
-            qf=["WEB/HD"],              # Only WEB/HD quality
-            ls=["Hindi", "English"],    # Hindi preferred over English
+            sr=["1080p", "720p"],  # Only 1080p and 720p
+            qf=["WEB/HD"],  # Only WEB/HD quality
+            ls=["Hindi", "English"],  # Hindi preferred over English
             tsp=[
                 {"k": "language", "d": "desc"},
                 {"k": "size", "d": "desc"},
             ],
-            ms=50 * GB,                 # Max 50 GB
-            mns=1 * GB,                 # Min 1 GB
+            ms=50 * GB,  # Max 50 GB
+            mns=1 * GB,  # Min 1 GB
             mxs=10,
         )
         result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")

@@ -9,14 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { 
-  X,
-  Copy,
-  Check,
-  Download,
-  AlertTriangle,
-  Volume2,
-} from 'lucide-react'
+import { X, Copy, Check, Download, AlertTriangle, Volume2 } from 'lucide-react'
 import { VideoPlayer, type VideoSource } from './VideoPlayer'
 import { ExternalPlayerMenu } from './ExternalPlayerMenu'
 
@@ -28,7 +21,7 @@ const UNSUPPORTED_AUDIO_CODECS = [
   'dts-hd',
   'dtshd',
   'truehd',
-  'atmos',  // Dolby Atmos (typically uses TrueHD or EAC3)
+  'atmos', // Dolby Atmos (typically uses TrueHD or EAC3)
   'ac3',
   'ac-3',
   'eac3',
@@ -46,7 +39,7 @@ const UNSUPPORTED_AUDIO_CODECS = [
 function hasUnsupportedAudioCodec(audioInfo?: string): boolean {
   if (!audioInfo) return false
   const lowerAudio = audioInfo.toLowerCase()
-  return UNSUPPORTED_AUDIO_CODECS.some(codec => lowerAudio.includes(codec))
+  return UNSUPPORTED_AUDIO_CODECS.some((codec) => lowerAudio.includes(codec))
 }
 
 /**
@@ -55,14 +48,27 @@ function hasUnsupportedAudioCodec(audioInfo?: string): boolean {
 function getUnsupportedCodecName(audioInfo?: string): string | null {
   if (!audioInfo) return null
   const lowerAudio = audioInfo.toLowerCase()
-  
+
   // Match display-friendly names
   if (lowerAudio.includes('truehd') || lowerAudio.includes('atmos')) return 'Dolby TrueHD/Atmos'
   if (lowerAudio.includes('dts-hd') || lowerAudio.includes('dtshd')) return 'DTS-HD'
   if (lowerAudio.includes('dts')) return 'DTS'
-  if (lowerAudio.includes('eac3') || lowerAudio.includes('e-ac-3') || lowerAudio.includes('ddp') || lowerAudio.includes('dd+')) return 'Dolby Digital Plus (EAC3)'
-  if (lowerAudio.includes('ac3') || lowerAudio.includes('ac-3') || lowerAudio.includes('dolby') || lowerAudio.includes('dd5') || lowerAudio.includes('dd7')) return 'Dolby Digital (AC3)'
-  
+  if (
+    lowerAudio.includes('eac3') ||
+    lowerAudio.includes('e-ac-3') ||
+    lowerAudio.includes('ddp') ||
+    lowerAudio.includes('dd+')
+  )
+    return 'Dolby Digital Plus (EAC3)'
+  if (
+    lowerAudio.includes('ac3') ||
+    lowerAudio.includes('ac-3') ||
+    lowerAudio.includes('dolby') ||
+    lowerAudio.includes('dd5') ||
+    lowerAudio.includes('dd7')
+  )
+    return 'Dolby Digital (AC3)'
+
   return null
 }
 
@@ -77,7 +83,7 @@ export interface StreamInfo {
   source?: string
   codec?: string
   audio?: string
-  behaviorHints?: Record<string, unknown>  // Contains headers and other hints for HTTP streams
+  behaviorHints?: Record<string, unknown> // Contains headers and other hints for HTTP streams
 }
 
 export interface PlayerDialogProps {
@@ -116,18 +122,18 @@ export function PlayerDialog({
   const audioWarning = useMemo(() => {
     if (!stream?.audio) return null
     if (!hasUnsupportedAudioCodec(stream.audio)) return null
-    
+
     return {
       hasWarning: true,
       codecName: getUnsupportedCodecName(stream.audio),
     }
   }, [stream?.audio])
-  
+
   // Handle runtime audio issue detection (when player detects no audio output)
   const handleAudioIssue = useCallback(() => {
     setRuntimeAudioIssue(true)
   }, [])
-  
+
   // Reset dismissed state and runtime issue when stream changes
   const streamId = stream?.url
   const [lastStreamId, setLastStreamId] = useState<string | undefined>()
@@ -144,22 +150,25 @@ export function PlayerDialog({
   const headers = proxyHeaders?.request
 
   // Prepare video sources
-  const sources: VideoSource[] = [{
-    src: stream.url,
-    label: stream.quality || stream.resolution || 'Default',
-    quality: stream.quality || stream.resolution,
-    headers,
-  }]
-  
+  const sources: VideoSource[] = [
+    {
+      src: stream.url,
+      label: stream.quality || stream.resolution || 'Default',
+      quality: stream.quality || stream.resolution,
+      headers,
+    },
+  ]
+
   // Show warning if we have metadata-based warning OR runtime-detected issue
   const showAudioWarning = (audioWarning?.hasWarning || runtimeAudioIssue) && !dismissedWarning
-  const warningMessage = runtimeAudioIssue && !audioWarning?.hasWarning
-    ? 'an unsupported audio codec'  // Runtime detected, no metadata
-    : audioWarning?.codecName || 'an unsupported audio codec'
+  const warningMessage =
+    runtimeAudioIssue && !audioWarning?.hasWarning
+      ? 'an unsupported audio codec' // Runtime detected, no metadata
+      : audioWarning?.codecName || 'an unsupported audio codec'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent 
+      <DialogContent
         className="max-w-[95vw] sm:max-w-[900px] lg:max-w-[1100px] p-0 overflow-hidden bg-black border-border/50 gap-0"
         hideCloseButton
         // Prevent the dialog from closing when clicking outside, losing focus, or interacting
@@ -172,21 +181,11 @@ export function PlayerDialog({
         <DialogHeader className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-black/80 to-transparent">
           <DialogTitle className="flex items-center justify-between text-white">
             <div className="flex flex-col gap-1 min-w-0">
-              <span className="text-lg font-semibold truncate">
-                {contentTitle || stream.title || stream.name}
-              </span>
-              {stream.source && (
-                <span className="text-xs text-white/60 font-normal">
-                  {stream.source}
-                </span>
-              )}
+              <span className="text-lg font-semibold truncate">{contentTitle || stream.title || stream.name}</span>
+              {stream.source && <span className="text-xs text-white/60 font-normal">{stream.source}</span>}
             </div>
             <DialogClose asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-white hover:bg-white/20"
-              >
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-white hover:bg-white/20">
                 <X className="h-4 w-4" />
                 <span className="sr-only">Close</span>
               </Button>
@@ -207,8 +206,8 @@ export function PlayerDialog({
                   {runtimeAudioIssue ? 'No audio detected' : 'Audio may not play in browser'}
                 </p>
                 <p className="text-xs mt-0.5 opacity-80">
-                  This video uses {warningMessage} which browsers cannot decode. 
-                  Video will play but you {runtimeAudioIssue ? "won't" : 'may not'} hear audio. Use an external player for full audio support.
+                  This video uses {warningMessage} which browsers cannot decode. Video will play but you{' '}
+                  {runtimeAudioIssue ? "won't" : 'may not'} hear audio. Use an external player for full audio support.
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -264,11 +263,11 @@ export function PlayerDialog({
                 </Badge>
               )}
               {stream.audio && (
-                <Badge 
-                  variant="outline" 
+                <Badge
+                  variant="outline"
                   className={`text-xs ${
-                    audioWarning?.hasWarning 
-                      ? 'text-yellow-400 border-yellow-400/50 bg-yellow-400/10' 
+                    audioWarning?.hasWarning
+                      ? 'text-yellow-400 border-yellow-400/50 bg-yellow-400/10'
                       : 'text-white/70 border-white/20'
                   }`}
                   title={audioWarning?.hasWarning ? `${audioWarning.codecName} - may not play in browser` : undefined}
@@ -299,15 +298,10 @@ export function PlayerDialog({
                   </>
                 )}
               </Button>
-              
+
               <ExternalPlayerMenu streamUrl={stream.url} />
-              
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-white/70 hover:text-white hover:bg-white/10"
-                asChild
-              >
+
+              <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10" asChild>
                 <a href={stream.url} download target="_blank" rel="noopener noreferrer">
                   <Download className="mr-2 h-4 w-4" />
                   Download
@@ -320,4 +314,3 @@ export function PlayerDialog({
     </Dialog>
   )
 }
-

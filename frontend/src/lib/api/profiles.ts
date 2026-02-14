@@ -28,7 +28,7 @@ export interface Profile {
   is_default: boolean
   created_at: string
   streaming_providers: StreamingProvidersSummary
-  streaming_provider: StreamingProviderSummary | null  // Deprecated
+  streaming_provider: StreamingProviderSummary | null // Deprecated
   catalogs_enabled: number
 }
 
@@ -62,7 +62,7 @@ export interface RpdbApiKeyResponse {
 }
 
 // Streaming provider types
-export type StreamingService = 
+export type StreamingService =
   | 'realdebrid'
   | 'seedr'
   | 'debridlink'
@@ -78,10 +78,10 @@ export type StreamingService =
 
 export interface StreamingProviderConfig {
   sv: StreamingService
-  tk?: string  // token
-  em?: string  // email
-  pw?: string  // password
-  u?: string   // url
+  tk?: string // token
+  em?: string // email
+  pw?: string // password
+  u?: string // url
   ewc?: boolean // enable_watchlist_catalogs
   dvb?: boolean // download_via_browser
   oscs?: boolean // only_show_cached_streams
@@ -93,8 +93,8 @@ export interface RPDBConfig {
 }
 
 export interface MediaFlowConfig {
-  pu?: string  // proxy_url
-  ap?: string  // api_password
+  pu?: string // proxy_url
+  ap?: string // api_password
   pip?: string // public_ip
   pls?: boolean // proxy_live_streams
   pds?: boolean // proxy_debrid_streams
@@ -102,68 +102,68 @@ export interface MediaFlowConfig {
 
 // Per-catalog configuration with sorting
 export interface CatalogConfig {
-  ci: string    // catalog_id
-  en?: boolean  // enabled (default true)
-  s?: 'latest' | 'popular' | 'rating' | 'year' | 'title' | 'release_date' | null  // sort
-  o?: 'asc' | 'desc'  // order (default 'desc')
+  ci: string // catalog_id
+  en?: boolean // enabled (default true)
+  s?: 'latest' | 'popular' | 'rating' | 'year' | 'title' | 'release_date' | null // sort
+  o?: 'asc' | 'desc' // order (default 'desc')
 }
 
 // Indexer configuration types
 export interface IndexerInstanceConfig {
-  en?: boolean   // enabled
-  u?: string     // url
-  ak?: string    // api_key
-  ug?: boolean   // use_global
+  en?: boolean // enabled
+  u?: string // url
+  ak?: string // api_key
+  ug?: boolean // use_global
 }
 
 export interface TorznabEndpointConfig {
-  i: string      // id
-  n: string      // name
-  u: string      // url
-  h?: Record<string, string> | null  // headers
-  en?: boolean   // enabled
-  c?: number[]   // categories
-  p?: number     // priority
+  i: string // id
+  n: string // name
+  u: string // url
+  h?: Record<string, string> | null // headers
+  en?: boolean // enabled
+  c?: number[] // categories
+  p?: number // priority
 }
 
 export interface IndexerConfig {
-  pr?: IndexerInstanceConfig | null    // prowlarr
-  jk?: IndexerInstanceConfig | null    // jackett
-  tz?: TorznabEndpointConfig[]         // torznab_endpoints
+  pr?: IndexerInstanceConfig | null // prowlarr
+  jk?: IndexerInstanceConfig | null // jackett
+  tz?: TorznabEndpointConfig[] // torznab_endpoints
 }
 
 export interface ProfileConfig {
-  sp?: StreamingProviderConfig      // streaming_provider
-  cc?: CatalogConfig[]              // catalog_configs (new: per-catalog configuration)
-  sc?: string[]                      // selected_catalogs (deprecated: use cc instead)
-  sr?: string[]                      // selected_resolutions
-  ec?: boolean                       // enable_catalogs
-  eim?: boolean                      // enable_imdb_metadata
-  ms?: number | string               // max_size (bytes or 'inf')
-  mns?: number                       // min_size (bytes, 0 = no minimum)
-  mspr?: number                      // max_streams_per_resolution
-  nf?: string[]                      // nudity_filter
-  cf?: string[]                      // certification_filter
-  ap?: string                        // api_password
-  ls?: string[]                      // language_sorting
-  qf?: string[]                      // quality_filter
-  mfc?: MediaFlowConfig              // mediaflow_config
-  rpc?: RPDBConfig                   // rpdb_config
-  lss?: boolean                      // live_search_streams
-  ic?: IndexerConfig                 // indexer_config
-  eus?: boolean                      // enable_usenet_streams
-  puot?: boolean                     // prefer_usenet_over_torrent
-  ets?: boolean                      // enable_telegram_streams
-  eas?: boolean                      // enable_acestream_streams
+  sp?: StreamingProviderConfig // streaming_provider
+  cc?: CatalogConfig[] // catalog_configs (new: per-catalog configuration)
+  sc?: string[] // selected_catalogs (deprecated: use cc instead)
+  sr?: string[] // selected_resolutions
+  ec?: boolean // enable_catalogs
+  eim?: boolean // enable_imdb_metadata
+  ms?: number | string // max_size (bytes or 'inf')
+  mns?: number // min_size (bytes, 0 = no minimum)
+  mspr?: number // max_streams_per_resolution
+  nf?: string[] // nudity_filter
+  cf?: string[] // certification_filter
+  ap?: string // api_password
+  ls?: string[] // language_sorting
+  qf?: string[] // quality_filter
+  mfc?: MediaFlowConfig // mediaflow_config
+  rpc?: RPDBConfig // rpdb_config
+  lss?: boolean // live_search_streams
+  ic?: IndexerConfig // indexer_config
+  eus?: boolean // enable_usenet_streams
+  puot?: boolean // prefer_usenet_over_torrent
+  ets?: boolean // enable_telegram_streams
+  eas?: boolean // enable_acestream_streams
   // Stream display settings
-  mxs?: number                       // max_streams (total cap)
-  stg?: 'mixed' | 'separate'        // stream_type_grouping
-  sto?: string[]                     // stream_type_order
-  pg?: 'mixed' | 'separate'         // provider_grouping
+  mxs?: number // max_streams (total cap)
+  stg?: 'mixed' | 'separate' // stream_type_grouping
+  sto?: string[] // stream_type_order
+  pg?: 'mixed' | 'separate' // provider_grouping
   // Stream name filter
-  snfm?: 'disabled' | 'include' | 'exclude'  // stream_name_filter_mode
-  snfp?: string[]                    // stream_name_filter_patterns
-  snfr?: boolean                     // stream_name_filter_use_regex
+  snfm?: 'disabled' | 'include' | 'exclude' // stream_name_filter_mode
+  snfp?: string[] // stream_name_filter_patterns
+  snfr?: boolean // stream_name_filter_use_regex
 }
 
 // API functions

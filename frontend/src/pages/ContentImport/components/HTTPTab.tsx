@@ -7,9 +7,18 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { 
-  Globe, Loader2, ArrowRight, Info, CheckCircle, Plus, Trash2, 
-  ChevronDown, ChevronUp, Shield, Settings2 
+import {
+  Globe,
+  Loader2,
+  ArrowRight,
+  Info,
+  CheckCircle,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Shield,
+  Settings2,
 } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { contentImportApi, type HTTPAnalyzeResponse, type ImportResponse } from '@/lib/api'
@@ -36,14 +45,14 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-function HeadersEditor({ 
-  headers, 
-  onChange, 
-  label 
-}: { 
+function HeadersEditor({
+  headers,
+  onChange,
+  label,
+}: {
   headers: HeaderEntry[]
   onChange: (headers: HeaderEntry[]) => void
-  label: string 
+  label: string
 }) {
   const addHeader = () => {
     onChange([...headers, { key: '', value: '' }])
@@ -102,11 +111,7 @@ function HeadersEditor({
   )
 }
 
-export function HTTPTab({ 
-  onSuccess, 
-  onError, 
-  contentType = 'movie',
-}: HTTPTabProps) {
+export function HTTPTab({ onSuccess, onError, contentType = 'movie' }: HTTPTabProps) {
   const { user } = useAuth()
   const [url, setUrl] = useState('')
   const [metaId, setMetaId] = useState('')
@@ -116,21 +121,21 @@ export function HTTPTab({
   const [quality, setQuality] = useState('')
   const [codec, setCodec] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
-  
+
   // MediaFlow extractor
   const [useExtractor, setUseExtractor] = useState(false)
   const [extractorName, setExtractorName] = useState('')
-  
+
   // Headers
   const [requestHeaders, setRequestHeaders] = useState<HeaderEntry[]>([])
   const [responseHeaders, setResponseHeaders] = useState<HeaderEntry[]>([])
   const [headersOpen, setHeadersOpen] = useState(false)
-  
+
   // DRM
   const [drmOpen, setDrmOpen] = useState(false)
   const [drmKeyId, setDrmKeyId] = useState('')
   const [drmKey, setDrmKey] = useState('')
-  
+
   const [analysis, setAnalysis] = useState<HTTPAnalyzeResponse | null>(null)
 
   // Fetch available extractors
@@ -147,10 +152,11 @@ export function HTTPTab({
 
   // Analyze mutation
   const analyzeMutation = useMutation({
-    mutationFn: () => contentImportApi.analyzeHTTP({ 
-      url, 
-      meta_type: contentType 
-    }),
+    mutationFn: () =>
+      contentImportApi.analyzeHTTP({
+        url,
+        meta_type: contentType,
+      }),
     onSuccess: (result) => {
       if (result.status === 'success') {
         setAnalysis(result)
@@ -172,15 +178,21 @@ export function HTTPTab({
   const importMutation = useMutation({
     mutationFn: () => {
       // Convert headers to Record<string, string>
-      const reqHeaders = requestHeaders.reduce((acc, h) => {
-        if (h.key && h.value) acc[h.key] = h.value
-        return acc
-      }, {} as Record<string, string>)
-      
-      const resHeaders = responseHeaders.reduce((acc, h) => {
-        if (h.key && h.value) acc[h.key] = h.value
-        return acc
-      }, {} as Record<string, string>)
+      const reqHeaders = requestHeaders.reduce(
+        (acc, h) => {
+          if (h.key && h.value) acc[h.key] = h.value
+          return acc
+        },
+        {} as Record<string, string>,
+      )
+
+      const resHeaders = responseHeaders.reduce(
+        (acc, h) => {
+          if (h.key && h.value) acc[h.key] = h.value
+          return acc
+        },
+        {} as Record<string, string>,
+      )
 
       return contentImportApi.importHTTP({
         url,
@@ -247,9 +259,7 @@ export function HTTPTab({
           <Globe className="h-5 w-5 text-primary" />
           Import HTTP Stream
         </CardTitle>
-        <CardDescription>
-          Import direct HTTP URLs, HLS/DASH streams, or MediaFlow extractor URLs
-        </CardDescription>
+        <CardDescription>Import direct HTTP URLs, HLS/DASH streams, or MediaFlow extractor URLs</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* URL Input */}
@@ -266,12 +276,7 @@ export function HTTPTab({
               }}
               className="font-mono text-sm rounded-xl"
             />
-            <Button 
-              onClick={handleAnalyze}
-              disabled={!urlValid || isLoading}
-              variant="outline"
-              className="rounded-xl"
-            >
+            <Button onClick={handleAnalyze} disabled={!urlValid || isLoading} variant="outline" className="rounded-xl">
               {analyzeMutation.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -280,9 +285,7 @@ export function HTTPTab({
               Analyze
             </Button>
           </div>
-          {url && !urlValid && (
-            <p className="text-sm text-destructive">Invalid URL. Must be http:// or https://</p>
-          )}
+          {url && !urlValid && <p className="text-sm text-destructive">Invalid URL. Must be http:// or https://</p>}
         </div>
 
         {/* Analysis Results */}
@@ -292,9 +295,7 @@ export function HTTPTab({
               {analysis.detected_format && (
                 <Badge variant="secondary">Format: {analysis.detected_format.toUpperCase()}</Badge>
               )}
-              {analysis.detected_extractor && (
-                <Badge variant="outline">Extractor: {analysis.detected_extractor}</Badge>
-              )}
+              {analysis.detected_extractor && <Badge variant="outline">Extractor: {analysis.detected_extractor}</Badge>}
             </div>
           </div>
         )}
@@ -304,13 +305,11 @@ export function HTTPTab({
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm font-medium">MediaFlow Extractor</Label>
-              <p className="text-xs text-muted-foreground">
-                Enable if this URL requires a MediaFlow extractor to play
-              </p>
+              <p className="text-xs text-muted-foreground">Enable if this URL requires a MediaFlow extractor to play</p>
             </div>
             <Switch checked={useExtractor} onCheckedChange={setUseExtractor} />
           </div>
-          
+
           {useExtractor && (
             <Select value={extractorName} onValueChange={setExtractorName}>
               <SelectTrigger className="rounded-lg">
@@ -386,9 +385,7 @@ export function HTTPTab({
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Required for Widevine/PlayReady protected MPD streams
-            </p>
+            <p className="text-xs text-muted-foreground">Required for Widevine/PlayReady protected MPD streams</p>
           </CollapsibleContent>
         </Collapsible>
 
@@ -421,7 +418,7 @@ export function HTTPTab({
               />
             </div>
           </div>
-          
+
           {/* Quality Info */}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
@@ -484,19 +481,14 @@ export function HTTPTab({
           <div>
             <span className="text-sm font-medium">Anonymous contribution</span>
             <p className="text-xs text-muted-foreground">
-              {isAnonymous 
-                ? 'Uploader will show as "Anonymous"' 
-                : 'Your username will be linked to this contribution'}
+              {isAnonymous ? 'Uploader will show as "Anonymous"' : 'Your username will be linked to this contribution'}
             </p>
           </div>
-          <Switch
-            checked={isAnonymous}
-            onCheckedChange={setIsAnonymous}
-          />
+          <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
         </div>
 
         {/* Import Button */}
-        <Button 
+        <Button
           onClick={handleImport}
           disabled={!urlValid || !metaId || isLoading}
           className="w-full rounded-xl bg-gradient-to-r from-primary to-primary/80"

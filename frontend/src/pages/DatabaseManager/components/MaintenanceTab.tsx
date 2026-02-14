@@ -58,27 +58,28 @@ export function MaintenanceTab() {
     title: string
     description: string
   } | null>(null)
-  
+
   const { toast } = useToast()
-  
+
   // Queries
   const { data: tables, isLoading: tablesLoading } = useTableList()
   const { data: orphans, isLoading: orphansLoading, refetch: refetchOrphans } = useOrphanRecords()
-  
+
   // Mutations
   const vacuumMutation = useVacuumTables()
   const analyzeMutation = useAnalyzeTables()
   const reindexMutation = useReindexTables()
   const cleanupMutation = useCleanupOrphans()
-  
-  const isOperationRunning = 
-    vacuumMutation.isPending || 
-    analyzeMutation.isPending || 
-    reindexMutation.isPending ||
-    cleanupMutation.isPending
-  
+
+  const isOperationRunning =
+    vacuumMutation.isPending || analyzeMutation.isPending || reindexMutation.isPending || cleanupMutation.isPending
+
   // Add to operation history
-  const addToHistory = (operation: string, tables: string[], result: { success: boolean; message: string; execution_time_ms: number; tables_processed?: string[] }) => {
+  const addToHistory = (
+    operation: string,
+    tables: string[],
+    result: { success: boolean; message: string; execution_time_ms: number; tables_processed?: string[] },
+  ) => {
     const item: OperationHistoryItem = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       operation,
@@ -88,34 +89,32 @@ export function MaintenanceTab() {
       executionTime: result.execution_time_ms,
       timestamp: new Date(),
     }
-    setOperationHistory(prev => [item, ...prev].slice(0, 20))
+    setOperationHistory((prev) => [item, ...prev].slice(0, 20))
   }
-  
+
   // Handle table selection
   const handleSelectAll = () => {
     if (!tables?.tables) return
     if (selectedTables.length === tables.tables.length) {
       setSelectedTables([])
     } else {
-      setSelectedTables(tables.tables.map(t => t.name))
+      setSelectedTables(tables.tables.map((t) => t.name))
     }
   }
-  
+
   const handleTableSelect = (tableName: string) => {
-    setSelectedTables(prev =>
-      prev.includes(tableName) ? prev.filter(t => t !== tableName) : [...prev, tableName]
-    )
+    setSelectedTables((prev) => (prev.includes(tableName) ? prev.filter((t) => t !== tableName) : [...prev, tableName]))
   }
-  
+
   // Execute operations
   const executeOperation = async () => {
     if (!confirmDialog) return
-    
+
     const tablesToProcess = selectedTables.length > 0 ? selectedTables : undefined
-    
+
     try {
       let result
-      
+
       switch (confirmDialog.operation) {
         case 'vacuum':
           result = await vacuumMutation.mutateAsync({
@@ -147,21 +146,19 @@ export function MaintenanceTab() {
           const cleanupResult = await cleanupMutation.mutateAsync({ dry_run: false })
           result = {
             success: true,
-            message: `Cleaned up: ${Object.entries(cleanupResult.deleted).map(([k, v]) => `${k}: ${v}`).join(', ')}`,
+            message: `Cleaned up: ${Object.entries(cleanupResult.deleted)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(', ')}`,
             execution_time_ms: 0,
             tables_processed: Object.keys(cleanupResult.deleted),
           }
           refetchOrphans()
           break
       }
-      
+
       if (result) {
-        addToHistory(
-          confirmDialog.operation,
-          result.tables_processed || [],
-          result
-        )
-        
+        addToHistory(confirmDialog.operation, result.tables_processed || [], result)
+
         toast({
           title: 'Operation completed',
           description: result.message,
@@ -174,10 +171,10 @@ export function MaintenanceTab() {
         variant: 'destructive',
       })
     }
-    
+
     setConfirmDialog(null)
   }
-  
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Left Column - Table Selection & Operations */}
@@ -190,21 +187,21 @@ export function MaintenanceTab() {
                 <HardDrive className="h-4 w-4 text-blue-400" />
                 VACUUM
               </CardTitle>
-              <CardDescription className="text-xs">
-                Reclaims storage and optimizes tables
-              </CardDescription>
+              <CardDescription className="text-xs">Reclaims storage and optimizes tables</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               <Button
                 className="w-full"
                 variant="outline"
                 disabled={isOperationRunning}
-                onClick={() => setConfirmDialog({
-                  open: true,
-                  operation: 'vacuum',
-                  title: 'Run VACUUM',
-                  description: `This will vacuum ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s). This may take some time.`,
-                })}
+                onClick={() =>
+                  setConfirmDialog({
+                    open: true,
+                    operation: 'vacuum',
+                    title: 'Run VACUUM',
+                    description: `This will vacuum ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s). This may take some time.`,
+                  })
+                }
               >
                 {vacuumMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -217,39 +214,41 @@ export function MaintenanceTab() {
                 className="w-full"
                 variant="outline"
                 disabled={isOperationRunning}
-                onClick={() => setConfirmDialog({
-                  open: true,
-                  operation: 'vacuum_full',
-                  title: 'Run VACUUM FULL',
-                  description: `This will run VACUUM FULL on ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s). This requires exclusive lock and may take significant time.`,
-                })}
+                onClick={() =>
+                  setConfirmDialog({
+                    open: true,
+                    operation: 'vacuum_full',
+                    title: 'Run VACUUM FULL',
+                    description: `This will run VACUUM FULL on ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s). This requires exclusive lock and may take significant time.`,
+                  })
+                }
               >
                 VACUUM FULL
               </Button>
             </CardContent>
           </Card>
-          
+
           <Card className="bg-card/50 border-border/50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <RefreshCw className="h-4 w-4 text-emerald-400" />
                 ANALYZE
               </CardTitle>
-              <CardDescription className="text-xs">
-                Updates statistics for query planning
-              </CardDescription>
+              <CardDescription className="text-xs">Updates statistics for query planning</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
                 className="w-full"
                 variant="outline"
                 disabled={isOperationRunning}
-                onClick={() => setConfirmDialog({
-                  open: true,
-                  operation: 'analyze',
-                  title: 'Run ANALYZE',
-                  description: `This will analyze ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s) to update statistics.`,
-                })}
+                onClick={() =>
+                  setConfirmDialog({
+                    open: true,
+                    operation: 'analyze',
+                    title: 'Run ANALYZE',
+                    description: `This will analyze ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s) to update statistics.`,
+                  })
+                }
               >
                 {analyzeMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -260,28 +259,28 @@ export function MaintenanceTab() {
               </Button>
             </CardContent>
           </Card>
-          
+
           <Card className="bg-card/50 border-border/50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Search className="h-4 w-4 text-primary" />
                 REINDEX
               </CardTitle>
-              <CardDescription className="text-xs">
-                Rebuilds indexes for better performance
-              </CardDescription>
+              <CardDescription className="text-xs">Rebuilds indexes for better performance</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
                 className="w-full"
                 variant="outline"
                 disabled={isOperationRunning}
-                onClick={() => setConfirmDialog({
-                  open: true,
-                  operation: 'reindex',
-                  title: 'Run REINDEX',
-                  description: `This will reindex ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s). This may take time on large tables.`,
-                })}
+                onClick={() =>
+                  setConfirmDialog({
+                    open: true,
+                    operation: 'reindex',
+                    title: 'Run REINDEX',
+                    description: `This will reindex ${selectedTables.length > 0 ? selectedTables.length : 'all'} table(s). This may take time on large tables.`,
+                  })
+                }
               >
                 {reindexMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -292,28 +291,28 @@ export function MaintenanceTab() {
               </Button>
             </CardContent>
           </Card>
-          
+
           <Card className="bg-card/50 border-border/50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Trash2 className="h-4 w-4 text-rose-400" />
                 Orphan Cleanup
               </CardTitle>
-              <CardDescription className="text-xs">
-                Remove orphaned records
-              </CardDescription>
+              <CardDescription className="text-xs">Remove orphaned records</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
                 className="w-full"
                 variant="outline"
                 disabled={isOperationRunning || !orphans?.total_count}
-                onClick={() => setConfirmDialog({
-                  open: true,
-                  operation: 'cleanup',
-                  title: 'Clean Up Orphans',
-                  description: `This will delete ${orphans?.total_count || 0} orphaned record(s). This action cannot be undone.`,
-                })}
+                onClick={() =>
+                  setConfirmDialog({
+                    open: true,
+                    operation: 'cleanup',
+                    title: 'Clean Up Orphans',
+                    description: `This will delete ${orphans?.total_count || 0} orphaned record(s). This action cannot be undone.`,
+                  })
+                }
               >
                 {cleanupMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -325,7 +324,7 @@ export function MaintenanceTab() {
             </CardContent>
           </Card>
         </div>
-        
+
         {/* Table Selection */}
         <Card className="bg-card/50 border-border/50">
           <CardHeader className="pb-2">
@@ -336,47 +335,43 @@ export function MaintenanceTab() {
               </Button>
             </div>
             <CardDescription>
-              {selectedTables.length > 0 
-                ? `${selectedTables.length} table(s) selected` 
+              {selectedTables.length > 0
+                ? `${selectedTables.length} table(s) selected`
                 : 'No tables selected (operations will run on all tables)'}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-48">
               <div className="space-y-1">
-                {tablesLoading ? (
-                  [...Array(8)].map((_, i) => (
-                    <Skeleton key={i} className="h-8 rounded-lg" />
-                  ))
-                ) : (
-                  tables?.tables.map((table) => {
-                    const colors = getTableTypeColor(table.name)
-                    return (
-                      <div
-                        key={table.name}
-                        className={cn(
-                          "flex items-center gap-3 p-2 rounded-lg transition-colors",
-                          "hover:bg-muted/50",
-                          selectedTables.includes(table.name) && "bg-muted"
-                        )}
-                      >
-                        <Checkbox
-                          checked={selectedTables.includes(table.name)}
-                          onCheckedChange={() => handleTableSelect(table.name)}
-                        />
-                        <span className={cn("text-sm font-mono", colors.text)}>{table.name}</span>
-                        <span className="text-xs text-muted-foreground ml-auto">
-                          {table.row_count.toLocaleString()} rows
-                        </span>
-                      </div>
-                    )
-                  })
-                )}
+                {tablesLoading
+                  ? [...Array(8)].map((_, i) => <Skeleton key={i} className="h-8 rounded-lg" />)
+                  : tables?.tables.map((table) => {
+                      const colors = getTableTypeColor(table.name)
+                      return (
+                        <div
+                          key={table.name}
+                          className={cn(
+                            'flex items-center gap-3 p-2 rounded-lg transition-colors',
+                            'hover:bg-muted/50',
+                            selectedTables.includes(table.name) && 'bg-muted',
+                          )}
+                        >
+                          <Checkbox
+                            checked={selectedTables.includes(table.name)}
+                            onCheckedChange={() => handleTableSelect(table.name)}
+                          />
+                          <span className={cn('text-sm font-mono', colors.text)}>{table.name}</span>
+                          <span className="text-xs text-muted-foreground ml-auto">
+                            {table.row_count.toLocaleString()} rows
+                          </span>
+                        </div>
+                      )
+                    })}
               </div>
             </ScrollArea>
           </CardContent>
         </Card>
-        
+
         {/* Orphan Records */}
         <Card className="bg-card/50 border-border/50">
           <CardHeader className="pb-2">
@@ -389,9 +384,7 @@ export function MaintenanceTab() {
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
-            <CardDescription>
-              Records without valid parent references
-            </CardDescription>
+            <CardDescription>Records without valid parent references</CardDescription>
           </CardHeader>
           <CardContent>
             {orphansLoading ? (
@@ -433,7 +426,7 @@ export function MaintenanceTab() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Right Column - Operation History */}
       <div>
         <Card className="bg-card/50 border-border/50 h-full">
@@ -455,13 +448,13 @@ export function MaintenanceTab() {
                   {operationHistory.map((item) => (
                     <div key={item.id} className="p-3 rounded-lg bg-muted/30 space-y-2">
                       <div className="flex items-center justify-between">
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className={cn(
-                            "font-mono text-xs",
-                            item.success 
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                              : "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                            'font-mono text-xs',
+                            item.success
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/30',
                           )}
                         >
                           {item.operation.toUpperCase()}
@@ -472,9 +465,7 @@ export function MaintenanceTab() {
                           <XCircle className="h-4 w-4 text-rose-400" />
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2">
-                        {item.message}
-                      </p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{item.message}</p>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{formatDuration(item.executionTime)}</span>
                         <span>{item.timestamp.toLocaleTimeString()}</span>
@@ -487,15 +478,13 @@ export function MaintenanceTab() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Confirmation Dialog */}
       <AlertDialog open={!!confirmDialog} onOpenChange={(open) => !open && setConfirmDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmDialog?.title}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmDialog?.description}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{confirmDialog?.description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -515,4 +504,3 @@ export function MaintenanceTab() {
     </div>
   )
 }
-

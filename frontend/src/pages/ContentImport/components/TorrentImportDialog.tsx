@@ -1,11 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,7 +41,7 @@ interface TorrentImportDialogProps {
   onOpenChange: (open: boolean) => void
   analysis: TorrentAnalyzeResponse | null
   magnetLink?: string // Not directly used in component but kept for parent context
-  torrentFile?: File | null // Not directly used in component but kept for parent context  
+  torrentFile?: File | null // Not directly used in component but kept for parent context
   onImport: (formData: TorrentImportFormData) => Promise<ImportResponse>
   onReanalyze?: (contentType: ContentType) => void
   isImporting?: boolean
@@ -73,25 +67,25 @@ export function TorrentImportDialog({
   // Note: magnetLink and torrentFile props are kept for parent context but handled there
   void _magnetLink
   void _torrentFile
-  
+
   // Check if we're in multi-content mode
   const isMultiContentMode = importMode === 'collection' || importMode === 'pack'
-  
+
   // Step management
   const [currentStep, setCurrentStep] = useState<ImportStep>('review')
-  
+
   // Form state - initialize contentType from initial prop
   const [contentType, setContentType] = useState<ContentType>(initialContentType)
   const [sportsCategory, setSportsCategory] = useState<SportsCategory | undefined>()
   const [selectedMatchIndex, setSelectedMatchIndex] = useState<number | null>(null)
-  
+
   // Metadata
   const [metaId, setMetaId] = useState('')
   const [title, setTitle] = useState('')
   const [poster, setPoster] = useState('')
   const [background, setBackground] = useState('')
   const [releaseDate, setReleaseDate] = useState('')
-  
+
   // Tech specs
   const [resolution, setResolution] = useState<string | undefined>()
   const [quality, setQuality] = useState<string | undefined>()
@@ -99,19 +93,19 @@ export function TorrentImportDialog({
   const [audio, setAudio] = useState<string[]>([])
   const [hdr, setHdr] = useState<string[]>([])
   const [languages, setLanguages] = useState<string[]>([])
-  
+
   // Catalogs
   const [selectedCatalogs, setSelectedCatalogs] = useState<string[]>([])
-  
+
   // Series/Sports specific
   const [episodeParser, setEpisodeParser] = useState('')
   const [fileAnnotations, setFileAnnotations] = useState<FileAnnotation[]>([])
-  
+
   // Import options
   const [forceImport, setForceImport] = useState(false)
   const [addTitleToPoster, setAddTitleToPoster] = useState(false)
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
-  
+
   // Dialog states
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
   const [validationDialogOpen, setValidationDialogOpen] = useState(false)
@@ -126,10 +120,10 @@ export function TorrentImportDialog({
   // Initialize from analysis when dialog opens
   useEffect(() => {
     if (!analysis || !open) return
-    
+
     // Initialize content type from initial prop
     setContentType(initialContentType)
-    
+
     // Initialize tech specs from analysis
     setResolution(analysis.resolution)
     setQuality(analysis.quality)
@@ -138,7 +132,7 @@ export function TorrentImportDialog({
     setHdr(analysis.hdr || [])
     setLanguages(analysis.languages || [])
     setTitle(analysis.parsed_title || analysis.torrent_name || '')
-    
+
     // Auto-select first match if available
     if (analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
@@ -152,7 +146,7 @@ export function TorrentImportDialog({
     } else {
       setSelectedMatchIndex(null)
     }
-    
+
     // Reset step
     setCurrentStep('review')
   }, [analysis, open, initialContentType])
@@ -185,13 +179,13 @@ export function TorrentImportDialog({
         setCodec(value as string | undefined)
         break
       case 'audio':
-        setAudio(value as string[] ?? [])
+        setAudio((value as string[]) ?? [])
         break
       case 'hdr':
-        setHdr(value as string[] ?? [])
+        setHdr((value as string[]) ?? [])
         break
       case 'languages':
-        setLanguages(value as string[] ?? [])
+        setLanguages((value as string[]) ?? [])
         break
     }
   }, [])
@@ -246,18 +240,33 @@ export function TorrentImportDialog({
       fileData: fileAnnotations.length > 0 ? fileAnnotations : undefined,
     }
   }, [
-    contentType, sportsCategory, metaId, title, poster, background,
-    resolution, quality, codec, audio, hdr, languages,
-    selectedCatalogs, episodeParser, releaseDate, forceImport, isAnonymous, fileAnnotations
+    contentType,
+    sportsCategory,
+    metaId,
+    title,
+    poster,
+    background,
+    resolution,
+    quality,
+    codec,
+    audio,
+    hdr,
+    languages,
+    selectedCatalogs,
+    episodeParser,
+    releaseDate,
+    forceImport,
+    isAnonymous,
+    fileAnnotations,
   ])
 
   // Handle import
   const handleImport = useCallback(async () => {
     const formData = buildFormData()
-    
+
     try {
       const result = await onImport(formData)
-      
+
       if (result.status === 'validation_failed') {
         // Show validation warning dialog
         setValidationErrors(result.errors || [{ type: 'unknown', message: result.message }])
@@ -290,43 +299,57 @@ export function TorrentImportDialog({
   }, [contentType, onReanalyze])
 
   // Handle multi-content wizard completion
-  const handleMultiContentComplete = useCallback(async (annotations: FileAnnotation[]) => {
-    // Build form data with multi-content annotations
-    const formData: TorrentImportFormData = {
+  const handleMultiContentComplete = useCallback(
+    async (annotations: FileAnnotation[]) => {
+      // Build form data with multi-content annotations
+      const formData: TorrentImportFormData = {
+        contentType,
+        sportsCategory,
+        // For multi-content, we don't set a single metaId - each file has its own
+        title: title || analysis?.parsed_title || undefined,
+        poster: poster || undefined,
+        background: background || undefined,
+        resolution: resolution || undefined,
+        quality: quality || undefined,
+        codec: codec || undefined,
+        audio: audio.length > 0 ? audio : undefined,
+        hdr: hdr.length > 0 ? hdr : undefined,
+        languages: languages.length > 0 ? languages : undefined,
+        catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
+        forceImport,
+        isAnonymous,
+        fileData: annotations,
+      }
+
+      try {
+        await onImport(formData)
+      } catch (error) {
+        console.error('Multi-content import failed:', error)
+      }
+    },
+    [
       contentType,
       sportsCategory,
-      // For multi-content, we don't set a single metaId - each file has its own
-      title: title || analysis?.parsed_title || undefined,
-      poster: poster || undefined,
-      background: background || undefined,
-      resolution: resolution || undefined,
-      quality: quality || undefined,
-      codec: codec || undefined,
-      audio: audio.length > 0 ? audio : undefined,
-      hdr: hdr.length > 0 ? hdr : undefined,
-      languages: languages.length > 0 ? languages : undefined,
-      catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
+      title,
+      poster,
+      background,
+      resolution,
+      quality,
+      codec,
+      audio,
+      hdr,
+      languages,
+      selectedCatalogs,
       forceImport,
       isAnonymous,
-      fileData: annotations,
-    }
-    
-    try {
-      await onImport(formData)
-    } catch (error) {
-      console.error('Multi-content import failed:', error)
-    }
-  }, [
-    contentType, sportsCategory, title, poster, background,
-    resolution, quality, codec, audio, hdr, languages,
-    selectedCatalogs, forceImport, isAnonymous, onImport, analysis
-  ])
+      onImport,
+      analysis,
+    ],
+  )
 
   // Check if series/sports needs annotation
   const needsAnnotation = useMemo(() => {
-    return (contentType === 'series' || contentType === 'sports') && 
-           analysis?.files && 
-           analysis.files.length > 1
+    return (contentType === 'series' || contentType === 'sports') && analysis?.files && analysis.files.length > 1
   }, [contentType, analysis])
 
   // Step indicator
@@ -386,30 +409,20 @@ export function TorrentImportDialog({
               {steps.map((step, index) => {
                 const Icon = step.icon
                 const isActive = currentStep === step.id
-                const isPast = steps.findIndex(s => s.id === currentStep) > index
-                
+                const isPast = steps.findIndex((s) => s.id === currentStep) > index
+
                 return (
                   <div key={step.id} className="flex items-center">
                     {index > 0 && (
-                      <div className={cn(
-                        "w-8 h-0.5 mx-1",
-                        isPast ? "bg-primary" : "bg-muted-foreground/20"
-                      )} />
+                      <div className={cn('w-8 h-0.5 mx-1', isPast ? 'bg-primary' : 'bg-muted-foreground/20')} />
                     )}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={cn(
-                        "gap-1.5 h-8",
-                        isActive && "bg-primary/10 text-primary",
-                        isPast && "text-primary"
-                      )}
+                      className={cn('gap-1.5 h-8', isActive && 'bg-primary/10 text-primary', isPast && 'text-primary')}
                       onClick={() => goToStep(step.id as ImportStep)}
                     >
-                      <Icon className={cn(
-                        "h-3.5 w-3.5",
-                        isPast && "text-primary"
-                      )} />
+                      <Icon className={cn('h-3.5 w-3.5', isPast && 'text-primary')} />
                       <span className="text-xs">{step.label}</span>
                     </Button>
                   </div>
@@ -478,9 +491,7 @@ export function TorrentImportDialog({
                   {analysis.matches && analysis.matches.length > 0 && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label className="text-sm font-medium">
-                          Matched Content ({analysis.matches.length})
-                        </Label>
+                        <Label className="text-sm font-medium">Matched Content ({analysis.matches.length})</Label>
                         {selectedMatch && (
                           <Badge variant="secondary" className="text-xs">
                             <CheckCircle className="h-3 w-3 mr-1" />
@@ -607,12 +618,10 @@ export function TorrentImportDialog({
                   {(contentType === 'series' || contentType === 'sports') && (
                     <div className="space-y-4 pt-4 border-t">
                       <Label className="text-sm font-medium">Episode Options</Label>
-                      
+
                       {/* Episode Parser */}
                       <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">
-                          Episode Name Parser (regex pattern)
-                        </Label>
+                        <Label className="text-xs text-muted-foreground">Episode Name Parser (regex pattern)</Label>
                         <Input
                           value={episodeParser}
                           onChange={(e) => setEpisodeParser(e.target.value)}
@@ -626,11 +635,7 @@ export function TorrentImportDialog({
 
                       {/* File Annotation Button */}
                       {needsAnnotation && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setAnnotationDialogOpen(true)}
-                          className="w-full"
-                        >
+                        <Button variant="outline" onClick={() => setAnnotationDialogOpen(true)} className="w-full">
                           <FileVideo className="h-4 w-4 mr-2" />
                           Annotate Episode Files ({fileAnnotations.length || analysis.files?.length || 0})
                         </Button>
@@ -674,9 +679,7 @@ export function TorrentImportDialog({
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Files Annotated</span>
                           <span className="font-medium">
-                            {fileAnnotations.length > 0 
-                              ? `${fileAnnotations.length} files` 
-                              : 'Using auto-parser'}
+                            {fileAnnotations.length > 0 ? `${fileAnnotations.length} files` : 'Using auto-parser'}
                           </span>
                         </div>
                       )}
@@ -692,10 +695,7 @@ export function TorrentImportDialog({
                           <ImageIcon className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm">Add title to poster</span>
                         </div>
-                        <Switch
-                          checked={addTitleToPoster}
-                          onCheckedChange={setAddTitleToPoster}
-                        />
+                        <Switch checked={addTitleToPoster} onCheckedChange={setAddTitleToPoster} />
                       </div>
                       <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                         <div>
@@ -703,15 +703,12 @@ export function TorrentImportDialog({
                             <span className="text-sm">Anonymous contribution</span>
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {isAnonymous 
-                              ? 'Uploader will show as "Anonymous"' 
+                            {isAnonymous
+                              ? 'Uploader will show as "Anonymous"'
                               : 'Your username will be linked to this contribution'}
                           </p>
                         </div>
-                        <Switch
-                          checked={isAnonymous}
-                          onCheckedChange={setIsAnonymous}
-                        />
+                        <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
                       </div>
                     </div>
                   </div>
@@ -732,16 +729,12 @@ export function TorrentImportDialog({
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>
-              
+
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  disabled={isImporting}
-                >
+                <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isImporting}>
                   Cancel
                 </Button>
-                
+
                 {currentStep !== 'confirm' ? (
                   <Button
                     onClick={goForward}
@@ -800,4 +793,3 @@ export function TorrentImportDialog({
     </>
   )
 }
-

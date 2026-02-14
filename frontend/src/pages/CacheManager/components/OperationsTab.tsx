@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { 
-  Trash2, 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Trash2,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
   Loader2,
   Clock,
   User,
@@ -81,28 +81,23 @@ function ClearCacheButton({
 }) {
   const IconComponent = iconMap[icon] || Database
   const colors = getTypeColorClasses(color)
-  
+
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <Button
           variant="outline"
-          className={cn(
-            "h-auto p-4 flex flex-col items-start gap-2 hover:border-destructive/50",
-            colors.border
-          )}
+          className={cn('h-auto p-4 flex flex-col items-start gap-2 hover:border-destructive/50', colors.border)}
           disabled={isClearing}
         >
           <div className="flex items-center gap-2 w-full">
-            <div className={cn("p-2 rounded-lg", colors.bg)}>
-              <IconComponent className={cn("h-4 w-4", colors.text)} />
+            <div className={cn('p-2 rounded-lg', colors.bg)}>
+              <IconComponent className={cn('h-4 w-4', colors.text)} />
             </div>
             <span className="font-medium">{name}</span>
             <Trash2 className="h-4 w-4 ml-auto text-muted-foreground" />
           </div>
-          <p className="text-xs text-muted-foreground text-left">
-            {description}
-          </p>
+          <p className="text-xs text-muted-foreground text-left">{description}</p>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -113,9 +108,7 @@ function ClearCacheButton({
           </AlertDialogTitle>
           <AlertDialogDescription>
             This will delete all cache keys matching the pattern:
-            <code className="block mt-2 p-2 bg-muted rounded text-sm font-mono">
-              {pattern}
-            </code>
+            <code className="block mt-2 p-2 bg-muted rounded text-sm font-mono">{pattern}</code>
             This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -137,13 +130,13 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
   const { toast } = useToast()
   const clearCache = useClearCache()
   const [clearingPattern, setClearingPattern] = useState<string | null>(null)
-  
+
   const handleClearCache = async (pattern: string, name: string) => {
     setClearingPattern(pattern)
-    
+
     try {
       const result = await clearCache.mutateAsync({ pattern })
-      
+
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear',
@@ -153,7 +146,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
         admin: result.admin_username,
       }
       onActionComplete(action)
-      
+
       toast({
         title: 'Cache Cleared',
         description: `Deleted ${result.keys_deleted} keys from ${name} cache`,
@@ -167,7 +160,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
         result: 'Failed',
       }
       onActionComplete(action)
-      
+
       toast({
         title: 'Error',
         description: `Failed to clear ${name} cache`,
@@ -177,13 +170,13 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
       setClearingPattern(null)
     }
   }
-  
+
   const handleClearAll = async () => {
     setClearingPattern('all')
-    
+
     try {
       const result = await clearCache.mutateAsync({ pattern: '*' })
-      
+
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear_all',
@@ -193,7 +186,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
         admin: result.admin_username,
       }
       onActionComplete(action)
-      
+
       toast({
         title: 'All Caches Cleared',
         description: `Deleted ${result.keys_deleted} keys`,
@@ -207,7 +200,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
         result: 'Failed',
       }
       onActionComplete(action)
-      
+
       toast({
         title: 'Error',
         description: 'Failed to clear all caches',
@@ -217,7 +210,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
       setClearingPattern(null)
     }
   }
-  
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Clear by Type */}
@@ -228,7 +221,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
             Clear specific cache categories. This action cannot be undone.
           </p>
         </div>
-        
+
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {CACHE_TYPES.map((cacheType) => (
             <ClearCacheButton
@@ -239,16 +232,12 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
             />
           ))}
         </div>
-        
+
         {/* Clear All */}
         <div className="pt-4 border-t">
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button
-                variant="destructive"
-                className="w-full gap-2"
-                disabled={clearingPattern === 'all'}
-              >
+              <Button variant="destructive" className="w-full gap-2" disabled={clearingPattern === 'all'}>
                 {clearingPattern === 'all' ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -264,9 +253,10 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
                   Clear ALL Caches
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will delete ALL cache keys in Redis. This is a destructive operation
-                  and will affect system performance until caches are rebuilt.
-                  <br /><br />
+                  This will delete ALL cache keys in Redis. This is a destructive operation and will affect system
+                  performance until caches are rebuilt.
+                  <br />
+                  <br />
                   Are you absolutely sure?
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -283,16 +273,14 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
           </AlertDialog>
         </div>
       </div>
-      
+
       {/* Action History */}
       <div className="space-y-4">
         <div>
           <h3 className="text-lg font-semibold mb-1">Recent Actions</h3>
-          <p className="text-sm text-muted-foreground">
-            History of cache operations
-          </p>
+          <p className="text-sm text-muted-foreground">History of cache operations</p>
         </div>
-        
+
         <Card className="bg-card/50 border-border/50">
           <CardContent className="p-0">
             <ScrollArea className="h-[400px]">
@@ -306,12 +294,12 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
                   {actionHistory.map((action) => (
                     <div key={action.id} className="p-3 hover:bg-muted/30">
                       <div className="flex items-start gap-3">
-                        <div className={cn(
-                          "p-1.5 rounded-full mt-0.5",
-                          action.result.includes('Failed') 
-                            ? "bg-destructive/10" 
-                            : "bg-emerald-500/10"
-                        )}>
+                        <div
+                          className={cn(
+                            'p-1.5 rounded-full mt-0.5',
+                            action.result.includes('Failed') ? 'bg-destructive/10' : 'bg-emerald-500/10',
+                          )}
+                        >
                           {action.result.includes('Failed') ? (
                             <XCircle className="h-4 w-4 text-destructive" />
                           ) : (
@@ -324,9 +312,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
                               {action.action === 'clear_all' ? 'Clear All' : 'Clear'} {action.target}
                             </p>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {action.result}
-                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{action.result}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] text-muted-foreground">
                               {action.timestamp.toLocaleTimeString()}
@@ -354,4 +340,3 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
     </div>
   )
 }
-

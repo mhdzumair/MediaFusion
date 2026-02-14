@@ -5,12 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -19,16 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
-  Alert,
-  AlertDescription,
-} from '@/components/ui/alert'
-import { 
   RefreshCw,
   ArrowRightLeft,
   Loader2,
@@ -43,17 +31,72 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { metadataApi, type ExternalSearchResult, getCanonicalExternalId, type ExternalIds, type MetadataProvider, type ExternalProvider } from '@/lib/api'
+import {
+  metadataApi,
+  type ExternalSearchResult,
+  getCanonicalExternalId,
+  type ExternalIds,
+  type MetadataProvider,
+  type ExternalProvider,
+} from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { catalogKeys } from '@/hooks/useCatalog'
 
 // Available metadata providers with their details
-const PROVIDERS: { id: ExternalProvider; name: string; icon: string; description: string; idFormat: string; idPlaceholder: string; color: string }[] = [
-  { id: 'imdb', name: 'IMDb', icon: '🎬', description: 'Internet Movie Database', idFormat: 'tt1234567', idPlaceholder: 'tt1234567', color: 'yellow' },
-  { id: 'tmdb', name: 'TMDB', icon: '🎞️', description: 'The Movie Database', idFormat: '12345', idPlaceholder: '12345', color: 'blue' },
-  { id: 'tvdb', name: 'TVDB', icon: '📺', description: 'TheTVDB (best for TV series)', idFormat: '12345', idPlaceholder: '12345', color: 'green' },
-  { id: 'mal', name: 'MAL', icon: '🎌', description: 'MyAnimeList (anime)', idFormat: '12345', idPlaceholder: '12345', color: 'blue' },
-  { id: 'kitsu', name: 'Kitsu', icon: '🦊', description: 'Kitsu (anime)', idFormat: '12345', idPlaceholder: '12345', color: 'orange' },
+const PROVIDERS: {
+  id: ExternalProvider
+  name: string
+  icon: string
+  description: string
+  idFormat: string
+  idPlaceholder: string
+  color: string
+}[] = [
+  {
+    id: 'imdb',
+    name: 'IMDb',
+    icon: '🎬',
+    description: 'Internet Movie Database',
+    idFormat: 'tt1234567',
+    idPlaceholder: 'tt1234567',
+    color: 'yellow',
+  },
+  {
+    id: 'tmdb',
+    name: 'TMDB',
+    icon: '🎞️',
+    description: 'The Movie Database',
+    idFormat: '12345',
+    idPlaceholder: '12345',
+    color: 'blue',
+  },
+  {
+    id: 'tvdb',
+    name: 'TVDB',
+    icon: '📺',
+    description: 'TheTVDB (best for TV series)',
+    idFormat: '12345',
+    idPlaceholder: '12345',
+    color: 'green',
+  },
+  {
+    id: 'mal',
+    name: 'MAL',
+    icon: '🎌',
+    description: 'MyAnimeList (anime)',
+    idFormat: '12345',
+    idPlaceholder: '12345',
+    color: 'blue',
+  },
+  {
+    id: 'kitsu',
+    name: 'Kitsu',
+    icon: '🦊',
+    description: 'Kitsu (anime)',
+    idFormat: '12345',
+    idPlaceholder: '12345',
+    color: 'orange',
+  },
 ]
 
 // Extract available IDs from a search result
@@ -76,7 +119,7 @@ interface RefreshMetadataButtonProps {
 
 /**
  * RefreshMetadataButton - Provides refresh and migrate functionality for content metadata
- * 
+ *
  * - Refresh: Updates metadata from external sources (IMDB/TMDB)
  * - Migrate: Converts internal mf... IDs to proper IMDB IDs
  */
@@ -90,7 +133,7 @@ export function RefreshMetadataButton({
 }: RefreshMetadataButtonProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  
+
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [newExternalId, setNewExternalId] = useState('')
   const [selectedProvider, setSelectedProvider] = useState<ExternalProvider>('imdb')
@@ -103,23 +146,19 @@ export function RefreshMetadataButton({
   // For multi-link: which IDs from selected result to link
   const [idsToLink, setIdsToLink] = useState<{ provider: ExternalProvider; id: string }[]>([])
   const [linkMode, setLinkMode] = useState<'search' | 'manual'>('search')
-  
+
   // Get canonical external ID for display
   const canonicalExternalId = externalIds ? getCanonicalExternalId(externalIds, mediaId) : `mf:${mediaId}`
   const isInternalId = canonicalExternalId.startsWith('mf:')
-  
+
   // Check if we have any external ID linked (for enabling refresh)
-  const hasAnyExternalId = externalIds && (
-    externalIds.imdb || externalIds.tmdb || externalIds.tvdb || externalIds.mal || externalIds.kitsu
-  )
-  
+  const hasAnyExternalId =
+    externalIds && (externalIds.imdb || externalIds.tmdb || externalIds.tvdb || externalIds.mal || externalIds.kitsu)
+
   // Refresh mutation
   const refreshMutation = useMutation({
-    mutationFn: () => metadataApi.refreshMetadata(
-      mediaId, 
-      mediaType, 
-      selectedProviders.length > 0 ? selectedProviders : undefined
-    ),
+    mutationFn: () =>
+      metadataApi.refreshMetadata(mediaId, mediaType, selectedProviders.length > 0 ? selectedProviders : undefined),
     onSuccess: (data) => {
       const providersText = data.refreshed_providers?.join(', ') || 'external sources'
       toast({
@@ -138,7 +177,7 @@ export function RefreshMetadataButton({
       })
     },
   })
-  
+
   // Search mutation
   const searchMutation = useMutation({
     mutationFn: () => metadataApi.searchExternal(searchQuery, mediaType, year),
@@ -153,16 +192,11 @@ export function RefreshMetadataButton({
       })
     },
   })
-  
+
   // Link external ID mutation (single)
   const linkMutation = useMutation({
-    mutationFn: () => metadataApi.linkExternalId(
-      mediaId,
-      selectedProvider,
-      newExternalId,
-      mediaType,
-      fetchMetadataOnLink
-    ),
+    mutationFn: () =>
+      metadataApi.linkExternalId(mediaId, selectedProvider, newExternalId, mediaType, fetchMetadataOnLink),
     onSuccess: (data) => {
       toast({
         title: 'External ID linked',
@@ -180,7 +214,7 @@ export function RefreshMetadataButton({
       })
     },
   })
-  
+
   // Link multiple external IDs mutation
   const linkMultipleMutation = useMutation({
     mutationFn: () => {
@@ -218,20 +252,18 @@ export function RefreshMetadataButton({
       })
     },
   })
-  
+
   const handleRefresh = () => {
     refreshMutation.mutate()
     setProviderDropdownOpen(false)
   }
-  
+
   const toggleProvider = (providerId: MetadataProvider) => {
-    setSelectedProviders(prev => 
-      prev.includes(providerId)
-        ? prev.filter(p => p !== providerId)
-        : [...prev, providerId]
+    setSelectedProviders((prev) =>
+      prev.includes(providerId) ? prev.filter((p) => p !== providerId) : [...prev, providerId],
     )
   }
-  
+
   const handleOpenLinkDialog = () => {
     setSearchQuery(title)
     setSearchResults([])
@@ -243,50 +275,48 @@ export function RefreshMetadataButton({
     setLinkMode('search')
     setLinkDialogOpen(true)
   }
-  
+
   const handleSearch = () => {
     if (searchQuery.trim()) {
       searchMutation.mutate()
     }
   }
-  
+
   const handleSelectResult = (result: ExternalSearchResult) => {
     setSelectedResult(result)
     // Extract all available IDs from the result
     // Pre-select new IDs, but also allow selecting already-linked IDs to update them
     const availableIds = getAvailableIds(result)
     // Pre-select only new IDs by default, user can manually enable already-linked ones
-    const newIds = availableIds.filter(
-      item => !externalIds?.[item.provider as keyof ExternalIds]
-    )
+    const newIds = availableIds.filter((item) => !externalIds?.[item.provider as keyof ExternalIds])
     setIdsToLink(newIds)
   }
-  
+
   const toggleIdToLink = (provider: ExternalProvider, id: string) => {
-    setIdsToLink(prev => {
-      const exists = prev.some(item => item.provider === provider)
+    setIdsToLink((prev) => {
+      const exists = prev.some((item) => item.provider === provider)
       if (exists) {
-        return prev.filter(item => item.provider !== provider)
+        return prev.filter((item) => item.provider !== provider)
       } else {
         return [...prev, { provider, id }]
       }
     })
   }
-  
+
   const handleLink = () => {
     if (linkMode === 'manual' && newExternalId.trim()) {
       linkMutation.mutate()
     }
   }
-  
+
   const handleLinkMultiple = () => {
     if (idsToLink.length > 0) {
       linkMultipleMutation.mutate()
     }
   }
-  
+
   // Get the current provider config
-  const currentProviderConfig = PROVIDERS.find(p => p.id === selectedProvider)
+  const currentProviderConfig = PROVIDERS.find((p) => p.id === selectedProvider)
 
   return (
     <TooltipProvider>
@@ -308,23 +338,21 @@ export function RefreshMetadataButton({
                   <RefreshCw className="h-4 w-4" />
                 )}
                 <span className="hidden sm:inline">
-                  {selectedProviders.length > 0 
-                    ? `Refresh (${selectedProviders.length})` 
-                    : 'Refresh All'}
+                  {selectedProviders.length > 0 ? `Refresh (${selectedProviders.length})` : 'Refresh All'}
                 </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
               <p>
-                {!hasAnyExternalId 
+                {!hasAnyExternalId
                   ? 'No external IDs linked - add an external ID first'
-                  : selectedProviders.length > 0 
+                  : selectedProviders.length > 0
                     ? `Refresh from: ${selectedProviders.join(', ')}`
                     : 'Refresh metadata from all configured providers'}
               </p>
             </TooltipContent>
           </Tooltip>
-          
+
           <DropdownMenu open={providerDropdownOpen} onOpenChange={setProviderDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <Button
@@ -343,7 +371,7 @@ export function RefreshMetadataButton({
                   Select providers to refresh
                 </div>
                 <div className="space-y-1">
-                  {PROVIDERS.map(provider => {
+                  {PROVIDERS.map((provider) => {
                     const hasId = externalIds?.[provider.id as keyof ExternalIds]
                     return (
                       <label
@@ -351,7 +379,7 @@ export function RefreshMetadataButton({
                         className={cn(
                           'flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors',
                           hasId ? 'hover:bg-muted' : 'opacity-50 cursor-not-allowed',
-                          selectedProviders.includes(provider.id) && 'bg-primary/10'
+                          selectedProviders.includes(provider.id) && 'bg-primary/10',
                         )}
                       >
                         <Checkbox
@@ -384,7 +412,7 @@ export function RefreshMetadataButton({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        
+
         {/* Link External ID button */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -402,7 +430,7 @@ export function RefreshMetadataButton({
             <p>Link an external provider ID (IMDb, TMDB, TVDB, etc.)</p>
           </TooltipContent>
         </Tooltip>
-        
+
         {/* Link External ID Dialog */}
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
@@ -415,7 +443,7 @@ export function RefreshMetadataButton({
                 Link an external provider ID to this content. This allows fetching metadata from multiple sources.
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4 py-4">
               {/* Current IDs */}
               <div className="p-3 rounded-xl bg-muted/50">
@@ -453,7 +481,7 @@ export function RefreshMetadataButton({
                   )}
                 </div>
               </div>
-              
+
               {/* Search section */}
               <div className="space-y-3">
                 <Label className="text-sm font-medium">Search External Providers</Label>
@@ -478,7 +506,7 @@ export function RefreshMetadataButton({
                   </Button>
                 </div>
               </div>
-              
+
               {/* Search Results */}
               {searchResults.length > 0 && (
                 <div className="space-y-2">
@@ -486,10 +514,10 @@ export function RefreshMetadataButton({
                   <ScrollArea className="h-52 rounded-xl border">
                     <div className="p-2 space-y-2">
                       {searchResults.map((result, idx) => {
-                        const providerConfig = PROVIDERS.find(p => p.id === result.provider)
+                        const providerConfig = PROVIDERS.find((p) => p.id === result.provider)
                         const availableIds = getAvailableIds(result)
                         const newIdsCount = availableIds.filter(
-                          item => !externalIds?.[item.provider as keyof ExternalIds]
+                          (item) => !externalIds?.[item.provider as keyof ExternalIds],
                         ).length
                         return (
                           <div
@@ -498,16 +526,12 @@ export function RefreshMetadataButton({
                               'flex gap-3 p-2 rounded-lg cursor-pointer transition-colors',
                               selectedResult?.id === result.id
                                 ? 'bg-primary/20 border border-primary/50'
-                                : 'hover:bg-muted'
+                                : 'hover:bg-muted',
                             )}
                             onClick={() => handleSelectResult(result)}
                           >
                             {result.poster ? (
-                              <img
-                                src={result.poster}
-                                alt={result.title}
-                                className="w-12 h-18 object-cover rounded"
-                              />
+                              <img src={result.poster} alt={result.title} className="w-12 h-18 object-cover rounded" />
                             ) : (
                               <div className="w-12 h-18 bg-muted rounded flex items-center justify-center">
                                 <Film className="h-6 w-6 text-muted-foreground" />
@@ -522,7 +546,10 @@ export function RefreshMetadataButton({
                                   </Badge>
                                 )}
                                 {newIdsCount > 0 && (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                  >
                                     +{newIdsCount} new
                                   </Badge>
                                 )}
@@ -537,40 +564,46 @@ export function RefreshMetadataButton({
                               </div>
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {result.imdb_id && (
-                                  <code className={cn(
-                                    "text-[10px] px-1 rounded",
-                                    externalIds?.imdb === result.imdb_id
-                                      ? "text-emerald-600 bg-emerald-500/10"
-                                      : externalIds?.imdb 
-                                        ? "text-primary bg-primary/10"
-                                        : "text-muted-foreground bg-muted"
-                                  )}>
+                                  <code
+                                    className={cn(
+                                      'text-[10px] px-1 rounded',
+                                      externalIds?.imdb === result.imdb_id
+                                        ? 'text-emerald-600 bg-emerald-500/10'
+                                        : externalIds?.imdb
+                                          ? 'text-primary bg-primary/10'
+                                          : 'text-muted-foreground bg-muted',
+                                    )}
+                                  >
                                     IMDb: {result.imdb_id}
                                     {externalIds?.imdb === result.imdb_id && ' ✓'}
                                   </code>
                                 )}
                                 {result.tmdb_id && (
-                                  <code className={cn(
-                                    "text-[10px] px-1 rounded",
-                                    String(externalIds?.tmdb) === String(result.tmdb_id)
-                                      ? "text-emerald-600 bg-emerald-500/10"
-                                      : externalIds?.tmdb 
-                                        ? "text-primary bg-primary/10"
-                                        : "text-muted-foreground bg-muted"
-                                  )}>
+                                  <code
+                                    className={cn(
+                                      'text-[10px] px-1 rounded',
+                                      String(externalIds?.tmdb) === String(result.tmdb_id)
+                                        ? 'text-emerald-600 bg-emerald-500/10'
+                                        : externalIds?.tmdb
+                                          ? 'text-primary bg-primary/10'
+                                          : 'text-muted-foreground bg-muted',
+                                    )}
+                                  >
                                     TMDB: {result.tmdb_id}
                                     {String(externalIds?.tmdb) === String(result.tmdb_id) && ' ✓'}
                                   </code>
                                 )}
                                 {result.tvdb_id && (
-                                  <code className={cn(
-                                    "text-[10px] px-1 rounded",
-                                    String(externalIds?.tvdb) === String(result.tvdb_id)
-                                      ? "text-emerald-600 bg-emerald-500/10"
-                                      : externalIds?.tvdb 
-                                        ? "text-primary bg-primary/10"
-                                        : "text-muted-foreground bg-muted"
-                                  )}>
+                                  <code
+                                    className={cn(
+                                      'text-[10px] px-1 rounded',
+                                      String(externalIds?.tvdb) === String(result.tvdb_id)
+                                        ? 'text-emerald-600 bg-emerald-500/10'
+                                        : externalIds?.tvdb
+                                          ? 'text-primary bg-primary/10'
+                                          : 'text-muted-foreground bg-muted',
+                                    )}
+                                  >
                                     TVDB: {result.tvdb_id}
                                     {String(externalIds?.tvdb) === String(result.tvdb_id) && ' ✓'}
                                   </code>
@@ -584,7 +617,7 @@ export function RefreshMetadataButton({
                   </ScrollArea>
                 </div>
               )}
-              
+
               {/* Selected result - IDs to link */}
               {selectedResult && (
                 <div className="space-y-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
@@ -593,18 +626,16 @@ export function RefreshMetadataButton({
                       <Link2 className="h-4 w-4 text-primary" />
                       IDs to link from "{selectedResult.title}"
                     </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {idsToLink.length} selected
-                    </span>
+                    <span className="text-xs text-muted-foreground">{idsToLink.length} selected</span>
                   </div>
                   <div className="space-y-2">
                     {getAvailableIds(selectedResult).map(({ provider, id }) => {
-                      const providerConfig = PROVIDERS.find(p => p.id === provider)
+                      const providerConfig = PROVIDERS.find((p) => p.id === provider)
                       const currentLinkedId = externalIds?.[provider as keyof ExternalIds]
                       const alreadyLinked = !!currentLinkedId
                       const isSameId = alreadyLinked && String(currentLinkedId) === String(id)
-                      const isSelected = idsToLink.some(item => item.provider === provider)
-                      
+                      const isSelected = idsToLink.some((item) => item.provider === provider)
+
                       return (
                         <label
                           key={provider}
@@ -612,37 +643,36 @@ export function RefreshMetadataButton({
                             'flex items-center gap-3 p-2 rounded-lg transition-colors cursor-pointer',
                             isSameId && !isSelected && 'bg-muted/30',
                             isSelected && 'bg-emerald-500/10 border border-emerald-500/30',
-                            !isSelected && !isSameId && 'hover:bg-muted/50'
+                            !isSelected && !isSameId && 'hover:bg-muted/50',
                           )}
                         >
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleIdToLink(provider, id)}
-                          />
+                          <Checkbox checked={isSelected} onCheckedChange={() => toggleIdToLink(provider, id)} />
                           <span className="text-lg">{providerConfig?.icon}</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium">{providerConfig?.name}</p>
                             <code className="text-xs text-muted-foreground">{id}</code>
                           </div>
-                          {alreadyLinked && (
-                            isSameId ? (
+                          {alreadyLinked &&
+                            (isSameId ? (
                               <Badge variant="secondary" className="text-[10px] gap-1">
                                 <Check className="h-3 w-3" />
                                 Same ID
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/30">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/30"
+                              >
                                 Current: {currentLinkedId}
                               </Badge>
-                            )
-                          )}
+                            ))}
                         </label>
                       )
                     })}
                   </div>
                 </div>
               )}
-              
+
               {/* Manual entry section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -656,7 +686,7 @@ export function RefreshMetadataButton({
                   </button>
                   <div className="flex-1 h-px bg-border" />
                 </div>
-                
+
                 {linkMode === 'manual' && (
                   <>
                     <div className="grid grid-cols-[120px_1fr] gap-3">
@@ -673,12 +703,12 @@ export function RefreshMetadataButton({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="w-48">
-                            {PROVIDERS.map(provider => (
+                            {PROVIDERS.map((provider) => (
                               <div
                                 key={provider.id}
                                 className={cn(
                                   'flex items-center gap-2 p-2 cursor-pointer hover:bg-muted rounded-lg',
-                                  selectedProvider === provider.id && 'bg-primary/10'
+                                  selectedProvider === provider.id && 'bg-primary/10',
                                 )}
                                 onClick={() => {
                                   setSelectedProvider(provider.id)
@@ -703,15 +733,14 @@ export function RefreshMetadataButton({
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {selectedProvider === 'imdb' 
+                      {selectedProvider === 'imdb'
                         ? 'IMDb ID starts with "tt" (e.g., tt1234567)'
-                        : `Enter the ${currentProviderConfig?.name} ID (e.g., ${currentProviderConfig?.idFormat})`
-                      }
+                        : `Enter the ${currentProviderConfig?.name} ID (e.g., ${currentProviderConfig?.idFormat})`}
                     </p>
                   </>
                 )}
               </div>
-              
+
               {/* Fetch metadata option */}
               <label className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 cursor-pointer">
                 <Checkbox
@@ -720,39 +749,33 @@ export function RefreshMetadataButton({
                 />
                 <div>
                   <p className="text-sm font-medium">Fetch metadata from provider(s)</p>
-                  <p className="text-xs text-muted-foreground">
-                    Update title, description, poster, and other details
-                  </p>
+                  <p className="text-xs text-muted-foreground">Update title, description, poster, and other details</p>
                 </div>
               </label>
-              
+
               {/* Status messages */}
               {(linkMutation.isError || linkMultipleMutation.isError) && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    {(linkMutation.error as Error)?.message || 
-                     (linkMultipleMutation.error as Error)?.message || 
-                     'Linking failed'}
+                    {(linkMutation.error as Error)?.message ||
+                      (linkMultipleMutation.error as Error)?.message ||
+                      'Linking failed'}
                   </AlertDescription>
                 </Alert>
               )}
             </div>
-            
+
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setLinkDialogOpen(false)}
-                className="rounded-xl"
-              >
+              <Button variant="outline" onClick={() => setLinkDialogOpen(false)} className="rounded-xl">
                 Cancel
               </Button>
-              
+
               {linkMode === 'manual' ? (
                 <Button
                   onClick={handleLink}
                   disabled={
-                    linkMutation.isPending || 
+                    linkMutation.isPending ||
                     !newExternalId.trim() ||
                     (selectedProvider === 'imdb' && !newExternalId.startsWith('tt'))
                   }
@@ -796,4 +819,3 @@ export function RefreshMetadataButton({
     </TooltipProvider>
   )
 }
-

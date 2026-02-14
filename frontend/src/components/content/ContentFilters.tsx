@@ -1,27 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { 
-  Film, 
-  Tv, 
-  Radio,
-  Search,
-  Grid3X3,
-  List,
-  SortAsc,
-  SortDesc,
-  CheckCircle,
-  User,
-  X,
-} from 'lucide-react'
+import { Film, Tv, Radio, Search, Grid3X3, List, SortAsc, SortDesc, CheckCircle, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CatalogType, SortOption, SortDirection, GenreResponse, CatalogInfo } from '@/lib/api'
 
@@ -36,46 +18,46 @@ export interface ContentFiltersProps {
   catalogType?: CatalogType
   onCatalogTypeChange?: (type: CatalogType) => void
   showTypeFilter?: boolean
-  
+
   // Search
   search?: string
   onSearchChange?: (search: string) => void
   searchPlaceholder?: string
-  
+
   // Catalog filter
   selectedCatalog?: string
   catalogs?: CatalogInfo[]
   onCatalogChange?: (catalog: string) => void
   showCatalogFilter?: boolean
-  
+
   // Genre filter
   selectedGenre?: string
   genres?: GenreResponse[]
   onGenreChange?: (genre: string) => void
   showGenreFilter?: boolean
-  
+
   // Sort
   sort?: SortOption | 'added' | 'title'
   onSortChange?: (sort: SortOption | 'added' | 'title') => void
   sortOptions?: Array<{ value: string; label: string }>
   showSort?: boolean
-  
+
   // Sort direction
   sortDir?: SortDirection
   onSortDirChange?: (dir: SortDirection) => void
   showSortDir?: boolean
-  
+
   // View mode
   viewMode?: ViewMode
   onViewModeChange?: (mode: ViewMode) => void
   showViewMode?: boolean
-  
+
   // TV-specific filters
   workingOnly?: boolean
   onWorkingOnlyChange?: (value: boolean) => void
   myChannels?: boolean
   onMyChannelsChange?: (value: boolean) => void
-  
+
   className?: string
 }
 
@@ -104,46 +86,46 @@ export function ContentFilters({
   catalogType,
   onCatalogTypeChange,
   showTypeFilter = true,
-  
+
   // Search
   search = '',
   onSearchChange,
   searchPlaceholder = 'Search...',
-  
+
   // Catalog filter
   selectedCatalog,
   catalogs,
   onCatalogChange,
   showCatalogFilter = true,
-  
+
   // Genre filter
   selectedGenre,
   genres,
   onGenreChange,
   showGenreFilter = true,
-  
+
   // Sort
   sort,
   onSortChange,
   sortOptions = DEFAULT_SORT_OPTIONS,
   showSort = true,
-  
+
   // Sort direction
   sortDir = 'desc',
   onSortDirChange,
   showSortDir = true,
-  
+
   // View mode
   viewMode = 'grid',
   onViewModeChange,
   showViewMode = true,
-  
+
   // TV-specific filters
   workingOnly = false,
   onWorkingOnlyChange,
   myChannels = false,
   onMyChannelsChange,
-  
+
   className,
 }: ContentFiltersProps) {
   const showTvFilters = catalogType === 'tv' && (onWorkingOnlyChange || onMyChannelsChange)
@@ -187,11 +169,7 @@ export function ContentFilters({
         <div className="flex items-center gap-4 px-4 py-2 rounded-xl bg-muted/30 border border-border/50">
           {onWorkingOnlyChange && (
             <div className="flex items-center gap-2">
-              <Switch
-                id="working-only"
-                checked={workingOnly}
-                onCheckedChange={onWorkingOnlyChange}
-              />
+              <Switch id="working-only" checked={workingOnly} onCheckedChange={onWorkingOnlyChange} />
               <Label htmlFor="working-only" className="flex items-center gap-1.5 text-sm cursor-pointer">
                 <CheckCircle className="h-4 w-4 text-emerald-500" />
                 Working Only
@@ -200,11 +178,7 @@ export function ContentFilters({
           )}
           {onMyChannelsChange && (
             <div className="flex items-center gap-2">
-              <Switch
-                id="my-channels"
-                checked={myChannels}
-                onCheckedChange={onMyChannelsChange}
-              />
+              <Switch id="my-channels" checked={myChannels} onCheckedChange={onMyChannelsChange} />
               <Label htmlFor="my-channels" className="flex items-center gap-1.5 text-sm cursor-pointer">
                 <User className="h-4 w-4 text-primary" />
                 My Channels
@@ -238,20 +212,19 @@ export function ContentFilters({
             )}
           </div>
         )}
-        
+
         {/* Catalog Filter */}
         {showCatalogFilter && catalogs && onCatalogChange && (
-          <Select 
-            value={selectedCatalog || 'all'} 
-            onValueChange={(v) => onCatalogChange(v === 'all' ? '' : v)}
-          >
+          <Select value={selectedCatalog || 'all'} onValueChange={(v) => onCatalogChange(v === 'all' ? '' : v)}>
             <SelectTrigger className="w-[180px] rounded-xl">
               <SelectValue placeholder="All Catalogs" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Catalogs</SelectItem>
-              {catalogs.map(cat => (
-                <SelectItem key={cat.name} value={cat.name}>{cat.display_name}</SelectItem>
+              {catalogs.map((cat) => (
+                <SelectItem key={cat.name} value={cat.name}>
+                  {cat.display_name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -259,17 +232,16 @@ export function ContentFilters({
 
         {/* Genre Filter */}
         {showGenreFilter && genres && onGenreChange && (
-          <Select 
-            value={selectedGenre || 'all'} 
-            onValueChange={(v) => onGenreChange(v === 'all' ? '' : v)}
-          >
+          <Select value={selectedGenre || 'all'} onValueChange={(v) => onGenreChange(v === 'all' ? '' : v)}>
             <SelectTrigger className="w-[130px] rounded-xl">
               <SelectValue placeholder="All Genres" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Genres</SelectItem>
-              {genres.map(g => (
-                <SelectItem key={g.id} value={g.name}>{g.name}</SelectItem>
+              {genres.map((g) => (
+                <SelectItem key={g.id} value={g.name}>
+                  {g.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -280,15 +252,11 @@ export function ContentFilters({
           <div className="flex items-center gap-1">
             <Select value={sort} onValueChange={onSortChange}>
               <SelectTrigger className="w-[140px] rounded-xl">
-                {sortDir === 'desc' ? (
-                  <SortDesc className="mr-2 h-4 w-4" />
-                ) : (
-                  <SortAsc className="mr-2 h-4 w-4" />
-                )}
+                {sortDir === 'desc' ? <SortDesc className="mr-2 h-4 w-4" /> : <SortAsc className="mr-2 h-4 w-4" />}
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {sortOptions.map(option => (
+                {sortOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
@@ -304,11 +272,7 @@ export function ContentFilters({
                 onClick={() => onSortDirChange(sortDir === 'desc' ? 'asc' : 'desc')}
                 title={sortDir === 'desc' ? 'Descending (click for ascending)' : 'Ascending (click for descending)'}
               >
-                {sortDir === 'desc' ? (
-                  <SortDesc className="h-4 w-4" />
-                ) : (
-                  <SortAsc className="h-4 w-4" />
-                )}
+                {sortDir === 'desc' ? <SortDesc className="h-4 w-4" /> : <SortAsc className="h-4 w-4" />}
               </Button>
             )}
           </div>
@@ -342,4 +306,3 @@ export function ContentFilters({
 
 // Re-export for convenience
 export { DEFAULT_SORT_OPTIONS, LIBRARY_SORT_OPTIONS }
-

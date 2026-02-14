@@ -13,11 +13,11 @@ function toTorrentMetaType(contentType: ContentType): TorrentMetaType {
   if (contentType === 'tv') return 'movie'
   return contentType
 }
-import { 
-  MagnetTab, 
+import {
+  MagnetTab,
   TorrentTab,
-  NZBTab, 
-  M3UTab, 
+  NZBTab,
+  M3UTab,
   XtreamTab,
   YouTubeTab,
   HTTPTab,
@@ -37,18 +37,16 @@ interface LocationState {
 export function ContentImportPage() {
   const location = useLocation()
   const locationState = location.state as LocationState | null
-  
+
   const [activeTab, setActiveTab] = useState('magnet')
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  
+
   // Content type for initial analysis
-  const [selectedContentType, setSelectedContentType] = useState<ContentType>(
-    locationState?.prefillType || 'movie'
-  )
-  
+  const [selectedContentType, setSelectedContentType] = useState<ContentType>(locationState?.prefillType || 'movie')
+
   // Import mode for multi-content support
   const [importMode, setImportMode] = useState<ImportMode>('single')
-  
+
   // Torrent import state
   const [torrentAnalysis, setTorrentAnalysis] = useState<TorrentAnalyzeResponse | null>(null)
   const [torrentDialogOpen, setTorrentDialogOpen] = useState(false)
@@ -58,7 +56,7 @@ export function ContentImportPage() {
   const importMagnet = useImportMagnet()
   const importTorrent = useImportTorrent()
   const analyzeMagnet = useAnalyzeMagnet()
-  
+
   // Fetch IPTV import settings from server
   const { data: iptvSettings } = useIPTVImportSettings()
 
@@ -82,94 +80,100 @@ export function ContentImportPage() {
   const analyzeTorrent = useAnalyzeTorrent()
 
   // Handle re-analyze with different content type
-  const handleReanalyze = useCallback(async (contentType: ContentType) => {
-    const metaType = toTorrentMetaType(contentType)
-    if (magnetLink) {
-      try {
-        const result = await analyzeMagnet.mutateAsync({
-          magnet_link: magnetLink,
-          meta_type: metaType
-        })
-        setTorrentAnalysis(result)
-      } catch {
-        setImportResult({ success: false, message: 'Re-analysis failed' })
+  const handleReanalyze = useCallback(
+    async (contentType: ContentType) => {
+      const metaType = toTorrentMetaType(contentType)
+      if (magnetLink) {
+        try {
+          const result = await analyzeMagnet.mutateAsync({
+            magnet_link: magnetLink,
+            meta_type: metaType,
+          })
+          setTorrentAnalysis(result)
+        } catch {
+          setImportResult({ success: false, message: 'Re-analysis failed' })
+        }
+      } else if (selectedFile) {
+        // Re-analyze torrent file with new content type
+        try {
+          const result = await analyzeTorrent.mutateAsync({
+            file: selectedFile,
+            metaType: metaType,
+          })
+          setTorrentAnalysis(result)
+        } catch {
+          setImportResult({ success: false, message: 'Re-analysis failed' })
+        }
       }
-    } else if (selectedFile) {
-      // Re-analyze torrent file with new content type
-      try {
-        const result = await analyzeTorrent.mutateAsync({
-          file: selectedFile,
-          metaType: metaType
-        })
-        setTorrentAnalysis(result)
-      } catch {
-        setImportResult({ success: false, message: 'Re-analysis failed' })
-      }
-    }
-  }, [magnetLink, selectedFile, analyzeMagnet, analyzeTorrent])
+    },
+    [magnetLink, selectedFile, analyzeMagnet, analyzeTorrent],
+  )
 
   // Handle torrent import from dialog
-  const handleTorrentImport = useCallback(async (formData: TorrentImportFormData): Promise<ImportResponse> => {
-    try {
-      // Build the request data
-      const requestData = {
-        meta_type: toTorrentMetaType(formData.contentType),
-        meta_id: formData.metaId,
-        title: formData.title,
-        poster: formData.poster,
-        background: formData.background,
-        logo: formData.logo,
-        resolution: formData.resolution,
-        quality: formData.quality,
-        codec: formData.codec,
-        audio: formData.audio?.join(','),
-        hdr: formData.hdr?.join(','),
-        languages: formData.languages?.join(','),
-        catalogs: formData.catalogs?.join(','),
-        episode_name_parser: formData.episodeNameParser,
-        created_at: formData.releaseDate,
-        force_import: formData.forceImport,
-        is_add_title_to_poster: false,
-        is_anonymous: formData.isAnonymous,
-        file_data: formData.fileData ? JSON.stringify(formData.fileData) : undefined,
-        sports_category: formData.sportsCategory,
+  const handleTorrentImport = useCallback(
+    async (formData: TorrentImportFormData): Promise<ImportResponse> => {
+      try {
+        // Build the request data
+        const requestData = {
+          meta_type: toTorrentMetaType(formData.contentType),
+          meta_id: formData.metaId,
+          title: formData.title,
+          poster: formData.poster,
+          background: formData.background,
+          logo: formData.logo,
+          resolution: formData.resolution,
+          quality: formData.quality,
+          codec: formData.codec,
+          audio: formData.audio?.join(','),
+          hdr: formData.hdr?.join(','),
+          languages: formData.languages?.join(','),
+          catalogs: formData.catalogs?.join(','),
+          episode_name_parser: formData.episodeNameParser,
+          created_at: formData.releaseDate,
+          force_import: formData.forceImport,
+          is_add_title_to_poster: false,
+          is_anonymous: formData.isAnonymous,
+          file_data: formData.fileData ? JSON.stringify(formData.fileData) : undefined,
+          sports_category: formData.sportsCategory,
+        }
+
+        let result: ImportResponse
+
+        if (magnetLink) {
+          result = await importMagnet.mutateAsync({
+            magnet_link: magnetLink,
+            ...requestData,
+          })
+        } else if (selectedFile) {
+          result = await importTorrent.mutateAsync({
+            torrent_file: selectedFile,
+            ...requestData,
+          })
+        } else {
+          return { status: 'error', message: 'No torrent source provided' }
+        }
+
+        if (result.status === 'success') {
+          setImportResult({ success: true, message: result.message || 'Import successful!' })
+          setTorrentDialogOpen(false)
+          setTorrentAnalysis(null)
+          setSelectedFile(null)
+          setMagnetLink('')
+        } else if (result.status === 'warning') {
+          setImportResult({ success: true, message: result.message })
+          setTorrentDialogOpen(false)
+          setTorrentAnalysis(null)
+        }
+
+        return result
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Import failed'
+        setImportResult({ success: false, message: errorMessage })
+        return { status: 'error', message: errorMessage }
       }
-
-      let result: ImportResponse
-
-      if (magnetLink) {
-        result = await importMagnet.mutateAsync({
-          magnet_link: magnetLink,
-          ...requestData,
-        })
-      } else if (selectedFile) {
-        result = await importTorrent.mutateAsync({
-          torrent_file: selectedFile,
-          ...requestData,
-        })
-      } else {
-        return { status: 'error', message: 'No torrent source provided' }
-      }
-
-      if (result.status === 'success') {
-        setImportResult({ success: true, message: result.message || 'Import successful!' })
-        setTorrentDialogOpen(false)
-        setTorrentAnalysis(null)
-        setSelectedFile(null)
-        setMagnetLink('')
-      } else if (result.status === 'warning') {
-        setImportResult({ success: true, message: result.message })
-        setTorrentDialogOpen(false)
-        setTorrentAnalysis(null)
-      }
-
-      return result
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Import failed'
-      setImportResult({ success: false, message: errorMessage })
-      return { status: 'error', message: errorMessage }
-    }
-  }, [magnetLink, selectedFile, importMagnet, importTorrent])
+    },
+    [magnetLink, selectedFile, importMagnet, importTorrent],
+  )
 
   const handleSuccess = useCallback((message: string) => {
     setImportResult({ success: true, message })
@@ -179,7 +183,8 @@ export function ContentImportPage() {
     setImportResult({ success: false, message })
   }, [])
 
-  const isImporting = importMagnet.isPending || importTorrent.isPending || analyzeMagnet.isPending || analyzeTorrent.isPending
+  const isImporting =
+    importMagnet.isPending || importTorrent.isPending || analyzeMagnet.isPending || analyzeTorrent.isPending
 
   return (
     <div className="space-y-6">
@@ -191,51 +196,68 @@ export function ContentImportPage() {
           </div>
           Content Import
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Import torrents and playlists to expand your content library
-        </p>
+        <p className="text-muted-foreground mt-1">Import torrents and playlists to expand your content library</p>
       </div>
 
       {/* Import Result Banner */}
-      {importResult && (
-        <ImportResultBanner 
-          result={importResult} 
-          onDismiss={() => setImportResult(null)} 
-        />
-      )}
+      {importResult && <ImportResultBanner result={importResult} onDismiss={() => setImportResult(null)} />}
 
       {/* Import Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 p-1 bg-muted/50 rounded-xl gap-1">
-          <TabsTrigger value="magnet" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="magnet"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Magnet className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Magnet</span>
           </TabsTrigger>
-          <TabsTrigger value="torrent" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="torrent"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Upload className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Torrent</span>
           </TabsTrigger>
-          <TabsTrigger value="nzb" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="nzb"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Newspaper className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">NZB</span>
           </TabsTrigger>
-          <TabsTrigger value="m3u" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="m3u"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <FileVideo className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">M3U</span>
           </TabsTrigger>
-          <TabsTrigger value="xtream" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="xtream"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Tv className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Xtream</span>
           </TabsTrigger>
-          <TabsTrigger value="youtube" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="youtube"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Youtube className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-red-500" />
             <span className="hidden sm:inline">YouTube</span>
           </TabsTrigger>
-          <TabsTrigger value="http" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="http"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Globe className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">HTTP</span>
           </TabsTrigger>
-          <TabsTrigger value="acestream" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm">
+          <TabsTrigger
+            value="acestream"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
             <Radio className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-green-500" />
             <span className="hidden sm:inline">AceStream</span>
           </TabsTrigger>
@@ -247,9 +269,7 @@ export function ContentImportPage() {
           <Card className="glass border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">
-                Select the type of content you&apos;re importing
-              </CardDescription>
+              <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
             </CardHeader>
             <CardContent>
               <ContentTypeSelector
@@ -267,7 +287,7 @@ export function ContentImportPage() {
             </CardContent>
           </Card>
 
-          <MagnetTab 
+          <MagnetTab
             onAnalysisComplete={handleMagnetAnalysis}
             onError={handleError}
             contentType={selectedContentType}
@@ -282,9 +302,7 @@ export function ContentImportPage() {
           <Card className="glass border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">
-                Select the type of content you&apos;re importing
-              </CardDescription>
+              <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
             </CardHeader>
             <CardContent>
               <ContentTypeSelector
@@ -302,7 +320,7 @@ export function ContentImportPage() {
             </CardContent>
           </Card>
 
-          <TorrentTab 
+          <TorrentTab
             onAnalysisComplete={handleTorrentAnalysis}
             onError={handleError}
             contentType={selectedContentType}
@@ -315,9 +333,7 @@ export function ContentImportPage() {
           <Card className="glass border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">
-                Select the type of content you&apos;re importing
-              </CardDescription>
+              <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
             </CardHeader>
             <CardContent>
               <ContentTypeSelector
@@ -334,11 +350,13 @@ export function ContentImportPage() {
             </CardContent>
           </Card>
 
-          <NZBTab 
+          <NZBTab
             onAnalysisComplete={(analysis, _source) => {
               // For now, show a success message - full import dialog would be similar to TorrentImportDialog
               if (analysis.matches && analysis.matches.length > 0) {
-                handleSuccess(`NZB analyzed: ${analysis.nzb_title || 'Unknown'} - ${analysis.matches.length} matches found`)
+                handleSuccess(
+                  `NZB analyzed: ${analysis.nzb_title || 'Unknown'} - ${analysis.matches.length} matches found`,
+                )
               } else {
                 handleError('No metadata matches found for this NZB')
               }
@@ -353,16 +371,10 @@ export function ContentImportPage() {
           {iptvSettings?.enabled === false ? (
             <Alert>
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                IPTV import feature is disabled on this server.
-              </AlertDescription>
+              <AlertDescription>IPTV import feature is disabled on this server.</AlertDescription>
             </Alert>
           ) : (
-            <M3UTab 
-              onSuccess={handleSuccess}
-              onError={handleError}
-              iptvSettings={iptvSettings}
-            />
+            <M3UTab onSuccess={handleSuccess} onError={handleError} iptvSettings={iptvSettings} />
           )}
         </TabsContent>
 
@@ -371,16 +383,10 @@ export function ContentImportPage() {
           {iptvSettings?.enabled === false ? (
             <Alert>
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                IPTV import feature is disabled on this server.
-              </AlertDescription>
+              <AlertDescription>IPTV import feature is disabled on this server.</AlertDescription>
             </Alert>
           ) : (
-            <XtreamTab 
-              onSuccess={handleSuccess}
-              onError={handleError}
-              iptvSettings={iptvSettings}
-            />
+            <XtreamTab onSuccess={handleSuccess} onError={handleError} iptvSettings={iptvSettings} />
           )}
         </TabsContent>
 
@@ -405,11 +411,7 @@ export function ContentImportPage() {
             </CardContent>
           </Card>
 
-          <YouTubeTab 
-            onSuccess={handleSuccess}
-            onError={handleError}
-            contentType={selectedContentType}
-          />
+          <YouTubeTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
         </TabsContent>
 
         {/* HTTP Tab */}
@@ -418,9 +420,7 @@ export function ContentImportPage() {
           <Card className="glass border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">
-                Select the type of content for this HTTP stream
-              </CardDescription>
+              <CardDescription className="text-sm">Select the type of content for this HTTP stream</CardDescription>
             </CardHeader>
             <CardContent>
               <ContentTypeSelector
@@ -433,19 +433,12 @@ export function ContentImportPage() {
             </CardContent>
           </Card>
 
-          <HTTPTab 
-            onSuccess={handleSuccess}
-            onError={handleError}
-            contentType={selectedContentType}
-          />
+          <HTTPTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
         </TabsContent>
 
         {/* AceStream Tab */}
         <TabsContent value="acestream" className="space-y-6">
-          <AceStreamTab 
-            onSuccess={handleSuccess}
-            onError={handleError}
-          />
+          <AceStreamTab onSuccess={handleSuccess} onError={handleError} />
         </TabsContent>
       </Tabs>
 

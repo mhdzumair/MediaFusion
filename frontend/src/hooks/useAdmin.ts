@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
-import { 
-  adminApi, 
+import {
+  adminApi,
   type MetadataListParams,
   type MetadataUpdateRequest,
   type TorrentStreamListParams,
@@ -66,7 +66,7 @@ export function useMetadata(metaId: number | undefined) {
 
 export function useUpdateMetadata() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: ({ metaId, data }: { metaId: number; data: MetadataUpdateRequest }) =>
       adminApi.updateMetadata(metaId, data),
@@ -80,7 +80,7 @@ export function useUpdateMetadata() {
 
 export function useDeleteMetadata() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (metaId: number) => adminApi.deleteMetadata(metaId),
     onSuccess: () => {
@@ -113,7 +113,7 @@ export function useTorrentStream(streamId: string | undefined) {
 
 export function useUpdateTorrentStream() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: ({ streamId, data }: { streamId: string; data: TorrentStreamUpdateRequest }) =>
       adminApi.updateTorrentStream(streamId, data),
@@ -126,7 +126,7 @@ export function useUpdateTorrentStream() {
 
 export function useBlockTorrentStream() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (streamId: number) => adminApi.blockTorrentStream(streamId),
     onSuccess: () => {
@@ -137,7 +137,7 @@ export function useBlockTorrentStream() {
 
 export function useUnblockTorrentStream() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (streamId: number) => adminApi.unblockTorrentStream(streamId),
     onSuccess: () => {
@@ -148,7 +148,7 @@ export function useUnblockTorrentStream() {
 
 export function useDeleteTorrentStream() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (streamId: number) => adminApi.deleteTorrentStream(streamId),
     onSuccess: () => {
@@ -180,7 +180,7 @@ export function useTVStream(streamId: number | undefined) {
 
 export function useUpdateTVStream() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: ({ streamId, data }: { streamId: number; data: TVStreamUpdateRequest }) =>
       adminApi.updateTVStream(streamId, data),
@@ -193,7 +193,7 @@ export function useUpdateTVStream() {
 
 export function useToggleTVStreamActive() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (streamId: number) => adminApi.toggleTVStreamActive(streamId),
     onSuccess: () => {
@@ -207,7 +207,7 @@ export const useToggleTVStreamWorking = useToggleTVStreamActive
 
 export function useDeleteTVStream() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (streamId: number) => adminApi.deleteTVStream(streamId),
     onSuccess: () => {
@@ -267,15 +267,12 @@ interface UseReferenceDataOptions {
 // Generic hook for paginated reference data with search
 function createReferenceDataHook(
   queryKey: readonly string[],
-  fetchFn: (params: ReferenceListParams) => ReturnType<typeof adminApi.listGenres>
+  fetchFn: (params: ReferenceListParams) => ReturnType<typeof adminApi.listGenres>,
 ) {
-  return function useReferenceData(
-    params: ReferenceListParams = {},
-    options: UseReferenceDataOptions = {}
-  ) {
+  return function useReferenceData(params: ReferenceListParams = {}, options: UseReferenceDataOptions = {}) {
     const { enabled = true, perPage = DEFAULT_PER_PAGE } = options
     const queryParams = { ...params, per_page: params.per_page ?? perPage }
-    
+
     return useQuery({
       queryKey: [...queryKey, queryParams],
       queryFn: () => fetchFn(queryParams),
@@ -288,21 +285,19 @@ function createReferenceDataHook(
 // Generic hook for infinite loading reference data
 function createInfiniteReferenceDataHook(
   queryKey: readonly string[],
-  fetchFn: (params: ReferenceListParams) => ReturnType<typeof adminApi.listGenres>
+  fetchFn: (params: ReferenceListParams) => ReturnType<typeof adminApi.listGenres>,
 ) {
-  return function useInfiniteReferenceData(
-    search?: string,
-    options: UseReferenceDataOptions = {}
-  ) {
+  return function useInfiniteReferenceData(search?: string, options: UseReferenceDataOptions = {}) {
     const { enabled = true, perPage = DEFAULT_PER_PAGE } = options
-    
+
     return useInfiniteQuery({
       queryKey: [...queryKey, 'infinite', { search }],
-      queryFn: ({ pageParam = 1 }) => fetchFn({ 
-        search, 
-        page: pageParam, 
-        per_page: perPage 
-      }),
+      queryFn: ({ pageParam = 1 }) =>
+        fetchFn({
+          search,
+          page: pageParam,
+          per_page: perPage,
+        }),
       initialPageParam: 1,
       getNextPageParam: (lastPage) => {
         if (lastPage.page < lastPage.pages) {
@@ -325,7 +320,7 @@ export const useInfiniteGenres = createInfiniteReferenceDataHook(ADMIN_GENRES_KE
 
 export function useCreateGenre() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createGenre(data),
     onSuccess: () => {
@@ -336,7 +331,7 @@ export function useCreateGenre() {
 
 export function useDeleteGenre() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (genreId: number) => adminApi.deleteGenre(genreId),
     onSuccess: () => {
@@ -354,7 +349,7 @@ export const useInfiniteCatalogs = createInfiniteReferenceDataHook(ADMIN_CATALOG
 
 export function useCreateCatalog() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createCatalog(data),
     onSuccess: () => {
@@ -365,7 +360,7 @@ export function useCreateCatalog() {
 
 export function useDeleteCatalog() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (catalogId: number) => adminApi.deleteCatalog(catalogId),
     onSuccess: () => {
@@ -383,7 +378,7 @@ export const useInfiniteLanguages = createInfiniteReferenceDataHook(ADMIN_LANGUA
 
 export function useCreateLanguage() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createLanguage(data),
     onSuccess: () => {
@@ -394,7 +389,7 @@ export function useCreateLanguage() {
 
 export function useDeleteLanguage() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (languageId: number) => adminApi.deleteLanguage(languageId),
     onSuccess: () => {
@@ -412,7 +407,7 @@ export const useInfiniteStars = createInfiniteReferenceDataHook(ADMIN_STARS_KEY,
 
 export function useCreateStar() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createStar(data),
     onSuccess: () => {
@@ -423,7 +418,7 @@ export function useCreateStar() {
 
 export function useDeleteStar() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (starId: number) => adminApi.deleteStar(starId),
     onSuccess: () => {
@@ -436,12 +431,18 @@ export function useDeleteStar() {
 // Reference Data Hooks - Parental Certificates
 // ============================================
 
-export const useParentalCertificates = createReferenceDataHook(ADMIN_PARENTAL_CERTS_KEY, adminApi.listParentalCertificates)
-export const useInfiniteParentalCertificates = createInfiniteReferenceDataHook(ADMIN_PARENTAL_CERTS_KEY, adminApi.listParentalCertificates)
+export const useParentalCertificates = createReferenceDataHook(
+  ADMIN_PARENTAL_CERTS_KEY,
+  adminApi.listParentalCertificates,
+)
+export const useInfiniteParentalCertificates = createInfiniteReferenceDataHook(
+  ADMIN_PARENTAL_CERTS_KEY,
+  adminApi.listParentalCertificates,
+)
 
 export function useCreateParentalCertificate() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createParentalCertificate(data),
     onSuccess: () => {
@@ -452,7 +453,7 @@ export function useCreateParentalCertificate() {
 
 export function useDeleteParentalCertificate() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (certId: number) => adminApi.deleteParentalCertificate(certId),
     onSuccess: () => {
@@ -470,7 +471,7 @@ export const useInfiniteNamespaces = createInfiniteReferenceDataHook(ADMIN_NAMES
 
 export function useCreateNamespace() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createNamespace(data),
     onSuccess: () => {
@@ -481,7 +482,7 @@ export function useCreateNamespace() {
 
 export function useDeleteNamespace() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (namespaceId: number) => adminApi.deleteNamespace(namespaceId),
     onSuccess: () => {
@@ -495,11 +496,14 @@ export function useDeleteNamespace() {
 // ============================================
 
 export const useAnnounceUrls = createReferenceDataHook(ADMIN_ANNOUNCE_URLS_KEY, adminApi.listAnnounceUrls)
-export const useInfiniteAnnounceUrls = createInfiniteReferenceDataHook(ADMIN_ANNOUNCE_URLS_KEY, adminApi.listAnnounceUrls)
+export const useInfiniteAnnounceUrls = createInfiniteReferenceDataHook(
+  ADMIN_ANNOUNCE_URLS_KEY,
+  adminApi.listAnnounceUrls,
+)
 
 export function useCreateAnnounceUrl() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ReferenceItemCreate) => adminApi.createAnnounceUrl(data),
     onSuccess: () => {
@@ -510,7 +514,7 @@ export function useCreateAnnounceUrl() {
 
 export function useDeleteAnnounceUrl() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (urlId: number) => adminApi.deleteAnnounceUrl(urlId),
     onSuccess: () => {
@@ -518,4 +522,3 @@ export function useDeleteAnnounceUrl() {
     },
   })
 }
-

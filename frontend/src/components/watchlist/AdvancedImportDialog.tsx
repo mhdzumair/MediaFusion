@@ -61,15 +61,13 @@ export function AdvancedImportDialog({
   onSuccess,
 }: AdvancedImportDialogProps) {
   // Form state
-  const [contentType, setContentType] = useState<'movie' | 'series'>(
-    torrent.parsed_type || 'movie'
-  )
+  const [contentType, setContentType] = useState<'movie' | 'series'>(torrent.parsed_type || 'movie')
   const [importMode, setImportMode] = useState<ImportMode>('single')
   const [searchQuery, setSearchQuery] = useState(torrent.parsed_title || '')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
   const [fileAnnotations, setFileAnnotations] = useState<FileAnnotation[]>([])
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
-  
+
   // Import state
   const [importResult, setImportResult] = useState<{
     status: 'success' | 'failed' | 'skipped'
@@ -83,20 +81,24 @@ export function AdvancedImportDialog({
   const isMultiContentMode = importMode === 'collection' || importMode === 'pack'
 
   // Search for metadata (combined internal + external search)
-  const { data: searchResults = [], isLoading: isSearching, isFetching: isFetchingSearch } = useCombinedMetadataSearch(
+  const {
+    data: searchResults = [],
+    isLoading: isSearching,
+    isFetching: isFetchingSearch,
+  } = useCombinedMetadataSearch(
     {
       query: debouncedQuery,
       type: contentType,
       limit: 15,
     },
-    { enabled: debouncedQuery.length >= 2 && !isMultiContentMode }
+    { enabled: debouncedQuery.length >= 2 && !isMultiContentMode },
   )
 
   // Convert torrent files to TorrentFile format for annotation dialog
   const torrentFiles: TorrentFile[] = useMemo(() => {
     const videoExtensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.m4v']
     return torrent.files
-      .filter(f => videoExtensions.some(ext => f.path.toLowerCase().endsWith(ext)))
+      .filter((f) => videoExtensions.some((ext) => f.path.toLowerCase().endsWith(ext)))
       .map((f, idx) => ({
         filename: f.path.split('/').pop() || f.path,
         size: f.size,
@@ -105,18 +107,21 @@ export function AdvancedImportDialog({
   }, [torrent.files])
 
   // Create a mock analysis object for the MultiContentWizard
-  const mockAnalysis: TorrentAnalyzeResponse = useMemo(() => ({
-    status: 'success' as const,
-    torrent_name: torrent.name,
-    parsed_title: torrent.parsed_title,
-    year: torrent.parsed_year,
-    info_hash: torrent.info_hash,
-    total_size: torrent.size,
-    total_size_readable: formatBytes(torrent.size),
-    file_count: torrent.files.length,
-    files: torrentFiles,
-    matches: [],
-  }), [torrent, torrentFiles])
+  const mockAnalysis: TorrentAnalyzeResponse = useMemo(
+    () => ({
+      status: 'success' as const,
+      torrent_name: torrent.name,
+      parsed_title: torrent.parsed_title,
+      year: torrent.parsed_year,
+      info_hash: torrent.info_hash,
+      total_size: torrent.size,
+      total_size_readable: formatBytes(torrent.size),
+      file_count: torrent.files.length,
+      files: torrentFiles,
+      matches: [],
+    }),
+    [torrent, torrentFiles],
+  )
 
   const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
     setSelectedMedia(result)
@@ -129,91 +134,99 @@ export function AdvancedImportDialog({
   }, [])
 
   // Handle multi-content wizard completion
-  const handleMultiContentComplete = useCallback(async (annotations: FileAnnotation[]) => {
-    // Build file_data from multi-content annotations
-    const fileData: FileAnnotationData[] = annotations.map(f => ({
-      filename: f.filename,
-      size: f.size,
-      index: f.index,
-      season_number: f.season_number,
-      episode_number: f.episode_number,
-      episode_end: f.episode_end,
-      included: true,
-      meta_id: f.meta_id,
-      meta_title: f.meta_title,
-      meta_type: f.meta_type,
-    }))
+  const handleMultiContentComplete = useCallback(
+    async (annotations: FileAnnotation[]) => {
+      // Build file_data from multi-content annotations
+      const fileData: FileAnnotationData[] = annotations.map((f) => ({
+        filename: f.filename,
+        size: f.size,
+        index: f.index,
+        season_number: f.season_number,
+        episode_number: f.episode_number,
+        episode_end: f.episode_end,
+        included: true,
+        meta_id: f.meta_id,
+        meta_title: f.meta_title,
+        meta_type: f.meta_type,
+      }))
 
-    try {
-      const result = await advancedImport.mutateAsync({
-        provider,
-        profileId,
-        imports: [{
-          info_hash: torrent.info_hash,
-          meta_type: contentType,
-          // For multi-content, use the first file's meta_id as the primary
-          meta_id: annotations[0]?.meta_id || '',
-          title: torrent.parsed_title,
-          file_data: fileData,
-        }],
-      })
-
-      const detail = result.details[0]
-      if (detail) {
-        setImportResult({
-          status: detail.status as 'success' | 'failed' | 'skipped',
-          message: detail.message || (detail.status === 'success' ? 'Import successful' : 'Import failed'),
+      try {
+        const result = await advancedImport.mutateAsync({
+          provider,
+          profileId,
+          imports: [
+            {
+              info_hash: torrent.info_hash,
+              meta_type: contentType,
+              // For multi-content, use the first file's meta_id as the primary
+              meta_id: annotations[0]?.meta_id || '',
+              title: torrent.parsed_title,
+              file_data: fileData,
+            },
+          ],
         })
 
-        if (detail.status === 'success') {
-          onSuccess?.()
+        const detail = result.details[0]
+        if (detail) {
+          setImportResult({
+            status: detail.status as 'success' | 'failed' | 'skipped',
+            message: detail.message || (detail.status === 'success' ? 'Import successful' : 'Import failed'),
+          })
+
+          if (detail.status === 'success') {
+            onSuccess?.()
+          }
         }
+      } catch (error) {
+        setImportResult({
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Import failed',
+        })
       }
-    } catch (error) {
-      setImportResult({
-        status: 'failed',
-        message: error instanceof Error ? error.message : 'Import failed',
-      })
-    }
-  }, [torrent.info_hash, torrent.parsed_title, contentType, provider, profileId, advancedImport, onSuccess])
+    },
+    [torrent.info_hash, torrent.parsed_title, contentType, provider, profileId, advancedImport, onSuccess],
+  )
 
   const handleImport = useCallback(async () => {
     if (!selectedMedia) return
 
     // Build file_data from annotations or use defaults
-    const fileData: FileAnnotationData[] = fileAnnotations.length > 0
-      ? fileAnnotations
-          .filter(f => f.included)
-          .map(f => ({
+    const fileData: FileAnnotationData[] =
+      fileAnnotations.length > 0
+        ? fileAnnotations
+            .filter((f) => f.included)
+            .map((f) => ({
+              filename: f.filename,
+              size: f.size,
+              index: f.index,
+              season_number: f.season_number,
+              episode_number: f.episode_number,
+              episode_end: f.episode_end,
+              included: f.included,
+              meta_id: f.meta_id,
+              meta_title: f.meta_title,
+              meta_type: f.meta_type,
+            }))
+        : torrentFiles.map((f) => ({
             filename: f.filename,
             size: f.size,
             index: f.index,
-            season_number: f.season_number,
-            episode_number: f.episode_number,
-            episode_end: f.episode_end,
-            included: f.included,
-            meta_id: f.meta_id,
-            meta_title: f.meta_title,
-            meta_type: f.meta_type,
+            included: true,
           }))
-      : torrentFiles.map(f => ({
-          filename: f.filename,
-          size: f.size,
-          index: f.index,
-          included: true,
-        }))
 
     try {
       const result = await advancedImport.mutateAsync({
         provider,
         profileId,
-        imports: [{
-          info_hash: torrent.info_hash,
-          meta_type: contentType,
-          meta_id: getBestExternalId(selectedMedia),
-          title: selectedMedia.title,
-          file_data: fileData.length > 0 ? fileData : undefined,
-        }],
+        imports: [
+          {
+            info_hash: torrent.info_hash,
+            meta_type: contentType,
+            meta_id: getBestExternalId(selectedMedia),
+            title: selectedMedia.title,
+            file_data: fileData.length > 0 ? fileData : undefined,
+          },
+        ],
       })
 
       const detail = result.details[0]
@@ -233,7 +246,17 @@ export function AdvancedImportDialog({
         message: error instanceof Error ? error.message : 'Import failed',
       })
     }
-  }, [selectedMedia, fileAnnotations, torrentFiles, torrent.info_hash, contentType, provider, profileId, advancedImport, onSuccess])
+  }, [
+    selectedMedia,
+    fileAnnotations,
+    torrentFiles,
+    torrent.info_hash,
+    contentType,
+    provider,
+    profileId,
+    advancedImport,
+    onSuccess,
+  ])
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
@@ -248,23 +271,26 @@ export function AdvancedImportDialog({
   }, [onOpenChange, torrent.parsed_title])
 
   // Import mode options based on content type
-  const importModeOptions = contentType === 'movie'
-    ? [
-        { value: 'single', label: 'Single Movie', icon: Film, description: 'One movie file' },
-        { value: 'collection', label: 'Movie Collection', icon: Layers, description: 'Multiple movies' },
-      ]
-    : [
-        { value: 'single', label: 'Single Series', icon: Tv, description: 'Episodes of one show' },
-        { value: 'pack', label: 'Series Pack', icon: FolderOpen, description: 'Multiple series' },
-      ]
+  const importModeOptions =
+    contentType === 'movie'
+      ? [
+          { value: 'single', label: 'Single Movie', icon: Film, description: 'One movie file' },
+          { value: 'collection', label: 'Movie Collection', icon: Layers, description: 'Multiple movies' },
+        ]
+      : [
+          { value: 'single', label: 'Single Series', icon: Tv, description: 'Episodes of one show' },
+          { value: 'pack', label: 'Series Pack', icon: FolderOpen, description: 'Multiple series' },
+        ]
 
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className={cn(
-          "flex flex-col overflow-hidden",
-          isMultiContentMode ? "max-w-4xl h-[85vh] p-0 gap-0" : "max-w-2xl max-h-[85vh]"
-        )}>
+        <DialogContent
+          className={cn(
+            'flex flex-col overflow-hidden',
+            isMultiContentMode ? 'max-w-4xl h-[85vh] p-0 gap-0' : 'max-w-2xl max-h-[85vh]',
+          )}
+        >
           {isMultiContentMode ? (
             // Multi-content wizard mode
             <MultiContentWizard
@@ -282,9 +308,7 @@ export function AdvancedImportDialog({
                   <Download className="h-5 w-5" />
                   Advanced Import
                 </DialogTitle>
-                <DialogDescription>
-                  Import with full metadata control and file annotation support.
-                </DialogDescription>
+                <DialogDescription>Import with full metadata control and file annotation support.</DialogDescription>
               </DialogHeader>
 
               <div className="flex-1 overflow-hidden space-y-4">
@@ -307,12 +331,14 @@ export function AdvancedImportDialog({
 
                 {/* Import Result */}
                 {importResult && (
-                  <div className={cn(
-                    "p-3 rounded-lg border flex items-center gap-2",
-                    importResult.status === 'success' && "bg-green-500/10 border-green-500/30",
-                    importResult.status === 'failed' && "bg-red-500/10 border-red-500/30",
-                    importResult.status === 'skipped' && "bg-yellow-500/10 border-yellow-500/30"
-                  )}>
+                  <div
+                    className={cn(
+                      'p-3 rounded-lg border flex items-center gap-2',
+                      importResult.status === 'success' && 'bg-green-500/10 border-green-500/30',
+                      importResult.status === 'failed' && 'bg-red-500/10 border-red-500/30',
+                      importResult.status === 'skipped' && 'bg-yellow-500/10 border-yellow-500/30',
+                    )}
+                  >
                     {importResult.status === 'success' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
                     {importResult.status === 'failed' && <XCircle className="h-4 w-4 text-red-500" />}
                     {importResult.status === 'skipped' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
@@ -332,20 +358,19 @@ export function AdvancedImportDialog({
                         setSelectedMedia(null)
                       }}
                       className={cn(
-                        "p-3 rounded-lg border-2 text-left transition-all",
+                        'p-3 rounded-lg border-2 text-left transition-all',
                         contentType === 'movie'
-                          ? "border-primary bg-primary/10"
-                          : "border-border/50 hover:border-primary/30"
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border/50 hover:border-primary/30',
                       )}
                     >
-                      <Film className={cn(
-                        "h-4 w-4 mb-1",
-                        contentType === 'movie' ? "text-primary" : "text-muted-foreground"
-                      )} />
-                      <p className={cn(
-                        "text-sm font-medium",
-                        contentType === 'movie' && "text-primary"
-                      )}>Movie</p>
+                      <Film
+                        className={cn(
+                          'h-4 w-4 mb-1',
+                          contentType === 'movie' ? 'text-primary' : 'text-muted-foreground',
+                        )}
+                      />
+                      <p className={cn('text-sm font-medium', contentType === 'movie' && 'text-primary')}>Movie</p>
                     </button>
                     <button
                       type="button"
@@ -355,23 +380,22 @@ export function AdvancedImportDialog({
                         setSelectedMedia(null)
                       }}
                       className={cn(
-                        "p-3 rounded-lg border-2 text-left transition-all",
+                        'p-3 rounded-lg border-2 text-left transition-all',
                         contentType === 'series'
-                          ? "border-primary bg-primary/10"
-                          : "border-border/50 hover:border-primary/30"
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border/50 hover:border-primary/30',
                       )}
                     >
-                      <Tv className={cn(
-                        "h-4 w-4 mb-1",
-                        contentType === 'series' ? "text-primary" : "text-muted-foreground"
-                      )} />
-                      <p className={cn(
-                        "text-sm font-medium",
-                        contentType === 'series' && "text-primary"
-                      )}>Series</p>
+                      <Tv
+                        className={cn(
+                          'h-4 w-4 mb-1',
+                          contentType === 'series' ? 'text-primary' : 'text-muted-foreground',
+                        )}
+                      />
+                      <p className={cn('text-sm font-medium', contentType === 'series' && 'text-primary')}>Series</p>
                     </button>
                   </div>
-                  
+
                   {/* Import Mode Sub-options */}
                   <div className="grid grid-cols-2 gap-2">
                     {importModeOptions.map((option) => {
@@ -383,21 +407,13 @@ export function AdvancedImportDialog({
                           type="button"
                           onClick={() => setImportMode(option.value as ImportMode)}
                           className={cn(
-                            "p-2 rounded-lg border text-left transition-all flex items-center gap-2",
-                            isSelected
-                              ? "border-primary/50 bg-primary/5"
-                              : "border-border/30 hover:border-primary/30"
+                            'p-2 rounded-lg border text-left transition-all flex items-center gap-2',
+                            isSelected ? 'border-primary/50 bg-primary/5' : 'border-border/30 hover:border-primary/30',
                           )}
                         >
-                          <Icon className={cn(
-                            "h-4 w-4",
-                            isSelected ? "text-primary" : "text-muted-foreground"
-                          )} />
+                          <Icon className={cn('h-4 w-4', isSelected ? 'text-primary' : 'text-muted-foreground')} />
                           <div>
-                            <p className={cn(
-                              "text-xs font-medium",
-                              isSelected && "text-primary"
-                            )}>{option.label}</p>
+                            <p className={cn('text-xs font-medium', isSelected && 'text-primary')}>{option.label}</p>
                             <p className="text-[10px] text-muted-foreground">{option.description}</p>
                           </div>
                         </button>
@@ -444,10 +460,10 @@ export function AdvancedImportDialog({
                               key={result.id}
                               type="button"
                               className={cn(
-                                "w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors",
+                                'w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors',
                                 selectedMedia?.id === result.id
-                                  ? "bg-primary/20 border border-primary"
-                                  : "hover:bg-muted"
+                                  ? 'bg-primary/20 border border-primary'
+                                  : 'hover:bg-muted',
                               )}
                               onClick={() => handleSelectMedia(result)}
                             >
@@ -472,13 +488,18 @@ export function AdvancedImportDialog({
                                   {result.year && <span>{result.year}</span>}
                                   {result.imdb_id && <span>• {result.imdb_id}</span>}
                                   {result.source === 'internal' ? (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
+                                    >
                                       In Library
                                     </Badge>
-                                  ) : result.provider && (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                      {result.provider.toUpperCase()}
-                                    </Badge>
+                                  ) : (
+                                    result.provider && (
+                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                        {result.provider.toUpperCase()}
+                                      </Badge>
+                                    )
                                   )}
                                 </div>
                               </div>
@@ -521,10 +542,12 @@ export function AdvancedImportDialog({
                             <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
                               In Library
                             </Badge>
-                          ) : selectedMedia.provider && (
-                            <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                              {selectedMedia.provider.toUpperCase()}
-                            </Badge>
+                          ) : (
+                            selectedMedia.provider && (
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                {selectedMedia.provider.toUpperCase()}
+                              </Badge>
+                            )
                           )}
                         </div>
                       </div>
@@ -537,11 +560,7 @@ export function AdvancedImportDialog({
 
                 {/* File Annotation Button */}
                 {torrentFiles.length > 1 && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setAnnotationDialogOpen(true)}
-                  >
+                  <Button variant="outline" className="w-full" onClick={() => setAnnotationDialogOpen(true)}>
                     <FileVideo className="h-4 w-4 mr-2" />
                     Annotate Files ({fileAnnotations.length || torrentFiles.length})
                     {fileAnnotations.length > 0 && (
@@ -558,10 +577,7 @@ export function AdvancedImportDialog({
                   {importResult?.status === 'success' ? 'Done' : 'Cancel'}
                 </Button>
                 {importResult?.status !== 'success' && (
-                  <Button
-                    onClick={handleImport}
-                    disabled={!selectedMedia || advancedImport.isPending}
-                  >
+                  <Button onClick={handleImport} disabled={!selectedMedia || advancedImport.isPending}>
                     {advancedImport.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

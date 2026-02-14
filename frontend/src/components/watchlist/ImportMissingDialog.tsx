@@ -14,18 +14,12 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { 
-  Download, 
-  Loader2, 
-  CheckCircle2, 
-  XCircle, 
+  Download,
+  Loader2,
+  CheckCircle2,
+  XCircle,
   AlertCircle,
   Film,
   Tv,
@@ -64,15 +58,15 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-function TorrentItem({ 
-  torrent, 
-  selected, 
+function TorrentItem({
+  torrent,
+  selected,
   onSelect,
   disabled,
   isEditing,
   onEditClick,
   edit,
-}: { 
+}: {
   torrent: MissingTorrentItem
   selected: boolean
   onSelect: (selected: boolean) => void
@@ -83,9 +77,7 @@ function TorrentItem({
 }) {
   const videoFiles = useMemo(() => {
     const videoExtensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.m4v']
-    return torrent.files.filter(f => 
-      videoExtensions.some(ext => f.path.toLowerCase().endsWith(ext))
-    )
+    return torrent.files.filter((f) => videoExtensions.some((ext) => f.path.toLowerCase().endsWith(ext)))
   }, [torrent.files])
 
   // Use edited values if available
@@ -95,21 +87,16 @@ function TorrentItem({
   const hasEdits = edit && (edit.title || edit.year || edit.type)
 
   return (
-    <div 
+    <div
       className={cn(
-        "flex items-start gap-3 p-3 rounded-lg border transition-colors",
-        selected ? "border-primary bg-primary/5" : "border-border hover:border-border/80",
-        isEditing && "ring-2 ring-primary",
-        disabled && "opacity-50 cursor-not-allowed"
+        'flex items-start gap-3 p-3 rounded-lg border transition-colors',
+        selected ? 'border-primary bg-primary/5' : 'border-border hover:border-border/80',
+        isEditing && 'ring-2 ring-primary',
+        disabled && 'opacity-50 cursor-not-allowed',
       )}
     >
-      <Checkbox 
-        checked={selected}
-        onCheckedChange={onSelect}
-        disabled={disabled}
-        className="mt-1"
-      />
-      
+      <Checkbox checked={selected} onCheckedChange={onSelect} disabled={disabled} className="mt-1" />
+
       {/* Edit button - on left side for visibility */}
       <Button
         variant="outline"
@@ -124,7 +111,7 @@ function TorrentItem({
       >
         <Edit3 className="h-4 w-4" />
       </Button>
-      
+
       <div className="flex-1 min-w-0 space-y-1.5">
         <div className="flex items-start gap-2">
           {displayType === 'series' ? (
@@ -138,14 +125,19 @@ function TorrentItem({
             </p>
             {displayTitle && (
               <p className="text-xs text-muted-foreground">
-                Detected: <span className={cn("text-foreground", hasEdits && "text-primary font-medium")}>{displayTitle}</span>
-                {displayYear && <span className={hasEdits ? "text-primary" : ""}> ({displayYear})</span>}
-                {hasEdits && <Badge variant="outline" className="ml-2 text-[10px] px-1 py-0 text-primary">Edited</Badge>}
+                Detected:{' '}
+                <span className={cn('text-foreground', hasEdits && 'text-primary font-medium')}>{displayTitle}</span>
+                {displayYear && <span className={hasEdits ? 'text-primary' : ''}> ({displayYear})</span>}
+                {hasEdits && (
+                  <Badge variant="outline" className="ml-2 text-[10px] px-1 py-0 text-primary">
+                    Edited
+                  </Badge>
+                )}
               </p>
             )}
           </div>
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <HardDrive className="h-3 w-3" />
@@ -156,7 +148,10 @@ function TorrentItem({
             {videoFiles.length} video{videoFiles.length !== 1 ? 's' : ''}
           </span>
           {displayType && (
-            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", hasEdits && "border-primary text-primary")}>
+            <Badge
+              variant="outline"
+              className={cn('text-[10px] px-1.5 py-0', hasEdits && 'border-primary text-primary')}
+            >
               {displayType}
             </Badge>
           )}
@@ -199,14 +194,16 @@ function EditPanel({
           <X className="h-4 w-4" />
         </Button>
       </div>
-      
+
       <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded font-mono truncate" title={torrent.name}>
         {torrent.name}
       </div>
-      
+
       <div className="grid gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="edit-title" className="text-xs">Title</Label>
+          <Label htmlFor="edit-title" className="text-xs">
+            Title
+          </Label>
           <Input
             id="edit-title"
             value={title}
@@ -215,10 +212,12 @@ function EditPanel({
             className="h-8 text-sm"
           />
         </div>
-        
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="edit-year" className="text-xs">Year</Label>
+            <Label htmlFor="edit-year" className="text-xs">
+              Year
+            </Label>
             <Input
               id="edit-year"
               type="number"
@@ -230,9 +229,11 @@ function EditPanel({
               max={2100}
             />
           </div>
-          
+
           <div className="space-y-1.5">
-            <Label htmlFor="edit-type" className="text-xs">Type</Label>
+            <Label htmlFor="edit-type" className="text-xs">
+              Type
+            </Label>
             <Select value={type} onValueChange={(v) => setType(v as 'movie' | 'series')}>
               <SelectTrigger id="edit-type" className="h-8 text-sm">
                 <SelectValue />
@@ -255,11 +256,11 @@ function EditPanel({
           </div>
         </div>
       </div>
-      
+
       <div className="flex items-center justify-between gap-2">
-        <Button 
-          variant="link" 
-          size="sm" 
+        <Button
+          variant="link"
+          size="sm"
           className="text-xs px-0 h-auto text-muted-foreground hover:text-primary"
           onClick={onAdvancedImport}
         >
@@ -295,9 +296,7 @@ function ImportResultDisplay({ result }: { result: ImportResultItem }) {
           {result.info_hash.slice(0, 12)}...
         </p>
         {result.media_title && (
-          <p className="text-xs text-green-600 dark:text-green-400 truncate">
-            → {result.media_title}
-          </p>
+          <p className="text-xs text-green-600 dark:text-green-400 truncate">→ {result.media_title}</p>
         )}
         {result.message && (
           <p className="text-xs text-muted-foreground truncate" title={result.message}>
@@ -322,27 +321,21 @@ export function ImportMissingDialog({
   const [edits, setEdits] = useState<Map<string, TorrentEdit>>(new Map())
   const [advancedImportTorrent, setAdvancedImportTorrent] = useState<MissingTorrentItem | null>(null)
 
-  const { data: missingData, isLoading: loadingMissing } = useMissingTorrents(
-    provider,
-    profileId,
-    { enabled: open }
-  )
+  const { data: missingData, isLoading: loadingMissing } = useMissingTorrents(provider, profileId, { enabled: open })
 
   const importMutation = useImportTorrents()
 
   const missingTorrents = missingData?.items || []
   const allSelected = missingTorrents.length > 0 && selectedHashes.size === missingTorrents.length
   const someSelected = selectedHashes.size > 0
-  
-  const editingTorrent = editingHash 
-    ? missingTorrents.find(t => t.info_hash === editingHash) 
-    : null
+
+  const editingTorrent = editingHash ? missingTorrents.find((t) => t.info_hash === editingHash) : null
 
   const handleSelectAll = () => {
     if (allSelected) {
       setSelectedHashes(new Set())
     } else {
-      setSelectedHashes(new Set(missingTorrents.map(t => t.info_hash)))
+      setSelectedHashes(new Set(missingTorrents.map((t) => t.info_hash)))
     }
   }
 
@@ -355,7 +348,7 @@ export function ImportMissingDialog({
     }
     setSelectedHashes(newSet)
   }
-  
+
   // Open the advanced import dialog for a specific torrent
   const handleAdvancedImport = useCallback((torrent: MissingTorrentItem) => {
     setAdvancedImportTorrent(torrent)
@@ -368,12 +361,12 @@ export function ImportMissingDialog({
   const handleAdvancedImportSuccess = useCallback(() => {
     // Close the advanced dialog and remove the torrent from selection
     if (advancedImportTorrent) {
-      setSelectedHashes(prev => {
+      setSelectedHashes((prev) => {
         const newSet = new Set(prev)
         newSet.delete(advancedImportTorrent.info_hash)
         return newSet
       })
-      setEdits(prev => {
+      setEdits((prev) => {
         const newMap = new Map(prev)
         newMap.delete(advancedImportTorrent.info_hash)
         return newMap
@@ -383,14 +376,14 @@ export function ImportMissingDialog({
   }, [advancedImportTorrent])
 
   const handleEditSave = useCallback((hash: string, edit: TorrentEdit) => {
-    setEdits(prev => {
+    setEdits((prev) => {
       const newMap = new Map(prev)
       newMap.set(hash, edit)
       return newMap
     })
     setEditingHash(null)
   }, [])
-  
+
   const handleEditCancel = useCallback(() => {
     setEditingHash(null)
   }, [])
@@ -399,7 +392,7 @@ export function ImportMissingDialog({
     if (selectedHashes.size === 0) return
 
     setImportResults(null)
-    
+
     // Build overrides object from edits
     const overrides: Record<string, { title?: string; year?: number; type?: 'movie' | 'series' }> = {}
     edits.forEach((edit, hash) => {
@@ -407,7 +400,7 @@ export function ImportMissingDialog({
         overrides[hash] = edit
       }
     })
-    
+
     const result = await importMutation.mutateAsync({
       provider,
       infoHashes: Array.from(selectedHashes),
@@ -416,21 +409,17 @@ export function ImportMissingDialog({
     })
 
     setImportResults(result.details)
-    
+
     // Remove successfully imported hashes from selection and edits
-    const successHashes = new Set(
-      result.details
-        .filter(r => r.status === 'success')
-        .map(r => r.info_hash)
-    )
-    setSelectedHashes(prev => {
+    const successHashes = new Set(result.details.filter((r) => r.status === 'success').map((r) => r.info_hash))
+    setSelectedHashes((prev) => {
       const newSet = new Set(prev)
-      successHashes.forEach(h => newSet.delete(h))
+      successHashes.forEach((h) => newSet.delete(h))
       return newSet
     })
-    setEdits(prev => {
+    setEdits((prev) => {
       const newMap = new Map(prev)
-      successHashes.forEach(h => newMap.delete(h))
+      successHashes.forEach((h) => newMap.delete(h))
       return newMap
     })
   }
@@ -462,8 +451,8 @@ export function ImportMissingDialog({
             Import Missing Torrents
           </DialogTitle>
           <DialogDescription>
-            Import torrents from your {providerName || provider} account that aren't in our database yet.
-            Click the edit icon to modify detected metadata before importing.
+            Import torrents from your {providerName || provider} account that aren't in our database yet. Click the edit
+            icon to modify detected metadata before importing.
           </DialogDescription>
         </DialogHeader>
 
@@ -485,24 +474,19 @@ export function ImportMissingDialog({
               {/* Header with select all */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Checkbox 
+                  <Checkbox
                     checked={allSelected}
                     onCheckedChange={handleSelectAll}
                     disabled={importMutation.isPending}
                   />
                   <span className="text-sm">
-                    {someSelected 
+                    {someSelected
                       ? `${selectedHashes.size} of ${missingTorrents.length} selected`
-                      : `${missingTorrents.length} missing torrent(s)`
-                    }
+                      : `${missingTorrents.length} missing torrent(s)`}
                   </span>
                 </div>
                 {someSelected && !importMutation.isPending && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => setSelectedHashes(new Set())}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedHashes(new Set())}>
                     Clear selection
                   </Button>
                 )}
@@ -510,30 +494,30 @@ export function ImportMissingDialog({
 
               {/* Progress or Results */}
               {importProgress}
-              
+
               {importResults && (
                 <div className="space-y-2 p-3 rounded-lg bg-muted/50">
                   <div className="flex items-center gap-4 text-sm">
                     <span className="text-green-600 dark:text-green-400">
-                      {importResults.filter(r => r.status === 'success').length} imported
+                      {importResults.filter((r) => r.status === 'success').length} imported
                     </span>
                     <span className="text-red-600 dark:text-red-400">
-                      {importResults.filter(r => r.status === 'failed').length} failed
+                      {importResults.filter((r) => r.status === 'failed').length} failed
                     </span>
                     <span className="text-yellow-600 dark:text-yellow-400">
-                      {importResults.filter(r => r.status === 'skipped').length} skipped
+                      {importResults.filter((r) => r.status === 'skipped').length} skipped
                     </span>
                   </div>
                   <ScrollArea className="h-32">
                     <div className="space-y-1.5">
-                      {importResults.map(result => (
+                      {importResults.map((result) => (
                         <ImportResultDisplay key={result.info_hash} result={result} />
                       ))}
                     </div>
                   </ScrollArea>
                 </div>
               )}
-              
+
               {/* Edit Panel */}
               {editingTorrent && (
                 <EditPanel
@@ -548,7 +532,7 @@ export function ImportMissingDialog({
               {/* Torrent list */}
               <ScrollArea className="h-[300px] pr-4">
                 <div className="space-y-2">
-                  {missingTorrents.map(torrent => (
+                  {missingTorrents.map((torrent) => (
                     <TorrentItem
                       key={torrent.info_hash}
                       torrent={torrent}
@@ -556,9 +540,7 @@ export function ImportMissingDialog({
                       onSelect={(selected) => handleSelect(torrent.info_hash, selected)}
                       disabled={importMutation.isPending}
                       isEditing={editingHash === torrent.info_hash}
-                      onEditClick={() => setEditingHash(
-                        editingHash === torrent.info_hash ? null : torrent.info_hash
-                      )}
+                      onEditClick={() => setEditingHash(editingHash === torrent.info_hash ? null : torrent.info_hash)}
                       edit={edits.get(torrent.info_hash)}
                     />
                   ))}
@@ -573,10 +555,7 @@ export function ImportMissingDialog({
             {importResults ? 'Done' : 'Cancel'}
           </Button>
           {missingTorrents.length > 0 && (
-            <Button 
-              onClick={handleImport}
-              disabled={!someSelected || importMutation.isPending}
-            >
+            <Button onClick={handleImport} disabled={!someSelected || importMutation.isPending}>
               {importMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

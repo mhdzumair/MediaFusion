@@ -9,7 +9,7 @@ interface OptionalAuthGuardProps {
 
 /**
  * OptionalAuthGuard - Allows both authenticated and anonymous access
- * 
+ *
  * This guard:
  * - Shows loading state while checking auth status
  * - On private instances, still requires API key to be set

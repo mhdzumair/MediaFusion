@@ -3,11 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Check, ChevronDown, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -35,9 +31,7 @@ export function TagSelector({
   const filteredSuggestions = useMemo(() => {
     const available = suggestions.filter((s) => !value.includes(s))
     if (!search.trim()) return available
-    return available.filter((s) =>
-      s.toLowerCase().includes(search.toLowerCase())
-    )
+    return available.filter((s) => s.toLowerCase().includes(search.toLowerCase()))
   }, [suggestions, value, search])
 
   // Check if we can add a custom value
@@ -57,7 +51,7 @@ export function TagSelector({
       }
       setSearch('')
     },
-    [value, onChange]
+    [value, onChange],
   )
 
   const handleAddCustom = useCallback(() => {
@@ -72,7 +66,7 @@ export function TagSelector({
     (item: string) => {
       onChange(value.filter((v) => v !== item))
     },
-    [value, onChange]
+    [value, onChange],
   )
 
   const handleKeyDown = useCallback(
@@ -86,29 +80,19 @@ export function TagSelector({
         }
       }
     },
-    [canAddCustom, handleAddCustom, filteredSuggestions, handleAdd]
+    [canAddCustom, handleAddCustom, filteredSuggestions, handleAdd],
   )
 
   return (
     <div className="space-y-3">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className="w-full justify-between h-10"
-          >
-            <span className="text-muted-foreground font-normal truncate">
-              {placeholder}
-            </span>
+          <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between h-10">
+            <span className="text-muted-foreground font-normal truncate">{placeholder}</span>
             <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent
-          className="w-[--radix-popover-trigger-width] p-0"
-          align="start"
-        >
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
           <div className="p-2 border-b">
             <Input
               placeholder={placeholder}
@@ -133,9 +117,7 @@ export function TagSelector({
               )}
               {filteredSuggestions.length === 0 && !canAddCustom ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  {search.trim()
-                    ? 'No matching items'
-                    : 'No items available'}
+                  {search.trim() ? 'No matching items' : 'No items available'}
                 </p>
               ) : (
                 filteredSuggestions.map((item) => (
@@ -145,15 +127,10 @@ export function TagSelector({
                     onClick={() => handleAdd(item)}
                     className={cn(
                       'flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground text-left',
-                      value.includes(item) && 'bg-accent'
+                      value.includes(item) && 'bg-accent',
                     )}
                   >
-                    <Check
-                      className={cn(
-                        'h-4 w-4 shrink-0',
-                        value.includes(item) ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
+                    <Check className={cn('h-4 w-4 shrink-0', value.includes(item) ? 'opacity-100' : 'opacity-0')} />
                     <span className="truncate">{item}</span>
                   </button>
                 ))

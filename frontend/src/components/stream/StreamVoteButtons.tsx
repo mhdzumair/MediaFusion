@@ -9,15 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { 
-  ThumbsUp, 
-  ThumbsDown, 
+  ThumbsUp,
+  ThumbsDown,
   ChevronDown,
   CheckCircle2,
   XCircle,
@@ -43,16 +38,11 @@ const qualityStatusConfig: Record<QualityStatus, { label: string; icon: typeof C
   poor_quality: { label: 'Poor Quality', icon: AlertTriangle, color: 'text-primary' },
 }
 
-export function StreamVoteButtons({
-  streamId,
-  compact = false,
-  showCounts = true,
-  className,
-}: StreamVoteButtonsProps) {
+export function StreamVoteButtons({ streamId, compact = false, showCounts = true, className }: StreamVoteButtonsProps) {
   const { data: voteSummary, isLoading } = useStreamVotes(streamId)
   const voteOnStream = useVoteOnStream()
   const removeVote = useRemoveStreamVote()
-  
+
   const [pendingVote, setPendingVote] = useState<VoteType | null>(null)
 
   const userVote = voteSummary?.user_vote
@@ -102,10 +92,7 @@ export function StreamVoteButtons({
                 <Button
                   variant={userVote?.vote_type === 'up' ? 'default' : 'ghost'}
                   size={compact ? 'sm' : 'default'}
-                  className={cn(
-                    'gap-1',
-                    userVote?.vote_type === 'up' && 'bg-emerald-600 hover:bg-emerald-700'
-                  )}
+                  className={cn('gap-1', userVote?.vote_type === 'up' && 'bg-emerald-600 hover:bg-emerald-700')}
                   disabled={isVoting}
                 >
                   {pendingVote === 'up' ? (
@@ -113,9 +100,7 @@ export function StreamVoteButtons({
                   ) : (
                     <ThumbsUp className="h-4 w-4" />
                   )}
-                  {showCounts && !compact && (
-                    <span className="text-xs">{upvotes}</span>
-                  )}
+                  {showCounts && !compact && <span className="text-xs">{upvotes}</span>}
                   <ChevronDown className="h-3 w-3 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
@@ -127,24 +112,15 @@ export function StreamVoteButtons({
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>Vote as...</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              onClick={() => handleVote('up')}
-              className="cursor-pointer"
-            >
+            <DropdownMenuItem onClick={() => handleVote('up')} className="cursor-pointer">
               <ThumbsUp className="h-4 w-4 mr-2 text-emerald-500" />
               Just Upvote
             </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => handleVote('up', 'working')}
-              className="cursor-pointer"
-            >
+            <DropdownMenuItem onClick={() => handleVote('up', 'working')} className="cursor-pointer">
               <CheckCircle2 className="h-4 w-4 mr-2 text-emerald-500" />
               Working Stream
             </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => handleVote('up', 'good_quality')}
-              className="cursor-pointer"
-            >
+            <DropdownMenuItem onClick={() => handleVote('up', 'good_quality')} className="cursor-pointer">
               <Sparkles className="h-4 w-4 mr-2 text-blue-500" />
               Good Quality
             </DropdownMenuItem>
@@ -159,10 +135,7 @@ export function StreamVoteButtons({
                 <Button
                   variant={userVote?.vote_type === 'down' ? 'default' : 'ghost'}
                   size={compact ? 'sm' : 'default'}
-                  className={cn(
-                    'gap-1',
-                    userVote?.vote_type === 'down' && 'bg-red-600 hover:bg-red-700'
-                  )}
+                  className={cn('gap-1', userVote?.vote_type === 'down' && 'bg-red-600 hover:bg-red-700')}
                   disabled={isVoting}
                 >
                   {pendingVote === 'down' ? (
@@ -170,9 +143,7 @@ export function StreamVoteButtons({
                   ) : (
                     <ThumbsDown className="h-4 w-4" />
                   )}
-                  {showCounts && !compact && (
-                    <span className="text-xs">{downvotes}</span>
-                  )}
+                  {showCounts && !compact && <span className="text-xs">{downvotes}</span>}
                   <ChevronDown className="h-3 w-3 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
@@ -184,24 +155,15 @@ export function StreamVoteButtons({
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>Vote as...</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              onClick={() => handleVote('down')}
-              className="cursor-pointer"
-            >
+            <DropdownMenuItem onClick={() => handleVote('down')} className="cursor-pointer">
               <ThumbsDown className="h-4 w-4 mr-2 text-red-500" />
               Just Downvote
             </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => handleVote('down', 'broken')}
-              className="cursor-pointer"
-            >
+            <DropdownMenuItem onClick={() => handleVote('down', 'broken')} className="cursor-pointer">
               <XCircle className="h-4 w-4 mr-2 text-red-500" />
               Broken Stream
             </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={() => handleVote('down', 'poor_quality')}
-              className="cursor-pointer"
-            >
+            <DropdownMenuItem onClick={() => handleVote('down', 'poor_quality')} className="cursor-pointer">
               <AlertTriangle className="h-4 w-4 mr-2 text-primary" />
               Poor Quality
             </DropdownMenuItem>
@@ -209,23 +171,27 @@ export function StreamVoteButtons({
         </DropdownMenu>
 
         {/* Score badge */}
-        {showCounts && (upvotes + downvotes) > 0 && (
+        {showCounts && upvotes + downvotes > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Badge 
-                variant="outline" 
+              <Badge
+                variant="outline"
                 className={cn(
                   'ml-1 text-xs',
-                  scorePercent >= 70 ? 'border-emerald-500 text-emerald-500' :
-                  scorePercent >= 40 ? 'border-primary text-primary' :
-                  'border-red-500 text-red-500'
+                  scorePercent >= 70
+                    ? 'border-emerald-500 text-emerald-500'
+                    : scorePercent >= 40
+                      ? 'border-primary text-primary'
+                      : 'border-red-500 text-red-500',
                 )}
               >
                 {scorePercent}%
               </Badge>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{scorePercent}% positive ({upvotes + downvotes} votes)</p>
+              <p>
+                {scorePercent}% positive ({upvotes + downvotes} votes)
+              </p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -260,13 +226,13 @@ export function StreamVoteButtons({
 /**
  * Popular stream badge - shows when a stream has high engagement
  */
-export function StreamPopularityBadge({ 
+export function StreamPopularityBadge({
   streamId,
   className,
   threshold = 5, // Minimum total votes to show badge
-}: { 
+}: {
   streamId: number
-  className?: string 
+  className?: string
   threshold?: number
 }) {
   const { data: voteSummary, isLoading } = useStreamVotes(streamId)
@@ -283,18 +249,15 @@ export function StreamPopularityBadge({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge 
-            className={cn(
-              'gap-1 bg-gradient-to-r from-primary to-primary/80 text-white border-0',
-              className
-            )}
-          >
+          <Badge className={cn('gap-1 bg-gradient-to-r from-primary to-primary/80 text-white border-0', className)}>
             <Sparkles className="h-3 w-3" />
             Popular
           </Badge>
         </TooltipTrigger>
         <TooltipContent>
-          <p>Highly rated stream ({scorePercent}% positive from {totalVotes} votes)</p>
+          <p>
+            Highly rated stream ({scorePercent}% positive from {totalVotes} votes)
+          </p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -304,13 +267,7 @@ export function StreamPopularityBadge({
 /**
  * Compact vote summary display (read-only)
  */
-export function StreamVoteSummary({ 
-  summary, 
-  className 
-}: { 
-  summary: StreamVoteSummary
-  className?: string 
-}) {
+export function StreamVoteSummary({ summary, className }: { summary: StreamVoteSummary; className?: string }) {
   const { upvotes, downvotes, working_count, broken_count, score_percent } = summary
   const totalVotes = upvotes + downvotes
 
@@ -371,13 +328,15 @@ export function StreamVoteSummary({
           </Tooltip>
         )}
 
-        <Badge 
-          variant="outline" 
+        <Badge
+          variant="outline"
           className={cn(
             'text-xs',
-            score_percent >= 70 ? 'border-emerald-500/50 text-emerald-500' :
-            score_percent >= 40 ? 'border-primary/50 text-primary' :
-            'border-red-500/50 text-red-500'
+            score_percent >= 70
+              ? 'border-emerald-500/50 text-emerald-500'
+              : score_percent >= 40
+                ? 'border-primary/50 text-primary'
+                : 'border-red-500/50 text-red-500',
           )}
         >
           {score_percent}%
@@ -386,4 +345,3 @@ export function StreamVoteSummary({
     </TooltipProvider>
   )
 }
-

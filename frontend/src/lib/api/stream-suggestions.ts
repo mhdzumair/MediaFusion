@@ -1,28 +1,28 @@
 import { apiClient } from './client'
 
 // Types
-export type StreamSuggestionType = 
-  | 'report_broken' 
-  | 'field_correction' 
-  | 'language_add' 
-  | 'language_remove' 
-  | 'mark_duplicate' 
-  | 'relink_media'    // Re-link stream to different media (replaces current link)
-  | 'add_media_link'  // Add additional media link (for collections/multi-content)
+export type StreamSuggestionType =
+  | 'report_broken'
+  | 'field_correction'
+  | 'language_add'
+  | 'language_remove'
+  | 'mark_duplicate'
+  | 'relink_media' // Re-link stream to different media (replaces current link)
+  | 'add_media_link' // Add additional media link (for collections/multi-content)
   | 'other'
 
 export type StreamSuggestionStatus = 'pending' | 'approved' | 'rejected' | 'auto_approved'
 
-export type StreamFieldName = 
-  | 'name' 
-  | 'resolution' 
-  | 'codec' 
+export type StreamFieldName =
+  | 'name'
+  | 'resolution'
+  | 'codec'
   | 'quality'
-  | 'bit_depth' 
-  | 'audio_formats' 
+  | 'bit_depth'
+  | 'audio_formats'
   | 'channels'
-  | 'hdr_formats' 
-  | 'source' 
+  | 'hdr_formats'
+  | 'source'
   | 'languages'
 
 // Dynamic field name for episode link corrections
@@ -37,8 +37,8 @@ export interface StreamSuggestionCreateRequest {
   reason?: string
   related_stream_id?: string
   // Fields for stream re-linking suggestions
-  target_media_id?: number  // Target media ID to link stream to (for relink_media/add_media_link)
-  file_index?: number       // Specific file index within torrent (for multi-file torrents)
+  target_media_id?: number // Target media ID to link stream to (for relink_media/add_media_link)
+  file_index?: number // Specific file index within torrent (for multi-file torrents)
 }
 
 export interface StreamSuggestion {
@@ -56,8 +56,8 @@ export interface StreamSuggestion {
   status: StreamSuggestionStatus
   was_auto_approved: boolean
   created_at: string
-  reviewed_by: string | null  // User ID as string
-  reviewer_name: string | null  // Reviewer's username for display
+  reviewed_by: string | null // User ID as string
+  reviewer_name: string | null // Reviewer's username for display
   reviewed_at: string | null
   review_notes: string | null
   // User contribution info
@@ -127,10 +127,7 @@ export interface BrokenReportStatus {
 // API functions
 export const streamSuggestionsApi = {
   // Create a stream suggestion
-  createSuggestion: async (
-    streamId: number,
-    data: StreamSuggestionCreateRequest
-  ): Promise<StreamSuggestion> => {
+  createSuggestion: async (streamId: number, data: StreamSuggestionCreateRequest): Promise<StreamSuggestion> => {
     return apiClient.post<StreamSuggestion>(`/streams/${streamId}/suggest`, data)
   },
 
@@ -142,54 +139,47 @@ export const streamSuggestionsApi = {
   // Get suggestions for a stream
   getStreamSuggestions: async (
     streamId: number,
-    params: StreamSuggestionListParams = {}
+    params: StreamSuggestionListParams = {},
   ): Promise<StreamSuggestionListResponse> => {
     const searchParams = new URLSearchParams()
     if (params.status) searchParams.set('status', params.status)
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
-    
+
     const queryString = searchParams.toString()
     return apiClient.get<StreamSuggestionListResponse>(
-      `/streams/${streamId}/suggestions${queryString ? `?${queryString}` : ''}`
+      `/streams/${streamId}/suggestions${queryString ? `?${queryString}` : ''}`,
     )
   },
 
   // Get user's own stream suggestions
-  getMySuggestions: async (
-    params: StreamSuggestionListParams = {}
-  ): Promise<StreamSuggestionListResponse> => {
+  getMySuggestions: async (params: StreamSuggestionListParams = {}): Promise<StreamSuggestionListResponse> => {
     const searchParams = new URLSearchParams()
     if (params.status) searchParams.set('status', params.status)
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
-    
+
     const queryString = searchParams.toString()
-    return apiClient.get<StreamSuggestionListResponse>(
-      `/stream-suggestions/my${queryString ? `?${queryString}` : ''}`
-    )
+    return apiClient.get<StreamSuggestionListResponse>(`/stream-suggestions/my${queryString ? `?${queryString}` : ''}`)
   },
 
   // Get pending suggestions (moderator only)
   getPendingSuggestions: async (
-    params: Omit<StreamSuggestionListParams, 'status'> & { suggestion_type?: string } = {}
+    params: Omit<StreamSuggestionListParams, 'status'> & { suggestion_type?: string } = {},
   ): Promise<StreamSuggestionListResponse> => {
     const searchParams = new URLSearchParams()
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
     if (params.suggestion_type) searchParams.set('suggestion_type', params.suggestion_type)
-    
+
     const queryString = searchParams.toString()
     return apiClient.get<StreamSuggestionListResponse>(
-      `/stream-suggestions/pending${queryString ? `?${queryString}` : ''}`
+      `/stream-suggestions/pending${queryString ? `?${queryString}` : ''}`,
     )
   },
 
   // Review a suggestion (moderator only)
-  reviewSuggestion: async (
-    suggestionId: string,
-    data: StreamSuggestionReviewRequest
-  ): Promise<StreamSuggestion> => {
+  reviewSuggestion: async (suggestionId: string, data: StreamSuggestionReviewRequest): Promise<StreamSuggestion> => {
     return apiClient.put<StreamSuggestion>(`/stream-suggestions/${suggestionId}/review`, data)
   },
 
@@ -197,7 +187,7 @@ export const streamSuggestionsApi = {
   bulkReview: async (
     suggestionIds: string[],
     action: 'approve' | 'reject',
-    reviewNotes?: string
+    reviewNotes?: string,
   ): Promise<{ approved: number; rejected: number; skipped: number }> => {
     return apiClient.post('/stream-suggestions/bulk-review', {
       suggestion_ids: suggestionIds,
@@ -221,4 +211,3 @@ export const streamSuggestionsApi = {
     return apiClient.get<BrokenReportStatus>(`/streams/${streamId}/broken-status`)
   },
 }
-

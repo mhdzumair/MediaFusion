@@ -1,9 +1,4 @@
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ExternalLink, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -56,7 +51,7 @@ interface ExternalIdsDisplayProps {
 function getProviderUrl(provider: ProviderKey, id: string, mediaType?: string): string {
   const config = PROVIDER_CONFIG[provider]
   let url: string = config.urlTemplate
-  
+
   // Handle TMDB type-specific URLs
   if (provider === 'tmdb') {
     const type = mediaType === 'movie' ? 'movie' : 'tv'
@@ -65,16 +60,16 @@ function getProviderUrl(provider: ProviderKey, id: string, mediaType?: string): 
   if (provider === 'tvdb') {
     url = url.replace('{type}', mediaType === 'movie' ? 'series' : 'series')
   }
-  
+
   return url.replace('{id}', id)
 }
 
-function ExternalIdBadge({ 
-  provider, 
-  id, 
+function ExternalIdBadge({
+  provider,
+  id,
   mediaType,
   compact = false,
-}: { 
+}: {
   provider: ProviderKey
   id: string
   mediaType?: string
@@ -83,7 +78,7 @@ function ExternalIdBadge({
   const [copied, setCopied] = useState(false)
   const config = PROVIDER_CONFIG[provider]
   const url = getProviderUrl(provider, id, mediaType)
-  
+
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
@@ -91,7 +86,7 @@ function ExternalIdBadge({
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
-  
+
   return (
     <TooltipProvider>
       <Tooltip>
@@ -101,9 +96,9 @@ function ExternalIdBadge({
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border font-mono text-xs transition-all hover:scale-105",
+              'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border font-mono text-xs transition-all hover:scale-105',
               config.color,
-              compact && "px-1.5"
+              compact && 'px-1.5',
             )}
           >
             {!compact && <span className="text-[10px]">{config.icon}</span>}
@@ -113,16 +108,11 @@ function ExternalIdBadge({
           </a>
         </TooltipTrigger>
         <TooltipContent className="flex items-center gap-2">
-          <span>Open {config.name}: {id}</span>
-          <button
-            onClick={handleCopy}
-            className="p-1 hover:bg-muted rounded"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-green-500" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
+          <span>
+            Open {config.name}: {id}
+          </span>
+          <button onClick={handleCopy} className="p-1 hover:bg-muted rounded">
+            {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
           </button>
         </TooltipContent>
       </Tooltip>
@@ -130,14 +120,9 @@ function ExternalIdBadge({
   )
 }
 
-export function ExternalIdsDisplay({ 
-  externalIds, 
-  mediaType,
-  className,
-  compact = false,
-}: ExternalIdsDisplayProps) {
+export function ExternalIdsDisplay({ externalIds, mediaType, className, compact = false }: ExternalIdsDisplayProps) {
   if (!externalIds) return null
-  
+
   const providers: { key: ProviderKey; id: string | null | undefined }[] = [
     { key: 'imdb', id: externalIds.imdb },
     { key: 'tmdb', id: externalIds.tmdb },
@@ -145,40 +130,29 @@ export function ExternalIdsDisplay({
     { key: 'mal', id: externalIds.mal },
     { key: 'kitsu', id: externalIds.kitsu },
   ]
-  
-  const availableProviders = providers.filter(p => p.id)
-  
+
+  const availableProviders = providers.filter((p) => p.id)
+
   if (availableProviders.length === 0) {
-    return (
-      <div className={cn("text-xs text-muted-foreground", className)}>
-        No external IDs available
-      </div>
-    )
+    return <div className={cn('text-xs text-muted-foreground', className)}>No external IDs available</div>
   }
-  
+
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
       {availableProviders.map(({ key, id }) => (
-        <ExternalIdBadge
-          key={key}
-          provider={key}
-          id={id!}
-          mediaType={mediaType}
-          compact={compact}
-        />
+        <ExternalIdBadge key={key} provider={key} id={id!} mediaType={mediaType} compact={compact} />
       ))}
     </div>
   )
 }
 
 // Compact version for cards
-export function ExternalIdsBadges({ 
+export function ExternalIdsBadges({
   externalIds,
   mediaType,
-}: { 
+}: {
   externalIds?: ExternalIds
   mediaType?: 'movie' | 'series' | 'tv'
 }) {
   return <ExternalIdsDisplay externalIds={externalIds} mediaType={mediaType} compact />
 }
-

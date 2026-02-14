@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useReducer,
-  useEffect,
-  useCallback,
-  type ReactNode,
-} from 'react'
+import { createContext, useContext, useReducer, useEffect, useCallback, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi, apiClient, onAuthStateChange } from '@/lib/api'
 import { hasPermission, hasMinimumRole } from '@/lib/permissions'
@@ -89,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refetchUser()
       }
     })
-    
+
     return () => {
       unsubscribe()
     }
@@ -99,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check for existing token on mount - only run once
   useEffect(() => {
     let isMounted = true
-    
+
     const verifyAuth = async () => {
       const token = apiClient.getAccessToken()
       if (!token) {
@@ -114,9 +107,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         const result = await refetchUser()
-        
+
         if (!isMounted) return
-        
+
         // Check for errors first - react-query refetch can return cached data even on error
         if (result.isError || result.error) {
           // Token is invalid/expired, clear it silently (don't emit logout event to avoid loops)
@@ -125,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'SET_USER', payload: null })
           return
         }
-        
+
         if (result.data) {
           dispatch({ type: 'SET_USER', payload: result.data })
         } else {
@@ -143,7 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     verifyAuth()
-    
+
     return () => {
       isMounted = false
     }

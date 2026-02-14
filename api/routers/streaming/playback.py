@@ -880,9 +880,7 @@ async def _get_or_create_user_forward(
         async with get_async_session_context() as session:
             existing = await crud.get_telegram_user_forward(session, telegram_stream_id, user_id)
             if existing:
-                logging.debug(
-                    f"Forward already exists (race): stream {telegram_stream_id}, user {user_id}"
-                )
+                logging.debug(f"Forward already exists (race): stream {telegram_stream_id}, user {user_id}")
                 return existing
         raise
 

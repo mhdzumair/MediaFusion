@@ -24,23 +24,26 @@ export function TorrentTab({ onAnalysisComplete, onError, contentType = 'movie' 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const analyzeTorrent = useAnalyzeTorrent()
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0]
-      setSelectedFile(file)
-      
-      try {
-        const result = await analyzeTorrent.mutateAsync({ file, metaType: toTorrentMetaType(contentType) })
-        if (result.status === 'success' || result.matches) {
-          onAnalysisComplete(result, file)
-        } else {
-          onError(result.error || 'Failed to analyze torrent')
+  const onDrop = useCallback(
+    async (acceptedFiles: File[]) => {
+      if (acceptedFiles.length > 0) {
+        const file = acceptedFiles[0]
+        setSelectedFile(file)
+
+        try {
+          const result = await analyzeTorrent.mutateAsync({ file, metaType: toTorrentMetaType(contentType) })
+          if (result.status === 'success' || result.matches) {
+            onAnalysisComplete(result, file)
+          } else {
+            onError(result.error || 'Failed to analyze torrent')
+          }
+        } catch {
+          onError('Failed to analyze torrent file')
         }
-      } catch {
-        onError('Failed to analyze torrent file')
       }
-    }
-  }, [analyzeTorrent, onAnalysisComplete, onError, contentType])
+    },
+    [analyzeTorrent, onAnalysisComplete, onError, contentType],
+  )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -59,18 +62,18 @@ export function TorrentTab({ onAnalysisComplete, onError, contentType = 'movie' 
           <Upload className="h-5 w-5 text-primary" />
           Upload Torrent File
         </CardTitle>
-        <CardDescription>
-          Upload a .torrent file to analyze and import
-        </CardDescription>
+        <CardDescription>Upload a .torrent file to analyze and import</CardDescription>
       </CardHeader>
       <CardContent>
         <div
           {...getRootProps()}
           className={`
             border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors
-            ${isDragActive 
-              ? 'border-primary bg-primary/10' 
-              : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'}
+            ${
+              isDragActive
+                ? 'border-primary bg-primary/10'
+                : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'
+            }
           `}
         >
           <input {...getInputProps()} />
@@ -83,12 +86,8 @@ export function TorrentTab({ onAnalysisComplete, onError, contentType = 'movie' 
             ) : (
               <>
                 <div className="space-y-1">
-                  <p className="font-medium">
-                    Drag and drop a torrent file here, or click to browse
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Only .torrent files are accepted
-                  </p>
+                  <p className="font-medium">Drag and drop a torrent file here, or click to browse</p>
+                  <p className="text-sm text-muted-foreground">Only .torrent files are accepted</p>
                 </div>
                 <Button variant="outline" className="rounded-xl">
                   Browse Files
@@ -116,4 +115,3 @@ export function TorrentTab({ onAnalysisComplete, onError, contentType = 'movie' 
     </Card>
   )
 }
-

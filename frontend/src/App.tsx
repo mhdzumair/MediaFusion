@@ -101,7 +101,7 @@ function AppRoutes() {
       >
         {/* Dashboard index */}
         <Route index element={<DashboardPage />} />
-        
+
         {/* User routes - nested under /dashboard */}
         <Route path="configure" element={<ConfigurePage />} />
         <Route path="configure/:profileId" element={<ConfigurePage />} />

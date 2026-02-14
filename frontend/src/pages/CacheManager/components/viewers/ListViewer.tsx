@@ -4,18 +4,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Collapsible,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,12 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 interface ListViewerProps {
@@ -47,18 +32,16 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null)
-  
+
   const filteredData = useMemo(() => {
     if (!searchTerm) return data.map((item, index) => ({ item, index }))
-    
+
     const lowerSearch = searchTerm.toLowerCase()
-    return data
-      .map((item, index) => ({ item, index }))
-      .filter(({ item }) => item.toLowerCase().includes(lowerSearch))
+    return data.map((item, index) => ({ item, index })).filter(({ item }) => item.toLowerCase().includes(lowerSearch))
   }, [data, searchTerm])
-  
+
   const toggleExpand = (index: number) => {
-    setExpandedRows(prev => {
+    setExpandedRows((prev) => {
       const newSet = new Set(prev)
       if (newSet.has(index)) {
         newSet.delete(index)
@@ -68,13 +51,13 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
       return newSet
     })
   }
-  
+
   const copyValue = async (index: number, value: string) => {
     await navigator.clipboard.writeText(value)
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
   }
-  
+
   const handleDelete = async (item: string, index: number) => {
     if (!onDeleteItem) return
     setDeletingIndex(index)
@@ -90,9 +73,9 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
       setDeletingIndex(null)
     }
   }
-  
+
   const isLongValue = (value: string) => value.length > 100 || value.includes('\n')
-  
+
   const formatValue = (value: string) => {
     try {
       const parsed = JSON.parse(value)
@@ -101,9 +84,9 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
       return value
     }
   }
-  
+
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn('space-y-4', className)}>
       {/* Search and Stats */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
@@ -119,144 +102,148 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
           {filteredData.length} / {data.length} items
         </Badge>
       </div>
-      
+
       {/* Table */}
       <div className="rounded-xl border border-border/50 overflow-hidden bg-card/50">
         <ScrollArea className="h-[400px]">
           <Table>
             <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
               <TableRow className="hover:bg-transparent">
-                <TableHead className="font-semibold w-[80px]">
-                  {type === 'list' ? 'Index' : '#'}
-                </TableHead>
+                <TableHead className="font-semibold w-[80px]">{type === 'list' ? 'Index' : '#'}</TableHead>
                 <TableHead className="font-semibold">Value</TableHead>
                 <TableHead className="w-[80px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length > 0 ? filteredData.map(({ item, index }) => {
-                const isExpanded = expandedRows.has(index)
-                const needsExpand = isLongValue(item)
-                const displayValue = formatValue(item)
-                const isCurrentlyDeleting = deletingIndex === index
-                
-                return (
-                  <Collapsible key={index} open={isExpanded} onOpenChange={() => needsExpand && toggleExpand(index)}>
-                    <TableRow className="hover:bg-muted/30 group">
-                      <TableCell className="font-mono text-sm py-3 align-top">
-                        <Badge variant="outline" className="text-xs">
-                          {index}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm py-3 align-top">
-                        {needsExpand ? (
-                          <CollapsibleTrigger asChild>
-                            <div className="cursor-pointer">
-                              {isExpanded ? (
-                                <pre className="whitespace-pre-wrap break-all text-xs bg-muted/50 p-3 rounded-lg max-h-[300px] overflow-auto">
-                                  {displayValue}
-                                </pre>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <span className="truncate max-w-[400px] text-muted-foreground">
-                                    {item.slice(0, 100)}...
-                                  </span>
-                                  <Badge variant="outline" className="text-[10px]">
-                                    {item.length} chars
-                                  </Badge>
-                                </div>
-                              )}
-                            </div>
-                          </CollapsibleTrigger>
-                        ) : (
-                          <span className="break-all leading-relaxed">{item}</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-3 align-top text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {needsExpand && (
+              {filteredData.length > 0 ? (
+                filteredData.map(({ item, index }) => {
+                  const isExpanded = expandedRows.has(index)
+                  const needsExpand = isLongValue(item)
+                  const displayValue = formatValue(item)
+                  const isCurrentlyDeleting = deletingIndex === index
+
+                  return (
+                    <Collapsible key={index} open={isExpanded} onOpenChange={() => needsExpand && toggleExpand(index)}>
+                      <TableRow className="hover:bg-muted/30 group">
+                        <TableCell className="font-mono text-sm py-3 align-top">
+                          <Badge variant="outline" className="text-xs">
+                            {index}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm py-3 align-top">
+                          {needsExpand ? (
                             <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="cursor-pointer">
                                 {isExpanded ? (
-                                  <ChevronUp className="h-3.5 w-3.5" />
+                                  <pre className="whitespace-pre-wrap break-all text-xs bg-muted/50 p-3 rounded-lg max-h-[300px] overflow-auto">
+                                    {displayValue}
+                                  </pre>
                                 ) : (
-                                  <ChevronDown className="h-3.5 w-3.5" />
+                                  <div className="flex items-center gap-2">
+                                    <span className="truncate max-w-[400px] text-muted-foreground">
+                                      {item.slice(0, 100)}...
+                                    </span>
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {item.length} chars
+                                    </Badge>
+                                  </div>
                                 )}
-                              </Button>
+                              </div>
                             </CollapsibleTrigger>
+                          ) : (
+                            <span className="break-all leading-relaxed">{item}</span>
                           )}
-                          
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
+                        </TableCell>
+                        <TableCell className="py-3 align-top text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {needsExpand && (
+                              <CollapsibleTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => copyValue(index, item)}
                                 >
-                                  {copiedIndex === index ? (
-                                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                  {isExpanded ? (
+                                    <ChevronUp className="h-3.5 w-3.5" />
                                   ) : (
-                                    <Copy className="h-3.5 w-3.5" />
+                                    <ChevronDown className="h-3.5 w-3.5" />
                                   )}
                                 </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Copy value</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          
-                          {onDeleteItem && (
-                            <AlertDialog>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <AlertDialogTrigger asChild>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                                        disabled={isCurrentlyDeleting}
-                                      >
-                                        {isCurrentlyDeleting ? (
-                                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        )}
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Delete item</TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete Item</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Remove this item from the {type}?
-                                    <code className="block mt-2 p-2 bg-muted rounded text-xs break-all max-h-[100px] overflow-auto">
-                                      {item.length > 200 ? item.slice(0, 200) + '...' : item}
-                                    </code>
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(item, index)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              </CollapsibleTrigger>
+                            )}
+
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => copyValue(index, item)}
                                   >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  </Collapsible>
-                )
-              }) : (
+                                    {copiedIndex === index ? (
+                                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Copy value</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            {onDeleteItem && (
+                              <AlertDialog>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                                          disabled={isCurrentlyDeleting}
+                                        >
+                                          {isCurrentlyDeleting ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          )}
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Delete item</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Item</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Remove this item from the {type}?
+                                      <code className="block mt-2 p-2 bg-muted rounded text-xs break-all max-h-[100px] overflow-auto">
+                                        {item.length > 200 ? item.slice(0, 200) + '...' : item}
+                                      </code>
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleDelete(item, index)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    </Collapsible>
+                  )
+                })
+              ) : (
                 <TableRow>
                   <TableCell colSpan={3} className="text-center py-12 text-muted-foreground">
                     {searchTerm ? 'No matching items found' : `No items in ${type}`}

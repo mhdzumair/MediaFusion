@@ -12,23 +12,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { 
-  Edit,
-  Loader2,
-} from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Edit, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
 
@@ -46,7 +32,7 @@ const STREAM_EDITABLE_FIELDS = [
   { value: 'languages', label: 'Languages', hint: 'Comma-separated list: English, Spanish, French' },
 ] as const
 
-type StreamEditableField = typeof STREAM_EDITABLE_FIELDS[number]['value']
+type StreamEditableField = (typeof STREAM_EDITABLE_FIELDS)[number]['value']
 
 interface StreamEditProps {
   streamId: number
@@ -68,21 +54,15 @@ interface StreamEditProps {
   variant?: 'button' | 'icon'
 }
 
-export function StreamEdit({
-  streamId,
-  streamName,
-  currentValues,
-  className,
-  variant = 'icon',
-}: StreamEditProps) {
+export function StreamEdit({ streamId, streamName, currentValues, className, variant = 'icon' }: StreamEditProps) {
   const createSuggestion = useCreateStreamSuggestion()
-  
+
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedField, setSelectedField] = useState<StreamEditableField>('resolution')
   const [suggestedValue, setSuggestedValue] = useState('')
   const [reason, setReason] = useState('')
 
-  const selectedFieldInfo = STREAM_EDITABLE_FIELDS.find(f => f.value === selectedField)
+  const selectedFieldInfo = STREAM_EDITABLE_FIELDS.find((f) => f.value === selectedField)
 
   const getCurrentValue = (field: StreamEditableField): string => {
     if (!currentValues) return ''
@@ -98,7 +78,7 @@ export function StreamEdit({
 
   const handleSubmit = async () => {
     if (!suggestedValue.trim()) return
-    
+
     try {
       await createSuggestion.mutateAsync({
         streamId,
@@ -125,19 +105,11 @@ export function StreamEdit({
           <TooltipTrigger asChild>
             <DialogTrigger asChild>
               {variant === 'icon' ? (
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className={cn('h-8 w-8', className)}
-                >
+                <Button variant="ghost" size="icon" className={cn('h-8 w-8', className)}>
                   <Edit className="h-4 w-4" />
                 </Button>
               ) : (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className={cn('gap-1.5', className)}
-                >
+                <Button variant="outline" size="sm" className={cn('gap-1.5', className)}>
                   <Edit className="h-4 w-4" />
                   Edit Stream
                 </Button>
@@ -155,10 +127,13 @@ export function StreamEdit({
           <DialogTitle>Edit Stream Info</DialogTitle>
           <DialogDescription>
             {streamName ? (
-              <>Suggest an edit to <span className="font-medium line-clamp-1">{streamName}</span></>
+              <>
+                Suggest an edit to <span className="font-medium line-clamp-1">{streamName}</span>
+              </>
             ) : (
               'Suggest an edit to this stream'
-            )}. Your edit will be reviewed by moderators.
+            )}
+            . Your edit will be reviewed by moderators.
           </DialogDescription>
         </DialogHeader>
 
@@ -166,10 +141,7 @@ export function StreamEdit({
           {/* Field selection */}
           <div className="space-y-2">
             <Label>Field to Edit</Label>
-            <Select
-              value={selectedField}
-              onValueChange={(v) => handleFieldChange(v as StreamEditableField)}
-            >
+            <Select value={selectedField} onValueChange={(v) => handleFieldChange(v as StreamEditableField)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a field" />
               </SelectTrigger>
@@ -181,9 +153,7 @@ export function StreamEdit({
                 ))}
               </SelectContent>
             </Select>
-            {selectedFieldInfo?.hint && (
-              <p className="text-xs text-muted-foreground">{selectedFieldInfo.hint}</p>
-            )}
+            {selectedFieldInfo?.hint && <p className="text-xs text-muted-foreground">{selectedFieldInfo.hint}</p>}
           </div>
 
           {/* Current value */}
@@ -233,16 +203,10 @@ export function StreamEdit({
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setDialogOpen(false)}
-          >
+          <Button variant="outline" onClick={() => setDialogOpen(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!suggestedValue.trim() || createSuggestion.isPending}
-          >
+          <Button onClick={handleSubmit} disabled={!suggestedValue.trim() || createSuggestion.isPending}>
             {createSuggestion.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -257,4 +221,3 @@ export function StreamEdit({
     </Dialog>
   )
 }
-

@@ -1,8 +1,4 @@
-import {
-  createContext,
-  useContext,
-  type ReactNode,
-} from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { useRpdbApiKey } from '@/hooks'
 import { useAuth } from './AuthContext'
 
@@ -21,7 +17,7 @@ const RpdbContext = createContext<RpdbContextType>(defaultRpdbContext)
 
 export function RpdbProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth()
-  
+
   // Only fetch RPDB key when authenticated
   const { data, isLoading } = useRpdbApiKey(isAuthenticated)
 
@@ -30,11 +26,7 @@ export function RpdbProvider({ children }: { children: ReactNode }) {
     isLoading: isAuthenticated ? isLoading : false,
   }
 
-  return (
-    <RpdbContext.Provider value={value}>
-      {children}
-    </RpdbContext.Provider>
-  )
+  return <RpdbContext.Provider value={value}>{children}</RpdbContext.Provider>
 }
 
 /**

@@ -5,19 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { 
-  Folder, 
-  Film, 
-  Tv, 
-  Trophy,
-  Check,
-  ChevronsUpDown,
-} from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Folder, Film, Tv, Trophy, Check, ChevronsUpDown } from 'lucide-react'
 import { useAvailableCatalogs } from '@/hooks'
 import type { ContentType } from '@/lib/constants'
 import type { CatalogInfo } from '@/lib/api'
@@ -35,14 +24,14 @@ interface CatalogSelectorProps {
 // Quality-based catalog suggestions for movies
 const QUALITY_CATALOG_MAP: Record<string, string[]> = {
   'BluRay REMUX': ['mediafusion_movies_hdrip', 'mediafusion_movies_blurayrip'],
-  'BluRay': ['mediafusion_movies_blurayrip', 'mediafusion_movies_hdrip'],
+  BluRay: ['mediafusion_movies_blurayrip', 'mediafusion_movies_hdrip'],
   'WEB-DL': ['mediafusion_movies_webdl', 'mediafusion_movies_webrip'],
-  'WEBRip': ['mediafusion_movies_webrip', 'mediafusion_movies_webdl'],
-  'HDRip': ['mediafusion_movies_hdrip'],
-  'DVDRip': ['mediafusion_movies_dvdrip'],
-  'HDTV': ['mediafusion_movies_hdtv'],
-  'CAM': ['mediafusion_movies_tcrip', 'mediafusion_movies_predvd'],
-  'TeleSync': ['mediafusion_movies_tcrip', 'mediafusion_movies_predvd'],
+  WEBRip: ['mediafusion_movies_webrip', 'mediafusion_movies_webdl'],
+  HDRip: ['mediafusion_movies_hdrip'],
+  DVDRip: ['mediafusion_movies_dvdrip'],
+  HDTV: ['mediafusion_movies_hdtv'],
+  CAM: ['mediafusion_movies_tcrip', 'mediafusion_movies_predvd'],
+  TeleSync: ['mediafusion_movies_tcrip', 'mediafusion_movies_predvd'],
 }
 
 export function CatalogSelector({
@@ -106,7 +95,7 @@ export function CatalogSelector({
 
   if (isLoading) {
     return (
-      <div className={cn("space-y-1.5", className)}>
+      <div className={cn('space-y-1.5', className)}>
         <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
           <Folder className="h-3 w-3" />
           Catalogs
@@ -117,7 +106,7 @@ export function CatalogSelector({
   }
 
   return (
-    <div className={cn("space-y-1.5", className)}>
+    <div className={cn('space-y-1.5', className)}>
       <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
         <Folder className="h-3 w-3" />
         Catalogs
@@ -127,26 +116,20 @@ export function CatalogSelector({
           </Badge>
         )}
       </Label>
-      
+
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className={cn(
-              "w-full justify-between rounded-lg font-normal",
-              compact && "h-8 text-xs"
-            )}
+            className={cn('w-full justify-between rounded-lg font-normal', compact && 'h-8 text-xs')}
           >
             <span className="flex items-center gap-2 truncate">
               <ContentTypeIcon className="h-4 w-4 text-muted-foreground" />
               {selectedCatalogs.length > 0 ? (
                 <span className="truncate">
-                  {selectedCatalogs.length === 1 
-                    ? selectedCatalogs[0] 
-                    : `${selectedCatalogs.length} catalogs selected`
-                  }
+                  {selectedCatalogs.length === 1 ? selectedCatalogs[0] : `${selectedCatalogs.length} catalogs selected`}
                 </span>
               ) : (
                 <span className="text-muted-foreground">Select catalogs...</span>
@@ -158,36 +141,21 @@ export function CatalogSelector({
         <PopoverContent className="w-[300px] p-0" align="start">
           <div className="p-2 border-b space-y-2">
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 h-7 text-xs"
-                onClick={handleSelectAll}
-              >
+              <Button variant="outline" size="sm" className="flex-1 h-7 text-xs" onClick={handleSelectAll}>
                 Select All
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 h-7 text-xs"
-                onClick={handleClear}
-              >
+              <Button variant="outline" size="sm" className="flex-1 h-7 text-xs" onClick={handleClear}>
                 Clear
               </Button>
             </div>
             {suggestedCatalogs.length > 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full h-7 text-xs"
-                onClick={handleSelectSuggested}
-              >
+              <Button variant="secondary" size="sm" className="w-full h-7 text-xs" onClick={handleSelectSuggested}>
                 <Check className="h-3 w-3 mr-1" />
                 Select Suggested ({suggestedCatalogs.length})
               </Button>
             )}
           </div>
-          
+
           <ScrollArea className="h-[250px]">
             <div className="p-2 space-y-1">
               {filteredCatalogs.length === 0 ? (
@@ -198,30 +166,25 @@ export function CatalogSelector({
                 filteredCatalogs.map((catalog: CatalogInfo) => {
                   const isSelected = selectedCatalogs.includes(catalog.name)
                   const isSuggested = suggestedCatalogs.includes(catalog.name)
-                  
+
                   return (
                     <div
                       key={catalog.name}
                       className={cn(
-                        "flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors",
-                        isSelected ? "bg-accent" : "hover:bg-accent/50",
-                        isSuggested && !isSelected && "border border-primary/30"
+                        'flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors',
+                        isSelected ? 'bg-accent' : 'hover:bg-accent/50',
+                        isSuggested && !isSelected && 'border border-primary/30',
                       )}
                       onClick={() => handleToggle(catalog.name)}
                     >
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => handleToggle(catalog.name)}
-                      />
+                      <Checkbox checked={isSelected} onCheckedChange={() => handleToggle(catalog.name)} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm truncate">{catalog.display_name || catalog.name}</p>
                         {isSuggested && !isSelected && (
                           <p className="text-[10px] text-primary">Suggested for {quality}</p>
                         )}
                       </div>
-                      {isSelected && (
-                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
-                      )}
+                      {isSelected && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
                     </div>
                   )
                 })
@@ -234,10 +197,10 @@ export function CatalogSelector({
       {/* Selected Catalogs Badges */}
       {selectedCatalogs.length > 0 && !compact && (
         <div className="flex flex-wrap gap-1 pt-1">
-          {selectedCatalogs.slice(0, 3).map(catalogId => (
-            <Badge 
-              key={catalogId} 
-              variant="secondary" 
+          {selectedCatalogs.slice(0, 3).map((catalogId) => (
+            <Badge
+              key={catalogId}
+              variant="secondary"
               className="text-[10px] cursor-pointer hover:bg-destructive/20"
               onClick={() => handleToggle(catalogId)}
             >
@@ -254,4 +217,3 @@ export function CatalogSelector({
     </div>
   )
 }
-

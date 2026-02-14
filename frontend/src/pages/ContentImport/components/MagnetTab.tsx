@@ -22,9 +22,9 @@ interface MagnetTabProps {
   autoAnalyze?: boolean
 }
 
-export function MagnetTab({ 
-  onAnalysisComplete, 
-  onError, 
+export function MagnetTab({
+  onAnalysisComplete,
+  onError,
   contentType = 'movie',
   initialMagnet,
   autoAnalyze = false,
@@ -36,11 +36,11 @@ export function MagnetTab({
   const handleAnalyze = async (magnet?: string) => {
     const linkToAnalyze = magnet || magnetLink
     if (!linkToAnalyze.trim()) return
-    
+
     try {
-      const result = await analyzeMagnet.mutateAsync({ 
-        magnet_link: linkToAnalyze, 
-        meta_type: toTorrentMetaType(contentType) 
+      const result = await analyzeMagnet.mutateAsync({
+        magnet_link: linkToAnalyze,
+        meta_type: toTorrentMetaType(contentType),
       })
       if (result.status === 'success' || result.matches) {
         onAnalysisComplete(result, linkToAnalyze)
@@ -67,9 +67,7 @@ export function MagnetTab({
           <Magnet className="h-5 w-5 text-primary" />
           Import Magnet Link
         </CardTitle>
-        <CardDescription>
-          Paste a magnet link to analyze and import the torrent
-        </CardDescription>
+        <CardDescription>Paste a magnet link to analyze and import the torrent</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
@@ -82,7 +80,7 @@ export function MagnetTab({
               onChange={(e) => setMagnetLink(e.target.value)}
               className="font-mono text-sm rounded-xl"
             />
-            <Button 
+            <Button
               onClick={() => handleAnalyze()}
               disabled={!magnetLink.trim() || analyzeMagnet.isPending}
               className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
@@ -99,8 +97,8 @@ export function MagnetTab({
         <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50">
           <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
           <p className="text-sm text-muted-foreground">
-            The magnet link will be analyzed to extract metadata. You&apos;ll be able to review
-            the details before importing.
+            The magnet link will be analyzed to extract metadata. You&apos;ll be able to review the details before
+            importing.
           </p>
         </div>
       </CardContent>
@@ -110,4 +108,3 @@ export function MagnetTab({
 
 // Export for use in parent
 export { type MagnetTabProps }
-

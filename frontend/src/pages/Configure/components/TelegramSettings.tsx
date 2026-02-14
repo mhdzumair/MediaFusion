@@ -1,12 +1,5 @@
 import { useState, useEffect } from 'react'
-import { 
-  Send,
-  Link,
-  Unlink,
-  Info,
-  CheckCircle2,
-  Loader2,
-} from 'lucide-react'
+import { Send, Link, Unlink, Info, CheckCircle2, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -41,7 +34,6 @@ interface TelegramSettingsProps {
 }
 
 export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
-  
   // Fetch app config to check if Telegram is enabled on instance
   const { data: appConfig, isLoading: appConfigLoading } = useQuery({
     queryKey: ['appConfig'],
@@ -62,15 +54,15 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
 
   // Get linked status from API response
   const telegramLinked = telegramConfig?.account_linked ?? false
-  
+
   // Local state
   const [enableTelegram, setEnableTelegram] = useState(config.ets ?? false)
-  
+
   // Sync with config changes
   useEffect(() => {
     setEnableTelegram(config.ets ?? false)
   }, [config.ets])
-  
+
   // Update parent config
   const updateConfig = (newEnableTelegram: boolean) => {
     onChange({
@@ -78,13 +70,13 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
       ets: newEnableTelegram,
     })
   }
-  
+
   // Handlers
   const handleEnableTelegramChange = (checked: boolean) => {
     setEnableTelegram(checked)
     updateConfig(checked)
   }
-  
+
   // Show loading state while fetching app config
   if (appConfigLoading) {
     return (
@@ -104,7 +96,7 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
       </Card>
     )
   }
-  
+
   if (!telegramEnabled) {
     return (
       <Card className="border-border/50 bg-card/50">
@@ -113,23 +105,20 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
             <Send className="h-5 w-5" />
             Telegram Streams
           </CardTitle>
-          <CardDescription>
-            Stream content from Telegram channels
-          </CardDescription>
+          <CardDescription>Stream content from Telegram channels</CardDescription>
         </CardHeader>
         <CardContent>
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              Telegram streaming is not enabled on this instance. 
-              Contact the administrator if you'd like this feature.
+              Telegram streaming is not enabled on this instance. Contact the administrator if you'd like this feature.
             </AlertDescription>
           </Alert>
         </CardContent>
       </Card>
     )
   }
-  
+
   return (
     <Card className="border-border/50 bg-card/50">
       <CardHeader>
@@ -148,17 +137,11 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
             <Label htmlFor="enable-telegram" className="text-base">
               Enable Telegram Streams
             </Label>
-            <p className="text-sm text-muted-foreground">
-              Show Telegram streams in search results and catalogs
-            </p>
+            <p className="text-sm text-muted-foreground">Show Telegram streams in search results and catalogs</p>
           </div>
-          <Switch
-            id="enable-telegram"
-            checked={enableTelegram}
-            onCheckedChange={handleEnableTelegramChange}
-          />
+          <Switch id="enable-telegram" checked={enableTelegram} onCheckedChange={handleEnableTelegramChange} />
         </div>
-        
+
         {/* Account Link Status - Always show when Telegram is enabled on instance */}
         <div className="space-y-4 pt-4 border-t">
           <div className="flex items-center justify-between">
@@ -183,31 +166,32 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
                 )}
               </Label>
               <p className="text-sm text-muted-foreground">
-                {telegramLinked 
+                {telegramLinked
                   ? `Your Telegram account (ID: ${telegramConfig?.telegram_user_id}) is linked. Streams will be sent to your DM for playback.`
-                  : "Link your Telegram account to play streams. Videos will be sent to your DM."}
+                  : 'Link your Telegram account to play streams. Videos will be sent to your DM.'}
               </p>
             </div>
           </div>
-          
+
           {!telegramLinked && botConfigured && (
             <Alert>
               <Link className="h-4 w-4" />
               <AlertDescription className="flex items-center justify-between">
                 <span>
-                  To link your account, send <code className="bg-muted px-1 py-0.5 rounded">/login</code> to the MediaFusion Telegram bot.
+                  To link your account, send <code className="bg-muted px-1 py-0.5 rounded">/login</code> to the
+                  MediaFusion Telegram bot.
                 </span>
               </AlertDescription>
             </Alert>
           )}
-          
+
           {/* MediaFlow Proxy Requirement - only show when streams are enabled */}
           {enableTelegram && (
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                <strong>Requirement:</strong> You must have MediaFlow Proxy configured with a Telegram session 
-                to stream content. The bot sends videos to your DM, and MediaFlow streams them via MTProto.
+                <strong>Requirement:</strong> You must have MediaFlow Proxy configured with a Telegram session to stream
+                content. The bot sends videos to your DM, and MediaFlow streams them via MTProto.
               </AlertDescription>
             </Alert>
           )}

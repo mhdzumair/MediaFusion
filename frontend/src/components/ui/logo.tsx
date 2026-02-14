@@ -126,7 +126,7 @@ function getAnimationClasses(heroAnimation: HeroAnimationType) {
  * - gradient: Original brand colors (purple/orange)
  * - mono: Single color using currentColor for theme adaptability
  * - themed: Gradient colors that match the current color scheme
- * 
+ *
  * Hero animations (for large hero logos):
  * - converge: Arrows slide in from opposite directions
  * - orbital: Subtle rotation around center
@@ -134,19 +134,19 @@ function getAnimationClasses(heroAnimation: HeroAnimationType) {
  * - ripple: Play button pulses with ripple effect
  * - breathe: Arrows expand/contract like breathing
  */
-export function Logo({ 
-  className, 
-  size = 'md', 
-  animated = true, 
+export function Logo({
+  className,
+  size = 'md',
+  animated = true,
   heroAnimation = false,
-  variant = 'themed' 
+  variant = 'themed',
 }: LogoProps) {
   const id = useId()
   const { colorScheme } = useTheme()
-  
+
   const colors = variant === 'themed' ? schemeGradients[colorScheme] : schemeGradients.mediafusion
   const animClasses = getAnimationClasses(heroAnimation)
-  
+
   const gradientIds = {
     linear1: `${id}-linear1`,
     linear2: `${id}-linear2`,
@@ -168,7 +168,7 @@ export function Logo({
           sizeClasses[size],
           animated && !heroAnimation && 'transition-transform duration-300 group-hover:scale-105',
           animClasses.wrapper,
-          className
+          className,
         )}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -252,7 +252,7 @@ export function Logo({
         sizeClasses[size],
         animated && !heroAnimation && 'transition-transform duration-300 group-hover:scale-105',
         animClasses.wrapper,
-        className
+        className,
       )}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -262,7 +262,10 @@ export function Logo({
         {/* Upper Arrow Gradients */}
         <linearGradient
           id={gradientIds.linear1}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(1204,-1225,1225,1204,474,2213)"
         >
@@ -275,7 +278,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear2}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(974,-782,782,974,629,1426)"
         >
@@ -287,7 +293,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear3}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(1316,146,-146,1316,1480,1311)"
         >
@@ -298,7 +307,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear4}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(1264,-1234,1234,1264,640,1793)"
         >
@@ -312,7 +324,10 @@ export function Logo({
         {/* Down Arrow Gradients */}
         <linearGradient
           id={gradientIds.linear5}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(-1101,833,-833,-1101,2221,949.795694)"
         >
@@ -324,7 +339,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear6}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(-956,751,-751,-956,1636,688.795694)"
         >
@@ -336,7 +354,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear7}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(-1058,-82,82,-1058,2711,1601.795694)"
         >
@@ -346,7 +367,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear8}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(-2071,1112,-1112,-2071,2391,852.795694)"
         >
@@ -358,7 +382,10 @@ export function Logo({
         {/* Play Icon Gradients */}
         <linearGradient
           id={gradientIds.linear9}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(-457.282782,-513.793581,457.282782,-513.793581,1922.394527,2522.669978)"
         >
@@ -368,7 +395,10 @@ export function Logo({
         </linearGradient>
         <linearGradient
           id={gradientIds.linear10}
-          x1="0" y1="0" x2="1" y2="0"
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="0"
           gradientUnits="userSpaceOnUse"
           gradientTransform="matrix(-479,-475.274148,423,-538.194602,1926,2533.796875)"
         >
@@ -462,7 +492,9 @@ const textGradients: Record<ColorScheme, TextGradientThemeConfig> = {
     },
     dark: {
       first: { top: 'rgb(216,180,254)', bottom: 'rgb(147,87,219)' },
-      second: { stops: ['rgb(253,224,71)', 'rgb(251,191,36)', 'rgb(245,158,11)', 'rgb(217,119,106)', 'rgb(192,132,252)'] },
+      second: {
+        stops: ['rgb(253,224,71)', 'rgb(251,191,36)', 'rgb(245,158,11)', 'rgb(217,119,106)', 'rgb(192,132,252)'],
+      },
     },
   },
   cinematic: {
@@ -482,7 +514,9 @@ const textGradients: Record<ColorScheme, TextGradientThemeConfig> = {
     },
     dark: {
       first: { top: 'rgb(224,242,254)', bottom: 'rgb(56,189,248)' },
-      second: { stops: ['rgb(224,242,254)', 'rgb(186,230,253)', 'rgb(125,211,252)', 'rgb(56,189,248)', 'rgb(14,165,233)'] },
+      second: {
+        stops: ['rgb(224,242,254)', 'rgb(186,230,253)', 'rgb(125,211,252)', 'rgb(56,189,248)', 'rgb(14,165,233)'],
+      },
     },
   },
   forest: {
@@ -492,7 +526,9 @@ const textGradients: Record<ColorScheme, TextGradientThemeConfig> = {
     },
     dark: {
       first: { top: 'rgb(209,250,229)', bottom: 'rgb(52,211,153)' },
-      second: { stops: ['rgb(209,250,229)', 'rgb(167,243,208)', 'rgb(110,231,183)', 'rgb(52,211,153)', 'rgb(16,185,129)'] },
+      second: {
+        stops: ['rgb(209,250,229)', 'rgb(167,243,208)', 'rgb(110,231,183)', 'rgb(52,211,153)', 'rgb(16,185,129)'],
+      },
     },
   },
   rose: {
@@ -502,17 +538,23 @@ const textGradients: Record<ColorScheme, TextGradientThemeConfig> = {
     },
     dark: {
       first: { top: 'rgb(255,228,230)', bottom: 'rgb(251,113,133)' },
-      second: { stops: ['rgb(255,228,230)', 'rgb(254,205,211)', 'rgb(253,164,175)', 'rgb(251,113,133)', 'rgb(244,63,94)'] },
+      second: {
+        stops: ['rgb(255,228,230)', 'rgb(254,205,211)', 'rgb(253,164,175)', 'rgb(251,113,133)', 'rgb(244,63,94)'],
+      },
     },
   },
   purple: {
     light: {
       first: { top: 'rgb(196,181,253)', bottom: 'rgb(91,33,182)' },
-      second: { stops: ['rgb(196,181,253)', 'rgb(167,139,250)', 'rgb(139,92,246)', 'rgb(109,40,217)', 'rgb(76,29,149)'] },
+      second: {
+        stops: ['rgb(196,181,253)', 'rgb(167,139,250)', 'rgb(139,92,246)', 'rgb(109,40,217)', 'rgb(76,29,149)'],
+      },
     },
     dark: {
       first: { top: 'rgb(243,232,255)', bottom: 'rgb(167,139,250)' },
-      second: { stops: ['rgb(243,232,255)', 'rgb(233,213,255)', 'rgb(196,181,253)', 'rgb(167,139,250)', 'rgb(139,92,246)'] },
+      second: {
+        stops: ['rgb(243,232,255)', 'rgb(233,213,255)', 'rgb(196,181,253)', 'rgb(167,139,250)', 'rgb(139,92,246)'],
+      },
     },
   },
   sunset: {
@@ -522,7 +564,9 @@ const textGradients: Record<ColorScheme, TextGradientThemeConfig> = {
     },
     dark: {
       first: { top: 'rgb(255,237,213)', bottom: 'rgb(251,146,60)' },
-      second: { stops: ['rgb(255,237,213)', 'rgb(254,215,170)', 'rgb(253,186,116)', 'rgb(251,146,60)', 'rgb(249,115,22)'] },
+      second: {
+        stops: ['rgb(255,237,213)', 'rgb(254,215,170)', 'rgb(253,186,116)', 'rgb(251,146,60)', 'rgb(249,115,22)'],
+      },
     },
   },
   youtube: {
@@ -581,35 +625,35 @@ function parseAddonName(addonName: string): { mainName: string; suffix: string |
  * Automatically adapts colors for light/dark mode
  * Supports addon names with separators like "MediaFusion | ElfHosted"
  */
-export function LogoText({ 
-  className,
-  addonName = 'MediaFusion',
-  size = 'md',
-  variant = 'themed',
-}: LogoTextProps) {
+export function LogoText({ className, addonName = 'MediaFusion', size = 'md', variant = 'themed' }: LogoTextProps) {
   const { colorScheme, resolvedTheme } = useTheme()
-  
+
   // Parse addon name to handle separators
   const { mainName, suffix } = parseAddonName(addonName)
-  
+
   // Split main name into parts for gradient (e.g., "MediaFusion" -> "Media" + "Fusion")
   const nameParts = mainName.match(/([A-Z][a-z]+)/g) || [mainName]
   const firstPart = nameParts[0] || mainName
   const restParts = nameParts.length > 1 ? nameParts.slice(1).join('') : ''
-  
+
   // Use themed gradients or default to mediafusion, with light/dark mode support
-  const schemeGradients = variant === 'themed'
-    ? textGradients[colorScheme] || textGradients.mediafusion
-    : textGradients.mediafusion
-  
+  const schemeGradients =
+    variant === 'themed' ? textGradients[colorScheme] || textGradients.mediafusion : textGradients.mediafusion
+
   // Select the appropriate gradient based on current theme mode
   const gradientColors = resolvedTheme === 'dark' ? schemeGradients.dark : schemeGradients.light
 
   return (
-    <span className={cn('font-display font-black tracking-tight inline-flex items-baseline gap-2', textSizeClasses[size], className)}>
+    <span
+      className={cn(
+        'font-display font-black tracking-tight inline-flex items-baseline gap-2',
+        textSizeClasses[size],
+        className,
+      )}
+    >
       <span className="inline-flex">
-        <span 
-          style={{ 
+        <span
+          style={{
             backgroundImage: `linear-gradient(to bottom, ${gradientColors.first.top}, ${gradientColors.first.bottom})`,
             backgroundClip: 'text',
             WebkitBackgroundClip: 'text',
@@ -618,8 +662,8 @@ export function LogoText({
         >
           {firstPart}
         </span>
-        <span 
-          style={{ 
+        <span
+          style={{
             backgroundImage: `linear-gradient(to bottom, ${gradientColors.second.stops.join(', ')})`,
             backgroundClip: 'text',
             WebkitBackgroundClip: 'text',
@@ -658,14 +702,10 @@ const brandingSizeClasses = {
  */
 export function BrandingLogo({ svgUrl, className, size = 'md' }: BrandingLogoProps) {
   return (
-    <img 
-      src={svgUrl} 
+    <img
+      src={svgUrl}
       alt="Partner Logo"
-      className={cn(
-        brandingSizeClasses[size],
-        'w-auto object-contain',
-        className
-      )}
+      className={cn(brandingSizeClasses[size], 'w-auto object-contain', className)}
     />
   )
 }
@@ -680,9 +720,9 @@ interface LogoWithTextProps extends LogoProps {
  * Logo icon with gradient text beside it
  * Optionally displays a partner branding logo
  */
-export function LogoWithText({ 
-  className, 
-  size = 'md', 
+export function LogoWithText({
+  className,
+  size = 'md',
   animated = true,
   heroAnimation = false,
   variant = 'themed',
@@ -692,7 +732,7 @@ export function LogoWithText({
 }: LogoWithTextProps) {
   // Map mono variant to themed for text (mono doesn't make sense for gradient text)
   const textVariant = variant === 'mono' ? 'themed' : variant
-  
+
   return (
     <div className={cn('flex items-center gap-2.5 group', className)}>
       <Logo size={size} animated={animated} heroAnimation={heroAnimation} variant={variant} />

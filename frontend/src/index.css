@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ==========================================================================
    MEDIAFUSION THEME SYSTEM
@@ -54,7 +54,7 @@
 
 .scheme-mediafusion.dark,
 .dark.scheme-mediafusion,
-.dark:not([class*="scheme-"]) {
+.dark:not([class*='scheme-']) {
   --background: 260 25% 6%;
   --foreground: 250 10% 92%;
   --card: 260 22% 9%;
@@ -534,19 +534,19 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  
+
   /* Scheme colors for direct usage */
   --color-scheme-primary: hsl(var(--scheme-primary));
   --color-scheme-light: hsl(var(--scheme-light));
   --color-scheme-muted: hsl(var(--scheme-muted));
-  
+
   /* Chart colors - Use scheme primary with variations */
   --color-chart-1: hsl(var(--scheme-primary));
   --color-chart-2: hsl(173 45% 45%);
   --color-chart-3: hsl(var(--scheme-light));
   --color-chart-4: hsl(0 65% 55%);
   --color-chart-5: hsl(200 60% 50%);
-  
+
   /* Sidebar colors */
   --color-sidebar: hsl(var(--card));
   --color-sidebar-foreground: hsl(var(--foreground));
@@ -556,16 +556,16 @@
   --color-sidebar-accent-foreground: hsl(var(--accent-foreground));
   --color-sidebar-border: hsl(var(--border));
   --color-sidebar-ring: hsl(var(--ring));
-  
+
   /* Border radius */
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
-  
+
   /* Font families */
-  --font-display: "Outfit", system-ui, sans-serif;
-  --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 
 /* ==========================================================================
@@ -575,24 +575,31 @@
   * {
     @apply border-border;
   }
-  
+
   html {
     @apply scroll-smooth;
   }
-  
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
   }
-  
+
   /* Headings use display font */
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     font-weight: 600;
     letter-spacing: -0.01em;
   }
-  
+
   /* Film grain overlay on body */
   body::before {
     content: '';
@@ -617,62 +624,70 @@
     @apply bg-clip-text text-transparent;
     background-image: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--scheme-light)), hsl(var(--primary)));
   }
-  
+
   /* MediaFusion brand gradient - matches the logo exactly (purple to orange) */
   .brand-gradient {
     @apply bg-clip-text text-transparent;
     background-image: linear-gradient(135deg, #7c3aed, #a855f7, #f97316);
   }
-  
+
   /* Scheme-aware card style */
   .scheme-card {
     @apply bg-card border border-border/60 shadow-sm;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  
+
   .scheme-card:hover {
     @apply border-primary/30 shadow-md;
     box-shadow: 0 8px 30px -10px hsl(var(--primary) / 0.15);
   }
-  
+
   /* Glass effect */
   .glass {
     @apply bg-card/90 backdrop-blur-xl border border-border/50;
   }
-  
+
   .dark .glass {
     @apply bg-card/95 border-border/40;
   }
-  
+
   /* Gradient border using scheme colors */
   .gradient-border {
     @apply relative;
   }
-  
+
   .gradient-border::before {
     content: '';
     @apply absolute inset-0 rounded-[inherit] p-[1px];
     background: linear-gradient(135deg, hsl(var(--scheme-primary)), hsl(var(--scheme-light)), hsl(var(--scheme-muted)));
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
   }
-  
+
   /* Glow effect using scheme colors */
   .glow {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.2), 0 0 40px hsl(var(--primary) / 0.1);
+    box-shadow:
+      0 0 20px hsl(var(--primary) / 0.2),
+      0 0 40px hsl(var(--primary) / 0.1);
   }
-  
+
   .glow-scheme {
-    box-shadow: 0 0 20px hsl(var(--scheme-primary) / 0.25), 0 0 40px hsl(var(--scheme-primary) / 0.1);
+    box-shadow:
+      0 0 20px hsl(var(--scheme-primary) / 0.25),
+      0 0 40px hsl(var(--scheme-primary) / 0.1);
   }
-  
+
   /* Vignette effect for hero sections */
   .vignette {
     position: relative;
   }
-  
+
   .vignette::after {
     content: '';
     position: absolute;
@@ -680,7 +695,7 @@
     pointer-events: none;
     background: radial-gradient(ellipse at center, transparent 40%, hsl(var(--background)) 100%);
   }
-  
+
   /* Hero gradient using scheme colors */
   .hero-gradient {
     background: linear-gradient(
@@ -690,13 +705,13 @@
       hsl(var(--gradient-end)) 100%
     );
   }
-  
+
   /* Spotlight effect */
   .spotlight {
     position: relative;
     overflow: hidden;
   }
-  
+
   .spotlight::before {
     content: '';
     position: absolute;
@@ -704,25 +719,39 @@
     left: -50%;
     width: 200%;
     height: 200%;
-    background: radial-gradient(
-      ellipse at 30% 20%,
-      hsl(var(--scheme-primary) / 0.08) 0%,
-      transparent 50%
-    );
+    background: radial-gradient(ellipse at 30% 20%, hsl(var(--scheme-primary) / 0.08) 0%, transparent 50%);
     pointer-events: none;
   }
-  
+
   /* Stagger animation delays */
-  .animate-delay-75 { animation-delay: 75ms; }
-  .animate-delay-100 { animation-delay: 100ms; }
-  .animate-delay-150 { animation-delay: 150ms; }
-  .animate-delay-200 { animation-delay: 200ms; }
-  .animate-delay-300 { animation-delay: 300ms; }
-  .animate-delay-400 { animation-delay: 400ms; }
-  .animate-delay-500 { animation-delay: 500ms; }
-  .animate-delay-700 { animation-delay: 700ms; }
-  .animate-delay-1000 { animation-delay: 1000ms; }
-  
+  .animate-delay-75 {
+    animation-delay: 75ms;
+  }
+  .animate-delay-100 {
+    animation-delay: 100ms;
+  }
+  .animate-delay-150 {
+    animation-delay: 150ms;
+  }
+  .animate-delay-200 {
+    animation-delay: 200ms;
+  }
+  .animate-delay-300 {
+    animation-delay: 300ms;
+  }
+  .animate-delay-400 {
+    animation-delay: 400ms;
+  }
+  .animate-delay-500 {
+    animation-delay: 500ms;
+  }
+  .animate-delay-700 {
+    animation-delay: 700ms;
+  }
+  .animate-delay-1000 {
+    animation-delay: 1000ms;
+  }
+
   /* Fade in animation */
   @keyframes fade-in {
     from {
@@ -734,12 +763,12 @@
       transform: translateY(0);
     }
   }
-  
+
   .animate-fade-in {
     animation: fade-in 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     opacity: 0;
   }
-  
+
   /* Slide up animation */
   @keyframes slide-up {
     from {
@@ -751,12 +780,12 @@
       transform: translateY(0);
     }
   }
-  
+
   .animate-slide-up {
     animation: slide-up 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     opacity: 0;
   }
-  
+
   /* Scale in animation */
   @keyframes scale-in {
     from {
@@ -768,12 +797,12 @@
       transform: scale(1);
     }
   }
-  
+
   .animate-scale-in {
     animation: scale-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     opacity: 0;
   }
-  
+
   /* Shimmer effect for loading states */
   @keyframes shimmer {
     0% {
@@ -783,7 +812,7 @@
       background-position: 200% 0;
     }
   }
-  
+
   .animate-shimmer {
     background: linear-gradient(
       90deg,
@@ -794,28 +823,30 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
   }
-  
+
   /* Hover lift effect */
   .hover-lift {
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  
+
   .hover-lift:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 40px -15px hsl(var(--primary) / 0.2);
   }
-  
+
   /* Display font utility */
   .font-display {
     font-family: var(--font-display);
   }
-  
+
   /* Body font utility */
   .font-body {
     font-family: var(--font-body);
   }
 
- /* ==========================================================================
+  /* ==========================================================================
     HERO LOGO ANIMATION - Circular Spin with Pulsing Play Button
     ========================================================================== */
 
@@ -831,7 +862,8 @@
 
   /* Pulsing play button with glow */
   @keyframes play-pulse {
-    0%, 100% {
+    0%,
+    100% {
       transform: scale(1);
       filter: drop-shadow(0 0 8px hsl(var(--primary) / 0.4));
     }

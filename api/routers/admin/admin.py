@@ -2360,7 +2360,11 @@ async def list_genres(
     result = await session.exec(query)
     rows = result.all()
 
-    items = [ReferenceItem(id=row.id, name=row.name, usage_count=row.usage_count) for row in rows if row.name.lower() not in ["adult", "18+"]]
+    items = [
+        ReferenceItem(id=row.id, name=row.name, usage_count=row.usage_count)
+        for row in rows
+        if row.name.lower() not in ["adult", "18+"]
+    ]
 
     pages = (total + per_page - 1) // per_page if total > 0 else 1
 

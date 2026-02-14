@@ -14,20 +14,22 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import { ApiRequestError } from '@/lib/api/client'
 
-const registerSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
-  username: z.string().min(3, 'Username must be at least 3 characters').optional().or(z.literal('')),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ['confirmPassword'],
-})
+const registerSchema = z
+  .object({
+    email: z.string().email('Please enter a valid email'),
+    username: z.string().min(3, 'Username must be at least 3 characters').optional().or(z.literal('')),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+      .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+      .regex(/[0-9]/, 'Password must contain at least one number'),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  })
 
 type RegisterForm = z.infer<typeof registerSchema>
 
@@ -106,7 +108,7 @@ export function RegisterPage() {
           return
         }
       }
-      
+
       // For other errors, show the error message
       const errorMessage = err instanceof Error ? err.message : 'Registration failed'
       setError(errorMessage)
@@ -127,11 +129,11 @@ export function RegisterPage() {
         <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-primary/3 rounded-full blur-3xl" />
         {/* Subtle grid */}
-        <div 
+        <div
           className="absolute inset-0 opacity-[0.015]"
           style={{
             backgroundImage: `linear-gradient(hsl(var(--foreground) / 0.15) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground) / 0.15) 1px, transparent 1px)`,
-            backgroundSize: '80px 80px'
+            backgroundSize: '80px 80px',
           }}
         />
       </div>
@@ -145,9 +147,7 @@ export function RegisterPage() {
               <Logo size="lg" />
             </div>
             <CardTitle className="font-display text-2xl font-semibold">Create an account</CardTitle>
-            <CardDescription>
-              Sign up to save your configurations and access more features
-            </CardDescription>
+            <CardDescription>Sign up to save your configurations and access more features</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
@@ -202,17 +202,11 @@ export function RegisterPage() {
                           )}
                         </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant={isApiKeySet ? "outline" : "default"}
-                        onClick={handleSaveApiKey}
-                      >
+                      <Button type="button" variant={isApiKeySet ? 'outline' : 'default'} onClick={handleSaveApiKey}>
                         {isApiKeySet ? 'Update' : 'Save'}
                       </Button>
                     </div>
-                    {apiKeyError && (
-                      <p className="text-sm text-destructive">{apiKeyError}</p>
-                    )}
+                    {apiKeyError && <p className="text-sm text-destructive">{apiKeyError}</p>}
                     {isApiKeySet && (
                       <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                         <Shield className="h-3 w-3" />
@@ -232,9 +226,7 @@ export function RegisterPage() {
                   autoComplete="email"
                   {...register('email')}
                 />
-                {errors.email && (
-                  <p className="text-sm text-destructive">{errors.email.message}</p>
-                )}
+                {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
               </div>
 
               <div className="space-y-2">
@@ -248,9 +240,7 @@ export function RegisterPage() {
                   autoComplete="username"
                   {...register('username')}
                 />
-                {errors.username && (
-                  <p className="text-sm text-destructive">{errors.username.message}</p>
-                )}
+                {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
               </div>
 
               <div className="space-y-2">
@@ -278,22 +268,24 @@ export function RegisterPage() {
                     )}
                   </Button>
                 </div>
-                {errors.password && (
-                  <p className="text-sm text-destructive">{errors.password.message}</p>
-                )}
-                
+                {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
+
                 {/* Password requirements */}
                 <div className="mt-2 grid grid-cols-2 gap-1">
                   {passwordRequirements.map((req, index) => (
                     <div key={index} className="flex items-center gap-1.5 text-xs">
-                      <div className={`h-3.5 w-3.5 rounded-full flex items-center justify-center ${
-                        req.test(password)
-                          ? 'bg-emerald-500/20 text-emerald-500'
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
+                      <div
+                        className={`h-3.5 w-3.5 rounded-full flex items-center justify-center ${
+                          req.test(password) ? 'bg-emerald-500/20 text-emerald-500' : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
                         <Check className="h-2.5 w-2.5" />
                       </div>
-                      <span className={req.test(password) ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
+                      <span
+                        className={
+                          req.test(password) ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                        }
+                      >
                         {req.label}
                       </span>
                     </div>
@@ -326,27 +318,17 @@ export function RegisterPage() {
                     )}
                   </Button>
                 </div>
-                {errors.confirmPassword && (
-                  <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
-                )}
+                {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>}
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4">
-              <Button 
-                type="submit" 
-                variant="gold"
-                className="w-full" 
-                disabled={isSubmitting}
-              >
+              <Button type="submit" variant="gold" className="w-full" disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create account
               </Button>
               <p className="text-sm text-muted-foreground text-center">
                 Already have an account?{' '}
-                <Link
-                  to="/login"
-                  className="text-primary hover:text-primary/80 font-medium"
-                >
+                <Link to="/login" className="text-primary hover:text-primary/80 font-medium">
                   Sign in
                 </Link>
               </p>
@@ -359,10 +341,7 @@ export function RegisterPage() {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                <a
-                  href="/app/configure"
-                  className="text-primary hover:text-primary/80 font-medium"
-                >
+                <a href="/app/configure" className="text-primary hover:text-primary/80 font-medium">
                   Configure without an account
                 </a>
               </p>
@@ -382,7 +361,8 @@ export function RegisterPage() {
             Join the <LogoText addonName={addonName} size="4xl" /> Community
           </h1>
           <p className="text-lg text-muted-foreground">
-            Create an account to sync your configurations across devices, contribute to the metadata database, and unlock premium features.
+            Create an account to sync your configurations across devices, contribute to the metadata database, and
+            unlock premium features.
           </p>
           <div className="space-y-4">
             {[

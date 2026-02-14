@@ -48,7 +48,7 @@ export function ProfileHeader({
   const [isEditing, setIsEditing] = useState(isNew)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  
+
   const copyProfileId = async () => {
     if (profileId) {
       await navigator.clipboard.writeText(String(profileId))
@@ -56,7 +56,7 @@ export function ProfileHeader({
       setTimeout(() => setCopied(false), 2000)
     }
   }
-  
+
   return (
     <Card>
       <CardContent className="p-6">
@@ -74,65 +74,41 @@ export function ProfileHeader({
                     className="max-w-xs"
                     autoFocus
                   />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsEditing(false)}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>
                     Done
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold">{name || 'Unnamed Profile'}</h2>
-                  {isDefault && (
-                    <Badge className="bg-primary">Default</Badge>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setIsEditing(true)}
-                  >
+                  {isDefault && <Badge className="bg-primary">Default</Badge>}
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsEditing(true)}>
                     <Edit className="h-4 w-4" />
                   </Button>
                 </div>
               )}
             </div>
-            
+
             {/* Profile ID */}
             {profileId && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>ID:</span>
                 <code className="bg-muted px-2 py-0.5 rounded text-xs">{String(profileId).slice(0, 12)}...</code>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={copyProfileId}
-                >
-                  {copied ? (
-                    <Check className="h-3 w-3 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyProfileId}>
+                  {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                 </Button>
               </div>
             )}
-            
+
             {/* Default Toggle */}
             <div className="flex items-center gap-3">
-              <Switch
-                id="default"
-                checked={isDefault}
-                onCheckedChange={onDefaultChange}
-              />
+              <Switch id="default" checked={isDefault} onCheckedChange={onDefaultChange} />
               <Label htmlFor="default" className="cursor-pointer">
                 Set as default profile
               </Label>
             </div>
           </div>
-          
+
           {/* Actions Menu */}
           {!isNew && (
             <DropdownMenu>
@@ -149,10 +125,7 @@ export function ProfileHeader({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-red-500 focus:text-red-500"
-                  onClick={() => setDeleteDialogOpen(true)}
-                >
+                <DropdownMenuItem className="text-red-500 focus:text-red-500" onClick={() => setDeleteDialogOpen(true)}>
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete Profile
                 </DropdownMenuItem>
@@ -161,7 +134,7 @@ export function ProfileHeader({
           )}
         </div>
       </CardContent>
-      
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
@@ -188,4 +161,3 @@ export function ProfileHeader({
     </Card>
   )
 }
-

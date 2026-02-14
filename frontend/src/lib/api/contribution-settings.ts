@@ -70,4 +70,3 @@ export const contributionSettingsApi = {
     return apiClient.post<ContributionSettings>('/admin/contribution-settings/reset')
   },
 }
-

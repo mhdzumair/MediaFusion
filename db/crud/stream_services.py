@@ -63,9 +63,7 @@ def _get_visibility_filter(user_id: int | None = None):
 def _has_mediaflow_config(user_data: UserData) -> bool:
     """Check if user has MediaFlow proxy configured."""
     return bool(
-        user_data.mediaflow_config
-        and user_data.mediaflow_config.proxy_url
-        and user_data.mediaflow_config.api_password
+        user_data.mediaflow_config and user_data.mediaflow_config.proxy_url and user_data.mediaflow_config.api_password
     )
 
 
@@ -95,8 +93,7 @@ def _format_acestream_streams(
             )
         except ValueError:
             logger.warning(
-                f"Skipping AceStream stream_id={ace_stream.stream_id}: "
-                "missing both content_id and info_hash"
+                f"Skipping AceStream stream_id={ace_stream.stream_id}: missing both content_id and info_hash"
             )
             continue
 
@@ -344,9 +341,7 @@ async def get_movie_streams(
         acestream_result = await session.exec(acestream_query)
         acestream_streams = acestream_result.unique().all()
 
-        formatted_acestream_streams = _format_acestream_streams(
-            acestream_streams, user_data, user_ip
-        )
+        formatted_acestream_streams = _format_acestream_streams(acestream_streams, user_data, user_ip)
 
     if (
         not stream_data_list
@@ -606,9 +601,7 @@ async def get_series_streams(
         acestream_result = await session.exec(acestream_query)
         acestream_streams = acestream_result.unique().all()
 
-        formatted_acestream_streams = _format_acestream_streams(
-            acestream_streams, user_data, user_ip
-        )
+        formatted_acestream_streams = _format_acestream_streams(acestream_streams, user_data, user_ip)
 
     if (
         not stream_data_list
@@ -761,9 +754,7 @@ async def get_tv_streams_formatted(
         acestream_result = await session.exec(acestream_query)
         acestream_streams = acestream_result.unique().all()
 
-        formatted_streams.extend(
-            _format_acestream_streams(acestream_streams, user_data)
-        )
+        formatted_streams.extend(_format_acestream_streams(acestream_streams, user_data))
 
     return formatted_streams
 

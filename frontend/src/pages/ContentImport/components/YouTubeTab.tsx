@@ -36,11 +36,7 @@ function extractVideoId(url: string): string | null {
   return null
 }
 
-export function YouTubeTab({ 
-  onSuccess, 
-  onError, 
-  contentType = 'movie',
-}: YouTubeTabProps) {
+export function YouTubeTab({ onSuccess, onError, contentType = 'movie' }: YouTubeTabProps) {
   const { user } = useAuth()
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [metaId, setMetaId] = useState('')
@@ -55,10 +51,11 @@ export function YouTubeTab({
 
   // Analyze mutation
   const analyzeMutation = useMutation({
-    mutationFn: () => contentImportApi.analyzeYouTube({ 
-      youtube_url: youtubeUrl, 
-      meta_type: contentType 
-    }),
+    mutationFn: () =>
+      contentImportApi.analyzeYouTube({
+        youtube_url: youtubeUrl,
+        meta_type: contentType,
+      }),
     onSuccess: (result) => {
       if (result.status === 'success') {
         setAnalysis(result)
@@ -76,14 +73,15 @@ export function YouTubeTab({
 
   // Import mutation
   const importMutation = useMutation({
-    mutationFn: () => contentImportApi.importYouTube({
-      youtube_url: youtubeUrl,
-      meta_type: contentType,
-      meta_id: metaId || undefined,
-      title: title || undefined,
-      languages: languages || undefined,
-      is_anonymous: isAnonymous,
-    }),
+    mutationFn: () =>
+      contentImportApi.importYouTube({
+        youtube_url: youtubeUrl,
+        meta_type: contentType,
+        meta_id: metaId || undefined,
+        title: title || undefined,
+        languages: languages || undefined,
+        is_anonymous: isAnonymous,
+      }),
     onSuccess: (result: ImportResponse) => {
       if (result.status === 'success') {
         onSuccess(result.message || 'YouTube video imported successfully!')
@@ -123,9 +121,7 @@ export function YouTubeTab({
           <Youtube className="h-5 w-5 text-red-500" />
           Import YouTube Video
         </CardTitle>
-        <CardDescription>
-          Import a YouTube video as a stream for your content
-        </CardDescription>
+        <CardDescription>Import a YouTube video as a stream for your content</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* YouTube URL Input */}
@@ -142,7 +138,7 @@ export function YouTubeTab({
               }}
               className="font-mono text-sm rounded-xl"
             />
-            <Button 
+            <Button
               onClick={handleAnalyze}
               disabled={!isValidUrl || isLoading}
               variant="outline"
@@ -156,9 +152,7 @@ export function YouTubeTab({
               Analyze
             </Button>
           </div>
-          {youtubeUrl && !isValidUrl && (
-            <p className="text-sm text-destructive">Invalid YouTube URL</p>
-          )}
+          {youtubeUrl && !isValidUrl && <p className="text-sm text-destructive">Invalid YouTube URL</p>}
         </div>
 
         {/* Video Preview */}
@@ -175,12 +169,8 @@ export function YouTubeTab({
                   <Badge variant="secondary">Video ID: {videoId}</Badge>
                   {analysis?.is_live && <Badge variant="destructive">Live</Badge>}
                 </div>
-                {analysis?.title && (
-                  <p className="font-medium">{analysis.title}</p>
-                )}
-                {analysis?.channel_name && (
-                  <p className="text-sm text-muted-foreground">{analysis.channel_name}</p>
-                )}
+                {analysis?.title && <p className="font-medium">{analysis.title}</p>}
+                {analysis?.channel_name && <p className="text-sm text-muted-foreground">{analysis.channel_name}</p>}
                 <a
                   href={`https://www.youtube.com/watch?v=${videoId}`}
                   target="_blank"
@@ -208,7 +198,7 @@ export function YouTubeTab({
                 className="rounded-xl"
               />
               <p className="text-xs text-muted-foreground">
-                {contentType === 'tv' 
+                {contentType === 'tv'
                   ? 'Required. A unique identifier for the TV channel (e.g., mf_tv_bbc_one).'
                   : 'Required. The IMDb ID of the movie/series this video belongs to.'}
               </p>
@@ -233,9 +223,7 @@ export function YouTubeTab({
               onChange={(e) => setLanguages(e.target.value)}
               className="rounded-xl"
             />
-            <p className="text-xs text-muted-foreground">
-              Comma-separated list of languages
-            </p>
+            <p className="text-xs text-muted-foreground">Comma-separated list of languages</p>
           </div>
         </div>
 
@@ -244,19 +232,14 @@ export function YouTubeTab({
           <div>
             <span className="text-sm font-medium">Anonymous contribution</span>
             <p className="text-xs text-muted-foreground">
-              {isAnonymous 
-                ? 'Uploader will show as "Anonymous"' 
-                : 'Your username will be linked to this contribution'}
+              {isAnonymous ? 'Uploader will show as "Anonymous"' : 'Your username will be linked to this contribution'}
             </p>
           </div>
-          <Switch
-            checked={isAnonymous}
-            onCheckedChange={setIsAnonymous}
-          />
+          <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
         </div>
 
         {/* Import Button */}
-        <Button 
+        <Button
           onClick={handleImport}
           disabled={!isValidUrl || !metaId || isLoading}
           className="w-full rounded-xl bg-gradient-to-r from-red-500 to-red-600"
@@ -278,7 +261,7 @@ export function YouTubeTab({
         <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50">
           <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
           <p className="text-sm text-muted-foreground">
-            {contentType === 'tv' 
+            {contentType === 'tv'
               ? 'YouTube live streams can be used for TV channels. Provide the channel title as the title field.'
               : 'YouTube videos are linked to media content via external URL. Make sure to provide the correct IMDb ID so the video appears with the right movie or series.'}
           </p>

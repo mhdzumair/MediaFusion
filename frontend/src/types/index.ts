@@ -46,8 +46,8 @@ export interface CatalogConfig {
 // User configuration (matches existing UserData schema)
 export interface UserConfig {
   streaming_provider?: StreamingProvider
-  catalog_configs?: CatalogConfig[]  // New: per-catalog configuration
-  selected_catalogs: string[]  // Deprecated: use catalog_configs
+  catalog_configs?: CatalogConfig[] // New: per-catalog configuration
+  selected_catalogs: string[] // Deprecated: use catalog_configs
   selected_resolutions: string[]
   quality_filter: string[]
   max_size: number
@@ -291,14 +291,24 @@ export const Permission = {
   SYSTEM_CONFIG: 'system_config',
 } as const
 
-export type Permission = typeof Permission[keyof typeof Permission]
+export type Permission = (typeof Permission)[keyof typeof Permission]
 
 // =============================================================================
 // Stream Types (v5 Schema)
 // =============================================================================
 
 export type FileType = 'video' | 'audio' | 'subtitle' | 'archive' | 'sample' | 'trailer' | 'nfo' | 'other'
-export type LinkSource = 'user' | 'ptt_parser' | 'torrent_metadata' | 'debrid_realdebrid' | 'debrid_alldebrid' | 'debrid_premiumize' | 'debrid_torbox' | 'debrid_debridlink' | 'manual' | 'filename'
+export type LinkSource =
+  | 'user'
+  | 'ptt_parser'
+  | 'torrent_metadata'
+  | 'debrid_realdebrid'
+  | 'debrid_alldebrid'
+  | 'debrid_premiumize'
+  | 'debrid_torbox'
+  | 'debrid_debridlink'
+  | 'manual'
+  | 'filename'
 
 export interface StreamFile {
   id: number
@@ -329,7 +339,7 @@ export interface TorrentStream {
   id: number
   stream_id: number
   info_hash: string
-  
+
   // From Stream base
   name: string
   source: string
@@ -342,13 +352,13 @@ export interface TorrentStream {
   is_blocked: boolean
   is_active: boolean
   playback_count: number
-  
+
   // Normalized quality attributes (arrays)
   audio_formats: string[]
   channels: string[]
   hdr_formats: string[]
   languages: string[]
-  
+
   // Release flags
   is_remastered: boolean
   is_upscaled: boolean
@@ -358,7 +368,7 @@ export interface TorrentStream {
   is_complete: boolean
   is_dubbed: boolean
   is_subbed: boolean
-  
+
   // TorrentStream-specific
   total_size: number
   seeders?: number
@@ -366,11 +376,11 @@ export interface TorrentStream {
   torrent_type: 'public' | 'private' | 'webseed'
   uploaded_at?: string
   file_count: number
-  
+
   // Timestamps
   created_at: string
   updated_at?: string
-  
+
   // Relationships
   trackers: string[]
   files: StreamFile[]
@@ -380,38 +390,38 @@ export interface StreamInfo {
   // Core identifiers
   id: string
   info_hash: string
-  
+
   // Stremio-compatible fields
   stremio_name?: string
   description?: string
   url?: string
   behavior_hints?: Record<string, unknown>
-  
+
   // Rich metadata for frontend
-  name: string  // Stream display name
+  name: string // Stream display name
   resolution?: string
   quality?: string
   codec?: string
   bit_depth?: string
-  
+
   // Normalized quality attributes (displayed as joined strings)
   audio_formats?: string
   channels?: string
   hdr_formats?: string
   languages?: string
-  
+
   // Size and peers
   size?: string
   size_bytes?: number
   seeders?: number
-  
+
   // Uploader info
   uploader?: string
   release_group?: string
-  
+
   // Status
   cached?: boolean
-  
+
   // Release flags
   is_remastered?: boolean
   is_upscaled?: boolean
@@ -428,4 +438,3 @@ export interface StreamTemplate {
   name_template: string
   description_template: string
 }
-

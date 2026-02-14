@@ -5,19 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import {
-  Film,
-  Tv,
-  Radio,
-  Plus,
-  Search,
-  Trash2,
-  Edit,
-  ChevronRight,
-  Loader2,
-  Sparkles,
-  Download,
-} from 'lucide-react'
+import { Film, Tv, Radio, Plus, Search, Trash2, Edit, ChevronRight, Loader2, Sparkles, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserMetadataList, useDeleteUserMetadata } from '@/hooks'
 import type { UserMediaResponse } from '@/lib/api'
@@ -53,7 +41,11 @@ export function MetadataCreatorPage() {
 
   const { toast } = useToast()
 
-  const { data: metadataList, isLoading, refetch } = useUserMetadataList({
+  const {
+    data: metadataList,
+    isLoading,
+    refetch,
+  } = useUserMetadataList({
     page,
     per_page: 20,
     type: activeTab,
@@ -174,11 +166,7 @@ export function MetadataCreatorPage() {
             </Button>
             <h1 className="text-2xl font-bold">Edit Movie: {selectedMedia.title}</h1>
           </div>
-          <MovieMetadataForm
-            initialData={selectedMedia}
-            onSuccess={handleEditSuccess}
-            onCancel={handleBack}
-          />
+          <MovieMetadataForm initialData={selectedMedia} onSuccess={handleEditSuccess} onCancel={handleBack} />
         </div>
       )
     } else if (selectedMedia.type === 'tv') {
@@ -190,11 +178,7 @@ export function MetadataCreatorPage() {
             </Button>
             <h1 className="text-2xl font-bold">Edit TV Channel: {selectedMedia.title}</h1>
           </div>
-          <TVMetadataForm
-            initialData={selectedMedia}
-            onSuccess={handleEditSuccess}
-            onCancel={handleBack}
-          />
+          <TVMetadataForm initialData={selectedMedia} onSuccess={handleEditSuccess} onCancel={handleBack} />
         </div>
       )
     } else {
@@ -206,11 +190,7 @@ export function MetadataCreatorPage() {
             </Button>
             <h1 className="text-2xl font-bold">Edit Series: {selectedMedia.title}</h1>
           </div>
-          <SeriesMetadataForm
-            initialData={selectedMedia}
-            onSuccess={handleEditSuccess}
-            onCancel={handleBack}
-          />
+          <SeriesMetadataForm initialData={selectedMedia} onSuccess={handleEditSuccess} onCancel={handleBack} />
         </div>
       )
     }
@@ -226,36 +206,22 @@ export function MetadataCreatorPage() {
             <Sparkles className="h-6 w-6 text-primary" />
             Metadata Creator
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Create and manage your own movie, series, and TV metadata
-          </p>
+          <p className="text-muted-foreground mt-1">Create and manage your own movie, series, and TV metadata</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={() => setImportDialogOpen(true)}
-            variant="outline"
-          >
+          <Button onClick={() => setImportDialogOpen(true)} variant="outline">
             <Download className="h-4 w-4 mr-2" />
             Import from ID
           </Button>
-          <Button
-            onClick={() => setMode('create-movie')}
-            variant="outline"
-          >
+          <Button onClick={() => setMode('create-movie')} variant="outline">
             <Film className="h-4 w-4 mr-2" />
             New Movie
           </Button>
-          <Button
-            onClick={() => setMode('create-series')}
-            variant="outline"
-          >
+          <Button onClick={() => setMode('create-series')} variant="outline">
             <Tv className="h-4 w-4 mr-2" />
             New Series
           </Button>
-          <Button
-            onClick={() => setMode('create-tv')}
-            variant="outline"
-          >
+          <Button onClick={() => setMode('create-tv')} variant="outline">
             <Radio className="h-4 w-4 mr-2" />
             New TV
           </Button>
@@ -278,10 +244,13 @@ export function MetadataCreatorPage() {
                 className="pl-9"
               />
             </div>
-            <Tabs value={activeTab} onValueChange={(v) => {
-              setActiveTab(v as 'all' | 'movie' | 'series' | 'tv')
-              setPage(1)
-            }}>
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => {
+                setActiveTab(v as 'all' | 'movie' | 'series' | 'tv')
+                setPage(1)
+              }}
+            >
               <TabsList className="bg-muted/50">
                 <TabsTrigger value="all">All</TabsTrigger>
                 <TabsTrigger value="movie" className="gap-1.5">
@@ -313,9 +282,7 @@ export function MetadataCreatorPage() {
               </Badge>
             )}
           </div>
-          <CardDescription>
-            Manage your custom movie, series, and TV entries
-          </CardDescription>
+          <CardDescription>Manage your custom movie, series, and TV entries</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -340,19 +307,11 @@ export function MetadataCreatorPage() {
                   <Film className="h-4 w-4 mr-1.5" />
                   Create Movie
                 </Button>
-                <Button
-                  onClick={() => setMode('create-series')}
-                  size="sm"
-                  variant="outline"
-                >
+                <Button onClick={() => setMode('create-series')} size="sm" variant="outline">
                   <Tv className="h-4 w-4 mr-1.5" />
                   Create Series
                 </Button>
-                <Button
-                  onClick={() => setMode('create-tv')}
-                  size="sm"
-                  variant="outline"
-                >
+                <Button onClick={() => setMode('create-tv')} size="sm" variant="outline">
                   <Radio className="h-4 w-4 mr-1.5" />
                   Create TV
                 </Button>
@@ -377,12 +336,7 @@ export function MetadataCreatorPage() {
           {/* Pagination */}
           {metadataList && metadataList.pages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-              >
+              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
                 Previous
               </Button>
               <span className="text-sm text-muted-foreground">
@@ -467,18 +421,14 @@ function MetadataListItem({ media, onView, onEdit, onDelete }: MetadataListItemP
     <div
       className={cn(
         'flex items-center gap-4 p-3 rounded-lg border border-border/50',
-        'hover:bg-muted/30 transition-colors group cursor-pointer'
+        'hover:bg-muted/30 transition-colors group cursor-pointer',
       )}
       onClick={onView}
     >
       {/* Poster */}
       <div className="w-12 h-16 rounded bg-muted/50 flex-shrink-0 overflow-hidden">
         {media.poster_url ? (
-          <img
-            src={media.poster_url}
-            alt={media.title}
-            className="w-full h-full object-cover"
-          />
+          <img src={media.poster_url} alt={media.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             {media.type === 'movie' ? (
@@ -496,20 +446,18 @@ function MetadataListItem({ media, onView, onEdit, onDelete }: MetadataListItemP
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <h3 className="font-medium truncate">{media.title}</h3>
-          {media.year && (
-            <span className="text-sm text-muted-foreground">({media.year})</span>
-          )}
+          {media.year && <span className="text-sm text-muted-foreground">({media.year})</span>}
         </div>
         <div className="flex items-center gap-2 mt-1">
           <Badge
             variant="outline"
             className={cn(
               'text-xs',
-              media.type === 'movie' 
-                ? 'border-blue-500/50 text-blue-500' 
+              media.type === 'movie'
+                ? 'border-blue-500/50 text-blue-500'
                 : media.type === 'tv'
-                ? 'border-orange-500/50 text-orange-500'
-                : 'border-green-500/50 text-green-500'
+                  ? 'border-orange-500/50 text-orange-500'
+                  : 'border-green-500/50 text-green-500',
             )}
           >
             {media.type === 'movie' ? (
@@ -568,4 +516,3 @@ function MetadataListItem({ media, onView, onEdit, onDelete }: MetadataListItemP
     </div>
   )
 }
-

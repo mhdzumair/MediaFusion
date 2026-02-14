@@ -5,12 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import {
   Dialog,
   DialogContent,
@@ -84,9 +79,7 @@ const PRESETS = {
 const FIELD_GROUPS = {
   addon: {
     label: '🏷️ Addon',
-    fields: [
-      { field: 'addon.name', description: 'Addon name (MediaFusion)' },
-    ],
+    fields: [{ field: 'addon.name', description: 'Addon name (MediaFusion)' }],
   },
   service: {
     label: '☁️ Debrid Service',
@@ -133,13 +126,13 @@ const FIELD_GROUPS = {
 
 // Syntax reference for new MediaFusion format
 const SYNTAX_EXAMPLES = [
-  { 
+  {
     category: 'Variables',
     examples: [
       { code: '{stream.resolution}', desc: 'Simple variable' },
       { code: '{stream.size|bytes}', desc: 'With modifier' },
       { code: '{stream.name|upper|truncate(30)}', desc: 'Chained modifiers' },
-    ]
+    ],
   },
   {
     category: 'Conditionals',
@@ -147,7 +140,7 @@ const SYNTAX_EXAMPLES = [
       { code: '{if service.cached}⚡️{/if}', desc: 'Simple if' },
       { code: '{if service.cached}⚡️{else}⏳{/if}', desc: 'If/else' },
       { code: '{if stream.type = torrent}...{elif stream.type = http}...{else}...{/if}', desc: 'If/elif/else' },
-    ]
+    ],
   },
   {
     category: 'Comparisons',
@@ -155,7 +148,7 @@ const SYNTAX_EXAMPLES = [
       { code: '{if stream.size > 0}...{/if}', desc: 'Greater than' },
       { code: '{if stream.type = torrent}...{/if}', desc: 'Equality' },
       { code: '{if stream.name ~ 720}...{/if}', desc: 'Contains' },
-    ]
+    ],
   },
   {
     category: 'Logical',
@@ -163,7 +156,7 @@ const SYNTAX_EXAMPLES = [
       { code: '{if cached and stream.type = torrent}...{/if}', desc: 'AND' },
       { code: '{if cached or stream.library}...{/if}', desc: 'OR' },
       { code: '{if not stream.cached}...{/if}', desc: 'NOT' },
-    ]
+    ],
   },
 ]
 
@@ -187,18 +180,26 @@ const MODIFIERS = [
  */
 function convertAIOStreamsToMediaFusion(template: string): string {
   if (!template) return template
-  
+
   let result = template
-  
+
   // Convert conditionals: {var::check["true"||"false"]} -> {if condition}true{else}false{/if}
   // Pattern matches: {var::modifier["content"||"content"]}
   const conditionalPattern = /\{([a-zA-Z_][a-zA-Z0-9_.]+)::([=<>!~$^]?\w*)\[(['"])(.+?)\3\|\|(['"])(.+?)\5\]\}/g
-  
-  function convertMatch(_match: string, varPath: string, check: string, _q1: string, trueVal: string, _q2: string, falseVal: string): string {
+
+  function convertMatch(
+    _match: string,
+    varPath: string,
+    check: string,
+    _q1: string,
+    trueVal: string,
+    _q2: string,
+    falseVal: string,
+  ): string {
     // Recursively convert nested AIOStreams syntax
     trueVal = convertAIOStreamsToMediaFusion(trueVal)
     falseVal = convertAIOStreamsToMediaFusion(falseVal)
-    
+
     let condition: string
     if (check === 'istrue' || check === 'exists') {
       condition = varPath
@@ -221,23 +222,23 @@ function convertAIOStreamsToMediaFusion(template: string): string {
     } else {
       condition = varPath
     }
-    
+
     if (!falseVal || falseVal === '' || falseVal === "''" || falseVal === '""') {
       return `{if ${condition}}${trueVal}{/if}`
     }
     return `{if ${condition}}${trueVal}{else}${falseVal}{/if}`
   }
-  
+
   // Apply conversion multiple times for nested patterns
   let prev = ''
   while (prev !== result) {
     prev = result
     result = result.replace(conditionalPattern, convertMatch)
   }
-  
+
   // Convert simple modifiers: :: -> |
   result = result.replace(/::(\w+)/g, '|$1')
-  
+
   return result
 }
 
@@ -246,10 +247,10 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
   const [converterOpen, setConverterOpen] = useState(false)
   const [aioInput, setAioInput] = useState('')
   const [convertedOutput, setConvertedOutput] = useState('')
-  
+
   const currentTitle = config.st?.t ?? DEFAULT_TITLE_TEMPLATE
   const currentDescription = config.st?.d ?? DEFAULT_DESCRIPTION_TEMPLATE
-  
+
   const updateTemplate = (field: 't' | 'd', value: string) => {
     onChange({
       ...config,
@@ -259,7 +260,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
       },
     })
   }
-  
+
   const applyPreset = (presetKey: string) => {
     const preset = PRESETS[presetKey as keyof typeof PRESETS]
     if (preset) {
@@ -272,25 +273,25 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
       })
     }
   }
-  
+
   const resetToDefault = () => {
     onChange({
       ...config,
       st: undefined,
     })
   }
-  
+
   const copyField = (field: string) => {
     navigator.clipboard.writeText(`{${field}}`)
     setCopied(field)
     setTimeout(() => setCopied(null), 2000)
   }
-  
+
   const handleConvert = () => {
     const converted = convertAIOStreamsToMediaFusion(aioInput)
     setConvertedOutput(converted)
   }
-  
+
   const applyConvertedTitle = () => {
     if (convertedOutput) {
       updateTemplate('t', convertedOutput)
@@ -299,7 +300,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
       setConvertedOutput('')
     }
   }
-  
+
   const applyConvertedDescription = () => {
     if (convertedOutput) {
       updateTemplate('d', convertedOutput)
@@ -316,9 +317,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
           <Code className="h-5 w-5 text-primary" />
           Stream Formatter
         </CardTitle>
-        <CardDescription>
-          Customize how stream information is displayed in Stremio using templates
-        </CardDescription>
+        <CardDescription>Customize how stream information is displayed in Stremio using templates</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Preset Selection */}
@@ -334,16 +333,14 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                 onClick={() => applyPreset(key)}
               >
                 <span className="font-medium text-xs">{preset.name}</span>
-                <span className="text-[10px] text-muted-foreground truncate max-w-full">
-                  {preset.description}
-                </span>
+                <span className="text-[10px] text-muted-foreground truncate max-w-full">{preset.description}</span>
               </Button>
             ))}
           </div>
         </div>
-        
+
         <Separator />
-        
+
         {/* Title Template */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -362,7 +359,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
             className="font-mono text-sm h-20 resize-none"
           />
         </div>
-        
+
         {/* Description Template */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -381,7 +378,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
             className="font-mono text-sm h-40 resize-none"
           />
         </div>
-        
+
         {/* Action Buttons */}
         <div className="flex justify-between items-center">
           {/* AIOStreams Converter */}
@@ -415,17 +412,15 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                     className="font-mono text-xs h-32 resize-none"
                   />
                 </div>
-                
+
                 <Button onClick={handleConvert} className="w-full gap-2">
                   <ArrowRightLeft className="h-4 w-4" />
                   Convert to MediaFusion
                 </Button>
-                
+
                 {convertedOutput && (
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-emerald-600">
-                      ✅ Converted MediaFusion Template
-                    </Label>
+                    <Label className="text-sm font-medium text-emerald-600">✅ Converted MediaFusion Template</Label>
                     <Textarea
                       value={convertedOutput}
                       readOnly
@@ -443,28 +438,21 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                     <Button variant="secondary" onClick={applyConvertedTitle}>
                       Apply as Title
                     </Button>
-                    <Button onClick={applyConvertedDescription}>
-                      Apply as Description
-                    </Button>
+                    <Button onClick={applyConvertedDescription}>Apply as Description</Button>
                   </>
                 )}
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetToDefault}
-            className="gap-2"
-          >
+
+          <Button variant="outline" size="sm" onClick={resetToDefault} className="gap-2">
             <RotateCcw className="h-4 w-4" />
             Reset to Default
           </Button>
         </div>
-        
+
         <Separator />
-        
+
         {/* Reference Documentation */}
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="fields">
@@ -484,18 +472,14 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                         key={item.field}
                         onClick={() => copyField(item.field)}
                         className={cn(
-                          "flex items-center justify-between gap-2 p-2 rounded-lg text-left transition-colors",
-                          "hover:bg-muted/80 bg-muted/40",
-                          copied === item.field && "bg-emerald-500/20"
+                          'flex items-center justify-between gap-2 p-2 rounded-lg text-left transition-colors',
+                          'hover:bg-muted/80 bg-muted/40',
+                          copied === item.field && 'bg-emerald-500/20',
                         )}
                       >
                         <div className="min-w-0">
-                          <code className="text-xs font-medium truncate block">
-                            {'{' + item.field + '}'}
-                          </code>
-                          <span className="text-[10px] text-muted-foreground truncate block">
-                            {item.description}
-                          </span>
+                          <code className="text-xs font-medium truncate block">{'{' + item.field + '}'}</code>
+                          <span className="text-[10px] text-muted-foreground truncate block">{item.description}</span>
                         </div>
                         {copied === item.field ? (
                           <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
@@ -509,7 +493,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
               ))}
             </AccordionContent>
           </AccordionItem>
-          
+
           <AccordionItem value="syntax">
             <AccordionTrigger className="text-sm font-medium">
               <div className="flex items-center gap-2">
@@ -526,9 +510,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                     <div className="space-y-1.5">
                       {section.examples.map((ex, i) => (
                         <div key={i} className="flex items-start gap-2 text-xs">
-                          <code className="bg-background px-1.5 py-0.5 rounded shrink-0 text-[11px]">
-                            {ex.code}
-                          </code>
+                          <code className="bg-background px-1.5 py-0.5 rounded shrink-0 text-[11px]">{ex.code}</code>
                           <span className="text-muted-foreground">{ex.desc}</span>
                         </div>
                       ))}
@@ -536,16 +518,14 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                   </div>
                 ))}
               </div>
-              
+
               {/* Modifiers */}
               <div>
                 <h4 className="text-sm font-medium mb-2">Available Modifiers</h4>
                 <div className="grid grid-cols-2 gap-1.5">
                   {MODIFIERS.map((mod) => (
                     <div key={mod.modifier} className="flex items-start gap-2 text-xs p-1.5 rounded bg-muted/30">
-                      <code className="bg-background px-1 py-0.5 rounded shrink-0 text-[10px]">
-                        {mod.modifier}
-                      </code>
+                      <code className="bg-background px-1 py-0.5 rounded shrink-0 text-[10px]">{mod.modifier}</code>
                       <span className="text-muted-foreground text-[10px]">{mod.description}</span>
                     </div>
                   ))}

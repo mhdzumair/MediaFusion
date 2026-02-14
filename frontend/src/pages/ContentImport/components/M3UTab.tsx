@@ -15,32 +15,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { 
-  FileVideo, 
-  Link as LinkIcon, 
-  Loader2, 
-  ArrowRight, 
-  Info, 
-  Tv, 
-  Film, 
-  MonitorPlay, 
-  HelpCircle, 
-  Globe, 
-  Lock, 
-  Search, 
+  FileVideo,
+  Link as LinkIcon,
+  Loader2,
+  ArrowRight,
+  Info,
+  Tv,
+  Film,
+  MonitorPlay,
+  HelpCircle,
+  Globe,
+  Lock,
+  Search,
   X,
   FileInput,
   CheckCircle,
 } from 'lucide-react'
 import { useAnalyzeM3U, useImportM3U, useImportJobStatus } from '@/hooks'
-import type { M3UAnalyzeResponse, M3UChannelPreview, M3UContentType, M3UImportOverride, IPTVImportSettings } from '@/lib/api'
+import type {
+  M3UAnalyzeResponse,
+  M3UChannelPreview,
+  M3UContentType,
+  M3UImportOverride,
+  IPTVImportSettings,
+} from '@/lib/api'
 
 const CONTENT_TYPE_ICONS: Record<M3UContentType, React.ElementType> = {
   tv: Tv,
@@ -83,7 +83,9 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
     onComplete: (status) => {
       const stats = status.stats || {}
       const total = (stats.tv || 0) + (stats.movie || 0) + (stats.series || 0)
-      onSuccess(`Successfully imported ${total} items (${stats.tv || 0} TV, ${stats.movie || 0} movies, ${stats.series || 0} series)`)
+      onSuccess(
+        `Successfully imported ${total} items (${stats.tv || 0} TV, ${stats.movie || 0} movies, ${stats.series || 0} series)`,
+      )
       setImportJobId(null)
       setM3uUrl('')
       setAnalysis(null)
@@ -98,7 +100,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
 
   const handleAnalyze = async () => {
     if (!m3uUrl.trim()) return
-    
+
     try {
       const result = await analyzeM3U.mutateAsync({ m3u_url: m3uUrl })
       if (result.status === 'success') {
@@ -117,12 +119,12 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
 
   const handleImport = async () => {
     if (!analysis) return
-    
+
     const overrideList: M3UImportOverride[] = Array.from(overrides.entries()).map(([index, type]) => ({
       index,
       type,
     }))
-    
+
     try {
       const result = await importM3U.mutateAsync({
         redis_key: analysis.redis_key,
@@ -131,7 +133,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
         save_source: saveSource,
         source_name: sourceName || undefined,
       })
-      
+
       // Check if it's a background job
       if (result.status === 'processing' && result.details?.job_id) {
         setImportJobId(result.details.job_id)
@@ -153,7 +155,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
   }
 
   const handleTypeOverride = (index: number, type: M3UContentType) => {
-    setOverrides(prev => {
+    setOverrides((prev) => {
       const newMap = new Map(prev)
       newMap.set(index, type)
       return newMap
@@ -167,9 +169,9 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
   // Compute dynamic counts based on overrides
   const dynamicCounts = useMemo(() => {
     if (!analysis) return { tv: 0, movie: 0, series: 0, unknown: 0 }
-    
+
     const counts: Record<M3UContentType, number> = { tv: 0, movie: 0, series: 0, unknown: 0 }
-    analysis.channels.forEach(channel => {
+    analysis.channels.forEach((channel) => {
       const effectiveType = getEffectiveType(channel)
       counts[effectiveType]++
     })
@@ -178,13 +180,13 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
 
   const filteredChannels = useMemo(() => {
     if (!analysis) return []
-    
-    return analysis.channels.filter(channel => {
+
+    return analysis.channels.filter((channel) => {
       if (typeFilter !== 'all') {
         const effectiveType = getEffectiveType(channel)
         if (effectiveType !== typeFilter) return false
       }
-      
+
       if (search.trim()) {
         const searchLower = search.toLowerCase()
         const nameMatches = channel.name.toLowerCase().includes(searchLower)
@@ -192,7 +194,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
         const matchedMatches = channel.matched_media?.title.toLowerCase().includes(searchLower)
         if (!nameMatches && !titleMatches && !matchedMatches) return false
       }
-      
+
       return true
     })
   }, [analysis, typeFilter, search, overrides])
@@ -201,9 +203,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
   const isImporting = importM3U.isPending || !!importJobId
 
   // Calculate progress percentage
-  const progressPercent = jobStatus?.total 
-    ? Math.round((jobStatus.progress / jobStatus.total) * 100) 
-    : 0
+  const progressPercent = jobStatus?.total ? Math.round((jobStatus.progress / jobStatus.total) * 100) : 0
 
   return (
     <>
@@ -213,9 +213,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
             <FileVideo className="h-5 w-5 text-primary" />
             Import M3U Playlist
           </CardTitle>
-          <CardDescription>
-            Add an M3U playlist URL to import TV channels, movies, and series
-          </CardDescription>
+          <CardDescription>Add an M3U playlist URL to import TV channels, movies, and series</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -232,7 +230,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                   disabled={isImporting}
                 />
               </div>
-              <Button 
+              <Button
                 onClick={handleAnalyze}
                 disabled={!m3uUrl.trim() || isAnalyzing || isImporting}
                 className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
@@ -264,9 +262,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                 <span>TV: {jobStatus.stats?.tv || 0}</span>
                 <span>Movies: {jobStatus.stats?.movie || 0}</span>
                 <span>Series: {jobStatus.stats?.series || 0}</span>
-                {(jobStatus.stats?.skipped || 0) > 0 && (
-                  <span>Skipped: {jobStatus.stats.skipped}</span>
-                )}
+                {(jobStatus.stats?.skipped || 0) > 0 && <span>Skipped: {jobStatus.stats.skipped}</span>}
                 {(jobStatus.stats?.failed || 0) > 0 && (
                   <span className="text-red-500">Failed: {jobStatus.stats.failed}</span>
                 )}
@@ -293,11 +289,9 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
               <FileVideo className="h-5 w-5 text-primary" />
               M3U Playlist Preview
             </DialogTitle>
-            <DialogDescription>
-              Review detected content types and choose visibility before importing
-            </DialogDescription>
+            <DialogDescription>Review detected content types and choose visibility before importing</DialogDescription>
           </DialogHeader>
-          
+
           {analysis && (
             <ScrollArea className="flex-1 overflow-y-auto pr-4">
               <div className="space-y-4">
@@ -327,7 +321,9 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                       >
                         <Icon className="h-3.5 w-3.5 mr-1" />
                         {CONTENT_TYPE_LABELS[type]}
-                        <Badge variant="secondary" className="ml-1.5 text-xs">{count}</Badge>
+                        <Badge variant="secondary" className="ml-1.5 text-xs">
+                          {count}
+                        </Badge>
                       </Button>
                     ) : null
                   })}
@@ -357,7 +353,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                 {/* Import Settings - Compact */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Import Settings</Label>
-                  
+
                   <div className="grid grid-cols-2 gap-2">
                     {/* Visibility */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/50">
@@ -380,20 +376,17 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                         disabled={!iptvSettings?.allow_public_sharing}
                       />
                     </div>
-                    
+
                     {/* Save Source */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/50">
                       <div className="flex items-center gap-2">
                         <FileInput className="h-4 w-4 text-primary" />
                         <span className="text-sm font-medium">Save for Re-sync</span>
                       </div>
-                      <Switch
-                        checked={saveSource}
-                        onCheckedChange={setSaveSource}
-                      />
+                      <Switch checked={saveSource} onCheckedChange={setSaveSource} />
                     </div>
                   </div>
-                  
+
                   {/* Source Name */}
                   {saveSource && (
                     <Input
@@ -410,9 +403,13 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                   <div className="flex items-center justify-between">
                     <Label className="text-sm font-medium">
                       {filteredChannels.length === analysis.channels.length ? (
-                        <>Preview ({analysis.channels.length} of {analysis.total_count})</>
+                        <>
+                          Preview ({analysis.channels.length} of {analysis.total_count})
+                        </>
                       ) : (
-                        <>Showing {filteredChannels.length} of {analysis.channels.length}</>
+                        <>
+                          Showing {filteredChannels.length} of {analysis.channels.length}
+                        </>
                       )}
                     </Label>
                     {(typeFilter !== 'all' || search) && (
@@ -435,76 +432,78 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                         <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
                           No items match your filters
                         </div>
-                      ) : filteredChannels.map((channel) => {
-                        const effectiveType = getEffectiveType(channel)
-                        const Icon = CONTENT_TYPE_ICONS[effectiveType]
-                        const isOverridden = overrides.has(channel.index)
-                        
-                        return (
-                          <div 
-                            key={channel.index} 
-                            className={`flex items-center gap-3 p-2 ${isOverridden ? 'bg-primary/5' : ''}`}
-                          >
-                            {/* Logo/Icon */}
-                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden">
-                              {channel.logo ? (
-                                <img 
-                                  src={channel.logo} 
-                                  alt={channel.name}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none'
-                                  }}
-                                />
-                              ) : (
-                                <Icon className="h-5 w-5 text-muted-foreground" />
-                              )}
-                            </div>
-                            
-                            {/* Info */}
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{channel.name}</p>
-                              {channel.matched_media && (
-                                <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                                  ✓ {channel.matched_media.title}
-                                </span>
-                              )}
-                            </div>
-                            
-                            {/* Type Selector */}
-                            <Select
-                              value={effectiveType}
-                              onValueChange={(value) => handleTypeOverride(channel.index, value as M3UContentType)}
+                      ) : (
+                        filteredChannels.map((channel) => {
+                          const effectiveType = getEffectiveType(channel)
+                          const Icon = CONTENT_TYPE_ICONS[effectiveType]
+                          const isOverridden = overrides.has(channel.index)
+
+                          return (
+                            <div
+                              key={channel.index}
+                              className={`flex items-center gap-3 p-2 ${isOverridden ? 'bg-primary/5' : ''}`}
                             >
-                              <SelectTrigger className="w-[130px] h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="tv">
-                                  <span className="flex items-center gap-2">
-                                    <Tv className="h-3.5 w-3.5" /> TV Channel
+                              {/* Logo/Icon */}
+                              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden">
+                                {channel.logo ? (
+                                  <img
+                                    src={channel.logo}
+                                    alt={channel.name}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none'
+                                    }}
+                                  />
+                                ) : (
+                                  <Icon className="h-5 w-5 text-muted-foreground" />
+                                )}
+                              </div>
+
+                              {/* Info */}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{channel.name}</p>
+                                {channel.matched_media && (
+                                  <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                                    ✓ {channel.matched_media.title}
                                   </span>
-                                </SelectItem>
-                                <SelectItem value="movie">
-                                  <span className="flex items-center gap-2">
-                                    <Film className="h-3.5 w-3.5" /> Movie
-                                  </span>
-                                </SelectItem>
-                                <SelectItem value="series">
-                                  <span className="flex items-center gap-2">
-                                    <MonitorPlay className="h-3.5 w-3.5" /> Series
-                                  </span>
-                                </SelectItem>
-                                <SelectItem value="unknown">
-                                  <span className="flex items-center gap-2">
-                                    <HelpCircle className="h-3.5 w-3.5" /> Skip
-                                  </span>
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )
-                      })}
+                                )}
+                              </div>
+
+                              {/* Type Selector */}
+                              <Select
+                                value={effectiveType}
+                                onValueChange={(value) => handleTypeOverride(channel.index, value as M3UContentType)}
+                              >
+                                <SelectTrigger className="w-[130px] h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="tv">
+                                    <span className="flex items-center gap-2">
+                                      <Tv className="h-3.5 w-3.5" /> TV Channel
+                                    </span>
+                                  </SelectItem>
+                                  <SelectItem value="movie">
+                                    <span className="flex items-center gap-2">
+                                      <Film className="h-3.5 w-3.5" /> Movie
+                                    </span>
+                                  </SelectItem>
+                                  <SelectItem value="series">
+                                    <span className="flex items-center gap-2">
+                                      <MonitorPlay className="h-3.5 w-3.5" /> Series
+                                    </span>
+                                  </SelectItem>
+                                  <SelectItem value="unknown">
+                                    <span className="flex items-center gap-2">
+                                      <HelpCircle className="h-3.5 w-3.5" /> Skip
+                                    </span>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )
+                        })
+                      )}
                     </div>
                   </div>
                 </div>
@@ -513,14 +512,10 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
           )}
 
           <DialogFooter className="flex-shrink-0 border-t border-border/50 pt-4 mt-4">
-            <Button 
-              variant="outline" 
-              onClick={() => setPreviewOpen(false)}
-              disabled={isImporting}
-            >
+            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={isImporting}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleImport}
               disabled={isImporting}
               className="bg-gradient-to-r from-primary to-primary/80"

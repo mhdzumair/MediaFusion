@@ -5,13 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -21,11 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  Alert,
-  AlertDescription,
-} from '@/components/ui/alert'
-import { 
   Download,
   Search,
   ArrowRightLeft,
@@ -67,80 +58,83 @@ export function ExternalMetadataPanel({
   const [selectedPreview, setSelectedPreview] = useState<ExternalMetadataPreview | null>(null)
   const [newExternalId, setNewExternalId] = useState('')
   const [migrateDialogOpen, setMigrateDialogOpen] = useState(false)
-  
+
   const isInternalId = currentExternalId.startsWith('mf:')
   const isTmdbId = currentExternalId.startsWith('tmdb:')
   const canMigrate = isInternalId && mediaType !== 'tv'
-  
+
   // Search mutation
   const searchMutation = useMutation({
-    mutationFn: () => adminApi.searchExternalMetadata({
-      provider,
-      title: searchQuery,
-      year: searchYear ? parseInt(searchYear) : undefined,
-      media_type: mediaType === 'tv' ? undefined : mediaType,
-    }),
+    mutationFn: () =>
+      adminApi.searchExternalMetadata({
+        provider,
+        title: searchQuery,
+        year: searchYear ? parseInt(searchYear) : undefined,
+        media_type: mediaType === 'tv' ? undefined : mediaType,
+      }),
     onSuccess: (data) => {
       setSearchResults(data.results)
     },
   })
-  
+
   // Fetch preview mutation
   const fetchPreviewMutation = useMutation({
-    mutationFn: (externalId: string) => adminApi.fetchExternalMetadata(mediaId, {
-      provider,
-      external_id: externalId,
-    }),
+    mutationFn: (externalId: string) =>
+      adminApi.fetchExternalMetadata(mediaId, {
+        provider,
+        external_id: externalId,
+      }),
     onSuccess: (data) => {
       setSelectedPreview(data)
     },
   })
-  
+
   // Apply metadata mutation
   const applyMutation = useMutation({
-    mutationFn: (externalId: string) => adminApi.applyExternalMetadata(mediaId, {
-      provider,
-      external_id: externalId,
-    }),
+    mutationFn: (externalId: string) =>
+      adminApi.applyExternalMetadata(mediaId, {
+        provider,
+        external_id: externalId,
+      }),
     onSuccess: () => {
       onMetadataApplied?.()
     },
   })
-  
+
   // Migrate ID mutation
   const migrateMutation = useMutation({
-    mutationFn: () => adminApi.migrateMetadataId(mediaId, {
-      new_external_id: newExternalId,
-    }),
+    mutationFn: () =>
+      adminApi.migrateMetadataId(mediaId, {
+        new_external_id: newExternalId,
+      }),
     onSuccess: () => {
       setMigrateDialogOpen(false)
       onIdMigrated?.()
     },
   })
-  
+
   const handleSearch = () => {
     searchMutation.mutate()
   }
-  
+
   const handleSelectResult = (result: ExternalMetadataPreview) => {
     setSelectedPreview(result)
   }
-  
+
   const handleApply = () => {
     if (selectedPreview) {
-      const externalId = provider === 'imdb' 
-        ? selectedPreview.imdb_id || selectedPreview.external_id
-        : selectedPreview.tmdb_id || selectedPreview.external_id
+      const externalId =
+        provider === 'imdb'
+          ? selectedPreview.imdb_id || selectedPreview.external_id
+          : selectedPreview.tmdb_id || selectedPreview.external_id
       applyMutation.mutate(externalId)
     }
   }
-  
+
   const handleMigrateId = () => {
     if (selectedPreview) {
       // Auto-fill from preview
-      const suggestedId = provider === 'imdb' 
-        ? selectedPreview.imdb_id
-        : `tmdb:${selectedPreview.tmdb_id}`
+      const suggestedId = provider === 'imdb' ? selectedPreview.imdb_id : `tmdb:${selectedPreview.tmdb_id}`
       setNewExternalId(suggestedId || '')
       setMigrateDialogOpen(true)
     }
@@ -167,9 +161,9 @@ export function ExternalMetadataPanel({
           </p>
         )}
       </div>
-      
+
       <Separator />
-      
+
       {/* Provider Selection */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -184,7 +178,7 @@ export function ExternalMetadataPanel({
             </SelectContent>
           </Select>
         </div>
-        
+
         {/* Search Form */}
         <div className="space-y-2">
           <div className="flex gap-2">
@@ -206,15 +200,11 @@ export function ExternalMetadataPanel({
               disabled={searchMutation.isPending || !searchQuery.trim()}
               className="rounded-xl"
             >
-              {searchMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
+              {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             </Button>
           </div>
         </div>
-        
+
         {/* Search Results */}
         {searchResults.length > 0 && (
           <div className="space-y-2">
@@ -228,16 +218,12 @@ export function ExternalMetadataPanel({
                       'flex gap-3 p-2 rounded-lg cursor-pointer transition-colors',
                       selectedPreview?.external_id === result.external_id
                         ? 'bg-primary/20 border border-primary/50'
-                        : 'hover:bg-muted'
+                        : 'hover:bg-muted',
                     )}
                     onClick={() => handleSelectResult(result)}
                   >
                     {result.poster ? (
-                      <img
-                        src={result.poster}
-                        alt={result.title}
-                        className="w-12 h-18 object-cover rounded"
-                      />
+                      <img src={result.poster} alt={result.title} className="w-12 h-18 object-cover rounded" />
                     ) : (
                       <div className="w-12 h-18 bg-muted rounded flex items-center justify-center">
                         <Film className="h-6 w-6 text-muted-foreground" />
@@ -259,9 +245,7 @@ export function ExternalMetadataPanel({
                           </span>
                         )}
                       </div>
-                      <code className="text-[10px] text-muted-foreground">
-                        {result.imdb_id || result.tmdb_id}
-                      </code>
+                      <code className="text-[10px] text-muted-foreground">{result.imdb_id || result.tmdb_id}</code>
                     </div>
                   </div>
                 ))}
@@ -269,7 +253,7 @@ export function ExternalMetadataPanel({
             </ScrollArea>
           </div>
         )}
-        
+
         {/* Selected Preview */}
         {selectedPreview && (
           <div className="p-4 rounded-xl border bg-card space-y-3">
@@ -301,13 +285,11 @@ export function ExternalMetadataPanel({
                 )}
               </div>
             </div>
-            
+
             {selectedPreview.description && (
-              <p className="text-xs text-muted-foreground line-clamp-2">
-                {selectedPreview.description}
-              </p>
+              <p className="text-xs text-muted-foreground line-clamp-2">{selectedPreview.description}</p>
             )}
-            
+
             <div className="flex gap-2">
               <Button
                 onClick={handleApply}
@@ -326,15 +308,11 @@ export function ExternalMetadataPanel({
                   </>
                 )}
               </Button>
-              
+
               {canMigrate && (
                 <Dialog open={migrateDialogOpen} onOpenChange={setMigrateDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      onClick={handleMigrateId}
-                      className="rounded-xl"
-                    >
+                    <Button variant="outline" onClick={handleMigrateId} className="rounded-xl">
                       <ArrowRightLeft className="h-4 w-4 mr-2" />
                       Migrate ID
                     </Button>
@@ -343,17 +321,17 @@ export function ExternalMetadataPanel({
                     <DialogHeader>
                       <DialogTitle>Migrate External ID</DialogTitle>
                       <DialogDescription>
-                        Replace the internal MediaFusion ID with a proper external ID.
-                        This will update all references to this media item.
+                        Replace the internal MediaFusion ID with a proper external ID. This will update all references
+                        to this media item.
                       </DialogDescription>
                     </DialogHeader>
-                    
+
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
                         <Label>Current ID</Label>
                         <code className="block p-2 bg-muted rounded text-sm">{currentExternalId}</code>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label>New External ID</Label>
                         <Input
@@ -367,7 +345,7 @@ export function ExternalMetadataPanel({
                         </p>
                       </div>
                     </div>
-                    
+
                     {migrateMutation.isError && (
                       <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
@@ -376,13 +354,9 @@ export function ExternalMetadataPanel({
                         </AlertDescription>
                       </Alert>
                     )}
-                    
+
                     <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => setMigrateDialogOpen(false)}
-                        className="rounded-xl"
-                      >
+                      <Button variant="outline" onClick={() => setMigrateDialogOpen(false)} className="rounded-xl">
                         Cancel
                       </Button>
                       <Button
@@ -404,16 +378,14 @@ export function ExternalMetadataPanel({
                 </Dialog>
               )}
             </div>
-            
+
             {applyMutation.isSuccess && (
               <Alert className="bg-emerald-500/10 border-emerald-500/30">
                 <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                <AlertDescription className="text-emerald-500">
-                  Metadata applied successfully!
-                </AlertDescription>
+                <AlertDescription className="text-emerald-500">Metadata applied successfully!</AlertDescription>
               </Alert>
             )}
-            
+
             {applyMutation.isError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -425,16 +397,14 @@ export function ExternalMetadataPanel({
           </div>
         )}
       </div>
-      
+
       {/* Quick Fetch by ID */}
       <Separator />
-      
+
       <div className="space-y-3">
         <Label className="text-sm font-medium">Quick Fetch by ID</Label>
-        <p className="text-xs text-muted-foreground">
-          If you already know the IMDb or TMDB ID, enter it directly.
-        </p>
-        
+        <p className="text-xs text-muted-foreground">If you already know the IMDb or TMDB ID, enter it directly.</p>
+
         <div className="flex gap-2">
           <Input
             placeholder={provider === 'imdb' ? 'tt1234567' : '12345'}
@@ -466,4 +436,3 @@ export function ExternalMetadataPanel({
     </div>
   )
 }
-

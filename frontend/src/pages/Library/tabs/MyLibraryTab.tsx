@@ -4,30 +4,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { 
-  Film, 
-  Tv, 
-  Radio,
-  Search,
-  SortAsc,
-  Plus,
-  Heart,
-  Bookmark,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react'
-import { 
-  ContentCard, 
-  ContentGrid,
-  type ContentCardData,
-} from '@/components/content'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Film, Tv, Radio, Search, SortAsc, Plus, Heart, Bookmark, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ContentCard, ContentGrid, type ContentCardData } from '@/components/content'
 import { useLibrary, useLibraryStats, useRemoveFromLibrary } from '@/hooks'
 import type { CatalogType } from '@/hooks'
 
@@ -66,7 +45,7 @@ export function MyLibraryTab() {
   // Transform library items to ContentCardData format and create ID mapping
   const { contentItems, libraryItemIdMap } = useMemo(() => {
     const idMap = new Map<number, number>() // media_id -> library_item_id
-    const items: ContentCardData[] = (data?.items || []).map(item => {
+    const items: ContentCardData[] = (data?.items || []).map((item) => {
       idMap.set(item.media_id, item.id)
       return {
         id: item.media_id, // Use media_id for navigation
@@ -95,13 +74,13 @@ export function MyLibraryTab() {
   // Scroll to selected item and highlight after data loads
   useEffect(() => {
     if (!isLoading && data && selectedItemId && !hasScrolledToSelected.current) {
-      const itemExists = contentItems.some(item => item.id === selectedItemId)
+      const itemExists = contentItems.some((item) => item.id === selectedItemId)
       if (!itemExists) {
         setSelectedItemId(null)
         sessionStorage.removeItem(LIBRARY_SELECTED_ITEM_KEY)
         return
       }
-      
+
       const timer = setTimeout(() => {
         if (selectedCardRef.current) {
           selectedCardRef.current.scrollIntoView({
@@ -193,10 +172,10 @@ export function MyLibraryTab() {
             className="pl-9 rounded-xl"
           />
         </div>
-        
-        <Select 
-          value={catalogType || 'all'} 
-          onValueChange={(v) => setCatalogType(v === 'all' ? '' : v as CatalogType)}
+
+        <Select
+          value={catalogType || 'all'}
+          onValueChange={(v) => setCatalogType(v === 'all' ? '' : (v as CatalogType))}
         >
           <SelectTrigger className="w-[130px] rounded-xl">
             <SelectValue placeholder="All Types" />
@@ -235,9 +214,7 @@ export function MyLibraryTab() {
         <div className="text-center py-12">
           <Heart className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-muted-foreground">Your library is empty</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            Browse content and add items to your library
-          </p>
+          <p className="text-sm text-muted-foreground mt-2">Browse content and add items to your library</p>
           <Button className="mt-4 rounded-xl" asChild>
             <Link to="/dashboard/library">
               <Plus className="mr-2 h-4 w-4" />
@@ -248,7 +225,7 @@ export function MyLibraryTab() {
       ) : (
         <>
           <ContentGrid>
-            {contentItems.map(item => {
+            {contentItems.map((item) => {
               const isSelected = selectedItemId === item.id
               return (
                 <ContentCard
@@ -273,7 +250,7 @@ export function MyLibraryTab() {
                 variant="outline"
                 size="icon"
                 disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
+                onClick={() => setPage((p) => p - 1)}
                 className="rounded-xl"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -285,7 +262,7 @@ export function MyLibraryTab() {
                 variant="outline"
                 size="icon"
                 disabled={!data.has_more}
-                onClick={() => setPage(p => p + 1)}
+                onClick={() => setPage((p) => p + 1)}
                 className="rounded-xl"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -297,4 +274,3 @@ export function MyLibraryTab() {
     </div>
   )
 }
-

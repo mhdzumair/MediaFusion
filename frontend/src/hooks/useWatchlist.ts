@@ -27,7 +27,7 @@ export function useWatchlistProviders(profileId?: number, options?: { enabled?: 
 export function useWatchlist(
   provider: string | undefined,
   params: WatchlistParams = {},
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean },
 ) {
   return useQuery({
     queryKey: watchlistKeys.list(provider || '', params),
@@ -43,7 +43,7 @@ export function useWatchlist(
 export function useInfiniteWatchlist(
   provider: string | undefined,
   params: Omit<WatchlistParams, 'page'> = {},
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean },
 ) {
   return useInfiniteQuery({
     queryKey: watchlistKeys.list(provider || '', { ...params, page: 'infinite' as unknown as number }),
@@ -63,11 +63,7 @@ export function useInfiniteWatchlist(
 /**
  * Hook to get missing torrents from a provider
  */
-export function useMissingTorrents(
-  provider: string | undefined,
-  profileId?: number,
-  options?: { enabled?: boolean }
-) {
+export function useMissingTorrents(provider: string | undefined, profileId?: number, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: watchlistKeys.missing(provider || '', profileId),
     queryFn: () => watchlistApi.getMissing(provider!, profileId),
@@ -83,7 +79,12 @@ export function useImportTorrents() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ provider, infoHashes, profileId, overrides }: {
+    mutationFn: ({
+      provider,
+      infoHashes,
+      profileId,
+      overrides,
+    }: {
       provider: string
       infoHashes: string[]
       profileId?: number
@@ -104,11 +105,8 @@ export function useRemoveTorrent() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ provider, infoHash, profileId }: {
-      provider: string
-      infoHash: string
-      profileId?: number
-    }) => watchlistApi.removeTorrent(provider, infoHash, profileId),
+    mutationFn: ({ provider, infoHash, profileId }: { provider: string; infoHash: string; profileId?: number }) =>
+      watchlistApi.removeTorrent(provider, infoHash, profileId),
     onSuccess: (_data, variables) => {
       // Invalidate watchlist queries after removal
       queryClient.invalidateQueries({ queryKey: [...watchlistKeys.all, 'list', variables.provider] })
@@ -124,10 +122,8 @@ export function useClearAllTorrents() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ provider, profileId }: {
-      provider: string
-      profileId?: number
-    }) => watchlistApi.clearAll(provider, profileId),
+    mutationFn: ({ provider, profileId }: { provider: string; profileId?: number }) =>
+      watchlistApi.clearAll(provider, profileId),
     onSuccess: (_data, variables) => {
       // Invalidate all watchlist queries after clearing
       queryClient.invalidateQueries({ queryKey: [...watchlistKeys.all, 'list', variables.provider] })
@@ -143,7 +139,11 @@ export function useAdvancedImport() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ provider, imports, profileId }: {
+    mutationFn: ({
+      provider,
+      imports,
+      profileId,
+    }: {
       provider: string
       imports: AdvancedTorrentImport[]
       profileId?: number

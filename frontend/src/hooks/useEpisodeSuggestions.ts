@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  episodeSuggestionsApi, 
-  type EpisodeSuggestionCreateRequest, 
+import {
+  episodeSuggestionsApi,
+  type EpisodeSuggestionCreateRequest,
   type EpisodeSuggestionReviewRequest,
   type EpisodeSuggestionListParams,
-  type PendingEpisodeSuggestionParams 
+  type PendingEpisodeSuggestionParams,
 } from '@/lib/api'
 
 // Query keys
@@ -92,10 +92,14 @@ export function useBulkReviewEpisodeSuggestions() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ suggestionIds, action, reviewNotes }: { 
+    mutationFn: ({
+      suggestionIds,
+      action,
+      reviewNotes,
+    }: {
       suggestionIds: string[]
       action: 'approve' | 'reject'
-      reviewNotes?: string 
+      reviewNotes?: string
     }) => episodeSuggestionsApi.bulkReview(suggestionIds, action, reviewNotes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: episodeSuggestionKeys.all })

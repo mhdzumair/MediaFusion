@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { 
-  Settings, 
-  Plus, 
+import {
+  Settings,
+  Plus,
   ArrowLeft,
   Loader2,
   AlertCircle,
@@ -29,13 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { 
-  useProfiles, 
-  useCreateProfile, 
-  useUpdateProfile, 
-  useDeleteProfile,
-  useSetDefaultProfile,
-} from '@/hooks'
+import { useProfiles, useCreateProfile, useUpdateProfile, useDeleteProfile, useSetDefaultProfile } from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import type { Profile } from '@/lib/api'
@@ -59,38 +53,32 @@ import {
 import type { ProfileConfig } from './components'
 
 // Profile card for the list view
-function ProfileCard({ 
-  profile, 
-  onSelect 
-}: { 
-  profile: Profile
-  onSelect: () => void 
-}) {
+function ProfileCard({ profile, onSelect }: { profile: Profile; onSelect: () => void }) {
   const setDefault = useSetDefaultProfile()
-  
+
   const cfg = profile.config as ProfileConfig
   // Get providers from multi-provider array or legacy single provider
-  const providers = cfg?.sps?.filter(p => p.en !== false && p.sv) || []
+  const providers = cfg?.sps?.filter((p) => p.en !== false && p.sv) || []
   const legacySp = cfg?.sp
-  const hasProviders = providers.length > 0 || (legacySp?.sv)
-  
+  const hasProviders = providers.length > 0 || legacySp?.sv
+
   const getProviderNames = () => {
     if (providers.length > 0) {
-      return providers.map(p => p.sv).join(', ')
+      return providers.map((p) => p.sv).join(', ')
     }
     if (legacySp?.sv) {
       return legacySp.sv
     }
     return null
   }
-  
+
   const providerNames = getProviderNames()
-  
+
   return (
-    <Card 
+    <Card
       className={cn(
-        "relative overflow-hidden transition-all hover:shadow-lg cursor-pointer group",
-        profile.is_default && "border-primary/50 shadow-primary/10"
+        'relative overflow-hidden transition-all hover:shadow-lg cursor-pointer group',
+        profile.is_default && 'border-primary/50 shadow-primary/10',
       )}
       onClick={onSelect}
     >
@@ -126,7 +114,7 @@ function ProfileCard({
           <span>Catalogs:</span>
           <Badge variant="secondary">{profile.catalogs_enabled} enabled</Badge>
         </div>
-        
+
         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button variant="outline" size="sm" className="flex-1">
             Edit Configuration
@@ -183,9 +171,7 @@ function KodiPairingCard({ manifestUrl }: { manifestUrl: string }) {
           <Tv2 className="h-5 w-5 text-blue-500" />
           Link to Kodi
         </CardTitle>
-        <CardDescription>
-          Enter the 6-digit code from your Kodi addon
-        </CardDescription>
+        <CardDescription>Enter the 6-digit code from your Kodi addon</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
@@ -203,16 +189,8 @@ function KodiPairingCard({ manifestUrl }: { manifestUrl: string }) {
             maxLength={6}
             className="font-mono text-center text-lg tracking-widest"
           />
-          <Button
-            onClick={handleLink}
-            variant="outline"
-            disabled={linking || kodiCode.trim().length < 6}
-          >
-            {linking ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              'Link Kodi'
-            )}
+          <Button onClick={handleLink} variant="outline" disabled={linking || kodiCode.trim().length < 6}>
+            {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Link Kodi'}
           </Button>
         </div>
 
@@ -234,22 +212,16 @@ function KodiPairingCard({ manifestUrl }: { manifestUrl: string }) {
 }
 
 // Anonymous Install URLs component
-function AnonymousInstallUrls({ 
-  encryptedStr, 
-  onReset 
-}: { 
-  encryptedStr: string
-  onReset: () => void
-}) {
+function AnonymousInstallUrls({ encryptedStr, onReset }: { encryptedStr: string; onReset: () => void }) {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const urls = generateManifestUrls(encryptedStr)
-  
+
   const copyToClipboard = async (url: string, type: string) => {
     await navigator.clipboard.writeText(url)
     setCopiedUrl(type)
     setTimeout(() => setCopiedUrl(null), 2000)
   }
-  
+
   return (
     <div className="space-y-6">
       <Alert className="border-green-500 bg-green-500/10">
@@ -258,34 +230,20 @@ function AnonymousInstallUrls({
           Your configuration has been generated successfully!
         </AlertDescription>
       </Alert>
-      
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Tv className="h-5 w-5 text-primary" />
             Install in Stremio
           </CardTitle>
-          <CardDescription>
-            Click the button or copy the manifest URL
-          </CardDescription>
+          <CardDescription>Click the button or copy the manifest URL</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
-            <Input 
-              value={urls.manifestUrl} 
-              readOnly 
-              className="font-mono text-sm"
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => copyToClipboard(urls.manifestUrl, 'manifest')}
-            >
-              {copiedUrl === 'manifest' ? (
-                <Check className="h-4 w-4 text-green-500" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
+            <Input value={urls.manifestUrl} readOnly className="font-mono text-sm" />
+            <Button variant="outline" size="icon" onClick={() => copyToClipboard(urls.manifestUrl, 'manifest')}>
+              {copiedUrl === 'manifest' ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
             </Button>
           </div>
           <Button asChild variant="gold" className="w-full">
@@ -296,9 +254,9 @@ function AnonymousInstallUrls({
           </Button>
         </CardContent>
       </Card>
-      
+
       <KodiPairingCard manifestUrl={urls.manifestUrl} />
-      
+
       <div className="flex flex-col sm:flex-row gap-3">
         <Button variant="outline" onClick={onReset} className="flex-1">
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -323,19 +281,19 @@ function AnonymousConfigEditor() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [encryptedStr, setEncryptedStr] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  
+
   // API Key input state for private instances
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
   const [apiKeyError, setApiKeyError] = useState<string | null>(null)
-  
+
   // Initialize API key input from stored value
   useEffect(() => {
     if (apiKey) {
       setApiKeyInput(apiKey)
     }
   }, [apiKey])
-  
+
   const handleSaveApiKey = () => {
     if (!apiKeyInput.trim()) {
       setApiKeyError('API key is required')
@@ -344,29 +302,24 @@ function AnonymousConfigEditor() {
     setApiKey(apiKeyInput.trim())
     setApiKeyError(null)
   }
-  
+
   // If we have an encrypted string, show the install URLs
   if (encryptedStr) {
-    return (
-      <AnonymousInstallUrls 
-        encryptedStr={encryptedStr} 
-        onReset={() => setEncryptedStr(null)}
-      />
-    )
+    return <AnonymousInstallUrls encryptedStr={encryptedStr} onReset={() => setEncryptedStr(null)} />
   }
-  
+
   const handleGenerate = async () => {
     setIsGenerating(true)
     setError(null)
-    
+
     try {
       const result = await encryptUserData(config)
-      
+
       if (result.status === 'error') {
         setError(result.message || 'Failed to generate configuration')
         return
       }
-      
+
       if (result.encrypted_str) {
         setEncryptedStr(result.encrypted_str)
       }
@@ -376,7 +329,7 @@ function AnonymousConfigEditor() {
       setIsGenerating(false)
     }
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -388,16 +341,10 @@ function AnonymousConfigEditor() {
             </div>
             Configure Add-on
           </h1>
-          <p className="text-muted-foreground">
-            Set up your streaming preferences without an account
-          </p>
+          <p className="text-muted-foreground">Set up your streaming preferences without an account</p>
         </div>
-        
-        <Button 
-          onClick={handleGenerate}
-          disabled={isGenerating || (isApiKeyRequired && !isApiKeySet)}
-          variant="gold"
-        >
+
+        <Button onClick={handleGenerate} disabled={isGenerating || (isApiKeyRequired && !isApiKeySet)} variant="gold">
           {isGenerating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -411,7 +358,7 @@ function AnonymousConfigEditor() {
           )}
         </Button>
       </div>
-      
+
       {/* Error Alert */}
       {error && (
         <Alert variant="destructive">
@@ -419,7 +366,7 @@ function AnonymousConfigEditor() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      
+
       {/* API Key Section for Private Instances */}
       {isApiKeyRequired && (
         <Card className="border-primary/20 bg-primary/5">
@@ -447,9 +394,7 @@ function AnonymousConfigEditor() {
                         setApiKeyError(null)
                       }
                     }}
-                    className={`pl-10 pr-10 ${
-                      apiKeyError ? 'border-destructive focus-visible:ring-destructive' : ''
-                    }`}
+                    className={`pl-10 pr-10 ${apiKeyError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                   />
                   <Button
                     type="button"
@@ -465,17 +410,11 @@ function AnonymousConfigEditor() {
                     )}
                   </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant={isApiKeySet ? "outline" : "default"}
-                  onClick={handleSaveApiKey}
-                >
+                <Button type="button" variant={isApiKeySet ? 'outline' : 'default'} onClick={handleSaveApiKey}>
                   {isApiKeySet ? 'Update' : 'Save'}
                 </Button>
               </div>
-              {apiKeyError && (
-                <p className="text-sm text-destructive">{apiKeyError}</p>
-              )}
+              {apiKeyError && <p className="text-sm text-destructive">{apiKeyError}</p>}
               {isApiKeySet && (
                 <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <Shield className="h-3 w-3" />
@@ -486,7 +425,7 @@ function AnonymousConfigEditor() {
           </CardContent>
         </Card>
       )}
-      
+
       {/* Account Suggestion */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -500,13 +439,11 @@ function AnonymousConfigEditor() {
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link to="/register">
-              Create Account
-            </Link>
+            <Link to="/register">Create Account</Link>
           </Button>
         </CardContent>
       </Card>
-      
+
       {/* Configuration Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full h-auto flex-wrap gap-1 bg-muted/50 p-2 rounded-xl">
@@ -541,92 +478,54 @@ function AnonymousConfigEditor() {
             <span className="mr-2">📝</span> Formatter
           </TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="provider" className="mt-6">
-          <MultiProviderConfig 
-            config={config} 
-            onChange={setConfig} 
-          />
+          <MultiProviderConfig config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="catalogs" className="mt-6">
           <div className="space-y-6">
-            <CatalogConfig 
-              config={config} 
-              onChange={setConfig}
-            />
-            <MDBListConfigComponent 
-              config={config} 
-              onChange={setConfig}
-            />
+            <CatalogConfig config={config} onChange={setConfig} />
+            <MDBListConfigComponent config={config} onChange={setConfig} />
           </div>
         </TabsContent>
-        
+
         <TabsContent value="preferences" className="mt-6">
-          <StreamingPreferences 
-            config={config} 
-            onChange={setConfig}
-          />
+          <StreamingPreferences config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="parental" className="mt-6">
-          <ParentalGuides 
-            config={config} 
-            onChange={setConfig}
-          />
+          <ParentalGuides config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="services" className="mt-6">
-          <ExternalServices 
-            config={config} 
-            onChange={setConfig}
-          />
+          <ExternalServices config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="indexers" className="mt-6">
-          <IndexerSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <IndexerSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="usenet" className="mt-6">
-          <UsenetSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <UsenetSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="telegram" className="mt-6">
-          <TelegramSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <TelegramSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="acestream" className="mt-6">
-          <AceStreamSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <AceStreamSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="formatter" className="mt-6">
-          <StreamFormatterConfig 
-            config={config} 
-            onChange={setConfig}
-          />
+          <StreamFormatterConfig config={config} onChange={setConfig} />
         </TabsContent>
       </Tabs>
-      
+
       {/* Bottom Generate Button */}
       <div className="flex justify-end pt-4 border-t">
-        <Button 
-          onClick={handleGenerate}
-          disabled={isGenerating}
-          variant="gold"
-          size="lg"
-        >
+        <Button onClick={handleGenerate} disabled={isGenerating} variant="gold" size="lg">
           {isGenerating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -645,20 +544,12 @@ function AnonymousConfigEditor() {
 }
 
 // Profile Editor Component (for authenticated users)
-function ProfileEditor({ 
-  profile, 
-  onBack,
-  isNew = false,
-}: { 
-  profile?: Profile
-  onBack: () => void
-  isNew?: boolean
-}) {
+function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; onBack: () => void; isNew?: boolean }) {
   const createProfile = useCreateProfile()
   const updateProfile = useUpdateProfile()
   const deleteProfile = useDeleteProfile()
   const setDefaultProfile = useSetDefaultProfile()
-  
+
   const [name, setName] = useState(profile?.name || '')
   const [isDefault, setIsDefault] = useState(profile?.is_default || false)
   const [config, setConfig] = useState<ProfileConfig>(() => {
@@ -668,10 +559,10 @@ function ProfileEditor({
     return { ...DEFAULT_CONFIG }
   })
   const [activeTab, setActiveTab] = useState('provider')
-  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null)
-  
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
   const isPending = createProfile.isPending || updateProfile.isPending
-  
+
   // Clear status message after 5 seconds
   useEffect(() => {
     if (saveStatus) {
@@ -679,7 +570,7 @@ function ProfileEditor({
       return () => clearTimeout(timer)
     }
   }, [saveStatus])
-  
+
   const handleSave = async () => {
     setSaveStatus(null)
     try {
@@ -713,7 +604,7 @@ function ProfileEditor({
       setSaveStatus({ type: 'error', message })
     }
   }
-  
+
   const handleDelete = async () => {
     if (profile && confirm('Are you sure you want to delete this profile?')) {
       try {
@@ -725,7 +616,7 @@ function ProfileEditor({
       }
     }
   }
-  
+
   const handleSetDefault = async () => {
     if (profile) {
       try {
@@ -738,49 +629,46 @@ function ProfileEditor({
       }
     }
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Status Alert */}
       {saveStatus && (
-        <Alert variant={saveStatus.type === 'error' ? 'destructive' : 'default'} className={cn(
-          "transition-all",
-          saveStatus.type === 'success' && "border-green-500 bg-green-500/10 text-green-700 dark:text-green-400"
-        )}>
-          {saveStatus.type === 'success' ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <XCircle className="h-4 w-4" />
+        <Alert
+          variant={saveStatus.type === 'error' ? 'destructive' : 'default'}
+          className={cn(
+            'transition-all',
+            saveStatus.type === 'success' && 'border-green-500 bg-green-500/10 text-green-700 dark:text-green-400',
           )}
+        >
+          {saveStatus.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
           <AlertDescription>{saveStatus.message}</AlertDescription>
         </Alert>
       )}
-      
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={onBack} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
           Back to Profiles
         </Button>
-        
+
         <div className="flex items-center gap-2">
-          <Button 
-            onClick={handleSave}
-            disabled={isPending || !name.trim()}
-            variant="gold"
-          >
+          <Button onClick={handleSave} disabled={isPending || !name.trim()} variant="gold">
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Saving...
               </>
+            ) : isNew ? (
+              'Create Profile'
             ) : (
-              isNew ? 'Create Profile' : 'Save Changes'
+              'Save Changes'
             )}
           </Button>
         </div>
       </div>
-      
+
       {/* Profile Header Card */}
       <ProfileHeader
         profileId={profile?.id}
@@ -792,7 +680,7 @@ function ProfileEditor({
         onDelete={!isNew ? handleDelete : undefined}
         onSetDefault={!isNew && !isDefault ? handleSetDefault : undefined}
       />
-      
+
       {/* Configuration Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full h-auto flex-wrap gap-1 bg-muted/50 p-2 rounded-xl">
@@ -827,81 +715,48 @@ function ProfileEditor({
             <span className="mr-2">📝</span> Formatter
           </TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="provider" className="mt-6">
-          <MultiProviderConfig 
-            config={config} 
-            onChange={setConfig} 
-          />
+          <MultiProviderConfig config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="catalogs" className="mt-6">
           <div className="space-y-6">
-            <CatalogConfig 
-              config={config} 
-              onChange={setConfig}
-            />
-            <MDBListConfigComponent 
-              config={config} 
-              onChange={setConfig}
-            />
+            <CatalogConfig config={config} onChange={setConfig} />
+            <MDBListConfigComponent config={config} onChange={setConfig} />
           </div>
         </TabsContent>
-        
+
         <TabsContent value="preferences" className="mt-6">
-          <StreamingPreferences 
-            config={config} 
-            onChange={setConfig}
-          />
+          <StreamingPreferences config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="parental" className="mt-6">
-          <ParentalGuides 
-            config={config} 
-            onChange={setConfig}
-          />
+          <ParentalGuides config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="services" className="mt-6">
-          <ExternalServices 
-            config={config} 
-            onChange={setConfig}
-          />
+          <ExternalServices config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="indexers" className="mt-6">
-          <IndexerSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <IndexerSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="usenet" className="mt-6">
-          <UsenetSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <UsenetSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="telegram" className="mt-6">
-          <TelegramSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <TelegramSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="acestream" className="mt-6">
-          <AceStreamSettings 
-            config={config} 
-            onChange={setConfig}
-          />
+          <AceStreamSettings config={config} onChange={setConfig} />
         </TabsContent>
-        
+
         <TabsContent value="formatter" className="mt-6">
-          <StreamFormatterConfig 
-            config={config} 
-            onChange={setConfig}
-          />
+          <StreamFormatterConfig config={config} onChange={setConfig} />
         </TabsContent>
       </Tabs>
     </div>
@@ -915,20 +770,20 @@ function AuthenticatedConfigurePage() {
   const { data: profiles, isLoading, error } = useProfiles()
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [isCreating, setIsCreating] = useState(false)
-  
+
   // Check for edit param
   const editProfileId = searchParams.get('edit')
-  
+
   useEffect(() => {
     if (editProfileId && profiles) {
       const profileIdNum = parseInt(editProfileId, 10)
-      const profile = profiles.find(p => p.id === profileIdNum)
+      const profile = profiles.find((p) => p.id === profileIdNum)
       if (profile) {
         setSelectedProfile(profile)
       }
     }
   }, [editProfileId, profiles])
-  
+
   // If editing or creating, show the editor
   if (selectedProfile || isCreating) {
     return (
@@ -943,7 +798,7 @@ function AuthenticatedConfigurePage() {
       />
     )
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -955,20 +810,14 @@ function AuthenticatedConfigurePage() {
             </div>
             Configure
           </h1>
-          <p className="text-muted-foreground">
-            Manage your streaming profiles and settings
-          </p>
+          <p className="text-muted-foreground">Manage your streaming profiles and settings</p>
         </div>
-        <Button 
-          onClick={() => setIsCreating(true)} 
-          variant="default"
-          disabled={profiles && profiles.length >= 5}
-        >
+        <Button onClick={() => setIsCreating(true)} variant="default" disabled={profiles && profiles.length >= 5}>
           <Plus className="h-4 w-4 mr-2" />
           New Profile
         </Button>
       </div>
-      
+
       {/* Profile Limit Warning */}
       {profiles && profiles.length >= 5 && (
         <Card className="border-primary/50 bg-primary/10">
@@ -1003,11 +852,7 @@ function AuthenticatedConfigurePage() {
       ) : profiles && profiles.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {profiles.map((profile) => (
-            <ProfileCard 
-              key={profile.id} 
-              profile={profile}
-              onSelect={() => setSelectedProfile(profile)}
-            />
+            <ProfileCard key={profile.id} profile={profile} onSelect={() => setSelectedProfile(profile)} />
           ))}
         </div>
       ) : (
@@ -1017,10 +862,7 @@ function AuthenticatedConfigurePage() {
           <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
             Create your first profile to configure streaming providers and start watching.
           </p>
-          <Button 
-            onClick={() => setIsCreating(true)} 
-            variant="gold"
-          >
+          <Button onClick={() => setIsCreating(true)} variant="gold">
             <Plus className="h-4 w-4 mr-2" />
             Create Your First Profile
           </Button>
@@ -1038,8 +880,8 @@ function AuthenticatedConfigurePage() {
               <h3 className="font-medium">About Profiles</h3>
               <p className="text-sm text-muted-foreground">
                 Each profile contains your streaming provider configuration, catalog preferences, and quality settings.
-                You can have up to 5 profiles for different use cases (e.g., different debrid accounts, family profiles).
-                Use the Integrations page to install your profiles in Stremio or Kodi.
+                You can have up to 5 profiles for different use cases (e.g., different debrid accounts, family
+                profiles). Use the Integrations page to install your profiles in Stremio or Kodi.
               </p>
             </div>
           </div>
@@ -1052,7 +894,7 @@ function AuthenticatedConfigurePage() {
 // Main Configure Page - Switches between authenticated and anonymous modes
 export function ConfigurePage() {
   const { isAuthenticated, isLoading } = useAuth()
-  
+
   // Show loading state while checking auth
   if (isLoading) {
     return (
@@ -1071,12 +913,12 @@ export function ConfigurePage() {
       </div>
     )
   }
-  
+
   // Show anonymous config for non-authenticated users
   if (!isAuthenticated) {
     return <AnonymousConfigEditor />
   }
-  
+
   // Show authenticated profile management
   return <AuthenticatedConfigurePage />
 }

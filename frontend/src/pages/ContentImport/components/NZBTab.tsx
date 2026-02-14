@@ -47,7 +47,10 @@ interface NZBAnalyzeResponse {
 }
 
 interface NZBTabProps {
-  onAnalysisComplete: (analysis: NZBAnalyzeResponse, source: { type: 'file' | 'url'; file?: File; url?: string }) => void
+  onAnalysisComplete: (
+    analysis: NZBAnalyzeResponse,
+    source: { type: 'file' | 'url'; file?: File; url?: string },
+  ) => void
   onError: (message: string) => void
   contentType?: ContentType
 }
@@ -57,14 +60,14 @@ async function analyzeNZBFile(file: File, metaType: string): Promise<NZBAnalyzeR
   const formData = new FormData()
   formData.append('nzb_file', file)
   formData.append('meta_type', metaType)
-  
+
   return apiClient.upload<NZBAnalyzeResponse>('/import/nzb/analyze/file', formData)
 }
 
 async function analyzeNZBUrl(url: string, metaType: string): Promise<NZBAnalyzeResponse> {
   return apiClient.post<NZBAnalyzeResponse>('/import/nzb/analyze/url', {
     nzb_url: url,
-    meta_type: metaType
+    meta_type: metaType,
   })
 }
 
@@ -72,7 +75,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [nzbUrl, setNzbUrl] = useState('')
   const [activeMethod, setActiveMethod] = useState<'file' | 'url'>('file')
-  
+
   // File analysis mutation
   const analyzeFile = useMutation({
     mutationFn: (file: File) => analyzeNZBFile(file, contentType),
@@ -85,9 +88,9 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
     },
     onError: () => {
       onError('Failed to analyze NZB file')
-    }
+    },
   })
-  
+
   // URL analysis mutation
   const analyzeUrl = useMutation({
     mutationFn: (url: string) => analyzeNZBUrl(url, contentType),
@@ -100,16 +103,19 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
     },
     onError: () => {
       onError('Failed to analyze NZB URL')
-    }
+    },
   })
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0]
-      setSelectedFile(file)
-      analyzeFile.mutate(file)
-    }
-  }, [analyzeFile])
+  const onDrop = useCallback(
+    async (acceptedFiles: File[]) => {
+      if (acceptedFiles.length > 0) {
+        const file = acceptedFiles[0]
+        setSelectedFile(file)
+        analyzeFile.mutate(file)
+      }
+    },
+    [analyzeFile],
+  )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -120,7 +126,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
     },
     maxFiles: 1,
   })
-  
+
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (nzbUrl.trim()) {
@@ -137,9 +143,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
           <Newspaper className="h-5 w-5 text-primary" />
           Import NZB
         </CardTitle>
-        <CardDescription>
-          Upload an NZB file or provide a URL to analyze and import Usenet content
-        </CardDescription>
+        <CardDescription>Upload an NZB file or provide a URL to analyze and import Usenet content</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs value={activeMethod} onValueChange={(v) => setActiveMethod(v as 'file' | 'url')}>
@@ -153,15 +157,17 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
               NZB URL
             </TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="file">
             <div
               {...getRootProps()}
               className={`
                 border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors
-                ${isDragActive 
-                  ? 'border-primary bg-primary/10' 
-                  : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'}
+                ${
+                  isDragActive
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'
+                }
               `}
             >
               <input {...getInputProps()} />
@@ -174,12 +180,8 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
                 ) : (
                   <>
                     <div className="space-y-1">
-                      <p className="font-medium">
-                        Drag and drop an NZB file here, or click to browse
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Only .nzb files are accepted
-                      </p>
+                      <p className="font-medium">Drag and drop an NZB file here, or click to browse</p>
+                      <p className="text-sm text-muted-foreground">Only .nzb files are accepted</p>
                     </div>
                     <Button variant="outline" className="rounded-xl">
                       Browse Files
@@ -188,7 +190,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
                 )}
               </div>
             </div>
-            
+
             {selectedFile && !isAnalyzing && (
               <div className="mt-4 p-4 rounded-xl bg-muted/50 flex items-center gap-3">
                 <FileInput className="h-5 w-5 text-primary" />
@@ -199,7 +201,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
               </div>
             )}
           </TabsContent>
-          
+
           <TabsContent value="url">
             <form onSubmit={handleUrlSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -216,11 +218,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
                   Enter a direct URL to an NZB file or an indexer download link
                 </p>
               </div>
-              <Button 
-                type="submit" 
-                disabled={!nzbUrl.trim() || isAnalyzing}
-                className="w-full"
-              >
+              <Button type="submit" disabled={!nzbUrl.trim() || isAnalyzing} className="w-full">
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -236,7 +234,7 @@ export function NZBTab({ onAnalysisComplete, onError, contentType = 'movie' }: N
             </form>
           </TabsContent>
         </Tabs>
-        
+
         {isAnalyzing && (
           <div className="mt-4 p-4 rounded-xl bg-muted/50 flex items-center justify-center gap-3">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />

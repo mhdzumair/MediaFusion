@@ -7,9 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { 
-  Radio, Loader2, ArrowRight, Info, CheckCircle, AlertCircle, Image, ChevronDown
-} from 'lucide-react'
+import { Radio, Loader2, ArrowRight, Info, CheckCircle, AlertCircle, Image, ChevronDown } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { contentImportApi, type AceStreamAnalyzeResponse, type ImportResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
@@ -27,10 +25,10 @@ function extractAceStreamId(input: string): string | null {
   // Check if it's an acestream:// URL
   const match = input.match(ACESTREAM_URL_PATTERN)
   if (match) return match[1].toLowerCase()
-  
+
   // Check if it's already a valid hex ID
   if (HEX_40_PATTERN.test(input)) return input.toLowerCase()
-  
+
   return null
 }
 
@@ -42,10 +40,7 @@ function isValidHex40(value: string | null | undefined): boolean {
 // AceStream is primarily used for live streaming, so we always use 'tv' as the content type
 const ACESTREAM_CONTENT_TYPE = 'tv' as const
 
-export function AceStreamTab({ 
-  onSuccess, 
-  onError, 
-}: AceStreamTabProps) {
+export function AceStreamTab({ onSuccess, onError }: AceStreamTabProps) {
   const { user } = useAuth()
   const [contentIdInput, setContentIdInput] = useState('')
   const [infoHashInput, setInfoHashInput] = useState('')
@@ -60,20 +55,17 @@ export function AceStreamTab({
   const [logo, setLogo] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
   const [imagesOpen, setImagesOpen] = useState(false)
-  
+
   const [analysis, setAnalysis] = useState<AceStreamAnalyzeResponse | null>(null)
 
   // Extract and normalize content_id
-  const normalizedContentId = useMemo(() => 
-    extractAceStreamId(contentIdInput.trim()) || contentIdInput.trim().toLowerCase(),
-    [contentIdInput]
+  const normalizedContentId = useMemo(
+    () => extractAceStreamId(contentIdInput.trim()) || contentIdInput.trim().toLowerCase(),
+    [contentIdInput],
   )
-  
+
   // Normalize info_hash
-  const normalizedInfoHash = useMemo(() => 
-    infoHashInput.trim().toLowerCase(),
-    [infoHashInput]
-  )
+  const normalizedInfoHash = useMemo(() => infoHashInput.trim().toLowerCase(), [infoHashInput])
 
   // Validation
   const contentIdValid = contentIdInput ? isValidHex40(normalizedContentId) : true
@@ -84,11 +76,12 @@ export function AceStreamTab({
 
   // Analyze mutation
   const analyzeMutation = useMutation({
-    mutationFn: () => contentImportApi.analyzeAceStream({ 
-      content_id: contentIdInput ? normalizedContentId : undefined,
-      info_hash: infoHashInput ? normalizedInfoHash : undefined,
-      meta_type: ACESTREAM_CONTENT_TYPE 
-    }),
+    mutationFn: () =>
+      contentImportApi.analyzeAceStream({
+        content_id: contentIdInput ? normalizedContentId : undefined,
+        info_hash: infoHashInput ? normalizedInfoHash : undefined,
+        meta_type: ACESTREAM_CONTENT_TYPE,
+      }),
     onSuccess: (result) => {
       if (result.status === 'success') {
         setAnalysis(result)
@@ -106,21 +99,22 @@ export function AceStreamTab({
 
   // Import mutation
   const importMutation = useMutation({
-    mutationFn: () => contentImportApi.importAceStream({
-      content_id: contentIdInput ? normalizedContentId : undefined,
-      info_hash: infoHashInput ? normalizedInfoHash : undefined,
-      meta_type: ACESTREAM_CONTENT_TYPE,
-      title: title.trim(),
-      meta_id: metaId || undefined,
-      languages: languages || undefined,
-      resolution: resolution || undefined,
-      quality: quality || undefined,
-      codec: codec || undefined,
-      poster: poster || undefined,
-      background: background || undefined,
-      logo: logo || undefined,
-      is_anonymous: isAnonymous,
-    }),
+    mutationFn: () =>
+      contentImportApi.importAceStream({
+        content_id: contentIdInput ? normalizedContentId : undefined,
+        info_hash: infoHashInput ? normalizedInfoHash : undefined,
+        meta_type: ACESTREAM_CONTENT_TYPE,
+        title: title.trim(),
+        meta_id: metaId || undefined,
+        languages: languages || undefined,
+        resolution: resolution || undefined,
+        quality: quality || undefined,
+        codec: codec || undefined,
+        poster: poster || undefined,
+        background: background || undefined,
+        logo: logo || undefined,
+        is_anonymous: isAnonymous,
+      }),
     onSuccess: (result: ImportResponse) => {
       if (result.status === 'success') {
         onSuccess(result.message || 'AceStream content imported successfully!')
@@ -219,7 +213,7 @@ export function AceStreamTab({
         </div>
 
         {/* Analyze Button */}
-        <Button 
+        <Button
           onClick={handleAnalyze}
           disabled={!isInputValid || isLoading}
           variant="outline"
@@ -235,7 +229,9 @@ export function AceStreamTab({
 
         {/* Analysis Results */}
         {analysis && (
-          <div className={`p-4 rounded-xl space-y-2 ${analysis.already_exists ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-green-500/10 border border-green-500/20'}`}>
+          <div
+            className={`p-4 rounded-xl space-y-2 ${analysis.already_exists ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-green-500/10 border border-green-500/20'}`}
+          >
             <div className="flex flex-wrap gap-2">
               {analysis.content_id_valid && (
                 <Badge variant="secondary" className="bg-green-500/20">
@@ -268,9 +264,7 @@ export function AceStreamTab({
         <div className="p-4 rounded-xl bg-muted/50 space-y-2">
           <Label className="text-sm font-medium">MediaFlow Proxy URLs</Label>
           <div className="text-xs text-muted-foreground space-y-1 font-mono">
-            {contentIdInput && contentIdValid && (
-              <p>/proxy/acestream/stream?id={normalizedContentId.slice(0, 8)}...</p>
-            )}
+            {contentIdInput && contentIdValid && <p>/proxy/acestream/stream?id={normalizedContentId.slice(0, 8)}...</p>}
             {infoHashInput && infoHashValid && (
               <p>/proxy/acestream/stream?infohash={normalizedInfoHash.slice(0, 8)}...</p>
             )}
@@ -293,7 +287,8 @@ export function AceStreamTab({
                 className={`rounded-xl ${!hasTitle && title !== '' ? 'border-destructive' : ''}`}
               />
               <p className="text-xs text-muted-foreground">
-                The name of the channel or stream. If a channel with this name already exists, the stream will be linked to it.
+                The name of the channel or stream. If a channel with this name already exists, the stream will be linked
+                to it.
               </p>
             </div>
             <div className="space-y-2">
@@ -305,12 +300,10 @@ export function AceStreamTab({
                 onChange={(e) => setMetaId(e.target.value)}
                 className="rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Optional existing media ID to link to (e.g. mf:1234).
-              </p>
+              <p className="text-xs text-muted-foreground">Optional existing media ID to link to (e.g. mf:1234).</p>
             </div>
           </div>
-          
+
           {/* Quality Info */}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
@@ -385,8 +378,8 @@ export function AceStreamTab({
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-3 pt-2">
               <p className="text-xs text-muted-foreground">
-                Provide image URLs for the media entry. These are only used when creating a new media entry
-                (not when linking to an existing one).
+                Provide image URLs for the media entry. These are only used when creating a new media entry (not when
+                linking to an existing one).
               </p>
               <div className="space-y-2">
                 <Label htmlFor="poster">Poster URL</Label>
@@ -424,33 +417,39 @@ export function AceStreamTab({
                   {poster && (
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Poster Preview</Label>
-                      <img 
-                        src={poster} 
-                        alt="Poster preview" 
+                      <img
+                        src={poster}
+                        alt="Poster preview"
                         className="rounded-lg w-full h-32 object-cover border border-border/50"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).style.display = 'none'
+                        }}
                       />
                     </div>
                   )}
                   {background && (
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Background Preview</Label>
-                      <img 
-                        src={background} 
-                        alt="Background preview" 
+                      <img
+                        src={background}
+                        alt="Background preview"
                         className="rounded-lg w-full h-32 object-cover border border-border/50"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).style.display = 'none'
+                        }}
                       />
                     </div>
                   )}
                   {logo && (
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Logo Preview</Label>
-                      <img 
-                        src={logo} 
-                        alt="Logo preview" 
+                      <img
+                        src={logo}
+                        alt="Logo preview"
                         className="rounded-lg w-full h-32 object-contain border border-border/50 bg-black/20"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).style.display = 'none'
+                        }}
                       />
                     </div>
                   )}
@@ -465,19 +464,14 @@ export function AceStreamTab({
           <div>
             <span className="text-sm font-medium">Anonymous contribution</span>
             <p className="text-xs text-muted-foreground">
-              {isAnonymous 
-                ? 'Uploader will show as "Anonymous"' 
-                : 'Your username will be linked to this contribution'}
+              {isAnonymous ? 'Uploader will show as "Anonymous"' : 'Your username will be linked to this contribution'}
             </p>
           </div>
-          <Switch
-            checked={isAnonymous}
-            onCheckedChange={setIsAnonymous}
-          />
+          <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
         </div>
 
         {/* Import Button */}
-        <Button 
+        <Button
           onClick={handleImport}
           disabled={!isInputValid || !hasTitle || isLoading}
           className="w-full rounded-xl bg-gradient-to-r from-green-500 to-green-600"
@@ -499,8 +493,8 @@ export function AceStreamTab({
         <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50">
           <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
           <p className="text-sm text-muted-foreground">
-            AceStream is commonly used for live TV channels. Provide the content ID (acestream:// URL or 40-char hex) 
-            and the channel title. If a channel with the same title already exists, the stream will be added to it. 
+            AceStream is commonly used for live TV channels. Provide the content ID (acestream:// URL or 40-char hex)
+            and the channel title. If a channel with the same title already exists, the stream will be added to it.
             Playback is handled via MediaFlow Proxy with automatic transcoding for browser compatibility.
           </p>
         </div>

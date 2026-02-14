@@ -123,13 +123,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null
     return stored || 'system'
   })
-  
+
   const [colorScheme, setColorSchemeState] = useState<ColorScheme>(() => {
     if (typeof window === 'undefined') return 'mediafusion'
     const stored = localStorage.getItem(COLOR_SCHEME_STORAGE_KEY) as ColorScheme | null
     return stored || 'mediafusion'
   })
-  
+
   const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>(() => {
     if (theme === 'system') return getSystemTheme()
     return theme
@@ -144,7 +144,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Listen for system theme changes
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    
+
     const handleChange = () => {
       if (theme === 'system') {
         setResolvedTheme(getSystemTheme())
@@ -158,16 +158,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Apply theme class and color scheme to document
   useEffect(() => {
     const root = window.document.documentElement
-    
+
     // Remove old theme classes
     root.classList.remove('light', 'dark')
     root.classList.add(resolvedTheme)
-    
+
     // Remove old color scheme classes
-    colorSchemes.forEach(scheme => {
+    colorSchemes.forEach((scheme) => {
       root.classList.remove(`scheme-${scheme.id}`)
     })
-    
+
     // Add new color scheme class
     root.classList.add(`scheme-${colorScheme}`)
   }, [resolvedTheme, colorScheme])

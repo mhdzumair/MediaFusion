@@ -1,5 +1,5 @@
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import * as React from 'react'
+import { cn } from '@/lib/utils'
 
 interface SliderProps {
   value?: number[]
@@ -18,12 +18,9 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
     const percentage = ((currentValue - min) / (max - min)) * 100
 
     return (
-      <div className={cn("relative w-full touch-none select-none", className)}>
+      <div className={cn('relative w-full touch-none select-none', className)}>
         <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20">
-          <div
-            className="absolute h-full bg-primary rounded-full"
-            style={{ width: `${percentage}%` }}
-          />
+          <div className="absolute h-full bg-primary rounded-full" style={{ width: `${percentage}%` }} />
         </div>
         <input
           ref={ref}
@@ -34,10 +31,7 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
           value={currentValue}
           disabled={disabled}
           onChange={(e) => onValueChange?.([parseFloat(e.target.value)])}
-          className={cn(
-            "absolute inset-0 w-full h-full opacity-0 cursor-pointer",
-            disabled && "cursor-not-allowed"
-          )}
+          className={cn('absolute inset-0 w-full h-full opacity-0 cursor-pointer', disabled && 'cursor-not-allowed')}
         />
         <div
           className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-white shadow-md border-2 border-primary pointer-events-none transition-transform hover:scale-110"
@@ -45,9 +39,8 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
         />
       </div>
     )
-  }
+  },
 )
-Slider.displayName = "Slider"
+Slider.displayName = 'Slider'
 
 export { Slider }
-

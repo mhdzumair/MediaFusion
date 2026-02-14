@@ -167,9 +167,7 @@ async def list_exceptions(
     exception_type: str | None = None,
 ) -> dict:
     """Return a paginated list of tracked exceptions, most recent first."""
-    all_fps = await REDIS_ASYNC_CLIENT.zrevrangebyscore(
-        _INDEX_KEY, "+inf", "-inf", withscores=True
-    )
+    all_fps = await REDIS_ASYNC_CLIENT.zrevrangebyscore(_INDEX_KEY, "+inf", "-inf", withscores=True)
 
     if not all_fps:
         return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 0}
@@ -223,8 +221,7 @@ async def get_exception_detail(fingerprint: str) -> dict | None:
         return None
 
     decoded = {
-        (k if isinstance(k, str) else k.decode()): (v if isinstance(v, str) else v.decode())
-        for k, v in data.items()
+        (k if isinstance(k, str) else k.decode()): (v if isinstance(v, str) else v.decode()) for k, v in data.items()
     }
     decoded["fingerprint"] = fingerprint
     decoded["count"] = int(decoded.get("count", "1"))

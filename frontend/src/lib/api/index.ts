@@ -1,25 +1,88 @@
 export { apiClient, onAuthStateChange, ApiRequestError } from './client'
 export { authApi } from './auth'
-export { instanceApi, getInstanceInfo, getAppConfig, getStoredApiKey, setStoredApiKey, clearStoredApiKey, type InstanceInfo, type AppConfig, type TelegramFeatureConfig } from './instance'
-export { profilesApi, type Profile, type ProfileCreateRequest, type ProfileUpdateRequest, type ManifestUrlResponse, type SetDefaultResponse, type RpdbApiKeyResponse, type StreamingProviderSummary, type StreamingService, type StreamingProviderConfig, type RPDBConfig, type MediaFlowConfig, type ProfileConfig } from './profiles'
-export { usersApi, type UserListParams, type UserListResponse, type UserUpdateRequest, type RoleUpdateRequest } from './users'
-export { watchHistoryApi, type WatchHistoryItem, type WatchHistoryListParams, type WatchHistoryListResponse, type ContinueWatchingItem, type WatchHistoryCreateRequest, type WatchHistoryUpdateRequest, type StreamAction, type StreamActionTrackRequest, type WatchAction, type HistorySource, type StreamInfo as WatchStreamInfo } from './watch-history'
-export { downloadsApi, type DownloadHistoryItem, type DownloadListParams, type DownloadListResponse, type DownloadStats, type DownloadCreateRequest, type DownloadStreamInfo, type DownloadStatus } from './downloads'
-export { contributionsApi, type Contribution, type ContributionListParams, type ContributionListResponse, type ContributionStats, type ContributionCreateRequest, type ContributionReviewRequest, type ContributionType, type ContributionStatus, type ContributionData } from './contributions'
-export { 
-  contentImportApi, 
-  type TorrentFile, 
-  type TorrentMatch, 
-  type TorrentAnalyzeResponse, 
-  type MagnetAnalyzeRequest, 
+export {
+  instanceApi,
+  getInstanceInfo,
+  getAppConfig,
+  getStoredApiKey,
+  setStoredApiKey,
+  clearStoredApiKey,
+  type InstanceInfo,
+  type AppConfig,
+  type TelegramFeatureConfig,
+} from './instance'
+export {
+  profilesApi,
+  type Profile,
+  type ProfileCreateRequest,
+  type ProfileUpdateRequest,
+  type ManifestUrlResponse,
+  type SetDefaultResponse,
+  type RpdbApiKeyResponse,
+  type StreamingProviderSummary,
+  type StreamingService,
+  type StreamingProviderConfig,
+  type RPDBConfig,
+  type MediaFlowConfig,
+  type ProfileConfig,
+} from './profiles'
+export {
+  usersApi,
+  type UserListParams,
+  type UserListResponse,
+  type UserUpdateRequest,
+  type RoleUpdateRequest,
+} from './users'
+export {
+  watchHistoryApi,
+  type WatchHistoryItem,
+  type WatchHistoryListParams,
+  type WatchHistoryListResponse,
+  type ContinueWatchingItem,
+  type WatchHistoryCreateRequest,
+  type WatchHistoryUpdateRequest,
+  type StreamAction,
+  type StreamActionTrackRequest,
+  type WatchAction,
+  type HistorySource,
+  type StreamInfo as WatchStreamInfo,
+} from './watch-history'
+export {
+  downloadsApi,
+  type DownloadHistoryItem,
+  type DownloadListParams,
+  type DownloadListResponse,
+  type DownloadStats,
+  type DownloadCreateRequest,
+  type DownloadStreamInfo,
+  type DownloadStatus,
+} from './downloads'
+export {
+  contributionsApi,
+  type Contribution,
+  type ContributionListParams,
+  type ContributionListResponse,
+  type ContributionStats,
+  type ContributionCreateRequest,
+  type ContributionReviewRequest,
+  type ContributionType,
+  type ContributionStatus,
+  type ContributionData,
+} from './contributions'
+export {
+  contentImportApi,
+  type TorrentFile,
+  type TorrentMatch,
+  type TorrentAnalyzeResponse,
+  type MagnetAnalyzeRequest,
   type ImportResponse,
   type ImportJobStatus,
   type TorrentImportRequest,
   type TorrentMetaType,
-  type M3UContentType, 
-  type M3UMatchedMedia, 
-  type M3UChannelPreview, 
-  type M3UAnalyzeResponse, 
+  type M3UContentType,
+  type M3UMatchedMedia,
+  type M3UChannelPreview,
+  type M3UAnalyzeResponse,
   type M3UImportOverride,
   type XtreamCredentials,
   type XtreamCategory,
@@ -34,12 +97,12 @@ export {
   type HTTPAnalyzeResponse,
   type AceStreamAnalyzeResponse,
 } from './content-import'
-export { 
-  rssApi, 
+export {
+  rssApi,
   userRssApi,
-  type RSSFeed, 
-  type RSSFeedCreate, 
-  type RSSFeedUpdate, 
+  type RSSFeed,
+  type RSSFeedCreate,
+  type RSSFeedUpdate,
   type TestFeedResult,
   type UserRSSFeed,
   type UserRSSFeedCreate,
@@ -53,20 +116,124 @@ export {
   type ScrapeResult,
   type BulkStatusResult,
 } from './rss'
-export { metricsApi, type TorrentCount, type TorrentSource, type MetadataCount, type SpiderLastRun, type RedisMetrics, type DebridCacheMetrics, type TorrentUploader, type WeeklyUploadersResponse } from './metrics'
-export { scrapersApi, type ScraperTask, type ScraperResponse, type BlockTorrentRequest, type ScrapeStatusResponse, type ScrapeRequest, type ScrapeResponse, type ScraperInfo, type ScraperStatusInfo } from './scrapers'
-export { catalogApi, getCanonicalExternalId, type CatalogType, type SortOption, type SortDirection, type GenreResponse, type CatalogInfo, type CatalogItemBase, type CatalogItemDetail, type CatalogListResponse, type StreamListResponse, type AvailableCatalogsResponse, type CatalogListParams, type SeasonInfo, type EpisodeInfo, type StreamInfo as CatalogStreamInfo, type EpisodeLinkInfo, type AllRatings, type ProviderRating, type CommunityRating, type StreamFileInfo, type ExternalIds, type StreamingProviderInfo } from './catalog'
-export { libraryApi, type LibraryItemCreate, type LibraryItemResponse, type LibraryListResponse, type LibraryStatsResponse, type LibraryListParams, type LibraryCheckResponse } from './library'
-export { votingApi, type VoteType, type QualityStatus, type StreamVoteRequest, type StreamVoteResponse, type StreamVoteSummary, type BulkStreamVoteSummary, type ContentLikeResponse, type ContentLikeSummary } from './voting'
-export { suggestionsApi, type SuggestionStatus, type EditableField, type SuggestionCreateRequest, type SuggestionReviewRequest, type Suggestion, type SuggestionListResponse, type SuggestionStats, type SuggestionListParams, type PendingSuggestionParams } from './suggestions'
-export { streamSuggestionsApi, type StreamSuggestionType, type StreamSuggestionStatus, type StreamSuggestionCreateRequest, type StreamSuggestion, type StreamSuggestionListResponse, type StreamSuggestionReviewRequest, type StreamSuggestionStats, type StreamSuggestionListParams, type StreamFieldName, type EpisodeLinkFieldName } from './stream-suggestions'
-export { episodeSuggestionsApi, type EpisodeSuggestionStatus, type EpisodeEditableField, type EpisodeSuggestionCreateRequest, type EpisodeSuggestionReviewRequest, type EpisodeSuggestion, type EpisodeSuggestionListResponse, type EpisodeSuggestionStats, type EpisodeSuggestionListParams, type PendingEpisodeSuggestionParams, type BulkReviewResult } from './episode-suggestions'
-export { getDeviceCode, authorizeWithDeviceCode, isOAuthSupported, getOAuthProviders, type DeviceCodeResponse, type AuthorizeResponse } from './debrid-oauth'
-export { 
-  adminApi, 
-  type MetadataItem, 
-  type MetadataListParams, 
-  type MetadataListResponse, 
+export {
+  metricsApi,
+  type TorrentCount,
+  type TorrentSource,
+  type MetadataCount,
+  type SpiderLastRun,
+  type RedisMetrics,
+  type DebridCacheMetrics,
+  type TorrentUploader,
+  type WeeklyUploadersResponse,
+} from './metrics'
+export {
+  scrapersApi,
+  type ScraperTask,
+  type ScraperResponse,
+  type BlockTorrentRequest,
+  type ScrapeStatusResponse,
+  type ScrapeRequest,
+  type ScrapeResponse,
+  type ScraperInfo,
+  type ScraperStatusInfo,
+} from './scrapers'
+export {
+  catalogApi,
+  getCanonicalExternalId,
+  type CatalogType,
+  type SortOption,
+  type SortDirection,
+  type GenreResponse,
+  type CatalogInfo,
+  type CatalogItemBase,
+  type CatalogItemDetail,
+  type CatalogListResponse,
+  type StreamListResponse,
+  type AvailableCatalogsResponse,
+  type CatalogListParams,
+  type SeasonInfo,
+  type EpisodeInfo,
+  type StreamInfo as CatalogStreamInfo,
+  type EpisodeLinkInfo,
+  type AllRatings,
+  type ProviderRating,
+  type CommunityRating,
+  type StreamFileInfo,
+  type ExternalIds,
+  type StreamingProviderInfo,
+} from './catalog'
+export {
+  libraryApi,
+  type LibraryItemCreate,
+  type LibraryItemResponse,
+  type LibraryListResponse,
+  type LibraryStatsResponse,
+  type LibraryListParams,
+  type LibraryCheckResponse,
+} from './library'
+export {
+  votingApi,
+  type VoteType,
+  type QualityStatus,
+  type StreamVoteRequest,
+  type StreamVoteResponse,
+  type StreamVoteSummary,
+  type BulkStreamVoteSummary,
+  type ContentLikeResponse,
+  type ContentLikeSummary,
+} from './voting'
+export {
+  suggestionsApi,
+  type SuggestionStatus,
+  type EditableField,
+  type SuggestionCreateRequest,
+  type SuggestionReviewRequest,
+  type Suggestion,
+  type SuggestionListResponse,
+  type SuggestionStats,
+  type SuggestionListParams,
+  type PendingSuggestionParams,
+} from './suggestions'
+export {
+  streamSuggestionsApi,
+  type StreamSuggestionType,
+  type StreamSuggestionStatus,
+  type StreamSuggestionCreateRequest,
+  type StreamSuggestion,
+  type StreamSuggestionListResponse,
+  type StreamSuggestionReviewRequest,
+  type StreamSuggestionStats,
+  type StreamSuggestionListParams,
+  type StreamFieldName,
+  type EpisodeLinkFieldName,
+} from './stream-suggestions'
+export {
+  episodeSuggestionsApi,
+  type EpisodeSuggestionStatus,
+  type EpisodeEditableField,
+  type EpisodeSuggestionCreateRequest,
+  type EpisodeSuggestionReviewRequest,
+  type EpisodeSuggestion,
+  type EpisodeSuggestionListResponse,
+  type EpisodeSuggestionStats,
+  type EpisodeSuggestionListParams,
+  type PendingEpisodeSuggestionParams,
+  type BulkReviewResult,
+} from './episode-suggestions'
+export {
+  getDeviceCode,
+  authorizeWithDeviceCode,
+  isOAuthSupported,
+  getOAuthProviders,
+  type DeviceCodeResponse,
+  type AuthorizeResponse,
+} from './debrid-oauth'
+export {
+  adminApi,
+  type MetadataItem,
+  type MetadataListParams,
+  type MetadataListResponse,
   type MetadataUpdateRequest,
   type MetadataStatsResponse,
   type TorrentStreamItem,
@@ -89,7 +256,7 @@ export {
   NUDITY_STATUS_OPTIONS,
   TORRENT_TYPE_OPTIONS,
 } from './admin'
-export { 
+export {
   contributionSettingsApi,
   type ContributionSettings,
   type ContributionSettingsUpdate,

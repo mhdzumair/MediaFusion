@@ -5,13 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,26 +17,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { 
-  Film, 
-  Tv, 
-  Cloud,
-  CloudOff,
-  Settings,
-  Loader2,
-  HardDrive,
-  Download,
-  Trash2,
-} from 'lucide-react'
+import { Film, Tv, Cloud, CloudOff, Settings, Loader2, HardDrive, Download, Trash2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { 
-  ContentCard, 
-  ContentGrid,
-  type ContentCardData,
-} from '@/components/content'
+import { ContentCard, ContentGrid, type ContentCardData } from '@/components/content'
 import { ImportMissingDialog } from '@/components/watchlist'
-import { useWatchlistProviders, useInfiniteWatchlist, useMissingTorrents, useProfiles, useRemoveTorrent, useClearAllTorrents } from '@/hooks'
-import { getProviderDisplayName, DEBRID_SERVICE_DISPLAY_NAMES, type WatchlistProviderInfo, type WatchlistItem } from '@/lib/api'
+import {
+  useWatchlistProviders,
+  useInfiniteWatchlist,
+  useMissingTorrents,
+  useProfiles,
+  useRemoveTorrent,
+  useClearAllTorrents,
+} from '@/hooks'
+import {
+  getProviderDisplayName,
+  DEBRID_SERVICE_DISPLAY_NAMES,
+  type WatchlistProviderInfo,
+  type WatchlistItem,
+} from '@/lib/api'
 
 // Providers that support import functionality (all providers with fetch_torrent_details)
 const IMPORT_SUPPORTED_PROVIDERS = new Set([
@@ -58,39 +50,36 @@ const IMPORT_SUPPORTED_PROVIDERS = new Set([
 
 export function WatchlistTab() {
   const { toast } = useToast()
-  
+
   // Profile selection
   const { data: profiles } = useProfiles()
   const [selectedProfileId, setSelectedProfileId] = useState<number | undefined>()
-  
+
   // Provider selection
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>()
-  
+
   // Filters
   const [mediaType, setMediaType] = useState<'movie' | 'series' | ''>('')
-  
+
   // Import dialog state
   const [importDialogOpen, setImportDialogOpen] = useState(false)
-  
+
   // Infinite scroll ref
   const loadMoreRef = useRef<HTMLDivElement>(null)
-  
+
   // Set default profile on load
   useEffect(() => {
     if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
-      const defaultProfile = profiles.find(p => p.is_default) || profiles[0]
+      const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
       setSelectedProfileId(defaultProfile.id)
     }
   }, [profiles, selectedProfileId])
-  
+
   // Fetch providers for the selected profile
-  const { 
-    data: providersData, 
-    isLoading: providersLoading 
-  } = useWatchlistProviders(selectedProfileId, {
+  const { data: providersData, isLoading: providersLoading } = useWatchlistProviders(selectedProfileId, {
     enabled: selectedProfileId !== undefined,
   })
-  
+
   // Set default provider when providers load or profile changes
   useEffect(() => {
     if (providersData?.providers && providersData.providers.length > 0) {
@@ -100,7 +89,7 @@ export function WatchlistTab() {
       setSelectedProvider(undefined)
     }
   }, [providersData?.providers])
-  
+
   // Fetch watchlist items with infinite scroll
   const {
     data: watchlistData,
@@ -109,21 +98,26 @@ export function WatchlistTab() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteWatchlist(selectedProvider, {
-    profileId: selectedProfileId,
-    mediaType: mediaType || undefined,
-    pageSize: 24,
-  }, {
-    enabled: !!selectedProvider && selectedProfileId !== undefined,
-  })
-  
+  } = useInfiniteWatchlist(
+    selectedProvider,
+    {
+      profileId: selectedProfileId,
+      mediaType: mediaType || undefined,
+      pageSize: 24,
+    },
+    {
+      enabled: !!selectedProvider && selectedProfileId !== undefined,
+    },
+  )
+
   // Transform watchlist items to ContentCardData format (flatten pages)
   // Also keep track of info_hashes for each item
   const { contentItems, itemHashesMap } = useMemo(() => {
-    if (!watchlistData?.pages) return { contentItems: [] as ContentCardData[], itemHashesMap: new Map<number, string[]>() }
-    
+    if (!watchlistData?.pages)
+      return { contentItems: [] as ContentCardData[], itemHashesMap: new Map<number, string[]>() }
+
     const hashesMap = new Map<number, string[]>()
-    const items = watchlistData.pages.flatMap(page => 
+    const items = watchlistData.pages.flatMap((page) =>
       page.items.map((item: WatchlistItem) => {
         hashesMap.set(item.id, item.info_hashes || [])
         return {
@@ -134,66 +128,78 @@ export function WatchlistTab() {
           year: item.year,
           poster: item.poster,
         } as ContentCardData
-      })
+      }),
     )
     return { contentItems: items, itemHashesMap: hashesMap }
   }, [watchlistData?.pages])
-  
+
   // Remove torrent mutation
   const removeTorrent = useRemoveTorrent()
   const clearAllTorrents = useClearAllTorrents()
-  
+
   // Handle removing a content item from debrid
-  const handleRemove = useCallback(async (item: ContentCardData) => {
-    if (!selectedProvider || !selectedProfileId) return
-    
-    const infoHashes = itemHashesMap.get(item.id) || []
-    if (infoHashes.length === 0) {
-      toast({ title: 'Error', description: 'No torrent hashes found for this item', variant: 'destructive' })
-      return
-    }
-    
-    // Remove all info_hashes for this item
-    let successCount = 0
-    let failCount = 0
-    
-    for (const hash of infoHashes) {
-      try {
-        const result = await removeTorrent.mutateAsync({
-          provider: selectedProvider,
-          infoHash: hash,
-          profileId: selectedProfileId,
-        })
-        if (result.success) {
-          successCount++
-        } else {
+  const handleRemove = useCallback(
+    async (item: ContentCardData) => {
+      if (!selectedProvider || !selectedProfileId) return
+
+      const infoHashes = itemHashesMap.get(item.id) || []
+      if (infoHashes.length === 0) {
+        toast({ title: 'Error', description: 'No torrent hashes found for this item', variant: 'destructive' })
+        return
+      }
+
+      // Remove all info_hashes for this item
+      let successCount = 0
+      let failCount = 0
+
+      for (const hash of infoHashes) {
+        try {
+          const result = await removeTorrent.mutateAsync({
+            provider: selectedProvider,
+            infoHash: hash,
+            profileId: selectedProfileId,
+          })
+          if (result.success) {
+            successCount++
+          } else {
+            failCount++
+          }
+        } catch {
           failCount++
         }
-      } catch {
-        failCount++
       }
-    }
-    
-    if (successCount > 0 && failCount === 0) {
-      toast({ title: 'Removed', description: `Removed "${item.title}" from ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider}` })
-    } else if (successCount > 0) {
-      toast({ title: 'Partial Success', description: `Partially removed "${item.title}" (${successCount}/${infoHashes.length} torrents)` })
-    } else {
-      toast({ title: 'Error', description: `Failed to remove "${item.title}"`, variant: 'destructive' })
-    }
-  }, [selectedProvider, selectedProfileId, itemHashesMap, removeTorrent, toast])
-  
+
+      if (successCount > 0 && failCount === 0) {
+        toast({
+          title: 'Removed',
+          description: `Removed "${item.title}" from ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider}`,
+        })
+      } else if (successCount > 0) {
+        toast({
+          title: 'Partial Success',
+          description: `Partially removed "${item.title}" (${successCount}/${infoHashes.length} torrents)`,
+        })
+      } else {
+        toast({ title: 'Error', description: `Failed to remove "${item.title}"`, variant: 'destructive' })
+      }
+    },
+    [selectedProvider, selectedProfileId, itemHashesMap, removeTorrent, toast],
+  )
+
   // Handle clearing all torrents
   const handleClearAll = useCallback(async () => {
     if (!selectedProvider || !selectedProfileId) return
-    
+
     try {
       const result = await clearAllTorrents.mutateAsync({
         provider: selectedProvider,
         profileId: selectedProfileId,
       })
       if (result.success) {
-        toast({ title: 'Cleared', description: `All torrents cleared from ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider}` })
+        toast({
+          title: 'Cleared',
+          description: `All torrents cleared from ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider}`,
+        })
       } else {
         toast({ title: 'Error', description: result.message || 'Failed to clear torrents', variant: 'destructive' })
       }
@@ -201,42 +207,43 @@ export function WatchlistTab() {
       toast({ title: 'Error', description: 'Failed to clear torrents', variant: 'destructive' })
     }
   }, [selectedProvider, selectedProfileId, clearAllTorrents, toast])
-  
+
   // Get total count from first page
   const totalCount = watchlistData?.pages?.[0]?.total || 0
   const providerName = watchlistData?.pages?.[0]?.provider_name
-  
+
   // Check for missing torrents (only for supported providers)
   const supportsImport = selectedProvider && IMPORT_SUPPORTED_PROVIDERS.has(selectedProvider)
-  const { data: missingData } = useMissingTorrents(
-    supportsImport ? selectedProvider : undefined,
-    selectedProfileId,
-    { enabled: !!supportsImport && selectedProfileId !== undefined }
-  )
+  const { data: missingData } = useMissingTorrents(supportsImport ? selectedProvider : undefined, selectedProfileId, {
+    enabled: !!supportsImport && selectedProfileId !== undefined,
+  })
   const missingCount = missingData?.total || 0
-  
+
   // Infinite scroll observer
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    const [target] = entries
-    if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage()
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
-  
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [target] = entries
+      if (target.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage()
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  )
+
   useEffect(() => {
     const element = loadMoreRef.current
     if (!element) return
-    
+
     const observer = new IntersectionObserver(handleObserver, {
       root: null,
       rootMargin: '100px',
       threshold: 0,
     })
-    
+
     observer.observe(element)
     return () => observer.disconnect()
   }, [handleObserver])
-  
+
   // Get display name for provider tabs
   const getTabDisplayName = (provider: WatchlistProviderInfo): string => {
     const serviceName = DEBRID_SERVICE_DISPLAY_NAMES[provider.service] || provider.service
@@ -245,11 +252,11 @@ export function WatchlistTab() {
     }
     return serviceName
   }
-  
+
   const providers = providersData?.providers || []
   const hasProviders = providers.length > 0
   const isLoading = providersLoading || (watchlistLoading && !watchlistData)
-  
+
   // No profile selected yet
   if (!selectedProfileId) {
     return (
@@ -258,7 +265,7 @@ export function WatchlistTab() {
       </div>
     )
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Header with Profile Selector */}
@@ -269,12 +276,10 @@ export function WatchlistTab() {
           </div>
           <div>
             <h2 className="text-lg font-semibold">Debrid Watchlist</h2>
-            <p className="text-sm text-muted-foreground">
-              Content downloaded in your debrid accounts
-            </p>
+            <p className="text-sm text-muted-foreground">Content downloaded in your debrid accounts</p>
           </div>
         </div>
-        
+
         {/* Profile Selector */}
         {profiles && profiles.length > 1 && (
           <Select
@@ -290,7 +295,9 @@ export function WatchlistTab() {
                   <div className="flex items-center gap-2">
                     <span>{profile.name}</span>
                     {profile.is_default && (
-                      <Badge variant="secondary" className="text-[10px] px-1 py-0">Default</Badge>
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                        Default
+                      </Badge>
                     )}
                   </div>
                 </SelectItem>
@@ -299,7 +306,7 @@ export function WatchlistTab() {
           </Select>
         )}
       </div>
-      
+
       {/* No Providers Configured */}
       {!providersLoading && !hasProviders && (
         <Card className="glass border-border/50">
@@ -307,8 +314,8 @@ export function WatchlistTab() {
             <CloudOff className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
             <p className="mt-4 font-medium">No Debrid Providers Configured</p>
             <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-              Configure a debrid service in your profile to see your downloaded content here.
-              Supported services include Real-Debrid, AllDebrid, TorBox, and more.
+              Configure a debrid service in your profile to see your downloaded content here. Supported services include
+              Real-Debrid, AllDebrid, TorBox, and more.
             </p>
             <Button className="mt-4 rounded-xl" asChild>
               <Link to="/dashboard/configure">
@@ -319,7 +326,7 @@ export function WatchlistTab() {
           </CardContent>
         </Card>
       )}
-      
+
       {/* Provider Tabs */}
       {hasProviders && (
         <>
@@ -346,7 +353,7 @@ export function WatchlistTab() {
               </Badge>
             </div>
           )}
-          
+
           {/* Stats & Filters */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             {/* Stats & Import Button */}
@@ -354,23 +361,14 @@ export function WatchlistTab() {
               {totalCount > 0 && (
                 <p className="text-sm text-muted-foreground">
                   <span className="font-medium text-foreground">{totalCount}</span> items found
-                  {providerName && (
-                    <span> in {providerName}</span>
-                  )}
+                  {providerName && <span> in {providerName}</span>}
                 </p>
               )}
-              {isFetching && !watchlistLoading && (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-              
+              {isFetching && !watchlistLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+
               {/* Import Missing Button */}
               {supportsImport && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setImportDialogOpen(true)}
-                >
+                <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setImportDialogOpen(true)}>
                   <Download className="mr-2 h-4 w-4" />
                   Import Missing
                   {missingCount > 0 && (
@@ -380,7 +378,7 @@ export function WatchlistTab() {
                   )}
                 </Button>
               )}
-              
+
               {/* Clear All Button */}
               {totalCount > 0 && (
                 <AlertDialog>
@@ -403,8 +401,9 @@ export function WatchlistTab() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Clear All Torrents?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will delete ALL torrents from your {DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider || ''] || selectedProvider} account.
-                        This action cannot be undone.
+                        This will delete ALL torrents from your{' '}
+                        {DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider || ''] || selectedProvider} account. This action
+                        cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -420,12 +419,12 @@ export function WatchlistTab() {
                 </AlertDialog>
               )}
             </div>
-            
+
             {/* Type Filter */}
-            <Select 
-              value={mediaType || 'all'} 
+            <Select
+              value={mediaType || 'all'}
               onValueChange={(v) => {
-                setMediaType(v === 'all' ? '' : v as 'movie' | 'series')
+                setMediaType(v === 'all' ? '' : (v as 'movie' | 'series'))
               }}
             >
               <SelectTrigger className="w-[130px] rounded-xl">
@@ -448,7 +447,7 @@ export function WatchlistTab() {
               </SelectContent>
             </Select>
           </div>
-          
+
           {/* Content Grid */}
           {isLoading ? (
             <ContentGrid>
@@ -465,30 +464,23 @@ export function WatchlistTab() {
                 <Cloud className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
                 <p className="mt-4 font-medium">No Downloads Found</p>
                 <p className="text-sm text-muted-foreground mt-2">
-                  {mediaType 
+                  {mediaType
                     ? `No ${mediaType === 'movie' ? 'movies' : 'series'} found in your ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider || ''] || selectedProvider} account`
-                    : `Your ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider || ''] || selectedProvider} watchlist is empty or the content isn't in our database yet`
-                  }
+                    : `Your ${DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider || ''] || selectedProvider} watchlist is empty or the content isn't in our database yet`}
                 </p>
               </CardContent>
             </Card>
           ) : (
             <>
               <ContentGrid>
-                {contentItems.map(item => (
-                  <ContentCard
-                    key={item.id}
-                    item={item}
-                    variant="grid"
-                    showType={true}
-                    onRemove={handleRemove}
-                  />
+                {contentItems.map((item) => (
+                  <ContentCard key={item.id} item={item} variant="grid" showType={true} onRemove={handleRemove} />
                 ))}
               </ContentGrid>
-              
+
               {/* Infinite scroll trigger */}
               <div ref={loadMoreRef} className="h-4" />
-              
+
               {/* Loading indicator for next page */}
               {isFetchingNextPage && (
                 <div className="flex justify-center py-4">
@@ -499,7 +491,7 @@ export function WatchlistTab() {
           )}
         </>
       )}
-      
+
       {/* Import Missing Dialog */}
       {selectedProvider && supportsImport && (
         <ImportMissingDialog

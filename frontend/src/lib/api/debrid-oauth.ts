@@ -7,7 +7,7 @@ export interface DeviceCodeResponse {
   device_code: string
   user_code?: string
   verification_url?: string
-  verification_uri?: string  // Some providers use this instead
+  verification_uri?: string // Some providers use this instead
   expires_in: number
   interval: number
   direct_verification_url?: string
@@ -63,10 +63,7 @@ export async function getDeviceCode(provider: string): Promise<DeviceCodeRespons
 /**
  * Authorize with device code and get token
  */
-export async function authorizeWithDeviceCode(
-  provider: string,
-  deviceCode: string
-): Promise<AuthorizeResponse> {
+export async function authorizeWithDeviceCode(provider: string, deviceCode: string): Promise<AuthorizeResponse> {
   const endpoints = OAUTH_ENDPOINTS[provider]
   if (!endpoints) {
     throw new Error(`OAuth not supported for provider: ${provider}`)
@@ -101,4 +98,3 @@ export function isOAuthSupported(provider: string): boolean {
 export function getOAuthProviders(): string[] {
   return Object.keys(OAUTH_ENDPOINTS)
 }
-

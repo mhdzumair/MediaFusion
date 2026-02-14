@@ -1,6 +1,6 @@
 /**
  * Indexer Settings API
- * 
+ *
  * Provides test endpoints for Prowlarr, Jackett, and Torznab connections.
  * The actual indexer configuration is stored as part of the user profile.
  */

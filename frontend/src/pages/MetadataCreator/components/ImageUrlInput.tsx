@@ -25,11 +25,14 @@ export function ImageUrlInput({
   const [showPreview, setShowPreview] = useState(false)
   const [imageError, setImageError] = useState(false)
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(e.target.value)
-    setImageError(false)
-    setShowPreview(!!e.target.value)
-  }, [onChange])
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onChange(e.target.value)
+      setImageError(false)
+      setShowPreview(!!e.target.value)
+    },
+    [onChange],
+  )
 
   const handleClear = useCallback(() => {
     onChange('')
@@ -46,12 +49,7 @@ export function ImageUrlInput({
       <Label>{label}</Label>
       <div className="flex gap-2">
         <div className="relative flex-1">
-          <Input
-            value={value}
-            onChange={handleChange}
-            placeholder={placeholder}
-            className="pr-8"
-          />
+          <Input value={value} onChange={handleChange} placeholder={placeholder} className="pr-8" />
           {value && (
             <Button
               type="button"
@@ -84,7 +82,7 @@ export function ImageUrlInput({
             'relative rounded-lg border border-border/50 overflow-hidden bg-muted/30',
             aspectRatio === 'poster' && 'w-24 h-36',
             aspectRatio === 'backdrop' && 'w-full h-32',
-            aspectRatio === 'logo' && 'w-40 h-16'
+            aspectRatio === 'logo' && 'w-40 h-16',
           )}
         >
           {imageError ? (
@@ -93,12 +91,7 @@ export function ImageUrlInput({
               <span className="text-xs">Failed to load</span>
             </div>
           ) : (
-            <img
-              src={value}
-              alt="Preview"
-              className="w-full h-full object-cover"
-              onError={handleImageError}
-            />
+            <img src={value} alt="Preview" className="w-full h-full object-cover" onError={handleImageError} />
           )}
         </div>
       )}
@@ -109,7 +102,7 @@ export function ImageUrlInput({
             'rounded-lg border border-dashed border-border/50 flex items-center justify-center text-muted-foreground',
             aspectRatio === 'poster' && 'w-24 h-36',
             aspectRatio === 'backdrop' && 'w-full h-32',
-            aspectRatio === 'logo' && 'w-40 h-16'
+            aspectRatio === 'logo' && 'w-40 h-16',
           )}
         >
           <ImageIcon className="h-6 w-6" />
@@ -118,4 +111,3 @@ export function ImageUrlInput({
     </div>
   )
 }
-

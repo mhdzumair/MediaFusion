@@ -17,13 +17,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,13 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/hooks/use-toast'
@@ -110,7 +98,11 @@ function ExceptionDetailDialog({
         onClose()
       },
       onError: (err) => {
-        toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to clear', variant: 'destructive' })
+        toast({
+          title: 'Error',
+          description: err instanceof Error ? err.message : 'Failed to clear',
+          variant: 'destructive',
+        })
       },
     })
   }
@@ -124,7 +116,9 @@ function ExceptionDetailDialog({
             Exception Detail
           </DialogTitle>
           <DialogDescription>
-            {data ? `${data.type}: ${data.message.slice(0, 100)}${data.message.length > 100 ? '...' : ''}` : 'Loading...'}
+            {data
+              ? `${data.type}: ${data.message.slice(0, 100)}${data.message.length > 100 ? '...' : ''}`
+              : 'Loading...'}
           </DialogDescription>
         </DialogHeader>
 
@@ -141,7 +135,8 @@ function ExceptionDetailDialog({
                 {data.source}
               </Badge>
               <Badge variant="muted">
-                <Hash className="h-3 w-3 mr-1" />{data.count}x
+                <Hash className="h-3 w-3 mr-1" />
+                {data.count}x
               </Badge>
             </div>
 
@@ -181,22 +176,21 @@ function ExceptionDetailDialog({
 
             {/* Actions */}
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleClear}
-                disabled={clearMutation.isPending}
-              >
-                {clearMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+              <Button variant="outline" size="sm" onClick={onClose}>
+                Close
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleClear} disabled={clearMutation.isPending}>
+                {clearMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                )}
                 Clear
               </Button>
             </div>
           </div>
         ) : (
-          <div className="py-8 text-center text-muted-foreground">
-            Exception not found. It may have expired.
-          </div>
+          <div className="py-8 text-center text-muted-foreground">Exception not found. It may have expired.</div>
         )}
       </DialogContent>
     </Dialog>
@@ -227,16 +221,17 @@ function ExceptionRow({
         {/* Left side */}
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="destructive" className="text-[11px]">{item.type}</Badge>
+            <Badge variant="destructive" className="text-[11px]">
+              {item.type}
+            </Badge>
             <Badge variant="muted" className="text-[11px] font-mono gap-1">
-              <Hash className="h-2.5 w-2.5" />{item.count}
+              <Hash className="h-2.5 w-2.5" />
+              {item.count}
             </Badge>
             <span className="text-[11px] text-muted-foreground">{timeAgo(item.last_seen)}</span>
           </div>
           <p className="text-sm truncate text-foreground">{item.message}</p>
-          <p className="text-xs text-muted-foreground font-mono truncate">
-            {item.source}
-          </p>
+          <p className="text-xs text-muted-foreground font-mono truncate">{item.source}</p>
         </div>
 
         {/* Clear button */}
@@ -276,7 +271,11 @@ export function ExceptionTrackerPage() {
   const queryClient = useQueryClient()
 
   const { data: status, isLoading: statusLoading } = useExceptionStatus()
-  const { data: listData, isLoading: listLoading, isFetching } = useExceptionList({
+  const {
+    data: listData,
+    isLoading: listLoading,
+    isFetching,
+  } = useExceptionList({
     page,
     per_page: perPage,
     exception_type: typeFilter || undefined,
@@ -316,11 +315,6 @@ export function ExceptionTrackerPage() {
     queryClient.invalidateQueries({ queryKey: exceptionKeys.all })
   }
 
-  // Collect unique exception types from current list for the filter
-  const uniqueTypes = listData
-    ? [...new Set(listData.items.map((i) => i.type))].sort()
-    : []
-
   // Disabled state
   if (!statusLoading && status && !status.enabled) {
     return (
@@ -342,7 +336,9 @@ export function ExceptionTrackerPage() {
               <AlertTriangle className="h-10 w-10 text-muted-foreground/50" />
               <p className="text-lg font-medium">Exception tracking is disabled</p>
               <p className="text-sm text-muted-foreground max-w-md">
-                Set the <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-xs">ENABLE_EXCEPTION_TRACKING=true</code> environment variable to enable this feature.
+                Set the{' '}
+                <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-xs">ENABLE_EXCEPTION_TRACKING=true</code>{' '}
+                environment variable to enable this feature.
               </p>
             </div>
           </CardContent>
@@ -398,7 +394,15 @@ export function ExceptionTrackerPage() {
                 className="h-8 max-w-xs text-sm"
               />
               {typeFilter && (
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { setTypeFilter(''); setPage(1) }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => {
+                    setTypeFilter('')
+                    setPage(1)
+                  }}
+                >
                   <X className="h-3.5 w-3.5" />
                 </Button>
               )}
@@ -407,7 +411,13 @@ export function ExceptionTrackerPage() {
             {/* Per-page */}
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground whitespace-nowrap">Per page:</span>
-              <Select value={String(perPage)} onValueChange={(v) => { setPerPage(Number(v)); setPage(1) }}>
+              <Select
+                value={String(perPage)}
+                onValueChange={(v) => {
+                  setPerPage(Number(v))
+                  setPage(1)
+                }}
+              >
                 <SelectTrigger className="w-[65px] h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -428,7 +438,11 @@ export function ExceptionTrackerPage() {
                   className="gap-1.5"
                   disabled={!listData || listData.total === 0 || clearAllMutation.isPending}
                 >
-                  {clearAllMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  {clearAllMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
                   Clear All
                 </Button>
               </AlertDialogTrigger>
@@ -436,12 +450,16 @@ export function ExceptionTrackerPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear all exceptions?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently remove all {listData?.total ?? 0} tracked exception(s) from Redis. This action cannot be undone.
+                    This will permanently remove all {listData?.total ?? 0} tracked exception(s) from Redis. This action
+                    cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClearAll} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  <AlertDialogAction
+                    onClick={handleClearAll}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
                     Clear All
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -454,7 +472,7 @@ export function ExceptionTrackerPage() {
       {/* Exception List */}
       <Card>
         <CardContent className="p-4">
-          {(statusLoading || listLoading) ? (
+          {statusLoading || listLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>

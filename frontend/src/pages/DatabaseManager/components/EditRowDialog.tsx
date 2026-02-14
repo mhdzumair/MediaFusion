@@ -1,14 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import {
-  Save,
-  X,
-  ToggleLeft,
-  Calendar,
-  Hash,
-  Type,
-  Braces,
-  AlertCircle,
-} from 'lucide-react'
+import { Save, X, ToggleLeft, Calendar, Hash, Type, Braces, AlertCircle } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -40,13 +31,21 @@ interface EditRowDialogProps {
 // Get field type from PostgreSQL data type
 function getFieldType(dataType: string): 'text' | 'number' | 'boolean' | 'json' | 'timestamp' | 'textarea' {
   const lowerType = dataType.toLowerCase()
-  
+
   if (lowerType.includes('bool')) return 'boolean'
-  if (lowerType.includes('int') || lowerType.includes('numeric') || lowerType.includes('float') || lowerType.includes('decimal') || lowerType.includes('real') || lowerType.includes('double')) return 'number'
+  if (
+    lowerType.includes('int') ||
+    lowerType.includes('numeric') ||
+    lowerType.includes('float') ||
+    lowerType.includes('decimal') ||
+    lowerType.includes('real') ||
+    lowerType.includes('double')
+  )
+    return 'number'
   if (lowerType.includes('json') || lowerType.includes('array')) return 'json'
   if (lowerType.includes('timestamp') || lowerType.includes('date') || lowerType.includes('time')) return 'timestamp'
   if (lowerType.includes('text') && !lowerType.includes('varchar')) return 'textarea'
-  
+
   return 'text'
 }
 
@@ -86,7 +85,7 @@ function FieldEditor({
     if (typeof value === 'object') return JSON.stringify(value, null, 2)
     return String(value)
   })
-  
+
   // Update local value when external value changes
   useEffect(() => {
     if (value === null || value === undefined) {
@@ -101,7 +100,7 @@ function FieldEditor({
       }
     }
   }, [value])
-  
+
   const handleNullToggle = (checked: boolean) => {
     setIsNullChecked(checked)
     if (checked) {
@@ -123,12 +122,12 @@ function FieldEditor({
       }
     }
   }
-  
+
   const handleChange = (newValue: string) => {
     setLocalValue(newValue)
-    
+
     if (isNullChecked) return
-    
+
     switch (fieldType) {
       case 'boolean':
         onChange(newValue === 'true')
@@ -148,13 +147,15 @@ function FieldEditor({
         onChange(newValue)
     }
   }
-  
+
   // Read-only fields (typically auto-generated)
-  const isReadOnly = disabled || column.is_primary_key || 
-    column.name === 'created_at' || 
+  const isReadOnly =
+    disabled ||
+    column.is_primary_key ||
+    column.name === 'created_at' ||
     column.name === 'updated_at' ||
     column.default_value?.includes('nextval')
-  
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -175,19 +176,15 @@ function FieldEditor({
             </Badge>
           )}
         </div>
-        
+
         {column.is_nullable && !isReadOnly && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">NULL</span>
-            <Switch
-              checked={isNullChecked}
-              onCheckedChange={handleNullToggle}
-              disabled={isReadOnly}
-            />
+            <Switch checked={isNullChecked} onCheckedChange={handleNullToggle} disabled={isReadOnly} />
           </div>
         )}
       </div>
-      
+
       {/* Field input based on type */}
       {fieldType === 'boolean' ? (
         <div className="flex items-center gap-3">
@@ -211,10 +208,7 @@ function FieldEditor({
           onChange={(e) => handleChange(e.target.value)}
           disabled={isReadOnly || isNullChecked}
           placeholder={isNullChecked ? 'NULL' : fieldType === 'json' ? '{ }' : ''}
-          className={cn(
-            "font-mono text-sm min-h-[100px]",
-            isNullChecked && "bg-muted/50 text-muted-foreground italic"
-          )}
+          className={cn('font-mono text-sm min-h-[100px]', isNullChecked && 'bg-muted/50 text-muted-foreground italic')}
         />
       ) : fieldType === 'timestamp' ? (
         <Input
@@ -222,10 +216,7 @@ function FieldEditor({
           value={isNullChecked ? '' : localValue?.replace(' ', 'T')?.slice(0, 16) || ''}
           onChange={(e) => handleChange(e.target.value.replace('T', ' '))}
           disabled={isReadOnly || isNullChecked}
-          className={cn(
-            "font-mono",
-            isNullChecked && "bg-muted/50 text-muted-foreground italic"
-          )}
+          className={cn('font-mono', isNullChecked && 'bg-muted/50 text-muted-foreground italic')}
         />
       ) : fieldType === 'number' ? (
         <Input
@@ -234,10 +225,7 @@ function FieldEditor({
           onChange={(e) => handleChange(e.target.value)}
           disabled={isReadOnly || isNullChecked}
           placeholder={isNullChecked ? 'NULL' : '0'}
-          className={cn(
-            "font-mono",
-            isNullChecked && "bg-muted/50 text-muted-foreground italic"
-          )}
+          className={cn('font-mono', isNullChecked && 'bg-muted/50 text-muted-foreground italic')}
         />
       ) : (
         <Input
@@ -246,9 +234,7 @@ function FieldEditor({
           onChange={(e) => handleChange(e.target.value)}
           disabled={isReadOnly || isNullChecked}
           placeholder={isNullChecked ? 'NULL' : ''}
-          className={cn(
-            isNullChecked && "bg-muted/50 text-muted-foreground italic"
-          )}
+          className={cn(isNullChecked && 'bg-muted/50 text-muted-foreground italic')}
         />
       )}
     </div>
@@ -267,7 +253,7 @@ export function EditRowDialog({
 }: EditRowDialogProps) {
   const [editedData, setEditedData] = useState<Record<string, unknown>>({})
   const [error, setError] = useState<string | null>(null)
-  
+
   // Initialize edited data when dialog opens
   useEffect(() => {
     if (open && rowData) {
@@ -275,17 +261,17 @@ export function EditRowDialog({
       setError(null)
     }
   }, [open, rowData])
-  
+
   // Get the row ID for display
   const rowId = rowData?.[idColumn]
-  
+
   // Calculate which fields have been modified
   const modifiedFields = useMemo(() => {
     const modified: Record<string, unknown> = {}
     for (const key of Object.keys(editedData)) {
       const originalValue = rowData[key]
       const editedValue = editedData[key]
-      
+
       // Handle JSON comparison
       if (typeof originalValue === 'object' && typeof editedValue === 'object') {
         if (JSON.stringify(originalValue) !== JSON.stringify(editedValue)) {
@@ -297,22 +283,22 @@ export function EditRowDialog({
     }
     return modified
   }, [editedData, rowData])
-  
+
   const hasChanges = Object.keys(modifiedFields).length > 0
-  
+
   // Handle field change
   const handleFieldChange = (columnName: string, value: unknown) => {
-    setEditedData(prev => ({
+    setEditedData((prev) => ({
       ...prev,
       [columnName]: value,
     }))
     setError(null)
   }
-  
+
   // Handle save
   const handleSave = async () => {
     if (!hasChanges) return
-    
+
     try {
       await onSave(modifiedFields)
       onOpenChange(false)
@@ -320,7 +306,7 @@ export function EditRowDialog({
       setError(err instanceof Error ? err.message : 'Failed to save changes')
     }
   }
-  
+
   // Sort columns: primary key first, then by name
   const sortedColumns = useMemo(() => {
     return [...columns].sort((a, b) => {
@@ -333,7 +319,7 @@ export function EditRowDialog({
       return a.name.localeCompare(b.name)
     })
   }, [columns])
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
@@ -349,11 +335,9 @@ export function EditRowDialog({
               </Badge>
             )}
           </DialogTitle>
-          <DialogDescription>
-            Modify the field values below. Read-only fields cannot be edited.
-          </DialogDescription>
+          <DialogDescription>Modify the field values below. Read-only fields cannot be edited.</DialogDescription>
         </DialogHeader>
-        
+
         <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2">
           <div className="space-y-6 py-4">
             {sortedColumns.map((column) => (
@@ -366,20 +350,18 @@ export function EditRowDialog({
             ))}
           </div>
         </div>
-        
+
         {error && (
           <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
           </div>
         )}
-        
+
         <DialogFooter className="flex items-center justify-between sm:justify-between shrink-0">
           <div className="text-sm text-muted-foreground">
             {hasChanges ? (
-              <span className="text-primary">
-                {Object.keys(modifiedFields).length} field(s) modified
-              </span>
+              <span className="text-primary">{Object.keys(modifiedFields).length} field(s) modified</span>
             ) : (
               'No changes'
             )}
@@ -389,10 +371,7 @@ export function EditRowDialog({
               <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
-            <Button
-              onClick={handleSave}
-              disabled={!hasChanges || isPending}
-            >
+            <Button onClick={handleSave} disabled={!hasChanges || isPending}>
               <Save className="h-4 w-4 mr-2" />
               {isPending ? 'Saving...' : 'Save Changes'}
             </Button>
@@ -402,4 +381,3 @@ export function EditRowDialog({
     </Dialog>
   )
 }
-

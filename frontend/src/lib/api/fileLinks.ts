@@ -74,21 +74,14 @@ export const fileLinksApi = {
   /**
    * Get all file links for a stream and media combination
    */
-  getStreamFileLinks: async (
-    streamId: number,
-    mediaId: number
-  ): Promise<StreamFileLinksResponse> => {
-    return apiClient.get<StreamFileLinksResponse>(
-      `/stream-links/files/${streamId}?media_id=${mediaId}`
-    )
+  getStreamFileLinks: async (streamId: number, mediaId: number): Promise<StreamFileLinksResponse> => {
+    return apiClient.get<StreamFileLinksResponse>(`/stream-links/files/${streamId}?media_id=${mediaId}`)
   },
 
   /**
    * Update file links for a stream (fix season/episode numbers)
    */
-  updateFileLinks: async (
-    request: BulkFileLinkUpdateRequest
-  ): Promise<FileLinkUpdateResponse> => {
+  updateFileLinks: async (request: BulkFileLinkUpdateRequest): Promise<FileLinkUpdateResponse> => {
     return apiClient.put<FileLinkUpdateResponse>('/stream-links/files', request)
   },
 
@@ -96,17 +89,16 @@ export const fileLinksApi = {
    * Get list of streams that need file annotation (moderator only)
    */
   getStreamsNeedingAnnotation: async (
-    params: StreamsNeedingAnnotationParams = {}
+    params: StreamsNeedingAnnotationParams = {},
   ): Promise<StreamsNeedingAnnotationResponse> => {
     const searchParams = new URLSearchParams()
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.per_page) searchParams.set('per_page', params.per_page.toString())
     if (params.search) searchParams.set('search', params.search)
-    
+
     const queryString = searchParams.toString()
     return apiClient.get<StreamsNeedingAnnotationResponse>(
-      `/stream-links/needs-annotation${queryString ? `?${queryString}` : ''}`
+      `/stream-links/needs-annotation${queryString ? `?${queryString}` : ''}`,
     )
   },
 }
-

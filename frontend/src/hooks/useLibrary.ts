@@ -23,10 +23,8 @@ export function useLibrary(params: LibraryListParams = {}) {
 export function useInfiniteLibrary(params: Omit<LibraryListParams, 'page'> = {}) {
   return useInfiniteQuery({
     queryKey: [...libraryKeys.list(params), 'infinite'],
-    queryFn: ({ pageParam = 1 }) =>
-      libraryApi.getLibrary({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.page + 1 : undefined,
+    queryFn: ({ pageParam = 1 }) => libraryApi.getLibrary({ ...params, page: pageParam }),
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
     initialPageParam: 1,
     staleTime: 2 * 60 * 1000, // 2 minutes
   })
@@ -120,4 +118,3 @@ export function useRemoveFromLibraryByMediaId() {
 
 // Export types
 export type { LibraryListParams, LibraryItemCreate, CatalogType }
-

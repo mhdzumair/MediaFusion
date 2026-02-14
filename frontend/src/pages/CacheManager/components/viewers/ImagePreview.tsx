@@ -14,18 +14,18 @@ export function ImagePreview({ cacheKey, sizeBytes, className }: ImagePreviewPro
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [imageError, setImageError] = useState(false)
   const [loading, setLoading] = useState(true)
-  
+
   useEffect(() => {
     let blobUrl: string | null = null
     let mounted = true
-    
+
     const loadImage = async () => {
       try {
         setLoading(true)
         setImageError(false)
-        
+
         blobUrl = await fetchCacheImage(cacheKey)
-        
+
         if (mounted) {
           setImageSrc(blobUrl)
         }
@@ -40,9 +40,9 @@ export function ImagePreview({ cacheKey, sizeBytes, className }: ImagePreviewPro
         }
       }
     }
-    
+
     loadImage()
-    
+
     return () => {
       mounted = false
       if (blobUrl) {
@@ -50,9 +50,9 @@ export function ImagePreview({ cacheKey, sizeBytes, className }: ImagePreviewPro
       }
     }
   }, [cacheKey])
-  
+
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn('space-y-3', className)}>
       <div className="flex items-center justify-center p-6 rounded-xl border border-border/50 bg-muted/30 min-h-[300px]">
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3">
@@ -72,13 +72,10 @@ export function ImagePreview({ cacheKey, sizeBytes, className }: ImagePreviewPro
               alt="Cached image"
               className="max-w-full max-h-[500px] rounded-lg shadow-lg object-contain"
             />
-            <p className="text-sm text-muted-foreground mt-4">
-              {formatBytes(sizeBytes)}
-            </p>
+            <p className="text-sm text-muted-foreground mt-4">{formatBytes(sizeBytes)}</p>
           </div>
         )}
       </div>
     </div>
   )
 }
-

@@ -48,7 +48,7 @@ export interface ScrapeStatusResponse {
   scraper_statuses: Record<string, ScraperStatusInfo> | null
   available_scrapers: ScraperInfo[]
   is_moderator: boolean
-  has_debrid: boolean  // Whether user has debrid service configured
+  has_debrid: boolean // Whether user has debrid service configured
 }
 
 export interface ScrapeRequest {
@@ -56,7 +56,7 @@ export interface ScrapeRequest {
   season?: number
   episode?: number
   force?: boolean
-  scrapers?: string[]  // List of scraper IDs to use
+  scrapers?: string[] // List of scraper IDs to use
 }
 
 export interface ScrapeResponse {
@@ -136,7 +136,7 @@ export const scrapersApi = {
     mediaId: number,
     mediaType: 'movie' | 'series' = 'movie',
     season?: number,
-    episode?: number
+    episode?: number,
   ): Promise<ScrapeStatusResponse> => {
     const params = new URLSearchParams({ media_type: mediaType })
     if (season !== undefined) params.append('season', String(season))
@@ -147,11 +147,7 @@ export const scrapersApi = {
   /**
    * Trigger scraping for a media item
    */
-  triggerScrape: async (
-    mediaId: number,
-    request: ScrapeRequest
-  ): Promise<ScrapeResponse> => {
+  triggerScrape: async (mediaId: number, request: ScrapeRequest): Promise<ScrapeResponse> => {
     return apiClient.post(`/scraping/${mediaId}/scrape`, request)
   },
 }
-

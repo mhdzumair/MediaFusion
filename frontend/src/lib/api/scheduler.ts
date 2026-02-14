@@ -81,7 +81,7 @@ export const schedulerApi = {
     const searchParams = new URLSearchParams()
     if (params.category) searchParams.set('category', params.category)
     if (params.enabled_only) searchParams.set('enabled_only', 'true')
-    
+
     const query = searchParams.toString()
     return apiClient.get<SchedulerJobsResponse>(`/admin/schedulers${query ? `?${query}` : ''}`)
   },
@@ -124,4 +124,3 @@ export const schedulerApi = {
     return apiClient.get<JobHistoryResponse>(`/admin/schedulers/${jobId}/history?limit=${limit}`)
   },
 }
-

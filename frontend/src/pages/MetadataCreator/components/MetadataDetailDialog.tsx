@@ -1,10 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -33,12 +27,7 @@ interface MetadataDetailDialogProps {
   onEdit: () => void
 }
 
-export function MetadataDetailDialog({
-  open,
-  onOpenChange,
-  media,
-  onEdit,
-}: MetadataDetailDialogProps) {
+export function MetadataDetailDialog({ open, onOpenChange, media, onEdit }: MetadataDetailDialogProps) {
   if (!media) return null
 
   const isMovie = media.type === 'movie'
@@ -49,22 +38,14 @@ export function MetadataDetailDialog({
         {/* Header with backdrop */}
         <div className="relative h-32 bg-gradient-to-b from-primary/20 to-background overflow-hidden">
           {media.background_url && (
-            <img
-              src={media.background_url}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-30"
-            />
+            <img src={media.background_url} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-          
+
           {/* Poster overlay */}
           <div className="absolute -bottom-8 left-6 w-20 h-28 rounded-lg border-2 border-background overflow-hidden bg-muted shadow-xl">
             {media.poster_url ? (
-              <img
-                src={media.poster_url}
-                alt={media.title}
-                className="w-full h-full object-cover"
-              />
+              <img src={media.poster_url} alt={media.title} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 {isMovie ? (
@@ -84,20 +65,12 @@ export function MetadataDetailDialog({
               <div>
                 <DialogTitle className="text-xl flex items-center gap-2">
                   {media.title}
-                  {media.year && (
-                    <span className="text-muted-foreground font-normal">
-                      ({media.year})
-                    </span>
-                  )}
+                  {media.year && <span className="text-muted-foreground font-normal">({media.year})</span>}
                 </DialogTitle>
                 <DialogDescription className="mt-1 flex items-center gap-2 flex-wrap">
                   <Badge
                     variant="outline"
-                    className={cn(
-                      isMovie
-                        ? 'border-blue-500/50 text-blue-500'
-                        : 'border-green-500/50 text-green-500'
-                    )}
+                    className={cn(isMovie ? 'border-blue-500/50 text-blue-500' : 'border-green-500/50 text-green-500')}
                   >
                     {isMovie ? <Film className="h-3 w-3 mr-1" /> : <Tv className="h-3 w-3 mr-1" />}
                     {media.type}
@@ -184,16 +157,11 @@ export function MetadataDetailDialog({
                   <h4 className="text-sm font-medium mb-2">Seasons</h4>
                   <div className="space-y-2">
                     {media.seasons.map((season) => (
-                      <div
-                        key={season.id}
-                        className="p-3 rounded-lg border border-border/50 bg-muted/20"
-                      >
+                      <div key={season.id} className="p-3 rounded-lg border border-border/50 bg-muted/20">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Badge variant="outline">Season {season.season_number}</Badge>
-                            {season.name && (
-                              <span className="text-sm text-muted-foreground">{season.name}</span>
-                            )}
+                            {season.name && <span className="text-sm text-muted-foreground">{season.name}</span>}
                           </div>
                           <span className="text-xs text-muted-foreground">
                             {season.episode_count} episode{season.episode_count !== 1 ? 's' : ''}
@@ -285,5 +253,3 @@ export function MetadataDetailDialog({
     </Dialog>
   )
 }
-
-

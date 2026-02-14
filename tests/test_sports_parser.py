@@ -43,236 +43,270 @@ from utils.sports_parser import (
 # detect_sports_category() Tests
 # =============================================================================
 
+
 class TestDetectSportsCategory:
     """Tests for detect_sports_category() function."""
 
     # --- American Football (NFL) ---
-    @pytest.mark.parametrize("title,expected", [
-        # League identifiers
-        ("NFL.2026.Super.Bowl.LX.1080p", "american_football"),
-        ("Super Bowl 60 Seahawks vs Patriots", "american_football"),
-        ("NFC Championship Game 2026", "american_football"),
-        ("AFC Championship 2026 720p HDTV", "american_football"),
-        ("NCAA Football Week 5 Highlights", "american_football"),
-        ("College Football Playoff Semifinal", "american_football"),
-        # Team names
-        ("Dallas Cowboys vs Philadelphia Eagles 2026", "american_football"),
-        ("Green Bay Packers Game 720p", "american_football"),
-        ("New England Patriots Season Opener", "american_football"),
-        ("San Francisco 49ers at Seattle Seahawks", "american_football"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # League identifiers
+            ("NFL.2026.Super.Bowl.LX.1080p", "american_football"),
+            ("Super Bowl 60 Seahawks vs Patriots", "american_football"),
+            ("NFC Championship Game 2026", "american_football"),
+            ("AFC Championship 2026 720p HDTV", "american_football"),
+            ("NCAA Football Week 5 Highlights", "american_football"),
+            ("College Football Playoff Semifinal", "american_football"),
+            # Team names
+            ("Dallas Cowboys vs Philadelphia Eagles 2026", "american_football"),
+            ("Green Bay Packers Game 720p", "american_football"),
+            ("New England Patriots Season Opener", "american_football"),
+            ("San Francisco 49ers at Seattle Seahawks", "american_football"),
+        ],
+    )
     def test_american_football_detection(self, title, expected):
         """Test American Football/NFL category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Basketball (NBA) ---
-    @pytest.mark.parametrize("title,expected", [
-        # League identifiers
-        ("NBA.2024.02.15.Lakers.vs.Warriors.720p", "basketball"),
-        ("WNBA Finals 2024 Game 3", "basketball"),
-        ("March Madness Final Four 2024", "basketball"),
-        ("NCAA Basketball Championship", "basketball"),
-        ("Euroleague Final Four 2024", "basketball"),
-        ("FIBA World Cup 2023", "basketball"),
-        # Team names
-        ("Los Angeles Lakers vs Boston Celtics", "basketball"),
-        ("Golden State Warriors Game Highlights", "basketball"),
-        ("Brooklyn Nets at Miami Heat 1080p", "basketball"),
-        ("Chicago Bulls Season Preview", "basketball"),
-        ("Philadelphia 76ers Playoff Game", "basketball"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # League identifiers
+            ("NBA.2024.02.15.Lakers.vs.Warriors.720p", "basketball"),
+            ("WNBA Finals 2024 Game 3", "basketball"),
+            ("March Madness Final Four 2024", "basketball"),
+            ("NCAA Basketball Championship", "basketball"),
+            ("Euroleague Final Four 2024", "basketball"),
+            ("FIBA World Cup 2023", "basketball"),
+            # Team names
+            ("Los Angeles Lakers vs Boston Celtics", "basketball"),
+            ("Golden State Warriors Game Highlights", "basketball"),
+            ("Brooklyn Nets at Miami Heat 1080p", "basketball"),
+            ("Chicago Bulls Season Preview", "basketball"),
+            ("Philadelphia 76ers Playoff Game", "basketball"),
+        ],
+    )
     def test_basketball_detection(self, title, expected):
         """Test Basketball/NBA category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Hockey (NHL) ---
-    @pytest.mark.parametrize("title,expected", [
-        # League identifiers
-        ("NHL.2024.Stanley.Cup.Finals.Game.7.1080p", "hockey"),
-        ("Stanley Cup Playoffs Round 2", "hockey"),
-        ("KHL All Star Game 2024", "hockey"),
-        ("IIHF World Championship Final", "hockey"),
-        # Team names
-        ("Boston Bruins vs Toronto Maple Leafs", "hockey"),
-        ("Montreal Canadiens Game 720p", "hockey"),
-        ("Chicago Blackhawks at Pittsburgh Penguins", "hockey"),
-        ("Vegas Golden Knights Highlights", "hockey"),
-        ("Seattle Kraken Season Opener", "hockey"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # League identifiers
+            ("NHL.2024.Stanley.Cup.Finals.Game.7.1080p", "hockey"),
+            ("Stanley Cup Playoffs Round 2", "hockey"),
+            ("KHL All Star Game 2024", "hockey"),
+            ("IIHF World Championship Final", "hockey"),
+            # Team names
+            ("Boston Bruins vs Toronto Maple Leafs", "hockey"),
+            ("Montreal Canadiens Game 720p", "hockey"),
+            ("Chicago Blackhawks at Pittsburgh Penguins", "hockey"),
+            ("Vegas Golden Knights Highlights", "hockey"),
+            ("Seattle Kraken Season Opener", "hockey"),
+        ],
+    )
     def test_hockey_detection(self, title, expected):
         """Test Hockey/NHL category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Baseball (MLB) ---
-    @pytest.mark.parametrize("title,expected", [
-        # League identifiers
-        ("MLB.2024.World.Series.Game.5.1080p", "baseball"),
-        ("NPB Japan Series Final", "baseball"),
-        ("KBO Korean Baseball Championship", "baseball"),
-        # Team names
-        ("New York Yankees vs Boston Red Sox", "baseball"),
-        ("Los Angeles Dodgers Game Highlights", "baseball"),
-        ("Chicago Cubs at St Louis Cardinals", "baseball"),
-        ("Houston Astros World Series", "baseball"),
-        # Giants without MLB context does not match (too generic)
-        ("MLB San Francisco Giants Spring Training", "baseball"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # League identifiers
+            ("MLB.2024.World.Series.Game.5.1080p", "baseball"),
+            ("NPB Japan Series Final", "baseball"),
+            ("KBO Korean Baseball Championship", "baseball"),
+            # Team names
+            ("New York Yankees vs Boston Red Sox", "baseball"),
+            ("Los Angeles Dodgers Game Highlights", "baseball"),
+            ("Chicago Cubs at St Louis Cardinals", "baseball"),
+            ("Houston Astros World Series", "baseball"),
+            # Giants without MLB context does not match (too generic)
+            ("MLB San Francisco Giants Spring Training", "baseball"),
+        ],
+    )
     def test_baseball_detection(self, title, expected):
         """Test Baseball/MLB category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Fighting (UFC, WWE, Boxing) ---
-    @pytest.mark.parametrize("title,expected", [
-        # UFC
-        ("UFC.300.Alex.Pereira.vs.Jamahal.Hill.PPV.1080p", "fighting"),
-        ("UFC Fight Night Main Event 720p", "fighting"),
-        ("Bellator 300 Main Card", "fighting"),
-        ("ONE Championship Title Fight", "fighting"),
-        ("PFL Championship Finals", "fighting"),
-        # WWE
-        ("WWE.Monday.Night.Raw.2024.02.19.720p", "fighting"),
-        ("WWE SmackDown 2024.02.16 1080p", "fighting"),
-        ("WrestleMania 40 Full Show", "fighting"),
-        ("WWE Royal Rumble 2024", "fighting"),
-        ("WWE NXT Takeover 720p", "fighting"),
-        ("AEW Dynamite Weekly Show", "fighting"),
-        # Boxing
-        ("Boxing Canelo vs Plant PPV 1080p", "fighting"),
-        ("Tyson Fury vs Deontay Wilder 3", "fighting"),
-        ("Anthony Joshua Title Defense", "fighting"),
-        # MMA
-        ("MMA Cage Warriors 150", "fighting"),
-        # Kickboxing is a fighting keyword
-        ("Kickboxing Championship 2024", "fighting"),
-        ("Glory Kickboxing 80 Main Event", "fighting"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # UFC
+            ("UFC.300.Alex.Pereira.vs.Jamahal.Hill.PPV.1080p", "fighting"),
+            ("UFC Fight Night Main Event 720p", "fighting"),
+            ("Bellator 300 Main Card", "fighting"),
+            ("ONE Championship Title Fight", "fighting"),
+            ("PFL Championship Finals", "fighting"),
+            # WWE
+            ("WWE.Monday.Night.Raw.2024.02.19.720p", "fighting"),
+            ("WWE SmackDown 2024.02.16 1080p", "fighting"),
+            ("WrestleMania 40 Full Show", "fighting"),
+            ("WWE Royal Rumble 2024", "fighting"),
+            ("WWE NXT Takeover 720p", "fighting"),
+            ("AEW Dynamite Weekly Show", "fighting"),
+            # Boxing
+            ("Boxing Canelo vs Plant PPV 1080p", "fighting"),
+            ("Tyson Fury vs Deontay Wilder 3", "fighting"),
+            ("Anthony Joshua Title Defense", "fighting"),
+            # MMA
+            ("MMA Cage Warriors 150", "fighting"),
+            # Kickboxing is a fighting keyword
+            ("Kickboxing Championship 2024", "fighting"),
+            ("Glory Kickboxing 80 Main Event", "fighting"),
+        ],
+    )
     def test_fighting_detection(self, title, expected):
         """Test Fighting/Combat Sports category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Formula Racing (F1, NASCAR, IndyCar) ---
-    @pytest.mark.parametrize("title,expected", [
-        # F1 with various formats
-        ("Formula.1.2024.Round07.British.Grand.Prix.1080p", "formula_racing"),
-        ("Formula1.2024.Monaco.GP.Race.F1TV.1080p", "formula_racing"),
-        ("F1 2024 Spanish Grand Prix Qualifying", "formula_racing"),
-        (" F1 Monaco GP Race", "formula_racing"),  # Leading space F1
-        ("Formula 2 2024 Round 5 Race", "formula_racing"),
-        ("Formula 3 Sprint Race Silverstone", "formula_racing"),
-        # Other racing
-        ("IndyCar 2024 Indy 500 Full Race", "formula_racing"),
-        ("NASCAR Cup Series Daytona 500 2024", "formula_racing"),
-        ("WEC 24 Hours of Le Mans 2024", "formula_racing"),
-        # GP keywords
-        ("Monaco Grand Prix 2024 Race", "formula_racing"),
-        ("Silverstone GP Qualifying 1080p", "formula_racing"),
-        ("Monza Italian GP Sprint Race", "formula_racing"),
-        # Teams/Drivers
-        ("Max Verstappen Pole Position", "formula_racing"),
-        ("Lewis Hamilton Race Highlights", "formula_racing"),
-        ("Ferrari vs Mercedes Battle", "formula_racing"),
-        ("Red Bull Racing Dominant Win", "formula_racing"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # F1 with various formats
+            ("Formula.1.2024.Round07.British.Grand.Prix.1080p", "formula_racing"),
+            ("Formula1.2024.Monaco.GP.Race.F1TV.1080p", "formula_racing"),
+            ("F1 2024 Spanish Grand Prix Qualifying", "formula_racing"),
+            (" F1 Monaco GP Race", "formula_racing"),  # Leading space F1
+            ("Formula 2 2024 Round 5 Race", "formula_racing"),
+            ("Formula 3 Sprint Race Silverstone", "formula_racing"),
+            # Other racing
+            ("IndyCar 2024 Indy 500 Full Race", "formula_racing"),
+            ("NASCAR Cup Series Daytona 500 2024", "formula_racing"),
+            ("WEC 24 Hours of Le Mans 2024", "formula_racing"),
+            # GP keywords
+            ("Monaco Grand Prix 2024 Race", "formula_racing"),
+            ("Silverstone GP Qualifying 1080p", "formula_racing"),
+            ("Monza Italian GP Sprint Race", "formula_racing"),
+            # Teams/Drivers
+            ("Max Verstappen Pole Position", "formula_racing"),
+            ("Lewis Hamilton Race Highlights", "formula_racing"),
+            ("Ferrari vs Mercedes Battle", "formula_racing"),
+            ("Red Bull Racing Dominant Win", "formula_racing"),
+        ],
+    )
     def test_formula_racing_detection(self, title, expected):
         """Test Formula Racing/F1 category detection."""
         assert detect_sports_category(title) == expected
 
     # --- MotoGP ---
-    @pytest.mark.parametrize("title,expected", [
-        # Series identifiers
-        ("MotoGP.2024x03.San.Marino.Sprint.BTSportHD.1080p", "motogp_racing"),
-        ("Moto GP 2024 Round 5 Race", "motogp_racing"),
-        ("Moto2 2024 Catalunya GP Race", "motogp_racing"),
-        ("Moto3 2024 Mugello Sprint", "motogp_racing"),
-        ("World Superbike Championship 2024", "motogp_racing"),
-        ("WSBK 2024 Aragon Race 2", "motogp_racing"),
-        ("WorldSBK Assen Round", "motogp_racing"),
-        ("BSB British Superbike 2024", "motogp_racing"),
-        ("Isle of Man TT 2024 Senior Race", "motogp_racing"),
-        # Riders/Manufacturers
-        ("Marc Marquez Race Highlights", "motogp_racing"),
-        ("Francesco Bagnaia Championship Battle", "motogp_racing"),
-        ("Ducati Dominates MotoGP", "motogp_racing"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # Series identifiers
+            ("MotoGP.2024x03.San.Marino.Sprint.BTSportHD.1080p", "motogp_racing"),
+            ("Moto GP 2024 Round 5 Race", "motogp_racing"),
+            ("Moto2 2024 Catalunya GP Race", "motogp_racing"),
+            ("Moto3 2024 Mugello Sprint", "motogp_racing"),
+            ("World Superbike Championship 2024", "motogp_racing"),
+            ("WSBK 2024 Aragon Race 2", "motogp_racing"),
+            ("WorldSBK Assen Round", "motogp_racing"),
+            ("BSB British Superbike 2024", "motogp_racing"),
+            ("Isle of Man TT 2024 Senior Race", "motogp_racing"),
+            # Riders/Manufacturers
+            ("Marc Marquez Race Highlights", "motogp_racing"),
+            ("Francesco Bagnaia Championship Battle", "motogp_racing"),
+            ("Ducati Dominates MotoGP", "motogp_racing"),
+        ],
+    )
     def test_motogp_detection(self, title, expected):
         """Test MotoGP category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Football/Soccer ---
-    @pytest.mark.parametrize("title,expected", [
-        # League identifiers
-        ("UEFA Champions League Final 2024", "football"),
-        ("FIFA World Cup 2026 Final", "football"),
-        ("Premier League Arsenal vs Chelsea", "football"),
-        ("La Liga El Clasico Barcelona vs Real Madrid", "football"),
-        ("Bundesliga Bayern Munich Match", "football"),
-        ("Serie A Inter Milan vs Juventus", "football"),
-        ("Ligue 1 PSG vs Marseille", "football"),
-        ("Europa League Semifinal", "football"),
-        ("Copa America 2024 Final", "football"),
-        ("MLS Cup Final 2024", "football"),
-        # Teams
-        ("Manchester United vs Liverpool", "football"),
-        ("Chelsea FC Season Review", "football"),
-        ("Arsenal vs Tottenham Derby", "football"),
-        ("Barcelona Champions League", "football"),
-        ("Real Madrid La Liga Title", "football"),
-        ("Bayern Munich Bundesliga Match", "football"),
-        ("PSG Ligue 1 Match 1080p", "football"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # League identifiers
+            ("UEFA Champions League Final 2024", "football"),
+            ("FIFA World Cup 2026 Final", "football"),
+            ("Premier League Arsenal vs Chelsea", "football"),
+            ("La Liga El Clasico Barcelona vs Real Madrid", "football"),
+            ("Bundesliga Bayern Munich Match", "football"),
+            ("Serie A Inter Milan vs Juventus", "football"),
+            ("Ligue 1 PSG vs Marseille", "football"),
+            ("Europa League Semifinal", "football"),
+            ("Copa America 2024 Final", "football"),
+            ("MLS Cup Final 2024", "football"),
+            # Teams
+            ("Manchester United vs Liverpool", "football"),
+            ("Chelsea FC Season Review", "football"),
+            ("Arsenal vs Tottenham Derby", "football"),
+            ("Barcelona Champions League", "football"),
+            ("Real Madrid La Liga Title", "football"),
+            ("Bayern Munich Bundesliga Match", "football"),
+            ("PSG Ligue 1 Match 1080p", "football"),
+        ],
+    )
     def test_football_detection(self, title, expected):
         """Test Football/Soccer category detection."""
         assert detect_sports_category(title) == expected
 
     # --- Rugby ---
-    @pytest.mark.parametrize("title,expected", [
-        # League identifiers
-        ("Rugby World Cup 2023 Final", "rugby"),
-        ("Six Nations England vs Ireland", "rugby"),
-        ("Super Rugby Pacific Finals", "rugby"),
-        ("Premiership Rugby Final 2024", "rugby"),
-        ("NRL Grand Final 2024", "rugby"),
-        ("Top 14 French Rugby Final", "rugby"),
-        # Teams
-        ("All Blacks vs Springboks", "rugby"),
-        ("England Rugby Six Nations", "rugby"),
-        ("Crusaders Super Rugby Match", "rugby"),
-        # AFL keyword
-        ("Australian Football League Grand Final", "rugby"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # League identifiers
+            ("Rugby World Cup 2023 Final", "rugby"),
+            ("Six Nations England vs Ireland", "rugby"),
+            ("Super Rugby Pacific Finals", "rugby"),
+            ("Premiership Rugby Final 2024", "rugby"),
+            ("NRL Grand Final 2024", "rugby"),
+            ("Top 14 French Rugby Final", "rugby"),
+            # Teams
+            ("All Blacks vs Springboks", "rugby"),
+            ("England Rugby Six Nations", "rugby"),
+            ("Crusaders Super Rugby Match", "rugby"),
+            # AFL keyword
+            ("Australian Football League Grand Final", "rugby"),
+        ],
+    )
     def test_rugby_detection(self, title, expected):
         """Test Rugby category detection."""
         assert detect_sports_category(title) == expected
 
     # --- General Sports / Other Sports ---
-    @pytest.mark.parametrize("title,expected", [
-        ("Wimbledon 2024 Mens Final Tennis", "other_sports"),
-        ("Golf PGA Championship 2024", "other_sports"),
-        # Note: "Cricket World Cup" has "world cup" which matches football first
-        ("Cricket Test Match 2023 Final", "other_sports"),
-        ("Tour de France 2024 Stage 21 Cycling", "other_sports"),
-        ("Olympics 2024 Swimming Finals", "other_sports"),
-        # "athletics" with word boundary - doesn't match Oakland Athletics
-        ("World Athletics Championship 100m Final", "other_sports"),
-        ("Snooker World Championship Final", "other_sports"),
-        ("Darts World Championship 2024", "other_sports"),
-        ("ESPN Sports Highlights Weekly", "other_sports"),
-        ("Sky Sports News Daily", "other_sports"),
-        ("Match of the Day Episode 720p", "other_sports"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("Wimbledon 2024 Mens Final Tennis", "other_sports"),
+            ("Golf PGA Championship 2024", "other_sports"),
+            # Note: "Cricket World Cup" has "world cup" which matches football first
+            ("Cricket Test Match 2023 Final", "other_sports"),
+            ("Tour de France 2024 Stage 21 Cycling", "other_sports"),
+            ("Olympics 2024 Swimming Finals", "other_sports"),
+            # "athletics" with word boundary - doesn't match Oakland Athletics
+            ("World Athletics Championship 100m Final", "other_sports"),
+            ("Snooker World Championship Final", "other_sports"),
+            ("Darts World Championship 2024", "other_sports"),
+            ("ESPN Sports Highlights Weekly", "other_sports"),
+            ("Sky Sports News Daily", "other_sports"),
+            ("Match of the Day Episode 720p", "other_sports"),
+        ],
+    )
     def test_other_sports_detection(self, title, expected):
         """Test general sports fallback to other_sports category."""
         assert detect_sports_category(title) == expected
 
     # --- No Sports Content ---
-    @pytest.mark.parametrize("title", [
-        "The.Dark.Knight.2008.1080p.BluRay",
-        "Breaking.Bad.S01E01.720p.HDTV",
-        "Game.of.Thrones.S08E06.1080p",  # "game" requires word boundary now
-        "Random Movie Title 2024",
-        "Documentary About Nature 4K",
-        "Music Concert Live Performance",
-    ])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "The.Dark.Knight.2008.1080p.BluRay",
+            "Breaking.Bad.S01E01.720p.HDTV",
+            "Game.of.Thrones.S08E06.1080p",  # "game" requires word boundary now
+            "Random Movie Title 2024",
+            "Documentary About Nature 4K",
+            "Music Concert Live Performance",
+        ],
+    )
     def test_no_sports_content(self, title):
         """Test that non-sports content returns None."""
         assert detect_sports_category(title) is None
@@ -298,18 +332,21 @@ class TestDetectSportsCategory:
         assert detect_sports_category(None) is None
 
     # --- Title Normalization ---
-    @pytest.mark.parametrize("title,expected", [
-        # Dots replaced with spaces
-        ("NFL.Super.Bowl.2024", "american_football"),
-        # Underscores replaced with spaces
-        ("NFL_Super_Bowl_2024", "american_football"),
-        # Dashes replaced with spaces
-        ("NFL-Super-Bowl-2024", "american_football"),
-        # Mixed separators
-        ("NFL.Super_Bowl-2024", "american_football"),
-        # Original spaces preserved
-        ("NFL Super Bowl 2024", "american_football"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # Dots replaced with spaces
+            ("NFL.Super.Bowl.2024", "american_football"),
+            # Underscores replaced with spaces
+            ("NFL_Super_Bowl_2024", "american_football"),
+            # Dashes replaced with spaces
+            ("NFL-Super-Bowl-2024", "american_football"),
+            # Mixed separators
+            ("NFL.Super_Bowl-2024", "american_football"),
+            # Original spaces preserved
+            ("NFL Super Bowl 2024", "american_football"),
+        ],
+    )
     def test_title_normalization(self, title, expected):
         """Test that dots, underscores, and dashes are normalized to spaces."""
         assert detect_sports_category(title) == expected
@@ -344,34 +381,39 @@ class TestDetectSportsCategory:
         assert result == "baseball"
 
     # --- Real Torrent Name Patterns ---
-    @pytest.mark.parametrize("title,expected", [
-        # From Scrapy pipelines
-        ("WWE.Raw.2024.02.19.720p.HDTV.x264-NWCHD", "fighting"),
-        ("UFC.Fight.Night.240.1080p.WEB.h264-VERUM", "fighting"),
-        ("Formula 1. 2024. R03. Monaco. SkyF1HD. 1080P", "formula_racing"),
-        ("Formula1.2024.Round07.British.Grand.Prix.Race.F1TV.1080p", "formula_racing"),
-        ("MotoGP.2024x03.San.Marino.Sprint.BTSportHD.1080p", "motogp_racing"),
-        ("NFL.2024.Week.10.Cowboys.vs.Eagles.720p", "american_football"),
-        ("NBA.2024.02.15.Lakers.vs.Warriors.720p.WEB", "basketball"),
-        ("NHL.2024.Stanley.Cup.Finals.Game.7.1080p", "hockey"),
-        ("MLB.2024.World.Series.Game.5.720p", "baseball"),
-        ("Premier.League.2024.Arsenal.vs.Chelsea.720p", "football"),
-        ("Rugby.World.Cup.2023.Final.1080p", "rugby"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # From Scrapy pipelines
+            ("WWE.Raw.2024.02.19.720p.HDTV.x264-NWCHD", "fighting"),
+            ("UFC.Fight.Night.240.1080p.WEB.h264-VERUM", "fighting"),
+            ("Formula 1. 2024. R03. Monaco. SkyF1HD. 1080P", "formula_racing"),
+            ("Formula1.2024.Round07.British.Grand.Prix.Race.F1TV.1080p", "formula_racing"),
+            ("MotoGP.2024x03.San.Marino.Sprint.BTSportHD.1080p", "motogp_racing"),
+            ("NFL.2024.Week.10.Cowboys.vs.Eagles.720p", "american_football"),
+            ("NBA.2024.02.15.Lakers.vs.Warriors.720p.WEB", "basketball"),
+            ("NHL.2024.Stanley.Cup.Finals.Game.7.1080p", "hockey"),
+            ("MLB.2024.World.Series.Game.5.720p", "baseball"),
+            ("Premier.League.2024.Arsenal.vs.Chelsea.720p", "football"),
+            ("Rugby.World.Cup.2023.Final.1080p", "rugby"),
+        ],
+    )
     def test_real_torrent_names(self, title, expected):
         """Test detection with real-world torrent name patterns."""
         assert detect_sports_category(title) == expected
 
     # --- Ambiguous Team Names ---
-    @pytest.mark.parametrize("title,expected", [
-        # Panthers - requires league context
-        ("Carolina Panthers NFL Game", "american_football"),  # NFL explicit
-        ("NHL Florida Panthers Hockey", "hockey"),  # NHL explicit
-
-        # Giants - requires league context
-        ("New York Giants NFL Sunday Night", "american_football"),  # NFL explicit
-        ("San Francisco Giants MLB Game", "baseball"),  # MLB explicit
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # Panthers - requires league context
+            ("Carolina Panthers NFL Game", "american_football"),  # NFL explicit
+            ("NHL Florida Panthers Hockey", "hockey"),  # NHL explicit
+            # Giants - requires league context
+            ("New York Giants NFL Sunday Night", "american_football"),  # NFL explicit
+            ("San Francisco Giants MLB Game", "baseball"),  # MLB explicit
+        ],
+    )
     def test_ambiguous_team_names_with_context(self, title, expected):
         """Test ambiguous team names where league context helps."""
         assert detect_sports_category(title) == expected
@@ -400,6 +442,7 @@ class TestDetectSportsCategory:
 # clean_sports_event_title() Tests
 # =============================================================================
 
+
 class TestCleanSportsEventTitle:
     """Tests for clean_sports_event_title() function."""
 
@@ -415,36 +458,67 @@ class TestCleanSportsEventTitle:
         assert "mp4" not in clean_sports_event_title("UFC.300.1080p.mp4")
         assert "avi" not in clean_sports_event_title("WWE.Raw.720p.avi")
 
-    @pytest.mark.parametrize("indicator", [
-        "1080p", "720p", "480p", "4K", "UHD", "2160p",
-    ])
+    @pytest.mark.parametrize(
+        "indicator",
+        [
+            "1080p",
+            "720p",
+            "480p",
+            "4K",
+            "UHD",
+            "2160p",
+        ],
+    )
     def test_removes_resolution_indicators(self, indicator):
         """Test removal of resolution indicators."""
         title = f"NFL.Super.Bowl.{indicator}.HDTV"
         result = clean_sports_event_title(title)
         assert indicator.lower() not in result.lower()
 
-    @pytest.mark.parametrize("indicator", [
-        "HDTV", "WEB-DL", "WEBDL", "WEBRip", "BluRay", "BDRip",
-    ])
+    @pytest.mark.parametrize(
+        "indicator",
+        [
+            "HDTV",
+            "WEB-DL",
+            "WEBDL",
+            "WEBRip",
+            "BluRay",
+            "BDRip",
+        ],
+    )
     def test_removes_quality_indicators(self, indicator):
         """Test removal of quality type indicators."""
         title = f"NFL.Super.Bowl.1080p.{indicator}"
         result = clean_sports_event_title(title)
         assert indicator.lower() not in result.lower().replace("-", "")
 
-    @pytest.mark.parametrize("codec", [
-        "H.264", "H264", "H.265", "H265", "HEVC", "x264", "x265",
-    ])
+    @pytest.mark.parametrize(
+        "codec",
+        [
+            "H.264",
+            "H264",
+            "H.265",
+            "H265",
+            "HEVC",
+            "x264",
+            "x265",
+        ],
+    )
     def test_removes_codec_indicators(self, codec):
         """Test removal of codec indicators."""
         title = f"NFL.Game.1080p.{codec}-GROUP"
         result = clean_sports_event_title(title)
         assert codec.lower().replace(".", "") not in result.lower().replace(".", "")
 
-    @pytest.mark.parametrize("audio", [
-        "AAC", "AC3", "DTS", "DD5.1",
-    ])
+    @pytest.mark.parametrize(
+        "audio",
+        [
+            "AAC",
+            "AC3",
+            "DTS",
+            "DD5.1",
+        ],
+    )
     def test_removes_audio_indicators(self, audio):
         """Test removal of audio codec indicators."""
         title = f"UFC.300.1080p.{audio}.H264"
@@ -452,9 +526,14 @@ class TestCleanSportsEventTitle:
         # Remove dots for comparison
         assert audio.lower().replace(".", "") not in result.lower().replace(".", "")
 
-    @pytest.mark.parametrize("flag", [
-        "PROPER", "REPACK", "INTERNAL",
-    ])
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "PROPER",
+            "REPACK",
+            "INTERNAL",
+        ],
+    )
     def test_removes_release_flags(self, flag):
         """Test removal of release flags."""
         title = f"WWE.Raw.720p.{flag}.HDTV"
@@ -512,31 +591,35 @@ class TestCleanSportsEventTitle:
 # normalize_resolution() Tests
 # =============================================================================
 
+
 class TestNormalizeResolution:
     """Tests for normalize_resolution() function."""
 
-    @pytest.mark.parametrize("input_res,expected", [
-        # Standard resolutions
-        ("1080p", "1080p"),
-        ("720p", "720p"),
-        ("480p", "480p"),
-        ("360p", "360p"),
-        # Case insensitivity
-        ("1080P", "1080p"),
-        ("720P", "720p"),
-        # 4K variations
-        ("4K", "4k"),
-        ("4k", "4k"),
-        ("UHD", "4k"),
-        ("2160p", "4k"),
-        # Dimension format
-        ("1920x1080", "1080p"),
-        ("1280x720", "720p"),
-        ("3840x2160", "4k"),
-        ("2560x1440", "1440p"),
-        # SD
-        ("SD", "576p"),
-    ])
+    @pytest.mark.parametrize(
+        "input_res,expected",
+        [
+            # Standard resolutions
+            ("1080p", "1080p"),
+            ("720p", "720p"),
+            ("480p", "480p"),
+            ("360p", "360p"),
+            # Case insensitivity
+            ("1080P", "1080p"),
+            ("720P", "720p"),
+            # 4K variations
+            ("4K", "4k"),
+            ("4k", "4k"),
+            ("UHD", "4k"),
+            ("2160p", "4k"),
+            # Dimension format
+            ("1920x1080", "1080p"),
+            ("1280x720", "720p"),
+            ("3840x2160", "4k"),
+            ("2560x1440", "1440p"),
+            # SD
+            ("SD", "576p"),
+        ],
+    )
     def test_resolution_normalization(self, input_res, expected):
         """Test various resolution format normalizations."""
         assert normalize_resolution(input_res) == expected
@@ -569,21 +652,25 @@ class TestNormalizeResolution:
 # extract_date_from_title() Tests
 # =============================================================================
 
+
 class TestExtractDateFromTitle:
     """Tests for extract_date_from_title() function."""
 
-    @pytest.mark.parametrize("title,expected_date,expected_str", [
-        # YYYY.MM.DD format
-        ("NFL.2026.02.08.Super.Bowl", date(2026, 2, 8), "2026.02.08"),
-        # YYYY-MM-DD format
-        ("NBA-2024-02-15-Lakers-vs-Warriors", date(2024, 2, 15), "2024-02-15"),
-        # DD.MM.YYYY format
-        ("WWE.Raw.19.02.2024.720p", date(2024, 2, 19), "19.02.2024"),
-        # DD-MM-YYYY format
-        ("UFC-Fight-08-02-2024", date(2024, 2, 8), "08-02-2024"),
-        # YYYY_MM_DD format
-        ("MotoGP_2024_03_15_Race", date(2024, 3, 15), "2024_03_15"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_date,expected_str",
+        [
+            # YYYY.MM.DD format
+            ("NFL.2026.02.08.Super.Bowl", date(2026, 2, 8), "2026.02.08"),
+            # YYYY-MM-DD format
+            ("NBA-2024-02-15-Lakers-vs-Warriors", date(2024, 2, 15), "2024-02-15"),
+            # DD.MM.YYYY format
+            ("WWE.Raw.19.02.2024.720p", date(2024, 2, 19), "19.02.2024"),
+            # DD-MM-YYYY format
+            ("UFC-Fight-08-02-2024", date(2024, 2, 8), "08-02-2024"),
+            # YYYY_MM_DD format
+            ("MotoGP_2024_03_15_Race", date(2024, 3, 15), "2024_03_15"),
+        ],
+    )
     def test_date_format_extraction(self, title, expected_date, expected_str):
         """Test extraction of dates in various formats."""
         extracted_date, date_str = extract_date_from_title(title)
@@ -622,32 +709,39 @@ class TestExtractDateFromTitle:
 # extract_release_group() Tests
 # =============================================================================
 
+
 class TestExtractReleaseGroup:
     """Tests for extract_release_group() function."""
 
-    @pytest.mark.parametrize("title,expected", [
-        # Standard release groups
-        ("NFL.Super.Bowl.1080p-DARKSPORT", "DARKSPORT"),
-        ("UFC.300.1080p.WEB-VERUM", "VERUM"),
-        ("Formula1.Race.1080p-F1CARRERAS", "F1CARRERAS"),
-        ("WWE.Raw.720p-NWCHD", "NWCHD"),
-        ("MotoGP.Race.1080p-SMCGILL1969", "SMCGILL1969"),
-        # Sports-specific groups
-        ("Game.720p-SPORT720", "SPORT720"),
-        ("Match.480p-SPORT480", "SPORT480"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # Standard release groups
+            ("NFL.Super.Bowl.1080p-DARKSPORT", "DARKSPORT"),
+            ("UFC.300.1080p.WEB-VERUM", "VERUM"),
+            ("Formula1.Race.1080p-F1CARRERAS", "F1CARRERAS"),
+            ("WWE.Raw.720p-NWCHD", "NWCHD"),
+            ("MotoGP.Race.1080p-SMCGILL1969", "SMCGILL1969"),
+            # Sports-specific groups
+            ("Game.720p-SPORT720", "SPORT720"),
+            ("Match.480p-SPORT480", "SPORT480"),
+        ],
+    )
     def test_release_group_extraction(self, title, expected):
         """Test extraction of release groups."""
         assert extract_release_group(title) == expected
 
-    @pytest.mark.parametrize("title", [
-        # Should NOT return codec names
-        "NFL.Game.1080p.H264",
-        "UFC.Match-H264",
-        # Should NOT return quality names
-        "NBA.Game-HDTV",
-        "WWE.Show-WEB",
-    ])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # Should NOT return codec names
+            "NFL.Game.1080p.H264",
+            "UFC.Match-H264",
+            # Should NOT return quality names
+            "NBA.Game-HDTV",
+            "WWE.Show-WEB",
+        ],
+    )
     def test_excludes_codec_and_quality(self, title):
         """Test that codec and quality indicators are not returned as groups."""
         result = extract_release_group(title)
@@ -672,23 +766,27 @@ class TestExtractReleaseGroup:
 # extract_teams_from_title() Tests
 # =============================================================================
 
+
 class TestExtractTeamsFromTitle:
     """Tests for extract_teams_from_title() function."""
 
-    @pytest.mark.parametrize("title,expected_teams", [
-        # Standard "vs" pattern
-        ("Seattle Seahawks vs New England Patriots", ["Seattle Seahawks", "New England Patriots"]),
-        ("Lakers vs Warriors", ["Lakers", "Warriors"]),
-        # Case variations
-        ("Team1 VS Team2", ["Team1", "Team2"]),
-        ("Team1 Vs Team2", ["Team1", "Team2"]),
-        # "versus" pattern
-        ("Cowboys versus Eagles", ["Cowboys", "Eagles"]),
-        # Short "v" pattern
-        ("Arsenal v Chelsea", ["Arsenal", "Chelsea"]),
-        # "@" pattern (away game format)
-        ("Lakers @ Warriors", ["Lakers", "Warriors"]),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_teams",
+        [
+            # Standard "vs" pattern
+            ("Seattle Seahawks vs New England Patriots", ["Seattle Seahawks", "New England Patriots"]),
+            ("Lakers vs Warriors", ["Lakers", "Warriors"]),
+            # Case variations
+            ("Team1 VS Team2", ["Team1", "Team2"]),
+            ("Team1 Vs Team2", ["Team1", "Team2"]),
+            # "versus" pattern
+            ("Cowboys versus Eagles", ["Cowboys", "Eagles"]),
+            # Short "v" pattern
+            ("Arsenal v Chelsea", ["Arsenal", "Chelsea"]),
+            # "@" pattern (away game format)
+            ("Lakers @ Warriors", ["Lakers", "Warriors"]),
+        ],
+    )
     def test_team_extraction_patterns(self, title, expected_teams):
         """Test extraction of teams with various vs patterns."""
         teams = extract_teams_from_title(title)
@@ -729,23 +827,27 @@ class TestExtractTeamsFromTitle:
 # extract_round_number() Tests
 # =============================================================================
 
+
 class TestExtractRoundNumber:
     """Tests for extract_round_number() function."""
 
-    @pytest.mark.parametrize("title,expected", [
-        # R format
-        ("Formula1.2024.R01.Australian.GP", 1),
-        ("MotoGP.2024.R5.Race", 5),
-        ("F1.2024.R12.Belgium.GP", 12),
-        # Round format
-        ("Formula 1 2024 Round 7 British GP", 7),
-        ("MotoGP Round 3 Americas", 3),
-        # R.XX format
-        ("Formula1.R.03.Monaco", 3),
-        # Season x round format
-        ("MotoGP.2024x03.San.Marino", 3),
-        ("Formula1.2024x07.British.GP", 7),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            # R format
+            ("Formula1.2024.R01.Australian.GP", 1),
+            ("MotoGP.2024.R5.Race", 5),
+            ("F1.2024.R12.Belgium.GP", 12),
+            # Round format
+            ("Formula 1 2024 Round 7 British GP", 7),
+            ("MotoGP Round 3 Americas", 3),
+            # R.XX format
+            ("Formula1.R.03.Monaco", 3),
+            # Season x round format
+            ("MotoGP.2024x03.San.Marino", 3),
+            ("Formula1.2024x07.British.GP", 7),
+        ],
+    )
     def test_round_extraction(self, title, expected):
         """Test extraction of round numbers in various formats."""
         assert extract_round_number(title) == expected
@@ -766,6 +868,7 @@ class TestExtractRoundNumber:
 # =============================================================================
 # parse_sports_title() Integration Tests
 # =============================================================================
+
 
 class TestParseSportsTitle:
     """Integration tests for parse_sports_title() function."""
@@ -872,12 +975,15 @@ class TestParseSportsTitle:
         assert "teams" in result_dict
         assert isinstance(result_dict["teams"], list)
 
-    @pytest.mark.parametrize("title", [
-        "Premier.League.2024.Arsenal.vs.Chelsea.720p.HDTV",
-        "NHL.2024.Stanley.Cup.Finals.Game.7.1080p",
-        "MLB.2024.World.Series.Game.5.720p",
-        "Rugby.World.Cup.2023.Final.1080p",
-    ])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Premier.League.2024.Arsenal.vs.Chelsea.720p.HDTV",
+            "NHL.2024.Stanley.Cup.Finals.Game.7.1080p",
+            "MLB.2024.World.Series.Game.5.720p",
+            "Rugby.World.Cup.2023.Final.1080p",
+        ],
+    )
     def test_various_sports_parsing(self, title):
         """Test parsing of various sports titles."""
         result = parse_sports_title(title)
@@ -889,6 +995,7 @@ class TestParseSportsTitle:
 # =============================================================================
 # Sport-Specific Parser Tests
 # =============================================================================
+
 
 class TestParseF1Title:
     """Tests for parse_f1_title() function."""
@@ -908,11 +1015,14 @@ class TestParseF1Title:
         result = parse_f1_title("Formula.3.2024.Silverstone")
         assert result.league == "Formula 3"
 
-    @pytest.mark.parametrize("title,expected_broadcaster", [
-        ("Formula1.2024.Monaco.SkyF1HD.1080p", "SkyF1HD"),
-        ("Formula 1 2024 Race Sky Sports F1 UHD", "Sky Sports F1 UHD"),
-        ("F1.2024.Race.F1TV.1080p", "F1TV"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_broadcaster",
+        [
+            ("Formula1.2024.Monaco.SkyF1HD.1080p", "SkyF1HD"),
+            ("Formula 1 2024 Race Sky Sports F1 UHD", "Sky Sports F1 UHD"),
+            ("F1.2024.Race.F1TV.1080p", "F1TV"),
+        ],
+    )
     def test_broadcaster_extraction(self, title, expected_broadcaster):
         """Test broadcaster extraction from F1 titles."""
         result = parse_f1_title(title)
@@ -951,13 +1061,16 @@ class TestParseUFCTitle:
 class TestParseWWETitle:
     """Tests for parse_wwe_title() function."""
 
-    @pytest.mark.parametrize("title,expected_event_contains", [
-        # The wwe_shows dict maps lowercase keys to full names
-        # "raw" -> "WWE Raw", "monday night raw" -> "WWE Monday Night Raw"
-        ("WWE.Raw.2024.02.19", "WWE Raw"),
-        ("WWE.SmackDown.2024.02.16", "WWE SmackDown"),
-        ("WWE.NXT.2024.02.20", "WWE NXT"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_event_contains",
+        [
+            # The wwe_shows dict maps lowercase keys to full names
+            # "raw" -> "WWE Raw", "monday night raw" -> "WWE Monday Night Raw"
+            ("WWE.Raw.2024.02.19", "WWE Raw"),
+            ("WWE.SmackDown.2024.02.16", "WWE SmackDown"),
+            ("WWE.NXT.2024.02.20", "WWE NXT"),
+        ],
+    )
     def test_wwe_show_detection(self, title, expected_event_contains):
         """Test WWE show name detection."""
         result = parse_wwe_title(title)
@@ -1026,11 +1139,14 @@ class TestParseNFLTitle:
 class TestParseNBATitle:
     """Tests for parse_nba_title() function."""
 
-    @pytest.mark.parametrize("title,expected_event", [
-        ("NBA.Finals.2024.Game.7", "NBA Finals"),
-        ("NBA.Playoffs.2024.Round.1", "NBA Playoffs"),
-        ("NBA.All-Star.Game.2024", "NBA All Star"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_event",
+        [
+            ("NBA.Finals.2024.Game.7", "NBA Finals"),
+            ("NBA.Playoffs.2024.Round.1", "NBA Playoffs"),
+            ("NBA.All-Star.Game.2024", "NBA All Star"),
+        ],
+    )
     def test_nba_special_events(self, title, expected_event):
         """Test NBA special event detection."""
         result = parse_nba_title(title)
@@ -1053,20 +1169,26 @@ class TestParseNBATitle:
 class TestParseMotoGPTitle:
     """Tests for parse_motogp_title() function."""
 
-    @pytest.mark.parametrize("title,expected_league", [
-        ("MotoGP.2024.San.Marino", "MotoGP"),
-        ("Moto2.2024.Catalunya.Race", "Moto2"),
-        ("Moto3.2024.Mugello.Sprint", "Moto3"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_league",
+        [
+            ("MotoGP.2024.San.Marino", "MotoGP"),
+            ("Moto2.2024.Catalunya.Race", "Moto2"),
+            ("Moto3.2024.Mugello.Sprint", "Moto3"),
+        ],
+    )
     def test_motogp_series_detection(self, title, expected_league):
         """Test MotoGP series detection."""
         result = parse_motogp_title(title)
         assert result.league == expected_league
 
-    @pytest.mark.parametrize("title,expected_broadcaster", [
-        ("MotoGP.2024.Race.BTSportHD.1080p", "BTSportHD"),
-        ("MotoGP.2024.Race.TNTSportsHD.1080p", "TNTSportsHD"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected_broadcaster",
+        [
+            ("MotoGP.2024.Race.BTSportHD.1080p", "BTSportHD"),
+            ("MotoGP.2024.Race.TNTSportsHD.1080p", "TNTSportsHD"),
+        ],
+    )
     def test_motogp_broadcaster_extraction(self, title, expected_broadcaster):
         """Test broadcaster extraction from MotoGP titles."""
         result = parse_motogp_title(title)
@@ -1082,14 +1204,22 @@ class TestParseMotoGPTitle:
 # Constants Validation Tests
 # =============================================================================
 
+
 class TestConstantsValidation:
     """Tests to validate the constants in sports_parser.py."""
 
     def test_sports_categories_complete(self):
         """Test that all expected sports categories are defined."""
         expected_categories = [
-            "football", "american_football", "basketball", "baseball",
-            "hockey", "rugby", "fighting", "formula_racing", "motogp_racing",
+            "football",
+            "american_football",
+            "basketball",
+            "baseball",
+            "hockey",
+            "rugby",
+            "fighting",
+            "formula_racing",
+            "motogp_racing",
             "other_sports",
         ]
         for category in expected_categories:

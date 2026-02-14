@@ -8,13 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -33,14 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   Shield,
   CheckCircle2,
@@ -59,10 +46,39 @@ import {
   ThumbsDown,
   Search,
 } from 'lucide-react'
-import { usePendingSuggestions, useReviewSuggestion, useSuggestions, usePendingStreamSuggestions, useReviewStreamSuggestion, useStreamSuggestionStats, useSuggestionStats, useContributionSettings, useUpdateContributionSettings, useResetContributionSettings, usePendingContributions, useReviewContribution, useStreamsNeedingAnnotation, useUpdateFileLinks } from '@/hooks'
+import {
+  usePendingSuggestions,
+  useReviewSuggestion,
+  useSuggestions,
+  usePendingStreamSuggestions,
+  useReviewStreamSuggestion,
+  useStreamSuggestionStats,
+  useSuggestionStats,
+  useContributionSettings,
+  useUpdateContributionSettings,
+  useResetContributionSettings,
+  usePendingContributions,
+  useReviewContribution,
+  useStreamsNeedingAnnotation,
+  useUpdateFileLinks,
+} from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
 import type { Suggestion, SuggestionStatus, StreamSuggestion, Contribution } from '@/lib/api'
-import { Settings, Film, Zap, Save, RotateCcw, Magnet, Tag, FileText as FileIcon, ExternalLink, HardDrive, FileVideo, Tv, Hash } from 'lucide-react'
+import {
+  Settings,
+  Film,
+  Zap,
+  Save,
+  RotateCcw,
+  Magnet,
+  Tag,
+  FileText as FileIcon,
+  ExternalLink,
+  HardDrive,
+  FileVideo,
+  Tv,
+  Hash,
+} from 'lucide-react'
 import { FileAnnotationDialog, type FileLink, type EditedFileLink } from '@/components/stream'
 import { catalogApi } from '@/lib/api'
 
@@ -85,8 +101,16 @@ function formatTimeAgo(dateString: string): string {
 
 const statusConfig: Record<SuggestionStatus, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: 'Pending', color: 'bg-primary/10 text-primary border-primary/30', icon: Clock },
-  approved: { label: 'Approved', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30', icon: CheckCircle2 },
-  auto_approved: { label: 'Auto-Approved', color: 'bg-blue-500/10 text-blue-500 border-blue-500/30', icon: CheckCircle2 },
+  approved: {
+    label: 'Approved',
+    color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30',
+    icon: CheckCircle2,
+  },
+  auto_approved: {
+    label: 'Auto-Approved',
+    color: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
+    icon: CheckCircle2,
+  },
   rejected: { label: 'Rejected', color: 'bg-red-500/10 text-red-500 border-red-500/30', icon: XCircle },
 }
 
@@ -128,9 +152,7 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
               <Eye className="h-5 w-5 text-primary" />
               Review Suggestion
             </DialogTitle>
-            <DialogDescription>
-              Review and approve or reject this metadata correction suggestion.
-            </DialogDescription>
+            <DialogDescription>Review and approve or reject this metadata correction suggestion.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
@@ -192,26 +214,14 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
           </div>
 
           <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isReviewing}
-            >
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isReviewing}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setConfirmReject(true)}
-              disabled={isReviewing}
-            >
+            <Button variant="destructive" onClick={() => setConfirmReject(true)} disabled={isReviewing}>
               <XCircle className="mr-2 h-4 w-4" />
               Reject
             </Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={handleApprove}
-              disabled={isReviewing}
-            >
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApprove} disabled={isReviewing}>
               {isReviewing ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -242,9 +252,7 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={isReviewing}
             >
-              {isReviewing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
+              {isReviewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Reject Suggestion
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -265,7 +273,7 @@ function PendingSuggestionsTab() {
 
   const handleReview = async (decision: ReviewDecision, notes?: string) => {
     if (!selectedSuggestion) return
-    
+
     await reviewSuggestion.mutateAsync({
       suggestionId: selectedSuggestion.id,
       data: { action: decision, review_notes: notes },
@@ -293,9 +301,7 @@ function PendingSuggestionsTab() {
       <div className="text-center py-12">
         <Inbox className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
         <p className="mt-4 text-lg font-medium">No pending suggestions</p>
-        <p className="text-sm text-muted-foreground mt-2">
-          All suggestions have been reviewed!
-        </p>
+        <p className="text-sm text-muted-foreground mt-2">All suggestions have been reviewed!</p>
       </div>
     )
   }
@@ -315,16 +321,9 @@ function PendingSuggestionsTab() {
           </TableHeader>
           <TableBody>
             {data.suggestions.map((suggestion: Suggestion) => (
-              <TableRow 
-                key={suggestion.id}
-                className="hover:bg-muted/20"
-              >
-                <TableCell className="font-medium capitalize">
-                  {suggestion.field_name}
-                </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {suggestion.media_id}
-                </TableCell>
+              <TableRow key={suggestion.id} className="hover:bg-muted/20">
+                <TableCell className="font-medium capitalize">{suggestion.field_name}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{suggestion.media_id}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2 max-w-xs">
                     <span className="text-xs text-red-500 truncate max-w-[100px]">
@@ -336,15 +335,9 @@ function PendingSuggestionsTab() {
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatTimeAgo(suggestion.created_at)}
-                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatTimeAgo(suggestion.created_at)}</TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    onClick={() => handleOpenReview(suggestion)}
-                    className="rounded-lg"
-                  >
+                  <Button size="sm" onClick={() => handleOpenReview(suggestion)} className="rounded-lg">
                     <Eye className="mr-2 h-4 w-4" />
                     Review
                   </Button>
@@ -362,7 +355,7 @@ function PendingSuggestionsTab() {
             variant="outline"
             size="icon"
             disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}
+            onClick={() => setPage((p) => p - 1)}
             className="rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -374,7 +367,7 @@ function PendingSuggestionsTab() {
             variant="outline"
             size="icon"
             disabled={page >= Math.ceil(data.total / 20)}
-            onClick={() => setPage(p => p + 1)}
+            onClick={() => setPage((p) => p + 1)}
             className="rounded-xl"
           >
             <ChevronRight className="h-4 w-4" />
@@ -476,15 +469,9 @@ function AllSuggestionsTab() {
                         {config.label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-medium capitalize">
-                      {suggestion.field_name}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {suggestion.media_id}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate text-sm">
-                      {suggestion.suggested_value}
-                    </TableCell>
+                    <TableCell className="font-medium capitalize">{suggestion.field_name}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{suggestion.media_id}</TableCell>
+                    <TableCell className="max-w-[200px] truncate text-sm">{suggestion.suggested_value}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatTimeAgo(suggestion.created_at)}
                     </TableCell>
@@ -503,7 +490,7 @@ function AllSuggestionsTab() {
             variant="outline"
             size="icon"
             disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}
+            onClick={() => setPage((p) => p - 1)}
             className="rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -515,7 +502,7 @@ function AllSuggestionsTab() {
             variant="outline"
             size="icon"
             disabled={page >= Math.ceil(data.total / 20)}
-            onClick={() => setPage(p => p + 1)}
+            onClick={() => setPage((p) => p + 1)}
             className="rounded-xl"
           >
             <ChevronRight className="h-4 w-4" />
@@ -527,17 +514,19 @@ function AllSuggestionsTab() {
 }
 
 // Helper to parse episode link field names
-function parseEpisodeLinkField(fieldName: string | null): { fileId: string; field: string; displayField: string } | null {
+function parseEpisodeLinkField(
+  fieldName: string | null,
+): { fileId: string; field: string; displayField: string } | null {
   if (!fieldName || !fieldName.startsWith('episode_link:')) return null
   const parts = fieldName.split(':')
   if (parts.length < 3) return null
-  
+
   const fieldDisplayMap: Record<string, string> = {
     season_number: 'Season',
     episode_number: 'Episode',
     episode_end: 'Episode End',
   }
-  
+
   return {
     fileId: parts[1],
     field: parts[2],
@@ -548,12 +537,12 @@ function parseEpisodeLinkField(fieldName: string | null): { fileId: string; fiel
 // Helper to format field name for display
 function formatStreamFieldName(fieldName: string | null): string {
   if (!fieldName) return ''
-  
+
   const episodeInfo = parseEpisodeLinkField(fieldName)
   if (episodeInfo) {
     return `Episode ${episodeInfo.displayField}`
   }
-  
+
   const nameMap: Record<string, string> = {
     name: 'Name',
     resolution: 'Resolution',
@@ -586,8 +575,8 @@ function formatStreamSuggestionType(type: string): string {
 function StreamSuggestionsTab() {
   const [page, setPage] = useState(1)
   const [suggestionType, setSuggestionType] = useState<string>('all')
-  const { data, isLoading, refetch } = usePendingStreamSuggestions({ 
-    page, 
+  const { data, isLoading, refetch } = usePendingStreamSuggestions({
+    page,
     page_size: 20,
     suggestion_type: suggestionType === 'all' ? undefined : suggestionType,
   })
@@ -630,15 +619,21 @@ function StreamSuggestionsTab() {
         <div className="flex items-center gap-4 p-3 rounded-xl bg-muted/50">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-primary" />
-            <span className="text-sm"><strong>{stats.pending}</strong> Pending</span>
+            <span className="text-sm">
+              <strong>{stats.pending}</strong> Pending
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            <span className="text-sm"><strong>{stats.approved + stats.auto_approved}</strong> Approved</span>
+            <span className="text-sm">
+              <strong>{stats.approved + stats.auto_approved}</strong> Approved
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <XCircle className="h-4 w-4 text-red-500" />
-            <span className="text-sm"><strong>{stats.rejected}</strong> Rejected</span>
+            <span className="text-sm">
+              <strong>{stats.rejected}</strong> Rejected
+            </span>
           </div>
         </div>
       )}
@@ -671,19 +666,18 @@ function StreamSuggestionsTab() {
           {data.suggestions.map((suggestion) => {
             const episodeInfo = parseEpisodeLinkField(suggestion.field_name)
             const isEpisodeLink = !!episodeInfo
-            
+
             return (
-              <Card 
-                key={suggestion.id} 
-                className="glass border-border/50 hover:border-primary/30 transition-colors"
-              >
+              <Card key={suggestion.id} className="glass border-border/50 hover:border-primary/30 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
                     {/* Icon */}
-                    <div className={`p-2 rounded-xl flex-shrink-0 ${isEpisodeLink ? 'bg-blue-500/10' : 'bg-primary/10'}`}>
+                    <div
+                      className={`p-2 rounded-xl flex-shrink-0 ${isEpisodeLink ? 'bg-blue-500/10' : 'bg-primary/10'}`}
+                    >
                       <Film className={`h-5 w-5 ${isEpisodeLink ? 'text-blue-500' : 'text-primary'}`} />
                     </div>
-                    
+
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -701,12 +695,13 @@ function StreamSuggestionsTab() {
                           </Badge>
                         )}
                       </div>
-                      
+
                       {/* Stream name */}
                       <p className="text-sm text-muted-foreground truncate" title={suggestion.stream_name || ''}>
-                        <span className="font-medium text-foreground">Stream:</span> {suggestion.stream_name || `ID: ${suggestion.stream_id}`}
+                        <span className="font-medium text-foreground">Stream:</span>{' '}
+                        {suggestion.stream_name || `ID: ${suggestion.stream_id}`}
                       </p>
-                      
+
                       {/* Episode link specific display */}
                       {isEpisodeLink && (
                         <div className="p-3 rounded-lg bg-muted/50 space-y-1">
@@ -724,34 +719,42 @@ function StreamSuggestionsTab() {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Regular field correction display */}
-                      {!isEpisodeLink && suggestion.field_name && (suggestion.current_value || suggestion.suggested_value) && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-red-400 truncate max-w-[150px]" title={suggestion.current_value || ''}>
-                            {suggestion.current_value || '(empty)'}
-                          </span>
-                          <span className="text-muted-foreground flex-shrink-0">→</span>
-                          <span className="text-emerald-400 truncate max-w-[150px]" title={suggestion.suggested_value || ''}>
-                            {suggestion.suggested_value || '(empty)'}
-                          </span>
-                        </div>
-                      )}
-                      
+                      {!isEpisodeLink &&
+                        suggestion.field_name &&
+                        (suggestion.current_value || suggestion.suggested_value) && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span
+                              className="text-red-400 truncate max-w-[150px]"
+                              title={suggestion.current_value || ''}
+                            >
+                              {suggestion.current_value || '(empty)'}
+                            </span>
+                            <span className="text-muted-foreground flex-shrink-0">→</span>
+                            <span
+                              className="text-emerald-400 truncate max-w-[150px]"
+                              title={suggestion.suggested_value || ''}
+                            >
+                              {suggestion.suggested_value || '(empty)'}
+                            </span>
+                          </div>
+                        )}
+
                       {/* Reason preview */}
                       {suggestion.reason && (
                         <p className="text-xs text-muted-foreground truncate" title={suggestion.reason}>
                           <span className="font-medium">Reason:</span> {suggestion.reason}
                         </p>
                       )}
-                      
+
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span>by {suggestion.username || 'User'}</span>
                         <span>•</span>
                         <span>{formatTimeAgo(suggestion.created_at)}</span>
                       </div>
                     </div>
-                    
+
                     {/* Actions */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <Button
@@ -782,7 +785,7 @@ function StreamSuggestionsTab() {
             variant="outline"
             size="icon"
             disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}
+            onClick={() => setPage((p) => p - 1)}
             className="rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -794,7 +797,7 @@ function StreamSuggestionsTab() {
             variant="outline"
             size="icon"
             disabled={page >= Math.ceil(data.total / 20)}
-            onClick={() => setPage(p => p + 1)}
+            onClick={() => setPage((p) => p + 1)}
             className="rounded-xl"
           >
             <ChevronRight className="h-4 w-4" />
@@ -810,28 +813,23 @@ function StreamSuggestionsTab() {
               <Eye className="h-5 w-5 text-primary" />
               Review Stream Suggestion
             </DialogTitle>
-            <DialogDescription>
-              Review this suggestion and approve or reject it.
-            </DialogDescription>
+            <DialogDescription>Review this suggestion and approve or reject it.</DialogDescription>
           </DialogHeader>
 
           {selectedSuggestion && (
             <div className="space-y-4 py-4">
               {/* Type and user badges */}
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="outline">
-                  {formatStreamSuggestionType(selectedSuggestion.suggestion_type)}
-                </Badge>
+                <Badge variant="outline">{formatStreamSuggestionType(selectedSuggestion.suggestion_type)}</Badge>
                 {selectedSuggestion.field_name && (
-                  <Badge variant="secondary">
-                    {formatStreamFieldName(selectedSuggestion.field_name)}
-                  </Badge>
+                  <Badge variant="secondary">{formatStreamFieldName(selectedSuggestion.field_name)}</Badge>
                 )}
                 <Badge variant="outline" className="capitalize bg-primary/10 border-primary/30">
-                  {selectedSuggestion.user_contribution_level || 'new'} ({selectedSuggestion.user_contribution_points ?? 0} pts)
+                  {selectedSuggestion.user_contribution_level || 'new'} (
+                  {selectedSuggestion.user_contribution_points ?? 0} pts)
                 </Badge>
               </div>
-              
+
               {/* Stream info */}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Stream</label>
@@ -839,14 +837,14 @@ function StreamSuggestionsTab() {
                   {selectedSuggestion.stream_name || selectedSuggestion.stream_id}
                 </p>
               </div>
-              
+
               {selectedSuggestion.media_id && (
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">Media ID</label>
                   <p className="text-sm font-mono">{selectedSuggestion.media_id}</p>
                 </div>
               )}
-              
+
               {/* Episode link specific display */}
               {parseEpisodeLinkField(selectedSuggestion.field_name) && (
                 <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-3">
@@ -857,11 +855,15 @@ function StreamSuggestionsTab() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">File ID</p>
-                      <p className="font-mono text-sm">{parseEpisodeLinkField(selectedSuggestion.field_name)?.fileId}</p>
+                      <p className="font-mono text-sm">
+                        {parseEpisodeLinkField(selectedSuggestion.field_name)?.fileId}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Field</p>
-                      <p className="font-medium text-sm">{parseEpisodeLinkField(selectedSuggestion.field_name)?.displayField}</p>
+                      <p className="font-medium text-sm">
+                        {parseEpisodeLinkField(selectedSuggestion.field_name)?.displayField}
+                      </p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -880,25 +882,26 @@ function StreamSuggestionsTab() {
                   </div>
                 </div>
               )}
-              
+
               {/* Regular field correction display */}
-              {!parseEpisodeLinkField(selectedSuggestion.field_name) && (selectedSuggestion.current_value || selectedSuggestion.suggested_value) && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Current Value</label>
-                    <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
-                      <p className="text-sm break-words">{selectedSuggestion.current_value || '(empty)'}</p>
+              {!parseEpisodeLinkField(selectedSuggestion.field_name) &&
+                (selectedSuggestion.current_value || selectedSuggestion.suggested_value) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Current Value</label>
+                      <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+                        <p className="text-sm break-words">{selectedSuggestion.current_value || '(empty)'}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Suggested Value</label>
+                      <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                        <p className="text-sm break-words">{selectedSuggestion.suggested_value || '(empty)'}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Suggested Value</label>
-                    <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                      <p className="text-sm break-words">{selectedSuggestion.suggested_value || '(empty)'}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
+                )}
+
               {/* Reason */}
               {selectedSuggestion.reason && (
                 <div className="space-y-1">
@@ -915,7 +918,7 @@ function StreamSuggestionsTab() {
                 <span>•</span>
                 <span>{formatTimeAgo(selectedSuggestion.created_at)}</span>
               </div>
-              
+
               {/* Review notes */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Review Notes (optional)</label>
@@ -930,19 +933,15 @@ function StreamSuggestionsTab() {
           )}
 
           <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setReviewDialogOpen(false)}
-              disabled={reviewSuggestion.isPending}
-            >
+            <Button variant="outline" onClick={() => setReviewDialogOpen(false)} disabled={reviewSuggestion.isPending}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => handleReview('reject')}
-              disabled={reviewSuggestion.isPending}
-            >
-              {reviewSuggestion.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
+            <Button variant="destructive" onClick={() => handleReview('reject')} disabled={reviewSuggestion.isPending}>
+              {reviewSuggestion.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
               Reject
             </Button>
             <Button
@@ -950,7 +949,11 @@ function StreamSuggestionsTab() {
               onClick={() => handleReview('approve')}
               disabled={reviewSuggestion.isPending}
             >
-              {reviewSuggestion.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              {reviewSuggestion.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+              )}
               Approve
             </Button>
           </DialogFooter>
@@ -961,9 +964,11 @@ function StreamSuggestionsTab() {
 }
 
 // Helper to format torrent data for display
-function formatTorrentData(data: Record<string, unknown>): { label: string; value: string; type: 'text' | 'link' | 'badge' | 'size' }[] {
+function formatTorrentData(
+  data: Record<string, unknown>,
+): { label: string; value: string; type: 'text' | 'link' | 'badge' | 'size' }[] {
   const fields: { label: string; value: string; type: 'text' | 'link' | 'badge' | 'size' }[] = []
-  
+
   if (data.name) fields.push({ label: 'Torrent Name', value: String(data.name), type: 'text' })
   if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
   if (data.meta_type) fields.push({ label: 'Type', value: String(data.meta_type), type: 'badge' })
@@ -980,7 +985,7 @@ function formatTorrentData(data: Record<string, unknown>): { label: string; valu
   if (data.catalogs && Array.isArray(data.catalogs) && data.catalogs.length > 0) {
     fields.push({ label: 'Catalogs', value: (data.catalogs as string[]).join(', '), type: 'text' })
   }
-  
+
   return fields
 }
 
@@ -1002,7 +1007,7 @@ function ContributionsTab() {
   const [reviewNotes, setReviewNotes] = useState('')
 
   const { data, isLoading, refetch } = usePendingContributions({
-    contribution_type: typeFilter === 'all' ? undefined : typeFilter as 'torrent' | 'stream' | 'metadata',
+    contribution_type: typeFilter === 'all' ? undefined : (typeFilter as 'torrent' | 'stream' | 'metadata'),
     page,
     page_size: 20,
   })
@@ -1063,16 +1068,15 @@ function ContributionsTab() {
             const isTorrent = contribution.contribution_type === 'torrent'
             const isStream = contribution.contribution_type === 'stream'
             const torrentData = contribution.data as Record<string, unknown>
-            
+
             return (
-              <Card 
-                key={contribution.id} 
-                className="glass border-border/50 hover:border-primary/30 transition-colors"
-              >
+              <Card key={contribution.id} className="glass border-border/50 hover:border-primary/30 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
                     {/* Icon */}
-                    <div className={`p-2 rounded-xl flex-shrink-0 ${isTorrent ? 'bg-orange-500/10' : isStream ? 'bg-blue-500/10' : 'bg-primary/10'}`}>
+                    <div
+                      className={`p-2 rounded-xl flex-shrink-0 ${isTorrent ? 'bg-orange-500/10' : isStream ? 'bg-blue-500/10' : 'bg-primary/10'}`}
+                    >
                       {isTorrent ? (
                         <Tag className="h-5 w-5 text-orange-500" />
                       ) : isStream ? (
@@ -1081,7 +1085,7 @@ function ContributionsTab() {
                         <FileIcon className="h-5 w-5 text-primary" />
                       )}
                     </div>
-                    
+
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1104,23 +1108,23 @@ function ContributionsTab() {
                           </Badge>
                         )}
                         {/* Anonymous indicator */}
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className={`text-xs ${
-                            torrentData.is_anonymous === true 
-                              ? 'bg-gray-500/10 border-gray-500/30 text-gray-500' 
+                            torrentData.is_anonymous === true
+                              ? 'bg-gray-500/10 border-gray-500/30 text-gray-500'
                               : 'bg-primary/10 border-primary/30 text-primary'
                           }`}
                         >
                           {torrentData.is_anonymous === true ? 'Anonymous' : 'Linked'}
                         </Badge>
                       </div>
-                      
+
                       {/* Torrent/Stream name */}
                       <p className="font-medium truncate" title={String(torrentData.name || torrentData.title || '')}>
                         {String(torrentData.name || torrentData.title || 'Untitled')}
                       </p>
-                      
+
                       {/* Target ID */}
                       {contribution.target_id && (
                         <p className="text-sm text-muted-foreground">
@@ -1128,14 +1132,17 @@ function ContributionsTab() {
                           <span className="font-mono">{contribution.target_id}</span>
                         </p>
                       )}
-                      
+
                       {/* Info hash for torrents */}
                       {!!torrentData.info_hash && (
-                        <p className="text-xs text-muted-foreground font-mono truncate" title={String(torrentData.info_hash)}>
+                        <p
+                          className="text-xs text-muted-foreground font-mono truncate"
+                          title={String(torrentData.info_hash)}
+                        >
                           Hash: {String(torrentData.info_hash).slice(0, 16)}...
                         </p>
                       )}
-                      
+
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>{formatTimeAgo(contribution.created_at)}</span>
                         {!!torrentData.total_size && (
@@ -1155,7 +1162,7 @@ function ContributionsTab() {
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Actions */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <Button
@@ -1186,7 +1193,7 @@ function ContributionsTab() {
             variant="outline"
             size="icon"
             disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}
+            onClick={() => setPage((p) => p - 1)}
             className="rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -1198,7 +1205,7 @@ function ContributionsTab() {
             variant="outline"
             size="icon"
             disabled={page >= Math.ceil(data.total / 20)}
-            onClick={() => setPage(p => p + 1)}
+            onClick={() => setPage((p) => p + 1)}
             className="rounded-xl"
           >
             <ChevronRight className="h-4 w-4" />
@@ -1215,7 +1222,13 @@ function ContributionsTab() {
               Review Content Import
             </DialogTitle>
             <DialogDescription>
-              Review this {selectedContribution?.contribution_type === 'torrent' ? 'torrent import' : selectedContribution?.contribution_type === 'stream' ? 'stream import' : 'content import'} and approve or reject it.
+              Review this{' '}
+              {selectedContribution?.contribution_type === 'torrent'
+                ? 'torrent import'
+                : selectedContribution?.contribution_type === 'stream'
+                  ? 'stream import'
+                  : 'content import'}{' '}
+              and approve or reject it.
             </DialogDescription>
           </DialogHeader>
 
@@ -1232,18 +1245,21 @@ function ContributionsTab() {
                   </Badge>
                 )}
               </div>
-              
+
               {/* Structured data display */}
               <div className="space-y-3">
                 <h4 className="font-medium text-sm text-muted-foreground">Contribution Details</h4>
                 <div className="grid grid-cols-2 gap-3">
                   {formatTorrentData(selectedContribution.data as Record<string, unknown>).map((field, idx) => (
-                    <div key={idx} className={`p-3 rounded-lg bg-muted/50 ${field.type === 'text' && String(field.value).length > 30 ? 'col-span-2' : ''}`}>
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-lg bg-muted/50 ${field.type === 'text' && String(field.value).length > 30 ? 'col-span-2' : ''}`}
+                    >
                       <p className="text-xs text-muted-foreground mb-1">{field.label}</p>
                       {field.type === 'badge' ? (
                         <Badge variant="outline">{field.value}</Badge>
                       ) : field.type === 'link' ? (
-                        <a 
+                        <a
                           href={`https://www.imdb.com/title/${field.value}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -1261,7 +1277,7 @@ function ContributionsTab() {
                   ))}
                 </div>
               </div>
-              
+
               {/* Magnet link if available */}
               {!!(selectedContribution.data as Record<string, unknown>).magnet_link && (
                 <div className="space-y-2">
@@ -1278,7 +1294,7 @@ function ContributionsTab() {
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                 <span>Submitted: {formatTimeAgo(selectedContribution.created_at)}</span>
               </div>
-              
+
               {/* Review notes */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Review Notes (optional)</label>
@@ -1305,7 +1321,11 @@ function ContributionsTab() {
               onClick={() => handleReview('rejected')}
               disabled={reviewContribution.isPending}
             >
-              {reviewContribution.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
+              {reviewContribution.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
               Reject
             </Button>
             <Button
@@ -1313,7 +1333,11 @@ function ContributionsTab() {
               onClick={() => handleReview('approved')}
               disabled={reviewContribution.isPending}
             >
-              {reviewContribution.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              {reviewContribution.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+              )}
               Approve
             </Button>
           </DialogFooter>
@@ -1328,7 +1352,7 @@ function ContributionSettingsTab() {
   const { data: settings, isLoading } = useContributionSettings()
   const updateSettings = useUpdateContributionSettings()
   const resetSettings = useResetContributionSettings()
-  
+
   // Form state
   const [formData, setFormData] = useState({
     auto_approval_threshold: 25,
@@ -1393,7 +1417,7 @@ function ContributionSettingsTab() {
   }
 
   const handleChange = (field: string, value: number | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData((prev) => ({ ...prev, [field]: value }))
     setHasChanges(true)
   }
 
@@ -1406,7 +1430,7 @@ function ContributionSettingsTab() {
     await resetSettings.mutateAsync()
     setHasChanges(false)
   }
-  
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -1422,7 +1446,7 @@ function ContributionSettingsTab() {
       </div>
     )
   }
-  
+
   return (
     <div className="space-y-6">
       <Card className="glass border-border/50">
@@ -1467,7 +1491,7 @@ function ContributionSettingsTab() {
               </Button>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Thresholds Section */}
             <div className="space-y-4">
@@ -1526,7 +1550,7 @@ function ContributionSettingsTab() {
                 </div>
               </div>
             </div>
-            
+
             {/* Points Configuration */}
             <div className="space-y-4">
               <h4 className="font-medium flex items-center gap-2">
@@ -1587,7 +1611,7 @@ function ContributionSettingsTab() {
               </div>
             </div>
           </div>
-          
+
           {/* Feature Flags */}
           <div className="mt-6 pt-6 border-t border-border/50">
             <h4 className="font-medium flex items-center gap-2 mb-4">
@@ -1597,10 +1621,10 @@ function ContributionSettingsTab() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
                 <div>
-                  <Label htmlFor="allow_auto_approval" className="font-medium">Auto-Approval Enabled</Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Allow trusted users to auto-approve their edits
-                  </p>
+                  <Label htmlFor="allow_auto_approval" className="font-medium">
+                    Auto-Approval Enabled
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">Allow trusted users to auto-approve their edits</p>
                 </div>
                 <Switch
                   id="allow_auto_approval"
@@ -1610,7 +1634,9 @@ function ContributionSettingsTab() {
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
                 <div>
-                  <Label htmlFor="require_reason_for_edits" className="font-medium">Require Reason for Edits</Label>
+                  <Label htmlFor="require_reason_for_edits" className="font-medium">
+                    Require Reason for Edits
+                  </Label>
                   <p className="text-xs text-muted-foreground mt-1">
                     Users must provide a reason for their suggestions
                   </p>
@@ -1649,7 +1675,7 @@ function AnnotationRequestsTab() {
     search: search || undefined,
   })
   const updateFileLinks = useUpdateFileLinks()
-  
+
   // Annotation dialog state
   const [selectedStream, setSelectedStream] = useState<{
     streamId: number
@@ -1661,13 +1687,13 @@ function AnnotationRequestsTab() {
   const [annotationFiles, setAnnotationFiles] = useState<FileLink[]>([])
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false)
-  
+
   // Handle search
   const handleSearch = () => {
     setSearch(searchInput)
     setPage(1)
   }
-  
+
   // Handle opening annotation dialog
   const handleOpenAnnotation = async (stream: {
     stream_id: number
@@ -1679,14 +1705,16 @@ function AnnotationRequestsTab() {
     try {
       // Fetch stream files from the API
       const files = await catalogApi.getStreamFiles(stream.stream_id)
-      setAnnotationFiles(files.map(f => ({
-        file_id: f.file_id,
-        file_name: f.file_name,
-        size: f.size,
-        season_number: f.season_number,
-        episode_number: f.episode_number,
-        episode_end: f.episode_end,
-      })))
+      setAnnotationFiles(
+        files.map((f) => ({
+          file_id: f.file_id,
+          file_name: f.file_name,
+          size: f.size,
+          season_number: f.season_number,
+          episode_number: f.episode_number,
+          episode_end: f.episode_end,
+        })),
+      )
       setSelectedStream({
         streamId: stream.stream_id,
         streamName: stream.stream_name,
@@ -1700,29 +1728,29 @@ function AnnotationRequestsTab() {
       setIsLoadingFiles(false)
     }
   }
-  
+
   // Handle saving annotations (direct update, not suggestions)
   const handleSaveAnnotation = async (editedFiles: EditedFileLink[]) => {
     if (!selectedStream) return
-    
+
     setIsSavingAnnotation(true)
     try {
       // Convert to the format expected by the API
       const updates = editedFiles
-        .filter(f => f.included)
-        .map(f => ({
+        .filter((f) => f.included)
+        .map((f) => ({
           file_id: f.file_id,
           season_number: f.season_number,
           episode_number: f.episode_number,
           episode_end: f.episode_end ?? null,
         }))
-      
+
       await updateFileLinks.mutateAsync({
         stream_id: selectedStream.streamId,
         media_id: selectedStream.mediaId,
         updates,
       })
-      
+
       // Refresh the list
       refetch()
       setAnnotationDialogOpen(false)
@@ -1763,13 +1791,15 @@ function AnnotationRequestsTab() {
           Search
         </Button>
       </div>
-      
+
       {/* Stats */}
       {data && (
         <div className="p-3 rounded-xl bg-muted/50 flex items-center gap-4">
           <div className="flex items-center gap-2">
             <FileVideo className="h-4 w-4 text-cyan-500" />
-            <span className="text-sm"><strong>{data.total}</strong> streams need annotation</span>
+            <span className="text-sm">
+              <strong>{data.total}</strong> streams need annotation
+            </span>
           </div>
         </div>
       )}
@@ -1778,24 +1808,19 @@ function AnnotationRequestsTab() {
         <div className="text-center py-12">
           <FileVideo className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-lg font-medium">No annotation requests</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            All series streams have proper episode mappings!
-          </p>
+          <p className="text-sm text-muted-foreground mt-2">All series streams have proper episode mappings!</p>
         </div>
       ) : (
         <div className="space-y-3">
           {data.items.map((stream) => (
-            <Card 
-              key={stream.stream_id} 
-              className="glass border-border/50 hover:border-cyan-500/30 transition-colors"
-            >
+            <Card key={stream.stream_id} className="glass border-border/50 hover:border-cyan-500/30 transition-colors">
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
                   {/* Icon */}
                   <div className="p-2 rounded-xl flex-shrink-0 bg-cyan-500/10">
                     <FileVideo className="h-5 w-5 text-cyan-500" />
                   </div>
-                  
+
                   {/* Content */}
                   <div className="flex-1 min-w-0 space-y-2">
                     {/* Badges */}
@@ -1814,12 +1839,12 @@ function AnnotationRequestsTab() {
                         </Badge>
                       )}
                     </div>
-                    
+
                     {/* Stream name */}
                     <p className="font-medium truncate" title={stream.stream_name}>
                       {stream.stream_name}
                     </p>
-                    
+
                     {/* Media info */}
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Tv className="h-3.5 w-3.5" />
@@ -1828,7 +1853,7 @@ function AnnotationRequestsTab() {
                         {stream.media_year && ` (${stream.media_year})`}
                       </span>
                     </div>
-                    
+
                     {/* Info hash */}
                     {stream.info_hash && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1836,7 +1861,7 @@ function AnnotationRequestsTab() {
                         <span className="font-mono truncate">{stream.info_hash.slice(0, 16)}...</span>
                       </div>
                     )}
-                    
+
                     {/* Metadata */}
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span>{formatTimeAgo(stream.created_at)}</span>
@@ -1851,18 +1876,20 @@ function AnnotationRequestsTab() {
                       )}
                     </div>
                   </div>
-                  
+
                   {/* Actions */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <Button
                       size="sm"
                       className="rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500"
-                      onClick={() => handleOpenAnnotation({
-                        stream_id: stream.stream_id,
-                        stream_name: stream.stream_name,
-                        media_id: stream.media_id,
-                        media_title: stream.media_title,
-                      })}
+                      onClick={() =>
+                        handleOpenAnnotation({
+                          stream_id: stream.stream_id,
+                          stream_name: stream.stream_name,
+                          media_id: stream.media_id,
+                          media_title: stream.media_title,
+                        })
+                      }
                       disabled={isLoadingFiles}
                     >
                       {isLoadingFiles ? (
@@ -1887,7 +1914,7 @@ function AnnotationRequestsTab() {
             variant="outline"
             size="icon"
             disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}
+            onClick={() => setPage((p) => p - 1)}
             className="rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -1899,7 +1926,7 @@ function AnnotationRequestsTab() {
             variant="outline"
             size="icon"
             disabled={page >= data.pages}
-            onClick={() => setPage(p => p + 1)}
+            onClick={() => setPage((p) => p + 1)}
             className="rounded-xl"
           >
             <ChevronRight className="h-4 w-4" />
@@ -1929,18 +1956,18 @@ function AnnotationRequestsTab() {
 export function ModeratorDashboardPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('contributions')
-  
+
   const { data: pendingData } = usePendingSuggestions({ page: 1, page_size: 1 })
   const { data: suggestionStats } = useSuggestionStats()
   const { data: streamStats } = useStreamSuggestionStats()
   const { data: pendingContributions } = usePendingContributions({ page: 1, page_size: 1 })
   const { data: annotationData } = useStreamsNeedingAnnotation({ page: 1, per_page: 1 })
-  
+
   const pendingCount = pendingData?.total ?? 0
   const pendingContributionsCount = pendingContributions?.total ?? 0
   const streamPendingCount = streamStats?.pending ?? 0
   const annotationCount = annotationData?.total ?? 0
-  
+
   // Calculate combined today's stats from both metadata and stream suggestions
   const approvedToday = (suggestionStats?.approved_today ?? 0) + (streamStats?.approved_today ?? 0)
   const rejectedToday = (suggestionStats?.rejected_today ?? 0) + (streamStats?.rejected_today ?? 0)
@@ -1970,9 +1997,7 @@ export function ModeratorDashboardPage() {
           </div>
           Moderator Dashboard
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Review and manage user-submitted metadata corrections
-        </p>
+        <p className="text-muted-foreground mt-1">Review and manage user-submitted metadata corrections</p>
       </div>
 
       {/* Stats Cards */}
@@ -2142,4 +2167,3 @@ export function ModeratorDashboardPage() {
     </div>
   )
 }
-

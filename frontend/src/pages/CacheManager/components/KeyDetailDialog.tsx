@@ -1,4 +1,17 @@
-import { Eye, Copy, Trash2, Clock, HardDrive, Loader2, Hash, List, Layers, SortAsc, Type, AlertTriangle } from 'lucide-react'
+import {
+  Eye,
+  Copy,
+  Trash2,
+  Clock,
+  HardDrive,
+  Loader2,
+  Hash,
+  List,
+  Layers,
+  SortAsc,
+  Type,
+  AlertTriangle,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -37,16 +50,17 @@ interface KeyDetailDialogProps {
 // Type badge component
 function TypeBadge({ type }: { type: string }) {
   const typeInfo = REDIS_TYPE_BADGES[type] || REDIS_TYPE_BADGES.string
-  const IconComponent = {
-    Type,
-    Hash,
-    List,
-    Layers,
-    SortAsc,
-  }[typeInfo.icon] || Type
-  
+  const IconComponent =
+    {
+      Type,
+      Hash,
+      List,
+      Layers,
+      SortAsc,
+    }[typeInfo.icon] || Type
+
   return (
-    <Badge variant="outline" className={cn("gap-1.5 px-2.5 py-1", typeInfo.color)}>
+    <Badge variant="outline" className={cn('gap-1.5 px-2.5 py-1', typeInfo.color)}>
       <IconComponent className="h-3.5 w-3.5" />
       {type.charAt(0).toUpperCase() + type.slice(1)}
     </Badge>
@@ -61,18 +75,18 @@ interface ValueViewerProps {
 
 function ValueViewer({ keyValue, onDeleteItem }: ValueViewerProps) {
   const { key, type, value, is_binary } = keyValue
-  
+
   // Handle binary/image data
   if (is_binary) {
     return <StringViewer value={value} isBinary={true} cacheKey={key} />
   }
-  
+
   // Handle different types
   switch (type) {
     case 'hash':
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         return (
-          <HashViewer 
+          <HashViewer
             data={value as Record<string, string>}
             onDeleteItem={onDeleteItem ? (field) => onDeleteItem({ field }) : undefined}
           />
@@ -81,30 +95,18 @@ function ValueViewer({ keyValue, onDeleteItem }: ValueViewerProps) {
       break
     case 'list':
       if (Array.isArray(value)) {
-        return (
-          <ListViewer 
-            data={value as string[]} 
-            type="list"
-            onDeleteItem={onDeleteItem}
-          />
-        )
+        return <ListViewer data={value as string[]} type="list" onDeleteItem={onDeleteItem} />
       }
       break
     case 'set':
       if (Array.isArray(value)) {
-        return (
-          <ListViewer 
-            data={value as string[]} 
-            type="set"
-            onDeleteItem={onDeleteItem}
-          />
-        )
+        return <ListViewer data={value as string[]} type="set" onDeleteItem={onDeleteItem} />
       }
       break
     case 'zset':
       if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && 'member' in value[0]) {
         return (
-          <ZSetViewer 
+          <ZSetViewer
             data={value as Array<{ member: string; score: number }>}
             onDeleteItem={onDeleteItem ? (member) => onDeleteItem({ member }) : undefined}
           />
@@ -112,7 +114,7 @@ function ValueViewer({ keyValue, onDeleteItem }: ValueViewerProps) {
       }
       break
   }
-  
+
   // Default to string viewer
   return <StringViewer value={value} isBinary={false} cacheKey={key} />
 }
@@ -122,7 +124,7 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
   const { data: keyValue, isLoading, error, refetch } = useCacheKeyValue(open ? cacheKey : null)
   const deleteKey = useDeleteCacheKey()
   const deleteItem = useDeleteCacheItem()
-  
+
   const handleCopyKey = async () => {
     if (cacheKey) {
       await navigator.clipboard.writeText(cacheKey)
@@ -132,10 +134,10 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
       })
     }
   }
-  
+
   const handleDelete = async () => {
     if (!cacheKey) return
-    
+
     try {
       await deleteKey.mutateAsync(cacheKey)
       toast({
@@ -152,10 +154,10 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
       })
     }
   }
-  
+
   const handleDeleteItem = async (params: { field?: string; member?: string; value?: string; index?: number }) => {
     if (!cacheKey) return
-    
+
     try {
       await deleteItem.mutateAsync({ key: cacheKey, ...params })
       toast({
@@ -173,7 +175,7 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
       throw err // Re-throw so the viewer knows it failed
     }
   }
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
@@ -182,11 +184,9 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
             <Eye className="h-5 w-5 text-muted-foreground" />
             <DialogTitle className="text-xl">Cache Key Details</DialogTitle>
           </div>
-          <DialogDescription className="font-mono text-sm break-all pr-8">
-            {cacheKey}
-          </DialogDescription>
+          <DialogDescription className="font-mono text-sm break-all pr-8">{cacheKey}</DialogDescription>
         </DialogHeader>
-        
+
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center py-16">
             <div className="flex flex-col items-center gap-3">
@@ -220,27 +220,20 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
                 </Badge>
               )}
             </div>
-            
+
             {/* Value viewer - scrollable area */}
             <div className="flex-1 min-h-0 overflow-hidden">
-              <ValueViewer 
-                keyValue={keyValue} 
-                onDeleteItem={handleDeleteItem}
-              />
+              <ValueViewer keyValue={keyValue} onDeleteItem={handleDeleteItem} />
             </div>
           </>
         ) : null}
-        
+
         <DialogFooter className="flex-shrink-0 flex items-center justify-between gap-3 pt-4 border-t">
-          <Button
-            variant="outline"
-            onClick={handleCopyKey}
-            className="gap-2"
-          >
+          <Button variant="outline" onClick={handleCopyKey} className="gap-2">
             <Copy className="h-4 w-4" />
             Copy Key Name
           </Button>
-          
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" className="gap-2">
@@ -254,9 +247,7 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
                 <AlertDialogDescription>
                   Are you sure you want to delete this cache key? This action cannot be undone.
                   <br />
-                  <code className="mt-2 block text-xs bg-muted p-2 rounded break-all">
-                    {cacheKey}
-                  </code>
+                  <code className="mt-2 block text-xs bg-muted p-2 rounded break-all">{cacheKey}</code>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

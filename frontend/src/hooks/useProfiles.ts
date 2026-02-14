@@ -30,7 +30,7 @@ export function useProfile(profileId: number | undefined) {
 // Get default profile
 export function useDefaultProfile() {
   const { data: profiles } = useProfiles()
-  return profiles?.find(p => p.is_default) || profiles?.[0]
+  return profiles?.find((p) => p.is_default) || profiles?.[0]
 }
 
 // Create profile

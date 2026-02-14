@@ -37,9 +37,9 @@ export function useVoteOnStream() {
     onSuccess: (_, { streamId }) => {
       queryClient.invalidateQueries({ queryKey: votingKeys.streamVotes(streamId) })
       // Also invalidate any bulk queries that might include this stream
-      queryClient.invalidateQueries({ 
+      queryClient.invalidateQueries({
         queryKey: votingKeys.all,
-        predicate: (query) => query.queryKey[1] === 'streams'
+        predicate: (query) => query.queryKey[1] === 'streams',
       })
     },
   })
@@ -53,9 +53,9 @@ export function useRemoveStreamVote() {
     mutationFn: (streamId: number) => votingApi.removeStreamVote(streamId),
     onSuccess: (_, streamId) => {
       queryClient.invalidateQueries({ queryKey: votingKeys.streamVotes(streamId) })
-      queryClient.invalidateQueries({ 
+      queryClient.invalidateQueries({
         queryKey: votingKeys.all,
-        predicate: (query) => query.queryKey[1] === 'streams'
+        predicate: (query) => query.queryKey[1] === 'streams',
       })
     },
   })
@@ -93,4 +93,3 @@ export function useUnlikeContent() {
     },
   })
 }
-

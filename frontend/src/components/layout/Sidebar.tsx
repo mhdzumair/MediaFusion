@@ -92,13 +92,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         'group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200',
         isActive(item.href)
           ? 'bg-primary/10 text-primary border-l-2 border-primary ml-[-1px]'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
     >
-      <item.icon className={cn(
-        'h-4 w-4 transition-colors',
-        isActive(item.href) ? 'text-primary' : 'group-hover:text-primary'
-      )} />
+      <item.icon
+        className={cn('h-4 w-4 transition-colors', isActive(item.href) ? 'text-primary' : 'group-hover:text-primary')}
+      />
       {item.title}
     </Link>
   )
@@ -106,9 +105,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const SectionLabel = ({ children }: { children: React.ReactNode }) => (
     <div className="flex items-center gap-2 px-3 py-2 mt-6 mb-2">
       <div className="h-px flex-1 bg-border/50" />
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-        {children}
-      </span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{children}</span>
       <div className="h-px flex-1 bg-border/50" />
     </div>
   )
@@ -171,19 +168,14 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
       {/* Mobile overlay */}
-      {open && (
-        <div
-          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
-          onClick={onClose}
-        />
-      )}
+      {open && <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden" onClick={onClose} />}
 
       {/* Mobile sidebar */}
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ease-out md:hidden',
           'bg-card border-r border-border/40',
-          open ? 'translate-x-0' : '-translate-x-full'
+          open ? 'translate-x-0' : '-translate-x-full',
         )}
       >
         {sidebarContent}
@@ -191,9 +183,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col md:pt-14 z-30">
-        <div className="flex-1 bg-card/50 backdrop-blur-sm border-r border-border/40">
-          {sidebarContent}
-        </div>
+        <div className="flex-1 bg-card/50 backdrop-blur-sm border-r border-border/40">{sidebarContent}</div>
       </aside>
     </>
   )

@@ -67,4 +67,3 @@ export function getPermissionsForRole(role: UserRole): Permission[] {
 export function canAccessRoute(role: UserRole, requiredRole: UserRole): boolean {
   return hasMinimumRole(role, requiredRole)
 }
-

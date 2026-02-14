@@ -9,7 +9,7 @@ export interface WatchlistItem {
   year?: number
   poster?: string
   external_ids: ExternalIds
-  info_hashes: string[]  // Info hashes from debrid for this media
+  info_hashes: string[] // Info hashes from debrid for this media
 }
 
 export interface WatchlistProviderInfo {
@@ -118,7 +118,7 @@ export interface FileAnnotationData {
 export interface AdvancedTorrentImport {
   info_hash: string
   meta_type: 'movie' | 'series'
-  meta_id: string  // Primary media external ID (e.g., tt1234567)
+  meta_id: string // Primary media external ID (e.g., tt1234567)
   title?: string
   file_data?: FileAnnotationData[]
 }
@@ -148,7 +148,7 @@ export const watchlistApi = {
     if (params.mediaType) searchParams.append('media_type', params.mediaType)
     if (params.page) searchParams.append('page', params.page.toString())
     if (params.pageSize) searchParams.append('page_size', params.pageSize.toString())
-    
+
     const query = searchParams.toString()
     return apiClient.get<WatchlistResponse>(`/watchlist/${provider}${query ? `?${query}` : ''}`)
   },
@@ -170,7 +170,7 @@ export const watchlistApi = {
     provider: string,
     infoHashes: string[],
     profileId?: number,
-    overrides?: Record<string, TorrentOverride>
+    overrides?: Record<string, TorrentOverride>,
   ): Promise<ImportResponse> => {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())
@@ -210,7 +210,7 @@ export const watchlistApi = {
   advancedImport: async (
     provider: string,
     imports: AdvancedTorrentImport[],
-    profileId?: number
+    profileId?: number,
   ): Promise<ImportResponse> => {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())

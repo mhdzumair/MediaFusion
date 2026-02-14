@@ -68,9 +68,7 @@ export function TelegramLoginPage() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-          <div className="text-muted-foreground">
-            {authLoading ? 'Loading...' : 'Redirecting to login...'}
-          </div>
+          <div className="text-muted-foreground">{authLoading ? 'Loading...' : 'Redirecting to login...'}</div>
         </div>
       </div>
     )
@@ -103,11 +101,7 @@ export function TelegramLoginPage() {
                   This login link is invalid. Please use the link provided by the Telegram bot.
                 </AlertDescription>
               </Alert>
-              <Button
-                onClick={() => navigate('/dashboard')}
-                className="w-full mt-4"
-                variant="outline"
-              >
+              <Button onClick={() => navigate('/dashboard')} className="w-full mt-4" variant="outline">
                 Go to Dashboard
               </Button>
             </CardContent>
@@ -139,9 +133,7 @@ export function TelegramLoginPage() {
               <LogoText addonName={addonName} size="lg" />
             </div>
             <CardTitle className="text-xl">Link Telegram Account</CardTitle>
-            <CardDescription>
-              Connect your Telegram account to {addonName}
-            </CardDescription>
+            <CardDescription>Connect your Telegram account to {addonName}</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-6">
@@ -152,9 +144,7 @@ export function TelegramLoginPage() {
                 <p className="text-sm text-muted-foreground mt-1">
                   Your Telegram account has been successfully linked to your MediaFusion account.
                 </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Redirecting to dashboard...
-                </p>
+                <p className="text-xs text-muted-foreground mt-2">Redirecting to dashboard...</p>
               </div>
             ) : error ? (
               <Alert variant="destructive">
@@ -166,9 +156,7 @@ export function TelegramLoginPage() {
               <div className="p-4 rounded-lg bg-muted/50 border border-border/50 text-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
                 <p className="font-medium">Linking your Telegram account...</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Please wait while we connect your accounts.
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">Please wait while we connect your accounts.</p>
               </div>
             ) : (
               <div className="p-4 rounded-lg bg-muted/50 border border-border/50">

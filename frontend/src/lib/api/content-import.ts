@@ -112,40 +112,40 @@ export interface TorrentImportRequest {
   // Source - one of these required
   magnet_link?: string
   torrent_file?: File
-  
+
   // Content type
   meta_type: TorrentMetaType
-  
+
   // Metadata
   meta_id?: string
   title?: string
   poster?: string
   background?: string
   logo?: string
-  
+
   // Technical specs
   resolution?: string
   quality?: string
   codec?: string
-  audio?: string  // Comma-separated for multi-value
-  hdr?: string    // Comma-separated for multi-value
-  languages?: string  // Comma-separated for multi-value
-  
+  audio?: string // Comma-separated for multi-value
+  hdr?: string // Comma-separated for multi-value
+  languages?: string // Comma-separated for multi-value
+
   // Catalogs
-  catalogs?: string  // Comma-separated
-  
+  catalogs?: string // Comma-separated
+
   // Series/Sports specific
   episode_name_parser?: string
-  created_at?: string  // Release date YYYY-MM-DD
-  
+  created_at?: string // Release date YYYY-MM-DD
+
   // Import options
   force_import?: boolean
   is_add_title_to_poster?: boolean
-  is_anonymous?: boolean  // Whether to show as anonymous contribution
-  
+  is_anonymous?: boolean // Whether to show as anonymous contribution
+
   // File annotations for series
-  file_data?: string  // JSON stringified array
-  
+  file_data?: string // JSON stringified array
+
   // Sports category
   sports_category?: string
 }
@@ -278,7 +278,7 @@ export interface SyncResponse {
   message: string
   stats?: Record<string, number>
   error?: string
-  job_id?: string  // For background task tracking
+  job_id?: string // For background task tracking
 }
 
 // ============================================
@@ -308,7 +308,7 @@ export interface YouTubeImportRequest {
   meta_type: 'movie' | 'series' | 'sports' | 'tv'
   meta_id?: string
   title?: string
-  languages?: string  // Comma-separated
+  languages?: string // Comma-separated
   is_anonymous?: boolean
   force_import?: boolean
 }
@@ -336,15 +336,15 @@ export interface HTTPImportRequest {
   meta_type: 'movie' | 'series' | 'sports' | 'tv'
   meta_id?: string
   title?: string
-  extractor_name?: string  // MediaFlow extractor name
+  extractor_name?: string // MediaFlow extractor name
   request_headers?: Record<string, string>
   response_headers?: Record<string, string>
-  drm_key_id?: string  // For MPD streams
+  drm_key_id?: string // For MPD streams
   drm_key?: string
   resolution?: string
   quality?: string
   codec?: string
-  languages?: string  // Comma-separated
+  languages?: string // Comma-separated
   is_anonymous?: boolean
   force_import?: boolean
 }
@@ -354,8 +354,8 @@ export interface HTTPImportRequest {
 // ============================================
 
 export interface AceStreamAnalyzeRequest {
-  content_id?: string  // 40-char hex
-  info_hash?: string   // 40-char hex
+  content_id?: string // 40-char hex
+  info_hash?: string // 40-char hex
   meta_type: 'movie' | 'series' | 'sports' | 'tv'
 }
 
@@ -370,18 +370,18 @@ export interface AceStreamAnalyzeResponse {
 }
 
 export interface AceStreamImportRequest {
-  content_id?: string  // 40-char hex or acestream:// URL
-  info_hash?: string   // 40-char hex
+  content_id?: string // 40-char hex or acestream:// URL
+  info_hash?: string // 40-char hex
   meta_type: 'movie' | 'series' | 'sports' | 'tv'
-  title: string        // Required - stream/media title
-  meta_id?: string     // Optional external ID (e.g. IMDb tt1234567)
-  languages?: string   // Comma-separated
+  title: string // Required - stream/media title
+  meta_id?: string // Optional external ID (e.g. IMDb tt1234567)
+  languages?: string // Comma-separated
   resolution?: string
   quality?: string
   codec?: string
-  poster?: string      // Poster image URL
-  background?: string  // Background/backdrop image URL
-  logo?: string        // Logo image URL
+  poster?: string // Poster image URL
+  background?: string // Background/backdrop image URL
+  logo?: string // Logo image URL
   is_anonymous?: boolean
   force_import?: boolean
 }
@@ -407,7 +407,9 @@ export const contentImportApi = {
   /**
    * Import a magnet link as a contribution
    */
-  importMagnet: async (data: Omit<TorrentImportRequest, 'torrent_file'> & { magnet_link: string }): Promise<ImportResponse> => {
+  importMagnet: async (
+    data: Omit<TorrentImportRequest, 'torrent_file'> & { magnet_link: string },
+  ): Promise<ImportResponse> => {
     const formData = new FormData()
     formData.append('magnet_link', data.magnet_link)
     formData.append('meta_type', data.meta_type)
@@ -436,7 +438,9 @@ export const contentImportApi = {
   /**
    * Import a torrent file as a contribution
    */
-  importTorrent: async (data: Omit<TorrentImportRequest, 'magnet_link'> & { torrent_file: File }): Promise<ImportResponse> => {
+  importTorrent: async (
+    data: Omit<TorrentImportRequest, 'magnet_link'> & { torrent_file: File },
+  ): Promise<ImportResponse> => {
     const formData = new FormData()
     formData.append('torrent_file', data.torrent_file)
     formData.append('meta_type', data.meta_type)
@@ -465,10 +469,7 @@ export const contentImportApi = {
   /**
    * Analyze an M3U playlist (preview before import)
    */
-  analyzeM3U: async (data: {
-    m3u_url?: string
-    m3u_file?: File
-  }): Promise<M3UAnalyzeResponse> => {
+  analyzeM3U: async (data: { m3u_url?: string; m3u_file?: File }): Promise<M3UAnalyzeResponse> => {
     const formData = new FormData()
     if (data.m3u_url) formData.append('m3u_url', data.m3u_url)
     if (data.m3u_file) formData.append('m3u_file', data.m3u_file)
@@ -688,4 +689,3 @@ export interface IPTVImportSettings {
   enabled: boolean
   allow_public_sharing: boolean
 }
-

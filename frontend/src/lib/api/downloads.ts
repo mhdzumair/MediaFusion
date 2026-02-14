@@ -16,8 +16,8 @@ export interface DownloadHistoryItem {
   id: number
   user_id: number
   profile_id: number
-  media_id: number  // Internal media_id
-  external_ids: ExternalIds  // All external IDs
+  media_id: number // Internal media_id
+  external_ids: ExternalIds // All external IDs
   title: string
   media_type: 'movie' | 'series'
   season?: number
@@ -56,7 +56,7 @@ export interface DownloadStats {
 
 export interface DownloadCreateRequest {
   profile_id: number
-  media_id: number  // Internal media_id
+  media_id: number // Internal media_id
   title: string
   media_type: 'movie' | 'series'
   season?: number
@@ -76,7 +76,7 @@ export const downloadsApi = {
     if (params.download_status) searchParams.append('download_status', params.download_status)
     if (params.page) searchParams.append('page', params.page.toString())
     if (params.page_size) searchParams.append('page_size', params.page_size.toString())
-    
+
     const query = searchParams.toString()
     return apiClient.get<DownloadListResponse>(`/downloads${query ? `?${query}` : ''}`)
   },
@@ -111,4 +111,3 @@ export const downloadsApi = {
     await apiClient.delete(`/downloads${query}`)
   },
 }
-

@@ -13,7 +13,7 @@ export const onAuthStateChange = (listener: AuthEventListener) => {
 }
 
 const emitAuthEvent = (event: 'logout' | 'refreshed') => {
-  authListeners.forEach(listener => listener(event))
+  authListeners.forEach((listener) => listener(event))
 }
 
 class ApiClient {
@@ -64,13 +64,13 @@ class ApiClient {
     if (refreshToken !== null) {
       this.refreshToken = refreshToken
     }
-    
+
     if (accessToken) {
       localStorage.setItem('access_token', accessToken)
     } else {
       localStorage.removeItem('access_token')
     }
-    
+
     if (refreshToken) {
       localStorage.setItem('refresh_token', refreshToken)
     } else if (refreshToken === null && !accessToken) {
@@ -147,10 +147,10 @@ class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit & { useRawUrl?: boolean } = {},
-    retry = true
+    retry = true,
   ): Promise<T> {
     const { useRawUrl, ...fetchOptions } = options
-    
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...fetchOptions.headers,
@@ -158,17 +158,17 @@ class ApiClient {
 
     // Add Authorization header for JWT auth
     if (this.accessToken) {
-      (headers as Record<string, string>)['Authorization'] = `Bearer ${this.accessToken}`
+      ;(headers as Record<string, string>)['Authorization'] = `Bearer ${this.accessToken}`
     }
 
     // Add API key header for private instance authentication
     if (this.apiKey) {
-      (headers as Record<string, string>)['X-API-Key'] = this.apiKey
+      ;(headers as Record<string, string>)['X-API-Key'] = this.apiKey
     }
 
     // Use raw URL if specified (for admin routes, etc.), otherwise prepend API_BASE_URL
     const url = useRawUrl ? endpoint : `${API_BASE_URL}${endpoint}`
-    
+
     const response = await fetch(url, {
       ...fetchOptions,
       headers,
@@ -183,21 +183,17 @@ class ApiClient {
       } catch {
         error = { detail: `HTTP error ${response.status}` }
       }
-      
+
       // Check if it's an API key error
       const isApiKeyError = error.detail?.toLowerCase().includes('api key') || false
       // Check if it's an auth endpoint (login/register)
       const isAuthEndpoint = endpoint.includes('/auth/login') || endpoint.includes('/auth/register')
-      
+
       // For API key errors or auth endpoints, throw the actual error immediately
       if (isApiKeyError || isAuthEndpoint) {
-        throw new ApiRequestError(
-          error.detail || 'An error occurred',
-          response.status,
-          error
-        )
+        throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
       }
-      
+
       // For other 401 errors, try to refresh token (only if retry is enabled)
       if (retry) {
         const refreshed = await this.refreshAccessToken()
@@ -206,7 +202,7 @@ class ApiClient {
           return this.request<T>(endpoint, options, false)
         }
       }
-      
+
       // Refresh failed or retry disabled, clear tokens and throw session expired
       this.clearTokens()
       throw new Error('Session expired. Please log in again.')
@@ -219,12 +215,8 @@ class ApiClient {
       } catch {
         error = { detail: `HTTP error ${response.status}` }
       }
-      
-      throw new ApiRequestError(
-        error.detail || 'An error occurred',
-        response.status,
-        error
-      )
+
+      throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
     }
 
     // Handle 204 No Content
@@ -267,7 +259,7 @@ class ApiClient {
   // Multipart form data for file uploads
   async upload<T>(endpoint: string, formData: FormData, retry = true): Promise<T> {
     const headers: HeadersInit = {}
-    
+
     if (this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`
     }
@@ -300,11 +292,7 @@ class ApiClient {
       } catch {
         error = { detail: `HTTP error ${response.status}` }
       }
-      throw new ApiRequestError(
-        error.detail || 'An error occurred',
-        response.status,
-        error
-      )
+      throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
     }
 
     return response.json()

@@ -97,8 +97,7 @@ export function useDisconnectIntegration() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (platform: IntegrationType) =>
-      integrationsApi.disconnect(defaultProfile!.id, platform),
+    mutationFn: (platform: IntegrationType) => integrationsApi.disconnect(defaultProfile!.id, platform),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] })
     },
@@ -113,13 +112,8 @@ export function useUpdateIntegrationSettings() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      platform,
-      settings,
-    }: {
-      platform: IntegrationType
-      settings: IntegrationConfigUpdate
-    }) => integrationsApi.updateSettings(defaultProfile!.id, platform, settings),
+    mutationFn: ({ platform, settings }: { platform: IntegrationType; settings: IntegrationConfigUpdate }) =>
+      integrationsApi.updateSettings(defaultProfile!.id, platform, settings),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] })
     },

@@ -5,14 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -21,13 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,8 +25,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { 
-  Users, 
+import {
+  Users,
   Search,
   Filter,
   MoreVertical,
@@ -119,7 +106,7 @@ export function UserManagementPage() {
     setDeleteUserId(null)
   }
 
-  const selectedUser = usersData?.items.find(u => u.id === editUserId)
+  const selectedUser = usersData?.items.find((u) => u.id === editUserId)
 
   return (
     <div className="space-y-6">
@@ -132,9 +119,7 @@ export function UserManagementPage() {
             </div>
             User Management
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage users, roles, and permissions
-          </p>
+          <p className="text-muted-foreground mt-1">Manage users, roles, and permissions</p>
         </div>
       </div>
 
@@ -160,9 +145,7 @@ export function UserManagementPage() {
                 <ShieldAlert className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {usersData?.items.filter(u => u.role === 'admin').length ?? 0}
-                </p>
+                <p className="text-2xl font-bold">{usersData?.items.filter((u) => u.role === 'admin').length ?? 0}</p>
                 <p className="text-xs text-muted-foreground">Admins</p>
               </div>
             </div>
@@ -176,7 +159,7 @@ export function UserManagementPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {usersData?.items.filter(u => u.role === 'moderator').length ?? 0}
+                  {usersData?.items.filter((u) => u.role === 'moderator').length ?? 0}
                 </p>
                 <p className="text-xs text-muted-foreground">Moderators</p>
               </div>
@@ -190,9 +173,7 @@ export function UserManagementPage() {
                 <CheckCircle className="h-4 w-4 text-emerald-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {usersData?.items.filter(u => u.is_verified).length ?? 0}
-                </p>
+                <p className="text-2xl font-bold">{usersData?.items.filter((u) => u.is_verified).length ?? 0}</p>
                 <p className="text-xs text-muted-foreground">Verified</p>
               </div>
             </div>
@@ -226,11 +207,9 @@ export function UserManagementPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setRoleFilter(undefined)}>
-                  All Roles
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setRoleFilter(undefined)}>All Roles</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {allRoles.map(role => (
+                {allRoles.map((role) => (
                   <DropdownMenuItem key={role} onClick={() => setRoleFilter(role)}>
                     {roleConfig[role].label}
                   </DropdownMenuItem>
@@ -245,9 +224,7 @@ export function UserManagementPage() {
       <Card className="glass border-border/50">
         <CardHeader>
           <CardTitle>Users</CardTitle>
-          <CardDescription>
-            View and manage all registered users
-          </CardDescription>
+          <CardDescription>View and manage all registered users</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -267,11 +244,7 @@ export function UserManagementPage() {
             <div className="text-center py-12 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No users found.</p>
-              {search && (
-                <p className="text-sm mt-2">
-                  Try adjusting your search or filters.
-                </p>
-              )}
+              {search && <p className="text-sm mt-2">Try adjusting your search or filters.</p>}
             </div>
           ) : (
             <>
@@ -335,9 +308,7 @@ export function UserManagementPage() {
                                   Inactive
                                 </Badge>
                               )}
-                              {user.is_verified && (
-                                <CheckCircle className="h-4 w-4 text-emerald-500" />
-                              )}
+                              {user.is_verified && <CheckCircle className="h-4 w-4 text-emerald-500" />}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -357,16 +328,12 @@ export function UserManagementPage() {
                                   <UserIcon className="mr-2 h-4 w-4" />
                                   View Details
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => setRoleDialogUser({ id: user.id, role: user.role })}
-                                >
+                                <DropdownMenuItem onClick={() => setRoleDialogUser({ id: user.id, role: user.role })}>
                                   <Shield className="mr-2 h-4 w-4" />
                                   Change Role
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  onClick={() => handleToggleActive(user.id, user.is_active)}
-                                >
+                                <DropdownMenuItem onClick={() => handleToggleActive(user.id, user.is_active)}>
                                   {user.is_active ? (
                                     <>
                                       <Ban className="mr-2 h-4 w-4" />
@@ -379,9 +346,7 @@ export function UserManagementPage() {
                                     </>
                                   )}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => handleToggleVerified(user.id, user.is_verified)}
-                                >
+                                <DropdownMenuItem onClick={() => handleToggleVerified(user.id, user.is_verified)}>
                                   {user.is_verified ? (
                                     <>
                                       <XCircle className="mr-2 h-4 w-4" />
@@ -395,10 +360,7 @@ export function UserManagementPage() {
                                   )}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  className="text-destructive"
-                                  onClick={() => setDeleteUserId(user.id)}
-                                >
+                                <DropdownMenuItem className="text-destructive" onClick={() => setDeleteUserId(user.id)}>
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Delete User
                                 </DropdownMenuItem>
@@ -416,26 +378,21 @@ export function UserManagementPage() {
               {usersData && usersData.pages > 1 && (
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">
-                    Showing {((page - 1) * 20) + 1} to {Math.min(page * 20, usersData.total)} of {usersData.total} users
+                    Showing {(page - 1) * 20 + 1} to {Math.min(page * 20, usersData.total)} of {usersData.total} users
                   </p>
                   <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      disabled={page === 1}
-                      onClick={() => setPage(p => p - 1)}
-                    >
+                    <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
                       <ChevronLeft className="h-4 w-4 mr-1" />
                       Previous
                     </Button>
                     <span className="text-sm px-3">
                       Page {page} of {usersData.pages}
                     </span>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       disabled={page >= usersData.pages}
-                      onClick={() => setPage(p => p + 1)}
+                      onClick={() => setPage((p) => p + 1)}
                     >
                       Next
                       <ChevronRight className="h-4 w-4 ml-1" />
@@ -453,9 +410,7 @@ export function UserManagementPage() {
         <DialogContent className="glass border-border/50 sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>User Details</DialogTitle>
-            <DialogDescription>
-              View user information
-            </DialogDescription>
+            <DialogDescription>View user information</DialogDescription>
           </DialogHeader>
           {selectedUser && (
             <div className="space-y-4 py-4">
@@ -487,7 +442,7 @@ export function UserManagementPage() {
                       {new Date(selectedUser.created_at).toLocaleDateString('en-US', {
                         year: 'numeric',
                         month: 'long',
-                        day: 'numeric'
+                        day: 'numeric',
                       })}
                     </p>
                   </div>
@@ -497,9 +452,7 @@ export function UserManagementPage() {
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-xs text-muted-foreground">Last Login</p>
-                      <p className="font-medium">
-                        {new Date(selectedUser.last_login).toLocaleString()}
-                      </p>
+                      <p className="font-medium">{new Date(selectedUser.last_login).toLocaleString()}</p>
                     </div>
                   </div>
                 )}
@@ -540,26 +493,22 @@ export function UserManagementPage() {
         <DialogContent className="glass border-border/50 sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Change User Role</DialogTitle>
-            <DialogDescription>
-              Select a new role for this user
-            </DialogDescription>
+            <DialogDescription>Select a new role for this user</DialogDescription>
           </DialogHeader>
           {roleDialogUser && (
             <div className="py-4">
               <Label htmlFor="role">New Role</Label>
-              <Select 
-                value={roleDialogUser.role} 
+              <Select
+                value={roleDialogUser.role}
                 onValueChange={(v) => setRoleDialogUser({ ...roleDialogUser, role: v as UserRole })}
               >
                 <SelectTrigger className="mt-2 rounded-xl">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {allRoles.map(role => (
+                  {allRoles.map((role) => (
                     <SelectItem key={role} value={role}>
-                      <div className="flex items-center gap-2">
-                        {roleConfig[role].label}
-                      </div>
+                      <div className="flex items-center gap-2">{roleConfig[role].label}</div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -570,7 +519,7 @@ export function UserManagementPage() {
             <Button variant="outline" onClick={() => setRoleDialogUser(null)} className="rounded-xl">
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleUpdateRole}
               disabled={updateRole.isPending}
               className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
@@ -592,7 +541,7 @@ export function UserManagementPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDeleteUser}
             >

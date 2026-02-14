@@ -15,24 +15,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { 
-  Edit,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  Monitor,
-  Volume2,
-  Film,
-  Languages,
-  HardDrive,
-} from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Edit, Loader2, CheckCircle2, AlertCircle, Monitor, Volume2, Film, Languages, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
 import { TagInput } from '@/components/ui/tag-input'
@@ -45,7 +29,17 @@ const CODEC_OPTIONS = ['x265', 'x264', 'HEVC', 'H.265', 'H.264', 'AVC', 'VP9', '
 const AUDIO_OPTIONS = ['AAC', 'AC3', 'DTS', 'DTS-HD', 'Atmos', 'TrueHD', 'DD5.1', 'DD+', 'FLAC']
 const HDR_OPTIONS = ['HDR', 'HDR10', 'HDR10+', 'Dolby Vision', 'DV', 'HLG', 'SDR']
 
-type StreamFieldName = 'name' | 'resolution' | 'quality' | 'codec' | 'bit_depth' | 'audio_formats' | 'channels' | 'hdr_formats' | 'source' | 'languages'
+type StreamFieldName =
+  | 'name'
+  | 'resolution'
+  | 'quality'
+  | 'codec'
+  | 'bit_depth'
+  | 'audio_formats'
+  | 'channels'
+  | 'hdr_formats'
+  | 'source'
+  | 'languages'
 
 interface FieldState {
   value: string
@@ -55,7 +49,7 @@ interface FieldState {
 
 interface StreamEditSheetProps {
   streamId: number
-  streamName?: string  // Raw torrent/stream name
+  streamName?: string // Raw torrent/stream name
   currentValues?: {
     name?: string
     resolution?: string
@@ -72,7 +66,13 @@ interface StreamEditSheetProps {
   trigger?: React.ReactNode
   onSuccess?: () => void
   mediaType?: 'movie' | 'series'
-  episodeLinks?: { file_id: number; file_name: string; season_number?: number; episode_number?: number; episode_end?: number }[]
+  episodeLinks?: {
+    file_id: number
+    file_name: string
+    season_number?: number
+    episode_number?: number
+    episode_end?: number
+  }[]
 }
 
 const CLEAR_VALUE = '__CLEAR__'
@@ -91,20 +91,36 @@ export function StreamEditSheet({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
   const [languages, setLanguages] = useState<string[]>([])
-  
+
   const createSuggestion = useCreateStreamSuggestion()
 
   const getInitialFields = (): Record<StreamFieldName, FieldState> => ({
     name: { value: currentValues?.name || '', original: currentValues?.name || '', isModified: false },
-    resolution: { value: currentValues?.resolution || '', original: currentValues?.resolution || '', isModified: false },
+    resolution: {
+      value: currentValues?.resolution || '',
+      original: currentValues?.resolution || '',
+      isModified: false,
+    },
     quality: { value: currentValues?.quality || '', original: currentValues?.quality || '', isModified: false },
     codec: { value: currentValues?.codec || '', original: currentValues?.codec || '', isModified: false },
     bit_depth: { value: currentValues?.bit_depth || '', original: currentValues?.bit_depth || '', isModified: false },
-    audio_formats: { value: currentValues?.audio_formats || '', original: currentValues?.audio_formats || '', isModified: false },
+    audio_formats: {
+      value: currentValues?.audio_formats || '',
+      original: currentValues?.audio_formats || '',
+      isModified: false,
+    },
     channels: { value: currentValues?.channels || '', original: currentValues?.channels || '', isModified: false },
-    hdr_formats: { value: currentValues?.hdr_formats || '', original: currentValues?.hdr_formats || '', isModified: false },
+    hdr_formats: {
+      value: currentValues?.hdr_formats || '',
+      original: currentValues?.hdr_formats || '',
+      isModified: false,
+    },
     source: { value: currentValues?.source || '', original: currentValues?.source || '', isModified: false },
-    languages: { value: currentValues?.languages?.join(', ') || '', original: currentValues?.languages?.join(', ') || '', isModified: false },
+    languages: {
+      value: currentValues?.languages?.join(', ') || '',
+      original: currentValues?.languages?.join(', ') || '',
+      isModified: false,
+    },
   })
 
   const [fields, setFields] = useState<Record<StreamFieldName, FieldState>>(getInitialFields())
@@ -120,7 +136,7 @@ export function StreamEditSheet({
   }, [open, currentValues])
 
   const updateField = (fieldName: StreamFieldName, value: string) => {
-    setFields(prev => ({
+    setFields((prev) => ({
       ...prev,
       [fieldName]: {
         ...prev[fieldName],
@@ -135,33 +151,33 @@ export function StreamEditSheet({
     const original = currentValues?.languages || []
     return JSON.stringify([...languages].sort()) !== JSON.stringify([...original].sort())
   }, [languages, currentValues?.languages])
-  
+
   // Calculate all modifications
   const modifiedFields = useMemo(() => {
     const result: { field: StreamFieldName; currentValue: string; newValue: string }[] = []
-    
+
     Object.entries(fields).forEach(([key, state]) => {
       if (state.isModified && key !== 'languages') {
         result.push({ field: key as StreamFieldName, currentValue: state.original, newValue: state.value })
       }
     })
-    
+
     if (languagesModified) {
       result.push({
         field: 'languages',
         currentValue: currentValues?.languages?.join(', ') || '',
-        newValue: languages.join(', ')
+        newValue: languages.join(', '),
       })
     }
-    
+
     return result
   }, [fields, languagesModified, currentValues?.languages, languages])
-  
+
   const modifiedCount = modifiedFields.length
 
   const handleSubmit = async () => {
     if (modifiedCount === 0) return
-    
+
     setIsSubmitting(true)
     setSubmitResults([])
     const results: { field: string; success: boolean }[] = []
@@ -188,7 +204,7 @@ export function StreamEditSheet({
     setSubmitResults(results)
     setIsSubmitting(false)
 
-    const successCount = results.filter(r => r.success).length
+    const successCount = results.filter((r) => r.success).length
     if (successCount > 0 && successCount === results.length) {
       setTimeout(() => {
         setOpen(false)
@@ -197,15 +213,10 @@ export function StreamEditSheet({
     }
   }
 
-  const renderSelectField = (
-    fieldName: StreamFieldName,
-    label: string,
-    options: string[],
-    icon: React.ReactNode
-  ) => {
+  const renderSelectField = (fieldName: StreamFieldName, label: string, options: string[], icon: React.ReactNode) => {
     const state = fields[fieldName]
-    const validOptions = options.filter(opt => opt && opt.trim() !== '')
-    
+    const validOptions = options.filter((opt) => opt && opt.trim() !== '')
+
     return (
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
@@ -223,18 +234,17 @@ export function StreamEditSheet({
           value={state.value || CLEAR_VALUE}
           onValueChange={(v) => updateField(fieldName, v === CLEAR_VALUE ? '' : v)}
         >
-          <SelectTrigger className={cn(
-            'rounded-xl',
-            state.isModified && 'border-emerald-500/50 bg-emerald-500/5'
-          )}>
+          <SelectTrigger className={cn('rounded-xl', state.isModified && 'border-emerald-500/50 bg-emerald-500/5')}>
             <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={CLEAR_VALUE}>
               <span className="text-muted-foreground">Clear</span>
             </SelectItem>
-            {validOptions.map(opt => (
-              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+            {validOptions.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -242,10 +252,7 @@ export function StreamEditSheet({
           value={state.value}
           onChange={(e) => updateField(fieldName, e.target.value)}
           placeholder="Or enter custom value"
-          className={cn(
-            'rounded-xl text-xs',
-            state.isModified && 'border-emerald-500/50 bg-emerald-500/5'
-          )}
+          className={cn('rounded-xl text-xs', state.isModified && 'border-emerald-500/50 bg-emerald-500/5')}
         />
       </div>
     )
@@ -253,14 +260,14 @@ export function StreamEditSheet({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              {trigger || (
+      <SheetTrigger asChild>
+        {trigger || (
           <Button variant="outline" size="sm" className="gap-1.5 rounded-xl">
-                  <Edit className="h-4 w-4" />
+            <Edit className="h-4 w-4" />
             Edit Stream
-                </Button>
-              )}
-            </SheetTrigger>
+          </Button>
+        )}
+      </SheetTrigger>
 
       <SheetContent className="w-full sm:max-w-[480px] p-0 flex flex-col">
         <SheetHeader className="px-6 py-4 border-b">
@@ -268,9 +275,7 @@ export function StreamEditSheet({
             <Edit className="h-5 w-5 text-emerald-500" />
             Edit Stream
           </SheetTitle>
-          <SheetDescription className="line-clamp-1">
-            Suggest corrections to stream information
-          </SheetDescription>
+          <SheetDescription className="line-clamp-1">Suggest corrections to stream information</SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="flex-1 px-6">
@@ -307,7 +312,7 @@ export function StreamEditSheet({
                 <Monitor className="h-4 w-4" />
                 Video Quality
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 {renderSelectField('resolution', 'Resolution', RESOLUTION_OPTIONS, null)}
                 {renderSelectField('quality', 'Quality', QUALITY_OPTIONS, null)}
@@ -327,7 +332,7 @@ export function StreamEditSheet({
                 <Volume2 className="h-4 w-4" />
                 Audio
               </div>
-              
+
               {renderSelectField('audio_formats', 'Audio Format', AUDIO_OPTIONS, null)}
             </div>
 
@@ -339,7 +344,7 @@ export function StreamEditSheet({
                 <Languages className="h-4 w-4" />
                 Languages
               </div>
-              
+
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Available Languages</Label>
@@ -353,9 +358,7 @@ export function StreamEditSheet({
                   value={languages}
                   onChange={setLanguages}
                   placeholder="Add language (e.g., English)..."
-                  className={cn(
-                    languagesModified && 'border-emerald-500/50 bg-emerald-500/5'
-                  )}
+                  className={cn(languagesModified && 'border-emerald-500/50 bg-emerald-500/5')}
                 />
               </div>
             </div>
@@ -397,25 +400,27 @@ export function StreamEditSheet({
           <div className="flex items-center justify-between w-full">
             <div className="text-sm text-muted-foreground">
               {modifiedCount > 0 ? (
-                <span className="text-emerald-500 font-medium">{modifiedCount} change{modifiedCount !== 1 ? 's' : ''}</span>
+                <span className="text-emerald-500 font-medium">
+                  {modifiedCount} change{modifiedCount !== 1 ? 's' : ''}
+                </span>
               ) : (
                 'No changes'
               )}
             </div>
-              <Button
-                onClick={handleSubmit}
-                disabled={modifiedCount === 0 || isSubmitting}
+            <Button
+              onClick={handleSubmit}
+              disabled={modifiedCount === 0 || isSubmitting}
               className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
                 `Submit ${modifiedCount} Edit${modifiedCount !== 1 ? 's' : ''}`
-                )}
-              </Button>
+              )}
+            </Button>
           </div>
         </SheetFooter>
       </SheetContent>

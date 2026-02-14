@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { streamSuggestionsApi, type StreamSuggestionCreateRequest, type StreamSuggestionReviewRequest, type StreamSuggestionListParams } from '@/lib/api'
+import {
+  streamSuggestionsApi,
+  type StreamSuggestionCreateRequest,
+  type StreamSuggestionReviewRequest,
+  type StreamSuggestionListParams,
+} from '@/lib/api'
 
 // Query keys
 export const streamSuggestionKeys = {
@@ -87,4 +92,3 @@ export function useDeleteStreamSuggestion() {
     },
   })
 }
-

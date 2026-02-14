@@ -4,13 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -29,19 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Calendar,
   Clock,
@@ -64,7 +47,13 @@ import {
   PowerOff,
   FlaskConical,
 } from 'lucide-react'
-import { useSchedulerJobs, useSchedulerStats, useRunSchedulerJob, useRunSchedulerJobInline, useSchedulerJobHistory } from '@/hooks'
+import {
+  useSchedulerJobs,
+  useSchedulerStats,
+  useRunSchedulerJob,
+  useRunSchedulerJobInline,
+  useSchedulerJobHistory,
+} from '@/hooks'
 import { useToast } from '@/hooks/use-toast'
 import type { SchedulerCategory, SchedulerJobInfo } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -103,9 +92,9 @@ function formatCrontab(crontab: string): string {
   // Simple crontab to human-readable conversion
   const parts = crontab.split(' ')
   if (parts.length !== 5) return crontab
-  
+
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts
-  
+
   if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
     if (minute === '0' && hour === '*') return 'Every hour'
     if (minute === '*/5') return 'Every 5 minutes'
@@ -115,27 +104,24 @@ function formatCrontab(crontab: string): string {
     if (hour === '*') return `Every hour at :${minute.padStart(2, '0')}`
     return `Daily at ${hour}:${minute.padStart(2, '0')}`
   }
-  
+
   return crontab
 }
 
 // Job Detail Dialog
-function JobDetailDialog({ 
-  job, 
-  open, 
-  onOpenChange 
-}: { 
+function JobDetailDialog({
+  job,
+  open,
+  onOpenChange,
+}: {
   job: SchedulerJobInfo | null
   open: boolean
-  onOpenChange: (open: boolean) => void 
+  onOpenChange: (open: boolean) => void
 }) {
-  const { data: history, isLoading: historyLoading } = useSchedulerJobHistory(
-    open && job ? job.id : undefined,
-    10
-  )
-  
+  const { data: history, isLoading: historyLoading } = useSchedulerJobHistory(open && job ? job.id : undefined, 10)
+
   if (!job) return null
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
@@ -146,7 +132,7 @@ function JobDetailDialog({
           </DialogTitle>
           <DialogDescription>{job.description}</DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-6 py-4">
           {/* Job Details */}
           <div className="grid grid-cols-2 gap-4">
@@ -185,7 +171,7 @@ function JobDetailDialog({
               <p className="text-sm">{job.next_run_in || 'N/A'}</p>
             </div>
           </div>
-          
+
           {/* Last Run State */}
           {job.last_run_state && (
             <div className="space-y-2">
@@ -195,7 +181,7 @@ function JobDetailDialog({
               </div>
             </div>
           )}
-          
+
           {/* History */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-2">
@@ -213,22 +199,21 @@ function JobDetailDialog({
             ) : (
               <div className="space-y-1 max-h-40 overflow-auto">
                 {history?.entries.map((entry, i) => (
-                  <div 
+                  <div
                     key={i}
                     className={cn(
-                      "flex items-center justify-between p-2 rounded text-xs",
-                      entry.status === 'success' ? 'bg-emerald-500/10' : 
-                      entry.status === 'failed' ? 'bg-red-500/10' : 'bg-muted/50'
+                      'flex items-center justify-between p-2 rounded text-xs',
+                      entry.status === 'success'
+                        ? 'bg-emerald-500/10'
+                        : entry.status === 'failed'
+                          ? 'bg-red-500/10'
+                          : 'bg-muted/50',
                     )}
                   >
                     <span className="text-muted-foreground">{entry.run_at}</span>
                     <div className="flex items-center gap-2">
-                      {entry.items_scraped !== null && (
-                        <span>{entry.items_scraped} items</span>
-                      )}
-                      {entry.duration_seconds !== null && (
-                        <span>{entry.duration_seconds.toFixed(1)}s</span>
-                      )}
+                      {entry.items_scraped !== null && <span>{entry.items_scraped} items</span>}
+                      {entry.duration_seconds !== null && <span>{entry.duration_seconds.toFixed(1)}s</span>}
                       {entry.status === 'success' ? (
                         <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                       ) : entry.status === 'failed' ? (
@@ -243,7 +228,7 @@ function JobDetailDialog({
             )}
           </div>
         </div>
-        
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
@@ -255,14 +240,14 @@ function JobDetailDialog({
 }
 
 // Job Row Component
-function JobRow({ 
-  job, 
+function JobRow({
+  job,
   onRun,
   onRunInline,
   onViewDetails,
   isRunning,
-  isRunningInline
-}: { 
+  isRunningInline,
+}: {
   job: SchedulerJobInfo
   onRun: () => void
   onRunInline: () => void
@@ -274,10 +259,7 @@ function JobRow({
     <TableRow className="hover:bg-muted/20">
       <TableCell>
         <div className="flex items-center gap-3">
-          <div className={cn(
-            "p-2 rounded-lg",
-            getCategoryColor(job.category).split(' ')[0]
-          )}>
+          <div className={cn('p-2 rounded-lg', getCategoryColor(job.category).split(' ')[0])}>
             {getCategoryIcon(job.category)}
           </div>
           <div>
@@ -308,21 +290,13 @@ function JobRow({
             Running
           </Badge>
         ) : job.is_enabled ? (
-          <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
-            Active
-          </Badge>
+          <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">Active</Badge>
         ) : (
-          <Badge className="bg-red-500/10 text-red-500 border-red-500/30">
-            Disabled
-          </Badge>
+          <Badge className="bg-red-500/10 text-red-500 border-red-500/30">Disabled</Badge>
         )}
       </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
-        {job.time_since_last_run}
-      </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
-        {job.next_run_in || '—'}
-      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">{job.time_since_last_run}</TableCell>
+      <TableCell className="text-sm text-muted-foreground">{job.next_run_in || '—'}</TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-1">
           <Tooltip>
@@ -334,11 +308,7 @@ function JobRow({
                 disabled={isRunning || isRunningInline || job.is_running}
                 className="rounded-lg"
               >
-                {isRunning ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
+                {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
@@ -354,23 +324,14 @@ function JobRow({
                 disabled={isRunning || isRunningInline || job.is_running}
                 className="rounded-lg text-primary hover:text-primary hover:bg-primary/10"
               >
-                {isRunningInline ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FlaskConical className="h-4 w-4" />
-                )}
+                {isRunningInline ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
               <p>Run inline (test mode - blocks until complete)</p>
             </TooltipContent>
           </Tooltip>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onViewDetails}
-            className="rounded-lg"
-          >
+          <Button variant="ghost" size="sm" onClick={onViewDetails} className="rounded-lg">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -392,28 +353,33 @@ export function SchedulerPage() {
   const [selectedJob, setSelectedJob] = useState<SchedulerJobInfo | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [confirmRun, setConfirmRun] = useState<ConfirmRunState | null>(null)
-  
-  const { data: jobsData, isLoading, refetch } = useSchedulerJobs({
+
+  const {
+    data: jobsData,
+    isLoading,
+    refetch,
+  } = useSchedulerJobs({
     category: categoryFilter === 'all' ? undefined : categoryFilter,
   })
   const { data: stats } = useSchedulerStats()
   const runJob = useRunSchedulerJob()
   const runJobInline = useRunSchedulerJobInline()
   const { toast } = useToast()
-  
+
   // Filter jobs by search
-  const filteredJobs = jobsData?.jobs.filter(job => {
-    if (search) {
-      const searchLower = search.toLowerCase()
-      return (
-        job.display_name.toLowerCase().includes(searchLower) ||
-        job.description.toLowerCase().includes(searchLower) ||
-        job.id.toLowerCase().includes(searchLower)
-      )
-    }
-    return true
-  }) ?? []
-  
+  const filteredJobs =
+    jobsData?.jobs.filter((job) => {
+      if (search) {
+        const searchLower = search.toLowerCase()
+        return (
+          job.display_name.toLowerCase().includes(searchLower) ||
+          job.description.toLowerCase().includes(searchLower) ||
+          job.id.toLowerCase().includes(searchLower)
+        )
+      }
+      return true
+    }) ?? []
+
   const handleRunJob = async (job: SchedulerJobInfo, mode: RunMode) => {
     try {
       if (mode === 'inline') {
@@ -446,12 +412,12 @@ export function SchedulerPage() {
       })
     }
   }
-  
+
   const handleViewDetails = (job: SchedulerJobInfo) => {
     setSelectedJob(job)
     setDetailsOpen(true)
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -463,25 +429,21 @@ export function SchedulerPage() {
             </div>
             Scheduler Management
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Monitor and control scheduled background jobs
-          </p>
+          <p className="text-muted-foreground mt-1">Monitor and control scheduled background jobs</p>
         </div>
         <Button onClick={() => refetch()} variant="outline" className="rounded-xl">
           <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
         </Button>
       </div>
-      
+
       {/* Global Scheduler Warning */}
       {stats?.global_scheduler_disabled && (
         <div className="p-4 rounded-xl border border-primary/30 bg-primary/10">
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-primary" />
             <div>
-              <p className="font-medium text-primary dark:text-primary">
-                Global Scheduler Disabled
-              </p>
+              <p className="font-medium text-primary dark:text-primary">Global Scheduler Disabled</p>
               <p className="text-sm text-muted-foreground">
                 All scheduled jobs are paused. Enable the scheduler in server configuration.
               </p>
@@ -489,7 +451,7 @@ export function SchedulerPage() {
           </div>
         </div>
       )}
-      
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="glass border-border/50">
@@ -545,7 +507,7 @@ export function SchedulerPage() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
@@ -571,7 +533,7 @@ export function SchedulerPage() {
           </SelectContent>
         </Select>
       </div>
-      
+
       {/* Jobs Table */}
       {isLoading ? (
         <Card className="glass border-border/50">
@@ -608,7 +570,7 @@ export function SchedulerPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredJobs.map(job => (
+              {filteredJobs.map((job) => (
                 <JobRow
                   key={job.id}
                   job={job}
@@ -623,14 +585,10 @@ export function SchedulerPage() {
           </Table>
         </Card>
       )}
-      
+
       {/* Job Detail Dialog */}
-      <JobDetailDialog
-        job={selectedJob}
-        open={detailsOpen}
-        onOpenChange={setDetailsOpen}
-      />
-      
+      <JobDetailDialog job={selectedJob} open={detailsOpen} onOpenChange={setDetailsOpen} />
+
       {/* Confirm Run Dialog */}
       <AlertDialog open={!!confirmRun} onOpenChange={() => setConfirmRun(null)}>
         <AlertDialogContent>
@@ -652,14 +610,15 @@ export function SchedulerPage() {
               {confirmRun?.mode === 'inline' ? (
                 <>
                   This will run <strong>{confirmRun?.job.display_name}</strong> directly in the FastAPI process.
-                  <br /><br />
-                  <span className="text-primary font-medium">⚠️ Warning:</span> This will block until the job completes 
+                  <br />
+                  <br />
+                  <span className="text-primary font-medium">⚠️ Warning:</span> This will block until the job completes
                   and may take a long time. Use only for testing purposes.
                 </>
               ) : (
                 <>
-                  This will queue <strong>{confirmRun?.job.display_name}</strong> for immediate execution.
-                  The job will run in the background.
+                  This will queue <strong>{confirmRun?.job.display_name}</strong> for immediate execution. The job will
+                  run in the background.
                 </>
               )}
             </AlertDialogDescription>
@@ -668,9 +627,8 @@ export function SchedulerPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => confirmRun && handleRunJob(confirmRun.job, confirmRun.mode)}
-              className={confirmRun?.mode === 'inline' 
-                ? "bg-primary hover:bg-primary/90" 
-                : "bg-primary hover:bg-primary/90"
+              className={
+                confirmRun?.mode === 'inline' ? 'bg-primary hover:bg-primary/90' : 'bg-primary hover:bg-primary/90'
               }
             >
               {(confirmRun?.mode === 'inline' ? runJobInline.isPending : runJob.isPending) ? (
@@ -695,4 +653,3 @@ export function SchedulerPage() {
     </div>
   )
 }
-

@@ -5,8 +5,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
-import { 
-  BarChart3, 
+import {
+  BarChart3,
   Database,
   HardDrive,
   FileStack,
@@ -37,10 +37,10 @@ import {
   Award,
   Shield,
 } from 'lucide-react'
-import { 
-  useTorrentCount, 
-  useTorrentSources, 
-  useMetadataCount, 
+import {
+  useTorrentCount,
+  useTorrentSources,
+  useMetadataCount,
   useRedisMetrics,
   useDebridCacheMetrics,
   useTorrentUploaders,
@@ -97,14 +97,7 @@ function PieChart({ data }: { data: { label: string; value: number; color: strin
 
     const pathD = `M 50 50 L ${x1} ${y1} A 40 40 0 ${largeArc} 1 ${x2} ${y2} Z`
 
-    return (
-      <path
-        key={index}
-        d={pathD}
-        fill={item.color}
-        className="transition-opacity hover:opacity-80"
-      />
-    )
+    return <path key={index} d={pathD} fill={item.color} className="transition-opacity hover:opacity-80" />
   })
 
   return (
@@ -133,7 +126,7 @@ function SchedulerJobCard({ job }: { job: SchedulerJobInfo }) {
   // Determine card color based on log counts
   let statusColor = 'border-l-emerald-500'
   let statusBg = 'bg-emerald-500/10'
-  
+
   if (!job.is_enabled) {
     statusColor = 'border-l-gray-500'
     statusBg = 'bg-gray-500/10'
@@ -142,7 +135,7 @@ function SchedulerJobCard({ job }: { job: SchedulerJobInfo }) {
     const logWarning = state?.log_count_warning ?? 0
     const logError = state?.log_count_error ?? 0
     const maxLog = Math.max(logInfo, logWarning, logError)
-    
+
     if (maxLog === logError && logError > 0) {
       statusColor = 'border-l-red-500'
       statusBg = 'bg-red-500/10'
@@ -169,13 +162,13 @@ function SchedulerJobCard({ job }: { job: SchedulerJobInfo }) {
             {job.is_enabled ? 'Enabled' : 'Disabled'}
           </Badge>
         </div>
-        
+
         <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />
             <span>Last Run: {job.time_since_last_run}</span>
           </div>
-          
+
           {job.is_enabled && job.next_run_in && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="h-3.5 w-3.5" />
@@ -218,14 +211,20 @@ function SchedulerJobCard({ job }: { job: SchedulerJobInfo }) {
 }
 
 // Scraper Metrics Card Component
-function ScraperMetricsCard({ scraper, onViewHistory }: { scraper: ScraperMetricsData; onViewHistory: (name: string) => void }) {
+function ScraperMetricsCard({
+  scraper,
+  onViewHistory,
+}: {
+  scraper: ScraperMetricsData
+  onViewHistory: (name: string) => void
+}) {
   const latest = scraper.latest
   const aggregated = scraper.aggregated
-  
+
   // Determine status color based on success rate or errors
   let statusColor = 'border-l-emerald-500'
   let statusBg = 'bg-emerald-500/10'
-  
+
   if (aggregated) {
     if (aggregated.success_rate !== null && aggregated.success_rate !== undefined) {
       if (aggregated.success_rate < 50) {
@@ -237,19 +236,23 @@ function ScraperMetricsCard({ scraper, onViewHistory }: { scraper: ScraperMetric
       }
     }
   }
-  
+
   return (
     <Card className={`glass border-border/50 border-l-4 ${statusColor}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <h4 className="font-medium truncate">{scraper.scraper_name}</h4>
           {aggregated?.success_rate !== null && aggregated?.success_rate !== undefined && (
-            <Badge variant={aggregated.success_rate >= 80 ? 'default' : aggregated.success_rate >= 50 ? 'secondary' : 'destructive'}>
+            <Badge
+              variant={
+                aggregated.success_rate >= 80 ? 'default' : aggregated.success_rate >= 50 ? 'secondary' : 'destructive'
+              }
+            >
               {aggregated.success_rate.toFixed(0)}% success
             </Badge>
           )}
         </div>
-        
+
         {aggregated && (
           <div className={`p-3 rounded-lg ${statusBg} mb-3`}>
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -272,7 +275,7 @@ function ScraperMetricsCard({ scraper, onViewHistory }: { scraper: ScraperMetric
             </div>
           </div>
         )}
-        
+
         {latest && !latest.skip_scraping && (
           <div className="text-xs text-muted-foreground space-y-1">
             <div className="flex justify-between">
@@ -287,23 +290,18 @@ function ScraperMetricsCard({ scraper, onViewHistory }: { scraper: ScraperMetric
             )}
             <div className="flex justify-between">
               <span>Found/Processed:</span>
-              <span>{latest.total_items.found}/{latest.total_items.processed}</span>
+              <span>
+                {latest.total_items.found}/{latest.total_items.processed}
+              </span>
             </div>
           </div>
         )}
-        
+
         {latest?.skip_scraping && (
-          <div className="text-xs text-muted-foreground italic">
-            Last run was skipped (recent scrape)
-          </div>
+          <div className="text-xs text-muted-foreground italic">Last run was skipped (recent scrape)</div>
         )}
-        
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="w-full mt-3"
-          onClick={() => onViewHistory(scraper.scraper_name)}
-        >
+
+        <Button variant="ghost" size="sm" className="w-full mt-3" onClick={() => onViewHistory(scraper.scraper_name)}>
           View History
         </Button>
       </CardContent>
@@ -312,14 +310,19 @@ function ScraperMetricsCard({ scraper, onViewHistory }: { scraper: ScraperMetric
 }
 
 // Scraper History Modal/Panel Component
-function ScraperHistoryPanel({ scraperName, history, isLoading, onClose }: { 
-  scraperName: string | null; 
-  history: ScraperMetricsSummary[]; 
-  isLoading: boolean; 
-  onClose: () => void;
+function ScraperHistoryPanel({
+  scraperName,
+  history,
+  isLoading,
+  onClose,
+}: {
+  scraperName: string | null
+  history: ScraperMetricsSummary[]
+  isLoading: boolean
+  onClose: () => void
 }) {
   if (!scraperName) return null
-  
+
   return (
     <Card className="glass border-border/50">
       <CardHeader className="pb-3">
@@ -351,26 +354,28 @@ function ScraperHistoryPanel({ scraperName, history, isLoading, onClose }: {
             {history.map((run, idx) => {
               const hasErrors = run.total_items.errors > 0
               const wasSkipped = run.skip_scraping
-              
+
               return (
-                <div 
-                  key={idx} 
+                <div
+                  key={idx}
                   className={`p-3 rounded-lg border ${wasSkipped ? 'bg-muted/30 border-muted' : hasErrors ? 'bg-red-500/5 border-red-500/20' : 'bg-muted/50 border-border/30'}`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">
-                      {new Date(run.timestamp).toLocaleString()}
-                    </span>
-                    <Badge variant={wasSkipped ? 'outline' : hasErrors ? 'destructive' : 'secondary'} className="text-xs">
+                    <span className="text-sm font-medium">{new Date(run.timestamp).toLocaleString()}</span>
+                    <Badge
+                      variant={wasSkipped ? 'outline' : hasErrors ? 'destructive' : 'secondary'}
+                      className="text-xs"
+                    >
                       {wasSkipped ? 'Skipped' : hasErrors ? 'Errors' : `${run.duration_seconds.toFixed(1)}s`}
                     </Badge>
                   </div>
-                  
+
                   {!wasSkipped && (
                     <>
                       {run.meta_title && (
                         <p className="text-xs text-muted-foreground truncate mb-1">
-                          {run.meta_title} {run.season && `S${run.season}`}{run.episode && `E${run.episode}`}
+                          {run.meta_title} {run.season && `S${run.season}`}
+                          {run.episode && `E${run.episode}`}
                         </p>
                       )}
                       <div className="flex items-center gap-4 text-xs">
@@ -389,15 +394,17 @@ function ScraperHistoryPanel({ scraperName, history, isLoading, onClose }: {
                           </span>
                         )}
                       </div>
-                      
+
                       {/* Quality distribution preview */}
                       {Object.keys(run.quality_distribution).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
-                          {Object.entries(run.quality_distribution).slice(0, 5).map(([quality, count]) => (
-                            <Badge key={quality} variant="outline" className="text-[10px] px-1.5 py-0">
-                              {quality}: {count}
-                            </Badge>
-                          ))}
+                          {Object.entries(run.quality_distribution)
+                            .slice(0, 5)
+                            .map(([quality, count]) => (
+                              <Badge key={quality} variant="outline" className="text-[10px] px-1.5 py-0">
+                                {quality}: {count}
+                              </Badge>
+                            ))}
                         </div>
                       )}
                     </>
@@ -633,14 +640,15 @@ export function MetricsPage() {
 
   // Group scheduler jobs by category and status
   const groupedJobs = useMemo(() => {
-    if (!schedulerData?.jobs) return { enabledWithStats: [], enabledWithoutStats: [], disabledWithStats: [], disabledWithoutStats: [] }
-    
+    if (!schedulerData?.jobs)
+      return { enabledWithStats: [], enabledWithoutStats: [], disabledWithStats: [], disabledWithoutStats: [] }
+
     const enabledWithStats: SchedulerJobInfo[] = []
     const enabledWithoutStats: SchedulerJobInfo[] = []
     const disabledWithStats: SchedulerJobInfo[] = []
     const disabledWithoutStats: SchedulerJobInfo[] = []
 
-    schedulerData.jobs.forEach(job => {
+    schedulerData.jobs.forEach((job) => {
       const hasStats = job.last_run_state !== null
       if (job.is_enabled) {
         if (hasStats) enabledWithStats.push(job)
@@ -675,17 +683,9 @@ export function MetricsPage() {
             </div>
             System Metrics
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Monitor system health, scrapers, and resource usage
-          </p>
+          <p className="text-muted-foreground mt-1">Monitor system health, scrapers, and resource usage</p>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="rounded-xl"
-          onClick={handleRefreshAll}
-          disabled={isLoading}
-        >
+        <Button variant="outline" size="sm" className="rounded-xl" onClick={handleRefreshAll} disabled={isLoading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh All
         </Button>
@@ -703,14 +703,16 @@ export function MetricsPage() {
                 {tcLoading ? (
                   <Skeleton className="h-7 w-20" />
                 ) : (
-                  <p className="text-2xl font-bold">{torrentCount?.total_torrents_readable ?? formatNumber(torrentCount?.total_torrents ?? 0)}</p>
+                  <p className="text-2xl font-bold">
+                    {torrentCount?.total_torrents_readable ?? formatNumber(torrentCount?.total_torrents ?? 0)}
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground">Total Torrents</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -721,7 +723,11 @@ export function MetricsPage() {
                 {mcLoading ? (
                   <Skeleton className="h-7 w-20" />
                 ) : (
-                  <p className="text-2xl font-bold">{formatNumber((metadataCount?.movies ?? 0) + (metadataCount?.series ?? 0) + (metadataCount?.tv_channels ?? 0))}</p>
+                  <p className="text-2xl font-bold">
+                    {formatNumber(
+                      (metadataCount?.movies ?? 0) + (metadataCount?.series ?? 0) + (metadataCount?.tv_channels ?? 0),
+                    )}
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground">Metadata Entries</p>
               </div>
@@ -764,7 +770,7 @@ export function MetricsPage() {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -775,14 +781,16 @@ export function MetricsPage() {
                 {rmLoading ? (
                   <Skeleton className="h-7 w-20" />
                 ) : (
-                  <p className="text-2xl font-bold">{formatNumber(redisMetrics?.connections?.connected_clients ?? 0)}</p>
+                  <p className="text-2xl font-bold">
+                    {formatNumber(redisMetrics?.connections?.connected_clients ?? 0)}
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground">Redis Clients</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -808,15 +816,33 @@ export function MetricsPage() {
       {/* Detailed Metrics Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList className="flex flex-wrap gap-1 w-full max-w-4xl p-1 bg-muted/50 rounded-xl h-auto">
-          <TabsTrigger value="overview" className="rounded-lg">Overview</TabsTrigger>
-          <TabsTrigger value="users" className="rounded-lg">Users</TabsTrigger>
-          <TabsTrigger value="scrapers" className="rounded-lg">Scrapers</TabsTrigger>
-          <TabsTrigger value="scraper-runs" className="rounded-lg">Scraper Runs</TabsTrigger>
-          <TabsTrigger value="torrents" className="rounded-lg">Torrents</TabsTrigger>
-          <TabsTrigger value="metadata" className="rounded-lg">Metadata</TabsTrigger>
-          <TabsTrigger value="activity" className="rounded-lg">Activity</TabsTrigger>
-          <TabsTrigger value="redis" className="rounded-lg">Redis</TabsTrigger>
-          <TabsTrigger value="debrid" className="rounded-lg">Debrid</TabsTrigger>
+          <TabsTrigger value="overview" className="rounded-lg">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="users" className="rounded-lg">
+            Users
+          </TabsTrigger>
+          <TabsTrigger value="scrapers" className="rounded-lg">
+            Scrapers
+          </TabsTrigger>
+          <TabsTrigger value="scraper-runs" className="rounded-lg">
+            Scraper Runs
+          </TabsTrigger>
+          <TabsTrigger value="torrents" className="rounded-lg">
+            Torrents
+          </TabsTrigger>
+          <TabsTrigger value="metadata" className="rounded-lg">
+            Metadata
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="rounded-lg">
+            Activity
+          </TabsTrigger>
+          <TabsTrigger value="redis" className="rounded-lg">
+            Redis
+          </TabsTrigger>
+          <TabsTrigger value="debrid" className="rounded-lg">
+            Debrid
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -833,7 +859,9 @@ export function MetricsPage() {
               <CardContent className="space-y-3">
                 {soLoading ? (
                   <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <>
@@ -847,7 +875,14 @@ export function MetricsPage() {
                     </div>
                     <div className="flex justify-between py-1.5">
                       <span className="text-muted-foreground">Pending Moderation</span>
-                      <Badge variant={systemOverview?.moderation?.pending_contributions && systemOverview.moderation.pending_contributions > 0 ? 'destructive' : 'secondary'}>
+                      <Badge
+                        variant={
+                          systemOverview?.moderation?.pending_contributions &&
+                          systemOverview.moderation.pending_contributions > 0
+                            ? 'destructive'
+                            : 'secondary'
+                        }
+                      >
                         {systemOverview?.moderation?.pending_contributions ?? 0}
                       </Badge>
                     </div>
@@ -867,7 +902,9 @@ export function MetricsPage() {
               <CardContent className="space-y-3">
                 {usLoading ? (
                   <div className="space-y-2">
-                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(4)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <>
@@ -877,7 +914,9 @@ export function MetricsPage() {
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border/30">
                       <span className="text-muted-foreground">Active Today</span>
-                      <span className="font-bold text-green-500">{formatNumber(userStats?.active_users?.daily ?? 0)}</span>
+                      <span className="font-bold text-green-500">
+                        {formatNumber(userStats?.active_users?.daily ?? 0)}
+                      </span>
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border/30">
                       <span className="text-muted-foreground">Active This Week</span>
@@ -885,7 +924,9 @@ export function MetricsPage() {
                     </div>
                     <div className="flex justify-between py-1.5">
                       <span className="text-muted-foreground">New This Week</span>
-                      <Badge variant="outline" className="text-emerald-500 border-emerald-500">+{userStats?.new_users_this_week ?? 0}</Badge>
+                      <Badge variant="outline" className="text-emerald-500 border-emerald-500">
+                        +{userStats?.new_users_this_week ?? 0}
+                      </Badge>
                     </div>
                   </>
                 )}
@@ -903,7 +944,9 @@ export function MetricsPage() {
               <CardContent className="space-y-3">
                 {csLoading ? (
                   <div className="space-y-2">
-                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(4)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <>
@@ -913,7 +956,13 @@ export function MetricsPage() {
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border/30">
                       <span className="text-muted-foreground">Pending Review</span>
-                      <Badge variant={contributionStats?.pending_review && contributionStats.pending_review > 0 ? 'default' : 'secondary'}>
+                      <Badge
+                        variant={
+                          contributionStats?.pending_review && contributionStats.pending_review > 0
+                            ? 'default'
+                            : 'secondary'
+                        }
+                      >
                         {contributionStats?.pending_review ?? 0}
                       </Badge>
                     </div>
@@ -941,13 +990,17 @@ export function MetricsPage() {
               <CardContent className="space-y-3">
                 {asLoading ? (
                   <div className="space-y-2">
-                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(4)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <>
                     <div className="flex justify-between py-1.5 border-b border-border/30">
                       <span className="text-muted-foreground">Watch History</span>
-                      <span className="font-bold">{formatNumber(activityStats?.watch_history?.total_entries ?? 0)}</span>
+                      <span className="font-bold">
+                        {formatNumber(activityStats?.watch_history?.total_entries ?? 0)}
+                      </span>
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border/30">
                       <span className="text-muted-foreground">Total Plays</span>
@@ -977,7 +1030,9 @@ export function MetricsPage() {
               <CardContent className="space-y-3">
                 {mcLoading ? (
                   <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <>
@@ -1015,7 +1070,9 @@ export function MetricsPage() {
               <CardContent className="space-y-3">
                 {rmLoading ? (
                   <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <>
@@ -1025,11 +1082,17 @@ export function MetricsPage() {
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border/30">
                       <span className="text-muted-foreground">Ops/sec</span>
-                      <span className="font-bold">{formatNumber(redisMetrics?.performance?.instantaneous_ops_per_sec ?? 0)}</span>
+                      <span className="font-bold">
+                        {formatNumber(redisMetrics?.performance?.instantaneous_ops_per_sec ?? 0)}
+                      </span>
                     </div>
                     <div className="flex justify-between py-1.5">
                       <span className="text-muted-foreground">Cache Hit Rate</span>
-                      <Badge variant={redisMetrics?.cache?.hit_rate && redisMetrics.cache.hit_rate > 80 ? 'default' : 'secondary'}>
+                      <Badge
+                        variant={
+                          redisMetrics?.cache?.hit_rate && redisMetrics.cache.hit_rate > 80 ? 'default' : 'secondary'
+                        }
+                      >
                         {redisMetrics?.cache?.hit_rate?.toFixed(1) ?? 0}%
                       </Badge>
                     </div>
@@ -1055,7 +1118,9 @@ export function MetricsPage() {
               <CardContent>
                 {usLoading ? (
                   <div className="space-y-4">
-                    {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(5)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1065,7 +1130,9 @@ export function MetricsPage() {
                         <p className="text-xs text-muted-foreground mt-1">Total Users</p>
                       </div>
                       <div className="p-4 rounded-xl bg-green-500/10 text-center">
-                        <p className="text-3xl font-bold text-green-500">{formatNumber(userStats?.active_users?.daily ?? 0)}</p>
+                        <p className="text-3xl font-bold text-green-500">
+                          {formatNumber(userStats?.active_users?.daily ?? 0)}
+                        </p>
                         <p className="text-xs text-muted-foreground mt-1">Active Today</p>
                       </div>
                     </div>
@@ -1080,7 +1147,9 @@ export function MetricsPage() {
                       </div>
                       <div className="flex justify-between py-2 border-b border-border/30">
                         <span className="text-muted-foreground">New This Week</span>
-                        <Badge variant="outline" className="text-emerald-500 border-emerald-500">+{userStats?.new_users_this_week ?? 0}</Badge>
+                        <Badge variant="outline" className="text-emerald-500 border-emerald-500">
+                          +{userStats?.new_users_this_week ?? 0}
+                        </Badge>
                       </div>
                       <div className="flex justify-between py-2 border-b border-border/30">
                         <span className="text-muted-foreground">Verified Users</span>
@@ -1108,7 +1177,9 @@ export function MetricsPage() {
               <CardContent>
                 {usLoading ? (
                   <div className="space-y-4">
-                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                    {[...Array(4)].map((_, i) => (
+                      <Skeleton key={i} className="h-8 w-full" />
+                    ))}
                   </div>
                 ) : userStats?.users_by_role ? (
                   <div className="space-y-3">
@@ -1137,7 +1208,9 @@ export function MetricsPage() {
               <CardContent>
                 {usLoading ? (
                   <div className="grid grid-cols-4 gap-4">
-                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+                    {[...Array(4)].map((_, i) => (
+                      <Skeleton key={i} className="h-20" />
+                    ))}
                   </div>
                 ) : userStats?.users_by_contribution_level ? (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1188,7 +1261,7 @@ export function MetricsPage() {
                     Enabled Scrapers with Stats ({groupedJobs.enabledWithStats.length})
                   </h3>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {groupedJobs.enabledWithStats.map(job => (
+                    {groupedJobs.enabledWithStats.map((job) => (
                       <SchedulerJobCard key={job.id} job={job} />
                     ))}
                   </div>
@@ -1202,7 +1275,7 @@ export function MetricsPage() {
                     Enabled Scrapers - Pending First Run ({groupedJobs.enabledWithoutStats.length})
                   </h3>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {groupedJobs.enabledWithoutStats.map(job => (
+                    {groupedJobs.enabledWithoutStats.map((job) => (
                       <SchedulerJobCard key={job.id} job={job} />
                     ))}
                   </div>
@@ -1216,7 +1289,7 @@ export function MetricsPage() {
                     Disabled Scrapers with Stats ({groupedJobs.disabledWithStats.length})
                   </h3>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {groupedJobs.disabledWithStats.map(job => (
+                    {groupedJobs.disabledWithStats.map((job) => (
                       <SchedulerJobCard key={job.id} job={job} />
                     ))}
                   </div>
@@ -1230,7 +1303,7 @@ export function MetricsPage() {
                     Disabled Scrapers ({groupedJobs.disabledWithoutStats.length})
                   </h3>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {groupedJobs.disabledWithoutStats.map(job => (
+                    {groupedJobs.disabledWithoutStats.map((job) => (
                       <SchedulerJobCard key={job.id} job={job} />
                     ))}
                   </div>
@@ -1248,9 +1321,7 @@ export function MetricsPage() {
                 <Activity className="h-5 w-5 text-cyan-500" />
                 Live Scraper Run Metrics
               </h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Real-time metrics from individual scraper executions
-              </p>
+              <p className="text-sm text-muted-foreground mt-1">Real-time metrics from individual scraper executions</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => refetchSm()} disabled={smLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${smLoading ? 'animate-spin' : ''}`} />
@@ -1259,7 +1330,7 @@ export function MetricsPage() {
           </div>
 
           {selectedScraper ? (
-            <ScraperHistoryPanel 
+            <ScraperHistoryPanel
               scraperName={selectedScraper}
               history={scraperHistory?.history ?? []}
               isLoading={shLoading}
@@ -1297,7 +1368,7 @@ export function MetricsPage() {
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="glass border-border/50">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
@@ -1306,14 +1377,19 @@ export function MetricsPage() {
                       </div>
                       <div>
                         <p className="text-2xl font-bold">
-                          {formatNumber(scraperMetrics.scrapers.reduce((sum, s) => sum + (s.aggregated?.total_items_processed ?? 0), 0))}
+                          {formatNumber(
+                            scraperMetrics.scrapers.reduce(
+                              (sum, s) => sum + (s.aggregated?.total_items_processed ?? 0),
+                              0,
+                            ),
+                          )}
                         </p>
                         <p className="text-xs text-muted-foreground">Total Processed</p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="glass border-border/50">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
@@ -1322,14 +1398,16 @@ export function MetricsPage() {
                       </div>
                       <div>
                         <p className="text-2xl font-bold">
-                          {formatNumber(scraperMetrics.scrapers.reduce((sum, s) => sum + (s.aggregated?.total_runs ?? 0), 0))}
+                          {formatNumber(
+                            scraperMetrics.scrapers.reduce((sum, s) => sum + (s.aggregated?.total_runs ?? 0), 0),
+                          )}
                         </p>
                         <p className="text-xs text-muted-foreground">Total Runs</p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="glass border-border/50">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
@@ -1338,7 +1416,9 @@ export function MetricsPage() {
                       </div>
                       <div>
                         <p className="text-2xl font-bold">
-                          {formatNumber(scraperMetrics.scrapers.reduce((sum, s) => sum + (s.aggregated?.total_errors ?? 0), 0))}
+                          {formatNumber(
+                            scraperMetrics.scrapers.reduce((sum, s) => sum + (s.aggregated?.total_errors ?? 0), 0),
+                          )}
                         </p>
                         <p className="text-xs text-muted-foreground">Total Errors</p>
                       </div>
@@ -1346,15 +1426,11 @@ export function MetricsPage() {
                   </CardContent>
                 </Card>
               </div>
-              
+
               {/* Scraper Cards */}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {scraperMetrics.scrapers.map((scraper) => (
-                  <ScraperMetricsCard 
-                    key={scraper.scraper_name} 
-                    scraper={scraper}
-                    onViewHistory={setSelectedScraper}
-                  />
+                  <ScraperMetricsCard key={scraper.scraper_name} scraper={scraper} onViewHistory={setSelectedScraper} />
                 ))}
               </div>
             </>
@@ -1363,8 +1439,8 @@ export function MetricsPage() {
               <Activity className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
               <h3 className="text-lg font-semibold mb-2">No Scraper Metrics Yet</h3>
               <p className="text-muted-foreground max-w-md mx-auto">
-                Scraper metrics will appear here after scrapers have been executed. 
-                Run a search or wait for scheduled scrapers to execute.
+                Scraper metrics will appear here after scrapers have been executed. Run a search or wait for scheduled
+                scrapers to execute.
               </p>
             </div>
           )}
@@ -1397,8 +1473,8 @@ export function MetricsPage() {
                           <span className="font-medium truncate">{source.name}</span>
                           <span className="text-muted-foreground">{formatNumber(source.count)}</span>
                         </div>
-                        <Progress 
-                          value={(source.count / (torrentCount?.total_torrents ?? 1)) * 100} 
+                        <Progress
+                          value={(source.count / (torrentCount?.total_torrents ?? 1)) * 100}
                           className="h-1.5"
                         />
                       </div>
@@ -1469,7 +1545,8 @@ export function MetricsPage() {
 
               {weeklyUploaders && !weeklyUploaders.error && (
                 <div className="text-center mb-4 text-sm text-muted-foreground">
-                  {new Date(weeklyUploaders.week_start).toLocaleDateString()} - {new Date(weeklyUploaders.week_end).toLocaleDateString()}
+                  {new Date(weeklyUploaders.week_start).toLocaleDateString()} -{' '}
+                  {new Date(weeklyUploaders.week_end).toLocaleDateString()}
                 </div>
               )}
 
@@ -1519,7 +1596,7 @@ export function MetricsPage() {
               ) : metadataCount ? (
                 <div className="flex flex-col items-center">
                   <PieChart data={metadataPieData} />
-                  
+
                   {/* Detailed breakdown */}
                   <div className="grid grid-cols-3 gap-6 mt-8 w-full max-w-lg">
                     <div className="text-center p-4 rounded-xl bg-primary/10">
@@ -1560,12 +1637,16 @@ export function MetricsPage() {
               <CardContent>
                 {asLoading ? (
                   <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="p-4 rounded-xl bg-blue-500/10 text-center">
-                      <p className="text-3xl font-bold text-blue-500">{formatNumber(activityStats?.watch_history?.total_entries ?? 0)}</p>
+                      <p className="text-3xl font-bold text-blue-500">
+                        {formatNumber(activityStats?.watch_history?.total_entries ?? 0)}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-1">Total Entries</p>
                     </div>
                     <div className="flex justify-between py-2 border-b border-border/30">
@@ -1592,12 +1673,16 @@ export function MetricsPage() {
               <CardContent>
                 {asLoading ? (
                   <div className="space-y-2">
-                    {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(2)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="p-4 rounded-xl bg-emerald-500/10 text-center">
-                      <p className="text-3xl font-bold text-emerald-500">{formatNumber(activityStats?.playback?.total_plays ?? 0)}</p>
+                      <p className="text-3xl font-bold text-emerald-500">
+                        {formatNumber(activityStats?.playback?.total_plays ?? 0)}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-1">Total Plays</p>
                     </div>
                     <div className="flex justify-between py-2">
@@ -1622,7 +1707,9 @@ export function MetricsPage() {
                   <Skeleton className="h-20 w-full" />
                 ) : (
                   <div className="p-4 rounded-xl bg-primary/10 text-center">
-                    <p className="text-3xl font-bold text-primary">{formatNumber(activityStats?.downloads?.total ?? 0)}</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {formatNumber(activityStats?.downloads?.total ?? 0)}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-1">Total Downloads</p>
                   </div>
                 )}
@@ -1642,7 +1729,9 @@ export function MetricsPage() {
                   <Skeleton className="h-20 w-full" />
                 ) : (
                   <div className="p-4 rounded-xl bg-pink-500/10 text-center">
-                    <p className="text-3xl font-bold text-pink-500">{formatNumber(activityStats?.library?.total_items ?? 0)}</p>
+                    <p className="text-3xl font-bold text-pink-500">
+                      {formatNumber(activityStats?.library?.total_items ?? 0)}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-1">Library Items</p>
                   </div>
                 )}
@@ -1660,7 +1749,9 @@ export function MetricsPage() {
               <CardContent>
                 {asLoading ? (
                   <div className="space-y-2">
-                    {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(2)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1670,7 +1761,9 @@ export function MetricsPage() {
                     </div>
                     <div className="flex justify-between py-2">
                       <span className="text-muted-foreground">Active Feeds</span>
-                      <Badge variant="default" className="bg-emerald-500">{activityStats?.rss_feeds?.active ?? 0}</Badge>
+                      <Badge variant="default" className="bg-emerald-500">
+                        {activityStats?.rss_feeds?.active ?? 0}
+                      </Badge>
                     </div>
                   </div>
                 )}
@@ -1688,7 +1781,9 @@ export function MetricsPage() {
               <CardContent>
                 {csLoading ? (
                   <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-full" />
+                    ))}
                   </div>
                 ) : (
                   <div className="space-y-3">

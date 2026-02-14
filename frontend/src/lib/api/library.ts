@@ -3,7 +3,7 @@ import type { CatalogType, ExternalIds } from './catalog'
 
 // Types
 export interface LibraryItemCreate {
-  media_id: number  // Internal media ID
+  media_id: number // Internal media ID
   catalog_type: CatalogType
 }
 
@@ -50,16 +50,16 @@ export const libraryApi = {
   // Get user's library
   getLibrary: async (params: LibraryListParams = {}): Promise<LibraryListResponse> => {
     const searchParams = new URLSearchParams()
-    
+
     if (params.catalog_type) searchParams.set('catalog_type', params.catalog_type)
     if (params.search) searchParams.set('search', params.search)
     if (params.sort) searchParams.set('sort', params.sort)
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
-    
+
     const queryString = searchParams.toString()
     const url = `/library${queryString ? `?${queryString}` : ''}`
-    
+
     return apiClient.get<LibraryListResponse>(url)
   },
 
@@ -93,4 +93,3 @@ export const libraryApi = {
     await apiClient.delete(`/library/by-media-id/${mediaId}`)
   },
 }
-

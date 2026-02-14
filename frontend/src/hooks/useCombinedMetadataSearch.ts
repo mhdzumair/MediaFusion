@@ -1,10 +1,10 @@
 /**
  * Combined Metadata Search Hook
- * 
+ *
  * Searches both internal database (user-created + official media) AND
  * external providers (TMDB, IMDB, TVDB, MAL, Kitsu) in parallel.
  * Results are merged and deduplicated, with internal results prioritized.
- * 
+ *
  * Shows results progressively as each source completes - no waiting for all sources.
  */
 
@@ -15,31 +15,31 @@ import type { MetadataSearchResult, ExternalSearchResult } from '@/lib/api'
 
 // Unified search result type that works for both internal and external results
 export interface CombinedSearchResult {
-  id: string                    // Unique identifier for React keys
+  id: string // Unique identifier for React keys
   title: string
   year?: number
   poster?: string
-  type: string                  // 'movie' | 'series'
+  type: string // 'movie' | 'series'
   source: 'internal' | 'external'
-  
+
   // Internal-specific fields
-  internal_id?: number          // Database ID for internal results
-  external_id?: string          // External ID (e.g., tt1234567) for internal results
+  internal_id?: number // Database ID for internal results
+  external_id?: string // External ID (e.g., tt1234567) for internal results
   is_user_created?: boolean
   is_own?: boolean
-  
+
   // External-specific fields
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
-  provider?: string             // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
+  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
   description?: string
 }
 
 export interface UseCombinedSearchOptions {
   query: string
   type?: 'movie' | 'series' | 'all'
-  sources?: ('internal' | 'external')[]  // Default: both
+  sources?: ('internal' | 'external')[] // Default: both
   limit?: number
 }
 
@@ -83,28 +83,28 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
 // Deduplicate results, prioritizing internal over external
 function deduplicateResults(
   internalResults: CombinedSearchResult[],
-  externalResults: CombinedSearchResult[]
+  externalResults: CombinedSearchResult[],
 ): CombinedSearchResult[] {
   const seen = new Map<string, CombinedSearchResult>()
-  
+
   // Add internal results first (they take priority)
   for (const result of internalResults) {
     // Key by IMDB ID if available, otherwise by normalized title+year
-    const key = result.imdb_id || result.external_id || 
-      `${result.title.toLowerCase().trim()}-${result.year || 'unknown'}`
+    const key =
+      result.imdb_id || result.external_id || `${result.title.toLowerCase().trim()}-${result.year || 'unknown'}`
     seen.set(key, result)
   }
-  
+
   // Add external results only if not already present
   for (const result of externalResults) {
-    const key = result.imdb_id || result.external_id ||
-      `${result.title.toLowerCase().trim()}-${result.year || 'unknown'}`
-    
+    const key =
+      result.imdb_id || result.external_id || `${result.title.toLowerCase().trim()}-${result.year || 'unknown'}`
+
     if (!seen.has(key)) {
       seen.set(key, result)
     }
   }
-  
+
   return Array.from(seen.values())
 }
 
@@ -123,20 +123,15 @@ function sortResults(results: CombinedSearchResult[]): CombinedSearchResult[] {
 // Query keys for caching
 export const combinedSearchKeys = {
   all: ['combined-metadata-search'] as const,
-  internal: (query: string, type?: string) => 
-    [...combinedSearchKeys.all, 'internal', { query, type }] as const,
-  external: (query: string, type?: string) => 
-    [...combinedSearchKeys.all, 'external', { query, type }] as const,
+  internal: (query: string, type?: string) => [...combinedSearchKeys.all, 'internal', { query, type }] as const,
+  external: (query: string, type?: string) => [...combinedSearchKeys.all, 'external', { query, type }] as const,
 }
 
 /**
  * Combined metadata search hook that searches both internal and external sources
  * Results appear progressively as each source completes
  */
-export function useCombinedMetadataSearch(
-  params: UseCombinedSearchOptions,
-  options?: { enabled?: boolean }
-) {
+export function useCombinedMetadataSearch(params: UseCombinedSearchOptions, options?: { enabled?: boolean }) {
   const { query, type = 'all', sources = ['internal', 'external'], limit = 15 } = params
   const searchInternal = sources.includes('internal')
   const searchExternal = sources.includes('external')
@@ -168,7 +163,7 @@ export function useCombinedMetadataSearch(
     queryFn: async (): Promise<CombinedSearchResult[]> => {
       try {
         const response = await metadataApi.searchExternal(query, 'movie')
-        return (response.results || []).map(r => externalToCombined(r, 'movie'))
+        return (response.results || []).map((r) => externalToCombined(r, 'movie'))
       } catch {
         return []
       }
@@ -183,7 +178,7 @@ export function useCombinedMetadataSearch(
     queryFn: async (): Promise<CombinedSearchResult[]> => {
       try {
         const response = await metadataApi.searchExternal(query, 'series')
-        return (response.results || []).map(r => externalToCombined(r, 'series'))
+        return (response.results || []).map((r) => externalToCombined(r, 'series'))
       } catch {
         return []
       }
@@ -197,19 +192,20 @@ export function useCombinedMetadataSearch(
     const internalResults = internalQuery.data || []
     const externalMovieResults = externalMovieQuery.data || []
     const externalSeriesResults = externalSeriesQuery.data || []
-    
+
     // Combine external results
     const externalResults = [...externalMovieResults, ...externalSeriesResults]
-    
+
     // Deduplicate and merge
     const combined = deduplicateResults(internalResults, externalResults)
-    
+
     // Sort and limit
     return sortResults(combined).slice(0, limit)
   }, [internalQuery.data, externalMovieQuery.data, externalSeriesQuery.data, limit])
 
   // Determine loading states
-  const isLoading = (searchInternal && internalQuery.isLoading) || 
+  const isLoading =
+    (searchInternal && internalQuery.isLoading) ||
     (searchExternal && (type === 'all' || type === 'movie') && externalMovieQuery.isLoading) ||
     (searchExternal && (type === 'all' || type === 'series') && externalSeriesQuery.isLoading)
 
@@ -220,11 +216,10 @@ export function useCombinedMetadataSearch(
   const hasPartialResults = data.length > 0 && isFetching
 
   // Error if all enabled queries failed
-  const isError = (
+  const isError =
     (!searchInternal || internalQuery.isError) &&
     (!searchExternal || (type !== 'movie' && type !== 'all') || externalMovieQuery.isError) &&
     (!searchExternal || (type !== 'series' && type !== 'all') || externalSeriesQuery.isError)
-  )
 
   return {
     data,
@@ -244,9 +239,11 @@ export function useCombinedMetadataSearch(
  * Useful for import operations
  */
 export function getBestExternalId(result: CombinedSearchResult): string {
-  return result.imdb_id || 
-    result.external_id || 
+  return (
+    result.imdb_id ||
+    result.external_id ||
     (result.tmdb_id ? `tmdb:${result.tmdb_id}` : '') ||
     (result.tvdb_id ? `tvdb:${result.tvdb_id}` : '') ||
     result.id
+  )
 }

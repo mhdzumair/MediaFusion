@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { 
-  Search, 
-  Eye, 
-  Clock, 
-  HardDrive, 
+import {
+  Search,
+  Eye,
+  Clock,
+  HardDrive,
   Loader2,
   Filter,
   Hash,
@@ -15,13 +15,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useCacheKeys } from '../hooks/useCacheData'
 import { formatBytes, formatTTL, REDIS_TYPE_BADGES } from '../types'
@@ -34,16 +28,17 @@ interface BrowseTabProps {
 // Type badge component
 function TypeBadge({ type }: { type: string }) {
   const typeInfo = REDIS_TYPE_BADGES[type] || REDIS_TYPE_BADGES.string
-  const IconComponent = {
-    Type,
-    Hash,
-    List,
-    Layers,
-    SortAsc,
-  }[typeInfo.icon] || Type
-  
+  const IconComponent =
+    {
+      Type,
+      Hash,
+      List,
+      Layers,
+      SortAsc,
+    }[typeInfo.icon] || Type
+
   return (
-    <Badge variant="outline" className={cn("gap-1 px-2 py-0.5 text-[10px]", typeInfo.color)}>
+    <Badge variant="outline" className={cn('gap-1 px-2 py-0.5 text-[10px]', typeInfo.color)}>
       <IconComponent className="h-3 w-3" />
       {type}
     </Badge>
@@ -55,7 +50,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
   const [debouncedPattern, setDebouncedPattern] = useState(initialPattern)
   const [typeFilter, setTypeFilter] = useState('all')
   const loadMoreRef = useRef<HTMLDivElement>(null)
-  
+
   // Update search pattern when initialPattern changes
   useEffect(() => {
     if (initialPattern) {
@@ -63,7 +58,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
       setDebouncedPattern(initialPattern)
     }
   }, [initialPattern])
-  
+
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -71,42 +66,41 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
     }, 300)
     return () => clearTimeout(timer)
   }, [searchPattern])
-  
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-    error,
-  } = useCacheKeys(debouncedPattern, typeFilter)
-  
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useCacheKeys(
+    debouncedPattern,
+    typeFilter,
+  )
+
   // Infinite scroll observer
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    const [entry] = entries
-    if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage()
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
-  
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries
+      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage()
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  )
+
   useEffect(() => {
     const observer = new IntersectionObserver(handleObserver, {
       root: null,
       rootMargin: '100px',
       threshold: 0,
     })
-    
+
     if (loadMoreRef.current) {
       observer.observe(loadMoreRef.current)
     }
-    
+
     return () => observer.disconnect()
   }, [handleObserver])
-  
+
   // Flatten pages into single array
-  const allKeys = data?.pages.flatMap(page => page.keys) || []
+  const allKeys = data?.pages.flatMap((page) => page.keys) || []
   const totalKeys = data?.pages[0]?.total || 0
-  
+
   return (
     <div className="space-y-4">
       {/* Search and Filter */}
@@ -135,7 +129,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
           </SelectContent>
         </Select>
       </div>
-      
+
       {/* Results summary */}
       {debouncedPattern && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -146,7 +140,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
           <span className="font-mono text-xs">Pattern: {debouncedPattern}</span>
         </div>
       )}
-      
+
       {/* Loading state */}
       {isLoading && (
         <div className="flex items-center justify-center py-16">
@@ -156,7 +150,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
           </div>
         </div>
       )}
-      
+
       {/* Error state */}
       {error && (
         <div className="flex items-center justify-center py-16">
@@ -166,7 +160,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
           </div>
         </div>
       )}
-      
+
       {/* Empty state */}
       {!isLoading && !error && allKeys.length === 0 && debouncedPattern && (
         <div className="flex items-center justify-center py-16">
@@ -176,7 +170,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
           </div>
         </div>
       )}
-      
+
       {/* Keys list */}
       {allKeys.length > 0 && (
         <div className="space-y-2">
@@ -189,9 +183,7 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-mono text-sm truncate group-hover:text-primary transition-colors">
-                    {key.key}
-                  </p>
+                  <p className="font-mono text-sm truncate group-hover:text-primary transition-colors">{key.key}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <TypeBadge type={key.type} />
@@ -208,10 +200,10 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
               </div>
             </button>
           ))}
-          
+
           {/* Infinite scroll trigger */}
           <div ref={loadMoreRef} className="h-px" />
-          
+
           {/* Loading more indicator */}
           {isFetchingNextPage && (
             <div className="flex items-center justify-center py-4">
@@ -223,4 +215,3 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
     </div>
   )
 }
-

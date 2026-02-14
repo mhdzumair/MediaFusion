@@ -3,18 +3,24 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { userMetadataApi, type UserMediaCreate, type UserMediaUpdate, type SeasonAddRequest, type EpisodeAddRequest, type EpisodeUpdateRequest } from '@/lib/api'
+import {
+  userMetadataApi,
+  type UserMediaCreate,
+  type UserMediaUpdate,
+  type SeasonAddRequest,
+  type EpisodeAddRequest,
+  type EpisodeUpdateRequest,
+} from '@/lib/api'
 
 // Query keys
 export const userMetadataKeys = {
   all: ['user-metadata'] as const,
   lists: () => [...userMetadataKeys.all, 'list'] as const,
-  list: (params: { page?: number; per_page?: number; type?: string; search?: string }) => 
+  list: (params: { page?: number; per_page?: number; type?: string; search?: string }) =>
     [...userMetadataKeys.lists(), params] as const,
   details: () => [...userMetadataKeys.all, 'detail'] as const,
   detail: (id: number) => [...userMetadataKeys.details(), id] as const,
-  search: (params: { query: string; type?: string }) => 
-    [...userMetadataKeys.all, 'search', params] as const,
+  search: (params: { query: string; type?: string }) => [...userMetadataKeys.all, 'search', params] as const,
 }
 
 // ============================================
@@ -88,8 +94,7 @@ export function useDeleteUserMetadata() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ mediaId, force }: { mediaId: number; force?: boolean }) =>
-      userMetadataApi.delete(mediaId, force),
+    mutationFn: ({ mediaId, force }: { mediaId: number; force?: boolean }) => userMetadataApi.delete(mediaId, force),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userMetadataKeys.lists() })
     },
@@ -137,15 +142,8 @@ export function useUpdateEpisode() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      mediaId,
-      episodeId,
-      data,
-    }: {
-      mediaId: number
-      episodeId: number
-      data: EpisodeUpdateRequest
-    }) => userMetadataApi.updateEpisode(mediaId, episodeId, data),
+    mutationFn: ({ mediaId, episodeId, data }: { mediaId: number; episodeId: number; data: EpisodeUpdateRequest }) =>
+      userMetadataApi.updateEpisode(mediaId, episodeId, data),
     onSuccess: (_, { mediaId }) => {
       queryClient.invalidateQueries({ queryKey: userMetadataKeys.detail(mediaId) })
     },
@@ -198,7 +196,7 @@ export function useDeleteEpisodeAdmin() {
     mutationFn: ({
       mediaId,
       episodeId,
-      deleteStreamLinks = false
+      deleteStreamLinks = false,
     }: {
       mediaId: number
       episodeId: number
@@ -237,12 +235,15 @@ export function useDeleteSeasonAdmin() {
 /**
  * Search all metadata (user-created and official) for linking
  */
-export function useMetadataSearch(params: {
-  query: string
-  type?: 'movie' | 'series' | 'all'
-  limit?: number
-  include_official?: boolean
-}, options?: { enabled?: boolean }) {
+export function useMetadataSearch(
+  params: {
+    query: string
+    type?: 'movie' | 'series' | 'all'
+    limit?: number
+    include_official?: boolean
+  },
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: userMetadataKeys.search({ query: params.query, type: params.type }),
     queryFn: () => userMetadataApi.searchAll(params),
@@ -250,5 +251,3 @@ export function useMetadataSearch(params: {
     staleTime: 30 * 1000, // 30 seconds for search results
   })
 }
-
-

@@ -1,35 +1,12 @@
 import { useState, useCallback } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Loader2,
-  Download,
-  Search,
-  Film,
-  Tv,
-  Radio,
-  Globe,
-  Lock,
-  AlertCircle,
-  CheckCircle,
-} from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Loader2, Download, Search, Film, Tv, Radio, Globe, Lock, AlertCircle, CheckCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { userMetadataApi } from '@/lib/api'
 import type { ImportProvider, ImportPreviewResponse } from '@/lib/api'
@@ -54,11 +31,7 @@ const MEDIA_TYPES = [
   { value: 'tv' as const, label: 'TV', icon: Radio },
 ]
 
-export function ImportFromExternalDialog({
-  open,
-  onOpenChange,
-  onSuccess,
-}: ImportFromExternalDialogProps) {
+export function ImportFromExternalDialog({ open, onOpenChange, onSuccess }: ImportFromExternalDialogProps) {
   const [provider, setProvider] = useState<ImportProvider>('imdb')
   const [externalId, setExternalId] = useState('')
   const [mediaType, setMediaType] = useState<'movie' | 'series' | 'tv'>('movie')
@@ -70,7 +43,7 @@ export function ImportFromExternalDialog({
 
   const { toast } = useToast()
 
-  const selectedProvider = PROVIDERS.find(p => p.value === provider)
+  const selectedProvider = PROVIDERS.find((p) => p.value === provider)
 
   const handlePreview = useCallback(async () => {
     if (!externalId.trim()) {
@@ -159,11 +132,14 @@ export function ImportFromExternalDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Provider</Label>
-              <Select value={provider} onValueChange={(v) => {
-                setProvider(v as ImportProvider)
-                setPreview(null)
-                setError(null)
-              }}>
+              <Select
+                value={provider}
+                onValueChange={(v) => {
+                  setProvider(v as ImportProvider)
+                  setPreview(null)
+                  setError(null)
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -179,11 +155,14 @@ export function ImportFromExternalDialog({
 
             <div className="space-y-2">
               <Label>Media Type</Label>
-              <Select value={mediaType} onValueChange={(v) => {
-                setMediaType(v as 'movie' | 'series' | 'tv')
-                setPreview(null)
-                setError(null)
-              }}>
+              <Select
+                value={mediaType}
+                onValueChange={(v) => {
+                  setMediaType(v as 'movie' | 'series' | 'tv')
+                  setPreview(null)
+                  setError(null)
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -222,16 +201,8 @@ export function ImportFromExternalDialog({
                   }
                 }}
               />
-              <Button
-                type="button"
-                onClick={handlePreview}
-                disabled={isPreviewing || !externalId.trim()}
-              >
-                {isPreviewing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4" />
-                )}
+              <Button type="button" onClick={handlePreview} disabled={isPreviewing || !externalId.trim()}>
+                {isPreviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               </Button>
             </div>
           </div>
@@ -256,11 +227,7 @@ export function ImportFromExternalDialog({
                 {/* Poster */}
                 <div className="w-20 h-28 rounded bg-muted/50 flex-shrink-0 overflow-hidden">
                   {preview.poster ? (
-                    <img
-                      src={preview.poster}
-                      alt={preview.title}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={preview.poster} alt={preview.title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       {mediaType === 'movie' ? (
@@ -278,9 +245,7 @@ export function ImportFromExternalDialog({
                 <div className="flex-1 min-w-0 space-y-2">
                   <div>
                     <h4 className="font-semibold truncate">{preview.title}</h4>
-                    {preview.year && (
-                      <span className="text-sm text-muted-foreground">({preview.year})</span>
-                    )}
+                    {preview.year && <span className="text-sm text-muted-foreground">({preview.year})</span>}
                   </div>
 
                   {preview.genres.length > 0 && (
@@ -299,48 +264,27 @@ export function ImportFromExternalDialog({
                   )}
 
                   {preview.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {preview.description}
-                    </p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{preview.description}</p>
                   )}
                 </div>
               </div>
 
               {/* External IDs */}
               <div className="flex flex-wrap gap-2 text-xs">
-                {preview.imdb_id && (
-                  <Badge variant="outline">IMDb: {preview.imdb_id}</Badge>
-                )}
-                {preview.tmdb_id && (
-                  <Badge variant="outline">TMDB: {preview.tmdb_id}</Badge>
-                )}
-                {preview.tvdb_id && (
-                  <Badge variant="outline">TVDB: {preview.tvdb_id}</Badge>
-                )}
-                {preview.mal_id && (
-                  <Badge variant="outline">MAL: {preview.mal_id}</Badge>
-                )}
-                {preview.kitsu_id && (
-                  <Badge variant="outline">Kitsu: {preview.kitsu_id}</Badge>
-                )}
+                {preview.imdb_id && <Badge variant="outline">IMDb: {preview.imdb_id}</Badge>}
+                {preview.tmdb_id && <Badge variant="outline">TMDB: {preview.tmdb_id}</Badge>}
+                {preview.tvdb_id && <Badge variant="outline">TVDB: {preview.tvdb_id}</Badge>}
+                {preview.mal_id && <Badge variant="outline">MAL: {preview.mal_id}</Badge>}
+                {preview.kitsu_id && <Badge variant="outline">Kitsu: {preview.kitsu_id}</Badge>}
               </div>
 
               {/* Visibility */}
               <div className="flex items-center justify-between pt-2 border-t">
                 <div className="flex items-center gap-2">
-                  {isPublic ? (
-                    <Globe className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Lock className="h-4 w-4 text-primary" />
-                  )}
-                  <span className="text-sm">
-                    {isPublic ? 'Public' : 'Private'}
-                  </span>
+                  {isPublic ? <Globe className="h-4 w-4 text-green-500" /> : <Lock className="h-4 w-4 text-primary" />}
+                  <span className="text-sm">{isPublic ? 'Public' : 'Private'}</span>
                 </div>
-                <Switch
-                  checked={isPublic}
-                  onCheckedChange={setIsPublic}
-                />
+                <Switch checked={isPublic} onCheckedChange={setIsPublic} />
               </div>
             </div>
           )}

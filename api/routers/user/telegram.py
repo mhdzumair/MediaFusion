@@ -597,7 +597,9 @@ async def telegram_webhook(request: Request):
                             file_info = await telegram_content_bot.get_file_info(file_id)
                             if file_info and file_info.get("file_path"):
                                 file_path = file_info["file_path"]
-                                poster_url = f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{file_path}"
+                                poster_url = (
+                                    f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{file_path}"
+                                )
                                 await telegram_content_bot.handle_poster_input(user_id, chat_id, poster_url)
                                 return {"ok": True}
                         except Exception as e:

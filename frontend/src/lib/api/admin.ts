@@ -54,8 +54,8 @@ export interface ExternalIds {
 }
 
 export interface MetadataItem {
-  id: number  // Internal media_id
-  external_ids?: ExternalIds  // All external IDs
+  id: number // Internal media_id
+  external_ids?: ExternalIds // All external IDs
   type: 'movie' | 'series' | 'tv'
   title: string
   year?: number
@@ -66,33 +66,33 @@ export interface MetadataItem {
   description?: string
   runtime?: string
   website?: string
-  
+
   // Read-only computed fields
   total_streams: number
   created_at: string
   updated_at?: string
   last_stream_added?: string
-  
+
   // Type-specific fields (Movie/Series)
   imdb_rating?: number
   tmdb_rating?: number
   parent_guide_nudity_status?: string
-  
+
   // Series-specific
-  end_date?: string  // ISO format date string (YYYY-MM-DD)
-  
+  end_date?: string // ISO format date string (YYYY-MM-DD)
+
   // TV-specific
   country?: string
   tv_language?: string
   logo?: string
-  
+
   // Relationships
   genres: string[]
   catalogs: string[]
   stars: string[]
   parental_certificates: string[]
   aka_titles: string[]
-  
+
   // Content moderation
   is_blocked?: boolean
   blocked_at?: string
@@ -143,21 +143,21 @@ export interface MetadataUpdateRequest {
   description?: string
   runtime?: string
   website?: string
-  
+
   // Type-specific fields (Movie/Series)
   imdb_rating?: number
   tmdb_rating?: number
   parent_guide_nudity_status?: string
-  nudity_status?: string  // Nudity status on Media table
-  
+  nudity_status?: string // Nudity status on Media table
+
   // Series-specific
-  end_date?: string  // ISO format date string (YYYY-MM-DD)
-  
+  end_date?: string // ISO format date string (YYYY-MM-DD)
+
   // TV-specific
   country?: string
   tv_language?: string
   logo?: string
-  
+
   // Relationships
   genres?: string[]
   catalogs?: string[]
@@ -192,9 +192,9 @@ export interface TorrentStreamItem {
   id: string
   meta_id: string
   meta_title?: string
-  
+
   // Basic info
-  name: string  // Stream display name (formerly torrent_name)
+  name: string // Stream display name (formerly torrent_name)
   size: number
   source: string
   resolution?: string
@@ -206,12 +206,12 @@ export interface TorrentStreamItem {
   leechers?: number
   is_blocked: boolean
   is_active: boolean
-  
+
   // Normalized quality attributes (arrays)
   audio_formats: string[]
   channels: string[]
   hdr_formats: string[]
-  
+
   // Release flags
   is_remastered: boolean
   is_upscaled: boolean
@@ -221,23 +221,23 @@ export interface TorrentStreamItem {
   is_complete: boolean
   is_dubbed: boolean
   is_subbed: boolean
-  
+
   // Additional metadata
   torrent_type: string
   uploader?: string
   uploaded_at?: string
-  
+
   // File info (for movies)
   filename?: string
   file_index?: number
   file_count: number
   total_size: number
-  
+
   // Read-only
   playback_count: number
   created_at: string
   updated_at?: string
-  
+
   // Relationships
   languages: string[]
   trackers: string[]
@@ -281,18 +281,18 @@ export interface TorrentStreamUpdateRequest {
   seeders?: number
   leechers?: number
   is_blocked?: boolean
-  
+
   // Normalized quality attributes (arrays)
   audio_formats?: string[]
   channels?: string[]
   hdr_formats?: string[]
-  
+
   // Additional metadata
   torrent_type?: string
   uploader?: string
   release_group?: string
   uploaded_at?: string
-  
+
   // Relationships
   languages?: string[]
   trackers?: string[]
@@ -314,7 +314,7 @@ export interface TVStreamItem {
   id: number
   meta_id: string
   meta_title?: string
-  
+
   // Basic info
   name: string
   url?: string
@@ -322,23 +322,23 @@ export interface TVStreamItem {
   externalUrl?: string
   source: string
   country?: string
-  
+
   // Status
   is_active: boolean
   is_blocked: boolean
-  test_failure_count: number  // Read-only
-  
+  test_failure_count: number // Read-only
+
   // DRM
   drm_key_id?: string
   drm_key?: string
-  
+
   // Advanced
   behaviorHints?: Record<string, unknown>
-  
+
   // Read-only
   created_at: string
   updated_at?: string
-  
+
   // Relationships
   namespaces: string[]
 }
@@ -369,14 +369,14 @@ export interface TVStreamUpdateRequest {
   source?: string
   country?: string
   is_active?: boolean
-  
+
   // DRM
   drm_key_id?: string
   drm_key?: string
-  
+
   // Advanced
   behaviorHints?: Record<string, unknown>
-  
+
   // Relationships
   namespaces?: string[]
 }
@@ -563,7 +563,7 @@ export const adminApi = {
   // ============================================
   // Stats
   // ============================================
-  
+
   getStats: async (): Promise<MetadataStatsResponse> => {
     return adminGet<MetadataStatsResponse>('/stats')
   },
@@ -588,11 +588,11 @@ export const adminApi = {
   deleteMetadata: async (mediaId: number): Promise<{ message: string }> => {
     return adminDelete<{ message: string }>(`/metadata/${mediaId}`)
   },
-  
+
   // ============================================
   // Content Moderation
   // ============================================
-  
+
   /**
    * Block media content (Moderator/Admin only).
    * Blocked content is hidden from regular users.
@@ -600,7 +600,7 @@ export const adminApi = {
   blockMedia: async (mediaId: number, request: BlockMediaRequest = {}): Promise<BlockMediaResponse> => {
     return adminPost<BlockMediaResponse>(`/metadata/${mediaId}/block`, request)
   },
-  
+
   /**
    * Unblock media content (Moderator/Admin only).
    * Makes content visible to regular users again.
@@ -608,7 +608,7 @@ export const adminApi = {
   unblockMedia: async (mediaId: number): Promise<BlockMediaResponse> => {
     return adminPost<BlockMediaResponse>(`/metadata/${mediaId}/unblock`, {})
   },
-  
+
   /**
    * List all blocked media (Moderator/Admin only).
    */
@@ -616,32 +616,32 @@ export const adminApi = {
     const query = buildQueryString(params)
     return adminGet<MetadataListResponse>(`/blocked-media${query}`)
   },
-  
+
   // ============================================
   // External Metadata (ID Migration & Data Fetch)
   // ============================================
-  
+
   /**
    * Preview external metadata from IMDb or TMDB without applying changes.
    */
   fetchExternalMetadata: async (mediaId: number, request: FetchExternalRequest): Promise<ExternalMetadataPreview> => {
     return adminPost<ExternalMetadataPreview>(`/metadata/${mediaId}/fetch-external`, request)
   },
-  
+
   /**
    * Fetch and apply external metadata from IMDb or TMDB.
    */
   applyExternalMetadata: async (mediaId: number, request: FetchExternalRequest): Promise<MetadataItem> => {
     return adminPost<MetadataItem>(`/metadata/${mediaId}/apply-external`, request)
   },
-  
+
   /**
    * Migrate internal mf/mftmdb ID to proper external ID.
    */
   migrateMetadataId: async (mediaId: number, request: MigrateIdRequest): Promise<MetadataItem> => {
     return adminPost<MetadataItem>(`/metadata/${mediaId}/migrate-id`, request)
   },
-  
+
   /**
    * Search external providers for metadata.
    */
@@ -918,17 +918,17 @@ export interface TableSchema {
   size_human: string
 }
 
-export type FilterOperator = 
-  | 'equals' 
+export type FilterOperator =
+  | 'equals'
   | 'not_equals'
-  | 'contains' 
+  | 'contains'
   | 'starts_with'
   | 'ends_with'
-  | 'is_null' 
-  | 'is_not_null' 
-  | 'gt' 
+  | 'is_null'
+  | 'is_not_null'
+  | 'gt'
   | 'gte'
-  | 'lt' 
+  | 'lt'
   | 'lte'
   | 'array_contains'
   | 'array_not_contains'
@@ -1013,7 +1013,7 @@ export interface BulkDeleteRequest {
   table: string
   ids: string[]
   id_column?: string
-  cascade?: boolean  // If true, delete related records in child tables first
+  cascade?: boolean // If true, delete related records in child tables first
 }
 
 export interface BulkUpdateRequest {
@@ -1137,7 +1137,7 @@ export const databaseApi = {
   // ============================================
   // Stats
   // ============================================
-  
+
   getStats: async (): Promise<DatabaseStats> => {
     return dbGet<DatabaseStats>('/stats')
   },
@@ -1170,9 +1170,9 @@ export const databaseApi = {
   // ============================================
 
   exportTable: async (
-    tableName: string, 
+    tableName: string,
     format: 'csv' | 'json' | 'sql' = 'csv',
-    options: { include_schema?: boolean; include_data?: boolean; limit?: number } = {}
+    options: { include_schema?: boolean; include_data?: boolean; limit?: number } = {},
   ): Promise<Blob> => {
     const token = apiClient.getAccessToken()
     const apiKey = apiClient.getApiKey()
@@ -1209,7 +1209,7 @@ export const databaseApi = {
   previewImport: async (
     file: File,
     table: string,
-    format: 'csv' | 'json' | 'sql' = 'csv'
+    format: 'csv' | 'json' | 'sql' = 'csv',
   ): Promise<ImportPreviewResponse> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -1224,7 +1224,7 @@ export const databaseApi = {
     format: 'csv' | 'json' | 'sql',
     mode: 'insert' | 'upsert' | 'replace',
     columnMapping?: Record<string, string>,
-    skipErrors?: boolean
+    skipErrors?: boolean,
   ): Promise<ImportResult> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -1268,7 +1268,7 @@ export const databaseApi = {
     const params = new URLSearchParams()
     if (request.dry_run !== undefined) params.append('dry_run', String(request.dry_run))
     if (request.tables) {
-      request.tables.forEach(t => params.append('tables', t))
+      request.tables.forEach((t) => params.append('tables', t))
     }
     return dbPost<OrphanCleanupResponse>(`/orphans/cleanup?${params}`)
   },

@@ -36,11 +36,11 @@ export function RegexTesterModal({
   const [matches, setMatches] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [groupNumber, setGroupNumber] = useState(1)
-  
+
   useEffect(() => {
     setPattern(currentPattern)
   }, [currentPattern, open])
-  
+
   useEffect(() => {
     // Try to extract a reasonable test input from source content
     if (sourceContent) {
@@ -59,20 +59,20 @@ export function RegexTesterModal({
       }
     }
   }, [sourceContent, open])
-  
+
   const handleTest = () => {
     setMatches([])
     setError(null)
-    
+
     if (!pattern || !testInput) {
       return
     }
-    
+
     try {
       const regex = new RegExp(pattern, 'gim')
       const allMatches: string[] = []
       let match
-      
+
       while ((match = regex.exec(testInput)) !== null) {
         // Get the specified group or the full match
         if (match[groupNumber] !== undefined) {
@@ -80,15 +80,15 @@ export function RegexTesterModal({
         } else if (match[0]) {
           allMatches.push(match[0])
         }
-        
+
         // Prevent infinite loop for patterns that can match empty strings
         if (match.index === regex.lastIndex) {
           regex.lastIndex++
         }
       }
-      
+
       setMatches(allMatches)
-      
+
       if (allMatches.length === 0) {
         setError('No matches found')
       }
@@ -96,15 +96,15 @@ export function RegexTesterModal({
       setError(e instanceof Error ? e.message : 'Invalid regex pattern')
     }
   }
-  
+
   const handleApply = () => {
     onApply(pattern)
   }
-  
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
   }
-  
+
   // Common regex patterns
   const commonPatterns = [
     { name: 'Magnet Hash', pattern: 'magnet:\\?xt=urn:btih:([a-zA-Z0-9]+)' },
@@ -114,7 +114,7 @@ export function RegexTesterModal({
     { name: 'Episode', pattern: 'S(\\d{2})E(\\d{2})' },
     { name: 'Year', pattern: '\\((19|20\\d{2})\\)' },
   ]
-  
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
@@ -123,17 +123,15 @@ export function RegexTesterModal({
             <TestTube2 className="h-5 w-5 text-primary" />
             Regex Pattern Tester
           </DialogTitle>
-          <DialogDescription>
-            Test and refine your regex pattern for extracting {fieldName}
-          </DialogDescription>
+          <DialogDescription>Test and refine your regex pattern for extracting {fieldName}</DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           {/* Common patterns */}
           <div className="space-y-2">
             <Label className="text-sm">Quick Patterns</Label>
             <div className="flex flex-wrap gap-2">
-              {commonPatterns.map(p => (
+              {commonPatterns.map((p) => (
                 <Badge
                   key={p.name}
                   variant="outline"
@@ -145,7 +143,7 @@ export function RegexTesterModal({
               ))}
             </div>
           </div>
-          
+
           {/* Pattern input */}
           <div className="space-y-2">
             <Label htmlFor="pattern">Regex Pattern</Label>
@@ -170,7 +168,7 @@ export function RegexTesterModal({
               </div>
             </div>
           </div>
-          
+
           {/* Test input */}
           <div className="space-y-2">
             <Label htmlFor="testInput">Test Content</Label>
@@ -182,18 +180,18 @@ export function RegexTesterModal({
               className="font-mono text-xs h-32"
             />
           </div>
-          
+
           {/* Test button */}
           <Button onClick={handleTest} variant="secondary" className="w-full">
             <TestTube2 className="mr-2 h-4 w-4" />
             Test Pattern
           </Button>
-          
+
           {/* Results */}
           {(matches.length > 0 || error) && (
             <div className="space-y-2">
               <Label className="text-sm">Results</Label>
-              
+
               {error ? (
                 <div className="flex items-center gap-2 p-3 bg-red-500/10 text-red-500 rounded-lg">
                   <AlertCircle className="h-4 w-4" />
@@ -205,10 +203,10 @@ export function RegexTesterModal({
                     <Check className="h-4 w-4" />
                     Found {matches.length} match{matches.length !== 1 ? 'es' : ''}
                   </div>
-                  
+
                   <div className="max-h-40 overflow-auto space-y-1">
                     {matches.map((match, idx) => (
-                      <div 
+                      <div
                         key={idx}
                         className="flex items-center justify-between p-2 bg-muted rounded text-xs font-mono group"
                       >
@@ -229,13 +227,13 @@ export function RegexTesterModal({
             </div>
           )}
         </div>
-        
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             <X className="mr-2 h-4 w-4" />
             Cancel
           </Button>
-          <Button 
+          <Button
             onClick={handleApply}
             disabled={!pattern || error !== null}
             className="bg-gradient-to-r from-primary to-primary/80"
@@ -248,9 +246,3 @@ export function RegexTesterModal({
     </Dialog>
   )
 }
-
-
-
-
-
-

@@ -1,23 +1,27 @@
 import { useState } from 'react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { ArrowUpDown, Filter, X, ChevronDown, Zap, Clock, Magnet, Newspaper, Link2, HardDrive, Send, Globe, History } from 'lucide-react'
+import {
+  ArrowUpDown,
+  Filter,
+  X,
+  ChevronDown,
+  Zap,
+  Clock,
+  Magnet,
+  Newspaper,
+  Link2,
+  HardDrive,
+  Send,
+  Globe,
+  History,
+} from 'lucide-react'
 
 export type SortBy = 'quality' | 'size' | 'seeders' | 'source'
 export type SortOrder = 'asc' | 'desc'
@@ -36,7 +40,7 @@ export interface StreamFilterState {
   streamTypeFilter: StreamType[]
   minSizeGB: number | null
   maxSizeGB: number | null
-  lastPlayedOnly: boolean  // Show only last played stream
+  lastPlayedOnly: boolean // Show only last played stream
 }
 
 const RESOLUTION_OPTIONS = ['4K', '2160p', '1080p', '720p', '480p', 'SD']
@@ -53,8 +57,8 @@ interface StreamFiltersProps {
   availableStreamTypes?: StreamType[]
   totalStreams: number
   filteredCount: number
-  showCachedFilter?: boolean  // Show cached filter when debrid provider is active
-  hasLastPlayed?: boolean  // Whether there's a last played stream to filter by
+  showCachedFilter?: boolean // Show cached filter when debrid provider is active
+  hasLastPlayed?: boolean // Whether there's a last played stream to filter by
 }
 
 export function StreamFilters({
@@ -64,7 +68,7 @@ export function StreamFilters({
   availableResolutions = [],
   availableQualities = [],
   availableCodecs = [],
-  availableStreamTypes: _availableStreamTypes = [],  // Currently showing all types, may use for filtering later
+  availableStreamTypes: _availableStreamTypes = [], // Currently showing all types, may use for filtering later
   totalStreams,
   filteredCount,
   showCachedFilter = false,
@@ -74,40 +78,33 @@ export function StreamFilters({
   void _availableStreamTypes
   // Use API-provided options if available, otherwise fall back to defaults
   // Filter out empty strings to prevent SelectItem errors
-  const filteredResolutions = availableResolutions.filter(r => r && r.trim() !== '')
-  const filteredQualities = availableQualities.filter(q => q && q.trim() !== '')
-  const filteredCodecs = availableCodecs.filter(c => c && c.trim() !== '')
-  const filteredSources = availableSources.filter(s => s && s.trim() !== '')
-  
+  const filteredResolutions = availableResolutions.filter((r) => r && r.trim() !== '')
+  const filteredQualities = availableQualities.filter((q) => q && q.trim() !== '')
+  const filteredCodecs = availableCodecs.filter((c) => c && c.trim() !== '')
+  const filteredSources = availableSources.filter((s) => s && s.trim() !== '')
+
   const resolutionOptions = filteredResolutions.length > 0 ? filteredResolutions : RESOLUTION_OPTIONS
   const qualityOptions = filteredQualities.length > 0 ? filteredQualities : QUALITY_OPTIONS
   const codecOptions = filteredCodecs.length > 0 ? filteredCodecs : CODEC_OPTIONS
   const sourceOptions = filteredSources
   const [isOpen, setIsOpen] = useState(false)
 
-  const updateFilter = <K extends keyof StreamFilterState>(
-    key: K,
-    value: StreamFilterState[K]
-  ) => {
+  const updateFilter = <K extends keyof StreamFilterState>(key: K, value: StreamFilterState[K]) => {
     onFiltersChange({ ...filters, [key]: value })
   }
 
   const toggleArrayFilter = (
     key: 'qualityFilter' | 'resolutionFilter' | 'sourceFilter' | 'codecFilter',
-    value: string
+    value: string,
   ) => {
     const current = filters[key]
-    const newValue = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value]
+    const newValue = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
     updateFilter(key, newValue)
   }
 
   const toggleStreamTypeFilter = (value: StreamType) => {
     const current = filters.streamTypeFilter
-    const newValue = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value]
+    const newValue = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
     updateFilter('streamTypeFilter', newValue)
   }
 
@@ -154,10 +151,7 @@ export function StreamFilters({
       <div className="flex flex-wrap items-center gap-2">
         {/* Sort Controls */}
         <div className="flex items-center gap-2">
-          <Select
-            value={filters.sortBy}
-            onValueChange={(value: SortBy) => updateFilter('sortBy', value)}
-          >
+          <Select value={filters.sortBy} onValueChange={(value: SortBy) => updateFilter('sortBy', value)}>
             <SelectTrigger className="w-[110px] sm:w-[130px] rounded-xl h-9 text-xs sm:text-sm">
               <ArrowUpDown className="h-3.5 w-3.5 mr-1 sm:mr-1.5 text-muted-foreground shrink-0" />
               <SelectValue />
@@ -174,9 +168,7 @@ export function StreamFilters({
             variant="outline"
             size="sm"
             className="h-9 px-2.5 rounded-xl"
-            onClick={() =>
-              updateFilter('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')
-            }
+            onClick={() => updateFilter('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
           >
             {filters.sortOrder === 'desc' ? '↓' : '↑'}
           </Button>
@@ -185,11 +177,7 @@ export function StreamFilters({
         {/* Filter Popover */}
         <Popover open={isOpen} onOpenChange={setIsOpen}>
           <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-xl"
-            >
+            <Button variant="outline" size="sm" className="h-9 rounded-xl">
               <Filter className="h-3.5 w-3.5 mr-1 sm:mr-1.5" />
               <span className="hidden xs:inline">Filters</span>
               {activeFilterCount > 0 && (
@@ -200,8 +188,8 @@ export function StreamFilters({
               <ChevronDown className="h-3.5 w-3.5 ml-1 sm:ml-1.5" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent 
-            className="w-[calc(100vw-2rem)] sm:w-[420px] p-0 max-h-[80vh] flex flex-col" 
+          <PopoverContent
+            className="w-[calc(100vw-2rem)] sm:w-[420px] p-0 max-h-[80vh] flex flex-col"
             align="start"
             sideOffset={8}
           >
@@ -221,7 +209,7 @@ export function StreamFilters({
                 )}
               </div>
             </div>
-            
+
             <div className="overflow-y-auto flex-1 overscroll-contain">
               <div className="p-3 sm:p-4 space-y-4 sm:space-y-5">
                 {/* Last Played Filter */}
@@ -231,7 +219,9 @@ export function StreamFilters({
                       <History className="h-4 w-4 text-primary shrink-0" />
                       <div className="min-w-0">
                         <Label className="text-xs sm:text-sm font-medium">Last Played Only</Label>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">Show only your last played stream</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
+                          Show only your last played stream
+                        </p>
                       </div>
                     </div>
                     <Switch
@@ -322,7 +312,7 @@ export function StreamFilters({
                 )}
 
                 <Separator />
-                
+
                 {/* Resolution Filter */}
                 <div className="space-y-2.5">
                   <Label className="text-xs sm:text-sm font-medium">Resolution</Label>
@@ -446,24 +436,22 @@ export function StreamFilters({
       {/* Active Filters Display */}
       {hasActiveFilters && (
         <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
-          {[...filters.resolutionFilter, ...filters.qualityFilter, ...filters.codecFilter, ...filters.sourceFilter].map((filter) => (
-            <Badge key={filter} variant="secondary" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2">
-              {filter}
-              <X
-                className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer"
-                onClick={() => {
-                  if (filters.resolutionFilter.includes(filter))
-                    toggleArrayFilter('resolutionFilter', filter)
-                  else if (filters.qualityFilter.includes(filter))
-                    toggleArrayFilter('qualityFilter', filter)
-                  else if (filters.codecFilter.includes(filter))
-                    toggleArrayFilter('codecFilter', filter)
-                  else if (filters.sourceFilter.includes(filter))
-                    toggleArrayFilter('sourceFilter', filter)
-                }}
-              />
-            </Badge>
-          ))}
+          {[...filters.resolutionFilter, ...filters.qualityFilter, ...filters.codecFilter, ...filters.sourceFilter].map(
+            (filter) => (
+              <Badge key={filter} variant="secondary" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2">
+                {filter}
+                <X
+                  className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer"
+                  onClick={() => {
+                    if (filters.resolutionFilter.includes(filter)) toggleArrayFilter('resolutionFilter', filter)
+                    else if (filters.qualityFilter.includes(filter)) toggleArrayFilter('qualityFilter', filter)
+                    else if (filters.codecFilter.includes(filter)) toggleArrayFilter('codecFilter', filter)
+                    else if (filters.sourceFilter.includes(filter)) toggleArrayFilter('sourceFilter', filter)
+                  }}
+                />
+              </Badge>
+            ),
+          )}
           {filters.cachedFilter !== 'all' && (
             <Badge variant="secondary" className="text-[10px] sm:text-xs gap-1 py-0.5 px-1.5 sm:px-2">
               {filters.cachedFilter === 'cached' ? (
@@ -501,10 +489,7 @@ export function StreamFilters({
               {type === 'telegram' && <Send className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
               {type === 'direct' && <Globe className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
               {type.charAt(0).toUpperCase() + type.slice(1)}
-              <X
-                className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer"
-                onClick={() => toggleStreamTypeFilter(type)}
-              />
+              <X className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer" onClick={() => toggleStreamTypeFilter(type)} />
             </Badge>
           ))}
           {(filters.minSizeGB !== null || filters.maxSizeGB !== null) && (
@@ -513,8 +498,8 @@ export function StreamFilters({
               {filters.minSizeGB !== null && filters.maxSizeGB !== null
                 ? `${filters.minSizeGB} - ${filters.maxSizeGB} GB`
                 : filters.minSizeGB !== null
-                ? `≥ ${filters.minSizeGB} GB`
-                : `≤ ${filters.maxSizeGB} GB`}
+                  ? `≥ ${filters.minSizeGB} GB`
+                  : `≤ ${filters.maxSizeGB} GB`}
               <X
                 className="h-2.5 w-2.5 sm:h-3 sm:w-3 cursor-pointer"
                 onClick={() => {
@@ -544,4 +529,3 @@ export const defaultStreamFilters: StreamFilterState = {
   maxSizeGB: null,
   lastPlayedOnly: false,
 }
-

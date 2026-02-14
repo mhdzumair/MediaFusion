@@ -15,21 +15,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { 
-  Clock, 
+  Clock,
   Loader2,
   Trash2,
   Play,
@@ -147,13 +136,13 @@ function getSourceConfig(source: HistorySource | string) {
 }
 
 // Filter pill component
-function FilterPill({ 
-  active, 
-  onClick, 
-  icon: Icon, 
-  label, 
-  color 
-}: { 
+function FilterPill({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+  color,
+}: {
   active: boolean
   onClick: () => void
   icon?: React.ElementType
@@ -165,9 +154,9 @@ function FilterPill({
       onClick={onClick}
       className={cn(
         'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all',
-        active 
-          ? 'bg-primary text-primary-foreground shadow-md' 
-          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+        active
+          ? 'bg-primary text-primary-foreground shadow-md'
+          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
       {Icon && <Icon className={cn('h-3.5 w-3.5', active ? '' : color)} />}
@@ -177,11 +166,11 @@ function FilterPill({
 }
 
 // History card component
-function HistoryCard({ 
-  item, 
+function HistoryCard({
+  item,
   onDelete,
   rpdbApiKey,
-}: { 
+}: {
   item: WatchHistoryItem
   onDelete: () => void
   rpdbApiKey: string | null
@@ -191,24 +180,23 @@ function HistoryCard({
   const ActionIcon = actionConfig.icon
   const mediaConfig = getMediaTypeConfig(item.media_type)
   const MediaIcon = mediaConfig.icon
-  const progressPercentage = item.duration && item.duration > 0 
-    ? Math.round((item.progress / item.duration) * 100) 
-    : 0
+  const progressPercentage = item.duration && item.duration > 0 ? Math.round((item.progress / item.duration) * 100) : 0
 
   // Build URL with season/episode params for series deep linking
-  const contentUrl = item.media_type === 'series' && item.season && item.episode
-    ? `/dashboard/content/${getRouteMediaType(item.media_type)}/${item.media_id}?season=${item.season}&episode=${item.episode}`
-    : `/dashboard/content/${getRouteMediaType(item.media_type)}/${item.media_id}`
+  const contentUrl =
+    item.media_type === 'series' && item.season && item.episode
+      ? `/dashboard/content/${getRouteMediaType(item.media_type)}/${item.media_id}?season=${item.season}&episode=${item.episode}`
+      : `/dashboard/content/${getRouteMediaType(item.media_type)}/${item.media_id}`
 
   return (
     <div className="group relative">
-      <Link 
+      <Link
         to={contentUrl}
         className={cn(
           'block rounded-2xl overflow-hidden transition-all duration-300',
           'bg-gradient-to-br from-card/80 to-card/40 backdrop-blur-sm',
           'border border-border/40 hover:border-primary/40',
-          'hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5'
+          'hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5',
         )}
       >
         <div className="flex gap-4 p-3">
@@ -225,7 +213,7 @@ function HistoryCard({
             />
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-            
+
             {/* Play button overlay */}
             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
               <div className="w-10 h-10 rounded-full bg-primary/90 flex items-center justify-center shadow-lg">
@@ -234,10 +222,14 @@ function HistoryCard({
             </div>
 
             {/* Action badge on poster */}
-            <div className={cn(
-              'absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-center gap-1 py-1 px-2 rounded-lg text-[10px] font-medium',
-              actionConfig.bg, actionConfig.border, 'border backdrop-blur-sm'
-            )}>
+            <div
+              className={cn(
+                'absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-center gap-1 py-1 px-2 rounded-lg text-[10px] font-medium',
+                actionConfig.bg,
+                actionConfig.border,
+                'border backdrop-blur-sm',
+              )}
+            >
               <ActionIcon className={cn('h-3 w-3', actionConfig.color)} />
               <span className={actionConfig.color}>{actionConfig.label}</span>
             </div>
@@ -252,7 +244,7 @@ function HistoryCard({
                   {item.title}
                 </h3>
               </div>
-              
+
               {/* Episode info */}
               {item.media_type === 'series' && item.season && item.episode && (
                 <p className="text-xs text-muted-foreground mt-1">
@@ -294,18 +286,13 @@ function HistoryCard({
                       {formatBytes(item.stream_info.size)}
                     </span>
                   )}
-                  {item.stream_info.source && (
-                    <span className="truncate max-w-[100px]">{item.stream_info.source}</span>
-                  )}
+                  {item.stream_info.source && <span className="truncate max-w-[100px]">{item.stream_info.source}</span>}
                 </div>
               )}
-              
+
               {action === 'WATCHED' && item.duration && item.duration > 0 && (
                 <div className="flex items-center gap-2">
-                  <Progress 
-                    value={progressPercentage} 
-                    className="h-1.5 flex-1" 
-                  />
+                  <Progress value={progressPercentage} className="h-1.5 flex-1" />
                   <span className="text-[11px] text-muted-foreground font-medium min-w-[36px] text-right">
                     {progressPercentage}%
                   </span>
@@ -330,7 +317,7 @@ function HistoryCard({
                 'absolute top-2 right-2 p-1.5 rounded-lg transition-all',
                 'bg-background/80 backdrop-blur-sm border border-border/50',
                 'opacity-0 group-hover:opacity-100',
-                'hover:bg-destructive/10 hover:border-destructive/30 hover:text-destructive'
+                'hover:bg-destructive/10 hover:border-destructive/30 hover:text-destructive',
               )}
             >
               <X className="h-3.5 w-3.5" />
@@ -373,13 +360,7 @@ export function HistoryTab() {
   // Fetch profiles for the profile selector
   const { data: profiles } = useProfiles()
 
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-  } = useInfiniteWatchHistory({ 
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteWatchHistory({
     page_size: 20,
     action: actionFilter === 'all' ? undefined : actionFilter,
     media_type: typeFilter === 'all' ? undefined : typeFilter,
@@ -398,7 +379,7 @@ export function HistoryTab() {
           fetchNextPage()
         }
       },
-      { threshold: 0.1, rootMargin: '100px' }
+      { threshold: 0.1, rootMargin: '100px' },
     )
 
     const currentRef = loadMoreRef.current
@@ -413,7 +394,7 @@ export function HistoryTab() {
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  const items = data?.pages.flatMap(page => page.items) ?? []
+  const items = data?.pages.flatMap((page) => page.items) ?? []
 
   const handleClearAll = async () => {
     // Clear only the selected profile's history, or all if 'all' is selected
@@ -443,7 +424,9 @@ export function HistoryTab() {
                     <div className="flex items-center gap-2">
                       <span>{profile.name}</span>
                       {profile.is_default && (
-                        <Badge variant="secondary" className="text-[10px] px-1 py-0">Default</Badge>
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                          Default
+                        </Badge>
                       )}
                     </div>
                   </SelectItem>
@@ -456,28 +439,23 @@ export function HistoryTab() {
         {/* Action filters */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium mr-1">Activity:</span>
-          <FilterPill 
-            active={actionFilter === 'all'} 
-            onClick={() => setActionFilter('all')}
-            icon={Clock}
-            label="All"
-          />
-          <FilterPill 
-            active={actionFilter === 'WATCHED'} 
+          <FilterPill active={actionFilter === 'all'} onClick={() => setActionFilter('all')} icon={Clock} label="All" />
+          <FilterPill
+            active={actionFilter === 'WATCHED'}
             onClick={() => setActionFilter('WATCHED')}
             icon={Eye}
             label="Watched"
             color="text-sky-400"
           />
-          <FilterPill 
-            active={actionFilter === 'DOWNLOADED'} 
+          <FilterPill
+            active={actionFilter === 'DOWNLOADED'}
             onClick={() => setActionFilter('DOWNLOADED')}
             icon={Download}
             label="Downloaded"
             color="text-emerald-400"
           />
-          <FilterPill 
-            active={actionFilter === 'QUEUED'} 
+          <FilterPill
+            active={actionFilter === 'QUEUED'}
             onClick={() => setActionFilter('QUEUED')}
             icon={ListPlus}
             label="Queued"
@@ -488,27 +466,23 @@ export function HistoryTab() {
         {/* Type filters */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium mr-1">Type:</span>
-          <FilterPill 
-            active={typeFilter === 'all'} 
-            onClick={() => setTypeFilter('all')}
-            label="All"
-          />
-          <FilterPill 
-            active={typeFilter === 'movie'} 
+          <FilterPill active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} label="All" />
+          <FilterPill
+            active={typeFilter === 'movie'}
             onClick={() => setTypeFilter('movie')}
             icon={Film}
             label="Movies"
             color="text-purple-400"
           />
-          <FilterPill 
-            active={typeFilter === 'series'} 
+          <FilterPill
+            active={typeFilter === 'series'}
             onClick={() => setTypeFilter('series')}
             icon={Tv}
             label="Series"
             color="text-blue-400"
           />
-          <FilterPill 
-            active={typeFilter === 'tv'} 
+          <FilterPill
+            active={typeFilter === 'tv'}
             onClick={() => setTypeFilter('tv')}
             icon={Radio}
             label="TV"
@@ -530,15 +504,11 @@ export function HistoryTab() {
               'No activity found'
             )}
           </p>
-          
+
           {items.length > 0 && (
             <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
               <AlertDialogTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-8 text-xs text-muted-foreground hover:text-destructive"
-                >
+                <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-destructive">
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                   Clear All
                 </Button>
@@ -549,10 +519,9 @@ export function HistoryTab() {
                     {selectedProfileId === 'all' ? 'Clear all history?' : 'Clear profile history?'}
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    {selectedProfileId === 'all' 
+                    {selectedProfileId === 'all'
                       ? 'This will permanently delete all your watch history across all profiles including watched, downloaded, and queued items. This action cannot be undone.'
-                      : `This will permanently delete the watch history for the selected profile including watched, downloaded, and queued items. This action cannot be undone.`
-                    }
+                      : `This will permanently delete the watch history for the selected profile including watched, downloaded, and queued items. This action cannot be undone.`}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -593,13 +562,12 @@ export function HistoryTab() {
           <p className="text-sm text-muted-foreground text-center max-w-sm">
             {actionFilter !== 'all' || typeFilter !== 'all'
               ? 'No items match your current filters. Try adjusting them.'
-              : 'Start watching, downloading, or queuing content to see your activity here.'
-            }
+              : 'Start watching, downloading, or queuing content to see your activity here.'}
           </p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map(item => (
+          {items.map((item) => (
             <HistoryCard
               key={item.id}
               item={item}
@@ -618,11 +586,7 @@ export function HistoryTab() {
             <span className="text-sm">Loading more...</span>
           </div>
         )}
-        {!hasNextPage && items.length > 0 && (
-          <p className="text-xs text-muted-foreground/60">
-            You've reached the end
-          </p>
-        )}
+        {!hasNextPage && items.length > 0 && <p className="text-xs text-muted-foreground/60">You've reached the end</p>}
       </div>
     </div>
   )

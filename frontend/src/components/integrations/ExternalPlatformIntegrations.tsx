@@ -1,6 +1,6 @@
 /**
  * External Platform Integrations Component
- * 
+ *
  * Allows users to connect/disconnect and sync with external platforms
  * like Trakt, Simkl, MAL, etc.
  */
@@ -12,13 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -27,17 +21,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Link2,
   Unlink,
@@ -64,15 +49,18 @@ import type { IntegrationType, SyncDirection } from '@/lib/api/integrations'
 import { formatDistanceToNow } from 'date-fns'
 
 // Platform metadata
-const PLATFORM_INFO: Record<IntegrationType, {
-  name: string
-  description: string
-  icon: string
-  color: string
-  gradient: string
-  url: string
-  supported: boolean
-}> = {
+const PLATFORM_INFO: Record<
+  IntegrationType,
+  {
+    name: string
+    description: string
+    icon: string
+    color: string
+    gradient: string
+    url: string
+    supported: boolean
+  }
+> = {
   trakt: {
     name: 'Trakt',
     description: 'Track movies and TV shows you watch',
@@ -140,19 +128,19 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
   const [customClientId, setCustomClientId] = useState('')
   const [customClientSecret, setCustomClientSecret] = useState('')
   const [step, setStep] = useState<'auth' | 'code'>('auth')
-  
+
   const getOAuthUrl = useOAuthUrl()
   const connectTrakt = useConnectTrakt()
   const connectSimkl = useConnectSimkl()
-  
+
   const info = PLATFORM_INFO[platform]
   const isLoading = getOAuthUrl.isPending || connectTrakt.isPending || connectSimkl.isPending
 
   const handleGetAuthUrl = async () => {
     try {
-      const result = await getOAuthUrl.mutateAsync({ 
-        platform, 
-        clientId: customClientId || undefined 
+      const result = await getOAuthUrl.mutateAsync({
+        platform,
+        clientId: customClientId || undefined,
       })
       window.open(result.auth_url, '_blank')
       setStep('code')
@@ -165,10 +153,10 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
     try {
       // Only pass custom credentials if BOTH are provided
       const hasCustomCreds = customClientId && customClientSecret
-      
+
       if (platform === 'trakt') {
-        await connectTrakt.mutateAsync({ 
-          code, 
+        await connectTrakt.mutateAsync({
+          code,
           clientId: hasCustomCreds ? customClientId : undefined,
           clientSecret: hasCustomCreds ? customClientSecret : undefined,
         })
@@ -204,10 +192,9 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
             Connect {info.name}
           </DialogTitle>
           <DialogDescription>
-            {step === 'auth' 
+            {step === 'auth'
               ? `Authorize MediaFusion to access your ${info.name} account`
-              : `Enter the authorization code from ${info.name}`
-            }
+              : `Enter the authorization code from ${info.name}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -218,18 +205,18 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
                 <p className="text-xs text-muted-foreground">
                   Use your own API credentials (optional). Create an app at{' '}
                   {platform === 'trakt' ? (
-                    <a 
-                      href="https://trakt.tv/oauth/applications" 
-                      target="_blank" 
+                    <a
+                      href="https://trakt.tv/oauth/applications"
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline"
                     >
                       trakt.tv/oauth/applications
                     </a>
                   ) : (
-                    <a 
-                      href="https://simkl.com/settings/developer/" 
-                      target="_blank" 
+                    <a
+                      href="https://simkl.com/settings/developer/"
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline"
                     >
@@ -263,10 +250,10 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
                 )}
               </div>
             )}
-            
+
             <p className="text-sm text-muted-foreground">
-              Click the button below to open {info.name} authorization page. 
-              After authorizing, you'll receive a code to paste here.
+              Click the button below to open {info.name} authorization page. After authorizing, you'll receive a code to
+              paste here.
             </p>
           </div>
         ) : (
@@ -365,8 +352,10 @@ function PlatformCard({
 
   return (
     <Card className="relative overflow-hidden">
-      <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${info.gradient} rounded-full -translate-y-1/2 translate-x-1/2`} />
-      
+      <div
+        className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${info.gradient} rounded-full -translate-y-1/2 translate-x-1/2`}
+      />
+
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -391,9 +380,7 @@ function PlatformCard({
 
       <CardContent className="space-y-4">
         {!info.supported ? (
-          <p className="text-sm text-muted-foreground italic">
-            Coming soon - not yet implemented
-          </p>
+          <p className="text-sm text-muted-foreground italic">Coming soon - not yet implemented</p>
         ) : connected ? (
           <>
             {/* Sync Status */}
@@ -401,7 +388,8 @@ function PlatformCard({
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />
                 <span>
-                  Last synced {(() => {
+                  Last synced{' '}
+                  {(() => {
                     try {
                       // Handle both ISO format with and without timezone
                       const date = new Date(lastSyncAt.endsWith('Z') ? lastSyncAt : lastSyncAt + 'Z')
@@ -412,9 +400,7 @@ function PlatformCard({
                     }
                   })()}
                 </span>
-                {lastSyncStatus === 'success' && (
-                  <Check className="h-3 w-3 text-green-500" />
-                )}
+                {lastSyncStatus === 'success' && <Check className="h-3 w-3 text-green-500" />}
                 {lastSyncStatus === 'failed' && (
                   <Tooltip>
                     <TooltipTrigger>
@@ -441,11 +427,7 @@ function PlatformCard({
                     <Label htmlFor={`sync-${platform}`} className="text-sm">
                       Auto-sync enabled
                     </Label>
-                    <Switch
-                      id={`sync-${platform}`}
-                      checked={syncEnabled}
-                      onCheckedChange={handleSyncToggle}
-                    />
+                    <Switch id={`sync-${platform}`} checked={syncEnabled} onCheckedChange={handleSyncToggle} />
                   </div>
 
                   {/* Sync Direction */}
@@ -473,27 +455,13 @@ function PlatformCard({
 
             {/* Actions */}
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSync(false)}
-                disabled={isSyncing}
-              >
-                {isSyncing ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
+              <Button variant="outline" size="sm" onClick={() => handleSync(false)} disabled={isSyncing}>
+                {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Sync Now
               </Button>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSync(true)}
-                    disabled={isSyncing}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => handleSync(true)} disabled={isSyncing}>
                     {isSyncing ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
@@ -544,7 +512,7 @@ export function ExternalPlatformIntegrations() {
   const syncAll = useTriggerSyncAll()
   const [connectPlatform, setConnectPlatform] = useState<IntegrationType | null>(null)
 
-  const hasConnectedPlatforms = data?.integrations.some(i => i.connected && PLATFORM_INFO[i.platform].supported)
+  const hasConnectedPlatforms = data?.integrations.some((i) => i.connected && PLATFORM_INFO[i.platform].supported)
 
   if (isLoading) {
     return (
@@ -568,16 +536,10 @@ export function ExternalPlatformIntegrations() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Watch History Sync</h2>
-          <p className="text-sm text-muted-foreground">
-            Connect external platforms to sync your watch history
-          </p>
+          <p className="text-sm text-muted-foreground">Connect external platforms to sync your watch history</p>
         </div>
         {hasConnectedPlatforms && (
-          <Button
-            variant="outline"
-            onClick={() => syncAll.mutate()}
-            disabled={syncAll.isPending}
-          >
+          <Button variant="outline" onClick={() => syncAll.mutate()} disabled={syncAll.isPending}>
             {syncAll.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (

@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { contentImportApi, type MagnetAnalyzeRequest, type M3UImportOverride, type XtreamCredentials, type XtreamImportRequest, type IPTVSourceUpdateRequest, type TorrentImportRequest, type ImportJobStatus, type TorrentMetaType } from '@/lib/api'
+import {
+  contentImportApi,
+  type MagnetAnalyzeRequest,
+  type M3UImportOverride,
+  type XtreamCredentials,
+  type XtreamImportRequest,
+  type IPTVSourceUpdateRequest,
+  type TorrentImportRequest,
+  type ImportJobStatus,
+  type TorrentMetaType,
+} from '@/lib/api'
 
 export function useAnalyzeMagnet() {
   return useMutation({
@@ -17,22 +27,21 @@ export function useAnalyzeTorrent() {
 
 export function useImportMagnet() {
   return useMutation({
-    mutationFn: (data: Omit<TorrentImportRequest, 'torrent_file'> & { magnet_link: string }) => 
+    mutationFn: (data: Omit<TorrentImportRequest, 'torrent_file'> & { magnet_link: string }) =>
       contentImportApi.importMagnet(data),
   })
 }
 
 export function useImportTorrent() {
   return useMutation({
-    mutationFn: (data: Omit<TorrentImportRequest, 'magnet_link'> & { torrent_file: File }) => 
+    mutationFn: (data: Omit<TorrentImportRequest, 'magnet_link'> & { torrent_file: File }) =>
       contentImportApi.importTorrent(data),
   })
 }
 
 export function useAnalyzeM3U() {
   return useMutation({
-    mutationFn: (data: { m3u_url?: string; m3u_file?: File }) =>
-      contentImportApi.analyzeM3U(data),
+    mutationFn: (data: { m3u_url?: string; m3u_file?: File }) => contentImportApi.analyzeM3U(data),
   })
 }
 
@@ -57,8 +66,7 @@ export function useImportM3U() {
 
 export function useAnalyzeXtream() {
   return useMutation({
-    mutationFn: (credentials: XtreamCredentials) =>
-      contentImportApi.analyzeXtream(credentials),
+    mutationFn: (credentials: XtreamCredentials) => contentImportApi.analyzeXtream(credentials),
   })
 }
 
@@ -143,7 +151,7 @@ export function useSyncIPTVSource() {
 
 /**
  * Hook to poll for import job status.
- * 
+ *
  * @param jobId - The job ID to poll for (or null to disable polling)
  * @param options - Options for polling behavior
  */
@@ -152,16 +160,16 @@ export function useImportJobStatus(
   options: {
     onComplete?: (status: ImportJobStatus) => void
     onError?: (status: ImportJobStatus) => void
-  } = {}
+  } = {},
 ) {
   const queryClient = useQueryClient()
   const callbackFiredRef = useRef(false)
-  
+
   // Reset callback fired flag when jobId changes
   useEffect(() => {
     callbackFiredRef.current = false
   }, [jobId])
-  
+
   const query = useQuery({
     queryKey: ['import-job', jobId],
     queryFn: () => contentImportApi.getImportJobStatus(jobId!),
@@ -169,22 +177,22 @@ export function useImportJobStatus(
     refetchInterval: (data) => {
       const result = data.state.data
       if (!result) return 2000 // Initial poll every 2 seconds
-      
+
       // Stop polling when complete or failed or not found
       if (result.status === 'completed' || result.status === 'failed' || result.status === 'not_found') {
         return false
       }
-      
+
       // Continue polling every 2 seconds while processing
       return 2000
     },
     staleTime: 1000,
   })
-  
+
   // Handle callbacks in useEffect to ensure they're only called once
   useEffect(() => {
     if (!query.data || callbackFiredRef.current) return
-    
+
     if (query.data.status === 'completed') {
       callbackFiredRef.current = true
       if (options.onComplete) {
@@ -199,6 +207,6 @@ export function useImportJobStatus(
       }
     }
   }, [query.data, options, queryClient])
-  
+
   return query
 }

@@ -32,7 +32,7 @@ export function GuestGuard({ children }: GuestGuardProps) {
       // Still show the page content, but the user will be redirected by AuthGuard if needed
       return <>{children}</>
     }
-    
+
     // Redirect to the page they came from, or dashboard
     const from = (location.state as { from?: { pathname?: string } })?.from?.pathname
     return <Navigate to={from || '/dashboard'} replace />
@@ -40,4 +40,3 @@ export function GuestGuard({ children }: GuestGuardProps) {
 
   return <>{children}</>
 }
-

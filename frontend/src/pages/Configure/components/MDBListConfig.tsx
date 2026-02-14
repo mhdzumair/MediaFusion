@@ -1,8 +1,24 @@
 import { useState, useEffect } from 'react'
-import { 
-  Plus, Trash2, Eye, EyeOff, ExternalLink, AlertCircle, List,
-  Film, Tv, ChevronUp, ChevronDown, Search, Loader2, Check,
-  Trophy, User, PlusCircle, Edit2, Heart
+import {
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  AlertCircle,
+  List,
+  Film,
+  Tv,
+  ChevronUp,
+  ChevronDown,
+  Search,
+  Loader2,
+  Check,
+  Trophy,
+  User,
+  PlusCircle,
+  Edit2,
+  Heart,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,26 +26,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { ConfigSectionProps, MDBListConfig, MDBListItem, CatalogConfig } from './types'
 
@@ -61,17 +60,17 @@ const mdblistApi = {
   async makeRequest(endpoint: string, apiKey: string) {
     const url = new URL(endpoint.startsWith('http') ? endpoint : `${MDBLIST_API_BASE}${endpoint}`)
     url.searchParams.append('apikey', apiKey)
-    
+
     const response = await fetch(url.toString())
-    
+
     if (response.status === 403) throw new Error('Invalid API key')
     if (response.status === 404) throw new Error('Resource not found')
     if (response.status === 429) throw new Error('Rate limit exceeded')
     if (!response.ok) throw new Error(`API request failed with status ${response.status}`)
-    
+
     return response.json()
   },
-  
+
   async verifyApiKey(apiKey: string): Promise<boolean> {
     if (!apiKey?.trim()) return false
     try {
@@ -81,20 +80,20 @@ const mdblistApi = {
       return false
     }
   },
-  
+
   async getUserLists(apiKey: string): Promise<MDBListApiList[]> {
     return this.makeRequest('/lists/user', apiKey)
   },
-  
+
   async getTopLists(apiKey: string): Promise<MDBListApiList[]> {
     return this.makeRequest('/lists/top', apiKey)
   },
-  
+
   async searchLists(apiKey: string, query: string): Promise<MDBListApiList[]> {
     if (!query?.trim()) return []
     return this.makeRequest(`/lists/search?query=${encodeURIComponent(query.trim())}`, apiKey)
   },
-  
+
   async getListDetails(apiKey: string, listId: string): Promise<MDBListApiList> {
     return this.makeRequest(`/lists/${listId}`, apiKey)
   },
@@ -112,15 +111,17 @@ function ListItemCard({ list, isAdded, onAdd }: ListItemCardProps) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="font-medium truncate">{list.name}</p>
-          {list.user_name && (
-            <span className="text-xs text-muted-foreground">by {list.user_name}</span>
-          )}
+          {list.user_name && <span className="text-xs text-muted-foreground">by {list.user_name}</span>}
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
-            {list.mediatype === 'movie' ? <Film className="h-3 w-3" /> : 
-             list.mediatype === 'show' ? <Tv className="h-3 w-3" /> :
-             <List className="h-3 w-3" />}
+            {list.mediatype === 'movie' ? (
+              <Film className="h-3 w-3" />
+            ) : list.mediatype === 'show' ? (
+              <Tv className="h-3 w-3" />
+            ) : (
+              <List className="h-3 w-3" />
+            )}
             {list.mediatype === 'movie' ? 'Movies' : list.mediatype === 'show' ? 'Series' : 'Mixed'}
           </span>
           <span>{list.items || 0} items</span>
@@ -130,9 +131,9 @@ function ListItemCard({ list, isAdded, onAdd }: ListItemCardProps) {
           </span>
         </div>
       </div>
-      
+
       <Button
-        variant={isAdded ? "secondary" : "outline"}
+        variant={isAdded ? 'secondary' : 'outline'}
         size="sm"
         onClick={onAdd}
         disabled={isAdded}
@@ -168,7 +169,7 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
   const [useFilters, setUseFilters] = useState(false)
   const [sort, setSort] = useState('rank')
   const [order, setOrder] = useState<'asc' | 'desc'>('desc')
-  
+
   useEffect(() => {
     if (list) {
       setTitle(existingConfig?.t || list.name)
@@ -178,10 +179,10 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
       setOrder(existingConfig?.o || 'desc')
     }
   }, [list, existingConfig])
-  
+
   const handleSave = () => {
     if (!list) return
-    
+
     onSave({
       i: list.id,
       t: title,
@@ -192,17 +193,15 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
     })
     onOpenChange(false)
   }
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Configure List</DialogTitle>
-          <DialogDescription>
-            Customize how this list appears in your catalogs
-          </DialogDescription>
+          <DialogDescription>Customize how this list appears in your catalogs</DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label>Display Name</Label>
@@ -216,7 +215,7 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
               name="mdblist-display-name"
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label>Catalog Type</Label>
             <Select value={catalogType} onValueChange={(v: 'movie' | 'series') => setCatalogType(v)}>
@@ -239,7 +238,7 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
               </SelectContent>
             </Select>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Sort By</Label>
@@ -256,7 +255,7 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label>Order</Label>
               <Select value={order} onValueChange={(v: 'asc' | 'desc') => setOrder(v)}>
@@ -270,7 +269,7 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
               </Select>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Checkbox
               id="use-filters"
@@ -282,14 +281,12 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
             </Label>
           </div>
         </div>
-        
+
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>
-            Save
-          </Button>
+          <Button onClick={handleSave}>Save</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -301,7 +298,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
   const [isVerifying, setIsVerifying] = useState(false)
   const [isVerified, setIsVerified] = useState(false)
   const [verifyError, setVerifyError] = useState<string | null>(null)
-  
+
   const [activeTab, setActiveTab] = useState('my-lists')
   const [isLoading, setIsLoading] = useState(false)
   const [myLists, setMyLists] = useState<MDBListApiList[]>([])
@@ -309,39 +306,39 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
   const [searchResults, setSearchResults] = useState<MDBListApiList[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [manualInput, setManualInput] = useState('')
-  
+
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingList, setEditingList] = useState<MDBListApiList | null>(null)
   const [editingConfig, setEditingConfig] = useState<MDBListItem | undefined>()
-  
+
   const mdbConfig: MDBListConfig = config.mdb || { ak: '', l: [] }
   const lists = mdbConfig.l || []
   const apiKey = mdbConfig.ak || ''
-  
+
   // Check if API key exists on mount
   useEffect(() => {
     if (apiKey) {
       verifyApiKey(false)
     }
   }, [])
-  
+
   const updateConfig = (updates: Partial<MDBListConfig>) => {
     onChange({
       ...config,
       mdb: { ...mdbConfig, ...updates },
     })
   }
-  
+
   const verifyApiKey = async (showNotification = true) => {
     if (!apiKey) {
       if (showNotification) setVerifyError('Please enter an API key')
       return
     }
-    
+
     setIsVerifying(true)
     setVerifyError(null)
-    
+
     try {
       const isValid = await mdblistApi.verifyApiKey(apiKey)
       if (isValid) {
@@ -358,7 +355,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
       setIsVerifying(false)
     }
   }
-  
+
   const loadMyLists = async () => {
     setIsLoading(true)
     try {
@@ -370,7 +367,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
       setIsLoading(false)
     }
   }
-  
+
   const loadTopLists = async () => {
     if (topLists.length > 0) return // Already loaded
     setIsLoading(true)
@@ -383,10 +380,10 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
       setIsLoading(false)
     }
   }
-  
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
-    
+
     setIsLoading(true)
     try {
       const data = await mdblistApi.searchLists(apiKey, searchQuery)
@@ -397,18 +394,18 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
       setIsLoading(false)
     }
   }
-  
+
   const handleManualAdd = async () => {
     if (!manualInput.trim()) return
-    
+
     // Extract list ID from URL if needed
     const urlOrId = manualInput.trim()
     let listId = urlOrId
-    
+
     if (urlOrId.includes('mdblist.com/lists/')) {
       listId = urlOrId.split('mdblist.com/lists/')[1].replace(/\/$/, '')
     }
-    
+
     setIsLoading(true)
     try {
       const listDetails = await mdblistApi.getListDetails(apiKey, listId)
@@ -421,17 +418,17 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
       setIsLoading(false)
     }
   }
-  
+
   const isListAdded = (listId: number) => {
-    return lists.some(l => l.i === listId)
+    return lists.some((l) => l.i === listId)
   }
-  
+
   const openEditDialog = (list: MDBListApiList, existingConfig?: MDBListItem) => {
     setEditingList(list)
     setEditingConfig(existingConfig)
     setEditDialogOpen(true)
   }
-  
+
   // Helper to get migrated catalog configs (same as CatalogConfig.tsx)
   const getMigratedCatalogConfigs = (): CatalogConfig[] => {
     const existingConfigs = config.cc || []
@@ -445,23 +442,23 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
     }
     return []
   }
-  
+
   const handleSaveList = (listConfig: MDBListItem) => {
     // Remove existing entry for this list ID if exists
-    const newLists = lists.filter(l => l.i !== listConfig.i)
+    const newLists = lists.filter((l) => l.i !== listConfig.i)
     newLists.push(listConfig)
-    
+
     // Also add to catalog_configs (cc) for catalog integration
     const catalogId = `mdblist_${listConfig.ct}_${listConfig.i}`
     const currentConfigs = getMigratedCatalogConfigs()
-    const existingConfig = currentConfigs.find(c => c.ci === catalogId)
-    
+    const existingConfig = currentConfigs.find((c) => c.ci === catalogId)
+
     if (!existingConfig) {
       onChange({
         ...config,
         mdb: { ...mdbConfig, l: newLists },
         cc: [...currentConfigs, { ci: catalogId, en: true }],
-        sc: [] // Clear legacy format
+        sc: [], // Clear legacy format
       })
     } else {
       // Already exists, just update mdblist
@@ -469,15 +466,15 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
         ...config,
         mdb: { ...mdbConfig, l: newLists },
         cc: currentConfigs,
-        sc: [] // Clear legacy format
+        sc: [], // Clear legacy format
       })
     }
   }
-  
+
   const removeList = (listId: number) => {
-    const listToRemove = lists.find(l => l.i === listId)
-    const newLists = lists.filter(l => l.i !== listId)
-    
+    const listToRemove = lists.find((l) => l.i === listId)
+    const newLists = lists.filter((l) => l.i !== listId)
+
     // Also remove from catalog_configs (cc)
     if (listToRemove) {
       const catalogId = `mdblist_${listToRemove.ct}_${listToRemove.i}`
@@ -485,23 +482,23 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
       onChange({
         ...config,
         mdb: { ...mdbConfig, l: newLists },
-        cc: currentConfigs.filter(c => c.ci !== catalogId),
-        sc: [] // Clear legacy format
+        cc: currentConfigs.filter((c) => c.ci !== catalogId),
+        sc: [], // Clear legacy format
       })
     } else {
       updateConfig({ l: newLists })
     }
   }
-  
+
   const moveList = (index: number, direction: 'up' | 'down') => {
     const newIndex = direction === 'up' ? index - 1 : index + 1
     if (newIndex < 0 || newIndex >= lists.length) return
-    
+
     const newLists = [...lists]
     ;[newLists[index], newLists[newIndex]] = [newLists[newIndex], newLists[index]]
     updateConfig({ l: newLists })
   }
-  
+
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
     if (tab === 'top-lists') {
@@ -518,9 +515,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
               <List className="h-5 w-5" />
               MDBList Integration
             </CardTitle>
-            <CardDescription>
-              Import movie and TV lists from MDBList.com as catalogs
-            </CardDescription>
+            <CardDescription>Import movie and TV lists from MDBList.com as catalogs</CardDescription>
           </div>
           <a
             href="https://mdblist.com/preferences/"
@@ -562,10 +557,10 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                 {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
-            <Button 
-              onClick={() => verifyApiKey(true)} 
+            <Button
+              onClick={() => verifyApiKey(true)}
               disabled={isVerifying || !apiKey}
-              variant={isVerified ? "secondary" : "default"}
+              variant={isVerified ? 'secondary' : 'default'}
             >
               {isVerifying ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -579,7 +574,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
               )}
             </Button>
           </div>
-          
+
           {verifyError && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -587,7 +582,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
             </Alert>
           )}
         </div>
-        
+
         {/* List Management - only shown when verified */}
         {isVerified && (
           <>
@@ -610,7 +605,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                   <span className="hidden sm:inline">Add List</span>
                 </TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="my-lists" className="mt-4 space-y-2">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
@@ -628,13 +623,11 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                 ) : (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      No lists found. Create lists on MDBList.com first.
-                    </AlertDescription>
+                    <AlertDescription>No lists found. Create lists on MDBList.com first.</AlertDescription>
                   </Alert>
                 )}
               </TabsContent>
-              
+
               <TabsContent value="top-lists" className="mt-4 space-y-2">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
@@ -656,7 +649,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                   </Alert>
                 )}
               </TabsContent>
-              
+
               <TabsContent value="search" className="mt-4 space-y-4">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -677,7 +670,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
                   </Button>
                 </div>
-                
+
                 <div className="space-y-2">
                   {searchResults.map((list) => (
                     <ListItemCard
@@ -689,7 +682,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                   ))}
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="add" className="mt-4 space-y-4">
                 <div className="space-y-2">
                   <Label>MDBList URL or ID</Label>
@@ -702,21 +695,15 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                     data-lpignore="true"
                     name="mdblist-url"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Paste the full URL of the list or just the list ID
-                  </p>
+                  <p className="text-xs text-muted-foreground">Paste the full URL of the list or just the list ID</p>
                 </div>
                 <Button onClick={handleManualAdd} disabled={isLoading || !manualInput.trim()}>
-                  {isLoading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4 mr-2" />
-                  )}
+                  {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
                   Add List
                 </Button>
               </TabsContent>
             </Tabs>
-            
+
             {/* Selected Lists */}
             {lists.length > 0 && (
               <div className="pt-4 border-t space-y-2">
@@ -724,13 +711,10 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                   <Label>Selected Lists</Label>
                   <Badge variant="secondary">{lists.length} lists</Badge>
                 </div>
-                
+
                 <div className="space-y-2">
                   {lists.map((list, index) => (
-                    <div
-                      key={`${list.i}-${list.ct}`}
-                      className="flex items-center gap-2 p-3 border rounded-lg"
-                    >
+                    <div key={`${list.i}-${list.ct}`} className="flex items-center gap-2 p-3 border rounded-lg">
                       <div className="flex flex-col gap-0.5">
                         <Button
                           variant="ghost"
@@ -751,11 +735,11 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </div>
-                      
+
                       <Badge variant="outline" className="shrink-0">
                         {index + 1}
                       </Badge>
-                      
+
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{list.t}</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -764,22 +748,34 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
                             {list.ct === 'movie' ? 'Movies' : 'Series'}
                           </span>
                           <span>Sort: {list.s || 'rank'}</span>
-                          {list.uf && <Badge variant="secondary" className="text-[10px]">Filtered</Badge>}
+                          {list.uf && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              Filtered
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                      
+
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        onClick={() => openEditDialog(
-                          { id: list.i, name: list.t, mediatype: list.ct === 'movie' ? 'movie' : 'show', items: 0, likes: 0 },
-                          list
-                        )}
+                        onClick={() =>
+                          openEditDialog(
+                            {
+                              id: list.i,
+                              name: list.t,
+                              mediatype: list.ct === 'movie' ? 'movie' : 'show',
+                              items: 0,
+                              likes: 0,
+                            },
+                            list,
+                          )
+                        }
                       >
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      
+
                       <Button
                         variant="ghost"
                         size="icon"
@@ -795,7 +791,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
             )}
           </>
         )}
-        
+
         {!isVerified && !apiKey && (
           <Alert>
             <AlertCircle className="h-4 w-4" />
@@ -804,7 +800,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
             </AlertDescription>
           </Alert>
         )}
-        
+
         {/* Edit Dialog */}
         <EditListDialog
           open={editDialogOpen}

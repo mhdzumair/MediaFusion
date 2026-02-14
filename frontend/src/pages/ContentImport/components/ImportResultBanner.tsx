@@ -9,11 +9,9 @@ interface ImportResultBannerProps {
 
 export function ImportResultBanner({ result, onDismiss }: ImportResultBannerProps) {
   return (
-    <div 
+    <div
       className={`p-4 rounded-xl flex items-center gap-3 ${
-        result.success 
-          ? 'bg-emerald-500/10 border border-emerald-500/20' 
-          : 'bg-red-500/10 border border-red-500/20'
+        result.success ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'
       }`}
     >
       {result.success ? (
@@ -24,15 +22,9 @@ export function ImportResultBanner({ result, onDismiss }: ImportResultBannerProp
       <p className={result.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
         {result.message}
       </p>
-      <Button 
-        variant="ghost" 
-        size="sm" 
-        className="ml-auto"
-        onClick={onDismiss}
-      >
+      <Button variant="ghost" size="sm" className="ml-auto" onClick={onDismiss}>
         Dismiss
       </Button>
     </div>
   )
 }
-

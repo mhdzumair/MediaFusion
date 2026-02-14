@@ -4,4 +4,3 @@ export { RSSFeedCard } from './RSSFeedCard'
 export { RegexTesterModal } from './RegexTesterModal'
 export { CatalogPatternsEditor } from './CatalogPatternsEditor'
 export * from './constants'
-

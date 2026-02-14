@@ -108,7 +108,9 @@ async def filter_and_sort_streams(
         # Create a copy of the stream model to avoid modifying the original
         stream = stream.model_copy()
         # Add normalized attributes as dynamic properties
-        stream.filtered_resolution = stream.resolution if getattr(stream, "resolution", None) in valid_resolutions else None
+        stream.filtered_resolution = (
+            stream.resolution if getattr(stream, "resolution", None) in valid_resolutions else None
+        )
         stream.filtered_quality = stream.quality if getattr(stream, "quality", None) in valid_qualities else None
         stream_languages = getattr(stream, "languages", []) or []
         stream.filtered_languages = [lang for lang in stream_languages if lang in valid_languages] or [None]
@@ -230,7 +232,10 @@ async def filter_and_sort_streams(
                         # Try to find which group this quality belongs to
                         rank = len(user_data.quality_filter)
                         for i, group_name in enumerate(user_data.quality_filter):
-                            if group_name in const.QUALITY_GROUPS and torrent_stream.filtered_quality in const.QUALITY_GROUPS[group_name]:
+                            if (
+                                group_name in const.QUALITY_GROUPS
+                                and torrent_stream.filtered_quality in const.QUALITY_GROUPS[group_name]
+                            ):
                                 rank = i
                                 break
                     return multiplier * -rank
@@ -639,9 +644,7 @@ def _build_stream_entries(
                     info_hash = stream_data.info_hash
                     file_idx = file_index
                     announce_list = getattr(stream_data, "announce_list", None) or TRACKERS
-                    sources = [f"tracker:{tracker}" for tracker in announce_list] + [
-                        f"dht:{stream_data.info_hash}"
-                    ]
+                    sources = [f"tracker:{tracker}" for tracker in announce_list] + [f"dht:{stream_data.info_hash}"]
 
             # Build context for template rendering
             if is_telegram:

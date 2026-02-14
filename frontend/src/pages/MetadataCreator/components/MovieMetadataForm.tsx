@@ -6,13 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Film,
   Save,
@@ -100,98 +94,129 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
 
   // Get all available suggestions
   const genreSuggestions = useMemo(() => {
-    return availableGenres?.map(g => g.name) || []
+    return availableGenres?.map((g) => g.name) || []
   }, [availableGenres])
 
   const catalogSuggestions = useMemo(() => {
-    return availableCatalogs?.movies.map(c => c.name) || []
+    return availableCatalogs?.movies.map((c) => c.name) || []
   }, [availableCatalogs])
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
 
-    if (!title.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Title is required',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    try {
-      const externalIds: Record<string, string> = {}
-      if (imdbId.trim()) externalIds.imdb = imdbId.trim()
-      if (tmdbId.trim()) externalIds.tmdb = tmdbId.trim()
-      if (tvdbId.trim()) externalIds.tvdb = tvdbId.trim()
-      if (malId.trim()) externalIds.mal = malId.trim()
-      if (kitsuId.trim()) externalIds.kitsu = kitsuId.trim()
-
-      if (isEditing && initialData) {
-        const updateData: UserMediaUpdate = {
-          title: title.trim(),
-          original_title: originalTitle.trim() || undefined,
-          year: year ? parseInt(year) : undefined,
-          release_date: releaseDate || undefined,
-          description: description.trim() || undefined,
-          tagline: tagline.trim() || undefined,
-          poster_url: posterUrl.trim() || undefined,
-          background_url: backgroundUrl.trim() || undefined,
-          logo_url: logoUrl.trim() || undefined,
-          runtime_minutes: runtime ? parseInt(runtime) : undefined,
-          status: status.trim() || undefined,
-          website: website.trim() || undefined,
-          original_language: originalLanguage.trim() || undefined,
-          nudity_status: nudityStatus || undefined,
-          parental_certificate: parentalCertificate.trim() || undefined,
-          genres: genres.length > 0 ? genres : undefined,
-          catalogs: catalogs.length > 0 ? catalogs : undefined,
-          aka_titles: akaTitles.length > 0 ? akaTitles : undefined,
-          cast: cast.length > 0 ? cast : undefined,
-          directors: directors.length > 0 ? directors : undefined,
-          writers: writers.length > 0 ? writers : undefined,
-          is_public: isPublic,
-          external_ids: Object.keys(externalIds).length > 0 ? externalIds : undefined,
-        }
-
-        await updateMetadata.mutateAsync({
-          mediaId: initialData.id,
-          data: updateData,
+      if (!title.trim()) {
+        toast({
+          title: 'Validation Error',
+          description: 'Title is required',
+          variant: 'destructive',
         })
-      } else {
-        const createData: UserMediaCreate = {
-          type: 'movie',
-          title: title.trim(),
-          year: year ? parseInt(year) : undefined,
-          description: description.trim() || undefined,
-          poster_url: posterUrl.trim() || undefined,
-          background_url: backgroundUrl.trim() || undefined,
-          logo_url: logoUrl.trim() || undefined,
-          runtime_minutes: runtime ? parseInt(runtime) : undefined,
-          genres: genres.length > 0 ? genres : undefined,
-          catalogs: catalogs.length > 0 ? catalogs : undefined,
-          external_ids: Object.keys(externalIds).length > 0 ? externalIds : undefined,
-          is_public: isPublic,
-        }
-
-        await createMetadata.mutateAsync(createData)
+        return
       }
 
-      onSuccess()
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save metadata',
-        variant: 'destructive',
-      })
-    }
-  }, [
-    title, originalTitle, year, releaseDate, description, tagline, posterUrl, backgroundUrl, logoUrl, runtime,
-    status, website, originalLanguage, nudityStatus, parentalCertificate,
-    genres, catalogs, akaTitles, cast, directors, writers, isPublic,
-    imdbId, tmdbId, tvdbId, malId, kitsuId,
-    isEditing, initialData, createMetadata, updateMetadata, toast, onSuccess
-  ])
+      try {
+        const externalIds: Record<string, string> = {}
+        if (imdbId.trim()) externalIds.imdb = imdbId.trim()
+        if (tmdbId.trim()) externalIds.tmdb = tmdbId.trim()
+        if (tvdbId.trim()) externalIds.tvdb = tvdbId.trim()
+        if (malId.trim()) externalIds.mal = malId.trim()
+        if (kitsuId.trim()) externalIds.kitsu = kitsuId.trim()
+
+        if (isEditing && initialData) {
+          const updateData: UserMediaUpdate = {
+            title: title.trim(),
+            original_title: originalTitle.trim() || undefined,
+            year: year ? parseInt(year) : undefined,
+            release_date: releaseDate || undefined,
+            description: description.trim() || undefined,
+            tagline: tagline.trim() || undefined,
+            poster_url: posterUrl.trim() || undefined,
+            background_url: backgroundUrl.trim() || undefined,
+            logo_url: logoUrl.trim() || undefined,
+            runtime_minutes: runtime ? parseInt(runtime) : undefined,
+            status: status.trim() || undefined,
+            website: website.trim() || undefined,
+            original_language: originalLanguage.trim() || undefined,
+            nudity_status: nudityStatus || undefined,
+            parental_certificate: parentalCertificate.trim() || undefined,
+            genres: genres.length > 0 ? genres : undefined,
+            catalogs: catalogs.length > 0 ? catalogs : undefined,
+            aka_titles: akaTitles.length > 0 ? akaTitles : undefined,
+            cast: cast.length > 0 ? cast : undefined,
+            directors: directors.length > 0 ? directors : undefined,
+            writers: writers.length > 0 ? writers : undefined,
+            is_public: isPublic,
+            external_ids: Object.keys(externalIds).length > 0 ? externalIds : undefined,
+          }
+
+          await updateMetadata.mutateAsync({
+            mediaId: initialData.id,
+            data: updateData,
+          })
+        } else {
+          const createData: UserMediaCreate = {
+            type: 'movie',
+            title: title.trim(),
+            year: year ? parseInt(year) : undefined,
+            description: description.trim() || undefined,
+            poster_url: posterUrl.trim() || undefined,
+            background_url: backgroundUrl.trim() || undefined,
+            logo_url: logoUrl.trim() || undefined,
+            runtime_minutes: runtime ? parseInt(runtime) : undefined,
+            genres: genres.length > 0 ? genres : undefined,
+            catalogs: catalogs.length > 0 ? catalogs : undefined,
+            external_ids: Object.keys(externalIds).length > 0 ? externalIds : undefined,
+            is_public: isPublic,
+          }
+
+          await createMetadata.mutateAsync(createData)
+        }
+
+        onSuccess()
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Failed to save metadata',
+          variant: 'destructive',
+        })
+      }
+    },
+    [
+      title,
+      originalTitle,
+      year,
+      releaseDate,
+      description,
+      tagline,
+      posterUrl,
+      backgroundUrl,
+      logoUrl,
+      runtime,
+      status,
+      website,
+      originalLanguage,
+      nudityStatus,
+      parentalCertificate,
+      genres,
+      catalogs,
+      akaTitles,
+      cast,
+      directors,
+      writers,
+      isPublic,
+      imdbId,
+      tmdbId,
+      tvdbId,
+      malId,
+      kitsuId,
+      isEditing,
+      initialData,
+      createMetadata,
+      updateMetadata,
+      toast,
+      onSuccess,
+    ],
+  )
 
   const isPending = createMetadata.isPending || updateMetadata.isPending
 
@@ -207,9 +232,7 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
                 <Film className="h-5 w-5 text-blue-500" />
                 Basic Information
               </CardTitle>
-              <CardDescription>
-                Enter the movie's core details
-              </CardDescription>
+              <CardDescription>Enter the movie's core details</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -346,9 +369,7 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
                 <Shield className="h-5 w-5 text-orange-500" />
                 Content Guidance
               </CardTitle>
-              <CardDescription>
-                Content ratings and warnings
-              </CardDescription>
+              <CardDescription>Content ratings and warnings</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -388,9 +409,7 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
                 <Tag className="h-5 w-5 text-primary" />
                 Genres & Catalogs
               </CardTitle>
-              <CardDescription>
-                Select from available options or add custom ones
-              </CardDescription>
+              <CardDescription>Select from available options or add custom ones</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Genres */}
@@ -448,9 +467,7 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
                 <Users className="h-5 w-5 text-green-500" />
                 Cast & Crew
               </CardTitle>
-              <CardDescription>
-                Add cast members and crew
-              </CardDescription>
+              <CardDescription>Add cast members and crew</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
@@ -576,29 +593,17 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
           <Card className="border-border/50 bg-card/50 backdrop-blur">
             <CardHeader>
               <CardTitle className="text-base">Images</CardTitle>
-              <CardDescription>
-                Add poster, background, and logo images
-              </CardDescription>
+              <CardDescription>Add poster, background, and logo images</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <ImageUrlInput
-                label="Poster URL"
-                value={posterUrl}
-                onChange={setPosterUrl}
-                aspectRatio="poster"
-              />
+              <ImageUrlInput label="Poster URL" value={posterUrl} onChange={setPosterUrl} aspectRatio="poster" />
               <ImageUrlInput
                 label="Background URL"
                 value={backgroundUrl}
                 onChange={setBackgroundUrl}
                 aspectRatio="backdrop"
               />
-              <ImageUrlInput
-                label="Logo URL"
-                value={logoUrl}
-                onChange={setLogoUrl}
-                aspectRatio="logo"
-              />
+              <ImageUrlInput label="Logo URL" value={logoUrl} onChange={setLogoUrl} aspectRatio="logo" />
             </CardContent>
           </Card>
 
@@ -610,24 +615,13 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
             <CardContent>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {isPublic ? (
-                    <Globe className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Lock className="h-4 w-4 text-primary" />
-                  )}
-                  <span className="text-sm">
-                    {isPublic ? 'Public' : 'Private'}
-                  </span>
+                  {isPublic ? <Globe className="h-4 w-4 text-green-500" /> : <Lock className="h-4 w-4 text-primary" />}
+                  <span className="text-sm">{isPublic ? 'Public' : 'Private'}</span>
                 </div>
-                <Switch
-                  checked={isPublic}
-                  onCheckedChange={setIsPublic}
-                />
+                <Switch checked={isPublic} onCheckedChange={setIsPublic} />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {isPublic
-                  ? 'Anyone can see and link to this metadata'
-                  : 'Only you can see and use this metadata'}
+                {isPublic ? 'Anyone can see and link to this metadata' : 'Only you can see and use this metadata'}
               </p>
             </CardContent>
           </Card>
@@ -641,19 +635,10 @@ export function MovieMetadataForm({ initialData, onSuccess, onCancel }: MovieMet
                   disabled={isPending || !title.trim()}
                   className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
                 >
-                  {isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-2" />
-                  )}
+                  {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   {isEditing ? 'Save Changes' : 'Create Movie'}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onCancel}
-                  disabled={isPending}
-                >
+                <Button type="button" variant="outline" onClick={onCancel} disabled={isPending}>
                   Cancel
                 </Button>
               </div>

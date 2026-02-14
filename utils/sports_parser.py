@@ -48,133 +48,356 @@ SPORTS_CATEGORY_KEYWORDS: dict[str, list[str]] = {
     # Must come before american_football since teams like Panthers, Oilers overlap
     "hockey": [
         # League identifiers - MUST BE FIRST
-        "nhl", "stanley cup", "khl", "iihf",
+        "nhl",
+        "stanley cup",
+        "khl",
+        "iihf",
         # Teams (only check after league is confirmed by title structure)
-        "bruins", "maple leafs", "canadiens", "blackhawks",
-        "penguins", "red wings", "flyers", "flames", "canucks",
-        "avalanche", "lightning", "golden knights", "kraken",
-        "senators", "sabres", "devils", "islanders", "capitals",
-        "blue jackets", "coyotes",
+        "bruins",
+        "maple leafs",
+        "canadiens",
+        "blackhawks",
+        "penguins",
+        "red wings",
+        "flyers",
+        "flames",
+        "canucks",
+        "avalanche",
+        "lightning",
+        "golden knights",
+        "kraken",
+        "senators",
+        "sabres",
+        "devils",
+        "islanders",
+        "capitals",
+        "blue jackets",
+        "coyotes",
     ],
     # Rugby - "nrl", "super rugby", "six nations" are unique
     # Must come before american_football since "chiefs", "panthers" overlap
     "rugby": [
         # League identifiers - MUST BE FIRST
-        "rugby", "six nations", "rugby world cup", "super rugby",
-        "premiership rugby", "top 14", "pro14", "nrl",
+        "rugby",
+        "six nations",
+        "rugby world cup",
+        "super rugby",
+        "premiership rugby",
+        "top 14",
+        "pro14",
+        "nrl",
         "australian football",
         # Teams
-        "all blacks", "springboks", "wallabies", "england rugby",
-        "ireland rugby", "wales rugby", "scotland rugby", "france rugby",
+        "all blacks",
+        "springboks",
+        "wallabies",
+        "england rugby",
+        "ireland rugby",
+        "wales rugby",
+        "scotland rugby",
+        "france rugby",
         "crusaders",
     ],
     # Baseball - "mlb", "npb", "kbo" are unique
     # Must come before american_football since "giants", "cardinals", "rangers" overlap
     "baseball": [
         # League identifiers - MUST BE FIRST
-        "mlb", "npb", "kbo", "japan series",
+        "mlb",
+        "npb",
+        "kbo",
+        "japan series",
         # Teams (mostly unique to baseball)
         # NOTE: "athletics" removed - too ambiguous with track & field
         # Oakland A's should be detected via "mlb" or "oakland athletics"
-        "yankees", "dodgers", "red sox", "cubs", "astros",
-        "braves", "mets", "phillies", "padres", "mariners", "blue jays",
-        "twins", "white sox", "guardians", "orioles", "tigers",
-        "royals", "angels", "rockies", "marlins",
-        "brewers", "pirates", "diamondbacks", "nationals",
+        "yankees",
+        "dodgers",
+        "red sox",
+        "cubs",
+        "astros",
+        "braves",
+        "mets",
+        "phillies",
+        "padres",
+        "mariners",
+        "blue jays",
+        "twins",
+        "white sox",
+        "guardians",
+        "orioles",
+        "tigers",
+        "royals",
+        "angels",
+        "rockies",
+        "marlins",
+        "brewers",
+        "pirates",
+        "diamondbacks",
+        "nationals",
         "oakland athletics",  # Full team name to avoid ambiguity
     ],
     # MotoGP before formula_racing (both have "gp" keywords)
     "motogp_racing": [
         # Series - most specific keywords first
-        "motogp", "moto gp", "moto2", "moto3", "superbike", "wsbk", "bsb",
-        "worldsbk", "isle of man",
+        "motogp",
+        "moto gp",
+        "moto2",
+        "moto3",
+        "superbike",
+        "wsbk",
+        "bsb",
+        "worldsbk",
+        "isle of man",
         # Riders
-        "marquez", "bagnaia", "quartararo",
+        "marquez",
+        "bagnaia",
+        "quartararo",
         # Manufacturers (unique to MotoGP context)
-        "ducati", "ktm", "aprilia",
+        "ducati",
+        "ktm",
+        "aprilia",
     ],
     # Fighting - UFC, WWE, Boxing, etc.
     # Removed generic "heavyweight" etc. that could match other sports
     "fighting": [
         # Organizations - MUST BE FIRST
-        "ufc", "mma", "boxing", "wwe", "aew", "bellator", "one championship",
-        "pfl", "cage warriors", "glory", "pride fc", "rizin", "pwg",
+        "ufc",
+        "mma",
+        "boxing",
+        "wwe",
+        "aew",
+        "bellator",
+        "one championship",
+        "pfl",
+        "cage warriors",
+        "glory",
+        "pride fc",
+        "rizin",
+        "pwg",
         "pro wrestling",
         # Sports
-        "kickboxing", "muay thai", "k-1",
+        "kickboxing",
+        "muay thai",
+        "k-1",
         # WWE shows (unique identifiers)
-        "monday night raw", "smackdown", "wrestlemania", "summerslam",
-        "royal rumble", "nxt",
+        "monday night raw",
+        "smackdown",
+        "wrestlemania",
+        "summerslam",
+        "royal rumble",
+        "nxt",
         # Events (unique to combat sports)
-        "title fight", "championship fight",
+        "title fight",
+        "championship fight",
         # Fighters (well-known names)
-        "canelo", "fury", "joshua", "wilder",
-        "mcgregor", "khabib", "adesanya", "ngannou",
+        "canelo",
+        "fury",
+        "joshua",
+        "wilder",
+        "mcgregor",
+        "khabib",
+        "adesanya",
+        "ngannou",
     ],
     # American Football - NFL
     "american_football": [
         # League identifiers - MUST BE FIRST
-        "nfl", "super bowl", "nfc championship", "afc championship",
-        "college football", "ncaa football",
+        "nfl",
+        "super bowl",
+        "nfc championship",
+        "afc championship",
+        "college football",
+        "ncaa football",
         # Teams (checked only after league context)
-        "patriots", "cowboys", "packers", "49ers", "seahawks",
-        "ravens", "bills", "eagles", "broncos", "steelers", "raiders",
-        "chargers", "dolphins", "jets", "bears", "lions",
-        "vikings", "saints", "falcons", "buccaneers",
-        "rams", "titans", "colts", "texans", "jaguars",
-        "bengals", "browns", "commanders",
+        "patriots",
+        "cowboys",
+        "packers",
+        "49ers",
+        "seahawks",
+        "ravens",
+        "bills",
+        "eagles",
+        "broncos",
+        "steelers",
+        "raiders",
+        "chargers",
+        "dolphins",
+        "jets",
+        "bears",
+        "lions",
+        "vikings",
+        "saints",
+        "falcons",
+        "buccaneers",
+        "rams",
+        "titans",
+        "colts",
+        "texans",
+        "jaguars",
+        "bengals",
+        "browns",
+        "commanders",
     ],
     # Basketball - NBA, WNBA
     "basketball": [
         # League identifiers - MUST BE FIRST
-        "nba", "wnba", "ncaa basketball", "march madness", "euroleague", "fiba",
+        "nba",
+        "wnba",
+        "ncaa basketball",
+        "march madness",
+        "euroleague",
+        "fiba",
         # Teams (mostly unique to basketball)
-        "lakers", "celtics", "warriors", "nets", "knicks", "bulls", "heat",
-        "bucks", "suns", "clippers", "mavericks", "76ers", "nuggets",
-        "grizzlies", "cavaliers", "raptors", "spurs", "jazz",
-        "pelicans", "blazers", "timberwolves", "thunder",
-        "pistons", "hornets", "pacers", "magic", "wizards",
+        "lakers",
+        "celtics",
+        "warriors",
+        "nets",
+        "knicks",
+        "bulls",
+        "heat",
+        "bucks",
+        "suns",
+        "clippers",
+        "mavericks",
+        "76ers",
+        "nuggets",
+        "grizzlies",
+        "cavaliers",
+        "raptors",
+        "spurs",
+        "jazz",
+        "pelicans",
+        "blazers",
+        "timberwolves",
+        "thunder",
+        "pistons",
+        "hornets",
+        "pacers",
+        "magic",
+        "wizards",
     ],
     # Formula Racing - F1, F2, F3, IndyCar, NASCAR
     "formula_racing": [
         # Series identifiers - MUST BE FIRST
-        "formula 1", "formula1", "f1 ", " f1", "formula 2", "formula 3",
-        "f2 ", "f3 ", "indycar", "indy 500", "nascar", "wec", "le mans",
+        "formula 1",
+        "formula1",
+        "f1 ",
+        " f1",
+        "formula 2",
+        "formula 3",
+        "f2 ",
+        "f3 ",
+        "indycar",
+        "indy 500",
+        "nascar",
+        "wec",
+        "le mans",
         # Events
-        "grand prix", "monaco", "silverstone", "spa",
-        "monza", "suzuka", "interlagos", "daytona",
+        "grand prix",
+        "monaco",
+        "silverstone",
+        "spa",
+        "monza",
+        "suzuka",
+        "interlagos",
+        "daytona",
         # Teams
-        "ferrari", "mercedes", "red bull racing", "mclaren", "alpine",
-        "aston martin", "williams", "haas", "alfa romeo", "alphatauri",
+        "ferrari",
+        "mercedes",
+        "red bull racing",
+        "mclaren",
+        "alpine",
+        "aston martin",
+        "williams",
+        "haas",
+        "alfa romeo",
+        "alphatauri",
         # Drivers
-        "verstappen", "hamilton", "leclerc", "sainz", "norris", "perez",
+        "verstappen",
+        "hamilton",
+        "leclerc",
+        "sainz",
+        "norris",
+        "perez",
     ],
     # Football/soccer last since it has generic keywords like "fc"
     "football": [
         # League identifiers - MUST BE FIRST
-        "fifa", "uefa", "premier league", "la liga", "bundesliga", "serie a",
-        "ligue 1", "champions league", "europa league", "world cup", "euro 20",
-        "epl", "efl", "copa america", "copa libertadores", "copa sudamericana",
-        "concacaf", "mls", "eredivisie", "scottish premier", "primeira liga",
+        "fifa",
+        "uefa",
+        "premier league",
+        "la liga",
+        "bundesliga",
+        "serie a",
+        "ligue 1",
+        "champions league",
+        "europa league",
+        "world cup",
+        "euro 20",
+        "epl",
+        "efl",
+        "copa america",
+        "copa libertadores",
+        "copa sudamericana",
+        "concacaf",
+        "mls",
+        "eredivisie",
+        "scottish premier",
+        "primeira liga",
         # Generic
-        "soccer", "fc ", " fc",
+        "soccer",
+        "fc ",
+        " fc",
         # Top clubs
-        "manchester", "liverpool", "chelsea", "arsenal", "tottenham",
-        "barcelona", "real madrid", "juventus", "psg", "bayern",
-        "inter milan", "ac milan", "dortmund", "ajax",
+        "manchester",
+        "liverpool",
+        "chelsea",
+        "arsenal",
+        "tottenham",
+        "barcelona",
+        "real madrid",
+        "juventus",
+        "psg",
+        "bayern",
+        "inter milan",
+        "ac milan",
+        "dortmund",
+        "ajax",
     ],
 }
 
 # General sports keywords for fallback detection
 # NOTE: Avoid overly generic words like "game" that cause false positives
 GENERAL_SPORTS_KEYWORDS: list[str] = [
-    "sport", "sports", "match", "vs", "versus", "highlights",
-    "replay", "tournament", "championship", "espn",
-    "sky sports", "bt sport", "bein", "fox sports", "nbc sports",
-    "match of the day", "motd",
+    "sport",
+    "sports",
+    "match",
+    "vs",
+    "versus",
+    "highlights",
+    "replay",
+    "tournament",
+    "championship",
+    "espn",
+    "sky sports",
+    "bt sport",
+    "bein",
+    "fox sports",
+    "nbc sports",
+    "match of the day",
+    "motd",
     # Individual sports (not categorized separately)
-    "golf", "tennis", "cricket", "cycling", "swimming", "athletics",
-    "olympics", "marathon", "triathlon", "snooker", "darts", "bowling",
+    "golf",
+    "tennis",
+    "cricket",
+    "cycling",
+    "swimming",
+    "athletics",
+    "olympics",
+    "marathon",
+    "triathlon",
+    "snooker",
+    "darts",
+    "bowling",
 ]
 
 # Resolution mapping from various formats to standardized values
@@ -194,48 +417,102 @@ RESOLUTION_MAP: dict[str, str] = {
 
 # Quality indicators to strip from titles
 QUALITY_INDICATORS: list[str] = [
-    "2160p", "1080p", "720p", "480p", "360p", "240p", "4K", "UHD",
-    "HDTV", "WEB-DL", "WEBDL", "WEBRip", "BluRay", "BDRip", "HDRip",
-    "DVDRip", "PDTV", "SDTV", "WEB", "Sportnet360",
+    "2160p",
+    "1080p",
+    "720p",
+    "480p",
+    "360p",
+    "240p",
+    "4K",
+    "UHD",
+    "HDTV",
+    "WEB-DL",
+    "WEBDL",
+    "WEBRip",
+    "BluRay",
+    "BDRip",
+    "HDRip",
+    "DVDRip",
+    "PDTV",
+    "SDTV",
+    "WEB",
+    "Sportnet360",
 ]
 
 # Codec indicators to strip from titles
 CODEC_INDICATORS: list[str] = [
-    "H.264", "H264", "H.265", "H265", "HEVC", "x264", "x265",
-    "AVC", "XviD", "DivX", "VP9", "AV1",
+    "H.264",
+    "H264",
+    "H.265",
+    "H265",
+    "HEVC",
+    "x264",
+    "x265",
+    "AVC",
+    "XviD",
+    "DivX",
+    "VP9",
+    "AV1",
 ]
 
 # Audio indicators to strip from titles
 AUDIO_INDICATORS: list[str] = [
-    "AAC", "AAC2.0", "AC3", "DTS", "DD5.1", "DD2.0", "FLAC", "MP3",
-    "EAC3", "TrueHD", "Atmos", "Multi",
+    "AAC",
+    "AAC2.0",
+    "AC3",
+    "DTS",
+    "DD5.1",
+    "DD2.0",
+    "FLAC",
+    "MP3",
+    "EAC3",
+    "TrueHD",
+    "Atmos",
+    "Multi",
 ]
 
 # Release flags to strip from titles
 RELEASE_FLAGS: list[str] = [
-    "PROPER", "REPACK", "INTERNAL", "LIMITED", "UNRATED", "EXTENDED",
-    "RERIP", "REAL", "READNFO", "DIRFIX", "NFOFIX",
+    "PROPER",
+    "REPACK",
+    "INTERNAL",
+    "LIMITED",
+    "UNRATED",
+    "EXTENDED",
+    "RERIP",
+    "REAL",
+    "READNFO",
+    "DIRFIX",
+    "NFOFIX",
 ]
 
 # Common sports release groups
 SPORTS_RELEASE_GROUPS: list[str] = [
-    "DARKSPORT", "SPORT720", "SPORT480", "VERUM", "HDCTV", "SKYSPORT",
-    "F1CARRERAS", "EGORTECH", "SMCGILL1969",
+    "DARKSPORT",
+    "SPORT720",
+    "SPORT480",
+    "VERUM",
+    "HDCTV",
+    "SKYSPORT",
+    "F1CARRERAS",
+    "EGORTECH",
+    "SMCGILL1969",
 ]
 
 # Date format patterns
 DATE_PATTERNS: list[tuple[str, str]] = [
     (r"\d{4}\.\d{2}\.\d{2}", "%Y.%m.%d"),  # 2026.02.08
-    (r"\d{4}-\d{2}-\d{2}", "%Y-%m-%d"),    # 2026-02-08
+    (r"\d{4}-\d{2}-\d{2}", "%Y-%m-%d"),  # 2026-02-08
     (r"\d{2}\.\d{2}\.\d{4}", "%d.%m.%Y"),  # 08.02.2026
-    (r"\d{2}-\d{2}-\d{4}", "%d-%m-%Y"),    # 08-02-2026
-    (r"\d{4}_\d{2}_\d{2}", "%Y_%m_%d"),    # 2026_02_08
+    (r"\d{2}-\d{2}-\d{4}", "%d-%m-%Y"),  # 08-02-2026
+    (r"\d{4}_\d{2}_\d{2}", "%Y_%m_%d"),  # 2026_02_08
 ]
 
 
 # =============================================================================
 # Data Classes
 # =============================================================================
+
 
 @dataclass
 class SportsParsedTitle:
@@ -292,6 +569,7 @@ class SportsParsedTitle:
 # =============================================================================
 # Core Functions
 # =============================================================================
+
 
 def detect_sports_category(title: str) -> str | None:
     """Detect sports category from title using keyword matching.
@@ -411,12 +689,7 @@ def clean_sports_event_title(raw_name: str) -> str:
     )
 
     # Build pattern for quality/codec/audio/release indicators
-    all_indicators = (
-        QUALITY_INDICATORS
-        + CODEC_INDICATORS
-        + AUDIO_INDICATORS
-        + RELEASE_FLAGS
-    )
+    all_indicators = QUALITY_INDICATORS + CODEC_INDICATORS + AUDIO_INDICATORS + RELEASE_FLAGS
 
     # Remove quality/codec indicators
     for indicator in all_indicators:
@@ -677,6 +950,7 @@ def parse_sports_title(
 # Helper Functions
 # =============================================================================
 
+
 def _extract_tech_spec(title: str, indicators: list[str]) -> str | None:
     """Extract first matching technical spec from title."""
     title_upper = title.upper()
@@ -756,6 +1030,7 @@ def _build_event_name(
 # =============================================================================
 # Sport-Specific Parsers
 # =============================================================================
+
 
 def parse_f1_title(title: str) -> SportsParsedTitle:
     """Parse Formula 1/2/3 title with racing-specific extraction.

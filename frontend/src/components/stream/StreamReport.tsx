@@ -15,30 +15,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { 
-  Flag,
-  Loader2,
-  AlertTriangle,
-  Wrench,
-  Languages,
-  MoreHorizontal,
-  CheckCircle2,
-  Users,
-  Ban,
-} from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Flag, Loader2, AlertTriangle, Wrench, Languages, MoreHorizontal, CheckCircle2, Users, Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
 import { streamSuggestionsApi } from '@/lib/api/stream-suggestions'
@@ -51,39 +30,39 @@ interface StreamReportProps {
   currentLanguage?: string
   className?: string
   variant?: 'button' | 'icon'
-  trigger?: React.ReactNode  // Custom trigger element
+  trigger?: React.ReactNode // Custom trigger element
 }
 
 const suggestionTypes: { value: StreamSuggestionType; label: string; icon: React.ReactNode; description: string }[] = [
-  { 
-    value: 'report_broken', 
-    label: 'Report Broken', 
+  {
+    value: 'report_broken',
+    label: 'Report Broken',
     icon: <AlertTriangle className="h-4 w-4" />,
-    description: 'Stream is not working or cannot be played'
+    description: 'Stream is not working or cannot be played',
   },
-  { 
-    value: 'field_correction', 
-    label: 'Quality/Info Correction', 
+  {
+    value: 'field_correction',
+    label: 'Quality/Info Correction',
     icon: <Wrench className="h-4 w-4" />,
-    description: 'Incorrect resolution, codec, quality, or audio label'
+    description: 'Incorrect resolution, codec, quality, or audio label',
   },
-  { 
-    value: 'language_add', 
-    label: 'Add Language', 
+  {
+    value: 'language_add',
+    label: 'Add Language',
     icon: <Languages className="h-4 w-4" />,
-    description: 'Add a missing language to this stream'
+    description: 'Add a missing language to this stream',
   },
-  { 
-    value: 'language_remove', 
-    label: 'Remove Language', 
+  {
+    value: 'language_remove',
+    label: 'Remove Language',
     icon: <Languages className="h-4 w-4" />,
-    description: 'Remove an incorrect language from this stream'
+    description: 'Remove an incorrect language from this stream',
   },
-  { 
-    value: 'other', 
-    label: 'Other Issue', 
+  {
+    value: 'other',
+    label: 'Other Issue',
     icon: <MoreHorizontal className="h-4 w-4" />,
-    description: 'Other problems or suggestions'
+    description: 'Other problems or suggestions',
   },
 ]
 
@@ -97,7 +76,7 @@ export function StreamReport({
   trigger,
 }: StreamReportProps) {
   const createSuggestion = useCreateStreamSuggestion()
-  
+
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedType, setSelectedType] = useState<StreamSuggestionType>('report_broken')
   const [currentValue, setCurrentValue] = useState('')
@@ -119,7 +98,7 @@ export function StreamReport({
     }
   }, [dialogOpen, selectedType, refetchBrokenStatus])
 
-  const selectedTypeInfo = suggestionTypes.find(t => t.value === selectedType)
+  const selectedTypeInfo = suggestionTypes.find((t) => t.value === selectedType)
 
   const handleTypeChange = (value: StreamSuggestionType) => {
     setSelectedType(value)
@@ -157,24 +136,17 @@ export function StreamReport({
   const needsSuggestedValue = selectedType === 'field_correction' || selectedType === 'language_add'
 
   // Default trigger based on variant
-  const defaultTrigger = variant === 'icon' ? (
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className={cn('h-8 w-8', className)}
-                >
-                  <Flag className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className={cn('gap-1.5', className)}
-                >
-                  <Flag className="h-4 w-4" />
-                  Report Issue
-                </Button>
-  )
+  const defaultTrigger =
+    variant === 'icon' ? (
+      <Button variant="ghost" size="icon" className={cn('h-8 w-8', className)}>
+        <Flag className="h-4 w-4" />
+      </Button>
+    ) : (
+      <Button variant="outline" size="sm" className={cn('gap-1.5', className)}>
+        <Flag className="h-4 w-4" />
+        Report Issue
+      </Button>
+    )
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -186,15 +158,13 @@ export function StreamReport({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <DialogTrigger asChild>
-                {defaultTrigger}
-            </DialogTrigger>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Report an issue with this stream</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+              <DialogTrigger asChild>{defaultTrigger}</DialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Report an issue with this stream</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
 
       <DialogContent className="sm:max-w-[500px]">
@@ -202,10 +172,13 @@ export function StreamReport({
           <DialogTitle>Report Stream Issue</DialogTitle>
           <DialogDescription>
             {streamName ? (
-              <>Report an issue with <span className="font-medium">{streamName}</span></>
+              <>
+                Report an issue with <span className="font-medium">{streamName}</span>
+              </>
             ) : (
               'Report an issue with this stream'
-            )}. Your report will be reviewed by moderators.
+            )}
+            . Your report will be reviewed by moderators.
           </DialogDescription>
         </DialogHeader>
 
@@ -213,10 +186,7 @@ export function StreamReport({
           {/* Issue type selection */}
           <div className="space-y-2">
             <Label>Issue Type</Label>
-            <Select
-              value={selectedType}
-              onValueChange={(v) => handleTypeChange(v as StreamSuggestionType)}
-            >
+            <Select value={selectedType} onValueChange={(v) => handleTypeChange(v as StreamSuggestionType)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select issue type" />
               </SelectTrigger>
@@ -231,20 +201,18 @@ export function StreamReport({
                 ))}
               </SelectContent>
             </Select>
-            {selectedTypeInfo && (
-              <p className="text-xs text-muted-foreground">{selectedTypeInfo.description}</p>
-            )}
+            {selectedTypeInfo && <p className="text-xs text-muted-foreground">{selectedTypeInfo.description}</p>}
           </div>
 
           {/* Broken report status indicator */}
           {selectedType === 'report_broken' && brokenStatus && (
-            <Alert variant={brokenStatus.is_blocked ? 'destructive' : brokenStatus.user_has_reported ? 'default' : undefined}>
+            <Alert
+              variant={brokenStatus.is_blocked ? 'destructive' : brokenStatus.user_has_reported ? 'default' : undefined}
+            >
               {brokenStatus.is_blocked ? (
                 <>
                   <Ban className="h-4 w-4" />
-                  <AlertDescription>
-                    This stream is already blocked due to broken reports.
-                  </AlertDescription>
+                  <AlertDescription>This stream is already blocked due to broken reports.</AlertDescription>
                 </>
               ) : brokenStatus.user_has_reported ? (
                 <>
@@ -254,15 +222,15 @@ export function StreamReport({
                       <p>You have already reported this stream as broken.</p>
                       <div className="flex items-center gap-2 text-sm">
                         <Users className="h-3.5 w-3.5" />
-                        <span>{brokenStatus.report_count} of {brokenStatus.threshold} reports</span>
+                        <span>
+                          {brokenStatus.report_count} of {brokenStatus.threshold} reports
+                        </span>
                       </div>
-                      <Progress 
-                        value={(brokenStatus.report_count / brokenStatus.threshold) * 100} 
-                        className="h-2"
-                      />
+                      <Progress value={(brokenStatus.report_count / brokenStatus.threshold) * 100} className="h-2" />
                       {brokenStatus.reports_needed > 0 && (
                         <p className="text-xs text-muted-foreground">
-                          {brokenStatus.reports_needed} more report{brokenStatus.reports_needed !== 1 ? 's' : ''} needed to block this stream
+                          {brokenStatus.reports_needed} more report{brokenStatus.reports_needed !== 1 ? 's' : ''} needed
+                          to block this stream
                         </p>
                       )}
                     </div>
@@ -275,15 +243,15 @@ export function StreamReport({
                     <div className="space-y-2">
                       <p>Broken reports require consensus from multiple users.</p>
                       <div className="flex items-center gap-2 text-sm">
-                        <span>{brokenStatus.report_count} of {brokenStatus.threshold} reports received</span>
+                        <span>
+                          {brokenStatus.report_count} of {brokenStatus.threshold} reports received
+                        </span>
                       </div>
-                      <Progress 
-                        value={(brokenStatus.report_count / brokenStatus.threshold) * 100} 
-                        className="h-2"
-                      />
+                      <Progress value={(brokenStatus.report_count / brokenStatus.threshold) * 100} className="h-2" />
                       {brokenStatus.reports_needed > 0 && (
                         <p className="text-xs text-muted-foreground">
-                          {brokenStatus.reports_needed} more report{brokenStatus.reports_needed !== 1 ? 's' : ''} needed to block this stream
+                          {brokenStatus.reports_needed} more report{brokenStatus.reports_needed !== 1 ? 's' : ''} needed
+                          to block this stream
                         </p>
                       )}
                     </div>
@@ -301,11 +269,7 @@ export function StreamReport({
                 id="current"
                 value={currentValue}
                 onChange={(e) => setCurrentValue(e.target.value)}
-                placeholder={
-                  selectedType === 'field_correction' 
-                    ? 'e.g., 720p, H.264' 
-                    : 'e.g., English'
-                }
+                placeholder={selectedType === 'field_correction' ? 'e.g., 720p, H.264' : 'e.g., English'}
               />
             </div>
           )}
@@ -318,11 +282,7 @@ export function StreamReport({
                 id="suggested"
                 value={suggestedValue}
                 onChange={(e) => setSuggestedValue(e.target.value)}
-                placeholder={
-                  selectedType === 'field_correction' 
-                    ? 'e.g., 1080p, HEVC' 
-                    : 'e.g., Spanish'
-                }
+                placeholder={selectedType === 'field_correction' ? 'e.g., 1080p, HEVC' : 'e.g., Spanish'}
               />
             </div>
           )}
@@ -347,16 +307,13 @@ export function StreamReport({
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setDialogOpen(false)}
-          >
+          <Button variant="outline" onClick={() => setDialogOpen(false)}>
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={
-              createSuggestion.isPending || 
+              createSuggestion.isPending ||
               (needsSuggestedValue && !suggestedValue.trim()) ||
               (selectedType === 'report_broken' && brokenStatus?.user_has_reported) ||
               (selectedType === 'report_broken' && brokenStatus?.is_blocked)
@@ -380,4 +337,3 @@ export function StreamReport({
     </Dialog>
   )
 }
-

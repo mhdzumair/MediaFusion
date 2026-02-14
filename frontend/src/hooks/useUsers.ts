@@ -1,10 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
-import { 
-  usersApi, 
-  type UserListParams, 
-  type UserUpdateRequest,
-  type RoleUpdateRequest,
-} from '@/lib/api'
+import { usersApi, type UserListParams, type UserUpdateRequest, type RoleUpdateRequest } from '@/lib/api'
 
 const USERS_QUERY_KEY = ['users']
 
@@ -19,8 +14,7 @@ export function useInfiniteUsers(params: Omit<UserListParams, 'page'> = {}) {
   return useInfiniteQuery({
     queryKey: [...USERS_QUERY_KEY, 'infinite', params],
     queryFn: ({ pageParam = 1 }) => usersApi.list({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => 
-      lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
+    getNextPageParam: (lastPage) => (lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined),
     initialPageParam: 1,
   })
 }
@@ -35,10 +29,9 @@ export function useUser(userId: string | undefined) {
 
 export function useUpdateUser() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
-    mutationFn: ({ userId, data }: { userId: string; data: UserUpdateRequest }) =>
-      usersApi.update(userId, data),
+    mutationFn: ({ userId, data }: { userId: string; data: UserUpdateRequest }) => usersApi.update(userId, data),
     onSuccess: (_, { userId }) => {
       queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY })
       queryClient.invalidateQueries({ queryKey: [...USERS_QUERY_KEY, userId] })
@@ -48,10 +41,9 @@ export function useUpdateUser() {
 
 export function useUpdateUserRole() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
-    mutationFn: ({ userId, data }: { userId: string; data: RoleUpdateRequest }) =>
-      usersApi.updateRole(userId, data),
+    mutationFn: ({ userId, data }: { userId: string; data: RoleUpdateRequest }) => usersApi.updateRole(userId, data),
     onSuccess: (_, { userId }) => {
       queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY })
       queryClient.invalidateQueries({ queryKey: [...USERS_QUERY_KEY, userId] })
@@ -61,7 +53,7 @@ export function useUpdateUserRole() {
 
 export function useDeleteUser() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (userId: string) => usersApi.delete(userId),
     onSuccess: () => {
@@ -69,4 +61,3 @@ export function useDeleteUser() {
     },
   })
 }
-

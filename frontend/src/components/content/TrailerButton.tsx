@@ -1,17 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Play, ChevronDown, Youtube, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TrailerInfo } from '@/lib/api/catalog'
@@ -30,7 +20,7 @@ export function TrailerButton({ trailers, title, className }: TrailerButtonProps
     return null
   }
 
-  const primaryTrailer = trailers.find(t => t.type === 'trailer') || trailers[0]
+  const primaryTrailer = trailers.find((t) => t.type === 'trailer') || trailers[0]
 
   const handlePlayTrailer = (trailer: TrailerInfo) => {
     setSelectedTrailer(trailer)
@@ -44,7 +34,7 @@ export function TrailerButton({ trailers, title, className }: TrailerButtonProps
           variant="default"
           className={cn(
             'rounded-xl bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white shadow-lg',
-            className
+            className,
           )}
           onClick={() => handlePlayTrailer(primaryTrailer)}
         >
@@ -52,12 +42,7 @@ export function TrailerButton({ trailers, title, className }: TrailerButtonProps
           Watch Trailer
         </Button>
 
-        <TrailerDialog
-          trailer={selectedTrailer}
-          title={title}
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-        />
+        <TrailerDialog trailer={selectedTrailer} title={title} open={dialogOpen} onOpenChange={setDialogOpen} />
       </>
     )
   }
@@ -70,7 +55,7 @@ export function TrailerButton({ trailers, title, className }: TrailerButtonProps
             variant="default"
             className={cn(
               'rounded-xl bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white shadow-lg',
-              className
+              className,
             )}
           >
             <Play className="mr-2 h-4 w-4" />
@@ -90,21 +75,14 @@ export function TrailerButton({ trailers, title, className }: TrailerButtonProps
                 <span className="font-medium">
                   {trailer.name || `${trailer.type.charAt(0).toUpperCase() + trailer.type.slice(1)}`}
                 </span>
-                <span className="text-xs text-muted-foreground ml-2 capitalize">
-                  ({trailer.type})
-                </span>
+                <span className="text-xs text-muted-foreground ml-2 capitalize">({trailer.type})</span>
               </div>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <TrailerDialog
-        trailer={selectedTrailer}
-        title={title}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
+      <TrailerDialog trailer={selectedTrailer} title={title} open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   )
 }
@@ -127,9 +105,7 @@ function TrailerDialog({ trailer, title, open, onOpenChange }: TrailerDialogProp
       <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden">
         <DialogHeader className="p-4 pb-0">
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-lg font-semibold">
-              {trailer.name || `${title} - Trailer`}
-            </DialogTitle>
+            <DialogTitle className="text-lg font-semibold">{trailer.name || `${title} - Trailer`}</DialogTitle>
             <a
               href={getYouTubeUrl(trailer.key)}
               target="_blank"
@@ -151,9 +127,7 @@ function TrailerDialog({ trailer, title, open, onOpenChange }: TrailerDialogProp
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-muted-foreground">
-                Unsupported video platform: {trailer.site}
-              </p>
+              <p className="text-muted-foreground">Unsupported video platform: {trailer.site}</p>
             </div>
           )}
         </div>
@@ -161,4 +135,3 @@ function TrailerDialog({ trailer, title, open, onOpenChange }: TrailerDialogProp
     </Dialog>
   )
 }
-

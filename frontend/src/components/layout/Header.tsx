@@ -25,11 +25,11 @@ interface HeaderProps {
 export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
   const { user, logout, isAuthenticated } = useAuth()
   const { instanceInfo } = useInstance()
-  
+
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
   const brandingSvg = instanceInfo?.branding_svg || null
 
-  const getRoleBadgeVariant = (role: string): "gold" | "default" | "secondary" | "outline" => {
+  const getRoleBadgeVariant = (role: string): 'gold' | 'default' | 'secondary' | 'outline' => {
     switch (role) {
       case 'admin':
         return 'gold'
@@ -57,15 +57,10 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
     <header className="fixed top-0 left-0 right-0 z-40 h-14">
       {/* Background with subtle border */}
       <div className="absolute inset-0 bg-background/95 backdrop-blur-md border-b border-border/40" />
-      
+
       <div className="relative flex h-full items-center px-4 gap-4">
         {showMenuButton && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={onMenuClick}
-          >
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={onMenuClick}>
             <Menu className="h-5 w-5" />
             <span className="sr-only">Toggle menu</span>
           </Button>
@@ -78,11 +73,7 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
           {brandingSvg && (
             <>
               <span className="text-muted-foreground/50 text-sm hidden sm:inline">×</span>
-              <img 
-                src={brandingSvg} 
-                alt="Partner Logo"
-                className="h-6 w-auto hidden sm:inline"
-              />
+              <img src={brandingSvg} alt="Partner Logo" className="h-6 w-auto hidden sm:inline" />
             </>
           )}
         </Link>
@@ -97,10 +88,7 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
           {isAuthenticated && user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  className="flex items-center gap-2 px-2 hover:bg-accent"
-                >
+                <Button variant="ghost" className="flex items-center gap-2 px-2 hover:bg-accent">
                   <Avatar className="h-8 w-8 border border-border">
                     <AvatarFallback className="text-xs bg-muted text-foreground font-medium">
                       {getUserInitials()}
@@ -110,10 +98,7 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
                     <span className="text-sm font-medium leading-none">
                       {user.username || user.email.split('@')[0]}
                     </span>
-                    <Badge
-                      variant={getRoleBadgeVariant(user.role)}
-                      className="mt-1 text-[10px] px-1.5 py-0 h-4"
-                    >
+                    <Badge variant={getRoleBadgeVariant(user.role)} className="mt-1 text-[10px] px-1.5 py-0 h-4">
                       {user.role}
                     </Badge>
                   </div>
@@ -123,9 +108,7 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">
-                      {user.username || user.email.split('@')[0]}
-                    </p>
+                    <p className="text-sm font-medium">{user.username || user.email.split('@')[0]}</p>
                     <p className="text-xs text-muted-foreground">{user.email}</p>
                   </div>
                 </DropdownMenuLabel>
@@ -145,7 +128,7 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => logout()}
-                  className={cn("cursor-pointer text-destructive focus:text-destructive")}
+                  className={cn('cursor-pointer text-destructive focus:text-destructive')}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
                   Log out

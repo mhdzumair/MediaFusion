@@ -575,8 +575,12 @@ class TelegramContentBot:
                 message_id=payload.get("message_id"),
                 original_message_id=payload.get("original_message_id"),
                 custom_poster_url=payload.get("custom_poster_url"),
-                created_at=datetime.fromisoformat(payload.get("created_at")) if payload.get("created_at") else datetime.now(),
-                updated_at=datetime.fromisoformat(payload.get("updated_at")) if payload.get("updated_at") else datetime.now(),
+                created_at=datetime.fromisoformat(payload.get("created_at"))
+                if payload.get("created_at")
+                else datetime.now(),
+                updated_at=datetime.fromisoformat(payload.get("updated_at"))
+                if payload.get("updated_at")
+                else datetime.now(),
             )
         except Exception as e:
             logger.warning(f"Failed to deserialize conversation state: {e}")
@@ -1011,9 +1015,7 @@ class TelegramContentBot:
 
         return None
 
-    async def _add_custom_poster(
-        self, session, media_id: int, poster_url: str
-    ) -> None:
+    async def _add_custom_poster(self, session, media_id: int, poster_url: str) -> None:
         """Add a custom poster image provided by the user.
 
         Args:
@@ -1022,9 +1024,7 @@ class TelegramContentBot:
             poster_url: URL of the poster image
         """
         # Get or create the "mediafusion" provider for user-contributed images
-        provider = await session.exec(
-            select(MetadataProvider).where(MetadataProvider.name == "mediafusion")
-        )
+        provider = await session.exec(select(MetadataProvider).where(MetadataProvider.name == "mediafusion"))
         provider = provider.first()
         if not provider:
             provider = MetadataProvider(name="mediafusion", display_name="MediaFusion")
@@ -1073,9 +1073,7 @@ class TelegramContentBot:
             artifacts = SPORTS_ARTIFACTS.get("Sports", {})
 
         # Get or create the "mediafusion" provider for user-contributed images
-        provider = await session.exec(
-            select(MetadataProvider).where(MetadataProvider.name == "mediafusion")
-        )
+        provider = await session.exec(select(MetadataProvider).where(MetadataProvider.name == "mediafusion"))
         provider = provider.first()
         if not provider:
             provider = MetadataProvider(name="mediafusion", display_name="MediaFusion")
@@ -1148,9 +1146,7 @@ class TelegramContentBot:
             elif content_type == ContentType.YOUTUBE:
                 video_id = analysis.get("video_id")
                 if video_id:
-                    existing = await session.exec(
-                        select(YouTubeStream).where(YouTubeStream.video_id == video_id)
-                    )
+                    existing = await session.exec(select(YouTubeStream).where(YouTubeStream.video_id == video_id))
                     if existing.first():
                         return True, f"YouTube video already exists (`{video_id}`)"
 
@@ -1165,9 +1161,7 @@ class TelegramContentBot:
                 nzb_url = analysis.get("nzb_url")
                 if nzb_url:
                     nzb_guid = hashlib.sha256(nzb_url.encode()).hexdigest()[:32]
-                    existing = await session.exec(
-                        select(UsenetStream).where(UsenetStream.nzb_guid == nzb_guid)
-                    )
+                    existing = await session.exec(select(UsenetStream).where(UsenetStream.nzb_guid == nzb_guid))
                     if existing.first():
                         return True, f"NZB already exists (`{nzb_guid}`)"
 
@@ -1848,9 +1842,7 @@ class TelegramContentBot:
                 f"Select a match:"
             )
         else:
-            message = (
-                f"✅ *Analysis Complete*\n\n{summary}\n\n❌ No automatic matches found.\n\nEnter an external ID manually:"
-            )
+            message = f"✅ *Analysis Complete*\n\n{summary}\n\n❌ No automatic matches found.\n\nEnter an external ID manually:"
 
         await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard})
 
@@ -1904,12 +1896,14 @@ class TelegramContentBot:
         if detected_category:
             # Show detected category with confirm button at top
             detected_label = SPORTS_CATEGORIES.get(detected_category, "Sports")
-            keyboard_rows.append([
-                {
-                    "text": f"✅ Confirm: {detected_label}",
-                    "callback_data": f"sport:{state.user_id}:{detected_category}",
-                }
-            ])
+            keyboard_rows.append(
+                [
+                    {
+                        "text": f"✅ Confirm: {detected_label}",
+                        "callback_data": f"sport:{state.user_id}:{detected_category}",
+                    }
+                ]
+            )
 
             # Add separator row with "Or select different:" label as a non-clickable display
             # Since Telegram doesn't support non-clickable buttons, we'll just list other categories
@@ -1936,15 +1930,14 @@ class TelegramContentBot:
                     row.append({"text": f"🏆 {label}", "callback_data": f"sport:{state.user_id}:{key}"})
                 keyboard_rows.append(row)
 
-            message = (
-                f"✅ *Analysis Complete*\n\n{summary}\n\n"
-                f"🏆 *Select the sport category:*"
-            )
+            message = f"✅ *Analysis Complete*\n\n{summary}\n\n🏆 *Select the sport category:*"
 
-        keyboard_rows.append([
-            {"text": "⬅️ Back", "callback_data": f"back:{state.user_id}"},
-            {"text": "❌ Cancel", "callback_data": f"cancel:{state.user_id}"},
-        ])
+        keyboard_rows.append(
+            [
+                {"text": "⬅️ Back", "callback_data": f"back:{state.user_id}"},
+                {"text": "❌ Cancel", "callback_data": f"cancel:{state.user_id}"},
+            ]
+        )
 
         await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard_rows})
         return {"success": True, "detected_category": detected_category}
@@ -1981,12 +1974,7 @@ class TelegramContentBot:
         analysis = state.analysis_result or {}
 
         # Get the raw title for sports parsing
-        raw_title = (
-            analysis.get("torrent_name")
-            or analysis.get("file_name")
-            or analysis.get("title")
-            or ""
-        )
+        raw_title = analysis.get("torrent_name") or analysis.get("file_name") or analysis.get("title") or ""
 
         # Use the sports parser to properly clean the title
         # (PTT doesn't handle sports content well)
@@ -2148,9 +2136,7 @@ class TelegramContentBot:
             selected_match[f"{provider}_id"] = pid
             # Try to fetch metadata from the provider
             try:
-                metadata = await meta_fetcher.get_metadata_from_provider(
-                    provider, pid, state.media_type or "movie"
-                )
+                metadata = await meta_fetcher.get_metadata_from_provider(provider, pid, state.media_type or "movie")
                 if metadata:
                     selected_match["title"] = metadata.get("title", external_id)
                     selected_match["year"] = metadata.get("year")
@@ -2409,9 +2395,7 @@ class TelegramContentBot:
 
         # Add clear button if there's already a custom poster
         if state.custom_poster_url:
-            keyboard.insert(
-                0, [{"text": "🗑️ Clear Custom Poster", "callback_data": f"clear_poster:{user_id}"}]
-            )
+            keyboard.insert(0, [{"text": "🗑️ Clear Custom Poster", "callback_data": f"clear_poster:{user_id}"}])
 
         await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard})
         return {"success": True}
@@ -2445,8 +2429,7 @@ class TelegramContentBot:
         if not is_valid_url:
             await self.send_message(
                 chat_id,
-                "⚠️ *Invalid Image URL*\n\n"
-                "Please send a valid image URL (jpg, png, webp) or upload an image directly.",
+                "⚠️ *Invalid Image URL*\n\nPlease send a valid image URL (jpg, png, webp) or upload an image directly.",
             )
             return {"success": False, "message": "Invalid image URL"}
 
@@ -2542,11 +2525,7 @@ class TelegramContentBot:
                     id_block = "\n".join(id_lines) if id_lines else f"  `{canonical_id}`"
                     header = f"🎬 *{title}*{year_str}\n🆔 IDs:\n{id_block}"
 
-                success_message = (
-                    f"✅ *Import Successful!*\n\n"
-                    f"{header}\n\n"
-                    f"Your content has been added to MediaFusion!"
-                )
+                success_message = f"✅ *Import Successful!*\n\n{header}\n\nYour content has been added to MediaFusion!"
 
                 if result.get("auto_approved"):
                     success_message += "\n\n✓ _Auto-approved_"
@@ -2891,9 +2870,7 @@ class TelegramContentBot:
             if external_id:
                 media = await crud.get_media_by_external_id(session, external_id)
                 if not media:
-                    media = await fetch_and_create_media_from_external(
-                        session, external_id, "movie", event_title
-                    )
+                    media = await fetch_and_create_media_from_external(session, external_id, "movie", event_title)
 
             # If no external ID or creation via external ID failed, create media directly
             # Sports VOD content is stored as movie (events type is for live content only)
@@ -2992,9 +2969,7 @@ class TelegramContentBot:
                 if not content_id:
                     return {"success": False, "error": "No AceStream content ID."}
 
-                existing = await session.exec(
-                    select(AceStreamStream).where(AceStreamStream.content_id == content_id)
-                )
+                existing = await session.exec(select(AceStreamStream).where(AceStreamStream.content_id == content_id))
                 if existing.first():
                     return {"success": False, "error": "This AceStream is already in the database."}
 
@@ -3028,7 +3003,11 @@ class TelegramContentBot:
                 }
                 await session.commit()
                 stored = await self._store_forwarded_content(content_info)
-                return {"success": stored, "auto_approved": True, "error": "Failed to store video" if not stored else None}
+                return {
+                    "success": stored,
+                    "auto_approved": True,
+                    "error": "Failed to store video" if not stored else None,
+                }
 
             elif content_type == ContentType.YOUTUBE:
                 video_id = analysis.get("video_id")

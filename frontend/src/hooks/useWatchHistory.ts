@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
-import { 
-  watchHistoryApi, 
-  type WatchHistoryListParams, 
+import {
+  watchHistoryApi,
+  type WatchHistoryListParams,
   type WatchHistoryCreateRequest,
   type WatchHistoryUpdateRequest,
   type StreamActionTrackRequest,
@@ -21,7 +21,7 @@ export function useInfiniteWatchHistory(params: Omit<WatchHistoryListParams, 'pa
   return useInfiniteQuery({
     queryKey: [...WATCH_HISTORY_QUERY_KEY, 'infinite', params],
     queryFn: ({ pageParam = 1 }) => watchHistoryApi.list({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => lastPage.has_more ? lastPage.page + 1 : undefined,
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
     initialPageParam: 1,
   })
 }
@@ -35,7 +35,7 @@ export function useContinueWatching(profileId?: number, limit: number = 10) {
 
 export function useCreateWatchHistory() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: WatchHistoryCreateRequest) => watchHistoryApi.create(data),
     onSuccess: () => {
@@ -47,7 +47,7 @@ export function useCreateWatchHistory() {
 
 export function useUpdateWatchProgress() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: ({ historyId, data }: { historyId: number; data: WatchHistoryUpdateRequest }) =>
       watchHistoryApi.updateProgress(historyId, data),
@@ -60,7 +60,7 @@ export function useUpdateWatchProgress() {
 
 export function useDeleteWatchHistory() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (historyId: number) => watchHistoryApi.delete(historyId),
     onSuccess: () => {
@@ -72,7 +72,7 @@ export function useDeleteWatchHistory() {
 
 export function useClearWatchHistory() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (profileId?: number) => watchHistoryApi.clear(profileId),
     onSuccess: () => {
@@ -84,7 +84,7 @@ export function useClearWatchHistory() {
 
 export function useTrackStreamAction() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: StreamActionTrackRequest) => watchHistoryApi.trackAction(data),
     onSuccess: () => {
@@ -93,4 +93,3 @@ export function useTrackStreamAction() {
     },
   })
 }
-

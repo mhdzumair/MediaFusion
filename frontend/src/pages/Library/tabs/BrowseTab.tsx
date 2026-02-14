@@ -2,15 +2,22 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Film, Loader2 } from 'lucide-react'
-import { 
-  ContentCard, 
-  ContentGrid, 
-  ContentList, 
+import {
+  ContentCard,
+  ContentGrid,
+  ContentList,
   ContentFilters,
   type ContentCardData,
   type ViewMode,
 } from '@/components/content'
-import { useInfiniteCatalog, useAvailableCatalogs, useGenres, type CatalogType, type SortOption, type SortDirection } from '@/hooks'
+import {
+  useInfiniteCatalog,
+  useAvailableCatalogs,
+  useGenres,
+  type CatalogType,
+  type SortOption,
+  type SortDirection,
+} from '@/hooks'
 
 // Storage key for persisting browse state
 const BROWSE_STATE_KEY = 'browse_tab_state'
@@ -50,16 +57,14 @@ const saveState = (state: BrowseState) => {
 export function BrowseTab() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  
+
   // Get initial state from URL params or session storage
   const storedState = getStoredState()
   const urlType = searchParams.get('type') as CatalogType | null
   const urlGenre = searchParams.get('genre')
   const urlSearch = searchParams.get('search')
-  
-  const [catalogType, setCatalogType] = useState<CatalogType>(
-    urlType || storedState.catalogType || 'movie'
-  )
+
+  const [catalogType, setCatalogType] = useState<CatalogType>(urlType || storedState.catalogType || 'movie')
   const [selectedCatalog, setSelectedCatalog] = useState<string>(storedState.selectedCatalog || '')
   const [selectedGenre, setSelectedGenre] = useState<string>(urlGenre || storedState.selectedGenre || '')
   const [search, setSearch] = useState(urlSearch || storedState.search || '')
@@ -67,11 +72,11 @@ export function BrowseTab() {
   const [sortDir, setSortDir] = useState<SortDirection>(storedState.sortDir || 'desc')
   const [viewMode, setViewMode] = useState<ViewMode>(storedState.viewMode || 'grid')
   const [isRestoring, setIsRestoring] = useState(true)
-  
+
   // TV-specific filters
   const [workingOnly, setWorkingOnly] = useState(storedState.workingOnly || false)
   const [myChannels, setMyChannels] = useState(storedState.myChannels || false)
-  
+
   // Track selected item ID for highlighting
   const [selectedItemId, setSelectedItemId] = useState<number | null>(() => {
     try {
@@ -81,17 +86,17 @@ export function BrowseTab() {
       return null
     }
   })
-  
+
   // Track previous URL params to detect external navigation
   const prevUrlParamsRef = useRef({ type: urlType, genre: urlGenre, search: urlSearch })
-  
+
   // Refs
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const restoredScroll = useRef(false)
   const selectedCardRef = useRef<HTMLDivElement>(null)
   const hasScrolledToSelected = useRef(false)
-  
+
   // Sync state from URL params when navigating from another page
   // This ensures clicking a genre link clears the search and vice versa
   useEffect(() => {
@@ -99,38 +104,30 @@ export function BrowseTab() {
     const newType = searchParams.get('type') as CatalogType | null
     const newGenre = searchParams.get('genre')
     const newSearch = searchParams.get('search')
-    
+
     // Detect if this is an external navigation (params changed from outside)
-    const isExternalNavigation = 
-      newType !== prevParams.type ||
-      newGenre !== prevParams.genre ||
-      newSearch !== prevParams.search
-    
+    const isExternalNavigation =
+      newType !== prevParams.type || newGenre !== prevParams.genre || newSearch !== prevParams.search
+
     if (isExternalNavigation) {
       // Update state to match URL params exactly
       // If a param is not in URL, clear it (don't use stored state)
       if (newType) setCatalogType(newType)
       setSelectedGenre(newGenre || '')
       setSearch(newSearch || '')
-      
+
       // Reset scroll position for fresh navigation
       window.scrollTo(0, 0)
       restoredScroll.current = true
     }
-    
+
     // Update ref for next comparison
     prevUrlParamsRef.current = { type: newType, genre: newGenre, search: newSearch }
   }, [searchParams])
 
   const { data: availableCatalogs } = useAvailableCatalogs()
   const { data: genres } = useGenres(catalogType)
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-  } = useInfiniteCatalog(catalogType, {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteCatalog(catalogType, {
     catalog: selectedCatalog || undefined,
     genre: selectedGenre || undefined,
     search: search || undefined,
@@ -161,19 +158,30 @@ export function BrowseTab() {
         myChannels,
       })
     }
-  }, [catalogType, selectedCatalog, selectedGenre, search, sort, sortDir, viewMode, isRestoring, workingOnly, myChannels])
+  }, [
+    catalogType,
+    selectedCatalog,
+    selectedGenre,
+    search,
+    sort,
+    sortDir,
+    viewMode,
+    isRestoring,
+    workingOnly,
+    myChannels,
+  ])
 
   // Update URL params when filters change
   useEffect(() => {
     const params: Record<string, string> = { type: catalogType }
     if (selectedGenre) params.genre = selectedGenre
     if (search) params.search = search
-    
+
     // Only update if params actually changed
     const currentType = searchParams.get('type')
     const currentGenre = searchParams.get('genre')
     const currentSearch = searchParams.get('search')
-    
+
     if (currentType !== catalogType || currentGenre !== (selectedGenre || null) || currentSearch !== (search || null)) {
       setSearchParams(params, { replace: true })
     }
@@ -231,7 +239,7 @@ export function BrowseTab() {
           fetchNextPage()
         }
       },
-      { threshold: 0.1, rootMargin: '100px' }
+      { threshold: 0.1, rootMargin: '100px' },
     )
 
     const currentRef = loadMoreRef.current
@@ -256,16 +264,17 @@ export function BrowseTab() {
     restoredScroll.current = true
   }, [])
 
-  const items = data?.pages.flatMap(page => page.items) ?? []
+  const items = data?.pages.flatMap((page) => page.items) ?? []
 
-  const catalogs = catalogType === 'movie' 
-    ? availableCatalogs?.movies 
-    : catalogType === 'series' 
-    ? availableCatalogs?.series 
-    : availableCatalogs?.tv
+  const catalogs =
+    catalogType === 'movie'
+      ? availableCatalogs?.movies
+      : catalogType === 'series'
+        ? availableCatalogs?.series
+        : availableCatalogs?.tv
 
   // Transform items to ContentCardData format
-  const contentItems: ContentCardData[] = items.map(item => ({
+  const contentItems: ContentCardData[] = items.map((item) => ({
     id: item.id,
     external_ids: item.external_ids,
     title: item.title,
@@ -285,14 +294,14 @@ export function BrowseTab() {
   useEffect(() => {
     if (!isLoading && data && selectedItemId && !hasScrolledToSelected.current) {
       // Check if selected item exists in current data
-      const itemExists = contentItems.some(item => item.id === selectedItemId)
+      const itemExists = contentItems.some((item) => item.id === selectedItemId)
       if (!itemExists) {
         // Item not found, clear selection
         setSelectedItemId(null)
         sessionStorage.removeItem(BROWSE_SELECTED_ITEM_KEY)
         return
       }
-      
+
       const timer = setTimeout(() => {
         if (selectedCardRef.current) {
           selectedCardRef.current.scrollIntoView({
@@ -389,17 +398,13 @@ export function BrowseTab() {
         <div className="text-center py-12">
           <Film className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-muted-foreground">No items found</p>
-          {search && (
-            <p className="text-sm text-muted-foreground mt-2">
-              Try adjusting your search or filters
-            </p>
-          )}
+          {search && <p className="text-sm text-muted-foreground mt-2">Try adjusting your search or filters</p>}
         </div>
       ) : (
         <>
           {viewMode === 'grid' ? (
             <ContentGrid>
-              {contentItems.map(item => {
+              {contentItems.map((item) => {
                 const isSelected = selectedItemId === item.id
                 return (
                   <ContentCard
@@ -417,7 +422,7 @@ export function BrowseTab() {
             </ContentGrid>
           ) : (
             <ContentList>
-              {contentItems.map(item => {
+              {contentItems.map((item) => {
                 const isSelected = selectedItemId === item.id
                 return (
                   <ContentCard
@@ -444,14 +449,11 @@ export function BrowseTab() {
               </div>
             )}
             {!hasNextPage && items.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                You've reached the end
-              </p>
+              <p className="text-sm text-muted-foreground">You've reached the end</p>
             )}
           </div>
         </>
       )}
-
     </div>
   )
 }

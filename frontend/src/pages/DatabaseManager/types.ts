@@ -219,10 +219,7 @@ export interface ActionHistoryItem {
 // Tab Types
 // ============================================
 
-export type DatabaseTab = 
-  | 'overview'
-  | 'browser'
-  | 'maintenance'
+export type DatabaseTab = 'overview' | 'browser' | 'maintenance'
 
 // ============================================
 // Color Utility
@@ -254,7 +251,7 @@ export const getTableTypeColor = (tableName: string): { bg: string; text: string
     star: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/30' },
     user: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/30' },
   }
-  
+
   // Find matching pattern
   const loweredName = tableName.toLowerCase()
   for (const [pattern, colors] of Object.entries(colorMap)) {
@@ -262,7 +259,7 @@ export const getTableTypeColor = (tableName: string): { bg: string; text: string
       return colors
     }
   }
-  
+
   return { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/30' }
 }
 
@@ -311,4 +308,3 @@ export function truncateText(text: string, maxLength: number = 50): string {
   if (text.length <= maxLength) return text
   return text.substring(0, maxLength) + '...'
 }
-

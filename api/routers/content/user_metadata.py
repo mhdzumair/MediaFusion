@@ -841,9 +841,7 @@ async def update_user_metadata(
     if request.parental_certificate is not None:
         # Clear existing certificate links
         await session.exec(
-            sa_delete(MediaParentalCertificateLink).where(
-                MediaParentalCertificateLink.media_id == media.id
-            )
+            sa_delete(MediaParentalCertificateLink).where(MediaParentalCertificateLink.media_id == media.id)
         )
         if request.parental_certificate:
             cert = await get_or_create_parental_certificate(session, request.parental_certificate)

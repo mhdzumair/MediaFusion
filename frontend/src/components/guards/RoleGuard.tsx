@@ -8,11 +8,7 @@ interface RoleGuardProps {
   fallback?: React.ReactNode
 }
 
-export function RoleGuard({
-  children,
-  requiredRole,
-  fallback,
-}: RoleGuardProps) {
+export function RoleGuard({ children, requiredRole, fallback }: RoleGuardProps) {
   const { hasMinimumRole, isLoading } = useAuth()
 
   if (isLoading) {
@@ -28,4 +24,3 @@ export function RoleGuard({
 
   return <>{children}</>
 }
-

@@ -52,10 +52,7 @@ export interface ContentLikeSummary {
 // API functions
 export const votingApi = {
   // Stream voting
-  voteOnStream: async (
-    streamId: number,
-    data: StreamVoteRequest
-  ): Promise<StreamVoteResponse> => {
+  voteOnStream: async (streamId: number, data: StreamVoteRequest): Promise<StreamVoteResponse> => {
     return apiClient.post<StreamVoteResponse>(`/streams/${streamId}/vote`, data)
   },
 
@@ -67,9 +64,7 @@ export const votingApi = {
     return apiClient.get<StreamVoteSummary>(`/streams/${streamId}/votes`)
   },
 
-  getBulkStreamVotes: async (
-    streamIds: number[]
-  ): Promise<BulkStreamVoteSummary> => {
+  getBulkStreamVotes: async (streamIds: number[]): Promise<BulkStreamVoteSummary> => {
     return apiClient.post<BulkStreamVoteSummary>('/streams/votes/bulk', streamIds)
   },
 
@@ -86,4 +81,3 @@ export const votingApi = {
     return apiClient.get<ContentLikeSummary>(`/content/${mediaId}/likes`)
   },
 }
-

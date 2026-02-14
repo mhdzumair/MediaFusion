@@ -1,13 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  Compass, 
-  Bookmark, 
-  History,
-  Library,
-  Cloud,
-} from 'lucide-react'
+import { Compass, Bookmark, History, Library, Cloud } from 'lucide-react'
 import { BrowseTab, MyLibraryTab, HistoryTab, WatchlistTab } from './tabs'
 
 // Storage key for persisting library tab
@@ -15,11 +9,11 @@ const LIBRARY_TAB_KEY = 'library_active_tab'
 
 export function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  
+
   // Get initial tab from URL or session storage
   const urlTab = searchParams.get('tab')
   const storedTab = sessionStorage.getItem(LIBRARY_TAB_KEY)
-  
+
   const [activeTab, setActiveTab] = useState(urlTab || storedTab || 'browse')
 
   // Update URL and storage when tab changes (user clicked a tab)
@@ -46,13 +40,9 @@ export function LibraryPage() {
           <div className="p-2 rounded-md bg-primary/10 border border-primary/20">
             <Library className="h-5 w-5 text-primary" />
           </div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">
-            Library
-          </h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Library</h1>
         </div>
-        <p className="text-muted-foreground">
-          Browse, discover and manage your content collection
-        </p>
+        <p className="text-muted-foreground">Browse, discover and manage your content collection</p>
       </div>
 
       {/* Tabs */}
@@ -66,7 +56,7 @@ export function LibraryPage() {
             Browse
           </TabsTrigger>
           <TabsTrigger
-            value="library" 
+            value="library"
             className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
             <Bookmark className="mr-2 h-4 w-4" />

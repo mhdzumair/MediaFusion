@@ -102,11 +102,10 @@ export const SPORTS_CATEGORY_OPTIONS = [
   { value: 'other', label: 'Other Sports' },
 ] as const
 
-export type ContentType = typeof CONTENT_TYPE_OPTIONS[number]['value']
-export type SportsCategory = typeof SPORTS_CATEGORY_OPTIONS[number]['value']
-export type ResolutionValue = typeof RESOLUTION_OPTIONS[number]['value']
-export type QualityValue = typeof QUALITY_OPTIONS[number]['value']
-export type CodecValue = typeof CODEC_OPTIONS[number]['value']
-export type AudioValue = typeof AUDIO_OPTIONS[number]['value']
-export type HDRValue = typeof HDR_OPTIONS[number]['value']
-
+export type ContentType = (typeof CONTENT_TYPE_OPTIONS)[number]['value']
+export type SportsCategory = (typeof SPORTS_CATEGORY_OPTIONS)[number]['value']
+export type ResolutionValue = (typeof RESOLUTION_OPTIONS)[number]['value']
+export type QualityValue = (typeof QUALITY_OPTIONS)[number]['value']
+export type CodecValue = (typeof CODEC_OPTIONS)[number]['value']
+export type AudioValue = (typeof AUDIO_OPTIONS)[number]['value']
+export type HDRValue = (typeof HDR_OPTIONS)[number]['value']

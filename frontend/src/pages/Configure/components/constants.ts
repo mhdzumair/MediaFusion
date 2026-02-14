@@ -32,7 +32,15 @@ export const STREAMING_PROVIDERS: StreamingProviderOption[] = [
   { value: 'easydebrid', label: 'EasyDebrid', icon: '⚡', type: 'Premium', needsToken: true },
   { value: 'debrider', label: 'Debrider', icon: '🔓', type: 'Premium', needsToken: true },
   { value: 'qbittorrent', label: 'qBittorrent + WebDAV', icon: '📥', type: 'Free', needsQBitConfig: true },
-  { value: 'stremthru', label: 'StremThru', icon: '🔀', type: 'Interface', needsToken: true, needsUrl: true, hasStoreSelect: true },
+  {
+    value: 'stremthru',
+    label: 'StremThru',
+    icon: '🔀',
+    type: 'Interface',
+    needsToken: true,
+    needsUrl: true,
+    hasStoreSelect: true,
+  },
   // Usenet-only providers
   { value: 'sabnzbd', label: 'SABnzbd + WebDAV', icon: '📰', type: 'Usenet', needsSABnzbdConfig: true },
   { value: 'nzbget', label: 'NZBGet + WebDAV', icon: '📰', type: 'Usenet', needsNZBGetConfig: true },
@@ -48,7 +56,7 @@ export const STREMTHRU_STORES = [
 ]
 
 export const CATALOGS = {
-  'Movies': [
+  Movies: [
     { id: 'english_hdrip', name: 'English HD Movies' },
     { id: 'english_tcrip', name: 'English TCRip Movies' },
     { id: 'hindi_hdrip', name: 'Hindi HD Movies' },
@@ -81,7 +89,7 @@ export const CATALOGS = {
     { id: 'rss_feed_movies', name: 'RSS Feed Movies' },
     { id: 'contribution_movies', name: 'Contribution Movies' },
   ],
-  'Series': [
+  Series: [
     { id: 'english_series', name: 'English Series' },
     { id: 'hindi_series', name: 'Hindi Series' },
     { id: 'tamil_series', name: 'Tamil Series' },
@@ -113,7 +121,7 @@ export const CATALOGS = {
     { id: 'fighting', name: 'Fighting (WWE, UFC)' },
     { id: 'other_sports', name: 'Other Sports' },
   ],
-  'Search': [
+  Search: [
     { id: 'mediafusion_search_movies', name: 'MediaFusion Search Movies' },
     { id: 'mediafusion_search_series', name: 'MediaFusion Search Series' },
     { id: 'mediafusion_search_tv', name: 'MediaFusion Search TV' },
@@ -160,12 +168,54 @@ export const STREAM_TYPES = [
 ]
 
 export const LANGUAGES = [
-  'English', 'Tamil', 'Hindi', 'Malayalam', 'Kannada', 'Telugu', 'Chinese', 'Russian',
-  'Arabic', 'Japanese', 'Korean', 'Taiwanese', 'Latino', 'French', 'Spanish', 'Portuguese',
-  'Italian', 'German', 'Ukrainian', 'Polish', 'Czech', 'Thai', 'Indonesian', 'Vietnamese',
-  'Dutch', 'Bengali', 'Turkish', 'Greek', 'Swedish', 'Romanian', 'Hungarian', 'Finnish',
-  'Norwegian', 'Danish', 'Hebrew', 'Lithuanian', 'Punjabi', 'Marathi', 'Gujarati',
-  'Bhojpuri', 'Nepali', 'Urdu', 'Tagalog', 'Filipino', 'Malay', 'Mongolian', 'Armenian', 'Georgian'
+  'English',
+  'Tamil',
+  'Hindi',
+  'Malayalam',
+  'Kannada',
+  'Telugu',
+  'Chinese',
+  'Russian',
+  'Arabic',
+  'Japanese',
+  'Korean',
+  'Taiwanese',
+  'Latino',
+  'French',
+  'Spanish',
+  'Portuguese',
+  'Italian',
+  'German',
+  'Ukrainian',
+  'Polish',
+  'Czech',
+  'Thai',
+  'Indonesian',
+  'Vietnamese',
+  'Dutch',
+  'Bengali',
+  'Turkish',
+  'Greek',
+  'Swedish',
+  'Romanian',
+  'Hungarian',
+  'Finnish',
+  'Norwegian',
+  'Danish',
+  'Hebrew',
+  'Lithuanian',
+  'Punjabi',
+  'Marathi',
+  'Gujarati',
+  'Bhojpuri',
+  'Nepali',
+  'Urdu',
+  'Tagalog',
+  'Filipino',
+  'Malay',
+  'Mongolian',
+  'Armenian',
+  'Georgian',
 ]
 
 export const CERTIFICATION_LEVELS = [
@@ -219,4 +269,3 @@ export const DEFAULT_CONFIG: ProfileConfig = {
   snfp: [],
   snfr: false,
 }
-

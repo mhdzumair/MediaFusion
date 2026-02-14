@@ -7,7 +7,7 @@ export function usePermission() {
   return {
     hasPermission,
     can: (permission: Permission) => hasPermission(permission),
-    
+
     // Convenience methods for common permissions
     canViewDashboard: hasPermission(Permission.VIEW_DASHBOARD),
     canManageProfiles: hasPermission(Permission.MANAGE_PROFILES),
@@ -16,7 +16,7 @@ export function usePermission() {
     canSubmitContribution: hasPermission(Permission.SUBMIT_CONTRIBUTION),
     canImportContent: hasPermission(Permission.IMPORT_CONTENT),
     canManageOwnRSS: hasPermission(Permission.MANAGE_OWN_RSS),
-    
+
     // Moderator permissions
     canViewMetrics: hasPermission(Permission.VIEW_METRICS),
     canBlockTorrent: hasPermission(Permission.BLOCK_TORRENT),
@@ -24,7 +24,7 @@ export function usePermission() {
     canReviewContributions: hasPermission(Permission.REVIEW_CONTRIBUTIONS),
     canRunScrapers: hasPermission(Permission.RUN_SCRAPERS),
     canManageMetadata: hasPermission(Permission.MANAGE_METADATA),
-    
+
     // Admin permissions
     canManageUsers: hasPermission(Permission.MANAGE_USERS),
     canAssignRoles: hasPermission(Permission.ASSIGN_ROLES),
@@ -33,4 +33,3 @@ export function usePermission() {
     canSystemConfig: hasPermission(Permission.SYSTEM_CONFIG),
   }
 }
-

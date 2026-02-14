@@ -1,10 +1,5 @@
 import { Badge } from '@/components/ui/badge'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Star, Heart, ThumbsUp, ThumbsDown, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AllRatings, ProviderRating, CommunityRating } from '@/lib/api'
@@ -70,12 +65,12 @@ export function RatingBadge({ rating, size = 'sm', className }: RatingBadgeProps
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge 
+          <Badge
             className={cn(
               'gap-1 cursor-default transition-colors',
               size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1',
               getProviderColor(rating.provider),
-              className
+              className,
             )}
           >
             {getProviderIcon(rating.provider)}
@@ -85,7 +80,10 @@ export function RatingBadge({ rating, size = 'sm', className }: RatingBadgeProps
         <TooltipContent>
           <div className="text-xs">
             <p className="font-medium">{rating.provider_display_name}</p>
-            <p>Rating: {displayRating}{rating.is_percentage ? '' : ` / ${rating.max_rating}`}</p>
+            <p>
+              Rating: {displayRating}
+              {rating.is_percentage ? '' : ` / ${rating.max_rating}`}
+            </p>
             {rating.vote_count && <p>Votes: {rating.vote_count.toLocaleString()}</p>}
             {rating.certification && <p>Status: {rating.certification}</p>}
           </div>
@@ -107,25 +105,24 @@ interface CommunityRatingBadgeProps {
 
 export function CommunityRatingBadge({ rating, size = 'sm', className }: CommunityRatingBadgeProps) {
   const hasVotes = rating.total_votes > 0
-  
+
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge 
+          <Badge
             variant="outline"
             className={cn(
               'gap-1 cursor-default transition-colors',
               size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1',
               rating.user_vote === 1 && 'border-rose-500 bg-rose-500/10',
               rating.user_vote === -1 && 'border-slate-500 bg-slate-500/10',
-              className
+              className,
             )}
           >
-            <Heart className={cn(
-              size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3',
-              hasVotes && 'fill-rose-500 text-rose-500'
-            )} />
+            <Heart
+              className={cn(size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3', hasVotes && 'fill-rose-500 text-rose-500')}
+            />
             {hasVotes ? (
               <span className={size === 'sm' ? 'text-[10px]' : 'text-xs'}>{rating.total_votes}</span>
             ) : (
@@ -146,9 +143,7 @@ export function CommunityRatingBadge({ rating, size = 'sm', className }: Communi
                 {rating.downvotes}
               </span>
             </div>
-            {rating.average_rating > 0 && (
-              <p>Average: {rating.average_rating.toFixed(1)} / 10</p>
-            )}
+            {rating.average_rating > 0 && <p>Average: {rating.average_rating.toFixed(1)} / 10</p>}
             <p className="flex items-center gap-1">
               <Users className="h-3 w-3" />
               {rating.total_votes} votes
@@ -169,7 +164,7 @@ interface RatingsDisplayProps {
   // Fallback for backward compatibility
   imdbRating?: number
   size?: 'sm' | 'default'
-  maxExternalRatings?: number  // Max number of external ratings to show
+  maxExternalRatings?: number // Max number of external ratings to show
   showCommunity?: boolean
   className?: string
 }
@@ -186,11 +181,13 @@ export function RatingsDisplay({
   if (!ratings) {
     if (imdbRating) {
       return (
-        <Badge className={cn(
-          'gap-1 bg-amber-500/90 text-black',
-          size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1',
-          className
-        )}>
+        <Badge
+          className={cn(
+            'gap-1 bg-amber-500/90 text-black',
+            size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1',
+            className,
+          )}
+        >
           <Star className={cn(size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3', 'fill-current')} />
           {imdbRating.toFixed(1)}
         </Badge>
@@ -212,9 +209,7 @@ export function RatingsDisplay({
       {externalRatings.map((rating: ProviderRating) => (
         <RatingBadge key={rating.provider} rating={rating} size={size} />
       ))}
-      {hasCommunityRating && (
-        <CommunityRatingBadge rating={ratings.community_rating!} size={size} />
-      )}
+      {hasCommunityRating && <CommunityRatingBadge rating={ratings.community_rating!} size={size} />}
     </div>
   )
 }
@@ -267,9 +262,7 @@ export function RatingsDetailPanel({ ratings, className }: RatingsDetailPanelPro
                 <span className="font-medium">{communityRating.downvotes}</span>
               </span>
             </div>
-            <span className="text-xs text-muted-foreground">
-              {communityRating.total_votes} total votes
-            </span>
+            <span className="text-xs text-muted-foreground">{communityRating.total_votes} total votes</span>
           </div>
         </div>
       )}
@@ -284,12 +277,12 @@ export function RatingsDetailPanel({ ratings, className }: RatingsDetailPanelPro
 // Certification category colors and icons
 const CERTIFICATION_CONFIG: Record<string, { color: string; icon: string }> = {
   'All Ages': { color: 'bg-green-500/90 text-white', icon: '👨‍👩‍👧‍👦' },
-  'Children': { color: 'bg-lime-500/90 text-white', icon: '👧' },
+  Children: { color: 'bg-lime-500/90 text-white', icon: '👧' },
   'Parental Guidance': { color: 'bg-yellow-500/90 text-black', icon: '⚠️' },
-  'Teens': { color: 'bg-orange-500/90 text-white', icon: '🔶' },
-  'Adults': { color: 'bg-red-600/90 text-white', icon: '🔞' },
+  Teens: { color: 'bg-orange-500/90 text-white', icon: '🔶' },
+  Adults: { color: 'bg-red-600/90 text-white', icon: '🔞' },
   'Adults+': { color: 'bg-red-800/90 text-white', icon: '❌' },
-  'Unknown': { color: 'bg-slate-500/90 text-white', icon: '❓' },
+  Unknown: { color: 'bg-slate-500/90 text-white', icon: '❓' },
 }
 
 interface CertificationBadgeProps {
@@ -299,24 +292,24 @@ interface CertificationBadgeProps {
   className?: string
 }
 
-export function CertificationBadge({ 
-  certification, 
-  size = 'sm', 
+export function CertificationBadge({
+  certification,
+  size = 'sm',
   showIcon = true,
-  className 
+  className,
 }: CertificationBadgeProps) {
   const config = CERTIFICATION_CONFIG[certification] || CERTIFICATION_CONFIG['Unknown']
-  
+
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge 
+          <Badge
             className={cn(
               'font-semibold cursor-default gap-1',
               size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1',
               config.color,
-              className
+              className,
             )}
           >
             {showIcon && <span>{config.icon}</span>}
@@ -336,11 +329,11 @@ export function CertificationBadge({
 // ============================================
 
 const NUDITY_CONFIG: Record<string, { color: string; icon: string }> = {
-  'None': { color: 'bg-green-500/90 text-white', icon: '✓' },
-  'Mild': { color: 'bg-yellow-500/90 text-black', icon: '⚡' },
-  'Moderate': { color: 'bg-orange-500/90 text-white', icon: '🔶' },
-  'Severe': { color: 'bg-red-600/90 text-white', icon: '⛔' },
-  'Unknown': { color: 'bg-slate-500/90 text-white', icon: '?' },
+  None: { color: 'bg-green-500/90 text-white', icon: '✓' },
+  Mild: { color: 'bg-yellow-500/90 text-black', icon: '⚡' },
+  Moderate: { color: 'bg-orange-500/90 text-white', icon: '🔶' },
+  Severe: { color: 'bg-red-600/90 text-white', icon: '⛔' },
+  Unknown: { color: 'bg-slate-500/90 text-white', icon: '?' },
 }
 
 interface NudityBadgeProps {
@@ -350,27 +343,22 @@ interface NudityBadgeProps {
   className?: string
 }
 
-export function NudityBadge({ 
-  nudity, 
-  size = 'sm', 
-  showIcon = true,
-  className 
-}: NudityBadgeProps) {
+export function NudityBadge({ nudity, size = 'sm', showIcon = true, className }: NudityBadgeProps) {
   // Don't show if not set or Disable
   if (!nudity || nudity === 'Disable') return null
-  
+
   const config = NUDITY_CONFIG[nudity] || NUDITY_CONFIG['Unknown']
-  
+
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge 
+          <Badge
             variant="outline"
             className={cn(
               'font-medium cursor-default gap-1',
               size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1',
-              className
+              className,
             )}
           >
             {showIcon && <span>{config.icon}</span>}
@@ -379,10 +367,9 @@ export function NudityBadge({
         </TooltipTrigger>
         <TooltipContent>
           <p className="text-xs">
-            {nudity === 'Unknown' 
-              ? 'Nudity level not yet classified - help us by providing this info!' 
-              : `Nudity Level: ${nudity}`
-            }
+            {nudity === 'Unknown'
+              ? 'Nudity level not yet classified - help us by providing this info!'
+              : `Nudity Level: ${nudity}`}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -401,12 +388,7 @@ interface ContentGuidanceProps {
   className?: string
 }
 
-export function ContentGuidance({ 
-  certification, 
-  nudity, 
-  size = 'sm',
-  className 
-}: ContentGuidanceProps) {
+export function ContentGuidance({ certification, nudity, size = 'sm', className }: ContentGuidanceProps) {
   // Always show certification (even Unknown allows users to contribute)
   const showCert = !!certification
   // Show nudity if it's meaningful (not None or Disable)
@@ -424,4 +406,3 @@ export function ContentGuidance({
 
 // Export for convenience
 export type { AllRatings, ProviderRating, CommunityRating }
-

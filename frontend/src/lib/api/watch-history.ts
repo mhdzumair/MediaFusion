@@ -26,9 +26,9 @@ export interface WatchHistoryItem {
   progress: number
   watched_at: string
   poster?: string
-  episode_poster?: string  // Episode still/thumbnail if available (for series)
+  episode_poster?: string // Episode still/thumbnail if available (for series)
   action: WatchAction
-  source: HistorySource  // Where this history entry came from
+  source: HistorySource // Where this history entry came from
   stream_info?: StreamInfo
 }
 
@@ -65,7 +65,7 @@ export interface ContinueWatchingItem {
 
 export interface WatchHistoryCreateRequest {
   profile_id: number
-  media_id: number  // Internal media ID
+  media_id: number // Internal media ID
   title: string
   media_type: 'movie' | 'series' | 'tv'
   season?: number
@@ -82,7 +82,7 @@ export interface WatchHistoryUpdateRequest {
 export type StreamAction = 'download' | 'queue' | 'watch'
 
 export interface StreamActionTrackRequest {
-  media_id: number  // Internal media ID
+  media_id: number // Internal media ID
   title: string
   catalog_type: 'movie' | 'series' | 'tv'
   season?: number
@@ -102,7 +102,7 @@ export const watchHistoryApi = {
     if (params.action) searchParams.append('action', params.action)
     if (params.page) searchParams.append('page', params.page.toString())
     if (params.page_size) searchParams.append('page_size', params.page_size.toString())
-    
+
     const query = searchParams.toString()
     return apiClient.get<WatchHistoryListResponse>(`/watch-history${query ? `?${query}` : ''}`)
   },
@@ -114,7 +114,7 @@ export const watchHistoryApi = {
     const searchParams = new URLSearchParams()
     if (profileId !== undefined) searchParams.append('profile_id', profileId.toString())
     searchParams.append('limit', limit.toString())
-    
+
     return apiClient.get<ContinueWatchingItem[]>(`/watch-history/continue-watching?${searchParams.toString()}`)
   },
 

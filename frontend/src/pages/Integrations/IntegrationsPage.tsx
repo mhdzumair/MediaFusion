@@ -5,28 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { 
-  Link as LinkIcon, 
-  Copy, 
+  Link as LinkIcon,
+  Copy,
   Check,
   ExternalLink,
   Tv2,
@@ -57,13 +41,17 @@ export function IntegrationsPage() {
 
   // Auto-select default profile when profiles load
   if (profiles && selectedProfileId === null) {
-    const defaultProfile = profiles.find(p => p.is_default) || profiles[0]
+    const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
     if (defaultProfile) {
       setSelectedProfileId(defaultProfile.id)
     }
   }
 
-  const { data: manifestData, isLoading: manifestLoading, error: manifestError } = useManifestUrl(selectedProfileId ?? undefined)
+  const {
+    data: manifestData,
+    isLoading: manifestLoading,
+    error: manifestError,
+  } = useManifestUrl(selectedProfileId ?? undefined)
 
   // Kodi pairing state
   const [kodiCode, setKodiCode] = useState('')
@@ -72,14 +60,14 @@ export function IntegrationsPage() {
   const [kodiLinkError, setKodiLinkError] = useState<string | null>(null)
 
   // Build Torznab API key based on whether authentication is required
-  const torznabApiKey = user?.uuid 
-    ? (appConfig?.authentication_required 
-        ? `<api_password>:${user.uuid}` 
-        : user.uuid)
+  const torznabApiKey = user?.uuid
+    ? appConfig?.authentication_required
+      ? `<api_password>:${user.uuid}`
+      : user.uuid
     : null
   const torznabUrl = appConfig?.host_url ? `${appConfig.host_url}/torznab` : null
 
-  const selectedProfile = profiles?.find(p => p.id === selectedProfileId)
+  const selectedProfile = profiles?.find((p) => p.id === selectedProfileId)
 
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
@@ -151,9 +139,7 @@ export function IntegrationsPage() {
               </div>
               Integrations
             </h1>
-            <p className="text-muted-foreground">
-              Connect MediaFusion to your favorite streaming apps
-            </p>
+            <p className="text-muted-foreground">Connect MediaFusion to your favorite streaming apps</p>
           </div>
 
           {/* Profile selector */}
@@ -172,7 +158,9 @@ export function IntegrationsPage() {
                     <div className="flex items-center gap-2">
                       <span>{profile.name}</span>
                       {profile.is_default && (
-                        <Badge variant="secondary" className="text-xs">Default</Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          Default
+                        </Badge>
                       )}
                     </div>
                   </SelectItem>
@@ -229,7 +217,7 @@ export function IntegrationsPage() {
               ) : manifestData ? (
                 <>
                   {/* Install button */}
-                  <Button 
+                  <Button
                     onClick={openStremioInstall}
                     className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
                   >
@@ -241,15 +229,11 @@ export function IntegrationsPage() {
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Manifest URL</label>
                     <div className="flex gap-2">
-                      <Input 
-                        value={manifestData.manifest_url} 
-                        readOnly 
-                        className="font-mono text-xs"
-                      />
+                      <Input value={manifestData.manifest_url} readOnly className="font-mono text-xs" />
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="icon"
                             onClick={() => copyToClipboard(manifestData.manifest_url, 'manifest')}
                           >
@@ -260,9 +244,7 @@ export function IntegrationsPage() {
                             )}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          {copiedField === 'manifest' ? 'Copied!' : 'Copy URL'}
-                        </TooltipContent>
+                        <TooltipContent>{copiedField === 'manifest' ? 'Copied!' : 'Copy URL'}</TooltipContent>
                       </Tooltip>
                     </div>
                   </div>
@@ -303,13 +285,19 @@ export function IntegrationsPage() {
               {/* Instructions */}
               <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="instructions" className="border-none">
-                  <AccordionTrigger className="text-sm py-2">
-                    Installation Instructions
-                  </AccordionTrigger>
+                  <AccordionTrigger className="text-sm py-2">Installation Instructions</AccordionTrigger>
                   <AccordionContent className="text-sm text-muted-foreground space-y-2">
-                    <p><strong>Method 1:</strong> Click "Install in Stremio" button above. Stremio will open and prompt you to install MediaFusion.</p>
-                    <p><strong>Method 2:</strong> Copy the manifest URL, open Stremio, go to Add-ons, click "Install from URL", and paste the URL.</p>
-                    <p><strong>Note:</strong> Make sure you have Stremio installed on your device first.</p>
+                    <p>
+                      <strong>Method 1:</strong> Click "Install in Stremio" button above. Stremio will open and prompt
+                      you to install MediaFusion.
+                    </p>
+                    <p>
+                      <strong>Method 2:</strong> Copy the manifest URL, open Stremio, go to Add-ons, click "Install from
+                      URL", and paste the URL.
+                    </p>
+                    <p>
+                      <strong>Note:</strong> Make sure you have Stremio installed on your device first.
+                    </p>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -345,11 +333,9 @@ export function IntegrationsPage() {
                   {/* Kodi pairing code input */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Setup Code from Kodi</label>
-                    <p className="text-xs text-muted-foreground">
-                      Enter the 6-digit code shown on your Kodi screen
-                    </p>
+                    <p className="text-xs text-muted-foreground">Enter the 6-digit code shown on your Kodi screen</p>
                     <div className="flex gap-2">
-                      <Input 
+                      <Input
                         value={kodiCode}
                         onChange={(e) => {
                           setKodiCode(e.target.value)
@@ -365,11 +351,7 @@ export function IntegrationsPage() {
                         className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 whitespace-nowrap"
                         disabled={kodiLinking || kodiCode.trim().length < 6}
                       >
-                        {kodiLinking ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          'Link Kodi'
-                        )}
+                        {kodiLinking ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Link Kodi'}
                       </Button>
                     </div>
                   </div>
@@ -424,14 +406,23 @@ export function IntegrationsPage() {
               {/* Instructions */}
               <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="instructions" className="border-none">
-                  <AccordionTrigger className="text-sm py-2">
-                    Setup Instructions
-                  </AccordionTrigger>
+                  <AccordionTrigger className="text-sm py-2">Setup Instructions</AccordionTrigger>
                   <AccordionContent className="text-sm text-muted-foreground space-y-2">
-                    <p><strong>Step 1:</strong> Install the MediaFusion addon in Kodi from the MediaFusion repository.</p>
-                    <p><strong>Step 2:</strong> Open the addon in Kodi and click "Configure Secret" to generate a setup code.</p>
-                    <p><strong>Step 3:</strong> Enter the 6-digit code displayed on your Kodi screen into the field above.</p>
-                    <p><strong>Step 4:</strong> Click "Link Kodi" and your configuration will be sent to the Kodi addon automatically.</p>
+                    <p>
+                      <strong>Step 1:</strong> Install the MediaFusion addon in Kodi from the MediaFusion repository.
+                    </p>
+                    <p>
+                      <strong>Step 2:</strong> Open the addon in Kodi and click "Configure Secret" to generate a setup
+                      code.
+                    </p>
+                    <p>
+                      <strong>Step 3:</strong> Enter the 6-digit code displayed on your Kodi screen into the field
+                      above.
+                    </p>
+                    <p>
+                      <strong>Step 4:</strong> Click "Link Kodi" and your configuration will be sent to the Kodi addon
+                      automatically.
+                    </p>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -460,15 +451,11 @@ export function IntegrationsPage() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Torznab URL</label>
                   <div className="flex gap-2">
-                    <Input 
-                      value={torznabUrl} 
-                      readOnly 
-                      className="font-mono text-xs"
-                    />
+                    <Input value={torznabUrl} readOnly className="font-mono text-xs" />
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="icon"
                           onClick={() => copyToClipboard(torznabUrl, 'torznab-url')}
                         >
@@ -479,9 +466,7 @@ export function IntegrationsPage() {
                           )}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        {copiedField === 'torznab-url' ? 'Copied!' : 'Copy URL'}
-                      </TooltipContent>
+                      <TooltipContent>{copiedField === 'torznab-url' ? 'Copied!' : 'Copy URL'}</TooltipContent>
                     </Tooltip>
                   </div>
                 </div>
@@ -492,15 +477,11 @@ export function IntegrationsPage() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">API Key</label>
                   <div className="flex gap-2">
-                    <Input 
-                      value={torznabApiKey} 
-                      readOnly 
-                      className="font-mono text-xs"
-                    />
+                    <Input value={torznabApiKey} readOnly className="font-mono text-xs" />
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="icon"
                           onClick={() => copyToClipboard(torznabApiKey, 'torznab-key')}
                         >
@@ -511,14 +492,13 @@ export function IntegrationsPage() {
                           )}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        {copiedField === 'torznab-key' ? 'Copied!' : 'Copy API Key'}
-                      </TooltipContent>
+                      <TooltipContent>{copiedField === 'torznab-key' ? 'Copied!' : 'Copy API Key'}</TooltipContent>
                     </Tooltip>
                   </div>
                   {appConfig?.authentication_required && (
                     <p className="text-xs text-muted-foreground">
-                      Replace <code className="bg-muted px-1 rounded">&lt;api_password&gt;</code> with your server's API password
+                      Replace <code className="bg-muted px-1 rounded">&lt;api_password&gt;</code> with your server's API
+                      password
                     </p>
                   )}
                 </div>
@@ -543,14 +523,22 @@ export function IntegrationsPage() {
               {/* Instructions */}
               <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="instructions" className="border-none">
-                  <AccordionTrigger className="text-sm py-2">
-                    Setup Instructions
-                  </AccordionTrigger>
+                  <AccordionTrigger className="text-sm py-2">Setup Instructions</AccordionTrigger>
                   <AccordionContent className="text-sm text-muted-foreground space-y-2">
-                    <p><strong>For Prowlarr:</strong> Add a new indexer → Generic Torznab → Enter the URL and API Key above.</p>
-                    <p><strong>For Sonarr/Radarr:</strong> Settings → Indexers → Add → Torznab → Custom → Enter URL and API Key.</p>
-                    <p><strong>Categories:</strong> Movies (2000-2060), TV (5000-5070)</p>
-                    <p><strong>Note:</strong> Searches by IMDb ID or title are supported.</p>
+                    <p>
+                      <strong>For Prowlarr:</strong> Add a new indexer → Generic Torznab → Enter the URL and API Key
+                      above.
+                    </p>
+                    <p>
+                      <strong>For Sonarr/Radarr:</strong> Settings → Indexers → Add → Torznab → Custom → Enter URL and
+                      API Key.
+                    </p>
+                    <p>
+                      <strong>Categories:</strong> Movies (2000-2060), TV (5000-5070)
+                    </p>
+                    <p>
+                      <strong>Note:</strong> Searches by IMDb ID or title are supported.
+                    </p>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -562,9 +550,7 @@ export function IntegrationsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Other Compatible Apps</CardTitle>
-            <CardDescription>
-              MediaFusion works with any app that supports the Stremio manifest format
-            </CardDescription>
+            <CardDescription>MediaFusion works with any app that supports the Stremio manifest format</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
@@ -588,9 +574,7 @@ export function IntegrationsPage() {
                 <p className="text-xs text-muted-foreground mb-2">
                   Use this URL with any app that supports Stremio manifest format:
                 </p>
-                <code className="text-xs bg-background p-2 rounded block break-all">
-                  {manifestData.manifest_url}
-                </code>
+                <code className="text-xs bg-background p-2 rounded block break-all">{manifestData.manifest_url}</code>
               </div>
             )}
           </CardContent>
@@ -602,4 +586,3 @@ export function IntegrationsPage() {
     </TooltipProvider>
   )
 }
-

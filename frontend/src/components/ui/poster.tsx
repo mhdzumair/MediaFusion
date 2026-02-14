@@ -38,39 +38,39 @@ export function Poster({
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
   const [fallbackIndex, setFallbackIndex] = useState(0)
-  
+
   // Track the previous primary URL to avoid unnecessary resets
   const prevPrimaryUrlRef = useRef<string | null>(null)
 
   // Generate fallback URLs - memoized to prevent unnecessary recalculations
   const fallbackUrls = useMemo(() => {
     const urls: string[] = []
-    
+
     // 0. Override poster takes priority (e.g., episode stills)
     if (overridePoster) {
       urls.push(overridePoster)
     }
-    
+
     // 1. RPDB poster (for IMDB IDs with API key) - skip if override is set
     if (!overridePoster && metaId.startsWith('tt') && rpdbApiKey) {
       urls.push(`https://api.ratingposterdb.com/${rpdbApiKey}/imdb/poster-default/${metaId}.jpg?fallback=true`)
     }
-    
+
     // 2. Actual poster from database
     if (poster) {
       urls.push(poster)
     }
-    
+
     // 3. MediaFusion poster endpoint (fallback)
     const baseUrl = import.meta.env.VITE_API_URL || window.location.origin
     urls.push(`${baseUrl}/poster/${catalogType}/${metaId}.jpg`)
-    
+
     return urls
   }, [metaId, catalogType, poster, rpdbApiKey, overridePoster])
 
   // Current source is derived from fallbackUrls and fallbackIndex
   const currentSrc = fallbackUrls[fallbackIndex] || null
-  
+
   // Get the primary URL (first in fallback chain)
   const primaryUrl = fallbackUrls[0] || null
 
@@ -90,8 +90,7 @@ export function Poster({
     const img = e.currentTarget
     // Check if the image was redirected to the non-existent default poster
     // The browser's currentSrc will show the final URL after redirects
-    if (img.currentSrc?.includes('/static/images/default_poster') || 
-        img.currentSrc?.includes('default_poster')) {
+    if (img.currentSrc?.includes('/static/images/default_poster') || img.currentSrc?.includes('default_poster')) {
       // Treat this as an error and try next fallback
       handleError()
       return
@@ -103,7 +102,7 @@ export function Poster({
   // Handle image load error - try next fallback
   const handleError = () => {
     if (fallbackIndex < fallbackUrls.length - 1) {
-      setFallbackIndex(prev => prev + 1)
+      setFallbackIndex((prev) => prev + 1)
     } else {
       setIsLoading(false)
       setHasError(true)
@@ -113,22 +112,12 @@ export function Poster({
   // Only skip aspect ratio if BOTH height and width are explicitly set
   // If only width is set, we still need the aspect ratio to determine height
   const hasExplicitHeight = className?.includes('h-')
-  const aspectClasses = hasExplicitHeight 
-    ? '' 
-    : (aspectRatio === 'portrait' ? 'aspect-[2/3]' : 'aspect-square')
+  const aspectClasses = hasExplicitHeight ? '' : aspectRatio === 'portrait' ? 'aspect-[2/3]' : 'aspect-square'
 
   return (
-    <div
-      className={cn(
-        'relative overflow-hidden bg-muted rounded-lg',
-        aspectClasses,
-        className
-      )}
-    >
+    <div className={cn('relative overflow-hidden bg-muted rounded-lg', aspectClasses, className)}>
       {/* Loading skeleton */}
-      {isLoading && !hasError && (
-        <Skeleton className="absolute inset-0 rounded-lg" />
-      )}
+      {isLoading && !hasError && <Skeleton className="absolute inset-0 rounded-lg" />}
 
       {/* Image */}
       {currentSrc && !hasError && (
@@ -137,7 +126,7 @@ export function Poster({
           alt={title || 'Poster'}
           className={cn(
             'absolute inset-0 w-full h-full object-cover rounded-lg transition-opacity duration-300',
-            isLoading ? 'opacity-0' : 'opacity-100'
+            isLoading ? 'opacity-0' : 'opacity-100',
           )}
           onLoad={(e) => handleLoad(e)}
           onError={handleError}
@@ -239,16 +228,11 @@ interface BackdropProps {
  * Backdrop image component with RPDB support
  * Fallback chain: RPDB backdrop (Tier 1+ only) -> database backdrop
  */
-export function Backdrop({
-  metaId,
-  backdrop,
-  rpdbApiKey,
-  className,
-}: BackdropProps) {
+export function Backdrop({ metaId, backdrop, rpdbApiKey, className }: BackdropProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
   const [fallbackIndex, setFallbackIndex] = useState(0)
-  
+
   // Track the previous primary URL to avoid unnecessary resets
   const prevPrimaryUrlRef = useRef<string | null>(null)
 
@@ -258,22 +242,22 @@ export function Backdrop({
   // Generate fallback URLs
   const fallbackUrls = useMemo(() => {
     const urls: string[] = []
-    
+
     // 1. RPDB backdrop (for IMDB IDs with Tier 1+ API key only)
     if (metaId.startsWith('tt') && rpdbApiKey && canUseRpdbBackdrop) {
       urls.push(getRpdbBackdropUrl(metaId, rpdbApiKey))
     }
-    
+
     // 2. Actual backdrop from database
     if (backdrop) {
       urls.push(backdrop)
     }
-    
+
     return urls
   }, [metaId, backdrop, rpdbApiKey, canUseRpdbBackdrop])
 
   const currentSrc = fallbackUrls[fallbackIndex] || null
-  
+
   // Get the primary URL (first in fallback chain)
   const primaryUrl = fallbackUrls[0] || null
 
@@ -300,7 +284,7 @@ export function Backdrop({
 
   const handleError = () => {
     if (fallbackIndex < fallbackUrls.length - 1) {
-      setFallbackIndex(prev => prev + 1)
+      setFallbackIndex((prev) => prev + 1)
     } else {
       setIsLoading(false)
       setHasError(true)
@@ -316,11 +300,7 @@ export function Backdrop({
     <img
       src={currentSrc}
       alt=""
-      className={cn(
-        'transition-opacity duration-500',
-        isLoading ? 'opacity-0' : 'opacity-100',
-        className
-      )}
+      className={cn('transition-opacity duration-500', isLoading ? 'opacity-0' : 'opacity-100', className)}
       onLoad={handleLoad}
       onError={handleError}
       loading="lazy"

@@ -13,7 +13,7 @@ export interface UserEpisodeCreate {
   episode_number: number
   title: string
   overview?: string
-  air_date?: string  // YYYY-MM-DD format
+  air_date?: string // YYYY-MM-DD format
   runtime_minutes?: number
 }
 
@@ -54,7 +54,7 @@ export interface UserMediaUpdate {
   catalogs?: string[]
   is_public?: boolean
   runtime_minutes?: number
-  release_date?: string  // YYYY-MM-DD format
+  release_date?: string // YYYY-MM-DD format
   status?: string
   website?: string
   original_language?: string
@@ -220,7 +220,7 @@ export const userMetadataApi = {
     if (params?.per_page) searchParams.set('per_page', params.per_page.toString())
     if (params?.type) searchParams.set('type', params.type)
     if (params?.search) searchParams.set('search', params.search)
-    
+
     const query = searchParams.toString()
     return apiClient.get<UserMediaListResponse>(`/metadata/user${query ? `?${query}` : ''}`)
   },
@@ -264,15 +264,8 @@ export const userMetadataApi = {
   /**
    * Update an episode.
    */
-  updateEpisode: (
-    mediaId: number,
-    episodeId: number,
-    data: EpisodeUpdateRequest
-  ): Promise<EpisodeResponse> => {
-    return apiClient.put<EpisodeResponse>(
-      `/metadata/user/${mediaId}/episodes/${episodeId}`,
-      data
-    )
+  updateEpisode: (mediaId: number, episodeId: number, data: EpisodeUpdateRequest): Promise<EpisodeResponse> => {
+    return apiClient.put<EpisodeResponse>(`/metadata/user/${mediaId}/episodes/${episodeId}`, data)
   },
 
   /**
@@ -294,11 +287,7 @@ export const userMetadataApi = {
    * Allows moderators to delete any episode regardless of ownership.
    * @param deleteStreamLinks - Also delete file-media links for this episode (removes streams from this episode)
    */
-  deleteEpisodeAdmin: (
-    mediaId: number,
-    episodeId: number,
-    deleteStreamLinks: boolean = false
-  ): Promise<void> => {
+  deleteEpisodeAdmin: (mediaId: number, episodeId: number, deleteStreamLinks: boolean = false): Promise<void> => {
     const query = deleteStreamLinks ? '?delete_stream_links=true' : ''
     return apiClient.delete(`/metadata/user/${mediaId}/episodes/${episodeId}/admin${query}`)
   },
@@ -327,7 +316,7 @@ export const userMetadataApi = {
     if (params.include_official !== undefined) {
       searchParams.set('include_official', params.include_official.toString())
     }
-    
+
     return apiClient.get<MetadataSearchResponse>(`/metadata/user/search/all?${searchParams}`)
   },
 
@@ -345,4 +334,3 @@ export const userMetadataApi = {
     return apiClient.post<UserMediaResponse>('/metadata/user/import', data)
   },
 }
-

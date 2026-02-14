@@ -24,9 +24,9 @@ export function ExtensionAuthPage() {
     if (!isLoading && !isAuthenticated) {
       // Small delay to ensure the navigation happens after render
       const timer = setTimeout(() => {
-        navigate('/login', { 
+        navigate('/login', {
           state: { from: { pathname: '/extension-auth' } },
-          replace: true 
+          replace: true,
         })
       }, 100)
       return () => clearTimeout(timer)
@@ -57,18 +57,20 @@ export function ExtensionAuthPage() {
       document.body.appendChild(dataElement)
 
       // Dispatch custom event for extension
-      window.dispatchEvent(new CustomEvent('mediafusion-extension-auth-ready', {
-        detail: {
-          token: accessToken,
-          user: {
-            id: user.id,
-            email: user.email,
-            username: user.username,
-            role: user.role,
+      window.dispatchEvent(
+        new CustomEvent('mediafusion-extension-auth-ready', {
+          detail: {
+            token: accessToken,
+            user: {
+              id: user.id,
+              email: user.email,
+              username: user.username,
+              role: user.role,
+            },
+            apiKey: apiKey || null,
           },
-          apiKey: apiKey || null,
-        }
-      }))
+        }),
+      )
 
       return () => {
         dataElement.remove()
@@ -87,18 +89,20 @@ export function ExtensionAuthPage() {
   const handleAuthorize = () => {
     setAuthorized(true)
     // Dispatch event for extension to capture
-    window.dispatchEvent(new CustomEvent('mediafusion-extension-authorized', {
-      detail: {
-        token: accessToken,
-        user: {
-          id: user?.id,
-          email: user?.email,
-          username: user?.username,
-          role: user?.role,
+    window.dispatchEvent(
+      new CustomEvent('mediafusion-extension-authorized', {
+        detail: {
+          token: accessToken,
+          user: {
+            id: user?.id,
+            email: user?.email,
+            username: user?.username,
+            role: user?.role,
+          },
+          apiKey: apiKey || null,
         },
-        apiKey: apiKey || null,
-      }
-    }))
+      }),
+    )
   }
 
   // Show loading state while checking auth or waiting for redirect
@@ -136,9 +140,7 @@ export function ExtensionAuthPage() {
               <LogoText addonName={addonName} size="lg" />
             </div>
             <CardTitle className="text-xl">Browser Extension Authorization</CardTitle>
-            <CardDescription>
-              Connect your browser extension to {addonName}
-            </CardDescription>
+            <CardDescription>Connect your browser extension to {addonName}</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-6">
@@ -178,18 +180,11 @@ export function ExtensionAuthPage() {
               <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20 text-center">
                 <Check className="h-8 w-8 text-green-500 mx-auto mb-2" />
                 <p className="font-medium text-green-500">Extension Authorized!</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  You can now close this tab and use the extension.
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">You can now close this tab and use the extension.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                <Button 
-                  onClick={handleAuthorize}
-                  className="w-full"
-                  size="lg"
-                  variant="gold"
-                >
+                <Button onClick={handleAuthorize} className="w-full" size="lg" variant="gold">
                   <Check className="h-4 w-4 mr-2" />
                   Authorize Extension
                 </Button>
@@ -203,11 +198,7 @@ export function ExtensionAuthPage() {
                   </div>
                 </div>
 
-                <Button 
-                  onClick={handleCopyToken}
-                  variant="outline"
-                  className="w-full"
-                >
+                <Button onClick={handleCopyToken} variant="outline" className="w-full">
                   {copied ? (
                     <>
                       <Check className="h-4 w-4 mr-2 text-green-500" />
@@ -239,11 +230,7 @@ export function ExtensionAuthPage() {
       </div>
 
       {/* Hidden auth data element for extension */}
-      <div 
-        id="mediafusion-extension-auth-container"
-        data-extension-page="true"
-        style={{ display: 'none' }}
-      />
+      <div id="mediafusion-extension-auth-container" data-extension-page="true" style={{ display: 'none' }} />
     </div>
   )
 }

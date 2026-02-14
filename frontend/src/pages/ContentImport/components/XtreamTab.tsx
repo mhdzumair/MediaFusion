@@ -15,18 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { 
-  Tv, 
-  Film, 
-  MonitorPlay, 
-  Globe, 
-  Lock, 
-  Loader2, 
-  ArrowRight, 
-  Info, 
-  FileInput, 
-  CheckCircle,
-} from 'lucide-react'
+import { Tv, Film, MonitorPlay, Globe, Lock, Loader2, ArrowRight, Info, FileInput, CheckCircle } from 'lucide-react'
 import { useAnalyzeXtream, useImportXtream, useImportJobStatus } from '@/hooks'
 import type { XtreamAnalyzeResponse, IPTVImportSettings } from '@/lib/api'
 
@@ -62,7 +51,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
     onComplete: (status) => {
       const stats = status.stats || {}
       const total = (stats.tv || 0) + (stats.movie || 0) + (stats.series || 0)
-      onSuccess(`Successfully imported ${total} items (${stats.tv || 0} TV, ${stats.movie || 0} movies, ${stats.series || 0} series)`)
+      onSuccess(
+        `Successfully imported ${total} items (${stats.tv || 0} TV, ${stats.movie || 0} movies, ${stats.series || 0} series)`,
+      )
       setImportJobId(null)
       setServerUrl('')
       setUsername('')
@@ -78,7 +69,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
 
   const handleAnalyze = async () => {
     if (!serverUrl.trim() || !username.trim() || !password.trim()) return
-    
+
     try {
       const result = await analyzeXtream.mutateAsync({
         server_url: serverUrl,
@@ -89,9 +80,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
         setAnalysis(result)
         setPreviewOpen(true)
         // Select all categories by default
-        setSelectedLiveCats(new Set(result.live_categories.map(c => c.id)))
-        setSelectedVodCats(new Set(result.vod_categories.map(c => c.id)))
-        setSelectedSeriesCats(new Set(result.series_categories.map(c => c.id)))
+        setSelectedLiveCats(new Set(result.live_categories.map((c) => c.id)))
+        setSelectedVodCats(new Set(result.vod_categories.map((c) => c.id)))
+        setSelectedSeriesCats(new Set(result.series_categories.map((c) => c.id)))
       } else {
         onError(result.error || 'Failed to connect to Xtream server')
       }
@@ -102,7 +93,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
 
   const handleImport = async () => {
     if (!analysis) return
-    
+
     try {
       let defaultSourceName = sourceName
       if (!defaultSourceName) {
@@ -112,7 +103,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
           defaultSourceName = 'Xtream Server'
         }
       }
-      
+
       const result = await importXtream.mutateAsync({
         redis_key: analysis.redis_key,
         source_name: defaultSourceName,
@@ -148,7 +139,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
 
   const toggleCategory = (type: 'live' | 'vod' | 'series', categoryId: string) => {
     if (type === 'live') {
-      setSelectedLiveCats(prev => {
+      setSelectedLiveCats((prev) => {
         const newSet = new Set(prev)
         if (newSet.has(categoryId)) {
           newSet.delete(categoryId)
@@ -158,7 +149,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
         return newSet
       })
     } else if (type === 'vod') {
-      setSelectedVodCats(prev => {
+      setSelectedVodCats((prev) => {
         const newSet = new Set(prev)
         if (newSet.has(categoryId)) {
           newSet.delete(categoryId)
@@ -168,7 +159,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
         return newSet
       })
     } else {
-      setSelectedSeriesCats(prev => {
+      setSelectedSeriesCats((prev) => {
         const newSet = new Set(prev)
         if (newSet.has(categoryId)) {
           newSet.delete(categoryId)
@@ -192,9 +183,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
   }
 
   // Calculate progress percentage
-  const progressPercent = jobStatus?.total 
-    ? Math.round((jobStatus.progress / jobStatus.total) * 100) 
-    : 0
+  const progressPercent = jobStatus?.total ? Math.round((jobStatus.progress / jobStatus.total) * 100) : 0
 
   return (
     <>
@@ -204,9 +193,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
             <Tv className="h-5 w-5 text-primary" />
             Import from Xtream Codes
           </CardTitle>
-          <CardDescription>
-            Connect to an Xtream Codes server to import Live TV, Movies, and Series
-          </CardDescription>
+          <CardDescription>Connect to an Xtream Codes server to import Live TV, Movies, and Series</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -248,16 +235,12 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
               />
             </div>
           </div>
-          <Button 
+          <Button
             onClick={handleAnalyze}
             disabled={!serverUrl.trim() || !username.trim() || !password.trim() || isAnalyzing || isImporting}
             className="w-full rounded-xl bg-gradient-to-r from-primary to-primary/80"
           >
-            {isAnalyzing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowRight className="mr-2 h-4 w-4" />
-            )}
+            {isAnalyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
             Connect & Analyze
           </Button>
 
@@ -278,9 +261,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                 <span>TV: {jobStatus.stats?.tv || 0}</span>
                 <span>Movies: {jobStatus.stats?.movie || 0}</span>
                 <span>Series: {jobStatus.stats?.series || 0}</span>
-                {(jobStatus.stats?.skipped || 0) > 0 && (
-                  <span>Skipped: {jobStatus.stats.skipped}</span>
-                )}
+                {(jobStatus.stats?.skipped || 0) > 0 && <span>Skipped: {jobStatus.stats.skipped}</span>}
                 {(jobStatus.stats?.failed || 0) > 0 && (
                   <span className="text-red-500">Failed: {jobStatus.stats.failed}</span>
                 )}
@@ -307,11 +288,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
               <Tv className="h-5 w-5 text-primary" />
               Xtream Codes Import
             </DialogTitle>
-            <DialogDescription>
-              Select content to import from the Xtream server
-            </DialogDescription>
+            <DialogDescription>Select content to import from the Xtream server</DialogDescription>
           </DialogHeader>
-          
+
           {analysis && (
             <ScrollArea className="flex-1 overflow-y-auto pr-4">
               <div className="space-y-4">
@@ -320,7 +299,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                   <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-muted/30 border border-border/50">
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground">Status</p>
-                      <p className={`text-sm font-medium ${analysis.account_info.status === 'Active' ? 'text-emerald-500' : 'text-primary'}`}>
+                      <p
+                        className={`text-sm font-medium ${analysis.account_info.status === 'Active' ? 'text-emerald-500' : 'text-primary'}`}
+                      >
                         {analysis.account_info.status}
                       </p>
                     </div>
@@ -356,7 +337,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                 {/* Content Types */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Content Types</Label>
-                  
+
                   {/* Live TV */}
                   <div className="p-3 rounded-xl bg-muted/30 border border-border/50">
                     <div className="flex items-center justify-between">
@@ -369,10 +350,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                           </p>
                         </div>
                       </div>
-                      <Switch
-                        checked={importLive}
-                        onCheckedChange={setImportLive}
-                      />
+                      <Switch checked={importLive} onCheckedChange={setImportLive} />
                     </div>
                     {importLive && analysis.live_categories.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50 max-h-[80px] overflow-y-auto">
@@ -387,7 +365,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                           </Badge>
                         ))}
                         {analysis.live_categories.length > 15 && (
-                          <Badge variant="secondary" className="text-xs">+{analysis.live_categories.length - 15} more</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            +{analysis.live_categories.length - 15} more
+                          </Badge>
                         )}
                       </div>
                     )}
@@ -405,10 +385,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                           </p>
                         </div>
                       </div>
-                      <Switch
-                        checked={importVod}
-                        onCheckedChange={setImportVod}
-                      />
+                      <Switch checked={importVod} onCheckedChange={setImportVod} />
                     </div>
                     {importVod && analysis.vod_categories.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50 max-h-[80px] overflow-y-auto">
@@ -423,7 +400,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                           </Badge>
                         ))}
                         {analysis.vod_categories.length > 15 && (
-                          <Badge variant="secondary" className="text-xs">+{analysis.vod_categories.length - 15} more</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            +{analysis.vod_categories.length - 15} more
+                          </Badge>
                         )}
                       </div>
                     )}
@@ -441,10 +420,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                           </p>
                         </div>
                       </div>
-                      <Switch
-                        checked={importSeries}
-                        onCheckedChange={setImportSeries}
-                      />
+                      <Switch checked={importSeries} onCheckedChange={setImportSeries} />
                     </div>
                     {importSeries && analysis.series_categories.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50 max-h-[80px] overflow-y-auto">
@@ -459,7 +435,9 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                           </Badge>
                         ))}
                         {analysis.series_categories.length > 15 && (
-                          <Badge variant="secondary" className="text-xs">+{analysis.series_categories.length - 15} more</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            +{analysis.series_categories.length - 15} more
+                          </Badge>
                         )}
                       </div>
                     )}
@@ -469,7 +447,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                 {/* Settings - Compact */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Settings</Label>
-                  
+
                   <div className="grid grid-cols-2 gap-2">
                     {/* Visibility */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/50">
@@ -492,20 +470,17 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                         disabled={!iptvSettings?.allow_public_sharing}
                       />
                     </div>
-                    
+
                     {/* Save Source */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/50">
                       <div className="flex items-center gap-2">
                         <FileInput className="h-4 w-4 text-primary" />
                         <span className="text-sm font-medium">Save Credentials</span>
                       </div>
-                      <Switch
-                        checked={saveSource}
-                        onCheckedChange={setSaveSource}
-                      />
+                      <Switch checked={saveSource} onCheckedChange={setSaveSource} />
                     </div>
                   </div>
-                  
+
                   {/* Source Name */}
                   {saveSource && (
                     <Input
@@ -521,14 +496,10 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
           )}
 
           <DialogFooter className="flex-shrink-0 border-t border-border/50 pt-4 mt-4">
-            <Button 
-              variant="outline" 
-              onClick={() => setPreviewOpen(false)}
-              disabled={isImporting}
-            >
+            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={isImporting}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleImport}
               disabled={isImporting || (!importLive && !importVod && !importSeries)}
               className="bg-gradient-to-r from-primary to-primary/80"

@@ -1,44 +1,18 @@
 import { useState, useEffect } from 'react'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { 
-  Save, 
-  X, 
-  TestTube2, 
-  Loader2,
-  Settings2,
-  Filter,
-  ListTree,
-  Info,
-} from 'lucide-react'
-import type { 
-  UserRSSFeed, 
-  UserRSSFeedCreate, 
+import { Save, X, TestTube2, Loader2, Settings2, Filter, ListTree, Info } from 'lucide-react'
+import type {
+  UserRSSFeed,
+  UserRSSFeedCreate,
   UserRSSFeedUpdate,
   RSSFeedParsingPatterns,
   RSSFeedFilters,
@@ -66,7 +40,7 @@ const defaultFilters: RSSFeedFilters = {}
 
 export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlideOverProps) {
   const isEdit = !!feed
-  
+
   // Form state
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
@@ -77,7 +51,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
   const [parsingPatterns, setParsingPatterns] = useState<RSSFeedParsingPatterns>(defaultParsingPatterns)
   const [filters, setFilters] = useState<RSSFeedFilters>(defaultFilters)
   const [catalogPatterns, setCatalogPatterns] = useState<CatalogPattern[]>([])
-  
+
   // Test state
   const [testResult, setTestResult] = useState<{
     status: string
@@ -85,17 +59,17 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
     sample_item?: Record<string, unknown>
     detected_patterns?: Record<string, unknown>
   } | null>(null)
-  
+
   // Regex tester state
   const [regexTesterOpen, setRegexTesterOpen] = useState(false)
   const [regexTesterField, setRegexTesterField] = useState<string>('')
   const [regexTesterSource, setRegexTesterSource] = useState<string>('')
-  
+
   // Mutations
   const createFeed = useCreateRssFeed()
   const updateFeed = useUpdateRssFeed()
   const testFeedUrl = useTestRssFeedUrl()
-  
+
   // Populate form when editing
   useEffect(() => {
     if (feed) {
@@ -122,31 +96,29 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       setTestResult(null)
     }
   }, [feed, open])
-  
+
   const handleTest = async () => {
     if (!url) return
-    
+
     try {
       const result = await testFeedUrl.mutateAsync({ url, patterns: parsingPatterns as Record<string, unknown> })
       setTestResult(result)
-      
+
       // Auto-fill detected patterns
       if (result.status === 'success' && result.detected_patterns) {
-        setParsingPatterns(prev => ({
+        setParsingPatterns((prev) => ({
           ...prev,
-          ...Object.fromEntries(
-            Object.entries(result.detected_patterns || {}).filter(([_, v]) => v)
-          ),
+          ...Object.fromEntries(Object.entries(result.detected_patterns || {}).filter(([_, v]) => v)),
         }))
       }
     } catch (error) {
       console.error('Test failed:', error)
     }
   }
-  
+
   const handleSave = async () => {
     if (!name || !url) return
-    
+
     const data: UserRSSFeedCreate | UserRSSFeedUpdate = {
       name,
       url,
@@ -158,7 +130,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       filters,
       catalog_patterns: catalogPatterns,
     }
-    
+
     try {
       if (isEdit && feed) {
         await updateFeed.mutateAsync({ feedId: feed.id, data: data as UserRSSFeedUpdate })
@@ -171,32 +143,30 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       console.error('Save failed:', error)
     }
   }
-  
+
   const updateParsingPattern = (key: string, value: string) => {
-    setParsingPatterns(prev => ({ ...prev, [key]: value || undefined }))
+    setParsingPatterns((prev) => ({ ...prev, [key]: value || undefined }))
   }
-  
+
   const updateFilter = (key: string, value: string | number | string[] | undefined) => {
-    setFilters(prev => ({ ...prev, [key]: value }))
+    setFilters((prev) => ({ ...prev, [key]: value }))
   }
-  
+
   const openRegexTester = (field: string) => {
     // Get source content from test result if available
-    const sourceContent = testResult?.sample_item 
-      ? JSON.stringify(testResult.sample_item, null, 2)
-      : ''
+    const sourceContent = testResult?.sample_item ? JSON.stringify(testResult.sample_item, null, 2) : ''
     setRegexTesterField(field)
     setRegexTesterSource(sourceContent)
     setRegexTesterOpen(true)
   }
-  
+
   const handleRegexApply = (pattern: string) => {
     updateParsingPattern(`${regexTesterField}_regex`, pattern)
     setRegexTesterOpen(false)
   }
-  
+
   const isPending = createFeed.isPending || updateFeed.isPending
-  
+
   return (
     <>
       <Sheet open={open} onOpenChange={onClose}>
@@ -206,11 +176,9 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
               <Settings2 className="h-5 w-5" />
               {isEdit ? 'Edit RSS Feed' : 'Add RSS Feed'}
             </SheetTitle>
-            <SheetDescription>
-              Configure your RSS feed settings, parsing patterns, and filters.
-            </SheetDescription>
+            <SheetDescription>Configure your RSS feed settings, parsing patterns, and filters.</SheetDescription>
           </SheetHeader>
-          
+
           <ScrollArea className="flex-1 -mx-6 px-6">
             <div className="space-y-4 py-4">
               <Accordion type="multiple" defaultValue={['basic', 'patterns']} className="space-y-2">
@@ -233,7 +201,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                           placeholder="My RSS Feed"
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label htmlFor="url">Feed URL *</Label>
                         <div className="flex gap-2">
@@ -244,11 +212,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                             placeholder="https://example.com/feed.xml"
                             className="flex-1"
                           />
-                          <Button 
-                            variant="outline" 
-                            onClick={handleTest}
-                            disabled={!url || testFeedUrl.isPending}
-                          >
+                          <Button variant="outline" onClick={handleTest} disabled={!url || testFeedUrl.isPending}>
                             {testFeedUrl.isPending ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
@@ -257,16 +221,18 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                           </Button>
                         </div>
                         {testResult && (
-                          <div className={`text-sm p-2 rounded-lg ${
-                            testResult.status === 'success' 
-                              ? 'bg-emerald-500/10 text-emerald-500' 
-                              : 'bg-red-500/10 text-red-500'
-                          }`}>
+                          <div
+                            className={`text-sm p-2 rounded-lg ${
+                              testResult.status === 'success'
+                                ? 'bg-emerald-500/10 text-emerald-500'
+                                : 'bg-red-500/10 text-red-500'
+                            }`}
+                          >
                             {testResult.message}
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="source">Source Name</Label>
@@ -277,7 +243,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                             placeholder="Optional source identifier"
                           />
                         </div>
-                        
+
                         <div className="space-y-2">
                           <Label htmlFor="torrentType">Torrent Type</Label>
                           <Select value={torrentType} onValueChange={setTorrentType}>
@@ -285,7 +251,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {TORRENT_TYPES.map(type => (
+                              {TORRENT_TYPES.map((type) => (
                                 <SelectItem key={type.value} value={type.value}>
                                   {type.label}
                                 </SelectItem>
@@ -294,19 +260,15 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                           </Select>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center justify-between">
                         <Label htmlFor="active">Enable Feed</Label>
-                        <Switch
-                          id="active"
-                          checked={isActive}
-                          onCheckedChange={setIsActive}
-                        />
+                        <Switch id="active" checked={isActive} onCheckedChange={setIsActive} />
                       </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
-                
+
                 {/* Parsing Patterns */}
                 <AccordionItem value="patterns" className="border rounded-xl px-4">
                   <AccordionTrigger className="hover:no-underline">
@@ -317,11 +279,12 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                   </AccordionTrigger>
                   <AccordionContent className="space-y-4 pt-2">
                     <p className="text-sm text-muted-foreground">
-                      Configure how to extract data from RSS items. Use dot notation for nested fields (e.g., enclosure.@url).
+                      Configure how to extract data from RSS items. Use dot notation for nested fields (e.g.,
+                      enclosure.@url).
                     </p>
-                    
+
                     <div className="grid gap-3">
-                      {PARSING_PATTERN_FIELDS.map(field => (
+                      {PARSING_PATTERN_FIELDS.map((field) => (
                         <div key={field.key} className="space-y-1">
                           <Label className="text-xs">{field.label}</Label>
                           <div className="flex gap-2">
@@ -334,7 +297,9 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                             {field.hasRegex && (
                               <>
                                 <Input
-                                  value={(parsingPatterns as Record<string, string | undefined>)[`${field.key}_regex`] || ''}
+                                  value={
+                                    (parsingPatterns as Record<string, string | undefined>)[`${field.key}_regex`] || ''
+                                  }
                                   onChange={(e) => updateParsingPattern(`${field.key}_regex`, e.target.value)}
                                   placeholder="Regex pattern"
                                   className="text-sm flex-1"
@@ -354,7 +319,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                         </div>
                       ))}
                     </div>
-                    
+
                     <div className="space-y-1">
                       <Label className="text-xs">Episode Name Parser</Label>
                       <Input
@@ -366,7 +331,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                     </div>
                   </AccordionContent>
                 </AccordionItem>
-                
+
                 {/* Filters */}
                 <AccordionItem value="filters" className="border rounded-xl px-4">
                   <AccordionTrigger className="hover:no-underline">
@@ -376,36 +341,31 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="space-y-4 pt-2">
-                    <p className="text-sm text-muted-foreground">
-                      Filter torrents based on title, size, and seeders.
-                    </p>
-                    
+                    <p className="text-sm text-muted-foreground">Filter torrents based on title, size, and seeders.</p>
+
                     <div className="grid gap-3">
-                      {FILTER_FIELDS.map(field => (
+                      {FILTER_FIELDS.map((field) => (
                         <div key={field.key} className="space-y-1">
                           <Label className="text-xs">{field.label}</Label>
                           {field.type === 'number' ? (
                             <Input
                               type="number"
                               value={(filters as Record<string, number | undefined>)[field.key] || ''}
-                              onChange={(e) => updateFilter(
-                                field.key, 
-                                e.target.value ? parseInt(e.target.value) : undefined
-                              )}
+                              onChange={(e) =>
+                                updateFilter(field.key, e.target.value ? parseInt(e.target.value) : undefined)
+                              }
                               placeholder={field.placeholder}
                               className="text-sm"
                             />
                           ) : field.key === 'category_filter' ? (
                             <Input
-                              value={Array.isArray(filters.category_filter) 
-                                ? filters.category_filter.join(', ') 
-                                : ''}
-                              onChange={(e) => updateFilter(
-                                'category_filter',
-                                e.target.value 
-                                  ? e.target.value.split(',').map(s => s.trim())
-                                  : undefined
-                              )}
+                              value={Array.isArray(filters.category_filter) ? filters.category_filter.join(', ') : ''}
+                              onChange={(e) =>
+                                updateFilter(
+                                  'category_filter',
+                                  e.target.value ? e.target.value.split(',').map((s) => s.trim()) : undefined,
+                                )
+                              }
                               placeholder={field.placeholder}
                               className="text-sm"
                             />
@@ -422,7 +382,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                     </div>
                   </AccordionContent>
                 </AccordionItem>
-                
+
                 {/* Catalog Settings */}
                 <AccordionItem value="catalogs" className="border rounded-xl px-4">
                   <AccordionTrigger className="hover:no-underline">
@@ -430,7 +390,9 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                       <ListTree className="h-4 w-4 text-emerald-500" />
                       <span>Catalog Settings</span>
                       {autoDetectCatalog && (
-                        <Badge variant="secondary" className="ml-2">Auto-detect</Badge>
+                        <Badge variant="secondary" className="ml-2">
+                          Auto-detect
+                        </Badge>
                       )}
                     </div>
                   </AccordionTrigger>
@@ -438,16 +400,11 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <Label>Auto-detect Catalog</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Automatically assign catalogs based on content
-                        </p>
+                        <p className="text-xs text-muted-foreground">Automatically assign catalogs based on content</p>
                       </div>
-                      <Switch
-                        checked={autoDetectCatalog}
-                        onCheckedChange={setAutoDetectCatalog}
-                      />
+                      <Switch checked={autoDetectCatalog} onCheckedChange={setAutoDetectCatalog} />
                     </div>
-                    
+
                     {autoDetectCatalog && (
                       <CatalogPatternsEditor
                         patterns={catalogPatterns}
@@ -458,7 +415,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
-              
+
               {/* Sample Data Preview */}
               {testResult?.sample_item && (
                 <div className="space-y-2">
@@ -472,29 +429,25 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
               )}
             </div>
           </ScrollArea>
-          
+
           {/* Footer */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={onClose}>
               <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={!name || !url || isPending}
               className="bg-gradient-to-r from-primary to-primary/80"
             >
-              {isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
+              {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               {isEdit ? 'Save Changes' : 'Create Feed'}
             </Button>
           </div>
         </SheetContent>
       </Sheet>
-      
+
       <RegexTesterModal
         open={regexTesterOpen}
         onClose={() => setRegexTesterOpen(false)}
@@ -506,9 +459,3 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
     </>
   )
 }
-
-
-
-
-
-

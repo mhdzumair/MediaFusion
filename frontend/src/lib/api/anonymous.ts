@@ -1,6 +1,6 @@
 /**
  * Anonymous Configuration API
- * 
+ *
  * Handles configuration for users without an account.
  * Uses the /encrypt-user-data endpoint to generate manifest URLs.
  */
@@ -10,37 +10,37 @@ import { getStoredApiKey } from './instance'
 // Import ProfileConfig type from the configure page types
 // This matches the frontend format used in the Configure page
 export interface QBittorrentConfigType {
-  qur: string  // qbittorrent_url
-  qus: string  // qbittorrent_username
-  qpw: string  // qbittorrent_password
-  stl: number  // seeding_time_limit
-  srl: number  // seeding_ratio_limit
-  pva: number  // play_video_after
-  cat: string  // category
-  wur: string  // webdav_url
-  wus: string  // webdav_username
-  wpw: string  // webdav_password
-  wdp: string  // webdav_downloads_path
+  qur: string // qbittorrent_url
+  qus: string // qbittorrent_username
+  qpw: string // qbittorrent_password
+  stl: number // seeding_time_limit
+  srl: number // seeding_ratio_limit
+  pva: number // play_video_after
+  cat: string // category
+  wur: string // webdav_url
+  wus: string // webdav_username
+  wpw: string // webdav_password
+  wdp: string // webdav_downloads_path
 }
 
 export interface StreamingProviderConfigType {
-  n?: string   // name
-  sv: string   // service
-  tk?: string  // token
-  em?: string  // email
-  pw?: string  // password
-  u?: string   // url
+  n?: string // name
+  sv: string // service
+  tk?: string // token
+  em?: string // email
+  pw?: string // password
+  u?: string // url
   ewc?: boolean // enable_watchlist_catalogs
   oscs?: boolean // only_show_cached_streams
   stsn?: string // stremthru_store_name
   qbc?: QBittorrentConfigType
-  pr?: number   // priority
-  en?: boolean  // enabled
+  pr?: number // priority
+  en?: boolean // enabled
 }
 
 export interface MediaFlowConfigType {
-  pu?: string  // proxy_url
-  ap?: string  // api_password
+  pu?: string // proxy_url
+  ap?: string // api_password
   pip?: string // public_ip
   pls?: boolean // proxy_live_streams
   pds?: boolean // proxy_debrid_streams
@@ -51,24 +51,24 @@ export interface RPDBConfigType {
 }
 
 export interface MDBListItemType {
-  i: number    // id
-  t: string    // title
+  i: number // id
+  t: string // title
   ct: 'movie' | 'series' // catalog_type
   uf?: boolean // use_filters
-  s?: string   // sort
+  s?: string // sort
   o?: 'asc' | 'desc' // order
 }
 
 export interface MDBListConfigType {
-  ak: string           // api_key
+  ak: string // api_key
   l?: MDBListItemType[] // lists
 }
 
 export interface CatalogConfigType {
-  ci: string           // catalog_id
-  en?: boolean         // enabled
-  s?: string | null    // sort
-  o?: 'asc' | 'desc'   // order
+  ci: string // catalog_id
+  en?: boolean // enabled
+  s?: string | null // sort
+  o?: 'asc' | 'desc' // order
 }
 
 export interface SortingOptionType {
@@ -77,59 +77,59 @@ export interface SortingOptionType {
 }
 
 export interface IndexerInstanceConfigType {
-  en?: boolean   // enabled
-  u?: string     // url
-  ak?: string    // api_key
-  ug?: boolean   // use_global
+  en?: boolean // enabled
+  u?: string // url
+  ak?: string // api_key
+  ug?: boolean // use_global
 }
 
 export interface TorznabEndpointConfigType {
-  i: string      // id
-  n: string      // name
-  u: string      // url
-  h?: Record<string, string> | null  // headers
-  en?: boolean   // enabled
-  c?: number[]   // categories
-  p?: number     // priority
+  i: string // id
+  n: string // name
+  u: string // url
+  h?: Record<string, string> | null // headers
+  en?: boolean // enabled
+  c?: number[] // categories
+  p?: number // priority
 }
 
 export interface IndexerConfigType {
-  pr?: IndexerInstanceConfigType | null    // prowlarr
-  jk?: IndexerInstanceConfigType | null    // jackett
-  tz?: TorznabEndpointConfigType[]         // torznab_endpoints
+  pr?: IndexerInstanceConfigType | null // prowlarr
+  jk?: IndexerInstanceConfigType | null // jackett
+  tz?: TorznabEndpointConfigType[] // torznab_endpoints
 }
 
 export interface ProfileConfig {
-  sp?: StreamingProviderConfigType      // streaming_provider (legacy)
-  sps?: StreamingProviderConfigType[]   // streaming_providers (multi-provider)
-  cc?: CatalogConfigType[]              // catalog_configs
-  sc?: string[]                         // selected_catalogs (deprecated)
-  sr?: (string | null)[]                // selected_resolutions
-  ec?: boolean                          // enable_catalogs
-  eim?: boolean                         // enable_imdb_metadata
-  ms?: number | string                  // max_size (bytes or 'inf')
-  mns?: number                          // min_size (bytes, 0 = no minimum)
-  mspr?: number                         // max_streams_per_resolution
-  tsp?: SortingOptionType[]             // torrent_sorting_priority
-  nf?: string[]                         // nudity_filter
-  cf?: string[]                         // certification_filter
-  ap?: string                           // api_password
-  ls?: (string | null)[]                // language_sorting
-  qf?: string[]                         // quality_filter
-  mfc?: MediaFlowConfigType             // mediaflow_config
-  rpc?: RPDBConfigType                  // rpdb_config
-  lss?: boolean                         // live_search_streams
-  mdb?: MDBListConfigType               // mdblist_config
-  ic?: IndexerConfigType                // indexer_config
+  sp?: StreamingProviderConfigType // streaming_provider (legacy)
+  sps?: StreamingProviderConfigType[] // streaming_providers (multi-provider)
+  cc?: CatalogConfigType[] // catalog_configs
+  sc?: string[] // selected_catalogs (deprecated)
+  sr?: (string | null)[] // selected_resolutions
+  ec?: boolean // enable_catalogs
+  eim?: boolean // enable_imdb_metadata
+  ms?: number | string // max_size (bytes or 'inf')
+  mns?: number // min_size (bytes, 0 = no minimum)
+  mspr?: number // max_streams_per_resolution
+  tsp?: SortingOptionType[] // torrent_sorting_priority
+  nf?: string[] // nudity_filter
+  cf?: string[] // certification_filter
+  ap?: string // api_password
+  ls?: (string | null)[] // language_sorting
+  qf?: string[] // quality_filter
+  mfc?: MediaFlowConfigType // mediaflow_config
+  rpc?: RPDBConfigType // rpdb_config
+  lss?: boolean // live_search_streams
+  mdb?: MDBListConfigType // mdblist_config
+  ic?: IndexerConfigType // indexer_config
   // Stream display settings
-  mxs?: number                          // max_streams (total cap)
-  stg?: 'mixed' | 'separate'           // stream_type_grouping
-  sto?: string[]                        // stream_type_order
-  pg?: 'mixed' | 'separate'            // provider_grouping
+  mxs?: number // max_streams (total cap)
+  stg?: 'mixed' | 'separate' // stream_type_grouping
+  sto?: string[] // stream_type_order
+  pg?: 'mixed' | 'separate' // provider_grouping
   // Stream name filter
-  snfm?: 'disabled' | 'include' | 'exclude'  // stream_name_filter_mode
-  snfp?: string[]                       // stream_name_filter_patterns
-  snfr?: boolean                        // stream_name_filter_use_regex
+  snfm?: 'disabled' | 'include' | 'exclude' // stream_name_filter_mode
+  snfp?: string[] // stream_name_filter_patterns
+  snfr?: boolean // stream_name_filter_use_regex
 }
 
 // Response from encrypt-user-data endpoint
@@ -272,10 +272,10 @@ export interface TorznabEndpointPayload {
  */
 export function profileConfigToUserData(config: ProfileConfig, apiPassword?: string | null): UserDataPayload {
   const userData: UserDataPayload = {}
-  
+
   // Convert streaming providers (sps -> streaming_providers)
   if (config.sps && config.sps.length > 0) {
-    userData.streaming_providers = config.sps.map(sp => ({
+    userData.streaming_providers = config.sps.map((sp) => ({
       name: sp.n || 'default',
       service: sp.sv,
       stremthru_store_name: sp.stsn,
@@ -284,26 +284,28 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
       email: sp.em,
       password: sp.pw,
       enable_watchlist_catalogs: sp.ewc ?? true,
-      qbittorrent_config: sp.qbc ? {
-        qbittorrent_url: sp.qbc.qur,
-        qbittorrent_username: sp.qbc.qus,
-        qbittorrent_password: sp.qbc.qpw,
-        seeding_time_limit: sp.qbc.stl,
-        seeding_ratio_limit: sp.qbc.srl,
-        play_video_after: sp.qbc.pva,
-        category: sp.qbc.cat,
-        webdav_url: sp.qbc.wur,
-        webdav_username: sp.qbc.wus,
-        webdav_password: sp.qbc.wpw,
-        webdav_downloads_path: sp.qbc.wdp,
-      } : null,
+      qbittorrent_config: sp.qbc
+        ? {
+            qbittorrent_url: sp.qbc.qur,
+            qbittorrent_username: sp.qbc.qus,
+            qbittorrent_password: sp.qbc.qpw,
+            seeding_time_limit: sp.qbc.stl,
+            seeding_ratio_limit: sp.qbc.srl,
+            play_video_after: sp.qbc.pva,
+            category: sp.qbc.cat,
+            webdav_url: sp.qbc.wur,
+            webdav_username: sp.qbc.wus,
+            webdav_password: sp.qbc.wpw,
+            webdav_downloads_path: sp.qbc.wdp,
+          }
+        : null,
       only_show_cached_streams: sp.oscs ?? false,
       priority: sp.pr ?? 0,
       enabled: sp.en ?? true,
     }))
-    
+
     // Also set legacy single provider for backward compatibility
-    const primaryProvider = config.sps.find(sp => sp.en !== false)
+    const primaryProvider = config.sps.find((sp) => sp.en !== false)
     if (primaryProvider) {
       userData.streaming_provider = {
         name: primaryProvider.n || 'default',
@@ -314,39 +316,41 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
         email: primaryProvider.em,
         password: primaryProvider.pw,
         enable_watchlist_catalogs: primaryProvider.ewc ?? true,
-        qbittorrent_config: primaryProvider.qbc ? {
-          qbittorrent_url: primaryProvider.qbc.qur,
-          qbittorrent_username: primaryProvider.qbc.qus,
-          qbittorrent_password: primaryProvider.qbc.qpw,
-          seeding_time_limit: primaryProvider.qbc.stl,
-          seeding_ratio_limit: primaryProvider.qbc.srl,
-          play_video_after: primaryProvider.qbc.pva,
-          category: primaryProvider.qbc.cat,
-          webdav_url: primaryProvider.qbc.wur,
-          webdav_username: primaryProvider.qbc.wus,
-          webdav_password: primaryProvider.qbc.wpw,
-          webdav_downloads_path: primaryProvider.qbc.wdp,
-        } : null,
+        qbittorrent_config: primaryProvider.qbc
+          ? {
+              qbittorrent_url: primaryProvider.qbc.qur,
+              qbittorrent_username: primaryProvider.qbc.qus,
+              qbittorrent_password: primaryProvider.qbc.qpw,
+              seeding_time_limit: primaryProvider.qbc.stl,
+              seeding_ratio_limit: primaryProvider.qbc.srl,
+              play_video_after: primaryProvider.qbc.pva,
+              category: primaryProvider.qbc.cat,
+              webdav_url: primaryProvider.qbc.wur,
+              webdav_username: primaryProvider.qbc.wus,
+              webdav_password: primaryProvider.qbc.wpw,
+              webdav_downloads_path: primaryProvider.qbc.wdp,
+            }
+          : null,
         only_show_cached_streams: primaryProvider.oscs ?? false,
         priority: primaryProvider.pr ?? 0,
         enabled: primaryProvider.en ?? true,
       }
     }
   }
-  
+
   // Convert catalog configs (cc -> catalog_configs)
   if (config.cc && config.cc.length > 0) {
-    userData.catalog_configs = config.cc.map(c => ({
+    userData.catalog_configs = config.cc.map((c) => ({
       catalog_id: c.ci,
       enabled: c.en ?? true,
       sort: c.s,
       order: c.o,
     }))
   }
-  
+
   // Simple field mappings
   // Filter out empty strings from selected_resolutions (empty string represents "Unknown" which is invalid)
-  if (config.sr) userData.selected_resolutions = config.sr.filter(r => r !== '')
+  if (config.sr) userData.selected_resolutions = config.sr.filter((r) => r !== '')
   if (config.ec !== undefined) userData.enable_catalogs = config.ec
   if (config.eim !== undefined) userData.enable_imdb_metadata = config.eim
   if (config.ms !== undefined) userData.max_size = config.ms
@@ -357,26 +361,26 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
   if (config.ls) userData.language_sorting = config.ls
   if (config.qf) userData.quality_filter = config.qf
   if (config.lss !== undefined) userData.live_search_streams = config.lss
-  
+
   // Stream display settings
   if (config.mxs !== undefined) userData.max_streams = config.mxs
   if (config.stg !== undefined) userData.stream_type_grouping = config.stg
   if (config.sto) userData.stream_type_order = config.sto
   if (config.pg !== undefined) userData.provider_grouping = config.pg
-  
+
   // Stream name filter settings
   if (config.snfm !== undefined) userData.stream_name_filter_mode = config.snfm
   if (config.snfp) userData.stream_name_filter_patterns = config.snfp
   if (config.snfr !== undefined) userData.stream_name_filter_use_regex = config.snfr
-  
+
   // Convert torrent sorting priority (tsp)
   if (config.tsp && config.tsp.length > 0) {
-    userData.torrent_sorting_priority = config.tsp.map(s => ({
+    userData.torrent_sorting_priority = config.tsp.map((s) => ({
       key: s.k,
       direction: s.d,
     }))
   }
-  
+
   // Convert MediaFlow config (mfc -> mediaflow_config)
   if (config.mfc) {
     userData.mediaflow_config = {
@@ -387,19 +391,19 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
       proxy_debrid_streams: config.mfc.pds,
     }
   }
-  
+
   // Convert RPDB config (rpc -> rpdb_config)
   if (config.rpc) {
     userData.rpdb_config = {
       api_key: config.rpc.ak,
     }
   }
-  
+
   // Convert MDBList config (mdb -> mdblist_config)
   if (config.mdb) {
     userData.mdblist_config = {
       api_key: config.mdb.ak,
-      lists: config.mdb.l?.map(l => ({
+      lists: config.mdb.l?.map((l) => ({
         id: l.i,
         title: l.t,
         catalog_type: l.ct,
@@ -409,23 +413,27 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
       })),
     }
   }
-  
+
   // Convert indexer config (ic -> indexer_config)
   if (config.ic) {
     userData.indexer_config = {
-      prowlarr: config.ic.pr ? {
-        enabled: config.ic.pr.en,
-        url: config.ic.pr.u,
-        api_key: config.ic.pr.ak,
-        use_global: config.ic.pr.ug,
-      } : null,
-      jackett: config.ic.jk ? {
-        enabled: config.ic.jk.en,
-        url: config.ic.jk.u,
-        api_key: config.ic.jk.ak,
-        use_global: config.ic.jk.ug,
-      } : null,
-      torznab_endpoints: config.ic.tz?.map(t => ({
+      prowlarr: config.ic.pr
+        ? {
+            enabled: config.ic.pr.en,
+            url: config.ic.pr.u,
+            api_key: config.ic.pr.ak,
+            use_global: config.ic.pr.ug,
+          }
+        : null,
+      jackett: config.ic.jk
+        ? {
+            enabled: config.ic.jk.en,
+            url: config.ic.jk.u,
+            api_key: config.ic.jk.ak,
+            use_global: config.ic.jk.ug,
+          }
+        : null,
+      torznab_endpoints: config.ic.tz?.map((t) => ({
         id: t.i,
         name: t.n,
         url: t.u,
@@ -436,12 +444,12 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
       })),
     }
   }
-  
+
   // API password for private instances
   if (apiPassword) {
     userData.api_password = apiPassword
   }
-  
+
   return userData
 }
 
@@ -451,41 +459,37 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
  */
 export async function encryptUserData(
   config: ProfileConfig,
-  existingSecretStr?: string
+  existingSecretStr?: string,
 ): Promise<EncryptUserDataResponse> {
   // Get API key from storage if on private instance
   const apiKey = getStoredApiKey()
-  
+
   // Convert ProfileConfig to UserData format
   const userData = profileConfigToUserData(config, apiKey)
-  
-  const url = existingSecretStr 
-    ? `/encrypt-user-data/${existingSecretStr}`
-    : '/encrypt-user-data'
-  
+
+  const url = existingSecretStr ? `/encrypt-user-data/${existingSecretStr}` : '/encrypt-user-data'
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
-  
+
   // Add API key header if available
   if (apiKey) {
     headers['X-API-Key'] = apiKey
   }
-  
+
   const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(userData),
   })
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Request failed' }))
     // Handle FastAPI validation errors (detail is an array of error objects)
     let message = 'Failed to encrypt configuration'
     if (Array.isArray(error.detail)) {
-      message = error.detail.map((e: { msg?: string; loc?: string[] }) => 
-        e.msg || 'Validation error'
-      ).join(', ')
+      message = error.detail.map((e: { msg?: string; loc?: string[] }) => e.msg || 'Validation error').join(', ')
     } else if (typeof error.detail === 'string') {
       message = error.detail
     } else if (error.message) {
@@ -496,7 +500,7 @@ export async function encryptUserData(
       message,
     }
   }
-  
+
   return response.json()
 }
 
@@ -509,7 +513,7 @@ export function generateManifestUrls(encryptedStr: string): {
 } {
   const baseUrl = window.location.origin
   const hostWithoutProtocol = baseUrl.replace('https://', '').replace('http://', '')
-  
+
   return {
     manifestUrl: `${baseUrl}/${encryptedStr}/manifest.json`,
     stremioInstallUrl: `stremio://${hostWithoutProtocol}/${encryptedStr}/manifest.json`,
@@ -519,7 +523,7 @@ export function generateManifestUrls(encryptedStr: string): {
 /**
  * Associate a Kodi setup code with a manifest URL.
  * Called from the web UI after the user enters the 6-digit code from Kodi.
- * 
+ *
  * Sends the X-API-Key header (from localStorage) for private instance auth.
  */
 export async function associateKodiManifest(code: string, manifestUrl: string): Promise<{ status: string }> {
@@ -538,12 +542,12 @@ export async function associateKodiManifest(code: string, manifestUrl: string): 
     headers,
     body: JSON.stringify({ code, manifest_url: manifestUrl }),
   })
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }))
     throw new Error(typeof error.detail === 'string' ? error.detail : 'Failed to link Kodi device')
   }
-  
+
   return response.json()
 }
 

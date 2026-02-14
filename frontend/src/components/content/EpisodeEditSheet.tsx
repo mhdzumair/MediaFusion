@@ -15,16 +15,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { 
-  Edit,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  Tv,
-  Calendar,
-  Clock,
-  FileText,
-} from 'lucide-react'
+import { Edit, Loader2, CheckCircle2, AlertCircle, Tv, Calendar, Clock, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateEpisodeSuggestion } from '@/hooks'
 import type { EpisodeEditableField } from '@/lib/api'
@@ -42,7 +33,7 @@ export interface EpisodeData {
   episode_number: number
   title?: string
   overview?: string
-  air_date?: string  // ISO date string (YYYY-MM-DD)
+  air_date?: string // ISO date string (YYYY-MM-DD)
   runtime_minutes?: number
   season_number?: number
   series_title?: string
@@ -54,46 +45,42 @@ interface EpisodeEditSheetProps {
   onSuccess?: () => void
 }
 
-export function EpisodeEditSheet({
-  episode,
-  trigger,
-  onSuccess,
-}: EpisodeEditSheetProps) {
+export function EpisodeEditSheet({ episode, trigger, onSuccess }: EpisodeEditSheetProps) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
-  
+
   const createEpisodeSuggestion = useCreateEpisodeSuggestion()
-  
+
   // Field states - initialized from episode data
   const getInitialFields = (): Record<FieldName, FieldState> => {
     return {
-      title: { 
-        value: episode.title || '', 
-        original: episode.title || '', 
-        isModified: false 
+      title: {
+        value: episode.title || '',
+        original: episode.title || '',
+        isModified: false,
       },
-      overview: { 
-        value: episode.overview || '', 
-        original: episode.overview || '', 
-        isModified: false 
+      overview: {
+        value: episode.overview || '',
+        original: episode.overview || '',
+        isModified: false,
       },
-      air_date: { 
-        value: episode.air_date || '', 
-        original: episode.air_date || '', 
-        isModified: false 
+      air_date: {
+        value: episode.air_date || '',
+        original: episode.air_date || '',
+        isModified: false,
       },
-      runtime_minutes: { 
-        value: episode.runtime_minutes?.toString() || '', 
-        original: episode.runtime_minutes?.toString() || '', 
-        isModified: false 
+      runtime_minutes: {
+        value: episode.runtime_minutes?.toString() || '',
+        original: episode.runtime_minutes?.toString() || '',
+        isModified: false,
       },
     }
   }
-  
+
   const [fields, setFields] = useState<Record<FieldName, FieldState>>(getInitialFields())
-  
+
   // Reset when episode changes or sheet opens
   useEffect(() => {
     if (open) {
@@ -102,9 +89,9 @@ export function EpisodeEditSheet({
       setSubmitResults([])
     }
   }, [episode, open])
-  
+
   const updateField = (fieldName: FieldName, value: string) => {
-    setFields(prev => ({
+    setFields((prev) => ({
       ...prev,
       [fieldName]: {
         ...prev[fieldName],
@@ -113,33 +100,33 @@ export function EpisodeEditSheet({
       },
     }))
   }
-  
+
   // Calculate all modifications
   const modifiedFields = useMemo(() => {
     const result: { field: FieldName; currentValue: string; newValue: string }[] = []
-    
+
     Object.entries(fields).forEach(([key, state]) => {
       if (state.isModified) {
-        result.push({ 
-          field: key as FieldName, 
-          currentValue: state.original, 
-          newValue: state.value 
+        result.push({
+          field: key as FieldName,
+          currentValue: state.original,
+          newValue: state.value,
         })
       }
     })
-    
+
     return result
   }, [fields])
-  
+
   const modifiedCount = modifiedFields.length
-  
+
   const handleSubmit = async () => {
     if (modifiedCount === 0) return
-    
+
     setIsSubmitting(true)
     setSubmitResults([])
     const results: { field: string; success: boolean }[] = []
-    
+
     for (const { field, currentValue, newValue } of modifiedFields) {
       try {
         await createEpisodeSuggestion.mutateAsync({
@@ -157,11 +144,11 @@ export function EpisodeEditSheet({
         results.push({ field, success: false })
       }
     }
-    
+
     setSubmitResults(results)
     setIsSubmitting(false)
-    
-    const successCount = results.filter(r => r.success).length
+
+    const successCount = results.filter((r) => r.success).length
     if (successCount > 0 && successCount === results.length) {
       setTimeout(() => {
         setOpen(false)
@@ -169,7 +156,7 @@ export function EpisodeEditSheet({
       }, 1500)
     }
   }
-  
+
   const formatFieldName = (field: string): string => {
     const names: Record<string, string> = {
       title: 'Title',
@@ -190,45 +177,40 @@ export function EpisodeEditSheet({
           </Button>
         )}
       </SheetTrigger>
-      
+
       <SheetContent className="w-full sm:max-w-[480px] p-0 flex flex-col">
         <SheetHeader className="px-6 py-4 border-b">
           <SheetTitle className="flex items-center gap-2">
             <Edit className="h-5 w-5 text-primary" />
             Edit Episode
           </SheetTitle>
-          <SheetDescription>
-            Suggest corrections to this episode's information
-          </SheetDescription>
+          <SheetDescription>Suggest corrections to this episode's information</SheetDescription>
         </SheetHeader>
-        
+
         <ScrollArea className="flex-1 px-6">
           <div className="py-6 space-y-6">
             {/* Episode Preview */}
             <div className="p-4 rounded-xl bg-muted/50">
               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                 <Tv className="h-4 w-4" />
-                {episode.series_title && (
-                  <span className="font-medium">{episode.series_title}</span>
-                )}
+                {episode.series_title && <span className="font-medium">{episode.series_title}</span>}
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="rounded-lg">
-                  S{(episode.season_number || 1).toString().padStart(2, '0')}E{episode.episode_number.toString().padStart(2, '0')}
+                  S{(episode.season_number || 1).toString().padStart(2, '0')}E
+                  {episode.episode_number.toString().padStart(2, '0')}
                 </Badge>
-                <span className="font-semibold truncate">
-                  {episode.title || `Episode ${episode.episode_number}`}
-                </span>
+                <span className="font-semibold truncate">{episode.title || `Episode ${episode.episode_number}`}</span>
               </div>
             </div>
-            
+
             {/* Basic Info Section */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <FileText className="h-4 w-4" />
                 Episode Information
               </div>
-              
+
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -243,13 +225,10 @@ export function EpisodeEditSheet({
                     value={fields.title.value}
                     onChange={(e) => updateField('title', e.target.value)}
                     placeholder="Episode title"
-                    className={cn(
-                      'rounded-xl',
-                      fields.title.isModified && 'border-primary/50 bg-primary/5'
-                    )}
+                    className={cn('rounded-xl', fields.title.isModified && 'border-primary/50 bg-primary/5')}
                   />
                 </div>
-                
+
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Overview</Label>
@@ -266,22 +245,22 @@ export function EpisodeEditSheet({
                     rows={4}
                     className={cn(
                       'rounded-xl resize-none',
-                      fields.overview.isModified && 'border-primary/50 bg-primary/5'
+                      fields.overview.isModified && 'border-primary/50 bg-primary/5',
                     )}
                   />
                 </div>
               </div>
             </div>
-            
+
             <Separator />
-            
+
             {/* Date & Runtime Section */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Calendar className="h-4 w-4" />
                 Schedule & Duration
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -296,13 +275,10 @@ export function EpisodeEditSheet({
                     type="date"
                     value={fields.air_date.value}
                     onChange={(e) => updateField('air_date', e.target.value)}
-                    className={cn(
-                      'rounded-xl',
-                      fields.air_date.isModified && 'border-primary/50 bg-primary/5'
-                    )}
+                    className={cn('rounded-xl', fields.air_date.isModified && 'border-primary/50 bg-primary/5')}
                   />
                 </div>
-                
+
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs flex items-center gap-1">
@@ -321,17 +297,14 @@ export function EpisodeEditSheet({
                     value={fields.runtime_minutes.value}
                     onChange={(e) => updateField('runtime_minutes', e.target.value)}
                     placeholder="e.g., 45"
-                    className={cn(
-                      'rounded-xl',
-                      fields.runtime_minutes.isModified && 'border-primary/50 bg-primary/5'
-                    )}
+                    className={cn('rounded-xl', fields.runtime_minutes.isModified && 'border-primary/50 bg-primary/5')}
                   />
                 </div>
               </div>
             </div>
-            
+
             <Separator />
-            
+
             {/* Reason Section */}
             <div className="space-y-1.5">
               <Label className="text-xs">Reason for changes (optional)</Label>
@@ -346,7 +319,7 @@ export function EpisodeEditSheet({
                 Providing a reason helps moderators review your suggestions faster
               </p>
             </div>
-            
+
             {/* Submit Results */}
             {submitResults.length > 0 && (
               <div className="p-4 rounded-xl bg-muted/50 space-y-2">
@@ -359,18 +332,14 @@ export function EpisodeEditSheet({
                       <AlertCircle className="h-4 w-4 text-red-500" />
                     )}
                     <span>{formatFieldName(field)}</span>
-                    {success && (
-                      <span className="text-xs text-muted-foreground">
-                        (submitted for review)
-                      </span>
-                    )}
+                    {success && <span className="text-xs text-muted-foreground">(submitted for review)</span>}
                   </div>
                 ))}
               </div>
             )}
           </div>
         </ScrollArea>
-        
+
         <SheetFooter className="px-6 py-4 border-t">
           <div className="flex items-center justify-between w-full">
             <div className="text-sm text-muted-foreground">

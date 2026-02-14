@@ -9,12 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { 
-  AlertTriangle, 
-  Search, 
-  ArrowRight,
-  XCircle,
-} from 'lucide-react'
+import { AlertTriangle, Search, ArrowRight, XCircle } from 'lucide-react'
 import { useState } from 'react'
 
 interface ValidationError {
@@ -67,7 +62,7 @@ export function ValidationWarningDialog({
             The torrent metadata didn&apos;t match our validation checks. This could mean:
           </AlertDialogDescription>
         </AlertDialogHeader>
-        
+
         <div className="space-y-4 py-4">
           {/* Possible Reasons */}
           <div className="p-3 rounded-lg bg-muted/50 space-y-2">
@@ -97,9 +92,7 @@ export function ValidationWarningDialog({
 
           {/* Guidelines */}
           <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-            <p className="text-sm font-medium text-primary dark:text-primary mb-2">
-              Community Guidelines Reminder:
-            </p>
+            <p className="text-sm font-medium text-primary dark:text-primary mb-2">Community Guidelines Reminder:</p>
             <ul className="text-xs text-muted-foreground space-y-1 ml-4 list-disc">
               <li>Do not upload adult or inappropriate content</li>
               <li>Only upload content that matches the metadata</li>
@@ -114,28 +107,17 @@ export function ValidationWarningDialog({
               checked={guidelinesAcknowledged}
               onCheckedChange={(checked) => setGuidelinesAcknowledged(checked === true)}
             />
-            <Label 
-              htmlFor="guidelines" 
-              className="text-sm font-normal leading-tight cursor-pointer"
-            >
+            <Label htmlFor="guidelines" className="text-sm font-normal leading-tight cursor-pointer">
               I confirm this content follows community guidelines and the metadata is correct
             </Label>
           </div>
         </div>
 
         <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            className="sm:order-1"
-          >
+          <Button variant="outline" onClick={onCancel} className="sm:order-1">
             Cancel
           </Button>
-          <Button
-            variant="secondary"
-            onClick={onReanalyze}
-            className="sm:order-2"
-          >
+          <Button variant="secondary" onClick={onReanalyze} className="sm:order-2">
             <Search className="h-4 w-4 mr-2" />
             Re-analyze & Select Correct Match
           </Button>
@@ -152,4 +134,3 @@ export function ValidationWarningDialog({
     </AlertDialog>
   )
 }
-

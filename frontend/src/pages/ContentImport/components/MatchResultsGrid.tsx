@@ -2,16 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { 
-  Star, 
-  Clock, 
-  Film, 
-  Tv, 
-  Globe, 
-  Languages as LanguagesIcon,
-  User,
-  Check,
-} from 'lucide-react'
+import { Star, Clock, Film, Tv, Globe, Languages as LanguagesIcon, User, Check } from 'lucide-react'
 import type { TorrentMatch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -34,12 +25,7 @@ interface MatchResultsGridProps {
   className?: string
 }
 
-export function MatchResultsGrid({
-  matches,
-  selectedIndex,
-  onSelectMatch,
-  className,
-}: MatchResultsGridProps) {
+export function MatchResultsGrid({ matches, selectedIndex, onSelectMatch, className }: MatchResultsGridProps) {
   if (matches.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
@@ -51,18 +37,18 @@ export function MatchResultsGrid({
   }
 
   return (
-    <ScrollArea className={cn("h-[400px]", className)}>
+    <ScrollArea className={cn('h-[400px]', className)}>
       <div className="space-y-3 pr-4">
         {matches.map((match, index) => {
           const isSelected = selectedIndex === index
           const TypeIcon = match.type === 'series' ? Tv : Film
-          
+
           return (
             <Card
               key={`${match.id}-${index}`}
               className={cn(
-                "p-3 cursor-pointer transition-all hover:border-primary/50",
-                isSelected && "border-primary bg-primary/5 ring-1 ring-primary/30"
+                'p-3 cursor-pointer transition-all hover:border-primary/50',
+                isSelected && 'border-primary bg-primary/5 ring-1 ring-primary/30',
               )}
               onClick={() => onSelectMatch(match, index)}
             >
@@ -93,11 +79,7 @@ export function MatchResultsGrid({
                     <div className="min-w-0">
                       <h4 className="font-semibold truncate">
                         {match.title}
-                        {match.year && (
-                          <span className="text-muted-foreground font-normal ml-1">
-                            ({match.year})
-                          </span>
-                        )}
+                        {match.year && <span className="text-muted-foreground font-normal ml-1">({match.year})</span>}
                       </h4>
                       {match.aka_titles && match.aka_titles.length > 0 && (
                         <p className="text-xs text-muted-foreground truncate">
@@ -139,28 +121,19 @@ export function MatchResultsGrid({
 
                   {/* Description */}
                   {match.description && (
-                    <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">
-                      {match.description}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{match.description}</p>
                   )}
 
                   {/* Genres */}
                   {match.genres && match.genres.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {match.genres.slice(0, 4).map(genre => (
-                        <Badge 
-                          key={genre} 
-                          variant="secondary" 
-                          className="text-[10px] h-5 px-1.5"
-                        >
+                      {match.genres.slice(0, 4).map((genre) => (
+                        <Badge key={genre} variant="secondary" className="text-[10px] h-5 px-1.5">
                           {genre}
                         </Badge>
                       ))}
                       {match.genres.length > 4 && (
-                        <Badge 
-                          variant="secondary" 
-                          className="text-[10px] h-5 px-1.5"
-                        >
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
                           +{match.genres.length - 4}
                         </Badge>
                       )}
@@ -193,12 +166,9 @@ export function MatchResultsGrid({
                 {/* Select Button */}
                 <div className="flex-shrink-0 flex flex-col justify-center">
                   <Button
-                    variant={isSelected ? "default" : "outline"}
+                    variant={isSelected ? 'default' : 'outline'}
                     size="sm"
-                    className={cn(
-                      "h-8 text-xs",
-                      isSelected && "bg-primary hover:bg-primary/90"
-                    )}
+                    className={cn('h-8 text-xs', isSelected && 'bg-primary hover:bg-primary/90')}
                     onClick={(e) => {
                       e.stopPropagation()
                       onSelectMatch(match, index)
@@ -222,4 +192,3 @@ export function MatchResultsGrid({
     </ScrollArea>
   )
 }
-

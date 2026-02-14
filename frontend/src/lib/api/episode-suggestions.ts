@@ -17,7 +17,7 @@ export interface EpisodeSuggestionReviewRequest {
 }
 
 export interface EpisodeSuggestion {
-  id: string  // UUID
+  id: string // UUID
   user_id: number
   username: string | null
   episode_id: number
@@ -88,10 +88,7 @@ export interface BulkReviewResult {
 // API functions
 export const episodeSuggestionsApi = {
   // Create an episode suggestion
-  create: async (
-    episodeId: number,
-    data: EpisodeSuggestionCreateRequest
-  ): Promise<EpisodeSuggestion> => {
+  create: async (episodeId: number, data: EpisodeSuggestionCreateRequest): Promise<EpisodeSuggestion> => {
     return apiClient.post<EpisodeSuggestion>(`/episode/${episodeId}/suggest`, data)
   },
 
@@ -128,10 +125,7 @@ export const episodeSuggestionsApi = {
   },
 
   // Review episode suggestion (moderator)
-  review: async (
-    suggestionId: string,
-    data: EpisodeSuggestionReviewRequest
-  ): Promise<EpisodeSuggestion> => {
+  review: async (suggestionId: string, data: EpisodeSuggestionReviewRequest): Promise<EpisodeSuggestion> => {
     return apiClient.put<EpisodeSuggestion>(`/episode-suggestions/${suggestionId}/review`, data)
   },
 
@@ -139,16 +133,13 @@ export const episodeSuggestionsApi = {
   bulkReview: async (
     suggestionIds: string[],
     action: 'approve' | 'reject',
-    reviewNotes?: string
+    reviewNotes?: string,
   ): Promise<BulkReviewResult> => {
     const params = new URLSearchParams()
     params.set('action', action)
     if (reviewNotes) params.set('review_notes', reviewNotes)
-    
-    return apiClient.post<BulkReviewResult>(
-      `/episode-suggestions/bulk-review?${params.toString()}`,
-      suggestionIds
-    )
+
+    return apiClient.post<BulkReviewResult>(`/episode-suggestions/bulk-review?${params.toString()}`, suggestionIds)
   },
 
   // Get stats

@@ -84,7 +84,7 @@ export function LoginPage() {
           return
         }
       }
-      
+
       // For other errors, show the error message
       const errorMessage = err instanceof Error ? err.message : 'Login failed'
       setError(errorMessage)
@@ -105,11 +105,11 @@ export function LoginPage() {
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-primary/3 rounded-full blur-3xl" />
         {/* Subtle grid */}
-        <div 
+        <div
           className="absolute inset-0 opacity-[0.015]"
           style={{
             backgroundImage: `linear-gradient(hsl(var(--foreground) / 0.15) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground) / 0.15) 1px, transparent 1px)`,
-            backgroundSize: '80px 80px'
+            backgroundSize: '80px 80px',
           }}
         />
       </div>
@@ -125,7 +125,8 @@ export function LoginPage() {
             Your Universal <span className="gradient-text">Streaming</span> Experience
           </h1>
           <p className="text-lg text-muted-foreground">
-            Stream content from multiple sources with a single app. Configure your providers, manage your library, and enjoy seamless entertainment.
+            Stream content from multiple sources with a single app. Configure your providers, manage your library, and
+            enjoy seamless entertainment.
           </p>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -153,9 +154,7 @@ export function LoginPage() {
               <Logo size="lg" />
             </div>
             <CardTitle className="font-display text-2xl font-semibold">Welcome back</CardTitle>
-            <CardDescription>
-              Sign in to your {addonName} account
-            </CardDescription>
+            <CardDescription>Sign in to your {addonName} account</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
@@ -210,17 +209,11 @@ export function LoginPage() {
                           )}
                         </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant={isApiKeySet ? "outline" : "default"}
-                        onClick={handleSaveApiKey}
-                      >
+                      <Button type="button" variant={isApiKeySet ? 'outline' : 'default'} onClick={handleSaveApiKey}>
                         {isApiKeySet ? 'Update' : 'Save'}
                       </Button>
                     </div>
-                    {apiKeyError && (
-                      <p className="text-sm text-destructive">{apiKeyError}</p>
-                    )}
+                    {apiKeyError && <p className="text-sm text-destructive">{apiKeyError}</p>}
                     {isApiKeySet && (
                       <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                         <Shield className="h-3 w-3" />
@@ -240,9 +233,7 @@ export function LoginPage() {
                   autoComplete="email"
                   {...register('email')}
                 />
-                {errors.email && (
-                  <p className="text-sm text-destructive">{errors.email.message}</p>
-                )}
+                {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
               </div>
 
               <div className="space-y-2">
@@ -270,27 +261,17 @@ export function LoginPage() {
                     )}
                   </Button>
                 </div>
-                {errors.password && (
-                  <p className="text-sm text-destructive">{errors.password.message}</p>
-                )}
+                {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4">
-              <Button 
-                type="submit" 
-                variant="gold"
-                className="w-full" 
-                disabled={isSubmitting}
-              >
+              <Button type="submit" variant="gold" className="w-full" disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Sign in
               </Button>
               <p className="text-sm text-muted-foreground text-center">
                 Don&apos;t have an account?{' '}
-                <Link
-                  to="/register"
-                  className="text-primary hover:text-primary/80 font-medium"
-                >
+                <Link to="/register" className="text-primary hover:text-primary/80 font-medium">
                   Sign up
                 </Link>
               </p>
@@ -303,10 +284,7 @@ export function LoginPage() {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                <a
-                  href="/app/configure"
-                  className="text-primary hover:text-primary/80 font-medium"
-                >
+                <a href="/app/configure" className="text-primary hover:text-primary/80 font-medium">
                   Configure without an account
                 </a>
               </p>

@@ -5,11 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,16 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Hash,
-  Loader2,
-  Edit2,
-  Check,
-} from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Hash, Loader2, Edit2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { UserSeasonCreate, UserEpisodeCreate, SeasonResponse } from '@/lib/api'
 
@@ -77,10 +64,8 @@ export function SeasonEpisodeBuilder({
   }, [])
 
   const addSeason = useCallback(() => {
-    const nextSeasonNumber = seasons.length > 0
-      ? Math.max(...seasons.map(s => s.season_number)) + 1
-      : 1
-    
+    const nextSeasonNumber = seasons.length > 0 ? Math.max(...seasons.map((s) => s.season_number)) + 1 : 1
+
     onChange([
       ...seasons,
       {
@@ -92,59 +77,71 @@ export function SeasonEpisodeBuilder({
     setExpandedSeasons((prev) => new Set([...prev, seasons.length]))
   }, [seasons, onChange])
 
-  const updateSeason = useCallback((index: number, updates: Partial<UserSeasonCreate>) => {
-    const newSeasons = [...seasons]
-    newSeasons[index] = { ...newSeasons[index], ...updates }
-    onChange(newSeasons)
-  }, [seasons, onChange])
+  const updateSeason = useCallback(
+    (index: number, updates: Partial<UserSeasonCreate>) => {
+      const newSeasons = [...seasons]
+      newSeasons[index] = { ...newSeasons[index], ...updates }
+      onChange(newSeasons)
+    },
+    [seasons, onChange],
+  )
 
-  const removeSeason = useCallback((index: number) => {
-    onChange(seasons.filter((_, i) => i !== index))
-    setExpandedSeasons((prev) => {
-      const next = new Set(prev)
-      next.delete(index)
-      return next
-    })
-  }, [seasons, onChange])
+  const removeSeason = useCallback(
+    (index: number) => {
+      onChange(seasons.filter((_, i) => i !== index))
+      setExpandedSeasons((prev) => {
+        const next = new Set(prev)
+        next.delete(index)
+        return next
+      })
+    },
+    [seasons, onChange],
+  )
 
-  const addEpisode = useCallback((seasonIndex: number) => {
-    const season = seasons[seasonIndex]
-    const nextEpisodeNumber = season.episodes && season.episodes.length > 0
-      ? Math.max(...season.episodes.map(e => e.episode_number)) + 1
-      : 1
+  const addEpisode = useCallback(
+    (seasonIndex: number) => {
+      const season = seasons[seasonIndex]
+      const nextEpisodeNumber =
+        season.episodes && season.episodes.length > 0
+          ? Math.max(...season.episodes.map((e) => e.episode_number)) + 1
+          : 1
 
-    const newEpisode: UserEpisodeCreate = {
-      episode_number: nextEpisodeNumber,
-      title: `Episode ${nextEpisodeNumber}`,
-    }
+      const newEpisode: UserEpisodeCreate = {
+        episode_number: nextEpisodeNumber,
+        title: `Episode ${nextEpisodeNumber}`,
+      }
 
-    const newSeasons = [...seasons]
-    newSeasons[seasonIndex] = {
-      ...season,
-      episodes: [...(season.episodes || []), newEpisode],
-    }
-    onChange(newSeasons)
-  }, [seasons, onChange])
+      const newSeasons = [...seasons]
+      newSeasons[seasonIndex] = {
+        ...season,
+        episodes: [...(season.episodes || []), newEpisode],
+      }
+      onChange(newSeasons)
+    },
+    [seasons, onChange],
+  )
 
-  const updateEpisode = useCallback((
-    seasonIndex: number,
-    episodeIndex: number,
-    updates: Partial<UserEpisodeCreate>
-  ) => {
-    const newSeasons = [...seasons]
-    const episodes = [...(newSeasons[seasonIndex].episodes || [])]
-    episodes[episodeIndex] = { ...episodes[episodeIndex], ...updates }
-    newSeasons[seasonIndex] = { ...newSeasons[seasonIndex], episodes }
-    onChange(newSeasons)
-  }, [seasons, onChange])
+  const updateEpisode = useCallback(
+    (seasonIndex: number, episodeIndex: number, updates: Partial<UserEpisodeCreate>) => {
+      const newSeasons = [...seasons]
+      const episodes = [...(newSeasons[seasonIndex].episodes || [])]
+      episodes[episodeIndex] = { ...episodes[episodeIndex], ...updates }
+      newSeasons[seasonIndex] = { ...newSeasons[seasonIndex], episodes }
+      onChange(newSeasons)
+    },
+    [seasons, onChange],
+  )
 
-  const removeEpisode = useCallback((seasonIndex: number, episodeIndex: number) => {
-    const newSeasons = [...seasons]
-    const episodes = [...(newSeasons[seasonIndex].episodes || [])]
-    episodes.splice(episodeIndex, 1)
-    newSeasons[seasonIndex] = { ...newSeasons[seasonIndex], episodes }
-    onChange(newSeasons)
-  }, [seasons, onChange])
+  const removeEpisode = useCallback(
+    (seasonIndex: number, episodeIndex: number) => {
+      const newSeasons = [...seasons]
+      const episodes = [...(newSeasons[seasonIndex].episodes || [])]
+      episodes.splice(episodeIndex, 1)
+      newSeasons[seasonIndex] = { ...newSeasons[seasonIndex], episodes }
+      onChange(newSeasons)
+    },
+    [seasons, onChange],
+  )
 
   const handleDeleteClick = useCallback((item: typeof itemToDelete) => {
     setItemToDelete(item)
@@ -172,24 +169,28 @@ export function SeasonEpisodeBuilder({
     setItemToDelete(null)
   }, [itemToDelete, onDeleteExistingSeason, onDeleteExistingEpisode, removeSeason, removeEpisode])
 
-  const addBulkEpisodes = useCallback((seasonIndex: number, count: number) => {
-    const season = seasons[seasonIndex]
-    const startNumber = season.episodes && season.episodes.length > 0
-      ? Math.max(...season.episodes.map(e => e.episode_number)) + 1
-      : 1
+  const addBulkEpisodes = useCallback(
+    (seasonIndex: number, count: number) => {
+      const season = seasons[seasonIndex]
+      const startNumber =
+        season.episodes && season.episodes.length > 0
+          ? Math.max(...season.episodes.map((e) => e.episode_number)) + 1
+          : 1
 
-    const newEpisodes: UserEpisodeCreate[] = Array.from({ length: count }, (_, i) => ({
-      episode_number: startNumber + i,
-      title: `Episode ${startNumber + i}`,
-    }))
+      const newEpisodes: UserEpisodeCreate[] = Array.from({ length: count }, (_, i) => ({
+        episode_number: startNumber + i,
+        title: `Episode ${startNumber + i}`,
+      }))
 
-    const newSeasons = [...seasons]
-    newSeasons[seasonIndex] = {
-      ...season,
-      episodes: [...(season.episodes || []), ...newEpisodes],
-    }
-    onChange(newSeasons)
-  }, [seasons, onChange])
+      const newSeasons = [...seasons]
+      newSeasons[seasonIndex] = {
+        ...season,
+        episodes: [...(season.episodes || []), ...newEpisodes],
+      }
+      onChange(newSeasons)
+    },
+    [seasons, onChange],
+  )
 
   return (
     <div className="space-y-4">
@@ -209,9 +210,7 @@ export function SeasonEpisodeBuilder({
                           <Hash className="h-3 w-3" />
                           Season {season.season_number}
                         </Badge>
-                        {season.name && (
-                          <span className="text-sm text-muted-foreground">{season.name}</span>
-                        )}
+                        {season.name && <span className="text-sm text-muted-foreground">{season.name}</span>}
                         <Badge variant="secondary" className="text-xs">
                           {season.episode_count} episodes
                         </Badge>
@@ -243,9 +242,7 @@ export function SeasonEpisodeBuilder({
                           className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/30"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground w-8">
-                              E{episode.episode_number}
-                            </span>
+                            <span className="text-xs text-muted-foreground w-8">E{episode.episode_number}</span>
                             <span className="text-sm">{episode.title}</span>
                           </div>
                           <Button
@@ -253,10 +250,12 @@ export function SeasonEpisodeBuilder({
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                            onClick={() => handleDeleteClick({
-                              type: 'episode',
-                              episodeId: episode.id,
-                            })}
+                            onClick={() =>
+                              handleDeleteClick({
+                                type: 'episode',
+                                episodeId: episode.id,
+                              })
+                            }
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -281,10 +280,7 @@ export function SeasonEpisodeBuilder({
             <div className="space-y-2 pr-4">
               {seasons.map((season, seasonIndex) => (
                 <Card key={seasonIndex} className="border-border/50 bg-card/50">
-                  <Collapsible
-                    open={expandedSeasons.has(seasonIndex)}
-                    onOpenChange={() => toggleSeason(seasonIndex)}
-                  >
+                  <Collapsible open={expandedSeasons.has(seasonIndex)} onOpenChange={() => toggleSeason(seasonIndex)}>
                     <CollapsibleTrigger asChild>
                       <CardHeader className="py-3 cursor-pointer hover:bg-muted/30 transition-colors">
                         <div className="flex items-center justify-between">
@@ -298,9 +294,7 @@ export function SeasonEpisodeBuilder({
                               <Hash className="h-3 w-3" />
                               Season {season.season_number}
                             </Badge>
-                            {season.name && (
-                              <span className="text-sm text-muted-foreground">{season.name}</span>
-                            )}
+                            {season.name && <span className="text-sm text-muted-foreground">{season.name}</span>}
                             <Badge variant="secondary" className="text-xs">
                               {season.episodes?.length || 0} episodes
                             </Badge>
@@ -333,9 +327,11 @@ export function SeasonEpisodeBuilder({
                               type="number"
                               min="0"
                               value={season.season_number}
-                              onChange={(e) => updateSeason(seasonIndex, {
-                                season_number: parseInt(e.target.value) || 0,
-                              })}
+                              onChange={(e) =>
+                                updateSeason(seasonIndex, {
+                                  season_number: parseInt(e.target.value) || 0,
+                                })
+                              }
                               className="h-8"
                             />
                           </div>
@@ -343,9 +339,11 @@ export function SeasonEpisodeBuilder({
                             <Label className="text-xs">Season Name</Label>
                             <Input
                               value={season.name || ''}
-                              onChange={(e) => updateSeason(seasonIndex, {
-                                name: e.target.value || undefined,
-                              })}
+                              onChange={(e) =>
+                                updateSeason(seasonIndex, {
+                                  name: e.target.value || undefined,
+                                })
+                              }
                               placeholder="Optional name"
                               className="h-8"
                             />
@@ -395,26 +393,30 @@ export function SeasonEpisodeBuilder({
                                   key={episodeIndex}
                                   className={cn(
                                     'flex items-center gap-2 py-1.5 px-2 rounded',
-                                    'hover:bg-muted/30 group'
+                                    'hover:bg-muted/30 group',
                                   )}
                                 >
                                   {editingEpisode?.seasonIndex === seasonIndex &&
-                                   editingEpisode?.episodeIndex === episodeIndex ? (
+                                  editingEpisode?.episodeIndex === episodeIndex ? (
                                     <>
                                       <Input
                                         type="number"
                                         min="1"
                                         value={episode.episode_number}
-                                        onChange={(e) => updateEpisode(seasonIndex, episodeIndex, {
-                                          episode_number: parseInt(e.target.value) || 1,
-                                        })}
+                                        onChange={(e) =>
+                                          updateEpisode(seasonIndex, episodeIndex, {
+                                            episode_number: parseInt(e.target.value) || 1,
+                                          })
+                                        }
                                         className="h-7 w-14 text-xs"
                                       />
                                       <Input
                                         value={episode.title}
-                                        onChange={(e) => updateEpisode(seasonIndex, episodeIndex, {
-                                          title: e.target.value,
-                                        })}
+                                        onChange={(e) =>
+                                          updateEpisode(seasonIndex, episodeIndex, {
+                                            title: e.target.value,
+                                          })
+                                        }
                                         className="h-7 flex-1 text-xs"
                                         autoFocus
                                       />
@@ -449,11 +451,13 @@ export function SeasonEpisodeBuilder({
                                           variant="ghost"
                                           size="icon"
                                           className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                          onClick={() => handleDeleteClick({
-                                            type: 'episode',
-                                            seasonIndex,
-                                            episodeIndex,
-                                          })}
+                                          onClick={() =>
+                                            handleDeleteClick({
+                                              type: 'episode',
+                                              seasonIndex,
+                                              episodeIndex,
+                                            })
+                                          }
                                         >
                                           <Trash2 className="h-3 w-3" />
                                         </Button>
@@ -464,9 +468,7 @@ export function SeasonEpisodeBuilder({
                               ))}
                             </div>
                           ) : (
-                            <p className="text-xs text-muted-foreground py-2">
-                              No episodes yet. Add some above.
-                            </p>
+                            <p className="text-xs text-muted-foreground py-2">No episodes yet. Add some above.</p>
                           )}
                         </div>
                       </CardContent>
@@ -494,9 +496,7 @@ export function SeasonEpisodeBuilder({
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {itemToDelete?.type === 'season' ? 'Season' : 'Episode'}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Delete {itemToDelete?.type === 'season' ? 'Season' : 'Episode'}</AlertDialogTitle>
             <AlertDialogDescription>
               {itemToDelete?.type === 'season'
                 ? 'Are you sure you want to delete this season and all its episodes? This action cannot be undone.'
@@ -510,11 +510,7 @@ export function SeasonEpisodeBuilder({
               className="bg-red-600 hover:bg-red-700"
               disabled={isLoading}
             >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -523,4 +519,3 @@ export function SeasonEpisodeBuilder({
     </div>
   )
 }
-

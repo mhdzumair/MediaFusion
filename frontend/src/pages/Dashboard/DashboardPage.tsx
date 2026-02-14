@@ -58,42 +58,42 @@ const quickActions = [
 export function DashboardPage() {
   const { user } = useAuth()
   const { rpdbApiKey } = useRpdb()
-  
+
   // Fetch real stats from API
   const { data: libraryStats, isLoading: libraryLoading } = useLibraryStats()
   const { data: continueWatching, isLoading: watchingLoading } = useContinueWatching(undefined, 5)
   const { data: contributionStats, isLoading: contributionsLoading } = useContributionStats()
-  
+
   const isStatsLoading = libraryLoading || watchingLoading || contributionsLoading
 
   const stats = [
-    { 
-      label: 'Continue Watching', 
-      value: continueWatching?.length.toString() ?? '0', 
-      icon: Clock, 
+    {
+      label: 'Continue Watching',
+      value: continueWatching?.length.toString() ?? '0',
+      icon: Clock,
       href: '/dashboard/library',
     },
-    { 
-      label: 'My Library', 
-      value: libraryStats?.total_items.toString() ?? '0', 
+    {
+      label: 'My Library',
+      value: libraryStats?.total_items.toString() ?? '0',
       icon: Bookmark,
       href: '/dashboard/library',
     },
-    { 
-      label: 'Contributions', 
-      value: contributionStats?.total_contributions.toString() ?? '0', 
+    {
+      label: 'Contributions',
+      value: contributionStats?.total_contributions.toString() ?? '0',
       icon: Star,
       href: '/dashboard/contributions',
     },
-    { 
-      label: 'Saved Movies', 
-      value: libraryStats?.movies.toString() ?? '0', 
+    {
+      label: 'Saved Movies',
+      value: libraryStats?.movies.toString() ?? '0',
       icon: Library,
       href: '/dashboard/library',
     },
   ]
 
-  const getRoleBadgeVariant = (role?: string): "gold" | "default" | "secondary" | "muted" => {
+  const getRoleBadgeVariant = (role?: string): 'gold' | 'default' | 'secondary' | 'muted' => {
     switch (role) {
       case 'admin':
         return 'gold'
@@ -113,22 +113,22 @@ export function DashboardPage() {
         {/* Cinematic background with spotlight */}
         <div className="absolute inset-0 hero-gradient" />
         <div className="absolute inset-0 spotlight" />
-        
+
         {/* Subtle vignette */}
         <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
-        
+
         <div className="relative px-6 py-10 md:px-8 md:py-14">
           <div className="flex items-start justify-between">
             <div className="space-y-4 max-w-xl">
               <div className="flex items-center gap-2">
                 <Film className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium text-primary">
-                  Welcome back
-                </span>
+                <span className="text-sm font-medium text-primary">Welcome back</span>
               </div>
               <h1 className="font-display text-3xl md:text-4xl font-semibold tracking-tight">
                 {user?.username ? (
-                  <>Hey, <span className="gradient-text">{user.username}</span>!</>
+                  <>
+                    Hey, <span className="gradient-text">{user.username}</span>!
+                  </>
                 ) : (
                   <>Hey there!</>
                 )}
@@ -151,7 +151,7 @@ export function DashboardPage() {
                 </Button>
               </div>
             </div>
-            
+
             {/* Decorative icon */}
             <div className="hidden md:flex items-center justify-center w-28 h-28 rounded-lg bg-primary/10 border border-primary/20">
               <Clapperboard className="h-10 w-10 text-primary" />
@@ -163,8 +163,8 @@ export function DashboardPage() {
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat, index) => (
-          <Link 
-            key={stat.label} 
+          <Link
+            key={stat.label}
             to={stat.href}
             className="animate-fade-in"
             style={{ animationDelay: `${(index + 1) * 75}ms` }}
@@ -210,8 +210,8 @@ export function DashboardPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {continueWatching.slice(0, 5).map((item, index) => (
-              <Card 
-                key={item.id} 
+              <Card
+                key={item.id}
                 className="overflow-hidden group hover-lift animate-fade-in"
                 style={{ animationDelay: `${(index + 1) * 100}ms` }}
               >
@@ -228,11 +228,13 @@ export function DashboardPage() {
                   <div className="absolute bottom-0 left-0 right-0 p-3">
                     <p className="text-white text-sm font-medium line-clamp-2">{item.title}</p>
                     {item.season && item.episode && (
-                      <p className="text-white/60 text-xs mt-0.5">S{item.season} E{item.episode}</p>
+                      <p className="text-white/60 text-xs mt-0.5">
+                        S{item.season} E{item.episode}
+                      </p>
                     )}
                     <div className="mt-2 h-1 bg-white/20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-primary transition-all duration-300" 
+                      <div
+                        className="h-full bg-primary transition-all duration-300"
                         style={{ width: `${item.progress_percent}%` }}
                       />
                     </div>
@@ -251,10 +253,7 @@ export function DashboardPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 Account Overview
-                <Badge 
-                  variant={getRoleBadgeVariant(user?.role)}
-                  className="ml-2"
-                >
+                <Badge variant={getRoleBadgeVariant(user?.role)} className="ml-2">
                   {user?.role}
                 </Badge>
               </CardTitle>
@@ -284,10 +283,10 @@ export function DashboardPage() {
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Member Since</p>
               <p className="text-sm font-medium">
                 {user?.created_at
-                  ? new Date(user.created_at).toLocaleDateString('en-US', { 
-                      month: 'short', 
+                  ? new Date(user.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
                       day: 'numeric',
-                      year: 'numeric'
+                      year: 'numeric',
                     })
                   : 'N/A'}
               </p>
@@ -318,12 +317,8 @@ export function DashboardPage() {
                     <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
                   </div>
                   <div className="mt-4 space-y-1">
-                    <h3 className="font-semibold group-hover:text-primary transition-colors">
-                      {action.title}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {action.description}
-                    </p>
+                    <h3 className="font-semibold group-hover:text-primary transition-colors">{action.title}</h3>
+                    <p className="text-sm text-muted-foreground">{action.description}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -340,9 +335,7 @@ export function DashboardPage() {
               <GitPullRequest className="h-5 w-5 text-primary" />
               Your Contributions
             </CardTitle>
-            <CardDescription>
-              Track the status of your submitted metadata and torrents
-            </CardDescription>
+            <CardDescription>Track the status of your submitted metadata and torrents</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-4">
@@ -351,15 +344,21 @@ export function DashboardPage() {
                 <p className="text-xs text-muted-foreground mt-1">Total</p>
               </div>
               <div className="text-center p-4 rounded-md bg-primary/10 border border-primary/20">
-                <p className="text-2xl font-display font-semibold text-primary dark:text-primary">{contributionStats.pending}</p>
+                <p className="text-2xl font-display font-semibold text-primary dark:text-primary">
+                  {contributionStats.pending}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">Pending</p>
               </div>
               <div className="text-center p-4 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-                <p className="text-2xl font-display font-semibold text-emerald-600 dark:text-emerald-400">{contributionStats.approved}</p>
+                <p className="text-2xl font-display font-semibold text-emerald-600 dark:text-emerald-400">
+                  {contributionStats.approved}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">Approved</p>
               </div>
               <div className="text-center p-4 rounded-md bg-red-500/10 border border-red-500/20">
-                <p className="text-2xl font-display font-semibold text-red-600 dark:text-red-400">{contributionStats.rejected}</p>
+                <p className="text-2xl font-display font-semibold text-red-600 dark:text-red-400">
+                  {contributionStats.rejected}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">Rejected</p>
               </div>
             </div>
@@ -378,7 +377,8 @@ export function DashboardPage() {
                 New to MediaFusion?
               </h3>
               <p className="text-sm text-muted-foreground max-w-md">
-                Start by configuring your streaming provider to unlock all features and get the best streaming experience.
+                Start by configuring your streaming provider to unlock all features and get the best streaming
+                experience.
               </p>
             </div>
             <Button variant="gold" asChild className="whitespace-nowrap">

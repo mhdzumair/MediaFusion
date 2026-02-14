@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { 
+import {
   Search,
   Table2,
   Key,
@@ -37,18 +37,8 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,24 +64,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { 
-  useTableList, 
-  useTableSchema, 
-  useTableData, 
+import {
+  useTableList,
+  useTableSchema,
+  useTableData,
   useExportTable,
   useBulkDelete,
   useBulkUpdate,
@@ -135,9 +115,9 @@ function ColumnTypeBadge({ dataType }: { dataType: string }) {
     }
     return 'bg-slate-500/20 text-slate-400 border-slate-500/30'
   }
-  
+
   return (
-    <Badge variant="outline" className={cn("text-xs font-mono shrink-0", getTypeColor(dataType))}>
+    <Badge variant="outline" className={cn('text-xs font-mono shrink-0', getTypeColor(dataType))}>
       {dataType}
     </Badge>
   )
@@ -148,9 +128,9 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
   const [columnsOpen, setColumnsOpen] = useState(true)
   const [indexesOpen, setIndexesOpen] = useState(false)
   const [fkOpen, setFkOpen] = useState(false)
-  
+
   if (!schema) return null
-  
+
   return (
     <div className="space-y-2">
       {/* Columns - Collapsible */}
@@ -166,10 +146,7 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
         <CollapsibleContent className="pl-2">
           <div className="space-y-0.5 mt-1">
             {schema.columns.map((col) => (
-              <div 
-                key={col.name}
-                className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 text-sm group"
-              >
+              <div key={col.name} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 text-sm group">
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   {col.is_primary_key && (
                     <TooltipProvider>
@@ -187,9 +164,7 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
                         <TooltipTrigger>
                           <Link2 className="h-3.5 w-3.5 text-blue-400 shrink-0" />
                         </TooltipTrigger>
-                        <TooltipContent>
-                          Foreign Key → {col.foreign_key_ref}
-                        </TooltipContent>
+                        <TooltipContent>Foreign Key → {col.foreign_key_ref}</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   )}
@@ -208,7 +183,7 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
           </div>
         </CollapsibleContent>
       </Collapsible>
-      
+
       {/* Indexes - Collapsible */}
       {schema.indexes.length > 0 && (
         <Collapsible open={indexesOpen} onOpenChange={setIndexesOpen}>
@@ -223,10 +198,7 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
           <CollapsibleContent className="pl-2">
             <div className="space-y-0.5 mt-1">
               {schema.indexes.map((idx) => (
-                <div 
-                  key={idx.name}
-                  className="p-2 rounded-lg hover:bg-muted/50 text-sm"
-                >
+                <div key={idx.name} className="p-2 rounded-lg hover:bg-muted/50 text-sm">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs truncate flex-1">{idx.name}</span>
                     {idx.is_unique && (
@@ -240,16 +212,14 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
                       </Badge>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1 font-mono">
-                    ({idx.columns.join(', ')})
-                  </div>
+                  <div className="text-xs text-muted-foreground mt-1 font-mono">({idx.columns.join(', ')})</div>
                 </div>
               ))}
             </div>
           </CollapsibleContent>
         </Collapsible>
       )}
-      
+
       {/* Foreign Keys - Collapsible */}
       {schema.foreign_keys.length > 0 && (
         <Collapsible open={fkOpen} onOpenChange={setFkOpen}>
@@ -264,10 +234,7 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
           <CollapsibleContent className="pl-2">
             <div className="space-y-0.5 mt-1">
               {schema.foreign_keys.map((fk) => (
-                <div 
-                  key={fk.name}
-                  className="p-2 rounded-lg hover:bg-muted/50 text-sm"
-                >
+                <div key={fk.name} className="p-2 rounded-lg hover:bg-muted/50 text-sm">
                   <div className="font-mono text-[10px] text-muted-foreground truncate">{fk.name}</div>
                   <div className="flex items-center gap-1.5 mt-1 text-xs">
                     <span className="font-mono">{fk.columns.join(', ')}</span>
@@ -285,19 +252,13 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
 }
 
 // Data cell renderer with expandable content
-function DataCell({ 
-  value, 
-  column,
-}: { 
-  value: unknown
-  column: string
-}) {
+function DataCell({ value, column }: { value: unknown; column: string }) {
   const [expanded, setExpanded] = useState(false)
-  
+
   if (value === null || value === undefined) {
     return <span className="text-muted-foreground italic text-xs">NULL</span>
   }
-  
+
   if (typeof value === 'boolean') {
     return value ? (
       <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-xs">
@@ -311,24 +272,24 @@ function DataCell({
       </Badge>
     )
   }
-  
+
   if (typeof value === 'object') {
     const jsonStr = JSON.stringify(value)
     const isLong = jsonStr.length > 50
-    
+
     return (
       <div className="max-w-[200px]">
-        <span 
+        <span
           className={cn(
-            "font-mono text-xs text-primary cursor-pointer hover:text-primary/80",
-            !expanded && "line-clamp-1"
+            'font-mono text-xs text-primary cursor-pointer hover:text-primary/80',
+            !expanded && 'line-clamp-1',
           )}
           onClick={() => isLong && setExpanded(!expanded)}
         >
           {expanded ? JSON.stringify(value, null, 2) : truncateText(jsonStr, 50)}
         </span>
         {isLong && (
-          <button 
+          <button
             onClick={() => setExpanded(!expanded)}
             className="text-xs text-muted-foreground hover:text-foreground ml-1"
           >
@@ -338,30 +299,25 @@ function DataCell({
       </div>
     )
   }
-  
+
   const strValue = String(value)
-  
+
   // Check if it's a timestamp
   if (column.includes('_at') || column.includes('date') || column.includes('time')) {
-    return (
-      <span className="text-xs whitespace-nowrap">{formatTimestamp(strValue)}</span>
-    )
+    return <span className="text-xs whitespace-nowrap">{formatTimestamp(strValue)}</span>
   }
-  
+
   // Long text with expand option
   if (strValue.length > 60) {
     return (
       <div className="max-w-[250px]">
-        <span 
-          className={cn(
-            "text-sm cursor-pointer",
-            !expanded && "line-clamp-1"
-          )}
+        <span
+          className={cn('text-sm cursor-pointer', !expanded && 'line-clamp-1')}
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? strValue : truncateText(strValue, 60)}
         </span>
-        <button 
+        <button
           onClick={() => setExpanded(!expanded)}
           className="text-xs text-muted-foreground hover:text-foreground ml-1"
         >
@@ -370,7 +326,7 @@ function DataCell({
       </div>
     )
   }
-  
+
   return <span className="text-sm whitespace-nowrap">{strValue}</span>
 }
 
@@ -383,90 +339,89 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
   const [orderDir, setOrderDir] = useState<'asc' | 'desc'>('asc')
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [showSchema, setShowSchema] = useState(true)
-  
+
   // Filter state - support multiple filters
   const [filters, setFilters] = useState<FilterState[]>([])
-  
+
   // Helper to generate unique filter ID
   const generateFilterId = () => `filter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  
+
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'json' | 'sql'>('csv')
   const [exportIncludeSchema, setExportIncludeSchema] = useState(true)
   const [exportIncludeData, setExportIncludeData] = useState(true)
-  
+
   // Import dialog state
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importFormat, setImportFormat] = useState<'csv' | 'json' | 'sql'>('csv')
   const [importMode, setImportMode] = useState<'insert' | 'upsert' | 'replace'>('insert')
-  
+
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [cascadeDelete, setCascadeDelete] = useState(false)
-  
+
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null)
-  
+
   // Bulk update dialog state
   const [bulkUpdateDialogOpen, setBulkUpdateDialogOpen] = useState(false)
   const [bulkUpdateColumn, setBulkUpdateColumn] = useState('')
   const [bulkUpdateValue, setBulkUpdateValue] = useState('')
-  
+
   const { toast } = useToast()
-  
+
   // Queries
   const { data: tables, isLoading: tablesLoading } = useTableList()
   const { data: schema, isLoading: schemaLoading } = useTableSchema(selectedTable)
-  
+
   // Helper function to check if an operator needs a value
-  const operatorNeedsValue = (operator: string) => 
+  const operatorNeedsValue = (operator: string) =>
     !['is_null', 'is_not_null', 'array_empty', 'array_not_empty', 'json_is_null', 'json_is_not_null'].includes(operator)
-  
+
   // Build filter conditions for API
   const filterConditions = filters
-    .filter(f => f.column && (!operatorNeedsValue(f.operator) || f.value))
-    .map(f => ({
+    .filter((f) => f.column && (!operatorNeedsValue(f.operator) || f.value))
+    .map((f) => ({
       column: f.column,
       operator: f.operator as import('@/lib/api/admin').FilterOperator,
       value: operatorNeedsValue(f.operator) ? f.value : undefined,
     }))
-  
-  const { data: tableData, isLoading: dataLoading, refetch: refetchData } = useTableData(
-    selectedTable, 
-    { 
-      page, 
-      per_page: perPage, 
-      order_by: orderBy, 
-      order_dir: orderDir,
-      filters: filterConditions.length > 0 ? filterConditions : undefined,
-    }
-  )
-  
+
+  const {
+    data: tableData,
+    isLoading: dataLoading,
+    refetch: refetchData,
+  } = useTableData(selectedTable, {
+    page,
+    per_page: perPage,
+    order_by: orderBy,
+    order_dir: orderDir,
+    filters: filterConditions.length > 0 ? filterConditions : undefined,
+  })
+
   // Mutations
   const exportMutation = useExportTable()
   const bulkDeleteMutation = useBulkDelete()
   const bulkUpdateMutation = useBulkUpdate()
   const importDataMutation = useImportData()
-  
+
   // Filter tables by search
   const filteredTables = useMemo(() => {
     if (!tables?.tables) return []
     if (!tableSearch) return tables.tables
-    return tables.tables.filter(t => 
-      t.name.toLowerCase().includes(tableSearch.toLowerCase())
-    )
+    return tables.tables.filter((t) => t.name.toLowerCase().includes(tableSearch.toLowerCase()))
   }, [tables, tableSearch])
-  
+
   // Get ID column for selected table
   const idColumn = useMemo(() => {
     if (!schema?.columns) return 'id'
-    const pkCol = schema.columns.find(c => c.is_primary_key)
+    const pkCol = schema.columns.find((c) => c.is_primary_key)
     return pkCol?.name || 'id'
   }, [schema])
-  
+
   // Handle sort
   const handleSort = (column: string) => {
     if (orderBy === column) {
@@ -476,43 +431,41 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
       setOrderDir('asc')
     }
   }
-  
+
   // Handle row selection
   const handleRowSelect = (id: string) => {
-    setSelectedRows(prev => 
-      prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
-    )
+    setSelectedRows((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]))
   }
-  
+
   const handleSelectAll = () => {
     if (!tableData?.rows) return
-    const allIds = tableData.rows.map(r => String(r[idColumn]))
+    const allIds = tableData.rows.map((r) => String(r[idColumn]))
     if (selectedRows.length === allIds.length) {
       setSelectedRows([])
     } else {
       setSelectedRows(allIds)
     }
   }
-  
+
   // Handle edit row
   const handleEditRow = (row: Record<string, unknown>) => {
     setEditingRow(row)
     setEditDialogOpen(true)
   }
-  
+
   // Handle save edit
   const handleSaveEdit = async (updates: Record<string, unknown>) => {
     if (!selectedTable || !editingRow) return
-    
+
     const rowId = String(editingRow[idColumn])
-    
+
     const result = await bulkUpdateMutation.mutateAsync({
       table: selectedTable,
       ids: [rowId],
       id_column: idColumn,
       updates,
     })
-    
+
     if (result.success) {
       toast({
         title: 'Row updated',
@@ -521,11 +474,11 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
       refetchData()
     }
   }
-  
+
   // Handle export
   const handleExport = async () => {
     if (!selectedTable) return
-    
+
     try {
       await exportMutation.mutateAsync({
         tableName: selectedTable,
@@ -548,11 +501,11 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
       })
     }
   }
-  
+
   // Handle import
   const handleImport = async () => {
     if (!selectedTable || !importFile) return
-    
+
     try {
       const result = await importDataMutation.mutateAsync({
         file: importFile,
@@ -561,7 +514,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
         mode: importMode,
         skipErrors: true,
       })
-      
+
       toast({
         title: 'Import complete',
         description: `Imported ${result.rows_imported} rows${result.rows_skipped > 0 ? `, skipped ${result.rows_skipped}` : ''}`,
@@ -577,11 +530,11 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
       })
     }
   }
-  
+
   // Handle bulk delete
   const handleBulkDelete = async () => {
     if (!selectedTable || selectedRows.length === 0) return
-    
+
     try {
       const result = await bulkDeleteMutation.mutateAsync({
         table: selectedTable,
@@ -589,7 +542,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
         id_column: idColumn,
         cascade: cascadeDelete,
       })
-      
+
       toast({
         title: 'Delete complete',
         description: `Deleted ${result.rows_affected} rows${cascadeDelete ? ' (including related records)' : ''}`,
@@ -606,11 +559,11 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
       })
     }
   }
-  
+
   // Handle bulk update
   const handleBulkUpdate = async () => {
     if (!selectedTable || selectedRows.length === 0 || !bulkUpdateColumn || bulkUpdateValue === '') return
-    
+
     try {
       const result = await bulkUpdateMutation.mutateAsync({
         table: selectedTable,
@@ -618,7 +571,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
         id_column: idColumn,
         updates: { [bulkUpdateColumn]: bulkUpdateValue },
       })
-      
+
       toast({
         title: 'Bulk update complete',
         description: `Updated ${result.rows_affected} rows`,
@@ -636,84 +589,83 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
       })
     }
   }
-  
+
   // Clear all filters
   const clearFilters = () => {
     setFilters([])
     setPage(1)
   }
-  
+
   // Add a new filter
   const addFilter = () => {
-    setFilters(prev => [...prev, { id: generateFilterId(), column: '', operator: 'equals', value: '' }])
+    setFilters((prev) => [...prev, { id: generateFilterId(), column: '', operator: 'equals', value: '' }])
   }
-  
+
   // Update a specific filter
   const updateFilter = (id: string, updates: Partial<FilterState>) => {
-    setFilters(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f))
+    setFilters((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)))
     setPage(1)
   }
-  
+
   // Remove a specific filter
   const removeFilter = (id: string) => {
-    setFilters(prev => prev.filter(f => f.id !== id))
+    setFilters((prev) => prev.filter((f) => f.id !== id))
     setPage(1)
   }
-  
+
   // Check if we have active filters (some operators don't need a value)
   const hasActiveFilters = filterConditions.length > 0
-  
+
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  
+
   // Stable callback for search input to prevent focus loss
   const handleTableSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setTableSearch(e.target.value)
   }, [])
-  
+
   // Render table items - memoized to prevent unnecessary re-renders
-  const renderTableItems = useCallback((onSelect?: () => void) => (
-    <ScrollArea className="flex-1">
-      <div className="space-y-1 p-2">
-        {tablesLoading ? (
-          [...Array(10)].map((_, i) => (
-            <Skeleton key={i} className="h-14 rounded-lg" />
-          ))
-        ) : (
-          filteredTables.map((table) => {
-            const colors = getTableTypeColor(table.name)
-            return (
-              <button
-                key={table.name}
-                onClick={() => {
-                  setSelectedTable(table.name)
-                  setPage(1)
-                  setSelectedRows([])
-                  onSelect?.()
-                }}
-                className={cn(
-                  "w-full p-2.5 rounded-lg text-left transition-all",
-                  "hover:bg-muted/50",
-                  selectedTable === table.name && "bg-muted ring-1 ring-border"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Table2 className={cn("h-4 w-4 shrink-0", colors.text)} />
-                  <span className="truncate text-sm font-medium">{table.name}</span>
-                </div>
-                <div className="text-xs text-muted-foreground mt-1 pl-6 flex items-center gap-2">
-                  <span>{table.row_count.toLocaleString()} rows</span>
-                  <span className="text-muted-foreground/50">•</span>
-                  <span>{table.size_human}</span>
-                </div>
-              </button>
-            )
-          })
-        )}
-      </div>
-    </ScrollArea>
-  ), [tablesLoading, filteredTables, selectedTable, setSelectedTable, setPage, setSelectedRows])
-  
+  const renderTableItems = useCallback(
+    (onSelect?: () => void) => (
+      <ScrollArea className="flex-1">
+        <div className="space-y-1 p-2">
+          {tablesLoading
+            ? [...Array(10)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)
+            : filteredTables.map((table) => {
+                const colors = getTableTypeColor(table.name)
+                return (
+                  <button
+                    key={table.name}
+                    onClick={() => {
+                      setSelectedTable(table.name)
+                      setPage(1)
+                      setSelectedRows([])
+                      onSelect?.()
+                    }}
+                    className={cn(
+                      'w-full p-2.5 rounded-lg text-left transition-all',
+                      'hover:bg-muted/50',
+                      selectedTable === table.name && 'bg-muted ring-1 ring-border',
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Table2 className={cn('h-4 w-4 shrink-0', colors.text)} />
+                      <span className="truncate text-sm font-medium">{table.name}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 pl-6 flex items-center gap-2">
+                      <span>{table.row_count.toLocaleString()} rows</span>
+                      <span className="text-muted-foreground/50">•</span>
+                      <span>{table.size_human}</span>
+                    </div>
+                  </button>
+                )
+              })}
+        </div>
+      </ScrollArea>
+    ),
+    [tablesLoading, filteredTables, selectedTable, setSelectedTable, setPage, setSelectedRows],
+  )
+
   return (
     <div className="flex flex-col md:flex-row gap-3 md:gap-4 h-[calc(100vh-200px)] md:h-[calc(100vh-260px)] min-h-[400px] md:min-h-[500px]">
       {/* Mobile Table Selector Sheet */}
@@ -737,7 +689,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           {renderTableItems(() => setSidebarOpen(false))}
         </SheetContent>
       </Sheet>
-      
+
       {/* Desktop Table List Sidebar - Hidden on mobile */}
       <div className="hidden md:flex w-60 shrink-0 flex-col">
         <Card className="flex-1 bg-card/50 border-border/50 flex flex-col overflow-hidden">
@@ -758,7 +710,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Main Content */}
       <div className="flex-1 min-w-0 flex flex-col gap-3">
         {!selectedTable ? (
@@ -770,11 +722,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 Choose a table from the sidebar to view and edit data
               </p>
               {/* Mobile table selector button */}
-              <Button
-                variant="outline"
-                className="mt-4 md:hidden gap-2"
-                onClick={() => setSidebarOpen(true)}
-              >
+              <Button variant="outline" className="mt-4 md:hidden gap-2" onClick={() => setSidebarOpen(true)}>
                 <Table2 className="h-4 w-4" />
                 Select Table
               </Button>
@@ -804,19 +752,14 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                   </Badge>
                 )}
               </div>
-              
+
               {/* Desktop actions */}
               <div className="hidden md:flex items-center gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowSchema(!showSchema)}
-                  className="gap-1.5"
-                >
+                <Button variant="outline" size="sm" onClick={() => setShowSchema(!showSchema)} className="gap-1.5">
                   <Eye className="h-4 w-4" />
                   {showSchema ? 'Hide' : 'Schema'}
                 </Button>
-                
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="gap-1.5">
@@ -825,41 +768,42 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => {
-                      setExportFormat('csv')
-                      setExportDialogOpen(true)
-                    }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setExportFormat('csv')
+                        setExportDialogOpen(true)
+                      }}
+                    >
                       <FileText className="h-4 w-4 mr-2" />
                       Export as CSV
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      setExportFormat('json')
-                      setExportDialogOpen(true)
-                    }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setExportFormat('json')
+                        setExportDialogOpen(true)
+                      }}
+                    >
                       <FileJson className="h-4 w-4 mr-2" />
                       Export as JSON
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => {
-                      setExportFormat('sql')
-                      setExportDialogOpen(true)
-                    }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setExportFormat('sql')
+                        setExportDialogOpen(true)
+                      }}
+                    >
                       <Database className="h-4 w-4 mr-2" />
                       Export as SQL
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setImportDialogOpen(true)}
-                >
+
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setImportDialogOpen(true)}>
                   <Upload className="h-4 w-4" />
                   Import
                 </Button>
-                
+
                 {selectedRows.length > 0 && (
                   <>
                     <Button
@@ -882,17 +826,12 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                     </Button>
                   </>
                 )}
-                
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => refetchData()}
-                >
+
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => refetchData()}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
-              
+
               {/* Mobile actions dropdown */}
               <div className="flex md:hidden items-center gap-1">
                 {selectedRows.length > 0 && (
@@ -900,12 +839,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                     {selectedRows.length}
                   </Badge>
                 )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => refetchData()}
-                >
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => refetchData()}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
                 <DropdownMenu>
@@ -920,11 +854,21 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                       {showSchema ? 'Hide Schema' : 'Show Schema'}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => { setExportFormat('csv'); setExportDialogOpen(true); }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setExportFormat('csv')
+                        setExportDialogOpen(true)
+                      }}
+                    >
                       <Download className="h-4 w-4 mr-2" />
                       Export CSV
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setExportFormat('json'); setExportDialogOpen(true); }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setExportFormat('json')
+                        setExportDialogOpen(true)
+                      }}
+                    >
                       <FileJson className="h-4 w-4 mr-2" />
                       Export JSON
                     </DropdownMenuItem>
@@ -939,10 +883,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                           <Wand2 className="h-4 w-4 mr-2" />
                           Update {selectedRows.length} rows
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => setDeleteDialogOpen(true)}
-                          className="text-destructive"
-                        >
+                        <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-destructive">
                           <Trash2 className="h-4 w-4 mr-2" />
                           Delete {selectedRows.length} rows
                         </DropdownMenuItem>
@@ -952,19 +893,21 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 </DropdownMenu>
               </div>
             </div>
-            
+
             {/* Toolbar Row 2 - Filters */}
             <div className="flex flex-col gap-2 shrink-0">
               {/* Existing filters */}
               {filters.map((filter) => (
                 <div key={filter.id} className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                  <Select 
-                    value={filter.column || "__none__"} 
-                    onValueChange={(v) => updateFilter(filter.id, { 
-                      column: v === "__none__" ? '' : v,
-                      operator: 'equals',
-                      value: ''
-                    })}
+                  <Select
+                    value={filter.column || '__none__'}
+                    onValueChange={(v) =>
+                      updateFilter(filter.id, {
+                        column: v === '__none__' ? '' : v,
+                        operator: 'equals',
+                        value: '',
+                      })
+                    }
                   >
                     <SelectTrigger className="w-[140px] md:w-[180px] h-9 text-xs md:text-sm">
                       <Filter className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -979,11 +922,11 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                       ))}
                     </SelectContent>
                   </Select>
-                  
+
                   {filter.column && (
                     <>
-                      <Select 
-                        value={filter.operator} 
+                      <Select
+                        value={filter.operator}
                         onValueChange={(v) => updateFilter(filter.id, { operator: v, value: '' })}
                       >
                         <SelectTrigger className="w-[110px] md:w-[140px] h-9 text-xs md:text-sm">
@@ -1008,7 +951,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                           <SelectItem value="json_is_not_null">JSON not null</SelectItem>
                         </SelectContent>
                       </Select>
-                      
+
                       {operatorNeedsValue(filter.operator) && (
                         <Input
                           placeholder="Filter value..."
@@ -1019,7 +962,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                       )}
                     </>
                   )}
-                  
+
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1030,19 +973,14 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                   </Button>
                 </div>
               ))}
-              
+
               {/* Add filter / Clear all buttons */}
               <div className="flex items-center gap-1.5 md:gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addFilter}
-                  className="h-9 gap-1.5 text-xs md:text-sm"
-                >
+                <Button variant="outline" size="sm" onClick={addFilter} className="h-9 gap-1.5 text-xs md:text-sm">
                   <Filter className="h-3.5 w-3.5" />
                   Add Filter
                 </Button>
-                
+
                 {hasActiveFilters && (
                   <Button
                     variant="ghost"
@@ -1056,7 +994,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 )}
               </div>
             </div>
-            
+
             <div className="flex flex-col md:flex-row gap-3 md:gap-4 flex-1 min-h-0 overflow-hidden">
               {/* Schema Panel - Hidden on mobile by default */}
               {showSchema && (
@@ -1081,7 +1019,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                   </CardContent>
                 </Card>
               )}
-              
+
               {/* Mobile Schema Collapsible */}
               {showSchema && (
                 <Collapsible className="md:hidden">
@@ -1108,7 +1046,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                   </Card>
                 </Collapsible>
               )}
-              
+
               {/* Data Grid */}
               <Card className="flex-1 min-w-0 bg-card/50 border-border/50 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
@@ -1153,16 +1091,25 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                         {dataLoading ? (
                           [...Array(10)].map((_, i) => (
                             <tr key={i} className="border-b border-border/30">
-                              <td className="p-3 sticky left-0 bg-card/95"><Skeleton className="h-4 w-4" /></td>
-                              <td className="p-3 sticky left-12 bg-card/95"><Skeleton className="h-4 w-4" /></td>
+                              <td className="p-3 sticky left-0 bg-card/95">
+                                <Skeleton className="h-4 w-4" />
+                              </td>
+                              <td className="p-3 sticky left-12 bg-card/95">
+                                <Skeleton className="h-4 w-4" />
+                              </td>
                               {[...Array(5)].map((_, j) => (
-                                <td key={j} className="p-3"><Skeleton className="h-4 w-24" /></td>
+                                <td key={j} className="p-3">
+                                  <Skeleton className="h-4 w-24" />
+                                </td>
                               ))}
                             </tr>
                           ))
                         ) : tableData?.rows.length === 0 ? (
                           <tr>
-                            <td colSpan={(tableData?.columns.length || 0) + 2} className="p-8 text-center text-muted-foreground">
+                            <td
+                              colSpan={(tableData?.columns.length || 0) + 2}
+                              className="p-8 text-center text-muted-foreground"
+                            >
                               No data found
                             </td>
                           </tr>
@@ -1170,11 +1117,11 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                           tableData?.rows.map((row, i) => {
                             const rowId = String(row[idColumn])
                             return (
-                              <tr 
-                                key={i} 
+                              <tr
+                                key={i}
                                 className={cn(
-                                  "border-b border-border/30 hover:bg-muted/30 transition-colors",
-                                  selectedRows.includes(rowId) && "bg-muted/50"
+                                  'border-b border-border/30 hover:bg-muted/30 transition-colors',
+                                  selectedRows.includes(rowId) && 'bg-muted/50',
                                 )}
                               >
                                 {/* Sticky checkbox */}
@@ -1207,10 +1154,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                                 {/* Data cells */}
                                 {tableData?.columns.map((col) => (
                                   <td key={col} className="p-3">
-                                    <DataCell 
-                                      value={row[col]} 
-                                      column={col}
-                                    />
+                                    <DataCell value={row[col]} column={col} />
                                   </td>
                                 ))}
                               </tr>
@@ -1220,7 +1164,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                       </tbody>
                     </table>
                   </div>
-                  
+
                   {/* Pagination - Responsive */}
                   <div className="flex items-center justify-between p-2 md:p-3 border-t border-border/50 shrink-0 bg-card/50 gap-2">
                     <div className="hidden sm:flex items-center gap-2">
@@ -1243,7 +1187,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                         </SelectContent>
                       </Select>
                     </div>
-                    
+
                     <div className="flex items-center gap-2 md:gap-4 flex-1 sm:flex-none justify-between sm:justify-end">
                       <span className="text-xs md:text-sm text-muted-foreground">
                         {page}/{tableData?.pages || 1}
@@ -1276,7 +1220,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           </>
         )}
       </div>
-      
+
       {/* Edit Row Dialog */}
       {editingRow && schema && (
         <EditRowDialog
@@ -1293,62 +1237,49 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           isPending={bulkUpdateMutation.isPending}
         />
       )}
-      
+
       {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Export {selectedTable}</DialogTitle>
-            <DialogDescription>
-              Export table data in {exportFormat.toUpperCase()} format
-            </DialogDescription>
+            <DialogDescription>Export table data in {exportFormat.toUpperCase()} format</DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             {exportFormat === 'sql' && (
               <>
                 <div className="flex items-center justify-between">
                   <Label>Include schema (CREATE TABLE)</Label>
-                  <Checkbox
-                    checked={exportIncludeSchema}
-                    onCheckedChange={(c) => setExportIncludeSchema(!!c)}
-                  />
+                  <Checkbox checked={exportIncludeSchema} onCheckedChange={(c) => setExportIncludeSchema(!!c)} />
                 </div>
                 <div className="flex items-center justify-between">
                   <Label>Include data (INSERT statements)</Label>
-                  <Checkbox
-                    checked={exportIncludeData}
-                    onCheckedChange={(c) => setExportIncludeData(!!c)}
-                  />
+                  <Checkbox checked={exportIncludeData} onCheckedChange={(c) => setExportIncludeData(!!c)} />
                 </div>
               </>
             )}
           </div>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setExportDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleExport}
-              disabled={exportMutation.isPending}
-            >
+            <Button onClick={handleExport} disabled={exportMutation.isPending}>
               {exportMutation.isPending ? 'Exporting...' : 'Export'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {/* Import Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Import to {selectedTable}</DialogTitle>
-            <DialogDescription>
-              Upload a file to import data into the table
-            </DialogDescription>
+            <DialogDescription>Upload a file to import data into the table</DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div>
               <Label>File</Label>
@@ -1369,7 +1300,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 className="mt-1"
               />
             </div>
-            
+
             <div>
               <Label>Format</Label>
               <Select value={importFormat} onValueChange={(v) => setImportFormat(v as 'csv' | 'json' | 'sql')}>
@@ -1383,7 +1314,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 </SelectContent>
               </Select>
             </div>
-            
+
             {importFormat !== 'sql' && (
               <div>
                 <Label>Import Mode</Label>
@@ -1400,26 +1331,26 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
               </div>
             )}
           </div>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleImport}
-              disabled={!importFile || importDataMutation.isPending}
-            >
+            <Button onClick={handleImport} disabled={!importFile || importDataMutation.isPending}>
               {importDataMutation.isPending ? 'Importing...' : 'Import'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {/* Delete Confirmation */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => {
-        setDeleteDialogOpen(open)
-        if (!open) setCascadeDelete(false)
-      }}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setCascadeDelete(false)
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {selectedRows.length} rows?</AlertDialogTitle>
@@ -1427,13 +1358,9 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
               This action cannot be undone. This will permanently delete the selected rows from {selectedTable}.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          
+
           <div className="flex items-center gap-3 py-2 px-1">
-            <Checkbox
-              id="cascade-delete"
-              checked={cascadeDelete}
-              onCheckedChange={(c) => setCascadeDelete(!!c)}
-            />
+            <Checkbox id="cascade-delete" checked={cascadeDelete} onCheckedChange={(c) => setCascadeDelete(!!c)} />
             <div className="grid gap-1">
               <Label htmlFor="cascade-delete" className="font-medium text-sm cursor-pointer">
                 Cascade delete
@@ -1443,10 +1370,10 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
               </p>
             </div>
           </div>
-          
+
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleBulkDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -1455,7 +1382,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+
       {/* Bulk Update Dialog */}
       <Dialog open={bulkUpdateDialogOpen} onOpenChange={setBulkUpdateDialogOpen}>
         <DialogContent>
@@ -1465,7 +1392,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
               Set a new value for a column across all selected rows in {selectedTable}.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div>
               <Label>Column to update</Label>
@@ -1475,7 +1402,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {schema?.columns
-                    .filter(c => !c.is_primary_key && c.name !== 'created_at' && c.name !== 'updated_at')
+                    .filter((c) => !c.is_primary_key && c.name !== 'created_at' && c.name !== 'updated_at')
                     .map((col) => (
                       <SelectItem key={col.name} value={col.name}>
                         <span className="font-mono">{col.name}</span>
@@ -1485,7 +1412,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                 </SelectContent>
               </Select>
             </div>
-            
+
             {bulkUpdateColumn && (
               <div>
                 <Label>New value</Label>
@@ -1501,12 +1428,12 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
               </div>
             )}
           </div>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkUpdateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleBulkUpdate}
               disabled={!bulkUpdateColumn || bulkUpdateValue === '' || bulkUpdateMutation.isPending}
             >

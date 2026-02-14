@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
-import { 
-  contributionsApi, 
+import {
+  contributionsApi,
   type ContributionListParams,
   type ContributionCreateRequest,
   type ContributionReviewRequest,
@@ -20,7 +20,7 @@ export function useInfiniteContributions(params: Omit<ContributionListParams, 'p
   return useInfiniteQuery({
     queryKey: [...CONTRIBUTIONS_QUERY_KEY, 'infinite', params],
     queryFn: ({ pageParam = 1 }) => contributionsApi.list({ ...params, page: pageParam }),
-    getNextPageParam: (lastPage) => lastPage.has_more ? lastPage.page + 1 : undefined,
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.page + 1 : undefined),
     initialPageParam: 1,
   })
 }
@@ -42,7 +42,7 @@ export function useContributionStats() {
 
 export function useCreateContribution() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (data: ContributionCreateRequest) => contributionsApi.create(data),
     onSuccess: () => {
@@ -53,7 +53,7 @@ export function useCreateContribution() {
 
 export function useDeleteContribution() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: (contributionId: string) => contributionsApi.delete(contributionId),
     onSuccess: () => {
@@ -64,7 +64,9 @@ export function useDeleteContribution() {
 
 // Moderator hooks
 
-export function usePendingContributions(params: { contribution_type?: ContributionType; page?: number; page_size?: number } = {}) {
+export function usePendingContributions(
+  params: { contribution_type?: ContributionType; page?: number; page_size?: number } = {},
+) {
   return useQuery({
     queryKey: [...CONTRIBUTIONS_QUERY_KEY, 'pending', params],
     queryFn: () => contributionsApi.listPending(params),
@@ -73,7 +75,7 @@ export function usePendingContributions(params: { contribution_type?: Contributi
 
 export function useReviewContribution() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
     mutationFn: ({ contributionId, data }: { contributionId: string; data: ContributionReviewRequest }) =>
       contributionsApi.review(contributionId, data),
@@ -89,4 +91,3 @@ export function useAllContributionStats() {
     queryFn: () => contributionsApi.getAllStats(),
   })
 }
-

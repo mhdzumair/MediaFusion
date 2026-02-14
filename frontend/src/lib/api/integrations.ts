@@ -76,9 +76,7 @@ export const integrationsApi = {
    * List all integrations for a profile
    */
   list: async (profileId: number): Promise<IntegrationListResponse> => {
-    return apiClient.get<IntegrationListResponse>(
-      `/integrations${buildQueryString({ profile_id: profileId })}`
-    )
+    return apiClient.get<IntegrationListResponse>(`/integrations${buildQueryString({ profile_id: profileId })}`)
   },
 
   /**
@@ -92,12 +90,7 @@ export const integrationsApi = {
   /**
    * Connect Trakt with authorization code
    */
-  connectTrakt: async (
-    profileId: number,
-    code: string,
-    clientId?: string,
-    clientSecret?: string
-  ): Promise<void> => {
+  connectTrakt: async (profileId: number, code: string, clientId?: string, clientSecret?: string): Promise<void> => {
     const qs = buildQueryString({ profile_id: profileId })
     return apiClient.post(`/integrations/trakt/connect${qs}`, {
       code,
@@ -109,12 +102,7 @@ export const integrationsApi = {
   /**
    * Connect Simkl with authorization code
    */
-  connectSimkl: async (
-    profileId: number,
-    code: string,
-    clientId?: string,
-    clientSecret?: string
-  ): Promise<void> => {
+  connectSimkl: async (profileId: number, code: string, clientId?: string, clientSecret?: string): Promise<void> => {
     const qs = buildQueryString({ profile_id: profileId })
     return apiClient.post(`/integrations/simkl/connect${qs}`, {
       code,
@@ -137,7 +125,7 @@ export const integrationsApi = {
   updateSettings: async (
     profileId: number,
     platform: IntegrationType,
-    settings: IntegrationConfigUpdate
+    settings: IntegrationConfigUpdate,
   ): Promise<void> => {
     const qs = buildQueryString({ profile_id: profileId })
     return apiClient.patch(`/integrations/${platform}/settings${qs}`, settings)
@@ -158,7 +146,7 @@ export const integrationsApi = {
     profileId: number,
     platform: IntegrationType,
     direction?: SyncDirection,
-    fullSync?: boolean
+    fullSync?: boolean,
   ): Promise<SyncTriggerResponse> => {
     const qs = buildQueryString({ profile_id: profileId, direction, full_sync: fullSync })
     return apiClient.post<SyncTriggerResponse>(`/integrations/${platform}/sync${qs}`)

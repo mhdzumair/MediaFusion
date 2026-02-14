@@ -33,25 +33,22 @@ export function TorrentPreviewDialog({
       <AlertDialogContent className="glass border-border/50 sm:max-w-[600px]">
         <AlertDialogHeader>
           <AlertDialogTitle>Confirm Import</AlertDialogTitle>
-          <AlertDialogDescription>
-            Review the torrent details before importing
-          </AlertDialogDescription>
+          <AlertDialogDescription>Review the torrent details before importing</AlertDialogDescription>
         </AlertDialogHeader>
-        
+
         {analysis && (
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label className="text-muted-foreground">Name</Label>
               <p className="font-medium">{analysis.torrent_name || analysis.parsed_title}</p>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-muted-foreground">Size</Label>
                 <p className="font-medium">
-                  {analysis.total_size_readable || (analysis.total_size 
-                    ? `${(analysis.total_size / (1024 * 1024 * 1024)).toFixed(2)} GB`
-                    : 'Unknown')}
+                  {analysis.total_size_readable ||
+                    (analysis.total_size ? `${(analysis.total_size / (1024 * 1024 * 1024)).toFixed(2)} GB` : 'Unknown')}
                 </p>
               </div>
               <div className="space-y-1">
@@ -63,9 +60,7 @@ export function TorrentPreviewDialog({
             {analysis.info_hash && (
               <div className="space-y-1">
                 <Label className="text-muted-foreground">Info Hash</Label>
-                <p className="font-mono text-xs bg-muted/50 p-2 rounded-lg break-all">
-                  {analysis.info_hash}
-                </p>
+                <p className="font-mono text-xs bg-muted/50 p-2 rounded-lg break-all">{analysis.info_hash}</p>
               </div>
             )}
 
@@ -84,7 +79,7 @@ export function TorrentPreviewDialog({
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isImporting}>Cancel</AlertDialogCancel>
-          <AlertDialogAction 
+          <AlertDialogAction
             onClick={onImport}
             disabled={isImporting}
             className="bg-gradient-to-r from-primary to-primary/80"
@@ -106,4 +101,3 @@ export function TorrentPreviewDialog({
     </AlertDialog>
   )
 }
-

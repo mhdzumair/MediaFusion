@@ -49,13 +49,21 @@ import { Skeleton } from '@/components/ui/skeleton'
 const platformFeatures = [
   { icon: Smartphone, title: 'Stremio & Kodi', description: 'Native support for popular media apps' },
   { icon: Globe, title: 'Torznab API', description: 'Use as indexer in *arr apps' },
-  { icon: HardDrive, title: 'Usenet Streams', description: 'NZB indexer support with Torbox, SABnzbd, NZBGet & Easynews' },
+  {
+    icon: HardDrive,
+    title: 'Usenet Streams',
+    description: 'NZB indexer support with Torbox, SABnzbd, NZBGet & Easynews',
+  },
   { icon: Send, title: 'Telegram Streams', description: 'Scrape streams from Telegram & Stream via MediaFlow Proxy' },
   { icon: Radio, title: 'AceStream Support', description: 'P2P live streaming via MediaFlow Proxy & AceEngine' },
   { icon: Lock, title: 'API Security', description: 'Password protection for private instances' },
   { icon: Shield, title: 'Encrypted Config', description: 'Secure configuration storage' },
   { icon: Users, title: 'Multiple Profiles', description: 'Unlimited profiles with unique configurations' },
-  { icon: RefreshCw, title: 'Watch History & Watchlist Sync', description: 'Track watched content across devices, Sync watchlists with Trakt, Simkl & more' },
+  {
+    icon: RefreshCw,
+    title: 'Watch History & Watchlist Sync',
+    description: 'Track watched content across devices, Sync watchlists with Trakt, Simkl & more',
+  },
   { icon: Upload, title: 'Community Streams', description: 'Import and share streams with the community' },
   { icon: Star, title: 'Community Ratings', description: 'Vote, rate, and review streams collaboratively' },
   { icon: Flag, title: 'Stream Reporting', description: 'Report broken or incorrect streams' },
@@ -94,27 +102,30 @@ const contentSources = [
   { icon: Radio, title: 'AceStream', description: 'P2P live streams via content ID or info hash' },
   { icon: Bot, title: 'Telegram Bot', description: 'Scrape streams from Telegram channels via bot integration' },
   { icon: Rss, title: 'RSS Feeds', description: 'Custom RSS monitoring with regex' },
-  { icon: Sparkles, title: 'Scrapy Spiders', description: 'Scrape streams from custom scrapy spiders like TamilMV, SportsVideo etc.' },
+  {
+    icon: Sparkles,
+    title: 'Scrapy Spiders',
+    description: 'Scrape streams from custom scrapy spiders like TamilMV, SportsVideo etc.',
+  },
   { icon: Tv, title: 'IPTV / M3U / Xtream', description: 'Live TV import from multiple formats' },
 ]
-
 
 export function HomePage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
   const { instanceInfo, isLoading: instanceLoading } = useInstance()
-  
+
   // Fetch full app config for branding_description
   const { data: appConfig } = useQuery({
     queryKey: ['appConfig'],
     queryFn: getAppConfig,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
-  
+
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
   const version = instanceInfo?.version || ''
   const brandingSvg = instanceInfo?.branding_svg || null
   const brandingDescription = appConfig?.branding_description || ''
-  
+
   // Show loading while checking auth
   if (authLoading || instanceLoading) {
     return (
@@ -127,7 +138,7 @@ export function HomePage() {
       </div>
     )
   }
-  
+
   // Redirect authenticated users to dashboard
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
@@ -141,7 +152,7 @@ export function HomePage() {
           <Link to="/app/" className="hover:opacity-80 transition-opacity">
             <LogoWithText size="lg" addonName={addonName} brandingSvg={brandingSvg} />
           </Link>
-          
+
           <div className="flex items-center gap-3">
             <ThemeSelector />
             <Button asChild variant="ghost">
@@ -165,15 +176,11 @@ export function HomePage() {
         <div className="absolute inset-0 hero-gradient" />
         <div className="absolute inset-0 spotlight opacity-50" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
-        
+
         <div className="container mx-auto px-4 relative py-20 md:py-28">
           <div className="max-w-4xl mx-auto text-center space-y-8">
             <div className="flex justify-center items-center gap-6">
-              <Logo 
-                size="xl" 
-                className="w-24 h-24 md:w-32 md:h-32" 
-                heroAnimation="spin"
-              />
+              <Logo size="xl" className="w-24 h-24 md:w-32 md:h-32" heroAnimation="spin" />
               {brandingSvg && (
                 <>
                   <span className="text-muted-foreground/50 text-4xl font-light">×</span>
@@ -181,7 +188,7 @@ export function HomePage() {
                 </>
               )}
             </div>
-            
+
             <div className="space-y-4">
               {version && (
                 <Badge variant="secondary" className="text-sm px-4 py-1">
@@ -192,14 +199,14 @@ export function HomePage() {
                 <LogoText addonName={addonName} size="5xl" />
               </h1>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                The ultimate open-source streaming platform. Aggregate content from multiple sources, 
-                stream via debrid services, and enjoy on Stremio, Kodi, or directly in your browser.
+                The ultimate open-source streaming platform. Aggregate content from multiple sources, stream via debrid
+                services, and enjoy on Stremio, Kodi, or directly in your browser.
               </p>
             </div>
-            
+
             {/* Custom branding description (supports HTML) */}
             {brandingDescription && (
-              <div 
+              <div
                 className="prose prose-sm dark:prose-invert max-w-2xl mx-auto text-muted-foreground [&_a]:text-primary [&_a]:underline [&_a:hover]:text-primary/80 [&_h4]:text-foreground [&_h4]:font-semibold [&_h4]:text-lg [&_p]:my-2"
                 dangerouslySetInnerHTML={{ __html: brandingDescription }}
               />
@@ -242,7 +249,7 @@ export function HomePage() {
 
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
             {platformFeatures.map((feature) => (
-              <Card 
+              <Card
                 key={feature.title}
                 className="hover:border-primary/30 transition-all hover:-translate-y-1 text-center"
               >
@@ -277,10 +284,13 @@ export function HomePage() {
               <Badge
                 key={provider.name}
                 variant={
-                  provider.type === 'Premium' ? 'default' : 
-                  provider.type === 'Freemium' ? 'secondary' : 
-                  provider.type === 'Proxy' ? 'outline' :
-                  'outline'
+                  provider.type === 'Premium'
+                    ? 'default'
+                    : provider.type === 'Freemium'
+                      ? 'secondary'
+                      : provider.type === 'Proxy'
+                        ? 'outline'
+                        : 'outline'
                 }
                 className="text-sm py-2.5 px-4 gap-2"
               >
@@ -308,8 +318,8 @@ export function HomePage() {
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
             {contentSources.map((source) => (
-              <Card 
-                key={source.title} 
+              <Card
+                key={source.title}
                 className="hover:border-primary/30 transition-all hover:-translate-y-1 text-center"
               >
                 <CardContent className="p-6">
@@ -332,12 +342,10 @@ export function HomePage() {
             <div className="absolute inset-0 hero-gradient opacity-50" />
             <CardContent className="relative p-10 md:p-14 text-center">
               <Play className="h-14 w-14 mx-auto text-primary mb-6" />
-              <h2 className="font-display text-2xl md:text-3xl font-bold mb-4">
-                Ready to Start Streaming?
-              </h2>
+              <h2 className="font-display text-2xl md:text-3xl font-bold mb-4">Ready to Start Streaming?</h2>
               <p className="text-muted-foreground mb-8 max-w-xl mx-auto text-lg">
-                Configure your addon in minutes. No account required for basic setup, 
-                or create an account to unlock all features.
+                Configure your addon in minutes. No account required for basic setup, or create an account to unlock all
+                features.
               </p>
               <div className="flex flex-wrap justify-center gap-4">
                 <Button asChild size="lg" variant="gold">
@@ -369,9 +377,9 @@ export function HomePage() {
               </span>
             </div>
             <div className="flex items-center gap-6">
-              <a 
-                href="https://github.com/mhdzumair/MediaFusion" 
-                target="_blank" 
+              <a
+                href="https://github.com/mhdzumair/MediaFusion"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
               >

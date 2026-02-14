@@ -17,8 +17,7 @@ export const databaseQueryKeys = {
   stats: () => [...databaseQueryKeys.all, 'stats'] as const,
   tables: () => [...databaseQueryKeys.all, 'tables'] as const,
   tableSchema: (name: string) => [...databaseQueryKeys.all, 'schema', name] as const,
-  tableData: (name: string, params?: TableDataParams) => 
-    [...databaseQueryKeys.all, 'data', name, params] as const,
+  tableData: (name: string, params?: TableDataParams) => [...databaseQueryKeys.all, 'data', name, params] as const,
   orphans: () => [...databaseQueryKeys.all, 'orphans'] as const,
 }
 
@@ -88,7 +87,7 @@ export function useExportTable() {
       options?: { include_schema?: boolean; include_data?: boolean; limit?: number }
     }) => {
       const blob = await databaseApi.exportTable(tableName, format, options)
-      
+
       // Create download link
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -98,7 +97,7 @@ export function useExportTable() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-      
+
       return { success: true }
     },
   })
@@ -110,15 +109,7 @@ export function useExportTable() {
 
 export function useImportPreview() {
   return useMutation({
-    mutationFn: async ({
-      file,
-      table,
-      format,
-    }: {
-      file: File
-      table: string
-      format: 'csv' | 'json' | 'sql'
-    }) => {
+    mutationFn: async ({ file, table, format }: { file: File; table: string; format: 'csv' | 'json' | 'sql' }) => {
       return await databaseApi.previewImport(file, table, format)
     },
   })
@@ -274,4 +265,3 @@ export function useBulkUpdate() {
     },
   })
 }
-

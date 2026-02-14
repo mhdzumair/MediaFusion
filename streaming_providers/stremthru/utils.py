@@ -91,7 +91,9 @@ async def update_st_cache_status(
             instant_items = res.body.get("data", {}).get("items", [])
             for stream in streams:
                 stream.cached = any(
-                    torrent["status"] == "cached" for torrent in instant_items if torrent.get("hash") == stream.info_hash
+                    torrent["status"] == "cached"
+                    for torrent in instant_items
+                    if torrent.get("hash") == stream.info_hash
                 )
             store_name = res.headers.get("X-StremThru-Store-Name", None)
             return store_name

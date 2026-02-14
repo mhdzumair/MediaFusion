@@ -21,16 +21,16 @@ export function ThemeSelector() {
           <Palette className="h-4 w-4" />
           <span className="sr-only">Theme settings</span>
           {/* Color indicator dot */}
-          <span 
+          <span
             className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background"
-            style={{ backgroundColor: colorSchemes.find(s => s.id === colorScheme)?.preview.primary }}
+            style={{ backgroundColor: colorSchemes.find((s) => s.id === colorScheme)?.preview.primary }}
           />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuLabel className="font-display">Appearance</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        
+
         {/* Light/Dark Mode */}
         <div className="p-2">
           <p className="text-xs text-muted-foreground mb-2">Mode</p>
@@ -64,9 +64,9 @@ export function ThemeSelector() {
             </Button>
           </div>
         </div>
-        
+
         <DropdownMenuSeparator />
-        
+
         {/* Color Schemes */}
         <div className="p-2">
           <p className="text-xs text-muted-foreground mb-2">Color Scheme</p>
@@ -79,7 +79,7 @@ export function ThemeSelector() {
                   'w-full flex items-center gap-3 p-2 rounded-lg transition-colors text-left',
                   colorScheme === scheme.id
                     ? 'bg-primary/10 text-foreground'
-                    : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                    : 'hover:bg-muted text-muted-foreground hover:text-foreground',
                 )}
               >
                 {/* Color preview dots */}
@@ -97,14 +97,12 @@ export function ThemeSelector() {
                     style={{ backgroundColor: scheme.preview.accent }}
                   />
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{scheme.name}</p>
                 </div>
-                
-                {colorScheme === scheme.id && (
-                  <Check className="h-4 w-4 text-primary flex-shrink-0" />
-                )}
+
+                {colorScheme === scheme.id && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
               </button>
             ))}
           </div>
@@ -122,24 +120,17 @@ export function ThemeSelectorCompact() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2">
-          <span 
+          <span
             className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: colorSchemes.find(s => s.id === colorScheme)?.preview.primary }}
+            style={{ backgroundColor: colorSchemes.find((s) => s.id === colorScheme)?.preview.primary }}
           />
           <span className="text-xs">Theme</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         {colorSchemes.map((scheme) => (
-          <DropdownMenuItem
-            key={scheme.id}
-            onClick={() => setColorScheme(scheme.id)}
-            className="gap-2"
-          >
-            <span
-              className="h-3 w-3 rounded-full"
-              style={{ backgroundColor: scheme.preview.primary }}
-            />
+          <DropdownMenuItem key={scheme.id} onClick={() => setColorScheme(scheme.id)} className="gap-2">
+            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: scheme.preview.primary }} />
             <span className="flex-1">{scheme.name}</span>
             {colorScheme === scheme.id && <Check className="h-3.5 w-3.5" />}
           </DropdownMenuItem>

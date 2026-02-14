@@ -36,7 +36,7 @@ export const usersApi = {
     if (params.per_page) searchParams.append('per_page', params.per_page.toString())
     if (params.role) searchParams.append('role', params.role)
     if (params.search) searchParams.append('search', params.search)
-    
+
     const query = searchParams.toString()
     return apiClient.get<UserListResponse>(`/users${query ? `?${query}` : ''}`)
   },
@@ -69,4 +69,3 @@ export const usersApi = {
     return apiClient.delete<{ message: string }>(`/users/${userId}`)
   },
 }
-

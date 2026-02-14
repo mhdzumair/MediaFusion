@@ -88,7 +88,13 @@ export interface ActionHistoryItem {
 
 // Cache type definitions with metadata
 export const CACHE_TYPES: CacheTypeInfo[] = [
-  { name: 'Scrapers', pattern: 'scrapy:*', icon: 'Radio', color: 'violet', description: 'Scraper job data and messages' },
+  {
+    name: 'Scrapers',
+    pattern: 'scrapy:*',
+    icon: 'Radio',
+    color: 'violet',
+    description: 'Scraper job data and messages',
+  },
   { name: 'Metadata', pattern: 'meta_cache:*', icon: 'FileJson', color: 'blue', description: 'Movie/TV show metadata' },
   { name: 'Catalog', pattern: 'catalog:*', icon: 'Database', color: 'emerald', description: 'Catalog browse cache' },
   { name: 'Streams', pattern: 'stream*', icon: 'Film', color: 'amber', description: 'Stream data cache' },
@@ -158,4 +164,3 @@ export function formatTimestamp(value: string | number): { display: string; isTi
   }
   return { display: String(value), isTimestamp: false }
 }
-

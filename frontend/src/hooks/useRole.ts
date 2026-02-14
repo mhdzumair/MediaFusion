@@ -13,4 +13,3 @@ export function useRole() {
     hasRole: (role: UserRole) => (user ? hasMinimumRole(role) : false),
   }
 }
-

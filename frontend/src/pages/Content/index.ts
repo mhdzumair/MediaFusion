@@ -1,2 +1,1 @@
 export { ContentDetailPage } from './ContentDetailPage'
-

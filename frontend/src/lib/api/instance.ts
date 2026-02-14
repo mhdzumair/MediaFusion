@@ -14,24 +14,24 @@ export interface InstanceInfo {
   addon_name: string
   version: string
   logo_url: string
-  branding_svg: string | null  // Optional partner/host SVG logo URL
+  branding_svg: string | null // Optional partner/host SVG logo URL
 }
 
 export interface TelegramFeatureConfig {
-  enabled: boolean  // Whether Telegram streaming is enabled on this instance
-  bot_configured: boolean  // Whether the Telegram bot is configured
-  scraping_enabled: boolean  // Whether Telegram scraping is enabled
+  enabled: boolean // Whether Telegram streaming is enabled on this instance
+  bot_configured: boolean // Whether the Telegram bot is configured
+  scraping_enabled: boolean // Whether Telegram scraping is enabled
 }
 
 export interface AppConfig {
   addon_name: string
   logo_url: string
-  branding_svg: string | null  // Optional partner/host SVG logo URL
+  branding_svg: string | null // Optional partner/host SVG logo URL
   host_url: string
   poster_host_url: string | null
   version: string
   description: string
-  branding_description: string  // Can contain HTML
+  branding_description: string // Can contain HTML
   is_public_instance: boolean
   disabled_providers: string[]
   authentication_required: boolean
@@ -116,4 +116,3 @@ export const instanceApi = {
   clearStoredApiKey,
   validateApiKey,
 }
-

@@ -1,17 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  fileLinksApi,
-  type StreamsNeedingAnnotationParams,
-  type BulkFileLinkUpdateRequest,
-} from '@/lib/api/fileLinks'
+import { fileLinksApi, type StreamsNeedingAnnotationParams, type BulkFileLinkUpdateRequest } from '@/lib/api/fileLinks'
 
 // Query keys for cache management
 export const fileLinksKeys = {
   all: ['fileLinks'] as const,
   needsAnnotation: (params: StreamsNeedingAnnotationParams) =>
     [...fileLinksKeys.all, 'needsAnnotation', params] as const,
-  streamFiles: (streamId: number, mediaId: number) =>
-    [...fileLinksKeys.all, 'streamFiles', streamId, mediaId] as const,
+  streamFiles: (streamId: number, mediaId: number) => [...fileLinksKeys.all, 'streamFiles', streamId, mediaId] as const,
 }
 
 /**
@@ -42,8 +37,7 @@ export function useUpdateFileLinks() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (request: BulkFileLinkUpdateRequest) =>
-      fileLinksApi.updateFileLinks(request),
+    mutationFn: (request: BulkFileLinkUpdateRequest) => fileLinksApi.updateFileLinks(request),
     onSuccess: (_data, variables) => {
       // Invalidate the streams needing annotation list
       queryClient.invalidateQueries({
@@ -56,4 +50,3 @@ export function useUpdateFileLinks() {
     },
   })
 }
-

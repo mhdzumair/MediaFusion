@@ -3,4 +3,3 @@ export { OverviewTab } from './OverviewTab'
 export { TableBrowserTab } from './TableBrowserTab'
 export { MaintenanceTab } from './MaintenanceTab'
 export { EditRowDialog } from './EditRowDialog'
-

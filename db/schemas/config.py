@@ -599,9 +599,7 @@ class UserData(BaseModel):
     )
     provider_grouping: Literal["mixed", "separate"] = Field(default="separate", alias="pg")
     # Stream name filter (include or exclude mode with keyword/regex patterns)
-    stream_name_filter_mode: Literal["disabled", "include", "exclude"] = Field(
-        default="disabled", alias="snfm"
-    )
+    stream_name_filter_mode: Literal["disabled", "include", "exclude"] = Field(default="disabled", alias="snfm")
     stream_name_filter_patterns: list[str] = Field(default_factory=list, alias="snfp")
     stream_name_filter_use_regex: bool = Field(default=False, alias="snfr")
 

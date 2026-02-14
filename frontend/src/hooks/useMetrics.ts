@@ -150,16 +150,8 @@ export function useDashboardMetrics() {
     metadataCount,
     torrentSources,
     scrapySchedulers,
-    isLoading: 
-      torrentCount.isLoading || 
-      metadataCount.isLoading || 
-      torrentSources.isLoading || 
-      scrapySchedulers.isLoading,
-    isError:
-      torrentCount.isError ||
-      metadataCount.isError ||
-      torrentSources.isError ||
-      scrapySchedulers.isError,
+    isLoading:
+      torrentCount.isLoading || metadataCount.isLoading || torrentSources.isLoading || scrapySchedulers.isLoading,
+    isError: torrentCount.isError || metadataCount.isError || torrentSources.isError || scrapySchedulers.isError,
   }
 }
-

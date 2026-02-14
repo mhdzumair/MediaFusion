@@ -13,23 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import {
-  Loader2,
-  Link2,
-  Unlink,
-  Search,
-  Film,
-  Tv,
-  Plus,
-  Trash2,
-  AlertCircle,
-  HardDrive,
-} from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Loader2, Link2, Unlink, Search, Film, Tv, Plus, Trash2, AlertCircle, HardDrive } from 'lucide-react'
 import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useToast } from '@/hooks/use-toast'
@@ -68,7 +53,7 @@ const streamLinkingApi = {
   getMediaForStream: async (streamId: number): Promise<{ stream_id: number; media_entries: MediaLinkInfo[] }> => {
     return apiClient.get(`/stream-links/stream/${streamId}`)
   },
-  
+
   createLink: async (data: {
     stream_id: number
     media_id: number
@@ -78,26 +63,21 @@ const streamLinkingApi = {
   }) => {
     return apiClient.post('/stream-links', data)
   },
-  
+
   deleteLink: async (linkId: number): Promise<void> => {
     return apiClient.delete(`/stream-links/${linkId}`)
   },
 }
 
-export function StreamLinkingDialog({
-  open,
-  onOpenChange,
-  stream,
-  onSuccess,
-}: StreamLinkingDialogProps) {
+export function StreamLinkingDialog({ open, onOpenChange, stream, onSuccess }: StreamLinkingDialogProps) {
   const { toast } = useToast()
-  
+
   // State
   const [existingLinks, setExistingLinks] = useState<MediaLinkInfo[]>([])
   const [isLoadingLinks, setIsLoadingLinks] = useState(false)
   const [isCreatingLink, setIsCreatingLink] = useState(false)
   const [deletingLinkId, setDeletingLinkId] = useState<number | null>(null)
-  
+
   // New link state
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -105,23 +85,27 @@ export function StreamLinkingDialog({
   const [fileIndex, setFileIndex] = useState<string>('')
   const [season, setSeason] = useState<string>('')
   const [episode, setEpisode] = useState<string>('')
-  
+
   const debouncedQuery = useDebounce(searchQuery, 300)
-  
+
   // Use combined search but only allow linking to internal results (they have media_id)
-  const { data: searchResults = [], isLoading: isSearching, isFetching: isFetchingSearch } = useCombinedMetadataSearch(
+  const {
+    data: searchResults = [],
+    isLoading: isSearching,
+    isFetching: isFetchingSearch,
+  } = useCombinedMetadataSearch(
     {
       query: debouncedQuery,
       type: 'all',
       limit: 20,
     },
-    { enabled: debouncedQuery.length >= 2 && open }
+    { enabled: debouncedQuery.length >= 2 && open },
   )
-  
+
   // Load existing links when dialog opens
   const loadExistingLinks = useCallback(async () => {
     if (!stream) return
-    
+
     setIsLoadingLinks(true)
     try {
       const result = await streamLinkingApi.getMediaForStream(stream.stream_id)
@@ -137,7 +121,7 @@ export function StreamLinkingDialog({
       setIsLoadingLinks(false)
     }
   }, [stream, toast])
-  
+
   // Load links when dialog opens
   useEffect(() => {
     if (open && stream) {
@@ -153,7 +137,7 @@ export function StreamLinkingDialog({
       setExistingLinks([])
     }
   }, [open, stream, loadExistingLinks])
-  
+
   // Handle media selection - only allow internal results (they have media_id)
   const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
     if (result.source !== 'internal' || !result.internal_id) {
@@ -164,11 +148,11 @@ export function StreamLinkingDialog({
     setSearchOpen(false)
     setSearchQuery('')
   }, [])
-  
+
   // Create new link
   const handleCreateLink = useCallback(async () => {
     if (!stream || !selectedMedia || !selectedMedia.internal_id) return
-    
+
     setIsCreatingLink(true)
     try {
       await streamLinkingApi.createLink({
@@ -178,12 +162,12 @@ export function StreamLinkingDialog({
         season: season ? parseInt(season) : null,
         episode: episode ? parseInt(episode) : null,
       })
-      
+
       toast({
         title: 'Link Created',
         description: `Stream linked to "${selectedMedia.title}"`,
       })
-      
+
       // Reset form and reload links
       setSelectedMedia(null)
       setFileIndex('')
@@ -201,31 +185,34 @@ export function StreamLinkingDialog({
       setIsCreatingLink(false)
     }
   }, [stream, selectedMedia, fileIndex, season, episode, toast, loadExistingLinks, onSuccess])
-  
+
   // Delete link
-  const handleDeleteLink = useCallback(async (linkId: number) => {
-    setDeletingLinkId(linkId)
-    try {
-      await streamLinkingApi.deleteLink(linkId)
-      
-      toast({
-        title: 'Link Removed',
-        description: 'Stream link has been removed',
-      })
-      
-      await loadExistingLinks()
-      onSuccess?.()
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to remove link',
-        variant: 'destructive',
-      })
-    } finally {
-      setDeletingLinkId(null)
-    }
-  }, [toast, loadExistingLinks, onSuccess])
-  
+  const handleDeleteLink = useCallback(
+    async (linkId: number) => {
+      setDeletingLinkId(linkId)
+      try {
+        await streamLinkingApi.deleteLink(linkId)
+
+        toast({
+          title: 'Link Removed',
+          description: 'Stream link has been removed',
+        })
+
+        await loadExistingLinks()
+        onSuccess?.()
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Failed to remove link',
+          variant: 'destructive',
+        })
+      } finally {
+        setDeletingLinkId(null)
+      }
+    },
+    [toast, loadExistingLinks, onSuccess],
+  )
+
   // Format size
   const formatSize = (bytes: number | null): string => {
     if (!bytes) return ''
@@ -238,9 +225,9 @@ export function StreamLinkingDialog({
     }
     return `${size.toFixed(1)} ${units[unitIndex]}`
   }
-  
+
   if (!stream) return null
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
@@ -249,11 +236,9 @@ export function StreamLinkingDialog({
             <Link2 className="h-5 w-5 text-primary" />
             Link Stream to Metadata
           </DialogTitle>
-          <DialogDescription>
-            Manage metadata links for this stream
-          </DialogDescription>
+          <DialogDescription>Manage metadata links for this stream</DialogDescription>
         </DialogHeader>
-        
+
         {/* Stream Info */}
         <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
           <div className="flex items-start gap-3">
@@ -263,22 +248,22 @@ export function StreamLinkingDialog({
             <div className="flex-1 min-w-0">
               <h4 className="font-medium text-sm truncate">{stream.stream_name}</h4>
               <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                <Badge variant="outline" className="text-[10px]">{stream.type}</Badge>
+                <Badge variant="outline" className="text-[10px]">
+                  {stream.type}
+                </Badge>
                 {stream.size && <span>{formatSize(stream.size)}</span>}
-                {stream.info_hash && (
-                  <span className="font-mono truncate max-w-[120px]">{stream.info_hash}</span>
-                )}
+                {stream.info_hash && <span className="font-mono truncate max-w-[120px]">{stream.info_hash}</span>}
               </div>
             </div>
           </div>
         </div>
-        
+
         <Separator />
-        
+
         {/* Existing Links */}
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">Current Links</Label>
-          
+
           {isLoadingLinks ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -331,24 +316,20 @@ export function StreamLinkingDialog({
             </ScrollArea>
           )}
         </div>
-        
+
         <Separator />
-        
+
         {/* Add New Link */}
         <div className="space-y-3">
           <Label className="text-sm text-muted-foreground">Add New Link</Label>
-          
+
           {/* Metadata Search */}
           <div className="space-y-2">
             <Label className="text-xs">Search Metadata</Label>
             {selectedMedia ? (
               <div className="flex items-center gap-2 p-2 rounded-lg border border-primary/30 bg-primary/5">
                 {selectedMedia.poster ? (
-                  <img
-                    src={selectedMedia.poster}
-                    alt=""
-                    className="w-8 h-12 rounded object-cover"
-                  />
+                  <img src={selectedMedia.poster} alt="" className="w-8 h-12 rounded object-cover" />
                 ) : (
                   <div className="w-8 h-12 rounded bg-muted flex items-center justify-center">
                     {selectedMedia.type === 'series' ? (
@@ -367,22 +348,14 @@ export function StreamLinkingDialog({
                     </Badge>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setSelectedMedia(null)}
-                >
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedMedia(null)}>
                   <Unlink className="h-3.5 w-3.5" />
                 </Button>
               </div>
             ) : (
               <Popover open={searchOpen} onOpenChange={setSearchOpen}>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-muted-foreground"
-                  >
+                  <Button variant="outline" className="w-full justify-start text-muted-foreground">
                     <Search className="h-4 w-4 mr-2" />
                     Search for metadata...
                   </Button>
@@ -404,9 +377,7 @@ export function StreamLinkingDialog({
                       </div>
                     )}
                     {!isSearching && !isFetchingSearch && searchQuery.length >= 2 && searchResults.length === 0 && (
-                      <div className="py-6 text-center text-sm text-muted-foreground">
-                        No results found
-                      </div>
+                      <div className="py-6 text-center text-sm text-muted-foreground">No results found</div>
                     )}
                     {!isSearching && searchQuery.length < 2 && (
                       <div className="py-6 text-center text-xs text-muted-foreground">
@@ -430,9 +401,7 @@ export function StreamLinkingDialog({
                               onClick={() => handleSelectMedia(result)}
                               disabled={isExternal}
                               className={`w-full flex items-center gap-2 p-2 rounded-md text-left ${
-                                isExternal 
-                                  ? 'opacity-50 cursor-not-allowed' 
-                                  : 'hover:bg-muted cursor-pointer'
+                                isExternal ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer'
                               }`}
                               title={isExternal ? 'External results must be imported first' : undefined}
                             >
@@ -459,11 +428,17 @@ export function StreamLinkingDialog({
                                     {result.type}
                                   </Badge>
                                   {result.source === 'internal' ? (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
+                                    >
                                       In Library
                                     </Badge>
                                   ) : (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700"
+                                    >
                                       {result.provider?.toUpperCase() || 'External'}
                                     </Badge>
                                   )}
@@ -479,7 +454,7 @@ export function StreamLinkingDialog({
               </Popover>
             )}
           </div>
-          
+
           {/* Optional fields */}
           {selectedMedia && (
             <div className="grid grid-cols-3 gap-2">
@@ -523,7 +498,7 @@ export function StreamLinkingDialog({
             </div>
           )}
         </div>
-        
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
@@ -533,11 +508,7 @@ export function StreamLinkingDialog({
             disabled={!selectedMedia || isCreatingLink}
             className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
           >
-            {isCreatingLink ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4 mr-2" />
-            )}
+            {isCreatingLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
             Add Link
           </Button>
         </DialogFooter>

@@ -13,15 +13,15 @@ interface AceStreamSettingsProps {
 
 export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) {
   const [enableAceStream, setEnableAceStream] = useState(config.eas ?? false)
-  
+
   // Sync with config changes
   useEffect(() => {
     setEnableAceStream(config.eas ?? false)
   }, [config.eas])
-  
+
   // Check if MediaFlow is configured
-  const hasMediaFlow = !!(config.mfc?.proxy_url && config.mfc?.api_password)
-  
+  const hasMediaFlow = !!(config.mfc?.pu && config.mfc?.ap)
+
   // Update parent config
   const handleEnableChange = (checked: boolean) => {
     setEnableAceStream(checked)
@@ -30,7 +30,7 @@ export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) 
       eas: checked,
     })
   }
-  
+
   return (
     <Card className="border-border/50 bg-card/50">
       <CardHeader>
@@ -49,15 +49,9 @@ export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) 
             <Label htmlFor="enable-acestream" className="text-base">
               Enable AceStream Streams
             </Label>
-            <p className="text-sm text-muted-foreground">
-              Show AceStream streams in search results and catalogs
-            </p>
+            <p className="text-sm text-muted-foreground">Show AceStream streams in search results and catalogs</p>
           </div>
-          <Switch
-            id="enable-acestream"
-            checked={enableAceStream}
-            onCheckedChange={handleEnableChange}
-          />
+          <Switch id="enable-acestream" checked={enableAceStream} onCheckedChange={handleEnableChange} />
         </div>
 
         {/* MediaFlow Proxy Requirement */}
@@ -65,18 +59,18 @@ export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) 
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>MediaFlow Required:</strong> You must configure MediaFlow Proxy in the Services tab 
-              for AceStream playback to work. AceStream content is streamed through MediaFlow's AceEngine integration.
+              <strong>MediaFlow Required:</strong> You must configure MediaFlow Proxy in the Services tab for AceStream
+              playback to work. AceStream content is streamed through MediaFlow's AceEngine integration.
             </AlertDescription>
           </Alert>
         )}
-        
+
         {enableAceStream && hasMediaFlow && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              AceStream content will be streamed through your MediaFlow Proxy with automatic transcoding 
-              for browser playback. Make sure AceEngine is running and accessible from your MediaFlow instance.
+              AceStream content will be streamed through your MediaFlow Proxy with automatic transcoding for browser
+              playback. Make sure AceEngine is running and accessible from your MediaFlow instance.
             </AlertDescription>
           </Alert>
         )}

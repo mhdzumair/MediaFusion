@@ -15,28 +15,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
-  Loader2,
-  Link2,
-  Unlink,
-  Search,
-  Film,
-  Tv,
-  AlertCircle,
-  HardDrive,
-  CheckCircle2,
-} from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Loader2, Link2, Unlink, Search, Film, Tv, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react'
 import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useToast } from '@/hooks/use-toast'
@@ -82,36 +63,40 @@ export function StreamRelinkButton({
 }: StreamRelinkButtonProps) {
   const { toast } = useToast()
   const createSuggestion = useCreateStreamSuggestion()
-  
+
   // Dialog state
   const [open, setOpen] = useState(false)
-  
+
   // Existing links state
   const [existingLinks, setExistingLinks] = useState<MediaLinkInfo[]>([])
   const [isLoadingLinks, setIsLoadingLinks] = useState(false)
-  
+
   // Link action type
   const [linkAction, setLinkAction] = useState<'relink' | 'add'>('add')
-  
+
   // Search state
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
   const [fileIndex, setFileIndex] = useState<string>('')
   const [reason, setReason] = useState('')
-  
+
   const debouncedQuery = useDebounce(searchQuery, 300)
-  
+
   // Use combined search
-  const { data: searchResults = [], isLoading: isSearching, isFetching: isFetchingSearch } = useCombinedMetadataSearch(
+  const {
+    data: searchResults = [],
+    isLoading: isSearching,
+    isFetching: isFetchingSearch,
+  } = useCombinedMetadataSearch(
     {
       query: debouncedQuery,
       type: 'all',
       limit: 20,
     },
-    { enabled: debouncedQuery.length >= 2 && open }
+    { enabled: debouncedQuery.length >= 2 && open },
   )
-  
+
   // Load existing links when dialog opens
   const loadExistingLinks = useCallback(async () => {
     setIsLoadingLinks(true)
@@ -124,7 +109,7 @@ export function StreamRelinkButton({
       setIsLoadingLinks(false)
     }
   }, [streamId])
-  
+
   // Load links when dialog opens
   useEffect(() => {
     if (open) {
@@ -140,26 +125,29 @@ export function StreamRelinkButton({
       setExistingLinks([])
     }
   }, [open, loadExistingLinks])
-  
+
   // Handle media selection - only allow internal results (they have media_id)
-  const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
-    if (result.source !== 'internal' || !result.internal_id) {
-      toast({
-        title: 'Cannot link to external metadata',
-        description: 'External results must be imported first. Go to Content Import to add this metadata.',
-        variant: 'destructive',
-      })
-      return
-    }
-    setSelectedMedia(result)
-    setSearchOpen(false)
-    setSearchQuery('')
-  }, [toast])
-  
+  const handleSelectMedia = useCallback(
+    (result: CombinedSearchResult) => {
+      if (result.source !== 'internal' || !result.internal_id) {
+        toast({
+          title: 'Cannot link to external metadata',
+          description: 'External results must be imported first. Go to Content Import to add this metadata.',
+          variant: 'destructive',
+        })
+        return
+      }
+      setSelectedMedia(result)
+      setSearchOpen(false)
+      setSearchQuery('')
+    },
+    [toast],
+  )
+
   // Submit suggestion
   const handleSubmit = useCallback(async () => {
     if (!selectedMedia || !selectedMedia.internal_id) return
-    
+
     try {
       await createSuggestion.mutateAsync({
         streamId,
@@ -168,18 +156,19 @@ export function StreamRelinkButton({
           target_media_id: selectedMedia.internal_id,
           file_index: fileIndex ? parseInt(fileIndex) : undefined,
           reason: reason || `Link stream to "${selectedMedia.title}"`,
-          current_value: currentMediaTitle || existingLinks.map(l => l.title).join(', ') || undefined,
+          current_value: currentMediaTitle || existingLinks.map((l) => l.title).join(', ') || undefined,
           suggested_value: selectedMedia.title,
         },
       })
-      
+
       toast({
         title: 'Suggestion Submitted',
-        description: createSuggestion.data?.status === 'auto_approved' 
-          ? 'Your change has been auto-approved and applied.' 
-          : 'Your suggestion has been submitted for moderator review.',
+        description:
+          createSuggestion.data?.status === 'auto_approved'
+            ? 'Your change has been auto-approved and applied.'
+            : 'Your suggestion has been submitted for moderator review.',
       })
-      
+
       setOpen(false)
     } catch (error) {
       toast({
@@ -188,29 +177,29 @@ export function StreamRelinkButton({
         variant: 'destructive',
       })
     }
-  }, [streamId, selectedMedia, linkAction, fileIndex, reason, currentMediaTitle, existingLinks, createSuggestion, toast])
-  
+  }, [
+    streamId,
+    selectedMedia,
+    linkAction,
+    fileIndex,
+    reason,
+    currentMediaTitle,
+    existingLinks,
+    createSuggestion,
+    toast,
+  ])
+
   return (
     <>
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             {variant === 'icon' ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={className}
-                onClick={() => setOpen(true)}
-              >
+              <Button variant="ghost" size="icon" className={className} onClick={() => setOpen(true)}>
                 <Link2 className="h-4 w-4" />
               </Button>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className={className}
-                onClick={() => setOpen(true)}
-              >
+              <Button variant="outline" size="sm" className={className} onClick={() => setOpen(true)}>
                 <Link2 className="h-4 w-4 mr-2" />
                 Link to Media
               </Button>
@@ -233,7 +222,7 @@ export function StreamRelinkButton({
               Suggest a link change for this stream. Your suggestion will be reviewed.
             </DialogDescription>
           </DialogHeader>
-          
+
           {/* Stream Info */}
           <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
             <div className="flex items-start gap-3">
@@ -250,13 +239,13 @@ export function StreamRelinkButton({
               </div>
             </div>
           </div>
-          
+
           <Separator />
-          
+
           {/* Existing Links */}
           <div className="space-y-2">
             <Label className="text-sm text-muted-foreground">Current Links</Label>
-            
+
             {isLoadingLinks ? (
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -294,14 +283,14 @@ export function StreamRelinkButton({
               </ScrollArea>
             )}
           </div>
-          
+
           <Separator />
-          
+
           {/* Link Action Type */}
           <div className="space-y-2">
             <Label className="text-sm text-muted-foreground">Action</Label>
-            <RadioGroup 
-              value={linkAction} 
+            <RadioGroup
+              value={linkAction}
               onValueChange={(v) => setLinkAction(v as 'relink' | 'add')}
               className="grid grid-cols-2 gap-2"
             >
@@ -321,18 +310,14 @@ export function StreamRelinkButton({
               </div>
             </RadioGroup>
           </div>
-          
+
           {/* Target Media Selection */}
           <div className="space-y-2">
             <Label className="text-sm text-muted-foreground">Target Media</Label>
             {selectedMedia ? (
               <div className="flex items-center gap-2 p-2 rounded-lg border border-primary/30 bg-primary/5">
                 {selectedMedia.poster ? (
-                  <img
-                    src={selectedMedia.poster}
-                    alt=""
-                    className="w-10 h-14 rounded object-cover"
-                  />
+                  <img src={selectedMedia.poster} alt="" className="w-10 h-14 rounded object-cover" />
                 ) : (
                   <div className="w-10 h-14 rounded bg-muted flex items-center justify-center">
                     {selectedMedia.type === 'series' ? (
@@ -363,10 +348,7 @@ export function StreamRelinkButton({
             ) : (
               <Popover open={searchOpen} onOpenChange={setSearchOpen}>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-muted-foreground"
-                  >
+                  <Button variant="outline" className="w-full justify-start text-muted-foreground">
                     <Search className="h-4 w-4 mr-2" />
                     Search for media...
                   </Button>
@@ -388,9 +370,7 @@ export function StreamRelinkButton({
                       </div>
                     )}
                     {!isSearching && !isFetchingSearch && searchQuery.length >= 2 && searchResults.length === 0 && (
-                      <div className="py-6 text-center text-sm text-muted-foreground">
-                        No results found
-                      </div>
+                      <div className="py-6 text-center text-sm text-muted-foreground">No results found</div>
                     )}
                     {!isSearching && searchQuery.length < 2 && (
                       <div className="py-6 text-center text-xs text-muted-foreground">
@@ -413,9 +393,7 @@ export function StreamRelinkButton({
                               onClick={() => handleSelectMedia(result)}
                               disabled={isExternal}
                               className={`w-full flex items-center gap-2 p-2 rounded-md text-left ${
-                                isExternal 
-                                  ? 'opacity-50 cursor-not-allowed' 
-                                  : 'hover:bg-muted cursor-pointer'
+                                isExternal ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer'
                               }`}
                               title={isExternal ? 'External results must be imported first' : undefined}
                             >
@@ -442,11 +420,17 @@ export function StreamRelinkButton({
                                     {result.type}
                                   </Badge>
                                   {result.source === 'internal' ? (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
+                                    >
                                       In Library
                                     </Badge>
                                   ) : (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700"
+                                    >
                                       External
                                     </Badge>
                                   )}
@@ -462,13 +446,11 @@ export function StreamRelinkButton({
               </Popover>
             )}
           </div>
-          
+
           {/* Optional file index for multi-file torrents */}
           {selectedMedia && (
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">
-                File Index (optional, for multi-file torrents)
-              </Label>
+              <Label className="text-xs text-muted-foreground">File Index (optional, for multi-file torrents)</Label>
               <Input
                 type="number"
                 min={0}
@@ -479,12 +461,10 @@ export function StreamRelinkButton({
               />
             </div>
           )}
-          
+
           {/* Reason */}
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">
-              Reason (optional)
-            </Label>
+            <Label className="text-xs text-muted-foreground">Reason (optional)</Label>
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -492,7 +472,7 @@ export function StreamRelinkButton({
               className="h-16 resize-none text-sm"
             />
           </div>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel

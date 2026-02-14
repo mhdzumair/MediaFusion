@@ -166,7 +166,6 @@ class OrphansResponse(BaseModel):
     by_type: dict[str, int]
 
 
-
 class MaintenanceRequest(BaseModel):
     """Request for maintenance operations."""
 

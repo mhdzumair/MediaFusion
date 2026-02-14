@@ -126,22 +126,17 @@ async function adminDelete<T>(endpoint: string): Promise<T> {
 
 export const exceptionsApi = {
   /** Get the status of exception tracking (enabled, TTL, count). */
-  getStatus: () =>
-    adminGet<ExceptionStatusResponse>('/exceptions/status'),
+  getStatus: () => adminGet<ExceptionStatusResponse>('/exceptions/status'),
 
   /** List tracked exceptions (paginated, most recent first). */
-  list: (params: ExceptionListParams = {}) =>
-    adminGet<ExceptionListResponse>(`/exceptions${buildQueryString(params)}`),
+  list: (params: ExceptionListParams = {}) => adminGet<ExceptionListResponse>(`/exceptions${buildQueryString(params)}`),
 
   /** Get full detail (including traceback) for a single exception. */
-  getDetail: (fingerprint: string) =>
-    adminGet<ExceptionDetail>(`/exceptions/${fingerprint}`),
+  getDetail: (fingerprint: string) => adminGet<ExceptionDetail>(`/exceptions/${fingerprint}`),
 
   /** Clear all tracked exceptions. */
-  clearAll: () =>
-    adminDelete<ExceptionClearResponse>('/exceptions'),
+  clearAll: () => adminDelete<ExceptionClearResponse>('/exceptions'),
 
   /** Clear a single tracked exception by fingerprint. */
-  clear: (fingerprint: string) =>
-    adminDelete<ExceptionClearResponse>(`/exceptions/${fingerprint}`),
+  clear: (fingerprint: string) => adminDelete<ExceptionClearResponse>(`/exceptions/${fingerprint}`),
 }

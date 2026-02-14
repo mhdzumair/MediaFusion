@@ -13,13 +13,13 @@ export type MetadataProvider = 'imdb' | 'tmdb' | 'tvdb' | 'mal' | 'kitsu'
 
 export interface RefreshMetadataRequest {
   media_type: 'movie' | 'series'
-  providers?: MetadataProvider[]  // Specific providers to refresh from, or undefined for all
+  providers?: MetadataProvider[] // Specific providers to refresh from, or undefined for all
 }
 
 export interface RefreshMetadataResponse {
   status: string
   message: string
-  media_id: number  // Internal media_id
+  media_id: number // Internal media_id
   title?: string
   refreshed_providers?: MetadataProvider[]
 }
@@ -73,16 +73,16 @@ export interface SearchExternalRequest {
 }
 
 export interface ExternalSearchResult {
-  id: string  // Primary ID (imdb_id or tmdb:xxx or tvdb:xxx)
+  id: string // Primary ID (imdb_id or tmdb:xxx or tvdb:xxx)
   title: string
   year?: number
   poster?: string
   description?: string
-  provider?: string  // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
+  provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
-  external_ids?: Record<string, string | number | null>  // All external IDs
+  external_ids?: Record<string, string | number | null> // All external IDs
 }
 
 export interface SearchExternalResponse {
@@ -103,18 +103,15 @@ export const metadataApi = {
    * @param providers Optional list of specific providers to refresh from
    */
   refreshMetadata: (
-    mediaId: number, 
+    mediaId: number,
     mediaType: 'movie' | 'series',
-    providers?: MetadataProvider[]
+    providers?: MetadataProvider[],
   ): Promise<RefreshMetadataResponse> => {
     const payload: RefreshMetadataRequest = { media_type: mediaType }
     if (providers && providers.length > 0) {
       payload.providers = providers
     }
-    return apiClient.post<RefreshMetadataResponse>(
-      `/metadata/${mediaId}/refresh`,
-      payload
-    )
+    return apiClient.post<RefreshMetadataResponse>(`/metadata/${mediaId}/refresh`, payload)
   },
 
   /**
@@ -130,12 +127,14 @@ export const metadataApi = {
     provider: ExternalProvider,
     externalId: string,
     mediaType: 'movie' | 'series',
-    fetchMetadata: boolean = true
+    fetchMetadata: boolean = true,
   ): Promise<LinkExternalIdResponse> => {
-    return apiClient.post<LinkExternalIdResponse>(
-      `/metadata/${mediaId}/link-external`,
-      { provider, external_id: externalId, media_type: mediaType, fetch_metadata: fetchMetadata }
-    )
+    return apiClient.post<LinkExternalIdResponse>(`/metadata/${mediaId}/link-external`, {
+      provider,
+      external_id: externalId,
+      media_type: mediaType,
+      fetch_metadata: fetchMetadata,
+    })
   },
 
   /**
@@ -144,27 +143,21 @@ export const metadataApi = {
   migrateId: (
     metaId: string,
     newExternalId: string,
-    mediaType: 'movie' | 'series'
+    mediaType: 'movie' | 'series',
   ): Promise<LinkExternalIdResponse> => {
-    return apiClient.post<LinkExternalIdResponse>(
-      `/metadata/${metaId}/migrate`,
-      { provider: 'imdb', external_id: newExternalId, media_type: mediaType }
-    )
+    return apiClient.post<LinkExternalIdResponse>(`/metadata/${metaId}/migrate`, {
+      provider: 'imdb',
+      external_id: newExternalId,
+      media_type: mediaType,
+    })
   },
 
   /**
    * Search for metadata in external sources (IMDB/TMDB/TVDB/MAL/Kitsu).
    * Useful for finding the correct external ID when linking providers.
    */
-  searchExternal: (
-    title: string,
-    mediaType: 'movie' | 'series',
-    year?: number
-  ): Promise<SearchExternalResponse> => {
-    return apiClient.post<SearchExternalResponse>(
-      '/metadata/search-external',
-      { title, media_type: mediaType, year }
-    )
+  searchExternal: (title: string, mediaType: 'movie' | 'series', year?: number): Promise<SearchExternalResponse> => {
+    return apiClient.post<SearchExternalResponse>('/metadata/search-external', { title, media_type: mediaType, year })
   },
 
   /**
@@ -185,12 +178,12 @@ export const metadataApi = {
       kitsu_id?: string | number
     },
     mediaType: 'movie' | 'series',
-    fetchMetadata: boolean = true
+    fetchMetadata: boolean = true,
   ): Promise<LinkMultipleExternalIdsResponse> => {
-    return apiClient.post<LinkMultipleExternalIdsResponse>(
-      `/metadata/${mediaId}/link-multiple`,
-      { ...ids, media_type: mediaType, fetch_metadata: fetchMetadata }
-    )
+    return apiClient.post<LinkMultipleExternalIdsResponse>(`/metadata/${mediaId}/link-multiple`, {
+      ...ids,
+      media_type: mediaType,
+      fetch_metadata: fetchMetadata,
+    })
   },
 }
-

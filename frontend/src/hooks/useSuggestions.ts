@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  suggestionsApi, 
-  type SuggestionCreateRequest, 
+import {
+  suggestionsApi,
+  type SuggestionCreateRequest,
   type SuggestionReviewRequest,
   type SuggestionListParams,
-  type PendingSuggestionParams 
+  type PendingSuggestionParams,
 } from '@/lib/api'
 
 // Query keys
@@ -86,4 +86,3 @@ export function useReviewSuggestion() {
     },
   })
 }
-

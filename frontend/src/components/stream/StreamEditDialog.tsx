@@ -15,14 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { 
   Edit,
   Loader2,
   CheckCircle2,
@@ -45,7 +39,17 @@ const AUDIO_OPTIONS = ['DTS', 'DTS-HD', 'Atmos', 'TrueHD', 'AAC', 'AC3', 'DD5.1'
 const HDR_OPTIONS = ['HDR', 'HDR10', 'HDR10+', 'Dolby Vision', 'DV', 'HLG']
 const SOURCE_OPTIONS = ['BluRay', 'WEB', 'HDTV', 'DVD', 'AMZN', 'NF', 'DSNP', 'ATVP', 'MAX']
 
-type StreamFieldName = 'name' | 'resolution' | 'quality' | 'codec' | 'bit_depth' | 'audio_formats' | 'channels' | 'hdr_formats' | 'source' | 'languages'
+type StreamFieldName =
+  | 'name'
+  | 'resolution'
+  | 'quality'
+  | 'codec'
+  | 'bit_depth'
+  | 'audio_formats'
+  | 'channels'
+  | 'hdr_formats'
+  | 'source'
+  | 'languages'
 
 interface FieldState {
   value: string
@@ -79,12 +83,7 @@ const STEPS = [
   { id: 'review', title: 'Review', icon: CheckCircle2 },
 ]
 
-export function StreamEditDialog({
-  streamId,
-  streamName,
-  currentValues,
-  trigger,
-}: StreamEditDialogProps) {
+export function StreamEditDialog({ streamId, streamName, currentValues, trigger }: StreamEditDialogProps) {
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState(0)
   const [reason, setReason] = useState('')
@@ -94,15 +93,31 @@ export function StreamEditDialog({
 
   const getInitialFields = (): Record<StreamFieldName, FieldState> => ({
     name: { value: currentValues?.name || '', original: currentValues?.name || '', isModified: false },
-    resolution: { value: currentValues?.resolution || '', original: currentValues?.resolution || '', isModified: false },
+    resolution: {
+      value: currentValues?.resolution || '',
+      original: currentValues?.resolution || '',
+      isModified: false,
+    },
     quality: { value: currentValues?.quality || '', original: currentValues?.quality || '', isModified: false },
     codec: { value: currentValues?.codec || '', original: currentValues?.codec || '', isModified: false },
     bit_depth: { value: currentValues?.bit_depth || '', original: currentValues?.bit_depth || '', isModified: false },
-    audio_formats: { value: currentValues?.audio_formats || '', original: currentValues?.audio_formats || '', isModified: false },
+    audio_formats: {
+      value: currentValues?.audio_formats || '',
+      original: currentValues?.audio_formats || '',
+      isModified: false,
+    },
     channels: { value: currentValues?.channels || '', original: currentValues?.channels || '', isModified: false },
-    hdr_formats: { value: currentValues?.hdr_formats || '', original: currentValues?.hdr_formats || '', isModified: false },
+    hdr_formats: {
+      value: currentValues?.hdr_formats || '',
+      original: currentValues?.hdr_formats || '',
+      isModified: false,
+    },
     source: { value: currentValues?.source || '', original: currentValues?.source || '', isModified: false },
-    languages: { value: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '', original: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '', isModified: false },
+    languages: {
+      value: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '',
+      original: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '',
+      isModified: false,
+    },
   })
 
   const [fields, setFields] = useState<Record<StreamFieldName, FieldState>>(getInitialFields())
@@ -117,7 +132,7 @@ export function StreamEditDialog({
   }, [open])
 
   const updateField = (fieldName: StreamFieldName, value: string) => {
-    setFields(prev => ({
+    setFields((prev) => ({
       ...prev,
       [fieldName]: {
         ...prev[fieldName],
@@ -158,7 +173,7 @@ export function StreamEditDialog({
     setSubmitResults(results)
     setIsSubmitting(false)
 
-    const successCount = results.filter(r => r.success).length
+    const successCount = results.filter((r) => r.success).length
     if (successCount > 0 && successCount === results.length) {
       setTimeout(() => setOpen(false), 1500)
     }
@@ -166,16 +181,11 @@ export function StreamEditDialog({
 
   const CLEAR_VALUE = '__CLEAR__'
 
-  const renderSelectWithInput = (
-    fieldName: StreamFieldName,
-    label: string,
-    options: string[],
-    placeholder: string
-  ) => {
+  const renderSelectWithInput = (fieldName: StreamFieldName, label: string, options: string[], placeholder: string) => {
     const state = fields[fieldName]
     // Filter out empty strings from options
-    const validOptions = options.filter(opt => opt && opt.trim() !== '')
-    
+    const validOptions = options.filter((opt) => opt && opt.trim() !== '')
+
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -186,20 +196,19 @@ export function StreamEditDialog({
             </Badge>
           )}
         </div>
-        <Select 
-          value={state.value || CLEAR_VALUE} 
+        <Select
+          value={state.value || CLEAR_VALUE}
           onValueChange={(v) => updateField(fieldName, v === CLEAR_VALUE ? '' : v)}
         >
-          <SelectTrigger className={cn(
-            'rounded-xl',
-            state.isModified && 'border-emerald-500/50 bg-emerald-500/5'
-          )}>
+          <SelectTrigger className={cn('rounded-xl', state.isModified && 'border-emerald-500/50 bg-emerald-500/5')}>
             <SelectValue placeholder={placeholder} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={CLEAR_VALUE}>Clear</SelectItem>
-            {validOptions.map(opt => (
-              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+            {validOptions.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -207,10 +216,7 @@ export function StreamEditDialog({
           value={state.value}
           onChange={(e) => updateField(fieldName, e.target.value)}
           placeholder="Or enter custom value"
-          className={cn(
-            'rounded-xl text-sm',
-            state.isModified && 'border-emerald-500/50 bg-emerald-500/5'
-          )}
+          className={cn('rounded-xl text-sm', state.isModified && 'border-emerald-500/50 bg-emerald-500/5')}
         />
       </div>
     )
@@ -231,7 +237,7 @@ export function StreamEditDialog({
             </div>
           </div>
         )
-      
+
       case 1: // Audio & Language
         return (
           <div className="space-y-4">
@@ -250,15 +256,12 @@ export function StreamEditDialog({
                 onChange={(e) => updateField('languages', e.target.value)}
                 placeholder="English, Spanish, French (comma-separated)"
                 rows={2}
-                className={cn(
-                  'rounded-xl',
-                  fields.languages.isModified && 'border-emerald-500/50 bg-emerald-500/5'
-                )}
+                className={cn('rounded-xl', fields.languages.isModified && 'border-emerald-500/50 bg-emerald-500/5')}
               />
             </div>
           </div>
         )
-      
+
       case 2: // Source
         return (
           <div className="space-y-4">
@@ -276,15 +279,12 @@ export function StreamEditDialog({
                 value={fields.name.value}
                 onChange={(e) => updateField('name', e.target.value)}
                 placeholder="Stream display name"
-                className={cn(
-                  'rounded-xl',
-                  fields.name.isModified && 'border-emerald-500/50 bg-emerald-500/5'
-                )}
+                className={cn('rounded-xl', fields.name.isModified && 'border-emerald-500/50 bg-emerald-500/5')}
               />
             </div>
           </div>
         )
-      
+
       case 3: // Review
         return (
           <div className="space-y-4">
@@ -342,7 +342,7 @@ export function StreamEditDialog({
             )}
           </div>
         )
-      
+
       default:
         return null
     }
@@ -381,13 +381,15 @@ export function StreamEditDialog({
                   onClick={() => setStep(i)}
                   className={cn(
                     'flex flex-col items-center gap-1 text-xs transition-colors',
-                    i === step ? 'text-emerald-500' : i < step ? 'text-muted-foreground' : 'text-muted-foreground/50'
+                    i === step ? 'text-emerald-500' : i < step ? 'text-muted-foreground' : 'text-muted-foreground/50',
                   )}
                 >
-                  <div className={cn(
-                    'w-8 h-8 rounded-full flex items-center justify-center transition-colors',
-                    i === step ? 'bg-emerald-500/20' : i < step ? 'bg-muted' : 'bg-muted/50'
-                  )}>
+                  <div
+                    className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center transition-colors',
+                      i === step ? 'bg-emerald-500/20' : i < step ? 'bg-muted' : 'bg-muted/50',
+                    )}
+                  >
                     <Icon className="h-4 w-4" />
                   </div>
                   <span className="hidden sm:block">{s.title}</span>
@@ -399,9 +401,7 @@ export function StreamEditDialog({
         </div>
 
         {/* Step Content */}
-        <div className="py-4 min-h-[200px]">
-          {renderStep()}
-        </div>
+        <div className="py-4 min-h-[200px]">{renderStep()}</div>
 
         <DialogFooter className="flex-row gap-2">
           <Button
@@ -413,7 +413,7 @@ export function StreamEditDialog({
             <ChevronLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
-          
+
           {step < STEPS.length - 1 ? (
             <Button
               onClick={() => setStep(step + 1)}
@@ -443,4 +443,3 @@ export function StreamEditDialog({
     </Dialog>
   )
 }
-

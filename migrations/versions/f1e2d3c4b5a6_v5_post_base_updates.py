@@ -43,9 +43,7 @@ def upgrade() -> None:
     op.execute("CREATE TYPE watchaction AS ENUM ('WATCHED', 'DOWNLOADED', 'QUEUED')")
 
     # historysource enum
-    op.execute(
-        "CREATE TYPE historysource AS ENUM ('MEDIAFUSION', 'TRAKT', 'SIMKL', 'MANUAL')"
-    )
+    op.execute("CREATE TYPE historysource AS ENUM ('MEDIAFUSION', 'TRAKT', 'SIMKL', 'MANUAL')")
 
     # integrationtype enum
     integrationtype = postgresql.ENUM(
@@ -68,10 +66,7 @@ def upgrade() -> None:
     # ==========================================================
 
     # Add action column with watchaction enum type (directly with final type)
-    op.execute(
-        "ALTER TABLE watch_history "
-        "ADD COLUMN action watchaction NOT NULL DEFAULT 'WATCHED'::watchaction"
-    )
+    op.execute("ALTER TABLE watch_history ADD COLUMN action watchaction NOT NULL DEFAULT 'WATCHED'::watchaction")
 
     # Add stream_info column
     op.add_column(
@@ -81,17 +76,12 @@ def upgrade() -> None:
 
     # Add source column with historysource enum type
     op.execute(
-        "ALTER TABLE watch_history "
-        "ADD COLUMN source historysource NOT NULL DEFAULT 'MEDIAFUSION'::historysource"
+        "ALTER TABLE watch_history ADD COLUMN source historysource NOT NULL DEFAULT 'MEDIAFUSION'::historysource"
     )
 
     # Create indexes on new watch_history columns
-    op.create_index(
-        op.f("ix_watch_history_action"), "watch_history", ["action"], unique=False
-    )
-    op.create_index(
-        op.f("ix_watch_history_source"), "watch_history", ["source"], unique=False
-    )
+    op.create_index(op.f("ix_watch_history_action"), "watch_history", ["action"], unique=False)
+    op.create_index(op.f("ix_watch_history_source"), "watch_history", ["source"], unique=False)
 
     # ==========================================================
     # 3. Migrate download_history data and drop the table
@@ -151,24 +141,16 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("encrypted_credentials", sa.String(), nullable=True),
-        sa.Column(
-            "is_enabled", sa.Boolean(), nullable=False, server_default="true"
-        ),
-        sa.Column(
-            "sync_direction", sa.String(), nullable=False, server_default="two_way"
-        ),
-        sa.Column(
-            "scrobble_enabled", sa.Boolean(), nullable=False, server_default="true"
-        ),
+        sa.Column("is_enabled", sa.Boolean(), nullable=False, server_default="true"),
+        sa.Column("sync_direction", sa.String(), nullable=False, server_default="two_way"),
+        sa.Column("scrobble_enabled", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("settings", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("last_sync_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_sync_status", sa.String(), nullable=True),
         sa.Column("last_sync_error", sa.String(), nullable=True),
         sa.Column("sync_cursor", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("last_sync_stats", sa.JSON(), nullable=False, server_default="{}"),
-        sa.ForeignKeyConstraint(
-            ["profile_id"], ["user_profiles.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["profile_id"], ["user_profiles.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -229,9 +211,7 @@ def upgrade() -> None:
         sa.Column("current_value", sa.String(), nullable=True),
         sa.Column("suggested_value", sa.String(), nullable=False),
         sa.Column("reason", sa.String(), nullable=True),
-        sa.Column(
-            "status", sa.String(), nullable=False, server_default="pending"
-        ),
+        sa.Column("status", sa.String(), nullable=False, server_default="pending"),
         sa.Column("reviewed_by", sa.String(), nullable=True),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("review_notes", sa.String(), nullable=True),
@@ -247,12 +227,8 @@ def upgrade() -> None:
             nullable=True,
             server_default=sa.text("now()"),
         ),
-        sa.ForeignKeyConstraint(
-            ["episode_id"], ["episode.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["episode_id"], ["episode.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -287,9 +263,7 @@ def upgrade() -> None:
     # Add extractor_name column to http_stream table
     op.add_column(
         "http_stream",
-        sa.Column(
-            "extractor_name", sqlmodel.sql.sqltypes.AutoString(), nullable=True
-        ),
+        sa.Column("extractor_name", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     )
 
     # Create acestream_stream table
@@ -297,12 +271,8 @@ def upgrade() -> None:
         "acestream_stream",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("stream_id", sa.Integer(), nullable=False),
-        sa.Column(
-            "content_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True
-        ),
-        sa.Column(
-            "info_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=True
-        ),
+        sa.Column("content_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("info_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.ForeignKeyConstraint(["stream_id"], ["stream.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("stream_id"),
@@ -366,9 +336,7 @@ def upgrade() -> None:
         ),
         sa.Column("forwarded_message_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["telegram_stream_id"], ["telegram_stream.id"]
-        ),
+        sa.ForeignKeyConstraint(["telegram_stream_id"], ["telegram_stream.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
@@ -413,9 +381,7 @@ def upgrade() -> None:
         "users",
         sa.Column("telegram_linked_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index(
-        "idx_user_telegram_user_id", "users", ["telegram_user_id"], unique=False
-    )
+    op.create_index("idx_user_telegram_user_id", "users", ["telegram_user_id"], unique=False)
     op.create_index(
         op.f("ix_users_telegram_user_id"),
         "users",
@@ -424,13 +390,8 @@ def upgrade() -> None:
     )
 
     # contribute_anonymously: add as nullable, backfill, then set NOT NULL
-    op.add_column(
-        "users", sa.Column("contribute_anonymously", sa.Boolean(), nullable=True)
-    )
-    op.execute(
-        "UPDATE users SET contribute_anonymously = false "
-        "WHERE contribute_anonymously IS NULL"
-    )
+    op.add_column("users", sa.Column("contribute_anonymously", sa.Boolean(), nullable=True))
+    op.execute("UPDATE users SET contribute_anonymously = false WHERE contribute_anonymously IS NULL")
     op.alter_column("users", "contribute_anonymously", nullable=False)
 
 
@@ -455,9 +416,7 @@ def downgrade() -> None:
         op.f("ix_telegram_user_forward_telegram_stream_id"),
         table_name="telegram_user_forward",
     )
-    op.drop_index(
-        "idx_tg_forward_user_stream", table_name="telegram_user_forward"
-    )
+    op.drop_index("idx_tg_forward_user_stream", table_name="telegram_user_forward")
     op.drop_table("telegram_user_forward")
 
     # 8. Remove Telegram backup fields
@@ -467,15 +426,9 @@ def downgrade() -> None:
     op.drop_column("telegram_stream", "file_unique_id")
 
     # 7. Remove AceStream support
-    op.drop_index(
-        op.f("ix_acestream_stream_info_hash"), table_name="acestream_stream"
-    )
-    op.drop_index(
-        op.f("ix_acestream_stream_content_id"), table_name="acestream_stream"
-    )
-    op.drop_index(
-        op.f("ix_acestream_stream_stream_id"), table_name="acestream_stream"
-    )
+    op.drop_index(op.f("ix_acestream_stream_info_hash"), table_name="acestream_stream")
+    op.drop_index(op.f("ix_acestream_stream_content_id"), table_name="acestream_stream")
+    op.drop_index(op.f("ix_acestream_stream_stream_id"), table_name="acestream_stream")
     op.drop_table("acestream_stream")
     op.drop_column("http_stream", "extractor_name")
     # Note: Cannot remove ACESTREAM from streamtype enum in PostgreSQL
@@ -485,9 +438,7 @@ def downgrade() -> None:
         op.f("ix_episode_suggestions_updated_at"),
         table_name="episode_suggestions",
     )
-    op.drop_index(
-        op.f("ix_episode_suggestions_status"), table_name="episode_suggestions"
-    )
+    op.drop_index(op.f("ix_episode_suggestions_status"), table_name="episode_suggestions")
     op.drop_index(
         op.f("ix_episode_suggestions_user_id"),
         table_name="episode_suggestions",
@@ -502,9 +453,7 @@ def downgrade() -> None:
     op.drop_column("contribution_settings", "broken_report_threshold")
 
     # 4. Drop profile_integration table
-    op.drop_index(
-        "idx_integration_profile_platform", table_name="profile_integration"
-    )
+    op.drop_index("idx_integration_profile_platform", table_name="profile_integration")
     op.drop_index(
         op.f("ix_profile_integration_updated_at"),
         table_name="profile_integration",
@@ -531,38 +480,22 @@ def downgrade() -> None:
         sa.Column("profile_id", sa.Integer(), nullable=False),
         sa.Column("media_id", sa.Integer(), nullable=False),
         sa.Column("stream_id", sa.Integer(), nullable=True),
-        sa.Column(
-            "title", sa.String(), nullable=False, server_default=""
-        ),
-        sa.Column(
-            "media_type", sa.String(), nullable=False, server_default="movie"
-        ),
+        sa.Column("title", sa.String(), nullable=False, server_default=""),
+        sa.Column("media_type", sa.String(), nullable=False, server_default="movie"),
         sa.Column("season", sa.Integer(), nullable=True),
         sa.Column("episode", sa.Integer(), nullable=True),
         sa.Column("stream_info", sa.JSON(), nullable=True, server_default="{}"),
-        sa.Column(
-            "status", sa.String(), nullable=False, server_default="completed"
-        ),
+        sa.Column("status", sa.String(), nullable=False, server_default="completed"),
         sa.Column("downloaded_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["profile_id"], ["user_profiles.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["profile_id"], ["user_profiles.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
         sa.ForeignKeyConstraint(["stream_id"], ["stream.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "idx_download_user", "download_history", ["user_id"], unique=False
-    )
-    op.create_index(
-        "idx_download_profile", "download_history", ["profile_id"], unique=False
-    )
-    op.create_index(
-        "idx_download_at", "download_history", ["downloaded_at"], unique=False
-    )
+    op.create_index("idx_download_user", "download_history", ["user_id"], unique=False)
+    op.create_index("idx_download_profile", "download_history", ["profile_id"], unique=False)
+    op.create_index("idx_download_at", "download_history", ["downloaded_at"], unique=False)
 
     # Migrate downloaded entries back
     op.execute(
@@ -580,9 +513,7 @@ def downgrade() -> None:
     )
 
     # Remove downloaded entries from watch_history
-    op.execute(
-        "DELETE FROM watch_history WHERE action = 'DOWNLOADED'::watchaction"
-    )
+    op.execute("DELETE FROM watch_history WHERE action = 'DOWNLOADED'::watchaction")
 
     # 2. Remove watch_history new columns
     op.drop_index(op.f("ix_watch_history_source"), table_name="watch_history")

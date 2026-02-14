@@ -69,7 +69,7 @@ export const contributionsApi = {
     if (params.contribution_status) searchParams.append('contribution_status', params.contribution_status)
     if (params.page) searchParams.append('page', params.page.toString())
     if (params.page_size) searchParams.append('page_size', params.page_size.toString())
-    
+
     const query = searchParams.toString()
     return apiClient.get<ContributionListResponse>(`/contributions${query ? `?${query}` : ''}`)
   },
@@ -107,12 +107,14 @@ export const contributionsApi = {
   /**
    * List pending contributions for review (Mod+ only)
    */
-  listPending: async (params: { contribution_type?: ContributionType; page?: number; page_size?: number } = {}): Promise<ContributionListResponse> => {
+  listPending: async (
+    params: { contribution_type?: ContributionType; page?: number; page_size?: number } = {},
+  ): Promise<ContributionListResponse> => {
     const searchParams = new URLSearchParams()
     if (params.contribution_type) searchParams.append('contribution_type', params.contribution_type)
     if (params.page) searchParams.append('page', params.page.toString())
     if (params.page_size) searchParams.append('page_size', params.page_size.toString())
-    
+
     const query = searchParams.toString()
     return apiClient.get<ContributionListResponse>(`/contributions/review/pending${query ? `?${query}` : ''}`)
   },
@@ -131,4 +133,3 @@ export const contributionsApi = {
     return apiClient.get<ContributionStats>('/contributions/review/stats')
   },
 }
-

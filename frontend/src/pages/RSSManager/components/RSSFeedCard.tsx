@@ -56,48 +56,48 @@ function formatDuration(seconds: number): string {
 
 export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  
+
   const updateFeed = useUpdateRssFeed()
   const deleteFeed = useDeleteRssFeed()
   const scrapeFeed = useScrapeRssFeed()
-  
+
   const handleToggleActive = async () => {
     await updateFeed.mutateAsync({
       feedId: feed.id,
       data: { is_active: !feed.is_active },
     })
   }
-  
+
   const handleDelete = async () => {
     await deleteFeed.mutateAsync(feed.id)
     setDeleteDialogOpen(false)
   }
-  
+
   const handleScrape = async () => {
     await scrapeFeed.mutateAsync(feed.id)
   }
-  
+
   const copyUrl = () => {
     navigator.clipboard.writeText(feed.url)
   }
-  
+
   const metrics = feed.metrics
   const isPending = updateFeed.isPending || deleteFeed.isPending || scrapeFeed.isPending
-  
+
   return (
     <TooltipProvider>
       <Card className={`group transition-all hover:shadow-lg ${!feed.is_active ? 'opacity-60' : ''}`}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${
-                feed.is_active 
-                  ? 'bg-gradient-to-br from-primary/20 to-primary/10' 
-                  : 'bg-muted'
-              }`}>
+              <div
+                className={`p-2 rounded-lg ${
+                  feed.is_active ? 'bg-gradient-to-br from-primary/20 to-primary/10' : 'bg-muted'
+                }`}
+              >
                 <Rss className={`h-5 w-5 ${feed.is_active ? 'text-primary' : 'text-muted-foreground'}`} />
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-lg leading-tight">{feed.name}</h3>
                 <div className="flex items-center gap-2 mt-1">
@@ -118,14 +118,10 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
-              <Switch
-                checked={feed.is_active}
-                onCheckedChange={handleToggleActive}
-                disabled={isPending}
-              />
-              
+              <Switch checked={feed.is_active} onCheckedChange={handleToggleActive} disabled={isPending} />
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -152,7 +148,7 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
                     </a>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     onClick={() => setDeleteDialogOpen(true)}
                     className="text-red-500 focus:text-red-500"
                   >
@@ -164,13 +160,11 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
             </div>
           </div>
         </CardHeader>
-        
+
         <CardContent className="pt-2">
           {/* URL */}
-          <div className="text-sm text-muted-foreground truncate mb-4 font-mono">
-            {feed.url}
-          </div>
-          
+          <div className="text-sm text-muted-foreground truncate mb-4 font-mono">{feed.url}</div>
+
           {/* Metrics Grid */}
           {metrics && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -200,7 +194,7 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
               />
             </div>
           )}
-          
+
           {/* Last run info */}
           <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
             <div className="flex items-center gap-4">
@@ -210,33 +204,32 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
                     <Clock className="h-3 w-3" />
                     <span>Last run: {formatDistanceToNow(new Date(feed.last_scraped_at), { addSuffix: true })}</span>
                   </TooltipTrigger>
-                  <TooltipContent>
-                    {new Date(feed.last_scraped_at).toLocaleString()}
-                  </TooltipContent>
+                  <TooltipContent>{new Date(feed.last_scraped_at).toLocaleString()}</TooltipContent>
                 </Tooltip>
               )}
-              
+
               {metrics?.last_scrape_duration !== undefined && metrics.last_scrape_duration !== null && (
                 <span className="flex items-center gap-1">
                   Duration: {formatDuration(metrics.last_scrape_duration)}
                 </span>
               )}
             </div>
-            
+
             {feed.auto_detect_catalog && (
               <Badge variant="outline" className="text-xs">
                 Auto-detect
               </Badge>
             )}
           </div>
-          
+
           {/* Last run stats */}
           {metrics && metrics.items_processed_last_run > 0 && (
             <div className="mt-2 text-xs text-muted-foreground">
-              Last run: {metrics.items_processed_last_run} processed, {metrics.items_skipped_last_run} skipped, {metrics.errors_last_run} errors
+              Last run: {metrics.items_processed_last_run} processed, {metrics.items_skipped_last_run} skipped,{' '}
+              {metrics.errors_last_run} errors
             </div>
           )}
-          
+
           {/* Skip reasons if any */}
           {metrics?.skip_reasons && Object.keys(metrics.skip_reasons).length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
@@ -247,7 +240,7 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
               ))}
             </div>
           )}
-          
+
           {/* Loading overlay */}
           {isPending && (
             <div className="absolute inset-0 bg-background/80 flex items-center justify-center rounded-lg">
@@ -255,7 +248,7 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
             </div>
           )}
         </CardContent>
-        
+
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -266,10 +259,7 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDelete}
-                className="bg-red-500 hover:bg-red-600"
-              >
+              <AlertDialogAction onClick={handleDelete} className="bg-red-500 hover:bg-red-600">
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -280,12 +270,12 @@ export function RSSFeedCard({ feed, onEdit, showOwner }: RSSFeedCardProps) {
   )
 }
 
-function MetricItem({ 
-  label, 
-  value, 
-  icon, 
-  color 
-}: { 
+function MetricItem({
+  label,
+  value,
+  icon,
+  color,
+}: {
   label: string
   value: number
   icon: React.ReactNode
@@ -297,12 +287,10 @@ function MetricItem({
     amber: 'text-primary bg-primary/10',
     red: 'text-red-500 bg-red-500/10',
   }
-  
+
   return (
     <div className="flex items-center gap-2">
-      <div className={`p-1.5 rounded ${colorClasses[color]}`}>
-        {icon}
-      </div>
+      <div className={`p-1.5 rounded ${colorClasses[color]}`}>{icon}</div>
       <div>
         <div className="text-sm font-semibold">{value.toLocaleString()}</div>
         <div className="text-xs text-muted-foreground">{label}</div>
@@ -310,4 +298,3 @@ function MetricItem({
     </div>
   )
 }
-

@@ -100,9 +100,12 @@ export interface RedisMetrics {
 // Debrid cache metrics - matches the actual API response structure
 export interface DebridCacheMetrics {
   timestamp: string
-  services: Record<string, {
-    cached_torrents: number
-  }>
+  services: Record<
+    string,
+    {
+      cached_torrents: number
+    }
+  >
   error?: string
 }
 
@@ -401,7 +404,9 @@ export const metricsApi = {
    * Requires admin role
    */
   getScraperHistory: async (scraperName: string, limit: number = 20): Promise<ScraperHistoryResponse> => {
-    return apiClient.get<ScraperHistoryResponse>(`/admin/metrics/scrapers/${encodeURIComponent(scraperName)}/history?limit=${limit}`)
+    return apiClient.get<ScraperHistoryResponse>(
+      `/admin/metrics/scrapers/${encodeURIComponent(scraperName)}/history?limit=${limit}`,
+    )
   },
 
   /**
@@ -417,6 +422,8 @@ export const metricsApi = {
    * Requires admin role
    */
   clearScraperMetrics: async (scraperName: string): Promise<{ message: string; keys_deleted: number }> => {
-    return apiClient.delete<{ message: string; keys_deleted: number }>(`/admin/metrics/scrapers/${encodeURIComponent(scraperName)}/metrics`)
+    return apiClient.delete<{ message: string; keys_deleted: number }>(
+      `/admin/metrics/scrapers/${encodeURIComponent(scraperName)}/metrics`,
+    )
   },
 }
