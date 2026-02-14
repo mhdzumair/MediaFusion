@@ -77,13 +77,10 @@ function PieChart({ data }: { data: { label: string; value: number; color: strin
   const total = data.reduce((acc, item) => acc + item.value, 0)
   if (total === 0) return null
 
-  let currentAngle = 0
   const paths = data.map((item, index) => {
-    const percentage = item.value / total
-    const angle = percentage * 360
-    const startAngle = currentAngle
-    const endAngle = currentAngle + angle
-    currentAngle = endAngle
+    const startAngle = data.slice(0, index).reduce((sum, i) => sum + (i.value / total) * 360, 0)
+    const endAngle = startAngle + (item.value / total) * 360
+    const angle = endAngle - startAngle
 
     const startRad = (startAngle - 90) * (Math.PI / 180)
     const endRad = (endAngle - 90) * (Math.PI / 180)

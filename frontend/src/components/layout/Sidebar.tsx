@@ -65,6 +65,16 @@ const adminNavItems: NavItem[] = [
   { title: 'Exceptions', href: '/dashboard/exceptions', icon: Bug, requiredRole: 'admin' },
 ]
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 mt-6 mb-2">
+      <div className="h-px flex-1 bg-border/50" />
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{children}</span>
+      <div className="h-px flex-1 bg-border/50" />
+    </div>
+  )
+}
+
 export function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation()
   const { hasMinimumRole } = useAuth()
@@ -100,14 +110,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       />
       {item.title}
     </Link>
-  )
-
-  const SectionLabel = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex items-center gap-2 px-3 py-2 mt-6 mb-2">
-      <div className="h-px flex-1 bg-border/50" />
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{children}</span>
-      <div className="h-px flex-1 bg-border/50" />
-    </div>
   )
 
   const sidebarContent = (

@@ -88,42 +88,31 @@ export function BrowseTab() {
   })
 
   // Track previous URL params to detect external navigation
-  const prevUrlParamsRef = useRef({ type: urlType, genre: urlGenre, search: urlSearch })
+  const [prevUrlParams, setPrevUrlParams] = useState({ type: urlType, genre: urlGenre, search: urlSearch })
+  const [restoredScroll, setRestoredScroll] = useState(false)
 
   // Refs
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const restoredScroll = useRef(false)
   const selectedCardRef = useRef<HTMLDivElement>(null)
   const hasScrolledToSelected = useRef(false)
 
-  // Sync state from URL params when navigating from another page
-  // This ensures clicking a genre link clears the search and vice versa
-  useEffect(() => {
-    const prevParams = prevUrlParamsRef.current
-    const newType = searchParams.get('type') as CatalogType | null
-    const newGenre = searchParams.get('genre')
-    const newSearch = searchParams.get('search')
+  // Sync state from URL params when navigating from another page (during render, not in effect)
+  const newType = searchParams.get('type') as CatalogType | null
+  const newGenre = searchParams.get('genre')
+  const newSearch = searchParams.get('search')
+  const prevParams = prevUrlParams
+  const isExternalNavigation =
+    newType !== prevParams.type || newGenre !== prevParams.genre || newSearch !== prevParams.search
 
-    // Detect if this is an external navigation (params changed from outside)
-    const isExternalNavigation =
-      newType !== prevParams.type || newGenre !== prevParams.genre || newSearch !== prevParams.search
-
-    if (isExternalNavigation) {
-      // Update state to match URL params exactly
-      // If a param is not in URL, clear it (don't use stored state)
-      if (newType) setCatalogType(newType)
-      setSelectedGenre(newGenre || '')
-      setSearch(newSearch || '')
-
-      // Reset scroll position for fresh navigation
-      window.scrollTo(0, 0)
-      restoredScroll.current = true
-    }
-
-    // Update ref for next comparison
-    prevUrlParamsRef.current = { type: newType, genre: newGenre, search: newSearch }
-  }, [searchParams])
+  if (isExternalNavigation) {
+    setPrevUrlParams({ type: newType, genre: newGenre, search: newSearch })
+    if (newType) setCatalogType(newType)
+    setSelectedGenre(newGenre || '')
+    setSearch(newSearch || '')
+    window.scrollTo(0, 0)
+    setRestoredScroll(true)
+  }
 
   const { data: availableCatalogs } = useAvailableCatalogs()
   const { data: genres } = useGenres(catalogType)
@@ -171,36 +160,32 @@ export function BrowseTab() {
     myChannels,
   ])
 
-  // Update URL params when filters change
+  // Update URL params when filters change (during render, not in effect)
+  const currentType = searchParams.get('type')
+  const currentGenre = searchParams.get('genre')
+  const currentSearch = searchParams.get('search')
+  const params: Record<string, string> = { type: catalogType }
+  if (selectedGenre) params.genre = selectedGenre
+  if (search) params.search = search
+  if (currentType !== catalogType || currentGenre !== (selectedGenre || null) || currentSearch !== (search || null)) {
+    setSearchParams(params, { replace: true })
+  }
+
+  // Set isRestoring when data loads (during render, not in effect)
+  if (!isLoading && data) {
+    setIsRestoring(false)
+  }
+
+  // Restore scroll position after data loads (async - keep in effect)
   useEffect(() => {
-    const params: Record<string, string> = { type: catalogType }
-    if (selectedGenre) params.genre = selectedGenre
-    if (search) params.search = search
-
-    // Only update if params actually changed
-    const currentType = searchParams.get('type')
-    const currentGenre = searchParams.get('genre')
-    const currentSearch = searchParams.get('search')
-
-    if (currentType !== catalogType || currentGenre !== (selectedGenre || null) || currentSearch !== (search || null)) {
-      setSearchParams(params, { replace: true })
-    }
-  }, [catalogType, selectedGenre, search, searchParams, setSearchParams])
-
-  // Restore scroll position after data loads
-  useEffect(() => {
-    if (!isLoading && data && !restoredScroll.current && storedState.scrollPosition !== undefined) {
-      // Delay to ensure DOM is rendered
+    if (!isLoading && data && !restoredScroll && storedState.scrollPosition !== undefined) {
       const timer = setTimeout(() => {
         window.scrollTo(0, storedState.scrollPosition!)
-        restoredScroll.current = true
-        setIsRestoring(false)
+        setRestoredScroll(true)
       }, 100)
       return () => clearTimeout(timer)
-    } else if (!isLoading && data) {
-      setIsRestoring(false)
     }
-  }, [isLoading, data, storedState.scrollPosition])
+  }, [isLoading, data, storedState.scrollPosition, restoredScroll])
 
   // Save scroll position on scroll (debounced)
   useEffect(() => {
@@ -261,7 +246,7 @@ export function BrowseTab() {
     setSelectedCatalog('')
     // Reset scroll position when changing type
     window.scrollTo(0, 0)
-    restoredScroll.current = true
+    setRestoredScroll(true)
   }, [])
 
   const items = data?.pages.flatMap((page) => page.items) ?? []
@@ -290,18 +275,16 @@ export function BrowseTab() {
     nudity: item.nudity,
   }))
 
-  // Scroll to selected item and highlight after data loads
-  useEffect(() => {
-    if (!isLoading && data && selectedItemId && !hasScrolledToSelected.current) {
-      // Check if selected item exists in current data
-      const itemExists = contentItems.some((item) => item.id === selectedItemId)
-      if (!itemExists) {
-        // Item not found, clear selection
-        setSelectedItemId(null)
-        sessionStorage.removeItem(BROWSE_SELECTED_ITEM_KEY)
-        return
-      }
+  // Clear selection if item not found (during render, not in effect)
+  const itemExists = contentItems.some((item) => item.id === selectedItemId)
+  if (!isLoading && data && selectedItemId && !itemExists) {
+    setSelectedItemId(null)
+    sessionStorage.removeItem(BROWSE_SELECTED_ITEM_KEY)
+  }
 
+  // Scroll to selected item after data loads (async - keep in effect)
+  useEffect(() => {
+    if (!isLoading && data && selectedItemId && itemExists && !hasScrolledToSelected.current) {
       const timer = setTimeout(() => {
         if (selectedCardRef.current) {
           selectedCardRef.current.scrollIntoView({
@@ -318,7 +301,7 @@ export function BrowseTab() {
       }, 200)
       return () => clearTimeout(timer)
     }
-  }, [isLoading, data, selectedItemId, contentItems])
+  }, [isLoading, data, selectedItemId, itemExists, contentItems])
 
   // Reset scroll flag when filters change
   useEffect(() => {

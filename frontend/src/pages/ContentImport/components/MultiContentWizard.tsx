@@ -157,7 +157,7 @@ function MetadataSearchPopover({
     if (initialQuery && !searchQuery) {
       setSearchQuery(initialQuery)
     }
-  }, [initialQuery])
+  }, [initialQuery, searchQuery])
 
   // Use combined search hook (searches both internal DB and external providers)
   const {
@@ -551,27 +551,26 @@ export function MultiContentWizard({
   // Determine metadata type based on import mode
   const metaType = importMode === 'collection' ? 'movie' : 'series'
 
-  // Initialize files from analysis
-  useEffect(() => {
-    if (analysis?.files) {
-      // Filter to video files only and sort by name
-      const videoFiles = analysis.files
-        .filter((f) => /\.(mkv|mp4|avi|mov|wmv|m4v|webm)$/i.test(f.filename))
-        .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true }))
+  // Initialize files from analysis (during render, not in effect)
+  const [prevAnalysis, setPrevAnalysis] = useState(analysis)
+  if (analysis?.files && prevAnalysis !== analysis) {
+    setPrevAnalysis(analysis)
+    const videoFiles = analysis.files
+      .filter((f) => /\.(mkv|mp4|avi|mov|wmv|m4v|webm)$/i.test(f.filename))
+      .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true }))
 
-      setFiles(
-        videoFiles.map((f, idx) => ({
-          filename: f.filename,
-          size: f.size,
-          index: f.index ?? idx,
-          season_number: null,
-          episode_number: null,
-          included: true,
-          searchQuery: parseFilenameForSearch(f.filename),
-        })),
-      )
-    }
-  }, [analysis])
+    setFiles(
+      videoFiles.map((f, idx) => ({
+        filename: f.filename,
+        size: f.size,
+        index: f.index ?? idx,
+        season_number: null,
+        episode_number: null,
+        included: true,
+        searchQuery: parseFilenameForSearch(f.filename),
+      })),
+    )
+  }
 
   // Handle metadata selection for a file
   const handleMetadataSelect = useCallback(

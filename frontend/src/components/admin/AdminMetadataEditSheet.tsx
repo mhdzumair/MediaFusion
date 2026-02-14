@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -98,35 +98,37 @@ export function AdminMetadataEditSheet({
   const [formData, setFormData] = useState<MetadataUpdateRequest>({})
   const [isDirty, setIsDirty] = useState(false)
 
-  // Reset form when metadata loads
-  useEffect(() => {
-    if (metadata && open) {
-      setFormData({
-        title: metadata.title,
-        year: metadata.year ?? undefined,
-        end_date: metadata.end_date ?? undefined,
-        description: metadata.description ?? undefined,
-        poster: metadata.poster ?? undefined,
-        background: metadata.background ?? undefined,
-        logo: metadata.logo ?? undefined,
-        runtime: metadata.runtime ?? undefined,
-        website: metadata.website ?? undefined,
-        is_poster_working: metadata.is_poster_working,
-        is_add_title_to_poster: metadata.is_add_title_to_poster,
-        imdb_rating: metadata.imdb_rating ?? undefined,
-        tmdb_rating: metadata.tmdb_rating ?? undefined,
-        parent_guide_nudity_status: metadata.parent_guide_nudity_status ?? undefined,
-        country: metadata.country ?? undefined,
-        tv_language: metadata.tv_language ?? undefined,
-        genres: metadata.genres ?? [],
-        catalogs: metadata.catalogs ?? [],
-        stars: metadata.stars ?? [],
-        parental_certificates: metadata.parental_certificates ?? [],
-        aka_titles: metadata.aka_titles ?? [],
-      })
-      setIsDirty(false)
-    }
-  }, [metadata, open])
+  // Reset form when metadata loads and dialog opens (React-recommended pattern: adjust state when prop changes)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevMetadata, setPrevMetadata] = useState(metadata)
+  if (metadata && open && (open !== prevOpen || prevMetadata !== metadata)) {
+    setPrevOpen(open)
+    setPrevMetadata(metadata)
+    setFormData({
+      title: metadata.title,
+      year: metadata.year ?? undefined,
+      end_date: metadata.end_date ?? undefined,
+      description: metadata.description ?? undefined,
+      poster: metadata.poster ?? undefined,
+      background: metadata.background ?? undefined,
+      logo: metadata.logo ?? undefined,
+      runtime: metadata.runtime ?? undefined,
+      website: metadata.website ?? undefined,
+      is_poster_working: metadata.is_poster_working,
+      is_add_title_to_poster: metadata.is_add_title_to_poster,
+      imdb_rating: metadata.imdb_rating ?? undefined,
+      tmdb_rating: metadata.tmdb_rating ?? undefined,
+      parent_guide_nudity_status: metadata.parent_guide_nudity_status ?? undefined,
+      country: metadata.country ?? undefined,
+      tv_language: metadata.tv_language ?? undefined,
+      genres: metadata.genres ?? [],
+      catalogs: metadata.catalogs ?? [],
+      stars: metadata.stars ?? [],
+      parental_certificates: metadata.parental_certificates ?? [],
+      aka_titles: metadata.aka_titles ?? [],
+    })
+    setIsDirty(false)
+  }
 
   // Update field helper
   const updateField = <K extends keyof MetadataUpdateRequest>(field: K, value: MetadataUpdateRequest[K]) => {

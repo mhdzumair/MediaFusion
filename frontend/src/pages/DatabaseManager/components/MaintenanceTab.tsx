@@ -142,7 +142,7 @@ export function MaintenanceTab() {
             operation: 'reindex',
           })
           break
-        case 'cleanup':
+        case 'cleanup': {
           const cleanupResult = await cleanupMutation.mutateAsync({ dry_run: false })
           result = {
             success: true,
@@ -154,6 +154,7 @@ export function MaintenanceTab() {
           }
           refetchOrphans()
           break
+        }
       }
 
       if (result) {

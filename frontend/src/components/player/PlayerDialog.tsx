@@ -116,7 +116,7 @@ export function PlayerDialog({
     await navigator.clipboard.writeText(stream.url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }, [stream?.url])
+  }, [stream])
 
   // Check for unsupported audio codec based on stream metadata
   const audioWarning = useMemo(() => {
@@ -127,7 +127,7 @@ export function PlayerDialog({
       hasWarning: true,
       codecName: getUnsupportedCodecName(stream.audio),
     }
-  }, [stream?.audio])
+  }, [stream])
 
   // Handle runtime audio issue detection (when player detects no audio output)
   const handleAudioIssue = useCallback(() => {

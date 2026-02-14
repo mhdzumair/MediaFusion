@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 type Theme = 'dark' | 'light' | 'system'
@@ -135,11 +136,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return theme
   })
 
-  // Update resolved theme when theme changes
-  useEffect(() => {
+  // Update resolved theme when theme changes (during render, not in effect)
+  const [prevTheme, setPrevTheme] = useState(theme)
+  if (theme !== prevTheme) {
     const resolved = theme === 'system' ? getSystemTheme() : theme
+    setPrevTheme(theme)
     setResolvedTheme(resolved)
-  }, [theme])
+  }
 
   // Listen for system theme changes
   useEffect(() => {

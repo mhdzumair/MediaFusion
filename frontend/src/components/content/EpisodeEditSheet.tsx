@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -81,14 +81,16 @@ export function EpisodeEditSheet({ episode, trigger, onSuccess }: EpisodeEditShe
 
   const [fields, setFields] = useState<Record<FieldName, FieldState>>(getInitialFields())
 
-  // Reset when episode changes or sheet opens
-  useEffect(() => {
-    if (open) {
-      setFields(getInitialFields())
-      setReason('')
-      setSubmitResults([])
-    }
-  }, [episode, open])
+  // Reset when episode changes or sheet opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevEpisode, setPrevEpisode] = useState(episode)
+  if (open && (open !== prevOpen || prevEpisode !== episode)) {
+    setPrevOpen(open)
+    setPrevEpisode(episode)
+    setFields(getInitialFields())
+    setReason('')
+    setSubmitResults([])
+  }
 
   const updateField = (fieldName: FieldName, value: string) => {
     setFields((prev) => ({

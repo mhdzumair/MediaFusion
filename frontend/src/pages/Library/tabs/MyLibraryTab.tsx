@@ -71,16 +71,16 @@ export function MyLibraryTab() {
     setSelectedItemId(item.id)
   }
 
-  // Scroll to selected item and highlight after data loads
-  useEffect(() => {
-    if (!isLoading && data && selectedItemId && !hasScrolledToSelected.current) {
-      const itemExists = contentItems.some((item) => item.id === selectedItemId)
-      if (!itemExists) {
-        setSelectedItemId(null)
-        sessionStorage.removeItem(LIBRARY_SELECTED_ITEM_KEY)
-        return
-      }
+  // Clear selection if item not found (during render, not in effect)
+  const itemExists = contentItems.some((item) => item.id === selectedItemId)
+  if (!isLoading && data && selectedItemId && !itemExists) {
+    setSelectedItemId(null)
+    sessionStorage.removeItem(LIBRARY_SELECTED_ITEM_KEY)
+  }
 
+  // Scroll to selected item after data loads (async - keep in effect)
+  useEffect(() => {
+    if (!isLoading && data && selectedItemId && itemExists && !hasScrolledToSelected.current) {
       const timer = setTimeout(() => {
         if (selectedCardRef.current) {
           selectedCardRef.current.scrollIntoView({
@@ -96,7 +96,7 @@ export function MyLibraryTab() {
       }, 200)
       return () => clearTimeout(timer)
     }
-  }, [isLoading, data, selectedItemId, contentItems])
+  }, [isLoading, data, selectedItemId, itemExists, contentItems])
 
   // Reset scroll flag when filters change
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Plus,
   Trash2,
@@ -170,15 +170,18 @@ function EditListDialog({ open, onOpenChange, list, existingConfig, onSave }: Ed
   const [sort, setSort] = useState('rank')
   const [order, setOrder] = useState<'asc' | 'desc'>('desc')
 
-  useEffect(() => {
-    if (list) {
-      setTitle(existingConfig?.t || list.name)
-      setCatalogType(existingConfig?.ct || (list.mediatype === 'show' ? 'series' : 'movie'))
-      setUseFilters(existingConfig?.uf || false)
-      setSort(existingConfig?.s || 'rank')
-      setOrder(existingConfig?.o || 'desc')
-    }
-  }, [list, existingConfig])
+  // Sync form when list/existingConfig changes (during render, not in effect)
+  const [prevList, setPrevList] = useState(list)
+  const [prevExistingConfig, setPrevExistingConfig] = useState(existingConfig)
+  if (list && (prevList !== list || prevExistingConfig !== existingConfig)) {
+    setPrevList(list)
+    setPrevExistingConfig(existingConfig)
+    setTitle(existingConfig?.t || list.name)
+    setCatalogType(existingConfig?.ct || (list.mediatype === 'show' ? 'series' : 'movie'))
+    setUseFilters(existingConfig?.uf || false)
+    setSort(existingConfig?.s || 'rank')
+    setOrder(existingConfig?.o || 'desc')
+  }
 
   const handleSave = () => {
     if (!list) return
@@ -316,13 +319,6 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
   const lists = mdbConfig.l || []
   const apiKey = mdbConfig.ak || ''
 
-  // Check if API key exists on mount
-  useEffect(() => {
-    if (apiKey) {
-      verifyApiKey(false)
-    }
-  }, [])
-
   const updateConfig = (updates: Partial<MDBListConfig>) => {
     onChange({
       ...config,
@@ -330,33 +326,7 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
     })
   }
 
-  const verifyApiKey = async (showNotification = true) => {
-    if (!apiKey) {
-      if (showNotification) setVerifyError('Please enter an API key')
-      return
-    }
-
-    setIsVerifying(true)
-    setVerifyError(null)
-
-    try {
-      const isValid = await mdblistApi.verifyApiKey(apiKey)
-      if (isValid) {
-        setIsVerified(true)
-        loadMyLists()
-      } else {
-        setVerifyError('Invalid API key')
-        setIsVerified(false)
-      }
-    } catch (err) {
-      setVerifyError(err instanceof Error ? err.message : 'Verification failed')
-      setIsVerified(false)
-    } finally {
-      setIsVerifying(false)
-    }
-  }
-
-  const loadMyLists = async () => {
+  const loadMyLists = useCallback(async () => {
     setIsLoading(true)
     try {
       const data = await mdblistApi.getUserLists(apiKey)
@@ -366,7 +336,43 @@ export function MDBListConfigComponent({ config, onChange }: ConfigSectionProps)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [apiKey])
+
+  const verifyApiKey = useCallback(
+    async (showNotification = true) => {
+      if (!apiKey) {
+        if (showNotification) setVerifyError('Please enter an API key')
+        return
+      }
+
+      setIsVerifying(true)
+      setVerifyError(null)
+
+      try {
+        const isValid = await mdblistApi.verifyApiKey(apiKey)
+        if (isValid) {
+          setIsVerified(true)
+          loadMyLists()
+        } else {
+          setVerifyError('Invalid API key')
+          setIsVerified(false)
+        }
+      } catch (err) {
+        setVerifyError(err instanceof Error ? err.message : 'Verification failed')
+        setIsVerified(false)
+      } finally {
+        setIsVerifying(false)
+      }
+    },
+    [apiKey, loadMyLists],
+  )
+
+  // Check if API key exists on mount
+  useEffect(() => {
+    if (apiKey) {
+      verifyApiKey(false)
+    }
+  }, [apiKey, verifyApiKey])
 
   const loadTopLists = async () => {
     if (topLists.length > 0) return // Already loaded

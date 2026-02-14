@@ -395,16 +395,16 @@ export function VideoPlayer({
 
   // Cleanup video element on unmount to stop buffering
   useEffect(() => {
+    const videoEl = videoRef.current
     return () => {
       if (hlsRef.current) {
         hlsRef.current.destroy()
         hlsRef.current = null
       }
-      const video = videoRef.current
-      if (video) {
-        video.pause()
-        video.removeAttribute('src')
-        video.load()
+      if (videoEl) {
+        videoEl.pause()
+        videoEl.removeAttribute('src')
+        videoEl.load()
       }
     }
   }, [])

@@ -13,6 +13,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const instanceContext = useContext(InstanceContext)
   const location = useLocation()
 
+  // Memoize the state object to prevent infinite re-renders (must be before any early returns)
+  const navigationState = useMemo(() => ({ from: location }), [location])
+
   // During hot reload or initial render, contexts might not be available yet
   // Show loading state until contexts are ready
   if (!authContext || !instanceContext) {
@@ -31,9 +34,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const { isApiKeyRequired, isApiKeySet, isLoading: instanceLoading } = instanceContext
 
   const isLoading = authLoading || instanceLoading
-
-  // Memoize the state object to prevent infinite re-renders
-  const navigationState = useMemo(() => ({ from: location }), [location.pathname])
 
   if (isLoading) {
     return (

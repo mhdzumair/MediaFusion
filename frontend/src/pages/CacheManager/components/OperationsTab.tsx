@@ -151,7 +151,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
         title: 'Cache Cleared',
         description: `Deleted ${result.keys_deleted} keys from ${name} cache`,
       })
-    } catch (err) {
+    } catch {
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear',
@@ -191,7 +191,7 @@ export function OperationsTab({ actionHistory, onActionComplete }: OperationsTab
         title: 'All Caches Cleared',
         description: `Deleted ${result.keys_deleted} keys`,
       })
-    } catch (err) {
+    } catch {
       const action: ActionHistoryItem = {
         id: Date.now().toString(),
         action: 'clear_all',

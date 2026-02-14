@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,6 +42,7 @@ import {
   useCatalogs,
   type CatalogType,
 } from '@/hooks'
+import type { EditableField } from '@/lib/api/suggestions'
 import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select'
 import { TagInput } from '@/components/ui/tag-input'
 import { NUDITY_STATUS_OPTIONS } from '@/lib/api'
@@ -147,7 +148,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
   )
 
   // Field states - initialized from metadata
-  const getInitialFields = (): Record<FieldName, FieldState> => {
+  const getInitialFields = useCallback((): Record<FieldName, FieldState> => {
     const cleanedPoster = getOriginalPosterUrl(metadata?.poster)
     const cleanedBackground = getOriginalPosterUrl(metadata?.background)
 
@@ -218,7 +219,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
         isModified: false,
       },
     }
-  }
+  }, [metadata])
 
   const [fields, setFields] = useState<Record<FieldName, FieldState>>(getInitialFields())
 
@@ -230,20 +231,22 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
   const [selectedCatalogs, setSelectedCatalogs] = useState<string[]>([])
   const [akaTitles, setAkaTitles] = useState<string[]>([])
 
-  // Reset when metadata loads
-  useEffect(() => {
-    if (metadata && open) {
-      setFields(getInitialFields())
-      setSelectedGenres(metadata.genres || [])
-      setSelectedCast(metadata.cast || [])
-      setSelectedDirectors(metadata.directors || [])
-      setSelectedWriters(metadata.writers || [])
-      setSelectedCatalogs(metadata.catalogs || [])
-      setAkaTitles(metadata.aka_titles || [])
-      setReason('')
-      setSubmitResults([])
-    }
-  }, [metadata, open])
+  // Reset when metadata loads and dialog opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevMetadata, setPrevMetadata] = useState(metadata)
+  if (metadata && open && (open !== prevOpen || prevMetadata !== metadata)) {
+    setPrevOpen(open)
+    setPrevMetadata(metadata)
+    setFields(getInitialFields())
+    setSelectedGenres(metadata.genres || [])
+    setSelectedCast(metadata.cast || [])
+    setSelectedDirectors(metadata.directors || [])
+    setSelectedWriters(metadata.writers || [])
+    setSelectedCatalogs(metadata.catalogs || [])
+    setAkaTitles(metadata.aka_titles || [])
+    setReason('')
+    setSubmitResults([])
+  }
 
   const updateField = (fieldName: FieldName, value: string) => {
     setFields((prev) => ({
@@ -371,22 +374,20 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
 
     for (const { field, currentValue, newValue } of modifiedFields) {
       try {
-        // Map field names to API field names
-        let apiFieldName = field
         if (field === 'parental_certificate') continue // Skip for now
         if (field === 'catalogs') continue // Skip - might not be in suggestions API
 
         await createSuggestion.mutateAsync({
           mediaId,
           data: {
-            field_name: apiFieldName as any,
+            field_name: field as EditableField,
             current_value: currentValue || undefined,
             suggested_value: newValue,
             reason: reason.trim() || undefined,
           },
         })
         results.push({ field, success: true })
-      } catch (error) {
+      } catch {
         results.push({ field, success: false })
       }
     }

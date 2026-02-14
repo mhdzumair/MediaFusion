@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+/* eslint-disable react-refresh/only-export-components */
+import { useState, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from './skeleton'
 import { Film } from 'lucide-react'
@@ -40,7 +41,7 @@ export function Poster({
   const [fallbackIndex, setFallbackIndex] = useState(0)
 
   // Track the previous primary URL to avoid unnecessary resets
-  const prevPrimaryUrlRef = useRef<string | null>(null)
+  const [prevPrimaryUrl, setPrevPrimaryUrl] = useState<string | null>(null)
 
   // Generate fallback URLs - memoized to prevent unnecessary recalculations
   const fallbackUrls = useMemo(() => {
@@ -74,16 +75,13 @@ export function Poster({
   // Get the primary URL (first in fallback chain)
   const primaryUrl = fallbackUrls[0] || null
 
-  // Only reset when the PRIMARY URL changes (not when secondary fallbacks change)
-  // This prevents flashing when metadata refreshes but RPDB poster stays the same
-  useEffect(() => {
-    if (prevPrimaryUrlRef.current !== primaryUrl) {
-      setFallbackIndex(0)
-      setHasError(false)
-      setIsLoading(true)
-      prevPrimaryUrlRef.current = primaryUrl
-    }
-  }, [primaryUrl])
+  // Only reset when the PRIMARY URL changes (during render, not in effect)
+  if (prevPrimaryUrl !== primaryUrl) {
+    setPrevPrimaryUrl(primaryUrl)
+    setFallbackIndex(0)
+    setHasError(false)
+    setIsLoading(true)
+  }
 
   // Handle image load success - but check if it's a redirect to the default poster
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -234,7 +232,7 @@ export function Backdrop({ metaId, backdrop, rpdbApiKey, className }: BackdropPr
   const [fallbackIndex, setFallbackIndex] = useState(0)
 
   // Track the previous primary URL to avoid unnecessary resets
-  const prevPrimaryUrlRef = useRef<string | null>(null)
+  const [prevPrimaryUrl, setPrevPrimaryUrl] = useState<string | null>(null)
 
   // Check if RPDB key is Tier 1+ (required for backdrop access)
   const canUseRpdbBackdrop = isRpdbTier1Plus(rpdbApiKey)
@@ -261,16 +259,13 @@ export function Backdrop({ metaId, backdrop, rpdbApiKey, className }: BackdropPr
   // Get the primary URL (first in fallback chain)
   const primaryUrl = fallbackUrls[0] || null
 
-  // Only reset when the PRIMARY URL changes
-  // This prevents flashing when metadata refreshes but RPDB backdrop stays the same
-  useEffect(() => {
-    if (prevPrimaryUrlRef.current !== primaryUrl) {
-      setFallbackIndex(0)
-      setHasError(false)
-      setIsLoading(true)
-      prevPrimaryUrlRef.current = primaryUrl
-    }
-  }, [primaryUrl])
+  // Only reset when the PRIMARY URL changes (during render, not in effect)
+  if (prevPrimaryUrl !== primaryUrl) {
+    setPrevPrimaryUrl(primaryUrl)
+    setFallbackIndex(0)
+    setHasError(false)
+    setIsLoading(true)
+  }
 
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget

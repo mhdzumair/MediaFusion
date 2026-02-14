@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { Save, X, ToggleLeft, Calendar, Hash, Type, Braces, AlertCircle } from 'lucide-react'
 import {
   Dialog,
@@ -86,8 +86,10 @@ function FieldEditor({
     return String(value)
   })
 
-  // Update local value when external value changes
-  useEffect(() => {
+  // Update local value when external value changes (during render, not in effect)
+  const [prevValue, setPrevValue] = useState(value)
+  if (prevValue !== value) {
+    setPrevValue(value)
     if (value === null || value === undefined) {
       setIsNullChecked(true)
       setLocalValue('')
@@ -99,7 +101,7 @@ function FieldEditor({
         setLocalValue(String(value))
       }
     }
-  }, [value])
+  }
 
   const handleNullToggle = (checked: boolean) => {
     setIsNullChecked(checked)
@@ -132,10 +134,11 @@ function FieldEditor({
       case 'boolean':
         onChange(newValue === 'true')
         break
-      case 'number':
+      case 'number': {
         const num = parseFloat(newValue)
         onChange(isNaN(num) ? null : num)
         break
+      }
       case 'json':
         try {
           onChange(JSON.parse(newValue))
@@ -254,13 +257,15 @@ export function EditRowDialog({
   const [editedData, setEditedData] = useState<Record<string, unknown>>({})
   const [error, setError] = useState<string | null>(null)
 
-  // Initialize edited data when dialog opens
-  useEffect(() => {
-    if (open && rowData) {
-      setEditedData({ ...rowData })
-      setError(null)
-    }
-  }, [open, rowData])
+  // Initialize edited data when dialog opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevRowData, setPrevRowData] = useState(rowData)
+  if (open && rowData && (!prevOpen || prevRowData !== rowData)) {
+    setPrevOpen(open)
+    setPrevRowData(rowData)
+    setEditedData({ ...rowData })
+    setError(null)
+  }
 
   // Get the row ID for display
   const rowId = rowData?.[idColumn]

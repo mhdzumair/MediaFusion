@@ -128,7 +128,7 @@ export function StreamReport({
       setCurrentValue('')
       setSuggestedValue('')
       setReason('')
-    } catch (error) {
+    } catch {
       // Error handled by mutation
     }
   }

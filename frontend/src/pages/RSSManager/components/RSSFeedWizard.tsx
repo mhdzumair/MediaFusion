@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,35 +50,30 @@ interface RegexTestModalProps {
 
 function RegexTestModal({ open, onClose, fieldName, sourceContent, initialPattern, onApply }: RegexTestModalProps) {
   const [pattern, setPattern] = useState(initialPattern)
-  const [result, setResult] = useState<{ match: string | null; groups: string[]; error: string | null }>({
-    match: null,
-    groups: [],
-    error: null,
-  })
 
-  useEffect(() => {
+  // Sync pattern when initialPattern or open changes (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevPattern, setPrevPattern] = useState(initialPattern)
+  if ((open && !prevOpen) || prevPattern !== initialPattern) {
+    setPrevOpen(open)
+    setPrevPattern(initialPattern)
     setPattern(initialPattern)
-  }, [initialPattern, open])
+  }
 
-  useEffect(() => {
+  // Derive result from pattern and sourceContent (useMemo instead of effect)
+  const result = useMemo(() => {
     if (!pattern || !sourceContent) {
-      setResult({ match: null, groups: [], error: null })
-      return
+      return { match: null as string | null, groups: [] as string[], error: null as string | null }
     }
     try {
       const regex = new RegExp(pattern)
       const match = sourceContent.match(regex)
       if (match) {
-        setResult({
-          match: match[0],
-          groups: match.slice(1),
-          error: null,
-        })
-      } else {
-        setResult({ match: null, groups: [], error: 'No match found' })
+        return { match: match[0], groups: match.slice(1), error: null }
       }
+      return { match: null, groups: [], error: 'No match found' }
     } catch (e) {
-      setResult({ match: null, groups: [], error: e instanceof Error ? e.message : 'Invalid regex' })
+      return { match: null, groups: [], error: e instanceof Error ? e.message : 'Invalid regex' }
     }
   }, [pattern, sourceContent])
 
@@ -232,37 +227,39 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
   const updateFeed = useUpdateRssFeed()
   const testFeedUrl = useTestRssFeedUrl()
 
-  // Reset when opening/closing
-  useEffect(() => {
-    if (open) {
-      if (feed) {
-        setName(feed.name)
-        setUrl(feed.url)
-        setIsActive(feed.is_active)
-        setSource(feed.source || '')
-        setTorrentType(feed.torrent_type || 'public')
-        setAutoDetectCatalog(feed.auto_detect_catalog)
-        setParsingPatterns(feed.parsing_patterns || defaultParsingPatterns)
-        setFilters(feed.filters || defaultFilters)
-        setCatalogPatterns(feed.catalog_patterns || [])
-        setHasTestedUrl(true) // Already configured feed
-        setCurrentStep('patterns') // Start at patterns for edit
-      } else {
-        setName('')
-        setUrl('')
-        setIsActive(true)
-        setSource('')
-        setTorrentType('public')
-        setAutoDetectCatalog(false)
-        setParsingPatterns(defaultParsingPatterns)
-        setFilters(defaultFilters)
-        setCatalogPatterns([])
-        setTestResult(null)
-        setHasTestedUrl(false)
-        setCurrentStep('url')
-      }
+  // Reset when opening/closing (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevFeed, setPrevFeed] = useState(feed)
+  if (open && (!prevOpen || prevFeed !== feed)) {
+    setPrevOpen(open)
+    setPrevFeed(feed)
+    if (feed) {
+      setName(feed.name)
+      setUrl(feed.url)
+      setIsActive(feed.is_active)
+      setSource(feed.source || '')
+      setTorrentType(feed.torrent_type || 'public')
+      setAutoDetectCatalog(feed.auto_detect_catalog)
+      setParsingPatterns(feed.parsing_patterns || defaultParsingPatterns)
+      setFilters(feed.filters || defaultFilters)
+      setCatalogPatterns(feed.catalog_patterns || [])
+      setHasTestedUrl(true)
+      setCurrentStep('patterns')
+    } else {
+      setName('')
+      setUrl('')
+      setIsActive(true)
+      setSource('')
+      setTorrentType('public')
+      setAutoDetectCatalog(false)
+      setParsingPatterns(defaultParsingPatterns)
+      setFilters(defaultFilters)
+      setCatalogPatterns([])
+      setTestResult(null)
+      setHasTestedUrl(false)
+      setCurrentStep('url')
     }
-  }, [feed, open])
+  }
 
   const handleTest = async () => {
     if (!url) return
@@ -289,7 +286,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
         if (result.detected_patterns) {
           setParsingPatterns((prev) => ({
             ...prev,
-            ...Object.fromEntries(Object.entries(result.detected_patterns || {}).filter(([_, v]) => v)),
+            ...Object.fromEntries(Object.entries(result.detected_patterns || {}).filter(([, v]) => v)),
           }))
         }
       }
@@ -405,7 +402,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
         return ''
       }
     },
-    [testResult?.sample_item],
+    [testResult],
   )
 
   // Open regex test modal
@@ -958,7 +955,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                         <Label className="text-xs text-muted-foreground">Parsing Patterns</Label>
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           {Object.entries(parsingPatterns)
-                            .filter(([_, v]) => v)
+                            .filter(([, v]) => v)
                             .map(([key, value]) => (
                               <div key={key} className="flex items-center gap-2 text-sm">
                                 <span className="text-muted-foreground">{key}:</span>
@@ -973,7 +970,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                           <Label className="text-xs text-muted-foreground">Filters</Label>
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             {Object.entries(filters)
-                              .filter(([_, v]) => v)
+                              .filter(([, v]) => v)
                               .map(([key, value]) => (
                                 <div key={key} className="flex items-center gap-2 text-sm">
                                   <span className="text-muted-foreground">{key}:</span>

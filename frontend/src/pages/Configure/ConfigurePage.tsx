@@ -774,15 +774,18 @@ function AuthenticatedConfigurePage() {
   // Check for edit param
   const editProfileId = searchParams.get('edit')
 
-  useEffect(() => {
-    if (editProfileId && profiles) {
-      const profileIdNum = parseInt(editProfileId, 10)
-      const profile = profiles.find((p) => p.id === profileIdNum)
-      if (profile) {
-        setSelectedProfile(profile)
-      }
+  // Sync selected profile when edit param or profiles change (during render, not in effect)
+  const [prevEditId, setPrevEditId] = useState(editProfileId)
+  const [prevProfiles, setPrevProfiles] = useState(profiles)
+  if (editProfileId && profiles && (prevEditId !== editProfileId || prevProfiles !== profiles)) {
+    setPrevEditId(editProfileId)
+    setPrevProfiles(profiles)
+    const profileIdNum = parseInt(editProfileId, 10)
+    const profile = profiles.find((p) => p.id === profileIdNum)
+    if (profile) {
+      setSelectedProfile(profile)
     }
-  }, [editProfileId, profiles])
+  }
 
   // If editing or creating, show the editor
   if (selectedProfile || isCreating) {

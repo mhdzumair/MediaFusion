@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -62,19 +62,17 @@ export function ScrapeContentButton({
     refetchInterval: dialogOpen && canQueryStatus ? 30000 : false, // Refresh every 30s when dialog is open
   })
 
-  // Initialize selected scrapers when status loads
-  useEffect(() => {
-    if (scrapeStatus?.available_scrapers) {
-      // Select all available scrapers by default
-      // If user has debrid, include debrid scrapers too
-      const defaultSelected = new Set(
-        scrapeStatus.available_scrapers
-          .filter((s) => s.enabled && (!s.requires_debrid || scrapeStatus.has_debrid))
-          .map((s) => s.id),
-      )
-      setSelectedScrapers(defaultSelected)
-    }
-  }, [scrapeStatus?.available_scrapers, scrapeStatus?.has_debrid])
+  // Initialize selected scrapers when status loads (during render, not in effect)
+  const [prevScrapers, setPrevScrapers] = useState(scrapeStatus?.available_scrapers)
+  if (scrapeStatus?.available_scrapers && scrapeStatus.available_scrapers !== prevScrapers) {
+    setPrevScrapers(scrapeStatus.available_scrapers)
+    const defaultSelected = new Set(
+      scrapeStatus.available_scrapers
+        .filter((s) => s.enabled && (!s.requires_debrid || scrapeStatus.has_debrid))
+        .map((s) => s.id),
+    )
+    setSelectedScrapers(defaultSelected)
+  }
 
   // Scrape mutation
   const scrapeMutation = useMutation({

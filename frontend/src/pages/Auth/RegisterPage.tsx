@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -41,6 +41,7 @@ const passwordRequirements = [
 ]
 
 export function RegisterPage() {
+  'use no memo'
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -54,11 +55,12 @@ export function RegisterPage() {
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
 
   // Initialize API key input from stored value
-  useEffect(() => {
-    if (apiKey) {
-      setApiKeyInput(apiKey)
-    }
-  }, [apiKey])
+  // Initialize API key input from stored value (during render, not in effect)
+  const prevApiKeyRef = useRef(apiKey)
+  if (apiKey && prevApiKeyRef.current !== apiKey) {
+    setApiKeyInput(apiKey)
+    prevApiKeyRef.current = apiKey
+  }
 
   const {
     register,

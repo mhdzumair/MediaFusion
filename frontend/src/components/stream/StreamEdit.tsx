@@ -93,7 +93,7 @@ export function StreamEdit({ streamId, streamName, currentValues, className, var
       setDialogOpen(false)
       setSuggestedValue('')
       setReason('')
-    } catch (error) {
+    } catch {
       // Error handled by mutation
     }
   }

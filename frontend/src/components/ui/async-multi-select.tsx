@@ -113,11 +113,12 @@ export function AsyncMultiSelect({
     }
   }, [debouncedSearch, open, onSearch, hasMore])
 
-  // Load initial options when popover opens
+  // Load initial options when popover opens (intentionally one-time on open to avoid loops)
   React.useEffect(() => {
     if (open && options.length === 0 && initialOptions.length === 0) {
       onSearch('').then(setOptions).catch(console.error)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: adding onSearch/options/initialOptions causes infinite loops
   }, [open])
 
   const handleSelect = (value: string) => {

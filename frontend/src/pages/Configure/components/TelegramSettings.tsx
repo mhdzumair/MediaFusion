@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Send, Link, Unlink, Info, CheckCircle2, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -58,10 +58,12 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
   // Local state
   const [enableTelegram, setEnableTelegram] = useState(config.ets ?? false)
 
-  // Sync with config changes
-  useEffect(() => {
+  // Sync with config changes (during render, not in effect)
+  const [prevEts, setPrevEts] = useState(config.ets)
+  if (config.ets !== prevEts) {
+    setPrevEts(config.ets)
     setEnableTelegram(config.ets ?? false)
-  }, [config.ets])
+  }
 
   // Update parent config
   const updateConfig = (newEnableTelegram: boolean) => {

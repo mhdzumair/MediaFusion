@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -37,16 +37,24 @@ export function RegexTesterModal({
   const [error, setError] = useState<string | null>(null)
   const [groupNumber, setGroupNumber] = useState(1)
 
-  useEffect(() => {
+  // Sync pattern when currentPattern or open changes (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevPattern, setPrevPattern] = useState(currentPattern)
+  if ((open && !prevOpen) || prevPattern !== currentPattern) {
+    setPrevOpen(open)
+    setPrevPattern(currentPattern)
     setPattern(currentPattern)
-  }, [currentPattern, open])
+  }
 
-  useEffect(() => {
-    // Try to extract a reasonable test input from source content
+  // Extract test input from source content (during render, not in effect)
+  const [prevSourceContent, setPrevSourceContent] = useState(sourceContent)
+  const [prevOpenForInput, setPrevOpenForInput] = useState(open)
+  if ((sourceContent && prevSourceContent !== sourceContent) || (open && !prevOpenForInput)) {
+    setPrevSourceContent(sourceContent)
+    setPrevOpenForInput(open)
     if (sourceContent) {
       try {
         const parsed = JSON.parse(sourceContent)
-        // Look for common content fields
         const contentFields = ['description', 'summary', 'content', 'title']
         for (const field of contentFields) {
           if (parsed[field] && typeof parsed[field] === 'string') {
@@ -58,7 +66,7 @@ export function RegexTesterModal({
         setTestInput(sourceContent)
       }
     }
-  }, [sourceContent, open])
+  }
 
   const handleTest = () => {
     setMatches([])

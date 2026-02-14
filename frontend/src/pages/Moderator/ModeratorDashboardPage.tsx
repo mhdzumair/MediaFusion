@@ -597,7 +597,7 @@ function StreamSuggestionsTab() {
       setSelectedSuggestion(null)
       setReviewNotes('')
       refetch()
-    } catch (error) {
+    } catch {
       // Error handled by mutation
     }
   }
@@ -1024,7 +1024,7 @@ function ContributionsTab() {
       setSelectedContribution(null)
       setReviewNotes('')
       refetch()
-    } catch (error) {
+    } catch {
       // Error handled by mutation
     }
   }

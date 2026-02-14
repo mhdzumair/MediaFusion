@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Eye,
@@ -263,11 +263,14 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
   const [torznabDialogOpen, setTorznabDialogOpen] = useState(false)
   const [editingEndpointIndex, setEditingEndpointIndex] = useState<number | null>(null)
 
-  // Sync local state when config changes from outside
-  useEffect(() => {
+  // Sync local state when config changes from outside (during render, not in effect)
+  const [prevConfigIc, setPrevConfigIc] = useState(config.ic)
+  const [prevGlobalStatus, setPrevGlobalStatus] = useState(globalStatus)
+  if (prevConfigIc !== config.ic || prevGlobalStatus !== globalStatus) {
+    setPrevConfigIc(config.ic)
+    setPrevGlobalStatus(globalStatus)
     const uiCfg = profileConfigToUI(config.ic as ProfileIndexerConfig | undefined)
 
-    // Default to enabled if global is available and not explicitly configured
     if (globalStatus?.prowlarr_available && !profileIndexerConfig?.pr) {
       uiCfg.prowlarr = { enabled: true, url: null, api_key: null, use_global: true }
     }
@@ -278,7 +281,7 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
     setProwlarrConfig(uiCfg.prowlarr)
     setJackettConfig(uiCfg.jackett)
     setTorznabEndpoints(uiCfg.torznab)
-  }, [config.ic, globalStatus])
+  }
 
   // Update parent config when local state changes
   const updateParentConfig = (
@@ -805,12 +808,15 @@ function TorznabEndpointDialog({
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
   const [showHeaders, setShowHeaders] = useState(false)
 
-  useEffect(() => {
+  // Sync form when endpoint changes (during render, not in effect)
+  const [prevEndpoint, setPrevEndpoint] = useState(endpoint)
+  if (endpoint !== prevEndpoint) {
+    setPrevEndpoint(endpoint)
     setName(endpoint?.name || '')
     setUrl(endpoint?.url || '')
     setHeaders(endpoint?.headers ? Object.entries(endpoint.headers).map(([key, value]) => ({ key, value })) : [])
     setEnabled(endpoint?.enabled ?? true)
-  }, [endpoint])
+  }
 
   const handleSubmit = () => {
     // Convert headers array to object, filtering out empty keys

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -36,12 +36,12 @@ export function LoginPage() {
 
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
 
-  // Initialize API key input from stored value
-  useEffect(() => {
-    if (apiKey) {
-      setApiKeyInput(apiKey)
-    }
-  }, [apiKey])
+  // Initialize API key input from stored value (during render, not in effect)
+  const [prevApiKey, setPrevApiKey] = useState(apiKey)
+  if (apiKey && prevApiKey !== apiKey) {
+    setPrevApiKey(apiKey)
+    setApiKeyInput(apiKey)
+  }
 
   const {
     register,

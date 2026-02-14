@@ -30,7 +30,7 @@ export interface UserProfile {
 }
 
 // Profile type (same as UserProfile)
-export interface Profile extends UserProfile {}
+export type Profile = UserProfile
 
 // ProfileConfig type (alias for UserConfig)
 export type ProfileConfig = UserConfig

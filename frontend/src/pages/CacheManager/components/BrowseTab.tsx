@@ -51,13 +51,13 @@ export function BrowseTab({ initialPattern = '', onViewKey }: BrowseTabProps) {
   const [typeFilter, setTypeFilter] = useState('all')
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
-  // Update search pattern when initialPattern changes
-  useEffect(() => {
-    if (initialPattern) {
-      setSearchPattern(initialPattern)
-      setDebouncedPattern(initialPattern)
-    }
-  }, [initialPattern])
+  // Update search pattern when initialPattern changes (during render, not in effect)
+  const [prevInitialPattern, setPrevInitialPattern] = useState(initialPattern)
+  if (initialPattern && prevInitialPattern !== initialPattern) {
+    setPrevInitialPattern(initialPattern)
+    setSearchPattern(initialPattern)
+    setDebouncedPattern(initialPattern)
+  }
 
   // Debounce search input
   useEffect(() => {

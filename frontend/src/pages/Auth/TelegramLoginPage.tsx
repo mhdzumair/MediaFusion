@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, AlertCircle, Loader2, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,16 +36,21 @@ export function TelegramLoginPage() {
     }
   }, [authLoading, isAuthenticated, navigate, token])
 
-  // Link Telegram account when authenticated and token is present
+  // Set linking state when we should initiate (during render, not in effect)
+  if (!authLoading && isAuthenticated && token && !linking && !success && !error) {
+    setLinking(true)
+  }
+
+  // Link Telegram account when linking is true (API call in effect - async)
+  const hasInitiatedRef = useRef(false)
   useEffect(() => {
-    if (!authLoading && isAuthenticated && token && !linking && !success && !error) {
-      setLinking(true)
+    if (!authLoading && isAuthenticated && token && linking && !hasInitiatedRef.current) {
+      hasInitiatedRef.current = true
       telegramApi
         .linkAccount(token)
         .then((response) => {
           if (response.success) {
             setSuccess(true)
-            // Auto-redirect after 3 seconds
             setTimeout(() => {
               navigate('/dashboard', { replace: true })
             }, 3000)
@@ -60,7 +65,7 @@ export function TelegramLoginPage() {
           setLinking(false)
         })
     }
-  }, [authLoading, isAuthenticated, token, linking, success, error, navigate])
+  }, [authLoading, isAuthenticated, token, linking, navigate])
 
   // Show loading state while checking auth or waiting for redirect
   if (authLoading || !isAuthenticated) {

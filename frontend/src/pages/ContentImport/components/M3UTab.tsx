@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -162,9 +162,12 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
     })
   }
 
-  const getEffectiveType = (channel: M3UChannelPreview): M3UContentType => {
-    return overrides.get(channel.index) ?? channel.detected_type
-  }
+  const getEffectiveType = useCallback(
+    (channel: M3UChannelPreview): M3UContentType => {
+      return overrides.get(channel.index) ?? channel.detected_type
+    },
+    [overrides],
+  )
 
   // Compute dynamic counts based on overrides
   const dynamicCounts = useMemo(() => {
@@ -176,7 +179,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
       counts[effectiveType]++
     })
     return counts
-  }, [analysis, overrides])
+  }, [analysis, getEffectiveType])
 
   const filteredChannels = useMemo(() => {
     if (!analysis) return []
@@ -197,7 +200,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
 
       return true
     })
-  }, [analysis, typeFilter, search, overrides])
+  }, [analysis, typeFilter, search, getEffectiveType])
 
   const isAnalyzing = analyzeM3U.isPending
   const isImporting = importM3U.isPending || !!importJobId

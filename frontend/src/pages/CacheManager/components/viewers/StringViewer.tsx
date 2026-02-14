@@ -16,6 +16,27 @@ interface StringViewerProps {
 export function StringViewer({ value, isBinary, cacheKey, className }: StringViewerProps) {
   const [copied, setCopied] = useState(false)
 
+  // Format the value for display (must be before any conditional returns)
+  const { formattedValue, isJson } = useMemo(() => {
+    if (value === null || value === undefined) {
+      return { formattedValue: 'null', isJson: false }
+    }
+
+    // If already an object, stringify it
+    if (typeof value === 'object') {
+      return { formattedValue: JSON.stringify(value, null, 2), isJson: true }
+    }
+
+    // Try to parse string as JSON
+    const strValue = String(value)
+    try {
+      const parsed = JSON.parse(strValue)
+      return { formattedValue: JSON.stringify(parsed, null, 2), isJson: true }
+    } catch {
+      return { formattedValue: strValue, isJson: false }
+    }
+  }, [value])
+
   // Check if it's binary data with image preview
   if (isBinary && typeof value === 'object' && value !== null && '_binary' in value && cacheKey) {
     const binaryData = value as { _binary: boolean; size_bytes: number; preview_base64: string; message: string }
@@ -38,27 +59,6 @@ export function StringViewer({ value, isBinary, cacheKey, className }: StringVie
       </div>
     )
   }
-
-  // Format the value for display
-  const { formattedValue, isJson } = useMemo(() => {
-    if (value === null || value === undefined) {
-      return { formattedValue: 'null', isJson: false }
-    }
-
-    // If already an object, stringify it
-    if (typeof value === 'object') {
-      return { formattedValue: JSON.stringify(value, null, 2), isJson: true }
-    }
-
-    // Try to parse string as JSON
-    const strValue = String(value)
-    try {
-      const parsed = JSON.parse(strValue)
-      return { formattedValue: JSON.stringify(parsed, null, 2), isJson: true }
-    } catch {
-      return { formattedValue: strValue, isJson: false }
-    }
-  }, [value])
 
   const copyValue = async () => {
     await navigator.clipboard.writeText(formattedValue)

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -120,11 +120,14 @@ function MediaSearchPopover({
     { enabled: debouncedQuery.length >= 2 && open },
   )
 
-  useEffect(() => {
-    if (open && !searchQuery && initialQuery) {
-      setSearchQuery(initialQuery)
-    }
-  }, [open, initialQuery, searchQuery])
+  // Sync initialQuery when popover opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open && !prevOpen && initialQuery && !searchQuery) {
+    setPrevOpen(open)
+    setSearchQuery(initialQuery)
+  } else if (open !== prevOpen) {
+    setPrevOpen(open)
+  }
 
   const handleSelect = useCallback(
     (result: CombinedSearchResult) => {
@@ -262,16 +265,18 @@ export function CollectionAnnotationDialog({
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Initialize files
-  useEffect(() => {
-    if (open && files.length > 0) {
-      const sorted = [...files].sort((a, b) =>
-        a.file_name.localeCompare(b.file_name, undefined, { numeric: true, sensitivity: 'base' }),
-      )
-      setFilesWithMedia(sorted.map((f) => ({ ...f, linkedMedia: null })))
-      setReason('')
-    }
-  }, [open, files])
+  // Initialize files when dialog opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevFiles, setPrevFiles] = useState(files)
+  if (open && files.length > 0 && (open !== prevOpen || prevFiles !== files)) {
+    setPrevOpen(open)
+    setPrevFiles(files)
+    const sorted = [...files].sort((a, b) =>
+      a.file_name.localeCompare(b.file_name, undefined, { numeric: true, sensitivity: 'base' }),
+    )
+    setFilesWithMedia(sorted.map((f) => ({ ...f, linkedMedia: null })))
+    setReason('')
+  }
 
   // Handle media selection for a file
   const handleSelectMedia = useCallback((fileId: number, result: CombinedSearchResult) => {

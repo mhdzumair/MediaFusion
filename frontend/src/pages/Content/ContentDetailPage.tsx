@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -818,12 +818,14 @@ export function ContentDetailPage() {
     return localStorage.getItem(key)
   })
 
-  // Update lastPlayedStreamId when season/episode changes
-  useEffect(() => {
-    const key = getLastPlayedKey()
-    const stored = localStorage.getItem(key)
+  // Update lastPlayedStreamId when season/episode changes (during render, not in effect)
+  const lastPlayedKey = getLastPlayedKey()
+  const [prevLastPlayedKey, setPrevLastPlayedKey] = useState(lastPlayedKey)
+  if (lastPlayedKey !== prevLastPlayedKey) {
+    setPrevLastPlayedKey(lastPlayedKey)
+    const stored = localStorage.getItem(lastPlayedKey)
     setLastPlayedStreamId(stored)
-  }, [getLastPlayedKey])
+  }
 
   // Profile and provider selection for streams
   const [selectedProfileId, setSelectedProfileId] = useState<number | undefined>()
@@ -832,22 +834,18 @@ export function ContentDetailPage() {
   // Fetch user profiles
   const { data: profiles } = useProfiles()
 
-  // Find default profile and set both profile ID and primary provider initially
-  // This ensures we make only ONE streams API call with both parameters
-  useEffect(() => {
-    if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
-      const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
-      setSelectedProfileId(defaultProfile.id)
-      // Set the primary provider from the profile to avoid a second API call
-      // Use primary_service if available, otherwise use first provider's service
-      const primaryService =
-        defaultProfile.streaming_providers?.primary_service ||
-        defaultProfile.streaming_providers?.providers?.[0]?.service
-      if (primaryService) {
-        setSelectedProvider(primaryService)
-      }
+  // Find default profile and set both profile ID and primary provider initially (during render, not in effect)
+  const [prevProfiles, setPrevProfiles] = useState(profiles)
+  if (profiles && profiles.length > 0 && selectedProfileId === undefined && prevProfiles !== profiles) {
+    setPrevProfiles(profiles)
+    const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
+    setSelectedProfileId(defaultProfile.id)
+    const primaryService =
+      defaultProfile.streaming_providers?.primary_service || defaultProfile.streaming_providers?.providers?.[0]?.service
+    if (primaryService) {
+      setSelectedProvider(primaryService)
     }
-  }, [profiles, selectedProfileId])
+  }
 
   // Fetch data
   const { data: item, isLoading } = useCatalogItem(catalogType, mediaId)
@@ -869,19 +867,18 @@ export function ContentDetailPage() {
         (selectedSeason !== undefined && selectedEpisode !== undefined)),
   })
 
-  // Get available providers from the streams response
-  const availableProviders = streamsData?.streaming_providers || []
+  // Get available providers from the streams response (memoized to avoid unstable deps)
+  const availableProviders = useMemo(() => streamsData?.streaming_providers || [], [streamsData?.streaming_providers])
 
-  // Update provider selection when providers list changes (e.g., after profile change)
-  useEffect(() => {
-    if (availableProviders.length > 0 && selectedProvider) {
-      // Check if current selection is still valid
-      const stillValid = availableProviders.some((p) => p.service === selectedProvider)
-      if (!stillValid) {
-        setSelectedProvider(availableProviders[0].service)
-      }
+  // Update provider selection when providers list changes (during render, not in effect)
+  const [prevProviders, setPrevProviders] = useState(availableProviders)
+  if (availableProviders.length > 0 && selectedProvider && prevProviders !== availableProviders) {
+    setPrevProviders(availableProviders)
+    const stillValid = availableProviders.some((p) => p.service === selectedProvider)
+    if (!stillValid) {
+      setSelectedProvider(availableProviders[0].service)
     }
-  }, [availableProviders, selectedProvider])
+  }
 
   // Library mutations
   const addToLibrary = useAddToLibrary()
@@ -911,29 +908,31 @@ export function ContentDetailPage() {
     return season?.episodes ?? []
   }, [selectedSeason, seasons])
 
-  // Sync URL params to state when they change (for navigation from history)
-  useEffect(() => {
-    if (initialSeason !== undefined) {
-      setSelectedSeason(initialSeason)
-    }
-    if (initialEpisode !== undefined) {
-      setSelectedEpisode(initialEpisode)
-    }
-  }, [initialSeason, initialEpisode])
+  // Sync URL params to state when they change (during render, not in effect)
+  const [prevInitialSeason, setPrevInitialSeason] = useState(initialSeason)
+  const [prevInitialEpisode, setPrevInitialEpisode] = useState(initialEpisode)
+  if (initialSeason !== undefined && prevInitialSeason !== initialSeason) {
+    setPrevInitialSeason(initialSeason)
+    setSelectedSeason(initialSeason)
+  }
+  if (initialEpisode !== undefined && prevInitialEpisode !== initialEpisode) {
+    setPrevInitialEpisode(initialEpisode)
+    setSelectedEpisode(initialEpisode)
+  }
 
-  // Set default season when data loads (only if no URL param provided)
-  useEffect(() => {
-    if (seasons.length > 0 && selectedSeason === undefined) {
-      setSelectedSeason(seasons[0].season_number)
-    }
-  }, [seasons, selectedSeason])
+  // Set default season when data loads (during render, not in effect)
+  const [prevSeasons, setPrevSeasons] = useState(seasons)
+  if (seasons.length > 0 && selectedSeason === undefined && prevSeasons !== seasons) {
+    setPrevSeasons(seasons)
+    setSelectedSeason(seasons[0].season_number)
+  }
 
-  // Set default episode when season changes (only if no URL param provided for this season)
-  useEffect(() => {
-    if (episodes.length > 0 && selectedEpisode === undefined) {
-      setSelectedEpisode(episodes[0].episode_number)
-    }
-  }, [episodes, selectedEpisode])
+  // Set default episode when season changes (during render, not in effect)
+  const [prevEpisodes, setPrevEpisodes] = useState(episodes)
+  if (episodes.length > 0 && selectedEpisode === undefined && prevEpisodes !== episodes) {
+    setPrevEpisodes(episodes)
+    setSelectedEpisode(episodes[0].episode_number)
+  }
 
   // Helper function for partial case-insensitive matching (for instant client-side filtering)
   const matchesFilter = (value: string | undefined, filters: string[]): boolean => {
@@ -1074,38 +1073,38 @@ export function ContentDetailPage() {
     })
 
     return result
-  }, [streamsData?.streams, streamFilters])
+  }, [streamsData, streamFilters, lastPlayedStreamId])
 
   // Derive available filter options from streams
   const availableSources = useMemo(() => {
     if (!streamsData?.streams) return []
     const sources = new Set(streamsData.streams.map((s) => s.source).filter(Boolean))
     return Array.from(sources).sort() as string[]
-  }, [streamsData?.streams])
+  }, [streamsData])
 
   const availableResolutions = useMemo(() => {
     if (!streamsData?.streams) return []
     const resolutions = new Set(streamsData.streams.map((s) => s.resolution).filter(Boolean))
     return Array.from(resolutions).sort() as string[]
-  }, [streamsData?.streams])
+  }, [streamsData])
 
   const availableQualities = useMemo(() => {
     if (!streamsData?.streams) return []
     const qualities = new Set(streamsData.streams.map((s) => s.quality).filter(Boolean))
     return Array.from(qualities).sort() as string[]
-  }, [streamsData?.streams])
+  }, [streamsData])
 
   const availableCodecs = useMemo(() => {
     if (!streamsData?.streams) return []
     const codecs = new Set(streamsData.streams.map((s) => s.codec).filter(Boolean))
     return Array.from(codecs).sort() as string[]
-  }, [streamsData?.streams])
+  }, [streamsData])
 
   const availableStreamTypes = useMemo(() => {
     if (!streamsData?.streams) return []
     const types = new Set(streamsData.streams.map((s) => s.stream_type).filter(Boolean))
     return Array.from(types) as ('torrent' | 'usenet' | 'http')[]
-  }, [streamsData?.streams])
+  }, [streamsData])
 
   const handleLibraryToggle = async () => {
     if (!id) return

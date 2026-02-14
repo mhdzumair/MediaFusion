@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Radio, Info } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -14,10 +14,12 @@ interface AceStreamSettingsProps {
 export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) {
   const [enableAceStream, setEnableAceStream] = useState(config.eas ?? false)
 
-  // Sync with config changes
-  useEffect(() => {
+  // Sync with config changes (during render, not in effect)
+  const [prevEas, setPrevEas] = useState(config.eas)
+  if (config.eas !== prevEas) {
+    setPrevEas(config.eas)
     setEnableAceStream(config.eas ?? false)
-  }, [config.eas])
+  }
 
   // Check if MediaFlow is configured
   const hasMediaFlow = !!(config.mfc?.pu && config.mfc?.ap)

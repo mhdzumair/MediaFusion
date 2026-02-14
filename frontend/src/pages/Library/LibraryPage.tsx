@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Compass, Bookmark, History, Library, Cloud } from 'lucide-react'
@@ -23,14 +23,14 @@ export function LibraryPage() {
     setSearchParams({ tab }, { replace: true })
   }
 
-  // Sync with URL tab param changes (e.g., browser back/forward, external navigation)
-  useEffect(() => {
-    const explicitTab = searchParams.get('tab')
-    if (explicitTab && explicitTab !== activeTab) {
-      setActiveTab(explicitTab)
-      sessionStorage.setItem(LIBRARY_TAB_KEY, explicitTab)
-    }
-  }, [searchParams, activeTab])
+  // Sync with URL tab param changes (during render, not in effect)
+  const explicitTab = searchParams.get('tab')
+  const [prevSearchParams, setPrevSearchParams] = useState(searchParams)
+  if (explicitTab && explicitTab !== activeTab && prevSearchParams !== searchParams) {
+    setPrevSearchParams(searchParams)
+    setActiveTab(explicitTab)
+    sessionStorage.setItem(LIBRARY_TAB_KEY, explicitTab)
+  }
 
   return (
     <div className="space-y-6 p-6 max-w-screen-xl mx-auto">

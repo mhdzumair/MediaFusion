@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -117,14 +117,13 @@ export function TorrentImportDialog({
     return analysis.matches[selectedMatchIndex] as ExtendedMatch | null
   }, [selectedMatchIndex, analysis?.matches])
 
-  // Initialize from analysis when dialog opens
-  useEffect(() => {
-    if (!analysis || !open) return
-
-    // Initialize content type from initial prop
+  // Initialize from analysis when dialog opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevAnalysis, setPrevAnalysis] = useState(analysis)
+  if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
+    setPrevOpen(open)
+    setPrevAnalysis(analysis)
     setContentType(initialContentType)
-
-    // Initialize tech specs from analysis
     setResolution(analysis.resolution)
     setQuality(analysis.quality)
     setCodec(analysis.codec)
@@ -133,7 +132,6 @@ export function TorrentImportDialog({
     setLanguages(analysis.languages || [])
     setTitle(analysis.parsed_title || analysis.torrent_name || '')
 
-    // Auto-select first match if available
     if (analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
       setSelectedMatchIndex(0)
@@ -147,9 +145,8 @@ export function TorrentImportDialog({
       setSelectedMatchIndex(null)
     }
 
-    // Reset step
     setCurrentStep('review')
-  }, [analysis, open, initialContentType])
+  }
 
   // Handle match selection
   const handleMatchSelect = useCallback((match: ExtendedMatch, index: number) => {

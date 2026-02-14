@@ -351,7 +351,7 @@ export function ContentImportPage() {
           </Card>
 
           <NZBTab
-            onAnalysisComplete={(analysis, _source) => {
+            onAnalysisComplete={(analysis) => {
               // For now, show a success message - full import dialog would be similar to TorrentImportDialog
               if (analysis.matches && analysis.matches.length > 0) {
                 handleSuccess(

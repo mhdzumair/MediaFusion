@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,32 +33,40 @@ export function MagnetTab({
   const [hasAutoAnalyzed, setHasAutoAnalyzed] = useState(false)
   const analyzeMagnet = useAnalyzeMagnet()
 
-  const handleAnalyze = async (magnet?: string) => {
-    const linkToAnalyze = magnet || magnetLink
-    if (!linkToAnalyze.trim()) return
+  const handleAnalyze = useCallback(
+    async (magnet?: string) => {
+      const linkToAnalyze = magnet || magnetLink
+      if (!linkToAnalyze.trim()) return
 
-    try {
-      const result = await analyzeMagnet.mutateAsync({
-        magnet_link: linkToAnalyze,
-        meta_type: toTorrentMetaType(contentType),
-      })
-      if (result.status === 'success' || result.matches) {
-        onAnalysisComplete(result, linkToAnalyze)
-      } else {
-        onError(result.error || 'Failed to analyze magnet link')
+      try {
+        const result = await analyzeMagnet.mutateAsync({
+          magnet_link: linkToAnalyze,
+          meta_type: toTorrentMetaType(contentType),
+        })
+        if (result.status === 'success' || result.matches) {
+          onAnalysisComplete(result, linkToAnalyze)
+        } else {
+          onError(result.error || 'Failed to analyze magnet link')
+        }
+      } catch {
+        onError('Failed to analyze magnet link')
       }
-    } catch {
-      onError('Failed to analyze magnet link')
-    }
-  }
+    },
+    [magnetLink, contentType, analyzeMagnet, onAnalysisComplete, onError],
+  )
 
-  // Auto-analyze if initialMagnet is provided and autoAnalyze is true
+  // Set hasAutoAnalyzed when we should auto-analyze (during render, not in effect)
+  if (autoAnalyze && initialMagnet && !hasAutoAnalyzed) {
+    setHasAutoAnalyzed(true)
+  }
+  // Actual analyze call in effect (async)
+  const hasInitiatedAnalyzeRef = useRef(false)
   useEffect(() => {
-    if (autoAnalyze && initialMagnet && !hasAutoAnalyzed) {
-      setHasAutoAnalyzed(true)
+    if (autoAnalyze && initialMagnet && hasAutoAnalyzed && !hasInitiatedAnalyzeRef.current) {
+      hasInitiatedAnalyzeRef.current = true
       handleAnalyze(initialMagnet)
     }
-  }, [autoAnalyze, initialMagnet, hasAutoAnalyzed])
+  }, [autoAnalyze, initialMagnet, hasAutoAnalyzed, handleAnalyze])
 
   return (
     <Card className="glass border-border/50">

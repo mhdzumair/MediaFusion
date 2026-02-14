@@ -380,7 +380,10 @@ function IndexerDialog({
   const [movieCategories, setMovieCategories] = useState<number[]>(indexer?.mc ?? DEFAULT_MOVIE_CATEGORIES)
   const [tvCategories, setTvCategories] = useState<number[]>(indexer?.tc ?? DEFAULT_TV_CATEGORIES)
 
-  useEffect(() => {
+  // Sync form when indexer changes (during render, not in effect)
+  const [prevIndexer, setPrevIndexer] = useState(indexer)
+  if (indexer !== prevIndexer) {
+    setPrevIndexer(indexer)
     setName(indexer?.n || '')
     setUrl(indexer?.u || '')
     setApiKey(indexer?.ak || '')
@@ -388,7 +391,7 @@ function IndexerDialog({
     setPriority(indexer?.p ?? 1)
     setMovieCategories(indexer?.mc ?? DEFAULT_MOVIE_CATEGORIES)
     setTvCategories(indexer?.tc ?? DEFAULT_TV_CATEGORIES)
-  }, [indexer])
+  }
 
   const handleSubmit = () => {
     // Clean URL - ensure it ends with /api or similar

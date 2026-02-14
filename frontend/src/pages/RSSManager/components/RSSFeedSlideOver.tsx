@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
@@ -70,8 +70,12 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
   const updateFeed = useUpdateRssFeed()
   const testFeedUrl = useTestRssFeedUrl()
 
-  // Populate form when editing
-  useEffect(() => {
+  // Populate form when editing (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevFeed, setPrevFeed] = useState(feed)
+  if (open && (!prevOpen || prevFeed !== feed)) {
+    setPrevOpen(open)
+    setPrevFeed(feed)
     if (feed) {
       setName(feed.name)
       setUrl(feed.url)
@@ -83,7 +87,6 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       setFilters(feed.filters || defaultFilters)
       setCatalogPatterns(feed.catalog_patterns || [])
     } else {
-      // Reset form for new feed
       setName('')
       setUrl('')
       setIsActive(true)
@@ -95,7 +98,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       setCatalogPatterns([])
       setTestResult(null)
     }
-  }, [feed, open])
+  }
 
   const handleTest = async () => {
     if (!url) return
@@ -108,7 +111,7 @@ export function RSSFeedSlideOver({ open, onClose, feed, onSuccess }: RSSFeedSlid
       if (result.status === 'success' && result.detected_patterns) {
         setParsingPatterns((prev) => ({
           ...prev,
-          ...Object.fromEntries(Object.entries(result.detected_patterns || {}).filter(([_, v]) => v)),
+          ...Object.fromEntries(Object.entries(result.detected_patterns || {}).filter(([, v]) => v)),
         }))
       }
     } catch (error) {

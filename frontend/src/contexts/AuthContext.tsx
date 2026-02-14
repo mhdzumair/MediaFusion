@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useReducer, useEffect, useCallback, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi, apiClient, onAuthStateChange } from '@/lib/api'
@@ -126,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           apiClient.clearTokens(true) // silent = true
           dispatch({ type: 'SET_USER', payload: null })
         }
-      } catch (error) {
+      } catch {
         if (!isMounted) return
         // Fetch failed, clear stale tokens silently
         apiClient.clearTokens(true) // silent = true to prevent logout event during initial verification

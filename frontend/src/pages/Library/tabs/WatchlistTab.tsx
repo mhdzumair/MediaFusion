@@ -67,28 +67,29 @@ export function WatchlistTab() {
   // Infinite scroll ref
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
-  // Set default profile on load
-  useEffect(() => {
-    if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
-      const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
-      setSelectedProfileId(defaultProfile.id)
-    }
-  }, [profiles, selectedProfileId])
+  // Set default profile on load (during render, not in effect)
+  const [prevProfiles, setPrevProfiles] = useState(profiles)
+  if (profiles && profiles.length > 0 && selectedProfileId === undefined && prevProfiles !== profiles) {
+    setPrevProfiles(profiles)
+    const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
+    setSelectedProfileId(defaultProfile.id)
+  }
 
   // Fetch providers for the selected profile
   const { data: providersData, isLoading: providersLoading } = useWatchlistProviders(selectedProfileId, {
     enabled: selectedProfileId !== undefined,
   })
 
-  // Set default provider when providers load or profile changes
-  useEffect(() => {
+  // Set default provider when providers load (during render, not in effect)
+  const [prevProviders, setPrevProviders] = useState(providersData?.providers)
+  if (prevProviders !== providersData?.providers) {
+    setPrevProviders(providersData?.providers)
     if (providersData?.providers && providersData.providers.length > 0) {
-      // Always set to first provider when providers data changes
       setSelectedProvider(providersData.providers[0].service)
     } else {
       setSelectedProvider(undefined)
     }
-  }, [providersData?.providers])
+  }
 
   // Fetch watchlist items with infinite scroll
   const {
@@ -131,7 +132,7 @@ export function WatchlistTab() {
       }),
     )
     return { contentItems: items, itemHashesMap: hashesMap }
-  }, [watchlistData?.pages])
+  }, [watchlistData])
 
   // Remove torrent mutation
   const removeTorrent = useRemoveTorrent()

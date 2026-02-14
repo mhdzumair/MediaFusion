@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -91,45 +91,51 @@ export function StreamEditDialog({ streamId, streamName, currentValues, trigger 
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
   const createSuggestion = useCreateStreamSuggestion()
 
-  const getInitialFields = (): Record<StreamFieldName, FieldState> => ({
-    name: { value: currentValues?.name || '', original: currentValues?.name || '', isModified: false },
-    resolution: {
-      value: currentValues?.resolution || '',
-      original: currentValues?.resolution || '',
-      isModified: false,
-    },
-    quality: { value: currentValues?.quality || '', original: currentValues?.quality || '', isModified: false },
-    codec: { value: currentValues?.codec || '', original: currentValues?.codec || '', isModified: false },
-    bit_depth: { value: currentValues?.bit_depth || '', original: currentValues?.bit_depth || '', isModified: false },
-    audio_formats: {
-      value: currentValues?.audio_formats || '',
-      original: currentValues?.audio_formats || '',
-      isModified: false,
-    },
-    channels: { value: currentValues?.channels || '', original: currentValues?.channels || '', isModified: false },
-    hdr_formats: {
-      value: currentValues?.hdr_formats || '',
-      original: currentValues?.hdr_formats || '',
-      isModified: false,
-    },
-    source: { value: currentValues?.source || '', original: currentValues?.source || '', isModified: false },
-    languages: {
-      value: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '',
-      original: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '',
-      isModified: false,
-    },
-  })
+  const getInitialFields = useCallback(
+    (): Record<StreamFieldName, FieldState> => ({
+      name: { value: currentValues?.name || '', original: currentValues?.name || '', isModified: false },
+      resolution: {
+        value: currentValues?.resolution || '',
+        original: currentValues?.resolution || '',
+        isModified: false,
+      },
+      quality: { value: currentValues?.quality || '', original: currentValues?.quality || '', isModified: false },
+      codec: { value: currentValues?.codec || '', original: currentValues?.codec || '', isModified: false },
+      bit_depth: { value: currentValues?.bit_depth || '', original: currentValues?.bit_depth || '', isModified: false },
+      audio_formats: {
+        value: currentValues?.audio_formats || '',
+        original: currentValues?.audio_formats || '',
+        isModified: false,
+      },
+      channels: { value: currentValues?.channels || '', original: currentValues?.channels || '', isModified: false },
+      hdr_formats: {
+        value: currentValues?.hdr_formats || '',
+        original: currentValues?.hdr_formats || '',
+        isModified: false,
+      },
+      source: { value: currentValues?.source || '', original: currentValues?.source || '', isModified: false },
+      languages: {
+        value: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '',
+        original: Array.isArray(currentValues?.languages) ? currentValues.languages.join(', ') : '',
+        isModified: false,
+      },
+    }),
+    [currentValues],
+  )
 
   const [fields, setFields] = useState<Record<StreamFieldName, FieldState>>(getInitialFields())
 
-  useEffect(() => {
-    if (open) {
-      setFields(getInitialFields())
-      setStep(0)
-      setReason('')
-      setSubmitResults([])
-    }
-  }, [open])
+  // Reset when dialog opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open && !prevOpen) {
+    setPrevOpen(open)
+    setFields(getInitialFields())
+    setStep(0)
+    setReason('')
+    setSubmitResults([])
+  } else if (open !== prevOpen) {
+    setPrevOpen(open)
+  }
 
   const updateField = (fieldName: StreamFieldName, value: string) => {
     setFields((prev) => ({
@@ -142,7 +148,7 @@ export function StreamEditDialog({ streamId, streamName, currentValues, trigger 
     }))
   }
 
-  const modifiedFields = Object.entries(fields).filter(([_, state]) => state.isModified)
+  const modifiedFields = Object.entries(fields).filter(([, state]) => state.isModified)
   const modifiedCount = modifiedFields.length
 
   const handleSubmit = async () => {
@@ -165,7 +171,7 @@ export function StreamEditDialog({ streamId, streamName, currentValues, trigger 
           },
         })
         results.push({ field: fieldName, success: true })
-      } catch (error) {
+      } catch {
         results.push({ field: fieldName, success: false })
       }
     }

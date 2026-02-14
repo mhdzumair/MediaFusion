@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -77,15 +77,7 @@ interface StreamEditSheetProps {
 
 const CLEAR_VALUE = '__CLEAR__'
 
-export function StreamEditSheet({
-  streamId,
-  streamName,
-  currentValues,
-  trigger,
-  onSuccess,
-  mediaType: _mediaType,
-  episodeLinks: _episodeLinks,
-}: StreamEditSheetProps) {
+export function StreamEditSheet({ streamId, streamName, currentValues, trigger, onSuccess }: StreamEditSheetProps) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -94,46 +86,51 @@ export function StreamEditSheet({
 
   const createSuggestion = useCreateStreamSuggestion()
 
-  const getInitialFields = (): Record<StreamFieldName, FieldState> => ({
-    name: { value: currentValues?.name || '', original: currentValues?.name || '', isModified: false },
-    resolution: {
-      value: currentValues?.resolution || '',
-      original: currentValues?.resolution || '',
-      isModified: false,
-    },
-    quality: { value: currentValues?.quality || '', original: currentValues?.quality || '', isModified: false },
-    codec: { value: currentValues?.codec || '', original: currentValues?.codec || '', isModified: false },
-    bit_depth: { value: currentValues?.bit_depth || '', original: currentValues?.bit_depth || '', isModified: false },
-    audio_formats: {
-      value: currentValues?.audio_formats || '',
-      original: currentValues?.audio_formats || '',
-      isModified: false,
-    },
-    channels: { value: currentValues?.channels || '', original: currentValues?.channels || '', isModified: false },
-    hdr_formats: {
-      value: currentValues?.hdr_formats || '',
-      original: currentValues?.hdr_formats || '',
-      isModified: false,
-    },
-    source: { value: currentValues?.source || '', original: currentValues?.source || '', isModified: false },
-    languages: {
-      value: currentValues?.languages?.join(', ') || '',
-      original: currentValues?.languages?.join(', ') || '',
-      isModified: false,
-    },
-  })
+  const getInitialFields = useCallback(
+    (): Record<StreamFieldName, FieldState> => ({
+      name: { value: currentValues?.name || '', original: currentValues?.name || '', isModified: false },
+      resolution: {
+        value: currentValues?.resolution || '',
+        original: currentValues?.resolution || '',
+        isModified: false,
+      },
+      quality: { value: currentValues?.quality || '', original: currentValues?.quality || '', isModified: false },
+      codec: { value: currentValues?.codec || '', original: currentValues?.codec || '', isModified: false },
+      bit_depth: { value: currentValues?.bit_depth || '', original: currentValues?.bit_depth || '', isModified: false },
+      audio_formats: {
+        value: currentValues?.audio_formats || '',
+        original: currentValues?.audio_formats || '',
+        isModified: false,
+      },
+      channels: { value: currentValues?.channels || '', original: currentValues?.channels || '', isModified: false },
+      hdr_formats: {
+        value: currentValues?.hdr_formats || '',
+        original: currentValues?.hdr_formats || '',
+        isModified: false,
+      },
+      source: { value: currentValues?.source || '', original: currentValues?.source || '', isModified: false },
+      languages: {
+        value: currentValues?.languages?.join(', ') || '',
+        original: currentValues?.languages?.join(', ') || '',
+        isModified: false,
+      },
+    }),
+    [currentValues],
+  )
 
   const [fields, setFields] = useState<Record<StreamFieldName, FieldState>>(getInitialFields())
 
-  // Reset when sheet opens
-  useEffect(() => {
-    if (open) {
-      setFields(getInitialFields())
-      setLanguages(currentValues?.languages || [])
-      setReason('')
-      setSubmitResults([])
-    }
-  }, [open, currentValues])
+  // Reset when sheet opens (during render, not in effect)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [prevCurrentValues, setPrevCurrentValues] = useState(currentValues)
+  if (open && (open !== prevOpen || prevCurrentValues !== currentValues)) {
+    setPrevOpen(open)
+    setPrevCurrentValues(currentValues)
+    setFields(getInitialFields())
+    setLanguages(currentValues?.languages || [])
+    setReason('')
+    setSubmitResults([])
+  }
 
   const updateField = (fieldName: StreamFieldName, value: string) => {
     setFields((prev) => ({
@@ -196,7 +193,7 @@ export function StreamEditSheet({
           },
         })
         results.push({ field, success: true })
-      } catch (error) {
+      } catch {
         results.push({ field, success: false })
       }
     }

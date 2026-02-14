@@ -146,7 +146,7 @@ export function KeyDetailDialog({ cacheKey, open, onOpenChange, onDeleted }: Key
       })
       onOpenChange(false)
       onDeleted?.()
-    } catch (err) {
+    } catch {
       toast({
         title: 'Error',
         description: 'Failed to delete cache key',

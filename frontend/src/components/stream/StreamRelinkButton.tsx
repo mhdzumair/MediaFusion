@@ -56,7 +56,6 @@ const streamLinkingApi = {
 export function StreamRelinkButton({
   streamId,
   streamName,
-  currentMediaId: _currentMediaId,
   currentMediaTitle,
   variant = 'button',
   className,
