@@ -27,10 +27,9 @@ VERSION_OLD ?=
 VERSION_NEW ?=
 CONTRIBUTORS ?= $(shell git log --pretty=format:'%an' $(VERSION_OLD)..$(VERSION_NEW) | sort | uniq)
 
-# Claude API settings
-CLAUDE_MODEL ?= claude-sonnet-4-20250514
-MAX_TOKENS ?= 1024
-ANTHROPIC_VERSION ?= 2023-06-01
+# Gemini API settings
+GEMINI_MODEL ?= gemini-3-flash-preview
+MAX_TOKENS ?= 4096
 
 # Reddit post settings
 SUBREDDIT ?= MediaFusion
@@ -86,9 +85,15 @@ ifndef VERSION_NEW
 	@echo "Error: VERSION_NEW is not set. Please set it like: make prompt VERSION_OLD=x.x.x VERSION_NEW=y.y.y CONTRIBUTORS='@user1, @user2'"
 	@exit 1
 endif
-	@echo "Generate a release note for MediaFusion $(VERSION_NEW) by analyzing the following changes. Organize the release note by importance rather than by commit order. highlight the most significant updates first, and streamline the content to focus on what adds the most value to the user. Ensure to dynamically create sections for New Features & Enhancements, Bug Fixes, and Documentation updates only if relevant based on the types of changes listed. Use emojis relevantly at the start of each item to enhance readability and engagement. Keep the format straightforward & shorter, provide a direct link to the detailed list of changes:\n"
-	@echo "## 🚀 MediaFusion $(VERSION_NEW) Released\n"
-	@echo "### Commit Messages and Descriptions:\n"
+	@echo "You are a technical writer for MediaFusion, an open-source streaming addon for Stremio and Kodi.\n"
+	@echo "Generate a concise GitHub release note for version $(VERSION_NEW). Follow these rules:\n"
+	@echo "1. Start with: ## 🚀 MediaFusion $(VERSION_NEW) Released\n"
+	@echo "2. Organize by importance, NOT commit order. Lead with the most impactful changes.\n"
+	@echo "3. Only include sections that are relevant (pick from: New Features & Enhancements, Bug Fixes, Performance, Documentation). Do not create empty sections.\n"
+	@echo "4. Each item: start with a relevant emoji, write a single clear sentence explaining the user-facing change. Omit internal refactors unless they affect performance or reliability.\n"
+	@echo "5. End with a Contributors section and a Full Changelog link (both provided below).\n"
+	@echo "6. Output ONLY the release note in markdown. No preamble, no commentary.\n"
+	@echo "\n### Commit Messages and Descriptions:\n"
 	@git log --pretty=format:'%s%n%b' $(VERSION_OLD)..$(VERSION_NEW) | awk 'BEGIN {RS="\n\n"; FS="\n"} { \
 		message = $$1; \
 		description = ""; \
@@ -110,8 +115,15 @@ ifndef VERSION_NEW
 	@echo "Error: VERSION_NEW is not set. Please set it like: make prompt-reddit VERSION_OLD=x.x.x VERSION_NEW=y.y.y"
 	@exit 1
 endif
-	@echo "Create an engaging Reddit post about the MediaFusion $(VERSION_NEW) update. Focus on the user experience and benefits. The post should be informative yet conversational, perfect for the r/$(SUBREDDIT) community. Analyze these changes and create sections for major updates, improvements, and fixes. Include a TL;DR at the top for quick scanning. Add a brief note about installation/updating at the bottom. Here are the changes to analyze:\n"
-	@echo "---\n"
+	@echo "You are writing a Reddit post for r/$(SUBREDDIT) announcing MediaFusion $(VERSION_NEW).\n"
+	@echo "Follow these rules:\n"
+	@echo "1. Start with a **TL;DR** (2-3 bullet points summarizing the biggest changes).\n"
+	@echo "2. Write in a conversational, community-friendly tone. Avoid marketing speak.\n"
+	@echo "3. Organize into clear sections (e.g., What's New, Improvements, Bug Fixes) — only include sections that apply.\n"
+	@echo "4. Focus on user-facing benefits, not implementation details.\n"
+	@echo "5. End with a short note on how to update/install and a link to the full changelog.\n"
+	@echo "6. Output ONLY the Reddit post body in markdown. No preamble, no commentary.\n"
+	@echo "\n---\n"
 	@git log --pretty=format:'%s%n%b' $(VERSION_OLD)..$(VERSION_NEW) | awk 'BEGIN {RS="\n\n"; FS="\n"} { \
 		message = $$1; \
 		description = ""; \
@@ -133,22 +145,21 @@ ifndef VERSION_NEW
 	@echo "Error: VERSION_NEW is not set"
 	@exit 1
 endif
-ifndef ANTHROPIC_API_KEY
-	@echo "Error: ANTHROPIC_API_KEY is not set"
+ifndef GEMINI_API_KEY
+	@echo "Error: GEMINI_API_KEY is not set"
 	@exit 1
 endif
 	@PROMPT_CONTENT=$$(make prompt VERSION_OLD=$(VERSION_OLD) VERSION_NEW=$(VERSION_NEW) | jq -sRr @json); \
 	if [ -z "$$PROMPT_CONTENT" ]; then \
-	    echo "Failed to generate release notes using Claude AI, prompt content is empty"; \
+	    echo "Failed to generate release notes using Gemini AI, prompt content is empty"; \
 	    exit 1; \
 	fi; \
 	temp_file=$$(mktemp); \
-	curl -s https://api.anthropic.com/v1/messages \
-		--header "x-api-key: $(ANTHROPIC_API_KEY)" \
-		--header "anthropic-version: $(ANTHROPIC_VERSION)" \
+	curl -s "https://generativelanguage.googleapis.com/v1beta/models/$(GEMINI_MODEL):generateContent" \
+		--header "x-goog-api-key: $(GEMINI_API_KEY)" \
 		--header "content-type: application/json" \
-		--data "{\"model\":\"$(CLAUDE_MODEL)\",\"max_tokens\":$(MAX_TOKENS),\"messages\":[{\"role\":\"user\",\"content\":$$PROMPT_CONTENT}]}" > $$temp_file; \
-	jq -r '.content[] | select(.type=="text") | .text' $$temp_file || { echo "Failed to generate release notes using Claude AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
+		--data "{\"contents\":[{\"parts\":[{\"text\":$$PROMPT_CONTENT}]}],\"generationConfig\":{\"maxOutputTokens\":$(MAX_TOKENS)}}" > $$temp_file; \
+	jq -r '.candidates[0].content.parts[0].text' $$temp_file || { echo "Failed to generate release notes using Gemini AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
 	rm $$temp_file
 
 generate-reddit-post:
@@ -160,22 +171,21 @@ ifndef VERSION_NEW
 	@echo "Error: VERSION_NEW is not set"
 	@exit 1
 endif
-ifndef ANTHROPIC_API_KEY
-	@echo "Error: ANTHROPIC_API_KEY is not set"
+ifndef GEMINI_API_KEY
+	@echo "Error: GEMINI_API_KEY is not set"
 	@exit 1
 endif
 	@PROMPT_CONTENT=$$(make prompt-reddit VERSION_OLD=$(VERSION_OLD) VERSION_NEW=$(VERSION_NEW) | jq -sRr @json); \
 	if [ -z "$$PROMPT_CONTENT" ]; then \
-	    echo "Failed to generate Reddit post using Claude AI, prompt content is empty"; \
+	    echo "Failed to generate Reddit post using Gemini AI, prompt content is empty"; \
 	    exit 1; \
 	fi; \
 	temp_file=$$(mktemp); \
-	curl -s https://api.anthropic.com/v1/messages \
-		--header "x-api-key: $(ANTHROPIC_API_KEY)" \
-		--header "anthropic-version: $(ANTHROPIC_VERSION)" \
+	curl -s "https://generativelanguage.googleapis.com/v1beta/models/$(GEMINI_MODEL):generateContent" \
+		--header "x-goog-api-key: $(GEMINI_API_KEY)" \
 		--header "content-type: application/json" \
-		--data "{\"model\":\"$(CLAUDE_MODEL)\",\"max_tokens\":$(MAX_TOKENS),\"messages\":[{\"role\":\"user\",\"content\":$$PROMPT_CONTENT}]}" > $$temp_file; \
-	jq -r '.content[] | select(.type=="text") | .text' $$temp_file || { echo "Failed to generate Reddit post using Claude AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
+		--data "{\"contents\":[{\"parts\":[{\"text\":$$PROMPT_CONTENT}]}],\"generationConfig\":{\"maxOutputTokens\":$(MAX_TOKENS)}}" > $$temp_file; \
+	jq -r '.candidates[0].content.parts[0].text' $$temp_file || { echo "Failed to generate Reddit post using Gemini AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
 	rm $$temp_file
 
 # Frontend build targets
