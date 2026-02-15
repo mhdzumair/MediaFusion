@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -90,12 +90,14 @@ export function ContentImportPage() {
   const [activeTab, setActiveTab] = useState('magnet')
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
-  // When config loads, ensure active tab is not a disabled one
-  useEffect(() => {
+  // When config loads, ensure active tab is not a disabled one (during render)
+  const [prevAppConfig, setPrevAppConfig] = useState(appConfig)
+  if (appConfig !== prevAppConfig) {
+    setPrevAppConfig(appConfig)
     if (appConfig && !isTabEnabled(activeTab)) {
       setActiveTab(defaultTab)
     }
-  }, [appConfig, activeTab, isTabEnabled, defaultTab])
+  }
 
   // Content type for initial analysis
   const [selectedContentType, setSelectedContentType] = useState<ContentType>(locationState?.prefillType || 'movie')
@@ -351,9 +353,7 @@ export function ContentImportPage() {
             <Card className="glass border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Content Type</CardTitle>
-                <CardDescription className="text-sm">
-                  Select the type of content you&apos;re importing
-                </CardDescription>
+                <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
               </CardHeader>
               <CardContent>
                 <ContentTypeSelector
@@ -388,9 +388,7 @@ export function ContentImportPage() {
             <Card className="glass border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Content Type</CardTitle>
-                <CardDescription className="text-sm">
-                  Select the type of content you&apos;re importing
-                </CardDescription>
+                <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
               </CardHeader>
               <CardContent>
                 <ContentTypeSelector
@@ -423,9 +421,7 @@ export function ContentImportPage() {
             <Card className="glass border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Content Type</CardTitle>
-                <CardDescription className="text-sm">
-                  Select the type of content you&apos;re importing
-                </CardDescription>
+                <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
               </CardHeader>
               <CardContent>
                 <ContentTypeSelector
@@ -520,9 +516,7 @@ export function ContentImportPage() {
             <Card className="glass border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Content Type</CardTitle>
-                <CardDescription className="text-sm">
-                  Select the type of content for this HTTP stream
-                </CardDescription>
+                <CardDescription className="text-sm">Select the type of content for this HTTP stream</CardDescription>
               </CardHeader>
               <CardContent>
                 <ContentTypeSelector

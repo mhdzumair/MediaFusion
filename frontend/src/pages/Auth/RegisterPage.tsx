@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -54,12 +54,11 @@ export function RegisterPage() {
 
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
 
-  // Initialize API key input from stored value
-  // Initialize API key input from stored value (during render, not in effect)
-  const prevApiKeyRef = useRef(apiKey)
-  if (apiKey && prevApiKeyRef.current !== apiKey) {
+  // Initialize API key input from stored value (during render)
+  const [prevApiKey, setPrevApiKey] = useState(apiKey)
+  if (apiKey && prevApiKey !== apiKey) {
+    setPrevApiKey(apiKey)
     setApiKeyInput(apiKey)
-    prevApiKeyRef.current = apiKey
   }
 
   const {
@@ -71,6 +70,7 @@ export function RegisterPage() {
     resolver: zodResolver(registerSchema),
   })
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form's watch() is inherently incompatible with React Compiler
   const password = watch('password', '')
 
   const handleSaveApiKey = () => {
