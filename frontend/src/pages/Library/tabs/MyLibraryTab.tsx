@@ -71,12 +71,18 @@ export function MyLibraryTab() {
     setSelectedItemId(item.id)
   }
 
-  // Clear selection if item not found (during render, not in effect)
+  // Clear selection if item not found (during render)
   const itemExists = contentItems.some((item) => item.id === selectedItemId)
   if (!isLoading && data && selectedItemId && !itemExists) {
     setSelectedItemId(null)
-    sessionStorage.removeItem(LIBRARY_SELECTED_ITEM_KEY)
   }
+
+  // Sync sessionStorage when selection is cleared
+  useEffect(() => {
+    if (selectedItemId === null) {
+      sessionStorage.removeItem(LIBRARY_SELECTED_ITEM_KEY)
+    }
+  }, [selectedItemId])
 
   // Scroll to selected item after data loads (async - keep in effect)
   useEffect(() => {

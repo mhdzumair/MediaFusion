@@ -71,7 +71,6 @@ export function BrowseTab() {
   const [sort, setSort] = useState<SortOption>(storedState.sort || 'latest')
   const [sortDir, setSortDir] = useState<SortDirection>(storedState.sortDir || 'desc')
   const [viewMode, setViewMode] = useState<ViewMode>(storedState.viewMode || 'grid')
-  const [isRestoring, setIsRestoring] = useState(true)
 
   // TV-specific filters
   const [workingOnly, setWorkingOnly] = useState(storedState.workingOnly || false)
@@ -130,6 +129,9 @@ export function BrowseTab() {
     }),
   })
 
+  // Derived: still restoring until first data load completes
+  const isRestoring = isLoading || !data
+
   // Save state whenever it changes
   useEffect(() => {
     if (!isRestoring) {
@@ -160,21 +162,13 @@ export function BrowseTab() {
     myChannels,
   ])
 
-  // Update URL params when filters change (during render, not in effect)
-  const currentType = searchParams.get('type')
-  const currentGenre = searchParams.get('genre')
-  const currentSearch = searchParams.get('search')
-  const params: Record<string, string> = { type: catalogType }
-  if (selectedGenre) params.genre = selectedGenre
-  if (search) params.search = search
-  if (currentType !== catalogType || currentGenre !== (selectedGenre || null) || currentSearch !== (search || null)) {
+  // Update URL params when filters change
+  useEffect(() => {
+    const params: Record<string, string> = { type: catalogType }
+    if (selectedGenre) params.genre = selectedGenre
+    if (search) params.search = search
     setSearchParams(params, { replace: true })
-  }
-
-  // Set isRestoring when data loads (during render, not in effect)
-  if (!isLoading && data) {
-    setIsRestoring(false)
-  }
+  }, [catalogType, selectedGenre, search, setSearchParams])
 
   // Restore scroll position after data loads (async - keep in effect)
   useEffect(() => {
@@ -275,12 +269,18 @@ export function BrowseTab() {
     nudity: item.nudity,
   }))
 
-  // Clear selection if item not found (during render, not in effect)
+  // Clear selection if item not found (derive during render)
   const itemExists = contentItems.some((item) => item.id === selectedItemId)
   if (!isLoading && data && selectedItemId && !itemExists) {
     setSelectedItemId(null)
-    sessionStorage.removeItem(BROWSE_SELECTED_ITEM_KEY)
   }
+
+  // Sync sessionStorage when selection is cleared
+  useEffect(() => {
+    if (selectedItemId === null) {
+      sessionStorage.removeItem(BROWSE_SELECTED_ITEM_KEY)
+    }
+  }, [selectedItemId])
 
   // Scroll to selected item after data loads (async - keep in effect)
   useEffect(() => {
