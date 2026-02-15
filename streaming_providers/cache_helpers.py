@@ -8,10 +8,19 @@ import httpx
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import StreamingProvider
+from utils.crypto import get_text_hash
 
 # Constants
 CACHE_KEY_PREFIX = "debrid_cache:"
 EXPIRY_DAYS = 7
+
+# Cache check marker constants
+CACHE_CHECK_PREFIX = "debrid_checked:"
+CACHE_CHECK_TTL = 1800  # 30 minutes
+
+# Providers that check service-level instant availability (global cache check).
+# All others use user's personal torrent list (per-user cache check).
+GLOBAL_CACHE_CHECK_PROVIDERS = {"torbox", "stremthru", "offcloud", "premiumize"}
 
 
 def get_cache_service_name(streaming_provider: StreamingProvider):
@@ -21,6 +30,55 @@ def get_cache_service_name(streaming_provider: StreamingProvider):
     if streaming_provider.service == "stremthru" and streaming_provider.stremthru_store_name:
         return streaming_provider.stremthru_store_name
     return streaming_provider.service
+
+
+def get_provider_user_hash(streaming_provider: StreamingProvider) -> str:
+    """
+    Hash the user's credentials to build a cache key that identifies this user
+    without storing raw credentials in Redis.
+    """
+    if streaming_provider.token:
+        raw = streaming_provider.token
+    elif streaming_provider.email and streaming_provider.password:
+        raw = streaming_provider.email + streaming_provider.password
+    else:
+        raw = streaming_provider.service
+    return get_text_hash(raw, full_hash=False)  # 10-char SHA256 prefix
+
+
+def _build_cache_check_key(streaming_provider: StreamingProvider, media_id: str) -> str:
+    """
+    Build the Redis key for the "cache check done" marker.
+
+    For global providers (Torbox, StremThru, etc.):
+        debrid_checked:{service}:{media_id}
+
+    For per-user providers (RD, AD, etc.):
+        debrid_checked:{service}:{user_hash}:{media_id}
+    """
+    service = get_cache_service_name(streaming_provider)
+    if service in GLOBAL_CACHE_CHECK_PROVIDERS:
+        return f"{CACHE_CHECK_PREFIX}{service}:{media_id}"
+    user_hash = get_provider_user_hash(streaming_provider)
+    return f"{CACHE_CHECK_PREFIX}{service}:{user_hash}:{media_id}"
+
+
+async def is_cache_check_done(streaming_provider: StreamingProvider, media_id: str) -> bool:
+    """
+    Check if we've already performed a debrid cache check for this
+    provider + media (and user, if the provider is per-user) recently.
+    """
+    key = _build_cache_check_key(streaming_provider, media_id)
+    return bool(await REDIS_ASYNC_CLIENT.exists(key))
+
+
+async def mark_cache_check_done(streaming_provider: StreamingProvider, media_id: str) -> None:
+    """
+    Mark that we've completed a debrid cache check so subsequent requests
+    within the TTL window skip the provider API call entirely.
+    """
+    key = _build_cache_check_key(streaming_provider, media_id)
+    await REDIS_ASYNC_CLIENT.set(key, 1, ex=CACHE_CHECK_TTL)
 
 
 async def store_cached_info_hashes(

@@ -1,12 +1,17 @@
 """Stremio meta routes - using new DB architecture."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db import crud, public_schemas, schemas
+from db.config import settings
 from db.database import get_read_session
 from db.enums import MediaType
-from utils import wrappers
+from db.redis_database import REDIS_ASYNC_CLIENT
+from utils import const, wrappers
+
+META_CACHE_PREFIX = "meta:"
 
 router = APIRouter()
 
@@ -44,11 +49,23 @@ def _get_stars(media) -> list[str]:
 )
 @wrappers.auth_required
 async def get_meta(
+    response: Response,
     catalog_type: MediaType,
     meta_id: str,
     session: AsyncSession = Depends(get_read_session),
 ) -> schemas.MetaItem:
     """Get metadata for a specific item."""
+    response.headers.update(const.CACHE_HEADERS)
+
+    # Check Redis cache first -- meta data is user-independent
+    cache_key = f"{META_CACHE_PREFIX}{catalog_type.value}:{meta_id}"
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+    if cached_data:
+        try:
+            return public_schemas.MetaItem.model_validate_json(cached_data)
+        except ValidationError:
+            pass
+
     # Use the appropriate CRUD function that loads relationships
     if catalog_type == MediaType.MOVIE:
         media = await crud.get_movie_data_by_id(session, meta_id)
@@ -105,9 +122,8 @@ async def get_meta(
                         public_schemas.Video(
                             id=f"{meta_id}:{season.season_number}:{episode.episode_number}",
                             title=episode.title or f"Episode {episode.episode_number}",
-                            released=str(episode.released) if episode.released else None,
+                            released=str(episode.air_date) if episode.air_date else None,
                             description=episode.overview,
-                            thumbnail=episode.thumbnail,
                             season=season.season_number,
                             episode=episode.episode_number,
                         )
@@ -137,4 +153,13 @@ async def get_meta(
     else:
         meta_response = public_schemas.Meta(**base_meta)
 
-    return public_schemas.MetaItem(meta=meta_response)
+    meta_item = public_schemas.MetaItem(meta=meta_response)
+
+    # Cache the result in Redis
+    await REDIS_ASYNC_CLIENT.set(
+        cache_key,
+        meta_item.model_dump_json(exclude_none=True),
+        ex=settings.meta_cache_ttl,
+    )
+
+    return meta_item

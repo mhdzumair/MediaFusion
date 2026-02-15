@@ -44,7 +44,10 @@ class Meta(BaseModel):
     @model_validator(mode="after")
     def parse_meta(self) -> "Meta":
         if self.releaseInfo:
-            if self.type == "series":
+            # Guard against double-transformation when deserializing from cache:
+            # if releaseInfo is already a string with '-', it was already formatted.
+            already_formatted = isinstance(self.releaseInfo, str) and "-" in self.releaseInfo
+            if self.type == "series" and not already_formatted:
                 # For series: "2020-2023" or "2020-" (ongoing)
                 self.releaseInfo = f"{self.releaseInfo}-{self.end_year if self.end_year else ''}"
             else:

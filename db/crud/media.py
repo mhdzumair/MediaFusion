@@ -5,6 +5,7 @@ Handles Media, MovieMetadata, SeriesMetadata, Season, Episode operations.
 Supports new multi-provider architecture with MediaImage, MediaRating, etc.
 """
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from datetime import datetime
@@ -1104,12 +1105,12 @@ async def get_canonical_external_ids_batch(
     result_map: dict[int, str] = {}
     missing_ids: list[int] = []
 
-    # Check Redis cache for all IDs
-    for media_id in media_ids:
-        cache_key = f"ext_id:{media_id}"
-        cached = await REDIS_ASYNC_CLIENT.get(cache_key)
-        if cached:
-            # Redis returns bytes, decode to string
+    # Check Redis cache for all IDs in a single MGET call
+    cache_keys = [f"ext_id:{mid}" for mid in media_ids]
+    cached_values = await REDIS_ASYNC_CLIENT.mget(cache_keys)
+
+    for media_id, cached in zip(media_ids, cached_values):
+        if cached is not None:
             result_map[media_id] = cached.decode("utf-8") if isinstance(cached, bytes) else cached
         else:
             missing_ids.append(media_id)
@@ -1129,6 +1130,9 @@ async def get_canonical_external_ids_batch(
 
     # Resolve canonical ID for each missing media
     priority_order = ["imdb", "tvdb", "tmdb", "mal", "kitsu"]
+
+    # Collect resolved IDs for batch Redis write
+    to_cache: dict[str, str] = {}
 
     for media_id in missing_ids:
         ext_ids = ext_ids_by_media.get(media_id, [])
@@ -1157,8 +1161,13 @@ async def get_canonical_external_ids_batch(
                     canonical = format_external_id(first.provider, first.external_id)
 
         result_map[media_id] = canonical
-        # Cache the result
-        await REDIS_ASYNC_CLIENT.set(f"ext_id:{media_id}", canonical, ex=3600)
+        to_cache[f"ext_id:{media_id}"] = canonical
+
+    # Batch cache all resolved IDs concurrently
+    if to_cache:
+        await asyncio.gather(
+            *(REDIS_ASYNC_CLIENT.set(key, value, ex=3600) for key, value in to_cache.items())
+        )
 
     return result_map
 
@@ -1170,6 +1179,23 @@ async def invalidate_external_id_cache(media_id: int) -> None:
     """
     cache_key = f"ext_id:{media_id}"
     await REDIS_ASYNC_CLIENT.delete(cache_key)
+
+
+META_CACHE_PREFIX = "meta:"
+
+
+async def invalidate_meta_cache(meta_id: str) -> None:
+    """Invalidate Redis cache for a media item's Stremio meta response.
+
+    Deletes cached meta for all catalog types (movie, series, tv)
+    so stale metadata is never served after updates.
+
+    Args:
+        meta_id: External ID string (e.g., 'tt1234567', 'mf:123')
+    """
+    types = ["movie", "series", "tv", "events"]
+    keys = [f"{META_CACHE_PREFIX}{t}:{meta_id}" for t in types]
+    await REDIS_ASYNC_CLIENT.delete(*keys)
 
 
 def format_external_id(provider: str, external_id: str) -> str:

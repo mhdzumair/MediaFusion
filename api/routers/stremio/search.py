@@ -1,6 +1,6 @@
 """Stremio search routes."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -10,7 +10,7 @@ from db.enums import MediaType
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
 from scrapers.rpdb import update_rpdb_posters
-from utils import wrappers
+from utils import const, wrappers
 from utils.network import get_request_namespace, get_user_data
 
 router = APIRouter()
@@ -48,6 +48,7 @@ async def get_search_cache_key(
 )
 @wrappers.auth_required
 async def search_meta(
+    response: Response,
     request: Request,
     catalog_type: MediaType,
     catalog_id: str,
@@ -58,6 +59,8 @@ async def search_meta(
     """
     Enhanced search endpoint with caching and efficient text search.
     """
+    response.headers.update(const.CACHE_HEADERS)
+
     if not search_query.strip():
         return public_schemas.Metas(metas=[])
 

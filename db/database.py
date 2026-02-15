@@ -107,6 +107,22 @@ async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
             logger.warning(f"Error closing read session: {e}")
 
 
+@asynccontextmanager
+async def get_read_session_context() -> AsyncGenerator[AsyncSession, None]:
+    """Get a read-only session as a context manager.
+    Uses read replica if configured, otherwise falls back to primary.
+    Use this when you need a read session outside of FastAPI dependency injection.
+    """
+    session = AsyncSession(ASYNC_READ_ENGINE, expire_on_commit=False)
+    try:
+        yield session
+    finally:
+        try:
+            await session.close()
+        except Exception as e:
+            logger.warning(f"Error closing read session: {e}")
+
+
 def _friendly_db_error(exc: BaseException) -> RuntimeError | None:
     """Return a user-friendly RuntimeError for known connection failures, or None."""
     cause = exc

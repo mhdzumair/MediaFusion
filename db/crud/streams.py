@@ -23,6 +23,7 @@ from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.crud.media import decrement_stream_count, increment_stream_count
+from db.crud.stream_services import invalidate_media_stream_cache
 from db.enums import TorrentType
 from db.models import (
     AceStreamStream,
@@ -159,6 +160,8 @@ async def link_stream_to_media(
     session.add(link)
     await increment_stream_count(session, media_id)
     await session.flush()
+    # Invalidate stream cache for this media so next request fetches fresh data
+    await invalidate_media_stream_cache(media_id)
     return link
 
 
@@ -177,6 +180,8 @@ async def unlink_stream_from_media(
     if result.rowcount > 0:
         await decrement_stream_count(session, media_id)
     await session.flush()
+    # Invalidate stream cache for this media
+    await invalidate_media_stream_cache(media_id)
     return result.rowcount > 0
 
 

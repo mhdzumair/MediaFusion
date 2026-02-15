@@ -8,7 +8,10 @@ They use:
 - utils/parser.py parse_stream_data() for Stremio formatting
 """
 
+import asyncio
+import json
 import logging
+import time
 
 from fastapi import BackgroundTasks
 from sqlalchemy import or_
@@ -18,11 +21,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
 from db.crud.media import get_media_by_external_id
+from db.database import get_read_session_context
 from db.enums import MediaType
 from db.models import (
     AceStreamStream,
     FileMediaLink,
     HTTPStream,
+    Media,
     Stream,
     StreamFile,
     StreamMediaLink,
@@ -31,6 +36,7 @@ from db.models import (
     UsenetStream,
     YouTubeStream,
 )
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import (
     Stream as StremioStream,
 )
@@ -44,6 +50,10 @@ from utils.network import encode_mediaflow_acestream_url
 # Providers that support Usenet content - defined here to avoid circular import
 # This should be kept in sync with streaming_providers.mapper.USENET_CAPABLE_PROVIDERS
 USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "easynews"}
+
+# Redis cache settings for raw stream data
+STREAM_CACHE_TTL = 1800  # 30 minutes
+STREAM_CACHE_PREFIX = "stream_data:"
 
 logger = logging.getLogger(__name__)
 
@@ -159,77 +169,74 @@ def _combine_streams_by_type(
     return combined[: user_data.max_streams]
 
 
-async def get_movie_streams(
-    session: AsyncSession,
-    video_id: str,
-    user_data: UserData,
-    secret_str: str,
-    user_ip: str | None,
-    background_tasks: BackgroundTasks,
-    user_id: int | None = None,
-) -> list[StremioStream]:
+async def invalidate_media_stream_cache(media_id: int) -> None:
+    """Delete all cached stream data for a media.
+
+    Called when streams are added to or removed from a media entry.
+    Clears both movie and series cache keys for the given media_id.
     """
-    Get formatted streams for a movie.
+    try:
+        # Delete movie cache key directly
+        movie_key = f"{STREAM_CACHE_PREFIX}movie:{media_id}"
+        await REDIS_ASYNC_CLIENT.delete(movie_key)
 
-    Query flow:
-    1. Resolve video_id to media
-    2. Query torrent and HTTP streams via StreamMediaLink
-    3. Convert to stream data objects
-    4. Format for Stremio via parse_stream_data
+        # For series, scan and delete all season:episode combos
+        pattern = f"{STREAM_CACHE_PREFIX}series:{media_id}:*"
+        keys = []
+        async for key in REDIS_ASYNC_CLIENT.scan_iter(match=pattern, count=100):
+            keys.append(key)
+        if keys:
+            await REDIS_ASYNC_CLIENT.delete(*keys)
+    except Exception as e:
+        logger.warning(f"Error invalidating stream cache for media_id={media_id}: {e}")
 
-    Args:
-        user_id: Current user ID for visibility filtering (shows public + user's own streams)
+
+async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
+    """Fetch all raw stream data for a movie from DB (read replica) and cache as JSON.
+
+    Returns a dict with serialized stream data lists keyed by type.
     """
-    # Lazy import to avoid circular dependency
-    from utils.parser import parse_stream_data
-
-    # Get media by external_id
-    media = await get_media_by_external_id(session, video_id, MediaType.MOVIE)
-    if not media:
-        logger.warning(f"Movie not found for video_id: {video_id}")
-        return []
-
-    # Visibility filter - public streams + user's own streams
-    visibility_filter = _get_visibility_filter(user_id)
-
-    # Query torrent streams linked to this media
-    torrent_query = (
-        select(TorrentStream)
-        .join(Stream, Stream.id == TorrentStream.stream_id)
-        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-        .where(StreamMediaLink.media_id == media.id)
-        .where(Stream.is_active.is_(True))
-        .where(Stream.is_blocked.is_(False))
-        .where(visibility_filter)
-        .options(
-            joinedload(TorrentStream.stream).options(
-                selectinload(Stream.languages),
-                selectinload(Stream.audio_formats),
-                selectinload(Stream.channels),
-                selectinload(Stream.hdr_formats),
-                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-            ),
-            selectinload(TorrentStream.trackers),
+    async with get_read_session_context() as session:
+        # Query torrent streams
+        torrent_query = (
+            select(TorrentStream)
+            .join(Stream, Stream.id == TorrentStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media_id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(TorrentStream.stream).options(
+                    selectinload(Stream.languages),
+                    selectinload(Stream.audio_formats),
+                    selectinload(Stream.channels),
+                    selectinload(Stream.hdr_formats),
+                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+                ),
+                selectinload(TorrentStream.trackers),
+            )
+            .limit(500)
         )
-        .limit(500)
-    )
+        result = await session.exec(torrent_query)
+        torrents = result.unique().all()
 
-    result = await session.exec(torrent_query)
-    torrents = result.unique().all()
+        # We need a Media object for from_db; fetch it
+        media = await session.get(Media, media_id)
 
-    # Convert torrent streams to TorrentStreamData
-    stream_data_list = [TorrentStreamData.from_db(torrent, torrent.stream, media) for torrent in torrents]
+        # Exclude binary fields that can't be JSON-serialized (torrent_file, nzb_content)
+        _torrent_exclude = {"torrent_file"}
+        torrent_data = [
+            TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
+            for t in torrents
+        ]
 
-    # Query Usenet streams linked to this media (if user has Usenet enabled AND has a capable provider)
-    usenet_stream_data_list = []
-    # Check if user has any Usenet-capable provider
-    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in user_data.get_active_providers())
-    if user_data.enable_usenet_streams and has_usenet_provider:
+        # Query usenet streams
         usenet_query = (
             select(UsenetStream)
             .join(Stream, Stream.id == UsenetStream.stream_id)
             .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media.id)
+            .where(StreamMediaLink.media_id == media_id)
             .where(Stream.is_active.is_(True))
             .where(Stream.is_blocked.is_(False))
             .where(visibility_filter)
@@ -244,28 +251,17 @@ async def get_movie_streams(
             )
             .limit(200)
         )
-
         usenet_result = await session.exec(usenet_query)
         usenet_streams = usenet_result.unique().all()
+        _usenet_exclude = {"nzb_content"}
+        usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude) for u in usenet_streams]
 
-        # Convert Usenet streams to UsenetStreamData
-        usenet_stream_data_list = [UsenetStreamData.from_db(usenet) for usenet in usenet_streams]
-
-    # Query Telegram streams (requires both enable_telegram_streams AND MediaFlow config)
-    # Users must have MediaFlow configured with their own Telegram session to access streams
-    telegram_stream_data_list = []
-    show_telegram = (
-        user_data.enable_telegram_streams
-        and user_data.mediaflow_config
-        and user_data.mediaflow_config.proxy_url
-        and user_data.mediaflow_config.api_password
-    )
-    if show_telegram:
+        # Query telegram streams
         telegram_query = (
             select(TelegramStream)
             .join(Stream, Stream.id == TelegramStream.stream_id)
             .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media.id)
+            .where(StreamMediaLink.media_id == media_id)
             .where(Stream.is_active.is_(True))
             .where(Stream.is_blocked.is_(False))
             .where(visibility_filter)
@@ -280,53 +276,39 @@ async def get_movie_streams(
             )
             .limit(100)
         )
-
         telegram_result = await session.exec(telegram_query)
         telegram_streams = telegram_result.unique().all()
+        telegram_data = [TelegramStreamData.from_db(tg).model_dump(mode="json") for tg in telegram_streams]
 
-        # Convert Telegram streams to TelegramStreamData
-        telegram_stream_data_list = [TelegramStreamData.from_db(tg) for tg in telegram_streams]
-
-    # Query HTTP streams (from M3U imports)
-    http_query = (
-        select(HTTPStream)
-        .join(Stream, Stream.id == HTTPStream.stream_id)
-        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-        .where(StreamMediaLink.media_id == media.id)
-        .where(Stream.is_active.is_(True))
-        .where(Stream.is_blocked.is_(False))
-        .where(visibility_filter)
-        .options(
-            joinedload(HTTPStream.stream).options(
-                selectinload(Stream.languages),
-            ),
-        )
-        .limit(100)
-    )
-
-    http_result = await session.exec(http_query)
-    http_streams = http_result.unique().all()
-
-    # Format HTTP streams directly for Stremio
-    formatted_http_streams = []
-    for http_stream in http_streams:
-        stream = http_stream.stream
-        formatted_http_streams.append(
-            StremioStream(
-                name=f"{settings.addon_name}\n{stream.name}",
-                description=f"🎬 {stream.source}" if stream.source else "🎬 Direct",
-                url=http_stream.url,
+        # Query HTTP streams
+        http_query = (
+            select(HTTPStream)
+            .join(Stream, Stream.id == HTTPStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media_id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(HTTPStream.stream).options(
+                    selectinload(Stream.languages),
+                ),
             )
+            .limit(100)
         )
+        http_result = await session.exec(http_query)
+        http_streams = http_result.unique().all()
+        http_data = [
+            {"name": hs.stream.name, "source": hs.stream.source, "url": hs.url}
+            for hs in http_streams
+        ]
 
-    # Query AceStream streams (requires enable_acestream_streams AND MediaFlow config)
-    formatted_acestream_streams = []
-    if user_data.enable_acestream_streams and _has_mediaflow_config(user_data):
+        # Query AceStream streams
         acestream_query = (
             select(AceStreamStream)
             .join(Stream, Stream.id == AceStreamStream.stream_id)
             .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media.id)
+            .where(StreamMediaLink.media_id == media_id)
             .where(Stream.is_active.is_(True))
             .where(Stream.is_blocked.is_(False))
             .where(visibility_filter)
@@ -337,11 +319,373 @@ async def get_movie_streams(
             )
             .limit(100)
         )
-
         acestream_result = await session.exec(acestream_query)
         acestream_streams = acestream_result.unique().all()
+        acestream_data = [
+            {
+                "content_id": ace.content_id,
+                "info_hash": ace.info_hash,
+                "stream_name": ace.stream.name,
+                "resolution": ace.stream.resolution,
+                "quality": ace.stream.quality,
+                "codec": ace.stream.codec,
+                "source": ace.stream.source,
+                "languages": [lang.lang for lang in (ace.stream.languages or [])],
+            }
+            for ace in acestream_streams
+        ]
 
-        formatted_acestream_streams = _format_acestream_streams(acestream_streams, user_data, user_ip)
+    return {
+        "torrents": torrent_data,
+        "usenet": usenet_data,
+        "telegram": telegram_data,
+        "http": http_data,
+        "acestream": acestream_data,
+    }
+
+
+async def _get_cached_movie_streams(
+    media_id: int, visibility_filter
+) -> dict:
+    """Get raw movie stream data with Redis caching."""
+    cache_key = f"{STREAM_CACHE_PREFIX}movie:{media_id}"
+
+    # Try Redis cache first
+    cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+    if cached:
+        logger.debug(f"Stream cache HIT for movie media_id={media_id}")
+        return json.loads(cached)
+
+    logger.debug(f"Stream cache MISS for movie media_id={media_id}")
+    t0 = time.monotonic()
+    data = await _fetch_movie_raw_streams(media_id, visibility_filter)
+    elapsed = time.monotonic() - t0
+    logger.info(f"DB fetch for movie media_id={media_id} took {elapsed:.3f}s")
+
+    # Store in Redis
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data), ex=STREAM_CACHE_TTL)
+    return data
+
+
+async def _fetch_series_raw_streams(
+    media_id: int, season: int, episode: int, visibility_filter
+) -> dict:
+    """Fetch all raw stream data for a series episode from DB (read replica)."""
+    async with get_read_session_context() as session:
+        media = await session.get(Media, media_id)
+
+        # Torrent streams
+        torrent_query = (
+            select(TorrentStream)
+            .join(Stream, Stream.id == TorrentStream.stream_id)
+            .join(StreamFile, StreamFile.stream_id == Stream.id)
+            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+            .where(
+                FileMediaLink.media_id == media_id,
+                FileMediaLink.season_number == season,
+                FileMediaLink.episode_number == episode,
+            )
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(TorrentStream.stream).options(
+                    selectinload(Stream.languages),
+                    selectinload(Stream.audio_formats),
+                    selectinload(Stream.channels),
+                    selectinload(Stream.hdr_formats),
+                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+                ),
+                selectinload(TorrentStream.trackers),
+            )
+            .limit(500)
+        )
+        result = await session.exec(torrent_query)
+        torrents = result.unique().all()
+        _torrent_exclude = {"torrent_file"}
+        torrent_data = [
+            TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
+            for t in torrents
+        ]
+
+        # Usenet streams
+        usenet_query = (
+            select(UsenetStream)
+            .join(Stream, Stream.id == UsenetStream.stream_id)
+            .join(StreamFile, StreamFile.stream_id == Stream.id)
+            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+            .where(
+                FileMediaLink.media_id == media_id,
+                FileMediaLink.season_number == season,
+                FileMediaLink.episode_number == episode,
+            )
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(UsenetStream.stream).options(
+                    selectinload(Stream.languages),
+                    selectinload(Stream.audio_formats),
+                    selectinload(Stream.channels),
+                    selectinload(Stream.hdr_formats),
+                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+                ),
+            )
+            .limit(200)
+        )
+        usenet_result = await session.exec(usenet_query)
+        usenet_streams = usenet_result.unique().all()
+        _usenet_exclude = {"nzb_content"}
+        usenet_data = [
+            UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude)
+            for u in usenet_streams
+        ]
+
+        # Telegram streams
+        telegram_query = (
+            select(TelegramStream)
+            .join(Stream, Stream.id == TelegramStream.stream_id)
+            .join(StreamFile, StreamFile.stream_id == Stream.id)
+            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+            .where(
+                FileMediaLink.media_id == media_id,
+                FileMediaLink.season_number == season,
+                FileMediaLink.episode_number == episode,
+            )
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(TelegramStream.stream).options(
+                    selectinload(Stream.languages),
+                    selectinload(Stream.audio_formats),
+                    selectinload(Stream.channels),
+                    selectinload(Stream.hdr_formats),
+                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
+                ),
+            )
+            .limit(100)
+        )
+        telegram_result = await session.exec(telegram_query)
+        telegram_streams = telegram_result.unique().all()
+        telegram_data = [TelegramStreamData.from_db(tg).model_dump(mode="json") for tg in telegram_streams]
+
+        # HTTP streams
+        http_query = (
+            select(HTTPStream)
+            .join(Stream, Stream.id == HTTPStream.stream_id)
+            .join(StreamFile, StreamFile.stream_id == Stream.id)
+            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+            .where(
+                FileMediaLink.media_id == media_id,
+                FileMediaLink.season_number == season,
+                FileMediaLink.episode_number == episode,
+            )
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(HTTPStream.stream).options(
+                    selectinload(Stream.languages),
+                ),
+            )
+            .limit(100)
+        )
+        http_result = await session.exec(http_query)
+        http_streams = http_result.unique().all()
+        http_data = [
+            {"name": hs.stream.name, "source": hs.stream.source, "url": hs.url}
+            for hs in http_streams
+        ]
+
+        # AceStream streams (uses StreamMediaLink, not FileMediaLink)
+        acestream_query = (
+            select(AceStreamStream)
+            .join(Stream, Stream.id == AceStreamStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media_id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(AceStreamStream.stream).options(
+                    selectinload(Stream.languages),
+                ),
+            )
+            .limit(100)
+        )
+        acestream_result = await session.exec(acestream_query)
+        acestream_streams = acestream_result.unique().all()
+        acestream_data = [
+            {
+                "content_id": ace.content_id,
+                "info_hash": ace.info_hash,
+                "stream_name": ace.stream.name,
+                "resolution": ace.stream.resolution,
+                "quality": ace.stream.quality,
+                "codec": ace.stream.codec,
+                "source": ace.stream.source,
+                "languages": [lang.lang for lang in (ace.stream.languages or [])],
+            }
+            for ace in acestream_streams
+        ]
+
+    return {
+        "torrents": torrent_data,
+        "usenet": usenet_data,
+        "telegram": telegram_data,
+        "http": http_data,
+        "acestream": acestream_data,
+    }
+
+
+async def _get_cached_series_streams(
+    media_id: int, season: int, episode: int, visibility_filter
+) -> dict:
+    """Get raw series stream data with Redis caching."""
+    cache_key = f"{STREAM_CACHE_PREFIX}series:{media_id}:{season}:{episode}"
+
+    cached = await REDIS_ASYNC_CLIENT.get(cache_key)
+    if cached:
+        logger.debug(f"Stream cache HIT for series media_id={media_id} S{season}E{episode}")
+        return json.loads(cached)
+
+    logger.debug(f"Stream cache MISS for series media_id={media_id} S{season}E{episode}")
+    t0 = time.monotonic()
+    data = await _fetch_series_raw_streams(media_id, season, episode, visibility_filter)
+    elapsed = time.monotonic() - t0
+    logger.info(f"DB fetch for series media_id={media_id} S{season}E{episode} took {elapsed:.3f}s")
+
+    await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data), ex=STREAM_CACHE_TTL)
+    return data
+
+
+def _deserialize_http_streams(http_data: list[dict]) -> list[StremioStream]:
+    """Deserialize cached HTTP stream data into Stremio streams."""
+    return [
+        StremioStream(
+            name=f"{settings.addon_name}\n{h['name']}",
+            description=f"🎬 {h['source']}" if h.get("source") else "🎬 Direct",
+            url=h["url"],
+        )
+        for h in http_data
+    ]
+
+
+def _deserialize_http_streams_series(
+    http_data: list[dict], season: int, episode: int
+) -> list[StremioStream]:
+    """Deserialize cached HTTP stream data for series into Stremio streams."""
+    return [
+        StremioStream(
+            name=f"{settings.addon_name}\n{h['name']}",
+            description=f"📺 S{season}E{episode} | {h['source']}" if h.get("source") else f"📺 S{season}E{episode}",
+            url=h["url"],
+        )
+        for h in http_data
+    ]
+
+
+def _deserialize_acestream_streams(
+    acestream_data: list[dict], user_data: UserData, user_ip: str | None = None
+) -> list[StremioStream]:
+    """Deserialize cached AceStream data into Stremio streams."""
+    if not acestream_data or not _has_mediaflow_config(user_data):
+        return []
+
+    mediaflow_config = user_data.mediaflow_config
+    formatted = []
+    for ace in acestream_data:
+        try:
+            url = encode_mediaflow_acestream_url(
+                mediaflow_proxy_url=mediaflow_config.proxy_url,
+                content_id=ace.get("content_id"),
+                info_hash=ace.get("info_hash"),
+                api_password=mediaflow_config.api_password,
+            )
+        except ValueError:
+            continue
+
+        desc_parts = ["📡 AceStream"]
+        if ace.get("resolution"):
+            desc_parts.append(ace["resolution"])
+        if ace.get("quality"):
+            desc_parts.append(ace["quality"])
+        if ace.get("codec"):
+            desc_parts.append(ace["codec"])
+        if ace.get("source") and ace["source"] != "acestream":
+            desc_parts.append(f"| {ace['source']}")
+
+        formatted.append(
+            StremioStream(
+                name=f"{settings.addon_name}\n{ace['stream_name']}",
+                description=" ".join(desc_parts),
+                url=url,
+            )
+        )
+    return formatted
+
+
+async def get_movie_streams(
+    session: AsyncSession,
+    video_id: str,
+    user_data: UserData,
+    secret_str: str,
+    user_ip: str | None,
+    background_tasks: BackgroundTasks,
+    user_id: int | None = None,
+) -> list[StremioStream]:
+    """
+    Get formatted streams for a movie.
+
+    Uses Redis caching for raw stream data (user-independent) and applies
+    per-user filtering/sorting/debrid-cache-checking on top.
+    Parallelizes parse_stream_data calls across stream types.
+    """
+    # Lazy import to avoid circular dependency
+    from utils.parser import parse_stream_data
+
+    # Resolve video_id to media
+    media = await get_media_by_external_id(session, video_id, MediaType.MOVIE)
+    if not media:
+        logger.warning(f"Movie not found for video_id: {video_id}")
+        return []
+
+    visibility_filter = _get_visibility_filter(user_id)
+
+    # Get cached or fresh raw stream data
+    raw_data = await _get_cached_movie_streams(media.id, visibility_filter)
+
+    # Deserialize stream data objects from cache
+    stream_data_list = [TorrentStreamData.model_validate(t) for t in raw_data["torrents"]]
+
+    # Check user flags to determine which stream types to include
+    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in user_data.get_active_providers())
+    usenet_stream_data_list = (
+        [UsenetStreamData.model_validate(u) for u in raw_data["usenet"]]
+        if user_data.enable_usenet_streams and has_usenet_provider and raw_data["usenet"]
+        else []
+    )
+
+    show_telegram = (
+        user_data.enable_telegram_streams
+        and user_data.mediaflow_config
+        and user_data.mediaflow_config.proxy_url
+        and user_data.mediaflow_config.api_password
+    )
+    telegram_stream_data_list = (
+        [TelegramStreamData.model_validate(tg) for tg in raw_data["telegram"]]
+        if show_telegram and raw_data["telegram"]
+        else []
+    )
+
+    # Deserialize HTTP and AceStream directly to Stremio format
+    formatted_http_streams = _deserialize_http_streams(raw_data["http"])
+    formatted_acestream_streams = (
+        _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
+        if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
+        else []
+    )
 
     if (
         not stream_data_list
@@ -352,49 +696,62 @@ async def get_movie_streams(
     ):
         return []
 
-    # Format torrent streams for Stremio
-    torrent_formatted = []
+    # Parallelize parse_stream_data calls across stream types
+    coros = []
+    coro_keys = []
+
     if stream_data_list:
-        torrent_formatted = await parse_stream_data(
-            streams=stream_data_list,
-            user_data=user_data,
-            secret_str=secret_str,
-            user_ip=user_ip,
-            is_series=False,
+        coros.append(
+            parse_stream_data(
+                streams=stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                user_ip=user_ip,
+                is_series=False,
+            )
         )
+        coro_keys.append("torrent")
 
-    # Format Usenet streams for Stremio
-    usenet_formatted = []
     if usenet_stream_data_list:
-        usenet_formatted = await parse_stream_data(
-            streams=usenet_stream_data_list,
-            user_data=user_data,
-            secret_str=secret_str,
-            user_ip=user_ip,
-            is_series=False,
-            is_usenet=True,
+        coros.append(
+            parse_stream_data(
+                streams=usenet_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                user_ip=user_ip,
+                is_series=False,
+                is_usenet=True,
+            )
         )
+        coro_keys.append("usenet")
 
-    # Format Telegram streams for Stremio
-    telegram_formatted = []
     if telegram_stream_data_list:
-        telegram_formatted = await parse_stream_data(
-            streams=telegram_stream_data_list,
-            user_data=user_data,
-            secret_str=secret_str,
-            user_ip=user_ip,
-            is_series=False,
-            is_telegram=True,
+        coros.append(
+            parse_stream_data(
+                streams=telegram_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                user_ip=user_ip,
+                is_series=False,
+                is_telegram=True,
+            )
         )
+        coro_keys.append("telegram")
 
-    # Combine streams based on user's type grouping and ordering preferences
-    stream_groups = {
-        "torrent": torrent_formatted,
-        "usenet": usenet_formatted,
-        "telegram": telegram_formatted,
+    # Run all parse_stream_data calls in parallel
+    results = await asyncio.gather(*coros) if coros else []
+
+    # Map results back to stream groups
+    stream_groups: dict[str, list[StremioStream]] = {
+        "torrent": [],
+        "usenet": [],
+        "telegram": [],
         "http": formatted_http_streams,
         "acestream": formatted_acestream_streams,
     }
+    for key, result in zip(coro_keys, results):
+        stream_groups[key] = result
+
     return _combine_streams_by_type(user_data, stream_groups)
 
 
@@ -412,196 +769,52 @@ async def get_series_streams(
     """
     Get formatted streams for a series episode.
 
-    Query flow:
-    1. Resolve video_id to media
-    2. Query torrent and HTTP streams via StreamFile + FileMediaLink
-    3. Convert to stream data objects
-    4. Format for Stremio via parse_stream_data
-
-    Args:
-        user_id: Current user ID for visibility filtering (shows public + user's own streams)
+    Uses Redis caching for raw stream data (user-independent) and applies
+    per-user filtering/sorting/debrid-cache-checking on top.
+    Parallelizes parse_stream_data calls across stream types.
     """
     # Lazy import to avoid circular dependency
     from utils.parser import parse_stream_data
 
-    # Get media by external_id
+    # Resolve video_id to media
     media = await get_media_by_external_id(session, video_id, MediaType.SERIES)
     if not media:
         logger.warning(f"Series not found for video_id: {video_id}")
         return []
 
-    # Visibility filter - public streams + user's own streams
     visibility_filter = _get_visibility_filter(user_id)
 
-    # Query torrent streams with files linked to this episode
-    torrent_query = (
-        select(TorrentStream)
-        .join(Stream, Stream.id == TorrentStream.stream_id)
-        .join(StreamFile, StreamFile.stream_id == Stream.id)
-        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-        .where(
-            FileMediaLink.media_id == media.id,
-            FileMediaLink.season_number == season,
-            FileMediaLink.episode_number == episode,
-        )
-        .where(Stream.is_active.is_(True))
-        .where(Stream.is_blocked.is_(False))
-        .where(visibility_filter)
-        .options(
-            joinedload(TorrentStream.stream).options(
-                selectinload(Stream.languages),
-                selectinload(Stream.audio_formats),
-                selectinload(Stream.channels),
-                selectinload(Stream.hdr_formats),
-                selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-            ),
-            selectinload(TorrentStream.trackers),
-        )
-        .limit(500)
+    # Get cached or fresh raw stream data
+    raw_data = await _get_cached_series_streams(media.id, season, episode, visibility_filter)
+
+    # Deserialize stream data objects from cache
+    stream_data_list = [TorrentStreamData.model_validate(t) for t in raw_data["torrents"]]
+
+    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in user_data.get_active_providers())
+    usenet_stream_data_list = (
+        [UsenetStreamData.model_validate(u) for u in raw_data["usenet"]]
+        if user_data.enable_usenet_streams and has_usenet_provider and raw_data["usenet"]
+        else []
     )
 
-    result = await session.exec(torrent_query)
-    torrents = result.unique().all()
-
-    # Convert torrent streams to TorrentStreamData
-    stream_data_list = [TorrentStreamData.from_db(torrent, torrent.stream, media) for torrent in torrents]
-
-    # Query Usenet streams with files linked to this episode (if user has Usenet enabled AND has a capable provider)
-    usenet_stream_data_list = []
-    # Check if user has any Usenet-capable provider
-    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in user_data.get_active_providers())
-    if user_data.enable_usenet_streams and has_usenet_provider:
-        usenet_query = (
-            select(UsenetStream)
-            .join(Stream, Stream.id == UsenetStream.stream_id)
-            .join(StreamFile, StreamFile.stream_id == Stream.id)
-            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-            .where(
-                FileMediaLink.media_id == media.id,
-                FileMediaLink.season_number == season,
-                FileMediaLink.episode_number == episode,
-            )
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(UsenetStream.stream).options(
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-            )
-            .limit(200)
-        )
-
-        usenet_result = await session.exec(usenet_query)
-        usenet_streams = usenet_result.unique().all()
-
-        # Convert Usenet streams to UsenetStreamData
-        usenet_stream_data_list = [UsenetStreamData.from_db(usenet) for usenet in usenet_streams]
-
-    # Query Telegram streams with files linked to this episode (requires MediaFlow config)
-    telegram_stream_data_list = []
     show_telegram = (
         user_data.enable_telegram_streams
         and user_data.mediaflow_config
         and user_data.mediaflow_config.proxy_url
         and user_data.mediaflow_config.api_password
     )
-    if show_telegram:
-        telegram_query = (
-            select(TelegramStream)
-            .join(Stream, Stream.id == TelegramStream.stream_id)
-            .join(StreamFile, StreamFile.stream_id == Stream.id)
-            .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-            .where(
-                FileMediaLink.media_id == media.id,
-                FileMediaLink.season_number == season,
-                FileMediaLink.episode_number == episode,
-            )
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(TelegramStream.stream).options(
-                    selectinload(Stream.languages),
-                    selectinload(Stream.audio_formats),
-                    selectinload(Stream.channels),
-                    selectinload(Stream.hdr_formats),
-                    selectinload(Stream.files).options(selectinload(StreamFile.media_links)),
-                ),
-            )
-            .limit(100)
-        )
-
-        telegram_result = await session.exec(telegram_query)
-        telegram_streams = telegram_result.unique().all()
-
-        # Convert Telegram streams to TelegramStreamData
-        telegram_stream_data_list = [TelegramStreamData.from_db(tg) for tg in telegram_streams]
-
-    # Query HTTP streams with file-level linking for series
-    http_query = (
-        select(HTTPStream)
-        .join(Stream, Stream.id == HTTPStream.stream_id)
-        .join(StreamFile, StreamFile.stream_id == Stream.id)
-        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
-        .where(
-            FileMediaLink.media_id == media.id,
-            FileMediaLink.season_number == season,
-            FileMediaLink.episode_number == episode,
-        )
-        .where(Stream.is_active.is_(True))
-        .where(Stream.is_blocked.is_(False))
-        .where(visibility_filter)
-        .options(
-            joinedload(HTTPStream.stream).options(
-                selectinload(Stream.languages),
-            ),
-        )
-        .limit(100)
+    telegram_stream_data_list = (
+        [TelegramStreamData.model_validate(tg) for tg in raw_data["telegram"]]
+        if show_telegram and raw_data["telegram"]
+        else []
     )
 
-    http_result = await session.exec(http_query)
-    http_streams = http_result.unique().all()
-
-    # Format HTTP streams directly for Stremio
-    formatted_http_streams = []
-    for http_stream in http_streams:
-        stream = http_stream.stream
-        formatted_http_streams.append(
-            StremioStream(
-                name=f"{settings.addon_name}\n{stream.name}",
-                description=f"📺 S{season}E{episode} | {stream.source}" if stream.source else f"📺 S{season}E{episode}",
-                url=http_stream.url,
-            )
-        )
-
-    # Query AceStream streams linked to this episode (requires enable_acestream_streams AND MediaFlow config)
-    formatted_acestream_streams = []
-    if user_data.enable_acestream_streams and _has_mediaflow_config(user_data):
-        acestream_query = (
-            select(AceStreamStream)
-            .join(Stream, Stream.id == AceStreamStream.stream_id)
-            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-            .where(StreamMediaLink.media_id == media.id)
-            .where(Stream.is_active.is_(True))
-            .where(Stream.is_blocked.is_(False))
-            .where(visibility_filter)
-            .options(
-                joinedload(AceStreamStream.stream).options(
-                    selectinload(Stream.languages),
-                ),
-            )
-            .limit(100)
-        )
-
-        acestream_result = await session.exec(acestream_query)
-        acestream_streams = acestream_result.unique().all()
-
-        formatted_acestream_streams = _format_acestream_streams(acestream_streams, user_data, user_ip)
+    formatted_http_streams = _deserialize_http_streams_series(raw_data["http"], season, episode)
+    formatted_acestream_streams = (
+        _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
+        if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
+        else []
+    )
 
     if (
         not stream_data_list
@@ -612,55 +825,66 @@ async def get_series_streams(
     ):
         return []
 
-    # Format torrent streams for Stremio
-    torrent_formatted = []
+    # Parallelize parse_stream_data calls across stream types
+    coros = []
+    coro_keys = []
+
     if stream_data_list:
-        torrent_formatted = await parse_stream_data(
-            streams=stream_data_list,
-            user_data=user_data,
-            secret_str=secret_str,
-            season=season,
-            episode=episode,
-            user_ip=user_ip,
-            is_series=True,
+        coros.append(
+            parse_stream_data(
+                streams=stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                season=season,
+                episode=episode,
+                user_ip=user_ip,
+                is_series=True,
+            )
         )
+        coro_keys.append("torrent")
 
-    # Format Usenet streams for Stremio
-    usenet_formatted = []
     if usenet_stream_data_list:
-        usenet_formatted = await parse_stream_data(
-            streams=usenet_stream_data_list,
-            user_data=user_data,
-            secret_str=secret_str,
-            season=season,
-            episode=episode,
-            user_ip=user_ip,
-            is_series=True,
-            is_usenet=True,
+        coros.append(
+            parse_stream_data(
+                streams=usenet_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                season=season,
+                episode=episode,
+                user_ip=user_ip,
+                is_series=True,
+                is_usenet=True,
+            )
         )
+        coro_keys.append("usenet")
 
-    # Format Telegram streams for Stremio
-    telegram_formatted = []
     if telegram_stream_data_list:
-        telegram_formatted = await parse_stream_data(
-            streams=telegram_stream_data_list,
-            user_data=user_data,
-            secret_str=secret_str,
-            season=season,
-            episode=episode,
-            user_ip=user_ip,
-            is_series=True,
-            is_telegram=True,
+        coros.append(
+            parse_stream_data(
+                streams=telegram_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                season=season,
+                episode=episode,
+                user_ip=user_ip,
+                is_series=True,
+                is_telegram=True,
+            )
         )
+        coro_keys.append("telegram")
 
-    # Combine streams based on user's type grouping and ordering preferences
-    stream_groups = {
-        "torrent": torrent_formatted,
-        "usenet": usenet_formatted,
-        "telegram": telegram_formatted,
+    results = await asyncio.gather(*coros) if coros else []
+
+    stream_groups: dict[str, list[StremioStream]] = {
+        "torrent": [],
+        "usenet": [],
+        "telegram": [],
         "http": formatted_http_streams,
         "acestream": formatted_acestream_streams,
     }
+    for key, result in zip(coro_keys, results):
+        stream_groups[key] = result
+
     return _combine_streams_by_type(user_data, stream_groups)
 
 

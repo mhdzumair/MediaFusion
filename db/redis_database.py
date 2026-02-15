@@ -241,6 +241,10 @@ class RedisWrapper:
         """Redis GET operation."""
         return self._create_method("get", None)(key)
 
+    def mget(self, keys: list[str]):
+        """Redis MGET operation - batch get multiple keys at once."""
+        return self._create_method("mget", [])(keys)
+
     def getex(self, key: str, ex: int):
         """Redis GETEX operation."""
         return self._create_method("getex", None)(key, ex)
