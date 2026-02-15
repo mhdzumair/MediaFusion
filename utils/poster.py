@@ -17,27 +17,56 @@ font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
 
-async def fetch_poster_image(url: str) -> bytes:
+async def fetch_poster_image(url: str, max_retries: int = 3) -> bytes:
     # Check if the image is cached in Redis
     cached_image = await REDIS_ASYNC_CLIENT.get(url)
     if cached_image:
         logging.info(f"Using cached image for URL: {url}")
         return cached_image
 
-    connector = aiohttp.TCPConnector()
-    if settings.requests_proxy_url:
-        connector = ProxyConnector.from_url(settings.requests_proxy_url)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        async with session.get(url, timeout=10, headers=const.UA_HEADER) as response:
-            response.raise_for_status()
-            if not response.headers["Content-Type"].lower().startswith("image/"):
-                raise ValueError(f"Unexpected content type: {response.headers['Content-Type']} for URL: {url}")
-            content = await response.read()
+    timeout = aiohttp.ClientTimeout(
+        total=30,
+        connect=10,
+        sock_read=15,
+    )
 
-            # Cache the image in Redis for 1 hour
-            logging.info(f"Caching image for URL: {url}")
-            await REDIS_ASYNC_CLIENT.set(url, content, ex=3600)
-            return content
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        connector = aiohttp.TCPConnector()
+        if settings.requests_proxy_url:
+            connector = ProxyConnector.from_url(settings.requests_proxy_url)
+        try:
+            async with aiohttp.ClientSession(
+                connector=connector, timeout=timeout
+            ) as session:
+                async with session.get(url, headers=const.UA_HEADER) as response:
+                    response.raise_for_status()
+                    content_type = response.headers.get("Content-Type", "")
+                    if not content_type.lower().startswith("image/"):
+                        raise ValueError(
+                            f"Unexpected content type: {content_type} for URL: {url}"
+                        )
+                    content = await response.read()
+
+                    # Cache the image in Redis for 1 hour
+                    logging.info(f"Caching image for URL: {url}")
+                    await REDIS_ASYNC_CLIENT.set(url, content, ex=3600)
+                    return content
+        except (TimeoutError, aiohttp.ClientError) as e:
+            last_exception = e
+            if attempt < max_retries:
+                wait_time = 2**attempt  # exponential backoff: 2s, 4s
+                logging.warning(
+                    f"Attempt {attempt}/{max_retries} failed for {url}: {e}. "
+                    f"Retrying in {wait_time}s..."
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logging.error(
+                    f"All {max_retries} attempts failed for {url}: {e}"
+                )
+
+    raise last_exception
 
 
 # Synchronous function for CPU-bound task: image processing
