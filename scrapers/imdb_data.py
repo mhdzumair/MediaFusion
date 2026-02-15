@@ -229,7 +229,7 @@ def parse_imdb_title(imdb_title: model.Title, episodes: list[dict]) -> dict:
     )
 
     certificates = []
-    if imdb_title.certification:
+    if imdb_title.certification and imdb_title.certification.certificates:
         certificates = list(set(rating for cert in imdb_title.certification.certificates for rating in cert.ratings))
 
     return {
@@ -242,7 +242,7 @@ def parse_imdb_title(imdb_title: model.Title, episodes: list[dict]) -> dict:
         "year": imdb_title.year,
         "end_year": end_year,
         "release_date": imdb_title.release_date,
-        "description": imdb_title.plot.get("en-US"),
+        "description": imdb_title.plot.get("en-US") if imdb_title.plot else None,
         "tagline": tagline,
         "countries": imdb_title.countries,
         "country_codes": imdb_title.country_codes,
@@ -254,7 +254,9 @@ def parse_imdb_title(imdb_title: model.Title, episodes: list[dict]) -> dict:
         "top_ranking": imdb_title.top_ranking,  # IMDB Top 250 rank
         "aka_titles": list(set(aka.title for aka in imdb_title.akas)),
         "type": ("movie" if imdb_title.type_id in ["movie", "tvMovie", "short", "tvShort", "tvSpecial"] else "series"),
-        "parent_guide_nudity_status": imdb_title.advisories.nudity.status,
+        "parent_guide_nudity_status": imdb_title.advisories.nudity.status
+        if imdb_title.advisories and imdb_title.advisories.nudity
+        else None,
         "parent_guide_certificates": certificates,
         "runtime": f"{imdb_title.runtime} min" if imdb_title.runtime else None,
         "runtime_minutes": imdb_title.runtime,

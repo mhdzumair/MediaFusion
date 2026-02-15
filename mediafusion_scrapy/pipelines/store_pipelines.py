@@ -3,9 +3,12 @@ import logging
 
 from scrapy import signals
 from scrapy.exceptions import DropItem
+from sqlmodel import select
 
 from db import crud
 from db.database import get_async_session
+from db.enums import MediaType
+from db.models import Episode, Media, Season, SeriesMetadata
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import TVMetaData
 
@@ -29,23 +32,23 @@ class QueueBasedPipeline:
         crawler.signals.connect(p.close, signal=signals.spider_closed)
         return p
 
-    async def process_item(self, item, spider):
+    async def process_item(self, item):
         # Instead of processing the item directly, add it to the queue
-        await self.queue.put((item, spider))
+        await self.queue.put(item)
         return item
 
     async def process_queue(self):
         logging.info("Starting processing queue")
         while True:
-            item, spider = await self.queue.get()
+            item = await self.queue.get()
             try:
-                await self.parse_item(item, spider)
+                await self.parse_item(item)
             except Exception as e:
                 logging.error(f"Error processing item: {e}", exc_info=True)
             finally:
                 self.queue.task_done()
 
-    async def parse_item(self, item, spider):
+    async def parse_item(self, item):
         raise NotImplementedError
 
 
@@ -58,7 +61,7 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
         await super().close()
         await self.redis.aclose()
 
-    async def parse_item(self, item, spider):
+    async def parse_item(self, item):
         if "title" not in item:
             logging.warning(f"title not found in item: {item}")
             raise DropItem(f"title not found in item: {item}")
@@ -138,7 +141,7 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
 
 
 class TVStorePipeline(QueueBasedPipeline):
-    async def parse_item(self, item, spider):
+    async def parse_item(self, item):
         if "title" not in item:
             logging.warning(f"title not found in item: {item}")
             raise DropItem(f"title not found in item: {item}")
@@ -153,12 +156,71 @@ class MovieStorePipeline(QueueBasedPipeline):
     def __init__(self):
         super().__init__()
         self.redis = REDIS_ASYNC_CLIENT
+        # Cache of (title_lower, year) -> media_id for items without external IDs.
+        # Prevents duplicate media creation when multiple torrents for the same
+        # movie are processed concurrently in the queue.
+        self._title_media_cache: dict[tuple[str, int | None], int] = {}
 
     async def close(self):
         await super().close()
         await self.redis.aclose()
 
-    async def parse_item(self, item, spider):
+    async def _get_or_create_media(self, session, item):
+        """Get or create media, handling items with or without external IDs."""
+        imdb_id = item.get("imdb_id")
+        if imdb_id:
+            metadata = {
+                "id": imdb_id,
+                "title": item["title"],
+                "year": item.get("year"),
+                "poster": item.get("poster"),
+                "background": item.get("background"),
+                "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
+                "catalogs": item.get("catalog", []),
+            }
+            return await crud.get_or_create_metadata(
+                session,
+                metadata,
+                "movie",
+                is_search_imdb_title=item.get("is_search_imdb_title", True),
+            )
+
+        # No external ID — check in-memory cache first to avoid race-condition
+        # duplicates when multiple torrents for the same title arrive concurrently.
+        cache_key = (item["title"].lower(), item.get("year"))
+        cached_id = self._title_media_cache.get(cache_key)
+        if cached_id:
+            result = await session.exec(
+                select(Media).where(Media.id == cached_id)
+            )
+            media = result.first()
+            if media:
+                return media
+
+        # Search by title/year in the database
+        media = await crud.get_media_by_title_year(
+            session, item["title"], item.get("year"), MediaType.MOVIE
+        )
+        if media:
+            self._title_media_cache[cache_key] = media.id
+            return media
+
+        # Create new media with a synthetic mf external ID
+        metadata = {
+            "title": item["title"],
+            "year": item.get("year"),
+            "poster": item.get("poster"),
+            "background": item.get("background"),
+            "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
+            "catalogs": item.get("catalog", []),
+        }
+        metadata["id"] = f"mf_tmp_{item['title']}_{item.get('year', 'unknown')}"
+        media = await crud.get_or_create_metadata(session, metadata, "movie", is_search_imdb_title=False)
+        if media:
+            self._title_media_cache[cache_key] = media.id
+        return media
+
+    async def parse_item(self, item):
         if "title" not in item:
             return item
 
@@ -166,7 +228,69 @@ class MovieStorePipeline(QueueBasedPipeline):
             return item
 
         async for session in get_async_session():
-            await crud.scraper_save_movie_metadata(session, item, item.get("is_search_imdb_title", True))
+            media = await self._get_or_create_media(session, item)
+
+            if not media:
+                raise DropItem(f"Failed to create movie metadata for: {item['title']}")
+
+            meta_id = f"mf:{media.id}"
+            logging.info("Using movie %s with id %s", item["title"], meta_id)
+
+            # Apply full provider metadata (description, cast, crew, genres,
+            # certification, etc.) if available from MetadataSearchPipeline.
+            # This avoids needing a separate "Refresh All" step later.
+            provider_metadata = item.get("_provider_metadata")
+            if provider_metadata:
+                try:
+                    # update_provider_metadata creates MediaExternalID rows and
+                    # ProviderMetadata records for each provider (IMDB, TMDB, etc.)
+                    for provider_name, data in provider_metadata.items():
+                        if data:
+                            await crud.update_provider_metadata(
+                                session, media.id, provider_name, data
+                            )
+                    # apply_multi_provider_metadata updates the canonical Media fields
+                    # (description, cast, crew, genres, images, etc.)
+                    await crud.apply_multi_provider_metadata(
+                        session, media.id, provider_metadata, "movie"
+                    )
+                    logging.info("Applied full metadata for movie %s", item["title"])
+                except Exception as e:
+                    logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)
+
+            # Check if torrent stream already exists
+            existing_stream = await crud.get_stream_by_info_hash(session, item["info_hash"])
+            if existing_stream:
+                logging.info("Torrent stream already exists: %s", item["torrent_name"])
+                await session.commit()
+                return item
+
+            stream_data = {
+                "id": item["info_hash"],
+                "meta_id": meta_id,
+                "torrent_name": item["torrent_name"],
+                "announce_urls": item.get("announce_list", []),
+                "size": item.get("total_size", 0),
+                "total_size": item.get("total_size", 0),
+                "languages": item.get("languages", []),
+                "resolution": item.get("resolution"),
+                "codec": item.get("codec"),
+                "quality": item.get("quality"),
+                "audio": item.get("audio"),
+                "hdr": item.get("hdr"),
+                "source": item.get("source", ""),
+                "uploader": item.get("uploader"),
+                "catalogs": item.get("catalog", []),
+                "created_at": item.get("created_at"),
+                "seeders": item.get("seeders"),
+                "torrent_file": item.get("torrent_file"),
+                "files": item.get("file_data", []),
+            }
+
+            await crud.store_new_torrent_streams(session, [stream_data])
+            await session.commit()
+            logging.info("Added torrent stream %s for movie %s", item["torrent_name"], item["title"])
+
         return item
 
 
@@ -174,19 +298,245 @@ class SeriesStorePipeline(QueueBasedPipeline):
     def __init__(self):
         super().__init__()
         self.redis = REDIS_ASYNC_CLIENT
+        self._title_media_cache: dict[tuple[str, int | None], int] = {}
 
     async def close(self):
         await super().close()
         await self.redis.aclose()
 
-    async def parse_item(self, item, spider):
+    async def _get_or_create_media(self, session, item):
+        """Get or create media, handling items with or without external IDs."""
+        imdb_id = item.get("imdb_id")
+        if imdb_id:
+            metadata = {
+                "id": imdb_id,
+                "title": item["title"],
+                "year": item.get("year"),
+                "poster": item.get("poster"),
+                "background": item.get("background"),
+                "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
+                "catalogs": item.get("catalog", []),
+            }
+            return await crud.get_or_create_metadata(
+                session,
+                metadata,
+                "series",
+                is_search_imdb_title=item.get("is_search_imdb_title", True),
+            )
+
+        cache_key = (item["title"].lower(), item.get("year"))
+        cached_id = self._title_media_cache.get(cache_key)
+        if cached_id:
+            result = await session.exec(
+                select(Media).where(Media.id == cached_id)
+            )
+            media = result.first()
+            if media:
+                return media
+
+        media = await crud.get_media_by_title_year(
+            session, item["title"], item.get("year"), MediaType.SERIES
+        )
+        if media:
+            self._title_media_cache[cache_key] = media.id
+            return media
+
+        metadata = {
+            "title": item["title"],
+            "year": item.get("year"),
+            "poster": item.get("poster"),
+            "background": item.get("background"),
+            "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
+            "catalogs": item.get("catalog", []),
+        }
+        metadata["id"] = f"mf_tmp_{item['title']}_{item.get('year', 'unknown')}"
+        media = await crud.get_or_create_metadata(session, metadata, "series", is_search_imdb_title=False)
+        if media:
+            self._title_media_cache[cache_key] = media.id
+        return media
+
+    @staticmethod
+    async def _ensure_episodes_from_file_data(session, media, item):
+        """Create season/episode entries from torrent file_data when no external
+        metadata provider supplied episode information.
+
+        The torrent parser extracts per-file ``season_number`` and
+        ``episode_number`` from the filenames inside the torrent.  This method
+        uses that data to populate the ``season`` and ``episode`` tables so that
+        the UI can display episode information even for ``mf:`` items.
+        """
+        file_data = item.get("file_data", [])
+        if not file_data:
+            return
+
+        # Ensure series_metadata exists (it should, but be safe)
+        result = await session.exec(
+            select(SeriesMetadata).where(SeriesMetadata.media_id == media.id)
+        )
+        series_meta = result.first()
+        if not series_meta:
+            series_meta = SeriesMetadata(media_id=media.id)
+            session.add(series_meta)
+            await session.flush()
+
+        # Collect unique (season, episode) pairs from file_data
+        episodes_to_create: dict[int, set[int]] = {}
+        for fd in file_data:
+            season_num = fd.get("season_number")
+            episode_num = fd.get("episode_number")
+            if season_num is None or episode_num is None:
+                continue
+            episodes_to_create.setdefault(season_num, set()).add(episode_num)
+
+        # Also collect from top-level parsed seasons/episodes (single-file torrents
+        # may not have per-file data but have seasons/episodes on the item).
+        item_seasons = item.get("seasons", [])
+        item_episodes = item.get("episodes", [])
+        if item_seasons and item_episodes:
+            for s in item_seasons:
+                for e in item_episodes:
+                    episodes_to_create.setdefault(s, set()).add(e)
+
+        if not episodes_to_create:
+            return
+
+        created_count = 0
+        for season_num, episode_nums in episodes_to_create.items():
+            # Get or create season
+            result = await session.exec(
+                select(Season).where(
+                    Season.series_id == series_meta.id,
+                    Season.season_number == season_num,
+                )
+            )
+            season = result.first()
+            if not season:
+                season = Season(
+                    series_id=series_meta.id,
+                    season_number=season_num,
+                    episode_count=len(episode_nums),
+                )
+                session.add(season)
+                await session.flush()
+            else:
+                # Update episode count if we know more episodes now
+                if len(episode_nums) > (season.episode_count or 0):
+                    season.episode_count = len(episode_nums)
+
+            # Create missing episodes
+            for ep_num in sorted(episode_nums):
+                result = await session.exec(
+                    select(Episode).where(
+                        Episode.season_id == season.id,
+                        Episode.episode_number == ep_num,
+                    )
+                )
+                if result.first():
+                    continue  # Already exists (from a previous torrent or provider)
+
+                episode = Episode(
+                    season_id=season.id,
+                    episode_number=ep_num,
+                    title=f"Episode {ep_num}",
+                )
+                session.add(episode)
+                created_count += 1
+
+        if created_count:
+            # Update total_seasons / total_episodes on series_metadata
+            all_seasons_result = await session.exec(
+                select(Season).where(Season.series_id == series_meta.id)
+            )
+            all_seasons = all_seasons_result.all()
+            series_meta.total_seasons = len(all_seasons)
+            total_eps = 0
+            for s in all_seasons:
+                ep_count_result = await session.exec(
+                    select(Episode).where(Episode.season_id == s.id)
+                )
+                total_eps += len(ep_count_result.all())
+            series_meta.total_episodes = total_eps
+
+            await session.flush()
+            logging.info(
+                "Created %d episode entries from torrent file data for %s (S%s)",
+                created_count,
+                item["title"],
+                list(episodes_to_create.keys()),
+            )
+
+    async def parse_item(self, item):
         if "title" not in item:
             return item
 
         if item.get("type") != "series":
             return item
+
         async for session in get_async_session():
-            await crud.scraper_save_series_metadata(session, item)
+            media = await self._get_or_create_media(session, item)
+
+            if not media:
+                raise DropItem(f"Failed to create series metadata for: {item['title']}")
+
+            meta_id = f"mf:{media.id}"
+            logging.info("Using series %s with id %s", item["title"], meta_id)
+
+            # Apply full provider metadata (description, cast, crew, genres,
+            # certification, etc.) if available from MetadataSearchPipeline.
+            provider_metadata = item.get("_provider_metadata")
+            if provider_metadata:
+                try:
+                    for provider_name, data in provider_metadata.items():
+                        if data:
+                            await crud.update_provider_metadata(
+                                session, media.id, provider_name, data
+                            )
+                    await crud.apply_multi_provider_metadata(
+                        session, media.id, provider_metadata, "series"
+                    )
+                    logging.info("Applied full metadata for series %s", item["title"])
+                except Exception as e:
+                    logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)
+
+            # When no external provider supplied episode data, create episode
+            # entries from the torrent's file list so the UI still shows episodes.
+            await self._ensure_episodes_from_file_data(session, media, item)
+
+            # Check if torrent stream already exists
+            existing_stream = await crud.get_stream_by_info_hash(session, item["info_hash"])
+            if existing_stream:
+                logging.info("Torrent stream already exists: %s", item["torrent_name"])
+                await session.commit()
+                return item
+
+            stream_data = {
+                "id": item["info_hash"],
+                "meta_id": meta_id,
+                "torrent_name": item["torrent_name"],
+                "announce_urls": item.get("announce_list", []),
+                "size": item.get("total_size", 0),
+                "total_size": item.get("total_size", 0),
+                "languages": item.get("languages", []),
+                "resolution": item.get("resolution"),
+                "codec": item.get("codec"),
+                "quality": item.get("quality"),
+                "audio": item.get("audio"),
+                "hdr": item.get("hdr"),
+                "source": item.get("source", ""),
+                "uploader": item.get("uploader"),
+                "catalogs": item.get("catalog", []),
+                "created_at": item.get("created_at"),
+                "seeders": item.get("seeders"),
+                "torrent_file": item.get("torrent_file"),
+                "files": item.get("file_data", []),
+                "season": item.get("seasons", [None])[0] if item.get("seasons") else None,
+                "episode": item.get("episodes", [None])[0] if item.get("episodes") else None,
+            }
+
+            await crud.store_new_torrent_streams(session, [stream_data])
+            await session.commit()
+            logging.info("Added torrent stream %s for series %s", item["torrent_name"], item["title"])
+
         if "scraped_info_hash_key" in item:
             await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
         return item
@@ -201,7 +551,7 @@ class LiveEventStorePipeline(QueueBasedPipeline):
         await super().close()
         await self.redis.aclose()
 
-    async def parse_item(self, item, spider):
+    async def parse_item(self, item):
         if "title" not in item:
             raise DropItem(f"name not found in item: {item}")
 

@@ -1,8 +1,9 @@
+import logging
+
 import scrapy
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
 from scrapy.http.request import NO_CALLBACK
-from scrapy.utils.defer import maybe_deferred_to_future
 
 from db import crud
 from db.database import get_async_session
@@ -10,7 +11,13 @@ from utils import torrent
 
 
 class TorrentDownloadAndParsePipeline:
-    async def process_item(self, item, spider):
+    @classmethod
+    def from_crawler(cls, crawler):
+        pipeline = cls()
+        pipeline.crawler = crawler
+        return pipeline
+
+    async def process_item(self, item):
         adapter = ItemAdapter(item)
         torrent_link = adapter.get("torrent_link")
 
@@ -19,19 +26,17 @@ class TorrentDownloadAndParsePipeline:
 
         headers = {"Referer": item.get("webpage_url")}
 
-        response = await maybe_deferred_to_future(
-            spider.crawler.engine.download(
-                scrapy.Request(torrent_link, callback=NO_CALLBACK, headers=headers),
-            )
+        response = await self.crawler.engine.download_async(
+            scrapy.Request(torrent_link, callback=NO_CALLBACK, headers=headers),
         )
 
         if response.status != 200:
-            spider.logger.error(f"Failed to download torrent file: {response.url} with status {response.status}")
+            logging.error("Failed to download torrent file: %s with status %s", response.url, response.status)
             return item
 
         # Validate the content-type of the response
         if "application/x-bittorrent" not in response.headers.get("Content-Type", b"").decode("utf-8", "ignore"):
-            spider.logger.error(f"Unexpected Content-Type for {response.url}: {response.headers.get('Content-Type')}")
+            logging.error("Unexpected Content-Type for %s: %s", response.url, response.headers.get("Content-Type"))
             return item
 
         torrent_metadata = torrent.extract_torrent_metadata(response.body, item.get("parsed_data"))
@@ -44,7 +49,7 @@ class TorrentDownloadAndParsePipeline:
 
 
 class MagnetDownloadAndParsePipeline:
-    async def process_item(self, item, spider):
+    async def process_item(self, item):
         magnet_link = item.get("magnet_link")
 
         if not magnet_link:
@@ -59,7 +64,7 @@ class MagnetDownloadAndParsePipeline:
 
         if torrent_stream:
             if item.get("expected_sources") and torrent_stream.source not in item["expected_sources"]:
-                spider.logger.info(
+                logging.info(
                     "Source mismatch for %s: %s != %s. Trying to re-create the data",
                     torrent_stream.name,
                     item["source"],

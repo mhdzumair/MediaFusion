@@ -185,7 +185,7 @@ class FormulaParserPipeline:
             "smcgill1969": self.parse_smcgill1969_description,
         }
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         uploader = item["uploader"]
         title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.title_parser_functions[uploader](title, item)

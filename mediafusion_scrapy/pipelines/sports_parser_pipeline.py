@@ -41,7 +41,7 @@ class BaseParserPipeline:
         self.static_poster = static_poster or {}
         self.static_logo = static_logo or {}
 
-    async def process_item(self, item, spider):
+    async def process_item(self, item):
         title = re.sub(r"\.\.+", ".", item["torrent_title"])
         self.parse_title(title, item)
         if not item.get("title"):

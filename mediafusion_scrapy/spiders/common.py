@@ -15,6 +15,7 @@ class CommonTamilSpider(scrapy.Spider):
         "ITEM_PIPELINES": {
             "mediafusion_scrapy.pipelines.TorrentDownloadAndParsePipeline": 100,
             "mediafusion_scrapy.pipelines.CatalogParsePipeline": 150,
+            "mediafusion_scrapy.pipelines.MetadataSearchPipeline": 175,
             "mediafusion_scrapy.pipelines.MovieStorePipeline": 200,
             "mediafusion_scrapy.pipelines.SeriesStorePipeline": 300,
             "mediafusion_scrapy.pipelines.RedisCacheURLPipeline": 400,
@@ -155,11 +156,37 @@ class CommonTamilSpider(scrapy.Spider):
             return True
         return False
 
+    @staticmethod
+    def _extract_poster(response):
+        """Extract the poster image URL from a topic page.
+
+        The forum layout uses div[data-role='commentContent'] to wrap
+        the post body.  The first non-GIF image with a ``data-src``
+        (lazy-loaded) or ``src`` attribute is typically the movie poster.
+        """
+        content_selector = "div[data-role='commentContent']"
+        imgs = response.css(f"{content_selector} img")
+        for img in imgs:
+            data_src = img.attrib.get("data-src", "")
+            src = img.attrib.get("src", "")
+            url = data_src or src
+            if not url:
+                continue
+            # Skip GIFs (decorative banners), spacer placeholders, and
+            # small site-hosted images that are not posters.
+            if url.endswith(".gif") or "spacer" in url:
+                continue
+            return url
+
+        # Fallback: try the legacy selector (pre-2025 forum layout)
+        return response.css(
+            "div[data-commenttype='forums'] img::attr(data-src),"
+            " div[data-commenttype='forums'] img::attr(src)"
+        ).get()
+
     def parse_movie_page(self, response):
         item = response.meta["item"].copy()
-        poster = response.css(
-            "div[data-commenttype='forums'] img::attr(data-src), div[data-commenttype='forums'] img::attr(src)"
-        ).get()
+        poster = self._extract_poster(response)
         created_at = response.css("time::attr(datetime)").get()
         torrent_links = response.css("a[data-fileext='torrent']::attr(href)").getall()
 

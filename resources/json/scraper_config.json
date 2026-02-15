@@ -11,52 +11,52 @@
 	]
   },
   "tamil_blasters": {
-	"homepage": "https://www.1tamilblasters.net",
+	"homepage": "https://1tamilblasters.wtf",
 	"catalogs": {
 	  "tamil": {
-		"hdrip": "7-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
-		"tcrip": "8-tamil-new-movies-tcrip-dvdscr-hdcam-predvd",
-		"dubbed": "9-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios",
-		"series": "63-tamil-new-web-series-tv-shows",
-		"old": "56-tamil-old-mid-movies-bdrips-hdrips-dvdrips-hdtv"
+		"hdrip": "15-tamil-new-movies-hdrips-bdrips-dvdrips-hdtv",
+		"tcrip": "13-tamil-new-movies-tcrip-dvdscr-hdcam-predvd",
+		"dubbed": "14-tamil-dubbed-movies-bdrips-hdrips-dvdscr-hdcam-in-multi-audios",
+		"series": "17-tamil-new-web-series-tv-shows",
+		"old": "16-tamil-old-mid-movies-bdrips-hdrips-dvdrips-hdtv"
 	  },
 	  "malayalam": {
-		"tcrip": "75-malayalam-new-movies-tcrip-dvdscr-hdcam-predvd",
-		"hdrip": "74-malayalam-new-movies-hdrips-bdrips-dvdrips-hdtv",
-		"dubbed": "76-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-		"series": "98-malayalam-new-web-series-tv-shows",
-		"old": "77-malayalam-old-mid-movies-bdrips-hdrips-dvdrips"
+		"tcrip": "21-malayalam-new-movies-tcrip-dvdscr-hdcam-predvd",
+		"hdrip": "22-malayalam-new-movies-hdrips-bdrips-dvdrips-hdtv",
+		"dubbed": "23-malayalam-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+		"series": "25-malayalam-new-web-series-tv-shows",
+		"old": "24-malayalam-old-mid-movies-bdrips-hdrips-dvdrips"
 	  },
 	  "telugu": {
-		"tcrip": "79-telugu-new-movies-tcrip-dvdscr-hdcam-predvd",
-		"hdrip": "78-telugu-new-movies-hdrips-bdrips-dvdrips-hdtv",
-		"dubbed": "80-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-		"series": "96-telugu-new-web-series-tv-shows",
-		"old": "81-telugu-old-mid-movies-bdrips-hdrips-dvdrips"
+		"tcrip": "27-telugu-new-movies-tcrip-dvdscr-hdcam-predvd",
+		"hdrip": "28-telugu-new-movies-hdrips-bdrips-dvdrips-hdtv",
+		"dubbed": "29-telugu-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+		"series": "31-telugu-new-web-series-tv-shows",
+		"old": "30-telugu-old-mid-movies-bdrips-hdrips-dvdrips"
 	  },
 	  "hindi": {
-		"tcrip": "87-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
-		"hdrip": "86-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
-		"dubbed": "88-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-		"series": "89-hindi-new-web-series-tv-shows",
-		"old": "102-hindi-old-mid-movies-bdrips-hdrips-dvdrips"
+		"tcrip": "44-hindi-new-movies-tcrip-dvdscr-hdcam-predvd",
+		"hdrip": "43-hindi-new-movies-hdrips-bdrips-dvdrips-hdtv",
+		"dubbed": "45-hindi-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+		"series": "47-hindi-new-web-series-tv-shows",
+		"old": "46-hindi-old-mid-movies-bdrips-hdrips-dvdrips"
 	  },
 	  "kannada": {
-		"tcrip": "83-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
-		"hdrip": "82-kannada-new-movies-hdrips-bdrips-dvdrips-hdtv",
-		"dubbed": "84-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
-		"series": "103-kannada-new-web-series-tv-shows",
-		"old": "85-kannada-old-mid-movies-bdrips-hdrips-dvdrips"
+		"tcrip": "37-kannada-new-movies-tcrip-dvdscr-hdcam-predvd",
+		"hdrip": "34-kannada-new-movies-hdrips-bdrips-dvdrips-hdtv",
+		"dubbed": "38-kannada-dubbed-movies-bdrips-hdrips-dvdscr-hdcam",
+		"series": "35-kannada-new-web-series-tv-shows",
+		"old": "36-kannada-old-mid-movies-bdrips-hdrips-dvdrips"
 	  },
 	  "english": {
-		"tcrip": "52-english-movies-hdcam-dvdscr-predvd",
-		"hdrip": "53-english-movies-hdrips-bdrips-dvdrips",
-		"series": "92-english-web-series-tv-shows"
+		"tcrip": "50-english-movies-hdcam-dvdscr-predvd",
+		"hdrip": "49-english-movies-hdrips-bdrips-dvdrips",
+		"series": "51-english-web-series-tv-shows"
 	  }
 	}
   },
   "tamilmv": {
-	"homepage": "https://www.1tamilmv.cab",
+	"homepage": "https://www.1tamilmv.earth",
 	"catalogs": {
 	  "tamil": {
 		"hdrip": [

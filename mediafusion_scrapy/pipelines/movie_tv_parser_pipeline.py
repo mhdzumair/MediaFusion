@@ -6,7 +6,7 @@ from utils.const import QUALITY_GROUPS
 
 
 class MovieTVParserPipeline:
-    async def process_item(self, item, spider):
+    async def process_item(self, item):
         data = item.copy()
         title = data["torrent_title"]
         if "title" not in data:

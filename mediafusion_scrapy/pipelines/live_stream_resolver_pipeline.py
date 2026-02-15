@@ -2,13 +2,18 @@ import scrapy
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
 from scrapy.http.request import NO_CALLBACK
-from scrapy.utils.defer import maybe_deferred_to_future
 
 from utils import const
 
 
 class LiveStreamResolverPipeline:
-    async def process_item(self, item, spider):
+    @classmethod
+    def from_crawler(cls, crawler, *args, **kwargs):
+        pipeline = cls(*args, **kwargs)
+        pipeline.crawler = crawler
+        return pipeline
+
+    async def process_item(self, item):
         adapter = ItemAdapter(item)
         stream_url = adapter.get("stream_url")
         stream_headers = adapter.get("stream_headers")
@@ -20,15 +25,13 @@ class LiveStreamResolverPipeline:
         if not stream_url:
             raise DropItem(f"No stream URL found in item: {item}")
 
-        response = await maybe_deferred_to_future(
-            spider.crawler.engine.download(
-                scrapy.Request(
-                    stream_url,
-                    callback=NO_CALLBACK,
-                    headers=stream_headers,
-                    method="HEAD",
-                    dont_filter=True,
-                )
+        response = await self.crawler.engine.download_async(
+            scrapy.Request(
+                stream_url,
+                callback=NO_CALLBACK,
+                headers=stream_headers,
+                method="HEAD",
+                dont_filter=True,
             )
         )
         content_type = response_headers.get("Content-Type", response.headers.get("Content-Type", b"").decode().lower())

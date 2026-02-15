@@ -133,18 +133,20 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
     MAX_DELAY = 180  # Max delay between retries.
     BACKOFF_FACTOR = 3  # Exponential backoff factor.
 
-    def __init__(self, settings):
+    def __init__(self, settings, crawler):
         super().__init__(settings)
+        self.crawler = crawler
         self.max_retry_times = settings.getint("RETRY_TIMES", 5)  # Get max retries from settings.
 
     @classmethod
     def from_crawler(cls, crawler):
-        return cls(crawler.settings)
+        return cls(crawler.settings, crawler)
 
-    def process_response(self, request, response, spider):
+    def process_response(self, request, response):
         """
         Handle response with 429 status by retrying the request with an exponential backoff delay.
         """
+        spider = self.crawler.spider
         if request.meta.get("dont_retry", False):
             return response
 
@@ -186,11 +188,12 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
 
 
 class FlaresolverrMiddleware:
-    def __init__(self, flaresolverr_url, cache_duration, max_timeout, max_attempts):
+    def __init__(self, flaresolverr_url, cache_duration, max_timeout, max_attempts, crawler):
         self.flaresolverr_url = flaresolverr_url
         self.cache_duration = cache_duration
         self.max_timeout = max_timeout
         self.max_attempts = max_attempts
+        self.crawler = crawler
         self.solved_domains = {}
         self.client = httpx.AsyncClient()
 
@@ -201,21 +204,24 @@ class FlaresolverrMiddleware:
             cache_duration=crawler.settings.get("FLARESOLVERR_CACHE_DURATION", 3600),
             max_timeout=crawler.settings.get("FLARESOLVERR_MAX_TIMEOUT", 60000),
             max_attempts=crawler.settings.get("FLARESOLVERR_MAX_ATTEMPTS", 3),
+            crawler=crawler,
         )
 
-    async def process_request(self, request, spider):
+    async def process_request(self, request):
         return None
 
-    async def process_response(self, request, response, spider):
+    async def process_response(self, request, response):
+        spider = self.crawler.spider
         if not hasattr(spider, "use_flaresolverr") or not spider.use_flaresolverr:
             return response
 
         if response.status == 403 or (response.status == 503 and "cloudflare" in response.text.lower()):
-            return await self._handle_cloudflare(request, spider)
+            return await self._handle_cloudflare(request)
 
         return response
 
-    async def _handle_cloudflare(self, request, spider):
+    async def _handle_cloudflare(self, request):
+        spider = self.crawler.spider
         domain = urlparse(request.url).netloc
         current_time = reactor.seconds()
 

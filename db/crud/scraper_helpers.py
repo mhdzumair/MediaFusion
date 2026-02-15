@@ -308,14 +308,41 @@ async def get_or_create_metadata(
         title=metadata_data.get("title", "Unknown"),
         year=metadata_data.get("year"),
         description=metadata_data.get("description") or metadata_data.get("overview"),
-        poster=metadata_data.get("poster"),
-        background=metadata_data.get("background") or metadata_data.get("backdrop"),
         runtime_minutes=metadata_data.get("runtime"),
         end_date=end_date,
         is_add_title_to_poster=metadata_data.get("is_add_title_to_poster", False),
     )
     session.add(media)
     await session.flush()
+
+    # Store poster/background as MediaImage records (images are not stored
+    # on the Media table itself — they live in the media_image table).
+    poster_url = metadata_data.get("poster")
+    background_url = metadata_data.get("background") or metadata_data.get("backdrop")
+    if poster_url or background_url:
+        mf_provider = await get_or_create_metadata_provider(
+            session, "mediafusion", "MediaFusion"
+        )
+        if poster_url:
+            session.add(
+                MediaImage(
+                    media_id=media.id,
+                    provider_id=mf_provider.id,
+                    image_type="poster",
+                    url=poster_url,
+                    is_primary=True,
+                )
+            )
+        if background_url:
+            session.add(
+                MediaImage(
+                    media_id=media.id,
+                    provider_id=mf_provider.id,
+                    image_type="background",
+                    url=background_url,
+                    is_primary=True,
+                )
+            )
 
     # Add genres
     if genres := metadata_data.get("genres"):

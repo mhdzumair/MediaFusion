@@ -17,7 +17,7 @@ class RedisCacheURLPipeline:
         crawler.signals.connect(p.close, signal=signals.spider_closed)
         return p
 
-    async def process_item(self, item, spider):
+    async def process_item(self, item):
         if "webpage_url" not in item:
             raise DropItem(f"webpage_url not found in item: {item}")
 

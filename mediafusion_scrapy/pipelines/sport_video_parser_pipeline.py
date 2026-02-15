@@ -17,7 +17,7 @@ class SportVideoParserPipeline:
     def __init__(self):
         self.title_regex = re.compile(r"^.*?\s(\d{2}\.\d{2}\.\d{4})")
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         adapter = ItemAdapter(item)
         if "title" not in adapter or "torrent_name" not in adapter:
             raise DropItem(f"title or torrent_name not found in item: {item}")

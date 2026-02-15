@@ -2,6 +2,7 @@ from .catalog_parse_pipeline import CatalogParsePipeline
 from .duplicates_pipeline import TorrentDuplicatesPipeline
 from .formula_parser_pipeline import FormulaParserPipeline
 from .live_stream_resolver_pipeline import LiveStreamResolverPipeline
+from .metadata_search_pipeline import MetadataSearchPipeline
 from .moto_gp_parser_pipeline import MotoGPParserPipeline
 from .movie_tv_parser_pipeline import MovieTVParserPipeline
 from .redis_cache_pipeline import RedisCacheURLPipeline
@@ -24,6 +25,7 @@ __all__ = [
     "TorrentDuplicatesPipeline",
     "FormulaParserPipeline",
     "LiveStreamResolverPipeline",
+    "MetadataSearchPipeline",
     "MotoGPParserPipeline",
     "RedisCacheURLPipeline",
     "SportVideoParserPipeline",
