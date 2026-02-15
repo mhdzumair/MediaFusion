@@ -1,5 +1,5 @@
 {
-  "id": "stremio.addons.{{ addon_name | lower | replace(' ', '') }}{% if streaming_provider_name %}.{{ streaming_provider_name }}{% endif %}",
+  "id": "stremio.addons.{{ addon_name | lower | replace(' ', '') }}",
   "version": "{{ version }}",
   "name": "{{ addon_name }}",
   "contactEmail": "{{ contact_email }}",
@@ -10,7 +10,7 @@
     "configurationRequired": false
   },
   "resources": [
-    {% if enable_catalogs or enable_watchlist_catalogs %}"catalog",{% endif %}
+    {% if enable_catalogs or watchlist_providers %}"catalog",{% endif %}
     {
       "name": "stream",
       "types": ["movie", "series", "tv", "events"],
@@ -25,22 +25,22 @@
   "types": ["movie", "series", "tv", "events"],
   "catalogs": [
     {% set comma = joiner(",") %}
-    {% if enable_watchlist_catalogs %}
+    {% for provider in watchlist_providers %}
     {{ comma() }}
     {
-      "id": "{{ streaming_provider_name }}_watchlist_movies",
-      "name": "{{ streaming_provider_short_name }} Watchlist",
+      "id": "{{ provider.service }}_watchlist_movies",
+      "name": "{{ provider.short_name }} Watchlist",
       "type": "movie",
       "extra": [{"name": "skip", "isRequired": false}]
     }
     {{ comma() }}
     {
-      "id": "{{ streaming_provider_name }}_watchlist_series",
-      "name": "{{ streaming_provider_short_name }} Watchlist",
+      "id": "{{ provider.service }}_watchlist_series",
+      "name": "{{ provider.short_name }} Watchlist",
       "type": "series",
       "extra": [{"name": "skip", "isRequired": false}]
     }
-    {% endif %}
+    {% endfor %}
     {% if enable_catalogs %}
     {% set catalog_definitions = {
       "mediafusion_search_movies": {"type": "movie", "name": "Movies", "genres": [], "is_search": true},

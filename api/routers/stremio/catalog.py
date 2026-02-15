@@ -151,9 +151,16 @@ async def get_catalog(
     Enhanced catalog endpoint with support for watchlists and external services.
 
     Supports per-catalog sorting configuration via user profile settings.
+    Detects watchlist catalogs for any active provider (multi-provider support).
     """
-    primary_provider = user_data.get_primary_provider()
-    is_watchlist_catalog = primary_provider and catalog_id.startswith(primary_provider.service)
+    # Check if the catalog belongs to any active provider's watchlist
+    watchlist_provider = None
+    is_watchlist_catalog = False
+    for provider in user_data.get_active_providers():
+        if catalog_id.startswith(f"{provider.service}_watchlist_"):
+            watchlist_provider = provider
+            is_watchlist_catalog = True
+            break
 
     # Get catalog configuration from user profile (includes sorting preferences)
     catalog_config = user_data.get_catalog_config(catalog_id)
@@ -241,16 +248,16 @@ async def get_catalog(
         sort_dir=sort_dir,
     )
 
-    # Handle watchlist special case
+    # Handle watchlist special case: add "Delete All" option for providers that support it
     if (
         is_watchlist_catalog
         and catalog_type == MediaType.MOVIE
         and metas.metas
-        and primary_provider
-        and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(primary_provider.service)
+        and watchlist_provider
+        and mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(watchlist_provider.service)
     ):
         delete_all_meta = DELETE_ALL_META.model_copy()
-        delete_all_meta.id = delete_all_meta.id.format(primary_provider.service)
+        delete_all_meta.id = delete_all_meta.id.format(watchlist_provider.service)
         metas.metas.insert(0, delete_all_meta)
 
     # Cache result if applicable

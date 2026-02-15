@@ -937,20 +937,33 @@ async def fetch_downloaded_info_hashes(user_data: UserData, user_ip: str | None)
 
 
 async def generate_manifest(user_data: UserData, genres: dict) -> dict:
-    streaming_provider_name = None
-    streaming_provider_short_name = None
-    enable_watchlist_catalogs = False
     addon_name = settings.addon_name
 
-    primary_provider = user_data.get_primary_provider()
-    if primary_provider:
-        streaming_provider_name = primary_provider.service
-        streaming_provider_short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(primary_provider.service)
-        enable_watchlist_catalogs = primary_provider.enable_watchlist_catalogs
-        addon_name += f" {streaming_provider_short_name}"
+    # Collect all active providers and their watchlist settings
+    active_providers = user_data.get_active_providers()
+    watchlist_providers = []
+    provider_short_names = []
+
+    for provider in active_providers:
+        short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(provider.service, provider.service[:2].upper())
+        provider_short_names.append(short_name)
+        if provider.enable_watchlist_catalogs:
+            watchlist_providers.append(
+                {
+                    "service": provider.service,
+                    "short_name": short_name,
+                }
+            )
+
+    # Build addon name with all provider short names (e.g., "MediaFusion RD+TRB")
+    if provider_short_names:
+        addon_name += f" {'+'.join(provider_short_names)}"
 
     if user_data.mediaflow_config:
         addon_name += " 🕵🏼‍♂️"
+
+    # Build unique addon ID suffix from all active provider services
+    provider_id_suffix = ".".join(p.service for p in active_providers) if active_providers else ""
 
     mdblist_data = {}
     if user_data.mdblist_config:
@@ -965,11 +978,10 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         "contact_email": settings.contact_email,
         "description": settings.description,
         "logo_url": settings.logo_url,
-        "streaming_provider_name": streaming_provider_name,
-        "streaming_provider_short_name": streaming_provider_short_name,
+        "provider_id_suffix": provider_id_suffix,
         "enable_imdb_metadata": user_data.enable_imdb_metadata,
         "enable_catalogs": user_data.enable_catalogs,
-        "enable_watchlist_catalogs": enable_watchlist_catalogs,
+        "watchlist_providers": watchlist_providers,
         "selected_catalogs": user_data.get_enabled_catalog_ids(),
         "genres": genres,
         "mdblist_data": mdblist_data,
