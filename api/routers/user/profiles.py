@@ -27,7 +27,7 @@ from db.database import get_async_session
 from db.models import User, UserProfile
 from db.schemas import UserData
 from utils import const
-from utils import crypto as crypto_utils
+from utils.crypto import UUID_PREFIX, crypto_utils
 from utils.profile_context import ProfileDataProvider
 from utils.profile_crypto import profile_crypto
 
@@ -236,11 +236,14 @@ def profile_to_response(profile: UserProfile, include_full_config: bool = False)
 
 async def generate_manifest_secret(profile: UserProfile, user: User, api_password: str | None = None) -> str:
     """
-    Generate encrypted secret string for manifest URL.
-    Merges config with decrypted secrets before generating.
+    Generate a UUID-based secret string for manifest URL.
 
-    Includes user UUID and profile UUID for secure identification,
-    preventing ID enumeration attacks.
+    Returns a stable U-{profile_uuid} string that dynamically resolves to the
+    current profile config on every request. The profile data is pre-cached in
+    Redis so the first Stremio request is fast.
+
+    This eliminates the need to re-install the addon when config changes,
+    since the UUID remains stable and always resolves to the latest config.
 
     Args:
         profile: The user profile
@@ -248,76 +251,24 @@ async def generate_manifest_secret(profile: UserProfile, user: User, api_passwor
         api_password: Optional API password from X-API-Key header (for private instances)
     """
     try:
-        config = profile.config or {}
+        # Build cache data for pre-caching in Redis
+        cache_data = {
+            "config": profile.config or {},
+            "encrypted_secrets": profile.encrypted_secrets,
+            "user_id": user.id,
+            "profile_id": profile.id,
+            "user_uuid": user.uuid,
+            "profile_uuid": profile.uuid,
+        }
 
-        # Decrypt and merge secrets if they exist
-        if profile.encrypted_secrets:
-            try:
-                secrets = profile_crypto.decrypt_secrets(profile.encrypted_secrets)
-                config = profile_crypto.merge_secrets(config, secrets)
-            except Exception as e:
-                # If decryption fails (corrupted data, key change, etc.), continue without secrets
-                # The profile can still work, just without the encrypted credentials
-                logger.warning(f"Could not decrypt profile secrets for profile {profile.id}: {e}")
-
-        # Include API password from header if provided (for private instances)
+        # Include API password if provided (for private instances)
         if api_password:
-            config["api_password"] = api_password
-            config["ap"] = api_password  # Also set alias
+            cache_data["api_password"] = api_password
 
-        # Filter out providers without a valid service type or missing required credentials
-        for key in ["streaming_providers", "sps"]:
-            if key in config and isinstance(config[key], list):
-                valid_providers = []
-                for sp in config[key]:
-                    if isinstance(sp, dict) and (sp.get("sv") or sp.get("service")):
-                        # Check if provider has required credentials (token or username/password)
-                        has_token = sp.get("tk") or sp.get("token")
-                        has_creds = (sp.get("em") or sp.get("email")) and (sp.get("pw") or sp.get("password"))
-                        has_url = sp.get("u") or sp.get("url")
-                        service = sp.get("sv") or sp.get("service")
-                        # qbittorrent needs URL, others need token or creds
-                        if service == "qbittorrent":
-                            if has_url:
-                                valid_providers.append(sp)
-                        elif service == "p2p":
-                            valid_providers.append(sp)  # P2P doesn't need credentials
-                        elif has_token or has_creds:
-                            valid_providers.append(sp)
-                config[key] = valid_providers
+        # Pre-cache the profile data in Redis so the first Stremio request is fast
+        await crypto_utils._cache_uuid_profile(profile.uuid, cache_data)
 
-        # Also validate legacy single provider
-        for key in ["streaming_provider", "sp"]:
-            if key in config and isinstance(config[key], dict):
-                sp = config[key]
-                if not (sp.get("sv") or sp.get("service")):
-                    del config[key]
-                else:
-                    has_token = sp.get("tk") or sp.get("token")
-                    has_creds = (sp.get("em") or sp.get("email")) and (sp.get("pw") or sp.get("password"))
-                    if not has_token and not has_creds:
-                        del config[key]
-
-        # Filter out invalid resolutions (empty strings, None values)
-        for key in ["selected_resolutions", "sr"]:
-            if key in config and isinstance(config[key], list):
-                config[key] = [r for r in config[key] if r]  # Filter out empty/None values
-
-        # Filter out invalid RPDB config (missing api_key)
-        for key in ["rpdb_config", "rpc"]:
-            if key in config and isinstance(config[key], dict):
-                if not (config[key].get("ak") or config[key].get("api_key")):
-                    del config[key]
-
-        # Include user and profile identification for security
-        # Using UUIDs instead of sequential IDs to prevent enumeration attacks
-        config["uid"] = user.id  # Keep numeric for backward compatibility
-        config["pid"] = profile.id
-        config["uuuid"] = user.uuid  # User UUID for unique identification
-        config["puuid"] = profile.uuid  # Profile UUID for unique identification
-
-        user_data = UserData(**config)
-        return await crypto_utils.crypto_utils.process_user_data(user_data)
+        return f"{UUID_PREFIX}{profile.uuid}"
     except Exception as e:
         logger.error(f"Failed to generate manifest secret: {e}")
         return ""
@@ -717,8 +668,10 @@ async def update_profile(
     await session.commit()
     await session.refresh(profile)
 
-    # Invalidate Redis cache for user's profile data
+    # Invalidate Redis caches for user's profile data
     await ProfileDataProvider.invalidate_cache(user.id)
+    # Also invalidate the UUID-keyed cache so Stremio/Kodi pick up new config
+    await crypto_utils.invalidate_uuid_cache(profile.uuid)
 
     return JSONResponse(
         content=profile_to_response(profile).model_dump(),
@@ -761,11 +714,16 @@ async def delete_profile(
             other_profile.is_default = True
             session.add(other_profile)
 
+    # Capture UUID before deletion
+    profile_uuid = profile.uuid
+
     await session.delete(profile)
     await session.commit()
 
-    # Invalidate Redis cache for user's profile data
+    # Invalidate Redis caches for user's profile data
     await ProfileDataProvider.invalidate_cache(user.id)
+    # Also invalidate the UUID-keyed cache so Stremio/Kodi get a clear error
+    await crypto_utils.invalidate_uuid_cache(profile_uuid)
 
     return {"message": "Profile deleted successfully"}
 

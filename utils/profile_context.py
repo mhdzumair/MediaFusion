@@ -29,6 +29,80 @@ from utils.profile_crypto import profile_crypto
 logger = logging.getLogger(__name__)
 
 
+def build_user_data_from_config(
+    full_config: dict,
+    user_id: int | None = None,
+    profile_id: int | None = None,
+    user_uuid: str | None = None,
+    profile_uuid: str | None = None,
+    api_password: str | None = None,
+) -> UserData:
+    """
+    Build a UserData instance from a full config dict (with secrets already decrypted).
+
+    This is the shared logic for constructing UserData from profile config,
+    used by both the authenticated UI flow (ProfileDataProvider) and
+    the Stremio addon flow (UUID-based secret string resolution).
+
+    Args:
+        full_config: Complete config dict with decrypted secrets merged in
+        user_id: Optional user ID for playback tracking
+        profile_id: Optional profile ID for playback tracking
+        user_uuid: Optional user UUID for secure identification
+        profile_uuid: Optional profile UUID for secure identification
+        api_password: Optional API password for private instances
+
+    Returns:
+        UserData instance
+
+    Raises:
+        ValueError: If UserData construction fails
+    """
+    # Include identification fields
+    if user_id is not None:
+        full_config["user_id"] = user_id
+    if profile_id is not None:
+        full_config["profile_id"] = profile_id
+    if user_uuid is not None:
+        full_config["uuuid"] = user_uuid
+    if profile_uuid is not None:
+        full_config["puuid"] = profile_uuid
+    if api_password is not None:
+        full_config["api_password"] = api_password
+        full_config["ap"] = api_password
+
+    # Filter out invalid streaming providers (empty service names or missing required credentials)
+    for key in ["streaming_providers", "sps"]:
+        if key in full_config and isinstance(full_config[key], list):
+            valid_providers = []
+            for sp in full_config[key]:
+                if not isinstance(sp, dict):
+                    continue
+                service = sp.get("sv") or sp.get("service")
+                if not service:
+                    continue
+                # P2P doesn't require credentials
+                if service == "p2p":
+                    valid_providers.append(sp)
+                # Other services require a token (or other credentials handled by validator)
+                elif sp.get("tk") or sp.get("token"):
+                    valid_providers.append(sp)
+            full_config[key] = valid_providers
+
+    # Filter out invalid RPDB config (missing API key)
+    for key in ["rpdb_config", "rpc"]:
+        if key in full_config and isinstance(full_config[key], dict):
+            if not full_config[key].get("ak") and not full_config[key].get("api_key"):
+                del full_config[key]
+
+    # Filter out invalid resolutions (empty strings, None values)
+    for key in ["selected_resolutions", "sr"]:
+        if key in full_config and isinstance(full_config[key], list):
+            full_config[key] = [r for r in full_config[key] if r]
+
+    return UserData(**full_config)
+
+
 class CachedProfileData(BaseModel):
     """
     Encrypted profile data stored in Redis.
@@ -159,43 +233,13 @@ class ProfileDataProvider:
             logger.error(f"Failed to decrypt profile secrets for user {user_id}: {e}")
             return ProfileContext.empty(user_id)
 
-        # Build UserData with user identification
+        # Build UserData using shared builder
         try:
-            # Include user_id and profile_id for playback tracking
-            full_config["user_id"] = user_id
-            full_config["profile_id"] = cached.profile_id
-
-            # Filter out invalid streaming providers (empty service names or missing required credentials)
-            # Note: P2P doesn't require a token, so we check service-specific requirements
-            for key in ["streaming_providers", "sps"]:
-                if key in full_config and isinstance(full_config[key], list):
-                    valid_providers = []
-                    for sp in full_config[key]:
-                        if not isinstance(sp, dict):
-                            continue
-                        service = sp.get("sv") or sp.get("service")
-                        if not service:
-                            continue
-                        # P2P doesn't require credentials
-                        if service == "p2p":
-                            valid_providers.append(sp)
-                        # Other services require a token (or other credentials handled by validator)
-                        elif sp.get("tk") or sp.get("token"):
-                            valid_providers.append(sp)
-                    full_config[key] = valid_providers
-
-            # Filter out invalid RPDB config (missing API key)
-            for key in ["rpdb_config", "rpc"]:
-                if key in full_config and isinstance(full_config[key], dict):
-                    if not full_config[key].get("ak") and not full_config[key].get("api_key"):
-                        del full_config[key]
-
-            # Filter out invalid resolutions (empty strings, None values)
-            for key in ["selected_resolutions", "sr"]:
-                if key in full_config and isinstance(full_config[key], list):
-                    full_config[key] = [r for r in full_config[key] if r]
-
-            user_data = UserData(**full_config)
+            user_data = build_user_data_from_config(
+                full_config,
+                user_id=user_id,
+                profile_id=cached.profile_id,
+            )
         except Exception as e:
             logger.error(f"Failed to build UserData for user {user_id}: {e}")
             return ProfileContext.empty(user_id)

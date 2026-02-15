@@ -9,10 +9,15 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
+from sqlmodel import select
 
 from db.config import settings
+from db.database import get_async_session_context
+from db.models import User, UserProfile
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
+from utils.profile_context import build_user_data_from_config
+from utils.profile_crypto import profile_crypto
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +25,9 @@ logger = logging.getLogger(__name__)
 REDIS_THRESHOLD = 1000  # Threshold for Redis storage in characters
 DIRECT_PREFIX = "D-"  # Prefix for direct encrypted data
 REDIS_PREFIX = "R-"  # Prefix for Redis-stored data
+UUID_PREFIX = "U-"  # Prefix for UUID-based dynamic config resolution
+UUID_CACHE_PREFIX = "user_profile:"  # Redis key prefix for UUID-cached profile data
+UUID_CACHE_TTL = 2592000  # 30 days in seconds (same as R- expiry)
 
 
 def make_urlsafe(data: bytes) -> str:
@@ -117,7 +125,8 @@ class CryptoUtils:
         """
         Decrypt user data from either storage method
         Args:
-            secret_str: Prefixed string containing either direct data or Redis key
+            secret_str: Prefixed string containing either direct data, Redis key,
+                        or UUID for dynamic config resolution
         Returns:
             UserData object
         """
@@ -126,7 +135,7 @@ class CryptoUtils:
 
         try:
             # Handle legacy format (no prefix)
-            if not secret_str.startswith((DIRECT_PREFIX, REDIS_PREFIX)):
+            if not secret_str.startswith((DIRECT_PREFIX, REDIS_PREFIX, UUID_PREFIX)):
                 raise ValueError("Invalid user data")
 
             prefix = secret_str[:2]
@@ -142,12 +151,174 @@ class CryptoUtils:
 
             elif prefix == REDIS_PREFIX:
                 return await self.retrieve_and_decrypt(data)
+
+            elif prefix == UUID_PREFIX:
+                return await self._resolve_uuid_profile(data)
+
             else:
                 raise ValueError("Invalid prefix")
 
         except Exception as e:
             logger.error(f"Failed to decrypt user data: {e}")
             raise ValueError("Invalid user data")
+
+    async def _resolve_uuid_profile(self, profile_uuid: str) -> UserData:
+        """
+        Resolve a profile UUID to UserData by checking Redis cache first,
+        then falling back to database lookup.
+
+        Args:
+            profile_uuid: The profile UUID string
+
+        Returns:
+            UserData object built from the profile's current config
+
+        Raises:
+            ValueError: If profile not found or resolution fails
+        """
+        if not profile_uuid or len(profile_uuid) < 32:
+            raise ValueError("Invalid profile UUID")
+
+        cache_key = f"{UUID_CACHE_PREFIX}{profile_uuid}"
+
+        # 1. Try Redis cache first
+        try:
+            cached_json = await REDIS_ASYNC_CLIENT.getex(
+                cache_key,
+                ex=UUID_CACHE_TTL,  # Refresh TTL on access
+            )
+            if cached_json:
+                cached_data = json.loads(cached_json)
+                return self._build_user_data_from_cached_uuid(cached_data)
+        except Exception as e:
+            logger.warning(f"Failed to get UUID cache for {profile_uuid}: {e}")
+
+        # 2. Cache miss - load from database
+        return await self._load_and_cache_uuid_profile(profile_uuid)
+
+    async def _load_and_cache_uuid_profile(self, profile_uuid: str) -> UserData:
+        """
+        Load profile from database by UUID, cache it in Redis, and return UserData.
+
+        Uses a standalone async session (not from FastAPI DI) so this can be called
+        from middleware context without requiring a session dependency.
+
+        Args:
+            profile_uuid: The profile UUID to look up
+
+        Returns:
+            UserData built from the profile's current config
+
+        Raises:
+            ValueError: If profile or user not found
+        """
+        async with get_async_session_context() as session:
+            # Load profile by UUID with its user relationship
+            result = await session.exec(select(UserProfile).where(UserProfile.uuid == profile_uuid))
+            profile = result.first()
+
+            if not profile:
+                raise ValueError("Profile not found or deleted")
+
+            # Load the user for UUID-based identification
+            user = await session.get(User, profile.user_id)
+            if not user:
+                raise ValueError("User not found or deleted")
+
+            # Decrypt secrets and build full config
+            full_config = profile_crypto.get_full_config(profile.config, profile.encrypted_secrets)
+
+            # Cache the profile data in Redis for future requests
+            # Store: config, encrypted_secrets, user_id, profile_id, user_uuid, profile_uuid, api_password
+            cache_data = {
+                "config": profile.config or {},
+                "encrypted_secrets": profile.encrypted_secrets,
+                "user_id": user.id,
+                "profile_id": profile.id,
+                "user_uuid": user.uuid,
+                "profile_uuid": profile.uuid,
+            }
+            # Include api_password if it exists in the config
+            api_password = full_config.get("api_password") or full_config.get("ap")
+            if api_password:
+                cache_data["api_password"] = api_password
+
+            await self._cache_uuid_profile(profile_uuid, cache_data)
+
+            # Build UserData from the full config
+            user_data = build_user_data_from_config(
+                full_config,
+                user_id=user.id,
+                profile_id=profile.id,
+                user_uuid=user.uuid,
+                profile_uuid=profile.uuid,
+            )
+            return user_data
+
+    def _build_user_data_from_cached_uuid(self, cached_data: dict) -> UserData:
+        """
+        Build UserData from UUID-cached profile data.
+
+        The cached data contains the raw config and encrypted secrets,
+        which are decrypted per-request (secrets are never stored in
+        plaintext in Redis).
+
+        Args:
+            cached_data: Dict with config, encrypted_secrets, and identification fields
+
+        Returns:
+            UserData instance
+        """
+        config = cached_data.get("config", {})
+        encrypted_secrets = cached_data.get("encrypted_secrets")
+
+        # Decrypt secrets per-request
+        full_config = profile_crypto.get_full_config(config, encrypted_secrets)
+
+        return build_user_data_from_config(
+            full_config,
+            user_id=cached_data.get("user_id"),
+            profile_id=cached_data.get("profile_id"),
+            user_uuid=cached_data.get("user_uuid"),
+            profile_uuid=cached_data.get("profile_uuid"),
+            api_password=cached_data.get("api_password"),
+        )
+
+    async def _cache_uuid_profile(self, profile_uuid: str, cache_data: dict) -> None:
+        """
+        Cache profile data in Redis keyed by profile UUID.
+
+        Args:
+            profile_uuid: The profile UUID
+            cache_data: Dict containing config, encrypted_secrets, and identification
+        """
+        cache_key = f"{UUID_CACHE_PREFIX}{profile_uuid}"
+        try:
+            await REDIS_ASYNC_CLIENT.setex(
+                cache_key,
+                UUID_CACHE_TTL,
+                json.dumps(cache_data),
+            )
+            logger.debug(f"Cached UUID profile data for {profile_uuid}")
+        except Exception as e:
+            logger.warning(f"Failed to cache UUID profile for {profile_uuid}: {e}")
+
+    @staticmethod
+    async def invalidate_uuid_cache(profile_uuid: str) -> None:
+        """
+        Invalidate the UUID-keyed Redis cache for a profile.
+
+        Call this whenever a profile's config is updated or the profile is deleted.
+
+        Args:
+            profile_uuid: The profile UUID to invalidate
+        """
+        cache_key = f"{UUID_CACHE_PREFIX}{profile_uuid}"
+        try:
+            await REDIS_ASYNC_CLIENT.delete(cache_key)
+            logger.debug(f"Invalidated UUID cache for profile {profile_uuid}")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate UUID cache for {profile_uuid}: {e}")
 
     def decode_user_data(self, encoded_user_data: str) -> UserData:
         """Decode and decrypt user data from URL-safe string"""
