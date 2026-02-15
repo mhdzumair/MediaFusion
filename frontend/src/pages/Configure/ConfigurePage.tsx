@@ -775,11 +775,11 @@ function AuthenticatedConfigurePage() {
   const editProfileId = searchParams.get('edit')
 
   // Sync selected profile when edit param or profiles change (during render, not in effect)
-  const [prevEditId, setPrevEditId] = useState(editProfileId)
-  const [prevProfiles, setPrevProfiles] = useState(profiles)
-  if (editProfileId && profiles && (prevEditId !== editProfileId || prevProfiles !== profiles)) {
-    setPrevEditId(editProfileId)
-    setPrevProfiles(profiles)
+  // Use a composite key instead of reference checks — avoids cached-reference bug
+  const editKey = editProfileId && profiles ? `${editProfileId}:${profiles.length}` : null
+  const [prevEditKey, setPrevEditKey] = useState(editKey)
+  if (editProfileId && profiles && editKey !== prevEditKey) {
+    setPrevEditKey(editKey)
     const profileIdNum = parseInt(editProfileId, 10)
     const profile = profiles.find((p) => p.id === profileIdNum)
     if (profile) {

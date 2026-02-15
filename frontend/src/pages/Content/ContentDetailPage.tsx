@@ -835,16 +835,16 @@ export function ContentDetailPage() {
   const { data: profiles } = useProfiles()
 
   // Find default profile and set both profile ID and primary provider initially (during render, not in effect)
-  const [prevProfiles, setPrevProfiles] = useState(profiles)
-  if (profiles && profiles.length > 0 && selectedProfileId === undefined && prevProfiles !== profiles) {
-    setPrevProfiles(profiles)
+  // Note: We only guard on selectedProfileId === undefined (not prev reference equality)
+  // because when profiles are already cached, useState(profiles) initializes to the same
+  // reference, making prevProfiles !== profiles always false and blocking initialization.
+  if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
     const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
     setSelectedProfileId(defaultProfile.id)
     const primaryService =
       defaultProfile.streaming_providers?.primary_service || defaultProfile.streaming_providers?.providers?.[0]?.service
-    if (primaryService) {
-      setSelectedProvider(primaryService)
-    }
+    // Default to 'p2p' when no streaming provider is configured so streams still load
+    setSelectedProvider(primaryService || 'p2p')
   }
 
   // Fetch data
@@ -921,16 +921,14 @@ export function ContentDetailPage() {
   }
 
   // Set default season when data loads (during render, not in effect)
-  const [prevSeasons, setPrevSeasons] = useState(seasons)
-  if (seasons.length > 0 && selectedSeason === undefined && prevSeasons !== seasons) {
-    setPrevSeasons(seasons)
+  // Guard only on selectedSeason === undefined to avoid cached-reference bug (same as profiles above)
+  if (seasons.length > 0 && selectedSeason === undefined) {
     setSelectedSeason(seasons[0].season_number)
   }
 
   // Set default episode when season changes (during render, not in effect)
-  const [prevEpisodes, setPrevEpisodes] = useState(episodes)
-  if (episodes.length > 0 && selectedEpisode === undefined && prevEpisodes !== episodes) {
-    setPrevEpisodes(episodes)
+  // Guard only on selectedEpisode === undefined to avoid cached-reference bug (same as profiles above)
+  if (episodes.length > 0 && selectedEpisode === undefined) {
     setSelectedEpisode(episodes[0].episode_number)
   }
 
@@ -1518,6 +1516,20 @@ export function ContentDetailPage() {
               <div className="pt-4 border-t border-border/30">
                 <p className="text-xs text-muted-foreground mb-2 font-medium">External IDs</p>
                 <ExternalIdsDisplay externalIds={item.external_ids} mediaType={catalogType} />
+              </div>
+            )}
+
+            {/* Catalogs */}
+            {item.catalogs && item.catalogs.length > 0 && (
+              <div className="pt-4 border-t border-border/30">
+                <p className="text-xs text-muted-foreground mb-2 font-medium">Catalogs</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {item.catalogs.map((catalog) => (
+                    <Badge key={catalog} variant="secondary" className="rounded-lg text-xs capitalize">
+                      {catalog.replace(/_/g, ' ')}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             )}
 

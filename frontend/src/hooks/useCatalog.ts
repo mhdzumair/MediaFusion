@@ -88,6 +88,7 @@ export function useCatalogStreams(
       provider !== undefined &&
       (catalogType === 'movie' || catalogType === 'tv' || (season !== undefined && episode !== undefined)),
     staleTime: 2 * 60 * 1000, // 2 minutes (streams can change)
+    refetchOnMount: 'always', // Always refetch when navigating to the detail page
   })
 }
 

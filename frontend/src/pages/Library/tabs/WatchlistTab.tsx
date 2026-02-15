@@ -68,9 +68,8 @@ export function WatchlistTab() {
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
   // Set default profile on load (during render, not in effect)
-  const [prevProfiles, setPrevProfiles] = useState(profiles)
-  if (profiles && profiles.length > 0 && selectedProfileId === undefined && prevProfiles !== profiles) {
-    setPrevProfiles(profiles)
+  // Only guard on selectedProfileId === undefined — prev reference guard fails when profiles are cached
+  if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
     const defaultProfile = profiles.find((p) => p.is_default) || profiles[0]
     setSelectedProfileId(defaultProfile.id)
   }

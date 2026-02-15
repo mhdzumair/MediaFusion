@@ -37,9 +37,10 @@ export function LoginPage() {
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
 
   // Initialize API key input from stored value (during render, not in effect)
-  const [prevApiKey, setPrevApiKey] = useState(apiKey)
-  if (apiKey && prevApiKey !== apiKey) {
-    setPrevApiKey(apiKey)
+  // Track whether we've done initial sync — prev value comparison fails for strings available on mount
+  const [apiKeySynced, setApiKeySynced] = useState(false)
+  if (apiKey && !apiKeySynced) {
+    setApiKeySynced(true)
     setApiKeyInput(apiKey)
   }
 
