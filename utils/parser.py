@@ -916,21 +916,33 @@ def create_exception_stream(addon_name: str, description: str, exc_file_name: st
     )
 
 
-async def fetch_downloaded_info_hashes(user_data: UserData, user_ip: str | None) -> list[str]:
-    primary_provider = user_data.get_primary_provider()
-    if not primary_provider:
+async def fetch_downloaded_info_hashes(
+    user_data: UserData,
+    user_ip: str | None,
+    provider: StreamingProvider | None = None,
+) -> list[str]:
+    """
+    Fetch downloaded info hashes from a streaming provider's watchlist.
+
+    Args:
+        user_data: User configuration
+        user_ip: User's public IP for API calls
+        provider: Specific provider to fetch from. If None, uses the primary provider.
+    """
+    target_provider = provider or user_data.get_primary_provider()
+    if not target_provider:
         return []
 
     if fetch_downloaded_info_hashes_function := mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS.get(
-        primary_provider.service
+        target_provider.service
     ):
         try:
             downloaded_info_hashes = await fetch_downloaded_info_hashes_function(
-                streaming_provider=primary_provider, user_ip=user_ip
+                streaming_provider=target_provider, user_ip=user_ip
             )
             return downloaded_info_hashes
         except Exception as error:
-            logging.exception(f"Failed to fetch downloaded info hashes for {primary_provider.service}: {error}")
+            logging.exception(f"Failed to fetch downloaded info hashes for {target_provider.service}: {error}")
             pass
 
     return []
@@ -947,7 +959,11 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
     for provider in active_providers:
         short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(provider.service, provider.service[:2].upper())
         provider_short_names.append(short_name)
-        if provider.enable_watchlist_catalogs:
+        # Only include providers that have watchlist support AND have it enabled
+        if (
+            provider.enable_watchlist_catalogs
+            and provider.service in mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS
+        ):
             watchlist_providers.append(
                 {
                     "service": provider.service,

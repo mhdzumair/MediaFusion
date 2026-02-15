@@ -167,10 +167,12 @@ async def get_catalog(
     sort = catalog_config.sort if catalog_config else None
     sort_dir = catalog_config.order if catalog_config else None
 
-    # Handle watchlist info hashes
+    # Handle watchlist info hashes - fetch from the specific provider that owns this watchlist
     info_hashes = None
     if is_watchlist_catalog:
-        info_hashes = await fetch_downloaded_info_hashes(user_data, await get_user_public_ip(request, user_data))
+        info_hashes = await fetch_downloaded_info_hashes(
+            user_data, await get_user_public_ip(request, user_data), provider=watchlist_provider
+        )
         if not info_hashes:
             return public_schemas.Metas(metas=[])
 
