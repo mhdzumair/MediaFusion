@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         ]
     ] = Field(default_factory=list)
 
+    # Content Import Toggles
+    # Disable specific content import types in the frontend UI.
+    # "iptv" disables both M3U and Xtream tabs, and hides the IPTV Sources page.
+    disabled_content_imports: list[
+        Literal["magnet", "torrent", "nzb", "iptv", "youtube", "http", "acestream", "telegram"]
+    ] = Field(default_factory=list)
+
     # Database and Cache Settings
     mongo_uri: str
     postgres_uri: str  # Primary read-write PostgreSQL URI
@@ -121,6 +128,7 @@ class Settings(BaseSettings):
 
     # Telegram Settings (Notifications)
     telegram_bot_token: str | None = None
+    telegram_bot_username: str | None = None  # Bot @username (without @), shown in the frontend import guide
     telegram_chat_id: str | None = None
     telegram_webhook_secret_token: str | None = None  # Secret token for webhook security (optional but recommended)
 

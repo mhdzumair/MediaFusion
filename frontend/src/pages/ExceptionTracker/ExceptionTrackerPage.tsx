@@ -213,9 +213,17 @@ function ExceptionRow({
   isClearing: boolean
 }) {
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="w-full p-3 md:p-4 rounded-lg border border-border/50 bg-card/50 hover:bg-muted/50 transition-all hover:border-border text-left group"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      className="w-full p-3 md:p-4 rounded-lg border border-border/50 bg-card/50 hover:bg-muted/50 transition-all hover:border-border text-left group cursor-pointer"
     >
       <div className="flex items-start justify-between gap-3">
         {/* Left side */}
@@ -252,7 +260,7 @@ function ExceptionRow({
           )}
         </Button>
       </div>
-    </button>
+    </div>
   )
 }
 

@@ -1,4 +1,6 @@
+import { useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
   Settings,
@@ -24,6 +26,7 @@ import { Logo } from '@/components/ui/logo'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
+import { getAppConfig } from '@/lib/api/instance'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/types'
 
@@ -37,6 +40,8 @@ interface NavItem {
   href: string
   icon: React.ElementType
   requiredRole?: UserRole
+  /** If set, hide this item when the given content import key is disabled. */
+  hideWhenImportDisabled?: string
 }
 
 const userNavItems: NavItem[] = [
@@ -46,7 +51,7 @@ const userNavItems: NavItem[] = [
   { title: 'Library', href: '/dashboard/library', icon: Library },
   { title: 'Content Import', href: '/dashboard/content-import', icon: FileInput },
   { title: 'Metadata Creator', href: '/dashboard/metadata-creator', icon: FilePlus2 },
-  { title: 'IPTV Sources', href: '/dashboard/iptv-sources', icon: Radio },
+  { title: 'IPTV Sources', href: '/dashboard/iptv-sources', icon: Radio, hideWhenImportDisabled: 'iptv' },
   { title: 'Contributions', href: '/dashboard/contributions', icon: GitPullRequest },
   { title: 'RSS Manager', href: '/dashboard/rss', icon: Rss },
   { title: 'Account Settings', href: '/dashboard/settings', icon: UserCog },
@@ -80,6 +85,14 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const { hasMinimumRole } = useAuth()
   const { instanceInfo } = useInstance()
 
+  const { data: appConfig } = useQuery({
+    queryKey: ['appConfig'],
+    queryFn: getAppConfig,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const disabledImports = useMemo(() => new Set(appConfig?.disabled_content_imports ?? []), [appConfig])
+
   const isActive = (href: string) => {
     if (href === '/dashboard') {
       return location.pathname === '/dashboard'
@@ -87,10 +100,11 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     return location.pathname.startsWith(href)
   }
 
-  const filterItemsByRole = (items: NavItem[]) => {
+  const filterItems = (items: NavItem[]) => {
     return items.filter((item) => {
-      if (!item.requiredRole) return true
-      return hasMinimumRole(item.requiredRole)
+      if (item.requiredRole && !hasMinimumRole(item.requiredRole)) return false
+      if (item.hideWhenImportDisabled && disabledImports.has(item.hideWhenImportDisabled)) return false
+      return true
     })
   }
 
@@ -127,7 +141,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
       <ScrollArea className="flex-1 px-3 py-4">
         <div className="space-y-1">
-          {filterItemsByRole(userNavItems).map((item) => (
+          {filterItems(userNavItems).map((item) => (
             <NavLink key={item.href} item={item} />
           ))}
         </div>
@@ -136,7 +150,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <>
             <SectionLabel>Moderation</SectionLabel>
             <div className="space-y-1">
-              {filterItemsByRole(modNavItems).map((item) => (
+              {filterItems(modNavItems).map((item) => (
                 <NavLink key={item.href} item={item} />
               ))}
             </div>
@@ -147,7 +161,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <>
             <SectionLabel>Administration</SectionLabel>
             <div className="space-y-1">
-              {filterItemsByRole(adminNavItems).map((item) => (
+              {filterItems(adminNavItems).map((item) => (
                 <NavLink key={item.href} item={item} />
               ))}
             </div>

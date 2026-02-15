@@ -1,10 +1,24 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { FileInput, Magnet, Upload, FileVideo, Tv, AlertTriangle, Newspaper, Youtube, Globe, Radio } from 'lucide-react'
+import {
+  FileInput,
+  Magnet,
+  Upload,
+  FileVideo,
+  Tv,
+  AlertTriangle,
+  Newspaper,
+  Youtube,
+  Globe,
+  Radio,
+  Send,
+} from 'lucide-react'
 import { useImportMagnet, useImportTorrent, useAnalyzeMagnet, useAnalyzeTorrent, useIPTVImportSettings } from '@/hooks'
+import { getAppConfig } from '@/lib/api/instance'
 import type { TorrentAnalyzeResponse, ImportResponse, TorrentMetaType } from '@/lib/api'
 import type { ContentType, ImportMode } from '@/lib/constants'
 
@@ -22,6 +36,7 @@ import {
   YouTubeTab,
   HTTPTab,
   AceStreamTab,
+  TelegramTab,
   TorrentImportDialog,
   ImportResultBanner,
   ContentTypeSelector,
@@ -34,12 +49,53 @@ interface LocationState {
   prefillType?: ContentType
 }
 
+/**
+ * Maps each tab value to the disable key used in `disabled_content_imports`.
+ * Both m3u and xtream are controlled by the single "iptv" key.
+ */
+const TAB_DISABLE_KEY: Record<string, string> = {
+  magnet: 'magnet',
+  torrent: 'torrent',
+  nzb: 'nzb',
+  m3u: 'iptv',
+  xtream: 'iptv',
+  youtube: 'youtube',
+  http: 'http',
+  acestream: 'acestream',
+  telegram: 'telegram',
+}
+
+/** Ordered list of all import tab values. */
+const ALL_TABS = ['magnet', 'torrent', 'nzb', 'm3u', 'xtream', 'youtube', 'http', 'acestream', 'telegram'] as const
+
 export function ContentImportPage() {
   const location = useLocation()
   const locationState = location.state as LocationState | null
 
+  // Fetch app config to determine which import types are disabled
+  const { data: appConfig } = useQuery({
+    queryKey: ['appConfig'],
+    queryFn: getAppConfig,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const disabledImports = useMemo(() => new Set(appConfig?.disabled_content_imports ?? []), [appConfig])
+
+  /** Check whether a tab is enabled (its disable key is not in the disabled set). */
+  const isTabEnabled = useCallback((tab: string) => !disabledImports.has(TAB_DISABLE_KEY[tab]), [disabledImports])
+
+  /** First enabled tab, used as the default active tab. */
+  const defaultTab = useMemo(() => ALL_TABS.find(isTabEnabled) ?? 'magnet', [isTabEnabled])
+
   const [activeTab, setActiveTab] = useState('magnet')
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+
+  // When config loads, ensure active tab is not a disabled one
+  useEffect(() => {
+    if (appConfig && !isTabEnabled(activeTab)) {
+      setActiveTab(defaultTab)
+    }
+  }, [appConfig, activeTab, isTabEnabled, defaultTab])
 
   // Content type for initial analysis
   const [selectedContentType, setSelectedContentType] = useState<ContentType>(locationState?.prefillType || 'movie')
@@ -204,242 +260,298 @@ export function ContentImportPage() {
 
       {/* Import Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 p-1 bg-muted/50 rounded-xl gap-1">
-          <TabsTrigger
-            value="magnet"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Magnet className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">Magnet</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="torrent"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Upload className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">Torrent</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="nzb"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Newspaper className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">NZB</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="m3u"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <FileVideo className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">M3U</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="xtream"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Tv className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">Xtream</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="youtube"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Youtube className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-red-500" />
-            <span className="hidden sm:inline">YouTube</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="http"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Globe className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">HTTP</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="acestream"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <Radio className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-green-500" />
-            <span className="hidden sm:inline">AceStream</span>
-          </TabsTrigger>
+        <TabsList className="flex w-full flex-wrap p-1 bg-muted/50 rounded-xl gap-1">
+          {isTabEnabled('magnet') && (
+            <TabsTrigger
+              value="magnet"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Magnet className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Magnet</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('torrent') && (
+            <TabsTrigger
+              value="torrent"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Upload className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Torrent</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('nzb') && (
+            <TabsTrigger
+              value="nzb"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Newspaper className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">NZB</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('m3u') && (
+            <TabsTrigger
+              value="m3u"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <FileVideo className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">M3U</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('xtream') && (
+            <TabsTrigger
+              value="xtream"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Tv className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Xtream</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('youtube') && (
+            <TabsTrigger
+              value="youtube"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Youtube className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-red-500" />
+              <span className="hidden sm:inline">YouTube</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('http') && (
+            <TabsTrigger
+              value="http"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Globe className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">HTTP</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('acestream') && (
+            <TabsTrigger
+              value="acestream"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Radio className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-green-500" />
+              <span className="hidden sm:inline">AceStream</span>
+            </TabsTrigger>
+          )}
+          {isTabEnabled('telegram') && (
+            <TabsTrigger
+              value="telegram"
+              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+            >
+              <Send className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-blue-500" />
+              <span className="hidden sm:inline">Telegram</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Magnet Link Tab */}
-        <TabsContent value="magnet" className="space-y-6">
-          {/* Content Type Selector */}
-          <Card className="glass border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ContentTypeSelector
-                value={selectedContentType}
-                importMode={importMode}
-                onChange={(newType) => {
-                  setSelectedContentType(newType)
-                  // Reset import mode when content type changes
-                  setImportMode('single')
-                }}
-                onImportModeChange={setImportMode}
-                showImportMode={selectedContentType !== 'sports'}
-                excludeTypes={['tv']}
-              />
-            </CardContent>
-          </Card>
+        {isTabEnabled('magnet') && (
+          <TabsContent value="magnet" className="space-y-6">
+            {/* Content Type Selector */}
+            <Card className="glass border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Content Type</CardTitle>
+                <CardDescription className="text-sm">
+                  Select the type of content you&apos;re importing
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ContentTypeSelector
+                  value={selectedContentType}
+                  importMode={importMode}
+                  onChange={(newType) => {
+                    setSelectedContentType(newType)
+                    // Reset import mode when content type changes
+                    setImportMode('single')
+                  }}
+                  onImportModeChange={setImportMode}
+                  showImportMode={selectedContentType !== 'sports'}
+                  excludeTypes={['tv']}
+                />
+              </CardContent>
+            </Card>
 
-          <MagnetTab
-            onAnalysisComplete={handleMagnetAnalysis}
-            onError={handleError}
-            contentType={selectedContentType}
-            initialMagnet={locationState?.prefillMagnet}
-            autoAnalyze={!!locationState?.prefillMagnet}
-          />
-        </TabsContent>
+            <MagnetTab
+              onAnalysisComplete={handleMagnetAnalysis}
+              onError={handleError}
+              contentType={selectedContentType}
+              initialMagnet={locationState?.prefillMagnet}
+              autoAnalyze={!!locationState?.prefillMagnet}
+            />
+          </TabsContent>
+        )}
 
         {/* Torrent File Tab */}
-        <TabsContent value="torrent" className="space-y-6">
-          {/* Content Type Selector */}
-          <Card className="glass border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ContentTypeSelector
-                value={selectedContentType}
-                importMode={importMode}
-                onChange={(newType) => {
-                  setSelectedContentType(newType)
-                  // Reset import mode when content type changes
-                  setImportMode('single')
-                }}
-                onImportModeChange={setImportMode}
-                showImportMode={selectedContentType !== 'sports'}
-                excludeTypes={['tv']}
-              />
-            </CardContent>
-          </Card>
+        {isTabEnabled('torrent') && (
+          <TabsContent value="torrent" className="space-y-6">
+            {/* Content Type Selector */}
+            <Card className="glass border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Content Type</CardTitle>
+                <CardDescription className="text-sm">
+                  Select the type of content you&apos;re importing
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ContentTypeSelector
+                  value={selectedContentType}
+                  importMode={importMode}
+                  onChange={(newType) => {
+                    setSelectedContentType(newType)
+                    // Reset import mode when content type changes
+                    setImportMode('single')
+                  }}
+                  onImportModeChange={setImportMode}
+                  showImportMode={selectedContentType !== 'sports'}
+                  excludeTypes={['tv']}
+                />
+              </CardContent>
+            </Card>
 
-          <TorrentTab
-            onAnalysisComplete={handleTorrentAnalysis}
-            onError={handleError}
-            contentType={selectedContentType}
-          />
-        </TabsContent>
+            <TorrentTab
+              onAnalysisComplete={handleTorrentAnalysis}
+              onError={handleError}
+              contentType={selectedContentType}
+            />
+          </TabsContent>
+        )}
 
         {/* NZB Tab */}
-        <TabsContent value="nzb" className="space-y-6">
-          {/* Content Type Selector */}
-          <Card className="glass border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">Select the type of content you&apos;re importing</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ContentTypeSelector
-                value={selectedContentType}
-                importMode={importMode}
-                onChange={(newType) => {
-                  setSelectedContentType(newType)
-                  setImportMode('single')
-                }}
-                onImportModeChange={setImportMode}
-                showImportMode={selectedContentType !== 'sports'}
-                excludeTypes={['tv']}
-              />
-            </CardContent>
-          </Card>
+        {isTabEnabled('nzb') && (
+          <TabsContent value="nzb" className="space-y-6">
+            {/* Content Type Selector */}
+            <Card className="glass border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Content Type</CardTitle>
+                <CardDescription className="text-sm">
+                  Select the type of content you&apos;re importing
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ContentTypeSelector
+                  value={selectedContentType}
+                  importMode={importMode}
+                  onChange={(newType) => {
+                    setSelectedContentType(newType)
+                    setImportMode('single')
+                  }}
+                  onImportModeChange={setImportMode}
+                  showImportMode={selectedContentType !== 'sports'}
+                  excludeTypes={['tv']}
+                />
+              </CardContent>
+            </Card>
 
-          <NZBTab
-            onAnalysisComplete={(analysis) => {
-              // For now, show a success message - full import dialog would be similar to TorrentImportDialog
-              if (analysis.matches && analysis.matches.length > 0) {
-                handleSuccess(
-                  `NZB analyzed: ${analysis.nzb_title || 'Unknown'} - ${analysis.matches.length} matches found`,
-                )
-              } else {
-                handleError('No metadata matches found for this NZB')
-              }
-            }}
-            onError={handleError}
-            contentType={selectedContentType}
-          />
-        </TabsContent>
+            <NZBTab
+              onAnalysisComplete={(analysis) => {
+                // For now, show a success message - full import dialog would be similar to TorrentImportDialog
+                if (analysis.matches && analysis.matches.length > 0) {
+                  handleSuccess(
+                    `NZB analyzed: ${analysis.nzb_title || 'Unknown'} - ${analysis.matches.length} matches found`,
+                  )
+                } else {
+                  handleError('No metadata matches found for this NZB')
+                }
+              }}
+              onError={handleError}
+              contentType={selectedContentType}
+            />
+          </TabsContent>
+        )}
 
         {/* M3U Playlist Tab */}
-        <TabsContent value="m3u" className="space-y-6">
-          {iptvSettings?.enabled === false ? (
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>IPTV import feature is disabled on this server.</AlertDescription>
-            </Alert>
-          ) : (
-            <M3UTab onSuccess={handleSuccess} onError={handleError} iptvSettings={iptvSettings} />
-          )}
-        </TabsContent>
+        {isTabEnabled('m3u') && (
+          <TabsContent value="m3u" className="space-y-6">
+            {iptvSettings?.enabled === false ? (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>IPTV import feature is disabled on this server.</AlertDescription>
+              </Alert>
+            ) : (
+              <M3UTab onSuccess={handleSuccess} onError={handleError} iptvSettings={iptvSettings} />
+            )}
+          </TabsContent>
+        )}
 
         {/* Xtream Codes Tab */}
-        <TabsContent value="xtream" className="space-y-6">
-          {iptvSettings?.enabled === false ? (
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>IPTV import feature is disabled on this server.</AlertDescription>
-            </Alert>
-          ) : (
-            <XtreamTab onSuccess={handleSuccess} onError={handleError} iptvSettings={iptvSettings} />
-          )}
-        </TabsContent>
+        {isTabEnabled('xtream') && (
+          <TabsContent value="xtream" className="space-y-6">
+            {iptvSettings?.enabled === false ? (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>IPTV import feature is disabled on this server.</AlertDescription>
+              </Alert>
+            ) : (
+              <XtreamTab onSuccess={handleSuccess} onError={handleError} iptvSettings={iptvSettings} />
+            )}
+          </TabsContent>
+        )}
 
         {/* YouTube Tab */}
-        <TabsContent value="youtube" className="space-y-6">
-          {/* Content Type Selector */}
-          <Card className="glass border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">
-                Select the type of content this YouTube video belongs to
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ContentTypeSelector
-                value={selectedContentType}
-                importMode="single"
-                onChange={setSelectedContentType}
-                showImportMode={false}
-                excludeTypes={['tv']}
-              />
-            </CardContent>
-          </Card>
+        {isTabEnabled('youtube') && (
+          <TabsContent value="youtube" className="space-y-6">
+            {/* Content Type Selector */}
+            <Card className="glass border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Content Type</CardTitle>
+                <CardDescription className="text-sm">
+                  Select the type of content this YouTube video belongs to
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ContentTypeSelector
+                  value={selectedContentType}
+                  importMode="single"
+                  onChange={setSelectedContentType}
+                  showImportMode={false}
+                  excludeTypes={['tv']}
+                />
+              </CardContent>
+            </Card>
 
-          <YouTubeTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
-        </TabsContent>
+            <YouTubeTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
+          </TabsContent>
+        )}
 
         {/* HTTP Tab */}
-        <TabsContent value="http" className="space-y-6">
-          {/* Content Type Selector */}
-          <Card className="glass border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Content Type</CardTitle>
-              <CardDescription className="text-sm">Select the type of content for this HTTP stream</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ContentTypeSelector
-                value={selectedContentType}
-                importMode="single"
-                onChange={setSelectedContentType}
-                showImportMode={false}
-                excludeTypes={['tv']}
-              />
-            </CardContent>
-          </Card>
+        {isTabEnabled('http') && (
+          <TabsContent value="http" className="space-y-6">
+            {/* Content Type Selector */}
+            <Card className="glass border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Content Type</CardTitle>
+                <CardDescription className="text-sm">
+                  Select the type of content for this HTTP stream
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ContentTypeSelector
+                  value={selectedContentType}
+                  importMode="single"
+                  onChange={setSelectedContentType}
+                  showImportMode={false}
+                  excludeTypes={['tv']}
+                />
+              </CardContent>
+            </Card>
 
-          <HTTPTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
-        </TabsContent>
+            <HTTPTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
+          </TabsContent>
+        )}
 
         {/* AceStream Tab */}
-        <TabsContent value="acestream" className="space-y-6">
-          <AceStreamTab onSuccess={handleSuccess} onError={handleError} />
-        </TabsContent>
+        {isTabEnabled('acestream') && (
+          <TabsContent value="acestream" className="space-y-6">
+            <AceStreamTab onSuccess={handleSuccess} onError={handleError} />
+          </TabsContent>
+        )}
+
+        {/* Telegram Bot Tab */}
+        {isTabEnabled('telegram') && (
+          <TabsContent value="telegram" className="space-y-6">
+            <TelegramTab telegram={appConfig?.telegram} />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Enhanced Torrent Import Dialog */}

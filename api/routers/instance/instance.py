@@ -29,6 +29,7 @@ class TelegramFeatureConfig(BaseModel):
 
     enabled: bool  # Whether Telegram streaming is enabled on this instance
     bot_configured: bool  # Whether the Telegram bot is configured
+    bot_username: str | None = None  # Bot @username for deep links (without @)
     scraping_enabled: bool  # Whether Telegram scraping is enabled
 
 
@@ -45,6 +46,7 @@ class AppConfig(BaseModel):
     branding_description: str
     is_public_instance: bool
     disabled_providers: list[str]
+    disabled_content_imports: list[str]
     authentication_required: bool
     torznab_enabled: bool
     telegram: TelegramFeatureConfig
@@ -88,11 +90,13 @@ async def get_app_config():
         branding_description=settings.branding_description,
         is_public_instance=settings.is_public_instance,
         disabled_providers=settings.disabled_providers,
+        disabled_content_imports=settings.disabled_content_imports,
         authentication_required=settings.api_password is not None and not settings.is_public_instance,
         torznab_enabled=settings.enable_torznab_api,
         telegram=TelegramFeatureConfig(
             enabled=settings.is_scrap_from_telegram,
             bot_configured=bool(settings.telegram_bot_token),
+            bot_username=settings.telegram_bot_username,
             scraping_enabled=settings.is_scrap_from_telegram,
         ),
     )

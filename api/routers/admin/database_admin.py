@@ -1075,16 +1075,86 @@ async def cleanup_orphans(
                     )
                     count = result.scalar() or 0
                 else:
-                    result = await session.execute(
-                        text("""
-                        DELETE FROM stream s
-                        USING (
+                    # First, delete from all child tables that reference stream.id.
+                    # Not all FKs have ON DELETE CASCADE, so we clean them up explicitly.
+                    orphan_ids_cte = """
+                        WITH orphan_streams AS (
                             SELECT s2.id FROM stream s2
                             LEFT JOIN stream_media_link sml ON s2.id = sml.stream_id
                             WHERE sml.id IS NULL
-                        ) orphans
-                        WHERE s.id = orphans.id
-                    """)
+                        )
+                    """
+
+                    # Delete grandchild tables first (telegram_user_forward -> telegram_stream)
+                    await session.execute(
+                        text(f"""
+                            {orphan_ids_cte}
+                            DELETE FROM telegram_user_forward
+                            WHERE telegram_stream_id IN (
+                                SELECT ts.id FROM telegram_stream ts
+                                WHERE ts.stream_id IN (SELECT id FROM orphan_streams)
+                            )
+                        """)
+                    )
+
+                    # Delete file_media_link entries for orphaned stream files
+                    await session.execute(
+                        text(f"""
+                            {orphan_ids_cte}
+                            DELETE FROM file_media_link
+                            WHERE file_id IN (
+                                SELECT sf.id FROM stream_file sf
+                                WHERE sf.stream_id IN (SELECT id FROM orphan_streams)
+                            )
+                        """)
+                    )
+
+                    # Delete torrent_tracker_link entries for orphaned torrent streams
+                    await session.execute(
+                        text(f"""
+                            {orphan_ids_cte}
+                            DELETE FROM torrent_tracker_link
+                            WHERE torrent_id IN (
+                                SELECT ts.id FROM torrent_stream ts
+                                WHERE ts.stream_id IN (SELECT id FROM orphan_streams)
+                            )
+                        """)
+                    )
+
+                    # Delete from all direct child tables that reference stream.id
+                    child_tables = [
+                        "http_stream",
+                        "torrent_stream",
+                        "youtube_stream",
+                        "usenet_stream",
+                        "telegram_stream",
+                        "external_link_stream",
+                        "acestream_stream",
+                        "stream_file",
+                        "stream_language_link",
+                        "stream_audio_link",
+                        "stream_channel_link",
+                        "stream_hdr_link",
+                        "stream_votes",
+                        "stream_suggestions",
+                        "playback_tracking",
+                    ]
+                    for child_table in child_tables:
+                        await session.execute(
+                            text(f"""
+                                {orphan_ids_cte}
+                                DELETE FROM {child_table}
+                                WHERE stream_id IN (SELECT id FROM orphan_streams)
+                            """)
+                        )
+
+                    # Now delete the orphaned streams themselves
+                    result = await session.execute(
+                        text(f"""
+                            {orphan_ids_cte}
+                            DELETE FROM stream
+                            WHERE id IN (SELECT id FROM orphan_streams)
+                        """)
                     )
                     count = result.rowcount
 

@@ -20,6 +20,7 @@ export interface InstanceInfo {
 export interface TelegramFeatureConfig {
   enabled: boolean // Whether Telegram streaming is enabled on this instance
   bot_configured: boolean // Whether the Telegram bot is configured
+  bot_username: string | null // Bot @username for deep links (without @)
   scraping_enabled: boolean // Whether Telegram scraping is enabled
 }
 
@@ -34,6 +35,7 @@ export interface AppConfig {
   branding_description: string // Can contain HTML
   is_public_instance: boolean
   disabled_providers: string[]
+  disabled_content_imports: string[]
   authentication_required: boolean
   torznab_enabled: boolean
   telegram: TelegramFeatureConfig
