@@ -17,6 +17,7 @@ interface InstanceContextType {
   apiKey: string | null
   isApiKeyRequired: boolean
   isApiKeySet: boolean
+  setupRequired: boolean
   setApiKey: (key: string) => void
   clearApiKey: () => void
   refetchInstanceInfo: () => Promise<void>
@@ -76,6 +77,7 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
   // Memoize computed values
   const isApiKeyRequired = useMemo(() => instanceInfo?.requires_api_key ?? false, [instanceInfo?.requires_api_key])
   const isApiKeySet = useMemo(() => !!apiKey, [apiKey])
+  const setupRequired = useMemo(() => instanceInfo?.setup_required ?? false, [instanceInfo?.setup_required])
 
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo<InstanceContextType>(
@@ -86,6 +88,7 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
       apiKey,
       isApiKeyRequired,
       isApiKeySet,
+      setupRequired,
       setApiKey: handleSetApiKey,
       clearApiKey: handleClearApiKey,
       refetchInstanceInfo: handleRefetch,
@@ -97,6 +100,7 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
       apiKey,
       isApiKeyRequired,
       isApiKeySet,
+      setupRequired,
       handleSetApiKey,
       handleClearApiKey,
       handleRefetch,

@@ -7,10 +7,11 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import { InstanceProvider } from '@/contexts/InstanceContext'
 import { RpdbProvider } from '@/contexts/RpdbContext'
 import { AppShell, PublicLayout } from '@/components/layout'
-import { AuthGuard, GuestGuard, RoleGuard, OptionalAuthGuard } from '@/components/guards'
+import { AuthGuard, GuestGuard, RoleGuard, OptionalAuthGuard, SetupGuard } from '@/components/guards'
 
 // Pages
 import { HomePage } from '@/pages/Home'
+import { SetupWizardPage } from '@/pages/Setup'
 import { DashboardPage } from '@/pages/Dashboard'
 import { LoginPage, RegisterPage, ExtensionAuthPage, TelegramLoginPage } from '@/pages/Auth'
 import { ConfigurePage } from '@/pages/Configure'
@@ -45,18 +46,30 @@ const queryClient = new QueryClient({
 function AppRoutes() {
   return (
     <Routes>
+      {/* Setup wizard - NOT wrapped by SetupGuard (it IS the setup destination) */}
+      <Route path="/setup" element={<SetupWizardPage />} />
+
       {/* Public home page - redirects to dashboard if authenticated */}
-      <Route index element={<HomePage />} />
+      <Route
+        index
+        element={
+          <SetupGuard>
+            <HomePage />
+          </SetupGuard>
+        }
+      />
 
       {/* Public configure page - works both authenticated and anonymous */}
       <Route
         path="/configure"
         element={
-          <OptionalAuthGuard>
-            <PublicLayout>
-              <ConfigurePage />
-            </PublicLayout>
-          </OptionalAuthGuard>
+          <SetupGuard>
+            <OptionalAuthGuard>
+              <PublicLayout>
+                <ConfigurePage />
+              </PublicLayout>
+            </OptionalAuthGuard>
+          </SetupGuard>
         }
       />
 
@@ -64,30 +77,43 @@ function AppRoutes() {
       <Route
         path="/login"
         element={
-          <GuestGuard>
-            <LoginPage />
-          </GuestGuard>
+          <SetupGuard>
+            <GuestGuard>
+              <LoginPage />
+            </GuestGuard>
+          </SetupGuard>
         }
       />
       <Route
         path="/register"
         element={
-          <GuestGuard>
-            <RegisterPage />
-          </GuestGuard>
+          <SetupGuard>
+            <GuestGuard>
+              <RegisterPage />
+            </GuestGuard>
+          </SetupGuard>
         }
       />
 
       {/* Extension auth - standalone page for browser extension authorization */}
-      <Route path="/extension-auth" element={<ExtensionAuthPage />} />
+      <Route
+        path="/extension-auth"
+        element={
+          <SetupGuard>
+            <ExtensionAuthPage />
+          </SetupGuard>
+        }
+      />
 
       {/* Telegram login - requires authentication, redirects to login if not authenticated */}
       <Route
         path="/telegram/login"
         element={
-          <OptionalAuthGuard>
-            <TelegramLoginPage />
-          </OptionalAuthGuard>
+          <SetupGuard>
+            <OptionalAuthGuard>
+              <TelegramLoginPage />
+            </OptionalAuthGuard>
+          </SetupGuard>
         }
       />
 
@@ -95,9 +121,11 @@ function AppRoutes() {
       <Route
         path="/dashboard"
         element={
-          <AuthGuard>
-            <AppShell />
-          </AuthGuard>
+          <SetupGuard>
+            <AuthGuard>
+              <AppShell />
+            </AuthGuard>
+          </SetupGuard>
         }
       >
         {/* Dashboard index */}

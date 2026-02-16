@@ -73,6 +73,23 @@ handle_migration_bridge
 echo "Running Alembic migrations..."
 alembic upgrade head
 
+# Check if this is a fresh deployment (no users in the database)
+USER_COUNT=$(psql "$PSQL_URI" -tAc "SELECT COUNT(*) FROM \"user\"" 2>/dev/null || echo "0")
+if [ "$USER_COUNT" = "0" ]; then
+    echo ""
+    echo "=========================================="
+    echo "FRESH DEPLOYMENT DETECTED"
+    echo "=========================================="
+    echo "A bootstrap admin will be created on first startup"
+    echo "with a randomly generated password."
+    echo ""
+    echo "Check the application log for the bootstrap credentials,"
+    echo "then open the web UI to complete the initial setup."
+    echo "You will also need your API_PASSWORD to proceed."
+    echo "=========================================="
+    echo ""
+fi
+
 echo "=========================================="
 echo "Starting FastAPI server..."
 echo "=========================================="

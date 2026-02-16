@@ -11,10 +11,17 @@ const API_KEY_STORAGE_KEY = 'mediafusion_api_key'
 export interface InstanceInfo {
   is_public: boolean
   requires_api_key: boolean
+  setup_required: boolean
   addon_name: string
   version: string
   logo_url: string
   branding_svg: string | null // Optional partner/host SVG logo URL
+}
+
+export interface SetupCompleteRequest {
+  email: string
+  username?: string
+  password: string
 }
 
 export interface TelegramFeatureConfig {
@@ -110,6 +117,53 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
   }
 }
 
+/**
+ * Login as the bootstrap admin during initial setup.
+ * This is the ONLY way to authenticate as the bootstrap admin.
+ * The normal /auth/login endpoint blocks the bootstrap account.
+ * Requires the instance API_PASSWORD for additional security.
+ */
+export async function setupLogin(
+  email: string,
+  password: string,
+  apiPassword: string,
+): Promise<import('@/types').AuthResponse> {
+  const response = await fetch(`${API_BASE_URL}/instance/setup/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, api_password: apiPassword }),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Setup login failed' }))
+    throw new Error(error.detail || 'Setup login failed')
+  }
+  return response.json()
+}
+
+/**
+ * Complete the initial admin setup.
+ * Creates the deployer's admin account and deactivates the bootstrap admin.
+ * Requires authentication as the bootstrap admin.
+ */
+export async function completeSetup(
+  data: SetupCompleteRequest,
+  accessToken: string,
+): Promise<import('@/types').AuthResponse> {
+  const response = await fetch(`${API_BASE_URL}/instance/setup/complete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Setup failed' }))
+    throw new Error(error.detail || 'Setup failed')
+  }
+  return response.json()
+}
+
 export const instanceApi = {
   getInstanceInfo,
   getAppConfig,
@@ -117,4 +171,5 @@ export const instanceApi = {
   setStoredApiKey,
   clearStoredApiKey,
   validateApiKey,
+  completeSetup,
 }

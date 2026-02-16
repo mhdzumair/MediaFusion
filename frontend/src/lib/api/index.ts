@@ -7,9 +7,12 @@ export {
   getStoredApiKey,
   setStoredApiKey,
   clearStoredApiKey,
+  setupLogin,
+  completeSetup,
   type InstanceInfo,
   type AppConfig,
   type TelegramFeatureConfig,
+  type SetupCompleteRequest,
 } from './instance'
 export {
   profilesApi,
