@@ -16,6 +16,7 @@ from tqdm.asyncio import tqdm
 
 from db.enums import UserRole
 from db.models import RSSFeed, RSSFeedCatalogPattern, User
+from migrations.mongo_models import RSSFeed as OldRSSFeed
 
 # Set up logging with more detailed format
 logging.basicConfig(

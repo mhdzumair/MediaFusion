@@ -434,9 +434,7 @@ async def parse_stream_data(
         return provider_streams, filtered_reasons
 
     # Run all providers in parallel
-    provider_results = await asyncio.gather(
-        *[_process_single_provider(p) for p in provider_list]
-    )
+    provider_results = await asyncio.gather(*[_process_single_provider(p) for p in provider_list])
 
     per_provider_streams: list[list[Stream] | list[RichStream]] = []
     last_filtered_reasons: dict = {}
@@ -977,10 +975,7 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(provider.service, provider.service[:2].upper())
         provider_short_names.append(short_name)
         # Only include providers that have watchlist support AND have it enabled
-        if (
-            provider.enable_watchlist_catalogs
-            and provider.service in mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS
-        ):
+        if provider.enable_watchlist_catalogs and provider.service in mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS:
             watchlist_providers.append(
                 {
                     "service": provider.service,

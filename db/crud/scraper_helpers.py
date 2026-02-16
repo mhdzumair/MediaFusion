@@ -322,9 +322,7 @@ async def get_or_create_metadata(
     poster_url = metadata_data.get("poster")
     background_url = metadata_data.get("background") or metadata_data.get("backdrop")
     if poster_url or background_url:
-        mf_provider = await get_or_create_metadata_provider(
-            session, "mediafusion", "MediaFusion"
-        )
+        mf_provider = await get_or_create_metadata_provider(session, "mediafusion", "MediaFusion")
         if poster_url:
             session.add(
                 MediaImage(
@@ -1718,7 +1716,6 @@ async def store_new_usenet_streams(
 
     # Invalidate stream cache for all affected media
     if media_ids_to_update:
-
         for media_id in media_ids_to_update:
             await invalidate_media_stream_cache(media_id)
 

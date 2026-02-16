@@ -37,9 +37,7 @@ class MetadataSearchPipeline:
         if not tasks:
             return provider_metadata
 
-        results = await asyncio.gather(
-            *tasks.values(), return_exceptions=True
-        )
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
         for provider_name, result in zip(tasks.keys(), results):
             if isinstance(result, Exception):
@@ -81,20 +79,14 @@ class MetadataSearchPipeline:
         created_at = item.get("created_at")
 
         try:
-            metadata = await meta_fetcher.search_metadata(
-                title, year, media_type, created_at
-            )
+            metadata = await meta_fetcher.search_metadata(title, year, media_type, created_at)
         except Exception as e:
-            logging.warning(
-                "Metadata search failed for '%s' (%s): %s", title, year, e
-            )
+            logging.warning("Metadata search failed for '%s' (%s): %s", title, year, e)
             return item
 
         if metadata:
             imdb_id = metadata.get("imdb_id")
-            logging.info(
-                "Resolved metadata for '%s' (%s) -> %s", title, year, imdb_id
-            )
+            logging.info("Resolved metadata for '%s' (%s) -> %s", title, year, imdb_id)
             item["imdb_id"] = imdb_id
             # Preserve spider-provided fields, only fill in missing ones
             if not item.get("poster") and metadata.get("poster"):
@@ -107,9 +99,7 @@ class MetadataSearchPipeline:
             # Start with IMDB data, then fetch TMDB + TVDB in parallel
             provider_metadata = {"imdb": metadata}
             if imdb_id:
-                additional = await self._fetch_additional_providers(
-                    imdb_id, media_type, title
-                )
+                additional = await self._fetch_additional_providers(imdb_id, media_type, title)
                 provider_metadata.update(additional)
 
             # Store all provider metadata so the store pipeline can

@@ -443,13 +443,9 @@ class TimingMiddleware(BaseHTTPMiddleware):
                 sanitized_path = request.url.path
                 # Mask secret path params (same logic as SecureLoggingMiddleware)
                 if request.path_params.get("secret_str"):
-                    sanitized_path = sanitized_path.replace(
-                        request.path_params["secret_str"], "*MASKED*"
-                    )
+                    sanitized_path = sanitized_path.replace(request.path_params["secret_str"], "*MASKED*")
                 if request.path_params.get("existing_secret_str"):
-                    sanitized_path = sanitized_path.replace(
-                        request.path_params["existing_secret_str"], "*MASKED*"
-                    )
+                    sanitized_path = sanitized_path.replace(request.path_params["existing_secret_str"], "*MASKED*")
 
                 # Extract route template from the matched route
                 route_template = None

@@ -36,16 +36,12 @@ async def fetch_poster_image(url: str, max_retries: int = 3) -> bytes:
         if settings.requests_proxy_url:
             connector = ProxyConnector.from_url(settings.requests_proxy_url)
         try:
-            async with aiohttp.ClientSession(
-                connector=connector, timeout=timeout
-            ) as session:
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 async with session.get(url, headers=const.UA_HEADER) as response:
                     response.raise_for_status()
                     content_type = response.headers.get("Content-Type", "")
                     if not content_type.lower().startswith("image/"):
-                        raise ValueError(
-                            f"Unexpected content type: {content_type} for URL: {url}"
-                        )
+                        raise ValueError(f"Unexpected content type: {content_type} for URL: {url}")
                     content = await response.read()
 
                     # Cache the image in Redis for 1 hour
@@ -56,15 +52,10 @@ async def fetch_poster_image(url: str, max_retries: int = 3) -> bytes:
             last_exception = e
             if attempt < max_retries:
                 wait_time = 2**attempt  # exponential backoff: 2s, 4s
-                logging.warning(
-                    f"Attempt {attempt}/{max_retries} failed for {url}: {e}. "
-                    f"Retrying in {wait_time}s..."
-                )
+                logging.warning(f"Attempt {attempt}/{max_retries} failed for {url}: {e}. Retrying in {wait_time}s...")
                 await asyncio.sleep(wait_time)
             else:
-                logging.error(
-                    f"All {max_retries} attempts failed for {url}: {e}"
-                )
+                logging.error(f"All {max_retries} attempts failed for {url}: {e}")
 
     raise last_exception
 

@@ -254,7 +254,9 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         usenet_result = await session.exec(usenet_query)
         usenet_streams = usenet_result.unique().all()
         _usenet_exclude = {"nzb_content"}
-        usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude) for u in usenet_streams]
+        usenet_data = [
+            UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude) for u in usenet_streams
+        ]
 
         # Query telegram streams
         telegram_query = (
@@ -298,10 +300,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         )
         http_result = await session.exec(http_query)
         http_streams = http_result.unique().all()
-        http_data = [
-            {"name": hs.stream.name, "source": hs.stream.source, "url": hs.url}
-            for hs in http_streams
-        ]
+        http_data = [{"name": hs.stream.name, "source": hs.stream.source, "url": hs.url} for hs in http_streams]
 
         # Query AceStream streams
         acestream_query = (
@@ -344,9 +343,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
     }
 
 
-async def _get_cached_movie_streams(
-    media_id: int, visibility_filter
-) -> dict:
+async def _get_cached_movie_streams(media_id: int, visibility_filter) -> dict:
     """Get raw movie stream data with Redis caching."""
     cache_key = f"{STREAM_CACHE_PREFIX}movie:{media_id}"
 
@@ -367,9 +364,7 @@ async def _get_cached_movie_streams(
     return data
 
 
-async def _fetch_series_raw_streams(
-    media_id: int, season: int, episode: int, visibility_filter
-) -> dict:
+async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, visibility_filter) -> dict:
     """Fetch all raw stream data for a series episode from DB (read replica)."""
     async with get_read_session_context() as session:
         media = await session.get(Media, media_id)
@@ -437,8 +432,7 @@ async def _fetch_series_raw_streams(
         usenet_streams = usenet_result.unique().all()
         _usenet_exclude = {"nzb_content"}
         usenet_data = [
-            UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude)
-            for u in usenet_streams
+            UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude) for u in usenet_streams
         ]
 
         # Telegram streams
@@ -493,10 +487,7 @@ async def _fetch_series_raw_streams(
         )
         http_result = await session.exec(http_query)
         http_streams = http_result.unique().all()
-        http_data = [
-            {"name": hs.stream.name, "source": hs.stream.source, "url": hs.url}
-            for hs in http_streams
-        ]
+        http_data = [{"name": hs.stream.name, "source": hs.stream.source, "url": hs.url} for hs in http_streams]
 
         # AceStream streams (uses StreamMediaLink, not FileMediaLink)
         acestream_query = (
@@ -539,9 +530,7 @@ async def _fetch_series_raw_streams(
     }
 
 
-async def _get_cached_series_streams(
-    media_id: int, season: int, episode: int, visibility_filter
-) -> dict:
+async def _get_cached_series_streams(media_id: int, season: int, episode: int, visibility_filter) -> dict:
     """Get raw series stream data with Redis caching."""
     cache_key = f"{STREAM_CACHE_PREFIX}series:{media_id}:{season}:{episode}"
 
@@ -572,9 +561,7 @@ def _deserialize_http_streams(http_data: list[dict]) -> list[StremioStream]:
     ]
 
 
-def _deserialize_http_streams_series(
-    http_data: list[dict], season: int, episode: int
-) -> list[StremioStream]:
+def _deserialize_http_streams_series(http_data: list[dict], season: int, episode: int) -> list[StremioStream]:
     """Deserialize cached HTTP stream data for series into Stremio streams."""
     return [
         StremioStream(

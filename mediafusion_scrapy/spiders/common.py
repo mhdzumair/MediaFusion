@@ -180,8 +180,7 @@ class CommonTamilSpider(scrapy.Spider):
 
         # Fallback: try the legacy selector (pre-2025 forum layout)
         return response.css(
-            "div[data-commenttype='forums'] img::attr(data-src),"
-            " div[data-commenttype='forums'] img::attr(src)"
+            "div[data-commenttype='forums'] img::attr(data-src), div[data-commenttype='forums'] img::attr(src)"
         ).get()
 
     def parse_movie_page(self, response):

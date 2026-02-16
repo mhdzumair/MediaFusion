@@ -1165,9 +1165,7 @@ async def get_canonical_external_ids_batch(
 
     # Batch cache all resolved IDs concurrently
     if to_cache:
-        await asyncio.gather(
-            *(REDIS_ASYNC_CLIENT.set(key, value, ex=3600) for key, value in to_cache.items())
-        )
+        await asyncio.gather(*(REDIS_ASYNC_CLIENT.set(key, value, ex=3600) for key, value in to_cache.items()))
 
     return result_map
 

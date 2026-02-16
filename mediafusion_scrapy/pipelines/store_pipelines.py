@@ -190,17 +190,13 @@ class MovieStorePipeline(QueueBasedPipeline):
         cache_key = (item["title"].lower(), item.get("year"))
         cached_id = self._title_media_cache.get(cache_key)
         if cached_id:
-            result = await session.exec(
-                select(Media).where(Media.id == cached_id)
-            )
+            result = await session.exec(select(Media).where(Media.id == cached_id))
             media = result.first()
             if media:
                 return media
 
         # Search by title/year in the database
-        media = await crud.get_media_by_title_year(
-            session, item["title"], item.get("year"), MediaType.MOVIE
-        )
+        media = await crud.get_media_by_title_year(session, item["title"], item.get("year"), MediaType.MOVIE)
         if media:
             self._title_media_cache[cache_key] = media.id
             return media
@@ -246,14 +242,10 @@ class MovieStorePipeline(QueueBasedPipeline):
                     # ProviderMetadata records for each provider (IMDB, TMDB, etc.)
                     for provider_name, data in provider_metadata.items():
                         if data:
-                            await crud.update_provider_metadata(
-                                session, media.id, provider_name, data
-                            )
+                            await crud.update_provider_metadata(session, media.id, provider_name, data)
                     # apply_multi_provider_metadata updates the canonical Media fields
                     # (description, cast, crew, genres, images, etc.)
-                    await crud.apply_multi_provider_metadata(
-                        session, media.id, provider_metadata, "movie"
-                    )
+                    await crud.apply_multi_provider_metadata(session, media.id, provider_metadata, "movie")
                     logging.info("Applied full metadata for movie %s", item["title"])
                 except Exception as e:
                     logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)
@@ -327,16 +319,12 @@ class SeriesStorePipeline(QueueBasedPipeline):
         cache_key = (item["title"].lower(), item.get("year"))
         cached_id = self._title_media_cache.get(cache_key)
         if cached_id:
-            result = await session.exec(
-                select(Media).where(Media.id == cached_id)
-            )
+            result = await session.exec(select(Media).where(Media.id == cached_id))
             media = result.first()
             if media:
                 return media
 
-        media = await crud.get_media_by_title_year(
-            session, item["title"], item.get("year"), MediaType.SERIES
-        )
+        media = await crud.get_media_by_title_year(session, item["title"], item.get("year"), MediaType.SERIES)
         if media:
             self._title_media_cache[cache_key] = media.id
             return media
@@ -370,9 +358,7 @@ class SeriesStorePipeline(QueueBasedPipeline):
             return
 
         # Ensure series_metadata exists (it should, but be safe)
-        result = await session.exec(
-            select(SeriesMetadata).where(SeriesMetadata.media_id == media.id)
-        )
+        result = await session.exec(select(SeriesMetadata).where(SeriesMetadata.media_id == media.id))
         series_meta = result.first()
         if not series_meta:
             series_meta = SeriesMetadata(media_id=media.id)
@@ -444,16 +430,12 @@ class SeriesStorePipeline(QueueBasedPipeline):
 
         if created_count:
             # Update total_seasons / total_episodes on series_metadata
-            all_seasons_result = await session.exec(
-                select(Season).where(Season.series_id == series_meta.id)
-            )
+            all_seasons_result = await session.exec(select(Season).where(Season.series_id == series_meta.id))
             all_seasons = all_seasons_result.all()
             series_meta.total_seasons = len(all_seasons)
             total_eps = 0
             for s in all_seasons:
-                ep_count_result = await session.exec(
-                    select(Episode).where(Episode.season_id == s.id)
-                )
+                ep_count_result = await session.exec(select(Episode).where(Episode.season_id == s.id))
                 total_eps += len(ep_count_result.all())
             series_meta.total_episodes = total_eps
 
@@ -488,12 +470,8 @@ class SeriesStorePipeline(QueueBasedPipeline):
                 try:
                     for provider_name, data in provider_metadata.items():
                         if data:
-                            await crud.update_provider_metadata(
-                                session, media.id, provider_name, data
-                            )
-                    await crud.apply_multi_provider_metadata(
-                        session, media.id, provider_metadata, "series"
-                    )
+                            await crud.update_provider_metadata(session, media.id, provider_name, data)
+                    await crud.apply_multi_provider_metadata(session, media.id, provider_metadata, "series")
                     logging.info("Applied full metadata for series %s", item["title"])
                 except Exception as e:
                     logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)

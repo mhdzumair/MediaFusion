@@ -140,9 +140,7 @@ async def record_request(
         latency_member = f"{process_time:.6f}:{uuid.uuid4().hex[:8]}"
         await REDIS_ASYNC_CLIENT.zadd(latency_key, {latency_member: now_ts})
         # Cap to the configured window size
-        await REDIS_ASYNC_CLIENT.zremrangebyrank(
-            latency_key, 0, -(settings.request_metrics_latency_window + 1)
-        )
+        await REDIS_ASYNC_CLIENT.zremrangebyrank(latency_key, 0, -(settings.request_metrics_latency_window + 1))
         await REDIS_ASYNC_CLIENT.expire(latency_key, settings.request_metrics_ttl)
 
         # --- 3. Unique visitor tracking (HyperLogLog with hashed IP) ---
@@ -203,8 +201,7 @@ async def record_request(
 def _decode_hash(data: dict) -> dict[str, str]:
     """Decode a Redis hash (bytes keys/values) into str dict."""
     return {
-        (k if isinstance(k, str) else k.decode()): (v if isinstance(v, str) else v.decode())
-        for k, v in data.items()
+        (k if isinstance(k, str) else k.decode()): (v if isinstance(v, str) else v.decode()) for k, v in data.items()
     }
 
 
@@ -306,22 +303,24 @@ async def get_endpoint_stats(
         uv_ep_key = f"{_UV_PREFIX}{ep}"
         ep_unique = await REDIS_ASYNC_CLIENT.pfcount(uv_ep_key) or 0
 
-        items.append({
-            "endpoint_key": ep,
-            "method": decoded.get("method", ep.split(":")[0] if ":" in ep else ""),
-            "route": decoded.get("route", ep.split(":", 1)[1] if ":" in ep else ep),
-            "total_requests": total_req,
-            "avg_time": round(avg_time, 6),
-            "min_time": round(float(decoded.get("min_time", "0")), 6),
-            "max_time": round(float(decoded.get("max_time", "0")), 6),
-            "error_count": int(decoded.get("error_count", "0")),
-            "status_2xx": int(decoded.get("status_2xx", "0")),
-            "status_3xx": int(decoded.get("status_3xx", "0")),
-            "status_4xx": int(decoded.get("status_4xx", "0")),
-            "status_5xx": int(decoded.get("status_5xx", "0")),
-            "unique_visitors": ep_unique,
-            "last_seen": decoded.get("last_seen", ""),
-        })
+        items.append(
+            {
+                "endpoint_key": ep,
+                "method": decoded.get("method", ep.split(":")[0] if ":" in ep else ""),
+                "route": decoded.get("route", ep.split(":", 1)[1] if ":" in ep else ep),
+                "total_requests": total_req,
+                "avg_time": round(avg_time, 6),
+                "min_time": round(float(decoded.get("min_time", "0")), 6),
+                "max_time": round(float(decoded.get("max_time", "0")), 6),
+                "error_count": int(decoded.get("error_count", "0")),
+                "status_2xx": int(decoded.get("status_2xx", "0")),
+                "status_3xx": int(decoded.get("status_3xx", "0")),
+                "status_4xx": int(decoded.get("status_4xx", "0")),
+                "status_5xx": int(decoded.get("status_5xx", "0")),
+                "unique_visitors": ep_unique,
+                "last_seen": decoded.get("last_seen", ""),
+            }
+        )
 
     # Sort
     reverse = sort_order == "desc"
@@ -416,15 +415,17 @@ async def get_recent_requests(
         if route_filter and route_filter not in decoded.get("route_template", ""):
             continue
 
-        items.append({
-            "request_id": rid,
-            "method": decoded.get("method", ""),
-            "path": decoded.get("path", ""),
-            "route_template": decoded.get("route_template", ""),
-            "status_code": int(decoded.get("status_code", "0")),
-            "process_time": float(decoded.get("process_time", "0")),
-            "timestamp": decoded.get("timestamp", ""),
-        })
+        items.append(
+            {
+                "request_id": rid,
+                "method": decoded.get("method", ""),
+                "path": decoded.get("path", ""),
+                "route_template": decoded.get("route_template", ""),
+                "status_code": int(decoded.get("status_code", "0")),
+                "process_time": float(decoded.get("process_time", "0")),
+                "timestamp": decoded.get("timestamp", ""),
+            }
+        )
 
     total = len(items)
     pages = (total + per_page - 1) // per_page if total > 0 else 0

@@ -16,9 +16,7 @@ class CloseSpiderExtended(CloseSpider):
         if self.items_in_period >= 1:
             self.items_in_period = 0
         else:
-            logger.info(
-                f"Closing spider since no items were produced in the last {self.timeout_no_item} seconds."
-            )
+            logger.info(f"Closing spider since no items were produced in the last {self.timeout_no_item} seconds.")
             self.shutdown_signal_count += 1
             dramatiq_message = CurrentMessage.get_current_message()
             if dramatiq_message:
