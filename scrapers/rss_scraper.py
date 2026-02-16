@@ -595,6 +595,8 @@ class RssScraper(BaseScraper):
                             is_search_imdb_title=False,
                             is_imdb_only=False,
                         )
+                        if metadata_result:
+                            canonical_ext_id = await crud.get_canonical_external_id(session, metadata_result.id)
                         await session.commit()
 
             # If no IMDB/TMDB match, create with MediaFusion internal ID
@@ -621,6 +623,8 @@ class RssScraper(BaseScraper):
                         is_search_imdb_title=False,
                         is_imdb_only=False,
                     )
+                    if metadata_result:
+                        canonical_ext_id = await crud.get_canonical_external_id(session, metadata_result.id)
                     await session.commit()
 
             if not metadata_result:
@@ -632,7 +636,7 @@ class RssScraper(BaseScraper):
             # get_or_create_metadata returns a Media SQLModel object
             metadata_obj = MetadataData(
                 id=metadata_result.id,
-                external_id=metadata_result.external_id,
+                external_id=canonical_ext_id,
                 title=metadata_result.title,
                 year=metadata_result.year,
                 type=metadata_result.type.value
