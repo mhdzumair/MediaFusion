@@ -1,6 +1,5 @@
 """FastAPI application factory."""
 
-import logging
 import os
 
 from fastapi import FastAPI, HTTPException, Request
@@ -12,20 +11,9 @@ from api import middleware
 from api.lifespan import lifespan
 from db.config import settings
 from utils import const
-from utils.exception_tracker import install_exception_handler
 
 # Path to React frontend build
 FRONTEND_DIST_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
-
-# Configure logging
-logging.basicConfig(
-    format="%(levelname)s::%(asctime)s::%(pathname)s::%(lineno)d - %(message)s",
-    datefmt="%d-%b-%y %H:%M:%S",
-    level=settings.logging_level,
-)
-
-# Install Redis exception handler (captures all ERROR/CRITICAL logs with tracebacks)
-install_exception_handler()
 
 
 def create_app() -> FastAPI:

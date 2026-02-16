@@ -147,13 +147,17 @@ def install_exception_handler() -> None:
     """Install the Redis exception handler on the root logger.
 
     Call this once during application startup (after ``logging.basicConfig``).
-    No-op if exception tracking is disabled.
+    No-op if exception tracking is disabled or the handler is already installed.
     """
     if not settings.enable_exception_tracking:
         return
 
+    root = logging.getLogger()
+    if any(isinstance(h, RedisExceptionHandler) for h in root.handlers):
+        return
+
     handler = RedisExceptionHandler(level=logging.ERROR)
-    logging.getLogger().addHandler(handler)
+    root.addHandler(handler)
 
 
 # ============================================
