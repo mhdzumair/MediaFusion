@@ -262,7 +262,7 @@ async def _process_xtream_import(
     from db.enums import IPTVSourceType
     from db.models import IPTVSource
     from utils.xtream_client import XtreamClient
-    from utils.crypto import ProfileCrypto
+    from utils.profile_crypto import ProfileCrypto
     from api.routers.content.m3u_import import (
         _import_tv_entry,
         _import_movie_entry,
