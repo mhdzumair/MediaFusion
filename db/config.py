@@ -168,6 +168,13 @@ class Settings(BaseSettings):
     exception_tracking_ttl: int = 259200  # 3 days in seconds
     exception_tracking_max_entries: int = 500
 
+    # Request Metrics Tracking
+    enable_request_metrics: bool = False
+    request_metrics_ttl: int = 86400  # 1 day for aggregated stats
+    request_metrics_recent_ttl: int = 3600  # 1 hour for individual request logs
+    request_metrics_max_recent: int = 1000  # max individual requests to keep
+    request_metrics_latency_window: int = 1000  # samples per endpoint for percentiles
+
     # IPTV Import Settings
     enable_iptv_import: bool = True  # Master toggle for M3U/Xtream import feature
     allow_public_iptv_sharing: bool = True  # If False, all imported streams are private to user profile only

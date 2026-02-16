@@ -28,6 +28,7 @@ import { SchedulerPage } from '@/pages/Scheduler'
 import { CacheManagerPage } from '@/pages/CacheManager'
 import { DatabaseManagerPage } from '@/pages/DatabaseManager'
 import { ExceptionTrackerPage } from '@/pages/ExceptionTracker'
+import { RequestMetricsPage } from '@/pages/RequestMetrics'
 import { MetadataCreatorPage } from '@/pages/MetadataCreator'
 import { SettingsPage } from '@/pages/Settings'
 
@@ -180,6 +181,14 @@ function AppRoutes() {
           element={
             <RoleGuard requiredRole="admin">
               <ExceptionTrackerPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="request-metrics"
+          element={
+            <RoleGuard requiredRole="admin">
+              <RequestMetricsPage />
             </RoleGuard>
           }
         />

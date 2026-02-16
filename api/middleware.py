@@ -27,6 +27,7 @@ from utils import const
 from utils.crypto import crypto_utils
 from utils.network import get_client_ip
 from utils.parser import create_exception_stream
+from utils.request_tracker import record_request
 
 
 async def find_route_handler(app, request: Request) -> Callable | None:
@@ -435,4 +436,36 @@ class TimingMiddleware(BaseHTTPMiddleware):
             )
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = f"{process_time:.4f} seconds"
+
+        # Record request metrics (fire-and-forget, never disrupts response)
+        try:
+            if settings.enable_request_metrics:
+                sanitized_path = request.url.path
+                # Mask secret path params (same logic as SecureLoggingMiddleware)
+                if request.path_params.get("secret_str"):
+                    sanitized_path = sanitized_path.replace(
+                        request.path_params["secret_str"], "*MASKED*"
+                    )
+                if request.path_params.get("existing_secret_str"):
+                    sanitized_path = sanitized_path.replace(
+                        request.path_params["existing_secret_str"], "*MASKED*"
+                    )
+
+                # Extract route template from the matched route
+                route_template = None
+                route = request.scope.get("route")
+                if route and hasattr(route, "path"):
+                    route_template = route.path
+
+                await record_request(
+                    method=request.method,
+                    path=sanitized_path,
+                    route_template=route_template,
+                    status_code=response.status_code,
+                    process_time=process_time,
+                    client_ip=get_client_ip(request),
+                )
+        except Exception:
+            pass
+
         return response
