@@ -543,10 +543,14 @@ class MigrationVerifier:
                         if old_episode.filename and not is_video_file(old_episode.filename):
                             continue
 
-                        # Check season exists
-                        stmt = select(Season).where(
-                            Season.media_id == media_id,
-                            Season.season_number == old_episode.season_number,
+                        # Check season exists (Season.series_id -> SeriesMetadata.id -> SeriesMetadata.media_id)
+                        stmt = (
+                            select(Season)
+                            .join(SeriesMetadata, Season.series_id == SeriesMetadata.id)
+                            .where(
+                                SeriesMetadata.media_id == media_id,
+                                Season.season_number == old_episode.season_number,
+                            )
                         )
                         season = (await session.exec(stmt)).one_or_none()
 
@@ -573,7 +577,7 @@ class MigrationVerifier:
                                     FileMediaLink.episode_number == old_episode.episode_number,
                                 )
                             )
-                            file_link = (await session.exec(stmt)).one_or_none()
+                            file_link = (await session.exec(stmt)).first()
 
                             if not file_link:
                                 episode_file_issues.append(

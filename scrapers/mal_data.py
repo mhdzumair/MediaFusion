@@ -49,7 +49,8 @@ _MEDIA_FIELDS = """
     isAdult
 """
 
-SEARCH_QUERY = """
+SEARCH_QUERY = (
+    """
 query ($search: String!, $type: MediaType, $format: MediaFormat,
        $formatIn: [MediaFormat], $perPage: Int, $isAdult: Boolean) {
   Page(perPage: $perPage) {
@@ -59,28 +60,37 @@ query ($search: String!, $type: MediaType, $format: MediaFormat,
     }
   }
 }
-""" % _MEDIA_FIELDS
+"""
+    % _MEDIA_FIELDS
+)
 
-GET_BY_MAL_ID_QUERY = """
+GET_BY_MAL_ID_QUERY = (
+    """
 query ($malId: Int!) {
   Media(idMal: $malId, type: ANIME) {
     %s
   }
 }
-""" % _MEDIA_FIELDS
+"""
+    % _MEDIA_FIELDS
+)
 
-GET_BY_ANILIST_ID_QUERY = """
+GET_BY_ANILIST_ID_QUERY = (
+    """
 query ($id: Int!) {
   Media(id: $id, type: ANIME) {
     %s
   }
 }
-""" % _MEDIA_FIELDS
+"""
+    % _MEDIA_FIELDS
+)
 
 
 # ---------------------------------------------------------------------------
 # Transport layer
 # ---------------------------------------------------------------------------
+
 
 async def _anilist_request(
     query: str,
@@ -105,24 +115,13 @@ async def _anilist_request(
 
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient(
-                proxy=settings.requests_proxy_url, timeout=30
-            ) as client:
-                response = await client.post(
-                    ANILIST_GRAPHQL_URL, json=payload, headers=headers
-                )
+            async with httpx.AsyncClient(proxy=settings.requests_proxy_url, timeout=30) as client:
+                response = await client.post(ANILIST_GRAPHQL_URL, json=payload, headers=headers)
 
                 if response.status_code == 429:
                     retry_after = response.headers.get("Retry-After")
-                    delay = (
-                        int(retry_after)
-                        if retry_after and retry_after.isdigit()
-                        else min(2 * (2**attempt), 60)
-                    )
-                    logger.warning(
-                        f"AniList rate limited, retrying in {delay}s "
-                        f"(attempt {attempt + 1}/{max_retries})"
-                    )
+                    delay = int(retry_after) if retry_after and retry_after.isdigit() else min(2 * (2**attempt), 60)
+                    logger.warning(f"AniList rate limited, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(delay)
                     continue
 
@@ -158,6 +157,7 @@ async def _anilist_request(
 # ---------------------------------------------------------------------------
 # Helper: convert AniList date dict to "YYYY-MM-DD" string
 # ---------------------------------------------------------------------------
+
 
 def _format_date(date_obj: dict[str, Any] | None) -> str | None:
     """Convert AniList {year, month, day} to 'YYYY-MM-DD' string."""
@@ -209,17 +209,23 @@ _SOURCE_MAP = {
 # Formatting helpers – produce the same dict shape as the old Jikan code
 # ---------------------------------------------------------------------------
 
+
 def _format_anilist_response(data: dict[str, Any]) -> dict[str, Any]:
     """Format AniList media data into the standardized dict used by callers."""
     title_obj = data.get("title") or {}
     title = title_obj.get("english") or title_obj.get("romaji") or "Unknown"
     original_title = title_obj.get("native")
 
-    aka_titles = list(filter(None, [
-        title_obj.get("romaji") if title_obj.get("romaji") != title else None,
-        title_obj.get("english") if title_obj.get("english") != title else None,
-        *(data.get("synonyms") or []),
-    ]))
+    aka_titles = list(
+        filter(
+            None,
+            [
+                title_obj.get("romaji") if title_obj.get("romaji") != title else None,
+                title_obj.get("english") if title_obj.get("english") != title else None,
+                *(data.get("synonyms") or []),
+            ],
+        )
+    )
 
     poster = None
     cover = data.get("coverImage") or {}
@@ -260,13 +266,15 @@ def _format_anilist_response(data: dict[str, Any]) -> dict[str, Any]:
     trailer = data.get("trailer") or {}
     if trailer.get("id") and trailer.get("site") == "youtube":
         yt_id = trailer["id"]
-        videos.append({
-            "name": "Trailer",
-            "url": f"https://www.youtube.com/watch?v={yt_id}",
-            "youtube_id": yt_id,
-            "type": "Trailer",
-            "thumbnail": trailer.get("thumbnail"),
-        })
+        videos.append(
+            {
+                "name": "Trailer",
+                "url": f"https://www.youtube.com/watch?v={yt_id}",
+                "youtube_id": yt_id,
+                "type": "Trailer",
+                "thumbnail": trailer.get("thumbnail"),
+            }
+        )
 
     # Rating: AniList uses 0-100 scale, convert to 0-10
     average_score = data.get("averageScore")
@@ -375,6 +383,7 @@ def _format_anilist_search_result(data: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Public API – same signatures as the old Jikan-based implementation
 # ---------------------------------------------------------------------------
+
 
 async def search_mal(
     query: str,
@@ -537,11 +546,14 @@ async def get_mal_by_title(
 
     for item in results:
         title_obj = item.get("title") or {}
-        candidates = filter(None, [
-            title_obj.get("english"),
-            title_obj.get("romaji"),
-            title_obj.get("native"),
-        ])
+        candidates = filter(
+            None,
+            [
+                title_obj.get("english"),
+                title_obj.get("romaji"),
+                title_obj.get("native"),
+            ],
+        )
         similarity = max(
             (fuzz.ratio(c.lower(), title.lower()) for c in candidates),
             default=0,
