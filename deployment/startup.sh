@@ -2,9 +2,18 @@
 set -e
 
 # psql accepts postgresql:// URIs (strip +asyncpg for SQLAlchemy format)
-PSQL_URI="${POSTGRES_URI:-postgresql://mediafusion:mediafusion@localhost:5432/mediafusion}"
+# Support both POSTGRES_URI and postgres_uri (Pydantic accepts either casing)
+PSQL_URI="${POSTGRES_URI:-${postgres_uri:-postgresql://mediafusion:mediafusion@localhost:5432/mediafusion}}"
 PSQL_URI="${PSQL_URI/postgresql+asyncpg/postgresql}"
-PSQL_URI_SYSTEM="${PSQL_URI%/*}/postgres"
+# Poolers (Neon, Supabase) require SSL for non-localhost; append sslmode if not present
+if [[ "$PSQL_URI" != *"sslmode="* ]] && [[ "$PSQL_URI" != *"@localhost"* ]] && [[ "$PSQL_URI" != *"@127.0.0.1"* ]]; then
+    [[ "$PSQL_URI" == *"?"* ]] && PSQL_URI="${PSQL_URI}&sslmode=require" || PSQL_URI="${PSQL_URI}?sslmode=require"
+fi
+# System DB URI (preserve query string for sslmode)
+PSQL_BASE="${PSQL_URI%%\?*}"
+PSQL_QUERY="${PSQL_URI#*\?}"
+PSQL_URI_SYSTEM="${PSQL_BASE%/*}/postgres"
+[[ "$PSQL_QUERY" != "$PSQL_URI" ]] && PSQL_URI_SYSTEM="${PSQL_URI_SYSTEM}?${PSQL_QUERY}"
 
 wait_for_postgres() {
     echo "Waiting for PostgreSQL..."
