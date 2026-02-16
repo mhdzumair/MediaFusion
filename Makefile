@@ -159,7 +159,11 @@ endif
 		--header "x-goog-api-key: $(GEMINI_API_KEY)" \
 		--header "content-type: application/json" \
 		--data "{\"contents\":[{\"parts\":[{\"text\":$$PROMPT_CONTENT}]}],\"generationConfig\":{\"maxOutputTokens\":$(MAX_TOKENS)}}" > $$temp_file; \
-	jq -r '.candidates[0].content.parts[0].text' $$temp_file || { echo "Failed to generate release notes using Gemini AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
+	RESULT=$$(jq -r '[.candidates[0].content.parts[] | select(.thought != true) | .text] | join("")' $$temp_file 2>/dev/null); \
+	if [ -z "$$RESULT" ] || [ "$$RESULT" = "null" ]; then \
+	    echo "Failed to generate release notes using Gemini AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; \
+	fi; \
+	echo "$$RESULT"; \
 	rm $$temp_file
 
 generate-reddit-post:
@@ -185,7 +189,11 @@ endif
 		--header "x-goog-api-key: $(GEMINI_API_KEY)" \
 		--header "content-type: application/json" \
 		--data "{\"contents\":[{\"parts\":[{\"text\":$$PROMPT_CONTENT}]}],\"generationConfig\":{\"maxOutputTokens\":$(MAX_TOKENS)}}" > $$temp_file; \
-	jq -r '.candidates[0].content.parts[0].text' $$temp_file || { echo "Failed to generate Reddit post using Gemini AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; } ; \
+	RESULT=$$(jq -r '[.candidates[0].content.parts[] | select(.thought != true) | .text] | join("")' $$temp_file 2>/dev/null); \
+	if [ -z "$$RESULT" ] || [ "$$RESULT" = "null" ]; then \
+	    echo "Failed to generate Reddit post using Gemini AI, response: $$(cat $$temp_file)"; rm $$temp_file; exit 1; \
+	fi; \
+	echo "$$RESULT"; \
 	rm $$temp_file
 
 # Frontend build targets
