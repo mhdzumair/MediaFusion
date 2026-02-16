@@ -19,6 +19,7 @@ export interface InstanceInfo {
 }
 
 export interface SetupCompleteRequest {
+  api_password: string
   email: string
   username?: string
   password: string
@@ -118,43 +119,14 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
 }
 
 /**
- * Login as the bootstrap admin during initial setup.
- * This is the ONLY way to authenticate as the bootstrap admin.
- * The normal /auth/login endpoint blocks the bootstrap account.
- * Requires the instance API_PASSWORD for additional security.
+ * Create the first admin account during initial setup.
+ * This endpoint is unauthenticated; it is protected by requiring the
+ * instance API_PASSWORD in the request body.
  */
-export async function setupLogin(
-  email: string,
-  password: string,
-  apiPassword: string,
-): Promise<import('@/types').AuthResponse> {
-  const response = await fetch(`${API_BASE_URL}/instance/setup/login`, {
+export async function completeSetup(data: SetupCompleteRequest): Promise<import('@/types').AuthResponse> {
+  const response = await fetch(`${API_BASE_URL}/instance/setup/create-admin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, api_password: apiPassword }),
-  })
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Setup login failed' }))
-    throw new Error(error.detail || 'Setup login failed')
-  }
-  return response.json()
-}
-
-/**
- * Complete the initial admin setup.
- * Creates the deployer's admin account and deactivates the bootstrap admin.
- * Requires authentication as the bootstrap admin.
- */
-export async function completeSetup(
-  data: SetupCompleteRequest,
-  accessToken: string,
-): Promise<import('@/types').AuthResponse> {
-  const response = await fetch(`${API_BASE_URL}/instance/setup/complete`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
     body: JSON.stringify(data),
   })
   if (!response.ok) {

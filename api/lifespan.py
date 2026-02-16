@@ -10,10 +10,8 @@ from fastapi import FastAPI
 from api.scheduler import setup_scheduler
 from db import database
 from db.config import settings
-from db.database import get_async_session_context
 from db.redis_database import REDIS_ASYNC_CLIENT
 from utils import torrent
-from utils.bootstrap import ensure_bootstrap_admin
 from utils.lock import (
     acquire_scheduler_lock,
     maintain_heartbeat,
@@ -27,7 +25,6 @@ async def lifespan(_: FastAPI):
 
     Handles:
     - Database initialization
-    - Bootstrap admin creation (first deployment)
     - Tracker initialization
     - Telegram bot commands registration
     - Scheduler setup with distributed locking
@@ -35,10 +32,6 @@ async def lifespan(_: FastAPI):
     """
     # Startup logic
     await database.init()
-
-    # Create bootstrap admin if this is a fresh deployment (no users exist)
-    async with get_async_session_context() as session:
-        await ensure_bootstrap_admin(session)
 
     await torrent.init_best_trackers()
 

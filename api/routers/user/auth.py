@@ -323,13 +323,7 @@ async def login(
     credentials: UserLogin,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Login with email and password.
-
-    The bootstrap admin account cannot use this endpoint.
-    Use /api/v1/instance/setup/login during initial setup instead.
-    """
-    from utils.bootstrap import is_bootstrap_user
-
+    """Login with email and password."""
     result = await session.exec(select(User).where(User.email == credentials.email))
     user = result.first()
 
@@ -337,13 +331,6 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
-        )
-
-    # Block bootstrap admin from normal login
-    if is_bootstrap_user(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account can only be used through the initial setup wizard.",
         )
 
     if not verify_password(credentials.password, user.password_hash):

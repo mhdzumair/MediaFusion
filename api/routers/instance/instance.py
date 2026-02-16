@@ -19,20 +19,13 @@ from api.routers.user.auth import (
     create_access_token,
     create_refresh_token,
     hash_password,
-    require_auth,
-    verify_password,
 )
 from db.config import settings
 from db.database import get_async_session
 from db.enums import UserRole
 from db.models import User, UserProfile
 from utils import const
-from utils.bootstrap import (
-    BOOTSTRAP_EMAIL,
-    check_setup_required,
-    is_bootstrap_user,
-    mark_setup_complete,
-)
+from utils.bootstrap import check_setup_required, mark_setup_complete
 
 router = APIRouter(prefix="/api/v1/instance", tags=["Instance"])
 
@@ -49,22 +42,14 @@ class InstanceInfo(BaseModel):
     branding_svg: str | None = None  # Optional partner/host SVG logo URL
 
 
-class SetupLoginRequest(BaseModel):
-    """Request body for bootstrap admin login during setup.
+class SetupCompleteRequest(BaseModel):
+    """Request body for creating the first admin account during initial setup.
 
-    Uses plain str for email instead of EmailStr because the bootstrap
-    email uses a .local domain which is rejected by email validators.
-    Requires the instance API_PASSWORD as an additional security layer.
+    Requires the instance API_PASSWORD for authentication since no user
+    accounts exist yet.
     """
 
-    email: str
-    password: str
     api_password: str
-
-
-class SetupCompleteRequest(BaseModel):
-    """Request body for completing the initial admin setup."""
-
     email: EmailStr
     username: str | None = Field(None, min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
@@ -170,22 +155,22 @@ async def get_system_constants():
     }
 
 
-@router.post("/setup/login", response_model=TokenResponse)
-async def setup_login(
-    credentials: SetupLoginRequest,
+@router.post("/setup/create-admin", response_model=TokenResponse)
+async def create_initial_admin(
+    request: SetupCompleteRequest,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Login as the bootstrap admin during initial setup.
+    """Create the first admin account during initial setup.
 
-    This is the ONLY way to authenticate as the bootstrap admin.
-    The normal /auth/login endpoint blocks the bootstrap account.
-    Only works when setup is still required.
+    This endpoint is unauthenticated (no user accounts exist yet).
+    It is protected by requiring the instance API_PASSWORD.
 
-    Requires the instance API_PASSWORD as an additional security layer
-    to prevent unauthorized access to the setup wizard.
+    SECURITY: Only available when the user table is completely empty.
+    Once any user exists (regardless of role or status), this endpoint
+    is permanently locked and returns 400.
     """
-    # Validate API_PASSWORD first
-    if credentials.api_password != settings.api_password:
+    # Validate API_PASSWORD
+    if request.api_password != settings.api_password:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API password.",
@@ -198,91 +183,9 @@ async def setup_login(
             detail="Setup has already been completed.",
         )
 
-    # Only allow bootstrap email
-    if credentials.email != BOOTSTRAP_EMAIL:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials for setup login.",
-        )
-
-    result = await session.exec(select(User).where(User.email == BOOTSTRAP_EMAIL))
-    user = result.first()
-
-    if not user or not user.password_hash:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Bootstrap admin not found.",
-        )
-
-    if not verify_password(credentials.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials for setup login.",
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bootstrap admin has been deactivated.",
-        )
-
-    access_token = create_access_token(user.id, user.role.value)
-    refresh_token = create_refresh_token(user.id)
-
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        user=UserResponse(
-            id=user.id,
-            uuid=user.uuid,
-            email=user.email,
-            username=user.username,
-            role=user.role.value,
-            is_verified=user.is_verified,
-            is_active=user.is_active,
-            created_at=user.created_at,
-            last_login=user.last_login,
-            contribution_points=user.contribution_points,
-            contribution_level=user.contribution_level,
-            contribute_anonymously=user.contribute_anonymously,
-        ),
-    )
-
-
-@router.post("/setup/complete", response_model=TokenResponse)
-async def complete_setup(
-    request: SetupCompleteRequest,
-    current_user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Complete the initial admin setup by creating the deployer's admin account.
-
-    This endpoint:
-    1. Requires authentication as the bootstrap admin
-    2. Creates a new admin user with the provided credentials
-    3. Deactivates the bootstrap admin account
-    4. Returns auth tokens for the new admin
-
-    Only available during initial setup (when setup_required is true).
-    """
-    # Verify setup is actually required
-    if not await check_setup_required(session):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Setup has already been completed.",
-        )
-
-    # Only the bootstrap admin can complete setup
-    if not is_bootstrap_user(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the bootstrap admin can complete initial setup.",
-        )
-
-    # Check if the new email is already taken (by someone other than bootstrap)
+    # Check if the email is already taken
     result = await session.exec(select(User).where(User.email == request.email))
-    existing = result.first()
-    if existing:
+    if result.first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered.",
@@ -297,7 +200,7 @@ async def complete_setup(
                 detail="Username already taken.",
             )
 
-    # Create the new admin user
+    # Create the admin user
     new_admin = User(
         email=request.email,
         username=request.username,
@@ -310,7 +213,7 @@ async def complete_setup(
     session.add(new_admin)
     await session.flush()
 
-    # Create default profile for the new admin
+    # Create default profile
     profile = UserProfile(
         user_id=new_admin.id,
         name="Default",
@@ -318,10 +221,6 @@ async def complete_setup(
         is_default=True,
     )
     session.add(profile)
-
-    # Deactivate the bootstrap admin
-    current_user.is_active = False
-    session.add(current_user)
 
     await session.commit()
     await session.refresh(new_admin)

@@ -7,7 +7,6 @@ export {
   getStoredApiKey,
   setStoredApiKey,
   clearStoredApiKey,
-  setupLogin,
   completeSetup,
   type InstanceInfo,
   type AppConfig,

@@ -3,7 +3,7 @@ RSS Feed migrator for MongoDB to PostgreSQL migration.
 
 Updated for MediaFusion 5.0 architecture:
 - All RSS feeds are now user-based
-- System feeds are assigned to the first real admin user, or the bootstrap admin
+- System feeds are assigned to the first active admin user
 """
 
 import logging
@@ -16,8 +16,6 @@ from tqdm.asyncio import tqdm
 
 from db.enums import UserRole
 from db.models import RSSFeed, RSSFeedCatalogPattern, User
-from migrations.mongo_models import RSSFeed as OldRSSFeed
-from utils.bootstrap import BOOTSTRAP_EMAIL
 
 # Set up logging with more detailed format
 logging.basicConfig(
@@ -40,16 +38,14 @@ class RSSFeedMigrator:
     async def _get_admin_user_id(self, session: AsyncSession) -> int:
         """Get the admin user ID to assign migrated feeds to.
 
-        Prefers a real admin user (non-bootstrap). Falls back to the bootstrap
-        admin if no real admin exists yet.
+        Finds the first active admin user. Raises an error if none exists,
+        directing the user to complete the initial setup first.
         """
-        # First, look for a real admin (non-bootstrap)
         stmt = (
             select(User)
             .where(
                 User.role == UserRole.ADMIN,
                 User.is_active.is_(True),
-                User.email != BOOTSTRAP_EMAIL,
             )
             .order_by(User.id)
             .limit(1)
@@ -61,18 +57,9 @@ class RSSFeedMigrator:
             logger.info("Assigning migrated RSS feeds to admin user: %s (id=%d)", admin.email, admin.id)
             return admin.id
 
-        # Fall back to bootstrap admin
-        stmt = select(User).where(User.email == BOOTSTRAP_EMAIL)
-        result = await session.exec(stmt)
-        bootstrap = result.first()
-
-        if bootstrap:
-            logger.info("No real admin found, assigning migrated RSS feeds to bootstrap admin (id=%d)", bootstrap.id)
-            return bootstrap.id
-
         raise RuntimeError(
             "No admin user found for RSS feed migration. "
-            "Please complete the initial setup first or create an admin user."
+            "Please complete the initial setup first by creating an admin user via the web UI."
         )
 
     async def _load_existing_rss_feed_urls(self):

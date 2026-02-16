@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, Eye, EyeOff, Check, Shield, ArrowRight, CheckCircle2, Terminal } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Check, Shield, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Logo, LogoText } from '@/components/ui/logo'
 import { ThemeSelector } from '@/components/ui/theme-selector'
@@ -11,10 +11,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { useInstance } from '@/contexts/InstanceContext'
-import { apiClient, setupLogin, completeSetup } from '@/lib/api'
+import { apiClient, completeSetup } from '@/lib/api'
 
 const setupSchema = z
   .object({
+    apiPassword: z.string().min(1, 'API password is required'),
     email: z.string().email('Please enter a valid email'),
     username: z.string().min(3, 'Username must be at least 3 characters').optional().or(z.literal('')),
     password: z
@@ -39,24 +40,25 @@ const passwordRequirements = [
   { label: 'One number', test: (p: string) => /[0-9]/.test(p) },
 ]
 
-type SetupStep = 'welcome' | 'create-admin' | 'complete'
+type SetupStep = 'create-admin' | 'complete'
 
 export function SetupWizardPage() {
-  const [step, setStep] = useState<SetupStep>('welcome')
+  const [step, setStep] = useState<SetupStep>('create-admin')
   const [error, setError] = useState<string | null>(null)
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [showBootstrapPassword, setShowBootstrapPassword] = useState(false)
   const [showApiPassword, setShowApiPassword] = useState(false)
-  const [bootstrapEmail, setBootstrapEmail] = useState('')
-  const [bootstrapPassword, setBootstrapPassword] = useState('')
-  const [apiPassword, setApiPassword] = useState('')
-  const [bootstrapToken, setBootstrapToken] = useState<string | null>(null)
-  const { instanceInfo, refetchInstanceInfo } = useInstance()
+  const { instanceInfo, isLoading, refetchInstanceInfo } = useInstance()
   const navigate = useNavigate()
 
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
+
+  // Redirect away if setup is already complete
+  useEffect(() => {
+    if (!isLoading && instanceInfo && !instanceInfo.setup_required) {
+      navigate('/', { replace: true })
+    }
+  }, [isLoading, instanceInfo, navigate])
 
   const {
     register,
@@ -70,42 +72,15 @@ export function SetupWizardPage() {
   // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form's watch() is inherently incompatible with React Compiler
   const password = watch('password', '')
 
-  const handleBootstrapLogin = async () => {
-    if (!bootstrapEmail.trim() || !bootstrapPassword.trim() || !apiPassword.trim()) {
-      setError('All fields are required.')
-      return
-    }
-
-    try {
-      setError(null)
-      setIsLoggingIn(true)
-      const response = await setupLogin(bootstrapEmail.trim(), bootstrapPassword, apiPassword)
-      setBootstrapToken(response.access_token)
-      setStep('create-admin')
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to log in with bootstrap credentials'
-      setError(errorMessage)
-    } finally {
-      setIsLoggingIn(false)
-    }
-  }
-
   const onSubmit = async (data: SetupForm) => {
-    if (!bootstrapToken) {
-      setError('Bootstrap authentication required. Please go back to Step 1.')
-      return
-    }
-
     try {
       setError(null)
-      const response = await completeSetup(
-        {
-          email: data.email,
-          username: data.username || undefined,
-          password: data.password,
-        },
-        bootstrapToken,
-      )
+      const response = await completeSetup({
+        api_password: data.apiPassword,
+        email: data.email,
+        username: data.username || undefined,
+        password: data.password,
+      })
 
       // Set the new admin's tokens
       apiClient.setTokens(response.access_token, response.refresh_token)
@@ -156,20 +131,17 @@ export function SetupWizardPage() {
             Welcome to <span className="gradient-text">{addonName}</span>
           </h1>
           <p className="text-lg text-muted-foreground">
-            Let's get your instance set up. You'll create your admin account in just a few steps.
+            Let's get your instance set up. Verify your API password and create your admin account.
           </p>
 
           {/* Step indicators */}
           <div className="space-y-4">
             {[
-              { id: 'welcome', label: 'Authenticate with bootstrap credentials' },
-              { id: 'create-admin', label: 'Create your admin account' },
+              { id: 'create-admin', label: 'Verify API password & create admin account' },
               { id: 'complete', label: 'Start using your instance' },
             ].map((s, idx) => {
               const isActive = s.id === step
-              const isCompleted =
-                (s.id === 'welcome' && (step === 'create-admin' || step === 'complete')) ||
-                (s.id === 'create-admin' && step === 'complete')
+              const isCompleted = s.id === 'create-admin' && step === 'complete'
 
               return (
                 <div key={s.id} className="flex items-center gap-3">
@@ -186,7 +158,11 @@ export function SetupWizardPage() {
                   </div>
                   <span
                     className={`text-sm ${
-                      isActive ? 'text-foreground font-medium' : isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                      isActive
+                        ? 'text-foreground font-medium'
+                        : isCompleted
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-muted-foreground'
                     }`}
                   >
                     {s.label}
@@ -200,8 +176,8 @@ export function SetupWizardPage() {
 
       {/* Right side - Setup content */}
       <div className="flex-1 flex items-center justify-center p-6">
-        {/* Step 1: Welcome & Bootstrap Login */}
-        {step === 'welcome' && (
+        {/* Step 1: Create Admin Account */}
+        {step === 'create-admin' && (
           <Card className="w-full max-w-md animate-fade-in">
             <CardHeader className="space-y-1 text-center">
               <div className="flex justify-center mb-4 lg:hidden">
@@ -211,81 +187,28 @@ export function SetupWizardPage() {
                 <Shield className="h-5 w-5 text-primary" />
                 <span className="text-xs font-medium text-primary uppercase tracking-wider">Initial Setup</span>
               </div>
-              <CardTitle className="font-display text-2xl font-semibold">Welcome to {addonName}</CardTitle>
-              <CardDescription>
-                Enter the bootstrap credentials from your server log and your API password to get started.
-              </CardDescription>
+              <CardTitle className="font-display text-2xl font-semibold">Create Admin Account</CardTitle>
+              <CardDescription>Enter your API password and set up your admin account to get started.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive border border-destructive/20">
-                  {error}
-                </div>
-              )}
-
-              {/* Hint about where to find credentials */}
-              <div className="flex items-start gap-3 rounded-lg bg-muted/50 border p-3">
-                <Terminal className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                <p className="text-xs text-muted-foreground">
-                  The bootstrap email and password are printed in your server startup log. The API password is the{' '}
-                  <code className="px-1 py-0.5 rounded bg-muted text-foreground text-[11px]">API_PASSWORD</code>{' '}
-                  from your environment configuration.
-                </p>
-              </div>
-
-              {/* Bootstrap credentials input */}
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="bootstrap-email">Bootstrap Email</Label>
-                  <Input
-                    id="bootstrap-email"
-                    type="email"
-                    placeholder="bootstrap@mediafusion.local"
-                    value={bootstrapEmail}
-                    onChange={(e) => setBootstrapEmail(e.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="bootstrap-password">Bootstrap Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="bootstrap-password"
-                      type={showBootstrapPassword ? 'text' : 'password'}
-                      placeholder="From server startup log"
-                      value={bootstrapPassword}
-                      onChange={(e) => setBootstrapPassword(e.target.value)}
-                      className="pr-10"
-                      autoComplete="off"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                      onClick={() => setShowBootstrapPassword(!showBootstrapPassword)}
-                    >
-                      {showBootstrapPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <CardContent className="space-y-4">
+                {error && (
+                  <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive border border-destructive/20">
+                    {error}
                   </div>
-                </div>
+                )}
 
+                {/* API Password */}
                 <div className="space-y-2">
-                  <Label htmlFor="api-password">API Password</Label>
+                  <Label htmlFor="apiPassword">API Password</Label>
                   <div className="relative">
                     <Input
-                      id="api-password"
+                      id="apiPassword"
                       type={showApiPassword ? 'text' : 'password'}
                       placeholder="API_PASSWORD from your .env"
-                      value={apiPassword}
-                      onChange={(e) => setApiPassword(e.target.value)}
-                      className="pr-10"
                       autoComplete="off"
+                      {...register('apiPassword')}
+                      className="pr-10"
                     />
                     <Button
                       type="button"
@@ -301,47 +224,18 @@ export function SetupWizardPage() {
                       )}
                     </Button>
                   </div>
+                  {errors.apiPassword && <p className="text-sm text-destructive">{errors.apiPassword.message}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    The <code className="px-1 py-0.5 rounded bg-muted text-foreground text-[11px]">API_PASSWORD</code>{' '}
+                    from your environment configuration.
+                  </p>
                 </div>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button
-                variant="gold"
-                className="w-full"
-                onClick={handleBootstrapLogin}
-                disabled={isLoggingIn || !bootstrapEmail.trim() || !bootstrapPassword.trim() || !apiPassword.trim()}
-              >
-                {isLoggingIn ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                )}
-                Authenticate & Continue
-              </Button>
-            </CardFooter>
-          </Card>
-        )}
 
-        {/* Step 2: Create Admin Account */}
-        {step === 'create-admin' && (
-          <Card className="w-full max-w-md animate-fade-in">
-            <CardHeader className="space-y-1 text-center">
-              <div className="flex justify-center mb-4 lg:hidden">
-                <Logo size="lg" />
-              </div>
-              <CardTitle className="font-display text-2xl font-semibold">Create Your Admin Account</CardTitle>
-              <CardDescription>
-                Set up your permanent admin account. The bootstrap account will be deactivated.
-              </CardDescription>
-            </CardHeader>
-            <form onSubmit={handleSubmit(onSubmit)}>
-              <CardContent className="space-y-4">
-                {error && (
-                  <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive border border-destructive/20">
-                    {error}
-                  </div>
-                )}
+                <div className="border-t pt-4">
+                  <p className="text-sm font-medium text-muted-foreground mb-3">Admin Account Details</p>
+                </div>
 
+                {/* Email */}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -354,6 +248,7 @@ export function SetupWizardPage() {
                   {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
                 </div>
 
+                {/* Username */}
                 <div className="space-y-2">
                   <Label htmlFor="username">
                     Username <span className="text-muted-foreground text-xs">(optional)</span>
@@ -368,6 +263,7 @@ export function SetupWizardPage() {
                   {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
                 </div>
 
+                {/* Password */}
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
                   <div className="relative">
@@ -417,6 +313,7 @@ export function SetupWizardPage() {
                   </div>
                 </div>
 
+                {/* Confirm Password */}
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm Password</Label>
                   <div className="relative">
@@ -461,7 +358,7 @@ export function SetupWizardPage() {
           </Card>
         )}
 
-        {/* Step 3: Complete */}
+        {/* Step 2: Complete */}
         {step === 'complete' && (
           <Card className="w-full max-w-md animate-fade-in">
             <CardHeader className="space-y-1 text-center">
@@ -472,8 +369,7 @@ export function SetupWizardPage() {
               </div>
               <CardTitle className="font-display text-2xl font-semibold">Setup Complete!</CardTitle>
               <CardDescription>
-                Your admin account has been created and the bootstrap account has been deactivated. You're all set to
-                start using {addonName}.
+                Your admin account has been created. You're all set to start using {addonName}.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -507,4 +403,3 @@ export function SetupWizardPage() {
     </div>
   )
 }
-

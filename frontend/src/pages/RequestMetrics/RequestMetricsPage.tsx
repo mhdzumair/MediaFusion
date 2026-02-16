@@ -117,9 +117,7 @@ function EndpointDetailDialog({
             <Activity className="h-5 w-5 text-primary" />
             Endpoint Detail
           </DialogTitle>
-          <DialogDescription>
-            {data ? `${data.method} ${data.route}` : 'Loading...'}
-          </DialogDescription>
+          <DialogDescription>{data ? `${data.method} ${data.route}` : 'Loading...'}</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
@@ -198,18 +196,10 @@ function EndpointDetailDialog({
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Status Code Breakdown</p>
               <div className="flex flex-wrap gap-2">
-                {data.status_2xx > 0 && (
-                  <Badge variant="success">2xx: {data.status_2xx.toLocaleString()}</Badge>
-                )}
-                {data.status_3xx > 0 && (
-                  <Badge variant="muted">3xx: {data.status_3xx.toLocaleString()}</Badge>
-                )}
-                {data.status_4xx > 0 && (
-                  <Badge variant="warning">4xx: {data.status_4xx.toLocaleString()}</Badge>
-                )}
-                {data.status_5xx > 0 && (
-                  <Badge variant="destructive">5xx: {data.status_5xx.toLocaleString()}</Badge>
-                )}
+                {data.status_2xx > 0 && <Badge variant="success">2xx: {data.status_2xx.toLocaleString()}</Badge>}
+                {data.status_3xx > 0 && <Badge variant="muted">3xx: {data.status_3xx.toLocaleString()}</Badge>}
+                {data.status_4xx > 0 && <Badge variant="warning">4xx: {data.status_4xx.toLocaleString()}</Badge>}
+                {data.status_5xx > 0 && <Badge variant="destructive">5xx: {data.status_5xx.toLocaleString()}</Badge>}
               </div>
             </div>
 
@@ -221,7 +211,9 @@ function EndpointDetailDialog({
             </div>
           </div>
         ) : (
-          <div className="py-8 text-center text-muted-foreground">Endpoint metrics not found. They may have expired.</div>
+          <div className="py-8 text-center text-muted-foreground">
+            Endpoint metrics not found. They may have expired.
+          </div>
         )}
       </DialogContent>
     </Dialog>
@@ -232,14 +224,8 @@ function EndpointDetailDialog({
 // Endpoint Row
 // ============================================
 
-function EndpointRow({
-  item,
-  onClick,
-}: {
-  item: EndpointStatsSummary
-  onClick: () => void
-}) {
-  const errorRate = item.total_requests > 0 ? ((item.error_count / item.total_requests) * 100) : 0
+function EndpointRow({ item, onClick }: { item: EndpointStatsSummary; onClick: () => void }) {
+  const errorRate = item.total_requests > 0 ? (item.error_count / item.total_requests) * 100 : 0
 
   return (
     <div
@@ -267,18 +253,28 @@ function EndpointRow({
             <span>{item.total_requests.toLocaleString()} requests</span>
             <span>{(item.unique_visitors ?? 0).toLocaleString()} visitors</span>
             <span>avg {formatDuration(item.avg_time)}</span>
-            {errorRate > 0 && (
-              <span className="text-destructive">{errorRate.toFixed(1)}% errors</span>
-            )}
+            {errorRate > 0 && <span className="text-destructive">{errorRate.toFixed(1)}% errors</span>}
             <span>{timeAgo(item.last_seen)}</span>
           </div>
         </div>
 
         {/* Right side - quick stats */}
         <div className="flex items-center gap-2 shrink-0">
-          {item.status_2xx > 0 && <Badge variant="success" className="text-[10px]">{item.status_2xx}</Badge>}
-          {item.status_4xx > 0 && <Badge variant="warning" className="text-[10px]">{item.status_4xx}</Badge>}
-          {item.status_5xx > 0 && <Badge variant="destructive" className="text-[10px]">{item.status_5xx}</Badge>}
+          {item.status_2xx > 0 && (
+            <Badge variant="success" className="text-[10px]">
+              {item.status_2xx}
+            </Badge>
+          )}
+          {item.status_4xx > 0 && (
+            <Badge variant="warning" className="text-[10px]">
+              {item.status_4xx}
+            </Badge>
+          )}
+          {item.status_5xx > 0 && (
+            <Badge variant="destructive" className="text-[10px]">
+              {item.status_5xx}
+            </Badge>
+          )}
         </div>
       </div>
     </div>
@@ -300,12 +296,8 @@ function RecentRequestRow({ item }: { item: RecentRequestItem }) {
           {item.status_code}
         </Badge>
         <span className="text-sm font-mono truncate flex-1 min-w-0">{item.path}</span>
-        <span className="text-[11px] text-muted-foreground shrink-0">
-          {formatDuration(item.process_time)}
-        </span>
-        <span className="text-[11px] text-muted-foreground shrink-0">
-          {timeAgo(item.timestamp)}
-        </span>
+        <span className="text-[11px] text-muted-foreground shrink-0">{formatDuration(item.process_time)}</span>
+        <span className="text-[11px] text-muted-foreground shrink-0">{timeAgo(item.timestamp)}</span>
       </div>
     </div>
   )
@@ -371,9 +363,7 @@ function EndpointsTab() {
             onClick={() => toggleSort(opt.key)}
           >
             {opt.label}
-            {sortBy === opt.key && (
-              <ArrowUpDown className="h-3 w-3" />
-            )}
+            {sortBy === opt.key && <ArrowUpDown className="h-3 w-3" />}
           </Button>
         ))}
 
@@ -706,12 +696,7 @@ export function RequestMetricsPage() {
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="gap-1.5"
-                disabled={clearAllMutation.isPending}
-              >
+              <Button variant="destructive" size="sm" className="gap-1.5" disabled={clearAllMutation.isPending}>
                 {clearAllMutation.isPending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
@@ -724,8 +709,8 @@ export function RequestMetricsPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Clear all request metrics?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently remove all tracked endpoint statistics and recent request logs from Redis.
-                  This action cannot be undone.
+                  This will permanently remove all tracked endpoint statistics and recent request logs from Redis. This
+                  action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -808,7 +793,8 @@ export function RequestMetricsPage() {
                   : `${Math.floor(status.ttl_seconds / 3600)}h`}
               </p>
               <p className="text-xs text-muted-foreground">
-                Recent: {status.recent_ttl_seconds >= 3600
+                Recent:{' '}
+                {status.recent_ttl_seconds >= 3600
                   ? `${Math.floor(status.recent_ttl_seconds / 3600)}h`
                   : `${Math.floor(status.recent_ttl_seconds / 60)}m`}
               </p>
