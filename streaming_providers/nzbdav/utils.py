@@ -265,9 +265,7 @@ async def update_nzbdav_cache_status(
         logging.error(f"Failed to check NzbDAV cache status: {e}")
 
 
-async def fetch_downloaded_usenet_hashes_from_nzbdav(
-    streaming_provider: StreamingProvider, **kwargs: Any
-) -> list[str]:
+async def fetch_downloaded_usenet_hashes_from_nzbdav(streaming_provider: StreamingProvider, **kwargs: Any) -> list[str]:
     """Fetch hashes of completed downloads from NzbDAV.
 
     Args:
