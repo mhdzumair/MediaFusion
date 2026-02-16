@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     ] = Field(default_factory=list)
 
     # Database and Cache Settings
-    mongo_uri: str
     postgres_uri: str  # Primary read-write PostgreSQL URI
     postgres_read_uri: str | None = None  # Optional read replica URI (if None, uses primary)
     db_max_connections: int = 50
