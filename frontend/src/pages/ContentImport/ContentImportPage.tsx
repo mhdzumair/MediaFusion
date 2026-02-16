@@ -69,7 +69,18 @@ const TAB_DISABLE_KEY: Record<string, string> = {
 }
 
 /** Ordered list of all import tab values. */
-const ALL_TABS = ['magnet', 'torrent', 'nzb', 'm3u', 'xtream', 'youtube', 'http', 'acestream', 'telegram', 'debrid'] as const
+const ALL_TABS = [
+  'magnet',
+  'torrent',
+  'nzb',
+  'm3u',
+  'xtream',
+  'youtube',
+  'http',
+  'acestream',
+  'telegram',
+  'debrid',
+] as const
 
 export function ContentImportPage() {
   const location = useLocation()
@@ -94,25 +105,30 @@ export function ContentImportPage() {
   /** First enabled tab, used as the default active tab. */
   const defaultTab = useMemo(() => ALL_TABS.find(isTabEnabled) ?? 'magnet', [isTabEnabled])
 
-  const [activeTab, setActiveTab] = useState(urlTab && ALL_TABS.includes(urlTab as typeof ALL_TABS[number]) ? urlTab : 'magnet')
+  const [activeTab, setActiveTab] = useState(
+    urlTab && ALL_TABS.includes(urlTab as (typeof ALL_TABS)[number]) ? urlTab : 'magnet',
+  )
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
   // Sync tab changes back to URL params
-  const handleTabChange = useCallback((tab: string) => {
-    setActiveTab(tab)
-    if (tab === 'magnet') {
-      searchParams.delete('tab')
-    } else {
-      searchParams.set('tab', tab)
-    }
-    setSearchParams(searchParams, { replace: true })
-  }, [searchParams, setSearchParams])
+  const handleTabChange = useCallback(
+    (tab: string) => {
+      setActiveTab(tab)
+      if (tab === 'magnet') {
+        searchParams.delete('tab')
+      } else {
+        searchParams.set('tab', tab)
+      }
+      setSearchParams(searchParams, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
 
   // Handle URL param changes (e.g. navigating from Watchlist with ?tab=debrid)
   const [prevUrlTab, setPrevUrlTab] = useState(urlTab)
   if (urlTab !== prevUrlTab) {
     setPrevUrlTab(urlTab)
-    if (urlTab && ALL_TABS.includes(urlTab as typeof ALL_TABS[number])) {
+    if (urlTab && ALL_TABS.includes(urlTab as (typeof ALL_TABS)[number])) {
       setActiveTab(urlTab)
     }
   }

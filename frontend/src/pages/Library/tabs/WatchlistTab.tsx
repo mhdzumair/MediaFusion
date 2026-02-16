@@ -489,7 +489,6 @@ export function WatchlistTab() {
           )}
         </>
       )}
-
     </div>
   )
 }

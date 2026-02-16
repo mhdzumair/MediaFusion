@@ -1209,7 +1209,9 @@ async def remove_torrent_from_debrid(
         return RemoveResponse(success=False, message="Delete not supported for this provider")
 
     try:
-        success = await delete_function(streaming_provider=provider_obj, user_ip=user_ip, info_hash=remove_request.info_hash)
+        success = await delete_function(
+            streaming_provider=provider_obj, user_ip=user_ip, info_hash=remove_request.info_hash
+        )
 
         if success:
             return RemoveResponse(success=True, message="Torrent removed from debrid account")

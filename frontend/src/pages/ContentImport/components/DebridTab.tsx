@@ -26,17 +26,9 @@ import {
   CloudOff,
   Settings,
 } from 'lucide-react'
-import {
-  useWatchlistProviders,
-  useProfiles,
-  useMissingTorrents,
-  useImportTorrents,
-} from '@/hooks'
+import { useWatchlistProviders, useProfiles, useMissingTorrents, useImportTorrents } from '@/hooks'
 import type { MissingTorrentItem, ImportResultItem } from '@/lib/api/watchlist'
-import {
-  DEBRID_SERVICE_DISPLAY_NAMES,
-  type WatchlistProviderInfo,
-} from '@/lib/api'
+import { DEBRID_SERVICE_DISPLAY_NAMES, type WatchlistProviderInfo } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AdvancedImportDialog } from '@/components/watchlist/AdvancedImportDialog'
 
@@ -600,9 +592,7 @@ export function DebridTab() {
           <CardContent className="py-8 text-center">
             <AlertCircle className="h-12 w-12 mx-auto text-yellow-500 opacity-50" />
             <p className="mt-4 font-medium">Import not supported for this provider</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Select a different provider from the dropdown above.
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">Select a different provider from the dropdown above.</p>
           </CardContent>
         </Card>
       )}
@@ -661,11 +651,7 @@ export function DebridTab() {
                         Clear selection
                       </Button>
                     )}
-                    <Button
-                      onClick={handleImport}
-                      disabled={!someSelected || importMutation.isPending}
-                      size="sm"
-                    >
+                    <Button onClick={handleImport} disabled={!someSelected || importMutation.isPending} size="sm">
                       {importMutation.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
