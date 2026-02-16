@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/ui/logo'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import { getAppConfig } from '@/lib/api/instance'
@@ -129,9 +128,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   )
 
   const sidebarContent = (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 h-full flex-col">
       {/* Mobile header */}
-      <div className="flex items-center justify-between p-4 md:hidden border-b border-border/40">
+      <div className="shrink-0 flex items-center justify-between p-4 md:hidden border-b border-border/40">
         <div className="flex items-center gap-2">
           <Logo size="md" />
           <span className="font-display font-semibold text-lg">Menu</span>
@@ -141,7 +140,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 px-3 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-1">
           {filterItems(userNavItems).map((item) => (
             <NavLink key={item.href} item={item} />
@@ -169,10 +168,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             </div>
           </>
         )}
-      </ScrollArea>
+      </div>
 
       {/* Footer */}
-      <div className="border-t border-border/40 p-4">
+      <div className="shrink-0 border-t border-border/40 px-4 py-2">
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
           <span>
@@ -200,8 +199,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col md:pt-14 z-30">
-        <div className="flex-1 bg-card/50 backdrop-blur-sm border-r border-border/40">{sidebarContent}</div>
+      <aside className="hidden md:fixed md:top-14 md:bottom-0 md:left-0 md:flex md:w-64 md:flex-col z-30">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/50 backdrop-blur-sm border-r border-border/40">
+          {sidebarContent}
+        </div>
       </aside>
     </>
   )
