@@ -41,6 +41,12 @@ export interface NZBGetConfig {
   wdp: string // webdav_downloads_path
 }
 
+export interface NzbDAVConfig {
+  u: string // url
+  ak: string // api_key
+  cat: string // category
+}
+
 export interface EasynewsConfig {
   un: string // username
   pw: string // password
@@ -72,6 +78,7 @@ export interface StreamingProviderConfigType {
   // Usenet provider configs
   sbc?: SABnzbdConfig // sabnzbd_config
   ngc?: NZBGetConfig // nzbget_config
+  ndc?: NzbDAVConfig // nzbdav_config
   enc?: EasynewsConfig // easynews_config
   // Multi-provider fields
   pr?: number // priority (0 = highest)

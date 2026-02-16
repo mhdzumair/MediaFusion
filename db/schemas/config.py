@@ -102,6 +102,18 @@ class NZBGetConfig(BaseModel):
         populate_by_name = True
 
 
+class NzbDAVConfig(BaseModel):
+    """NzbDAV configuration - SABnzbd-compatible API with built-in WebDAV."""
+
+    url: str = Field(alias="u")
+    api_key: str = Field(alias="ak")
+    category: str = Field(default="MediaFusion", alias="cat")
+
+    class Config:
+        extra = "ignore"
+        populate_by_name = True
+
+
 class EasynewsConfig(BaseModel):
     """Easynews streaming service configuration."""
 
@@ -135,6 +147,7 @@ class StreamingProvider(BaseModel):
         # Usenet-only providers
         "sabnzbd",
         "nzbget",
+        "nzbdav",
         "easynews",
     ] = Field(alias="sv")
     stremthru_store_name: (
@@ -160,6 +173,7 @@ class StreamingProvider(BaseModel):
     # Usenet-specific provider configs
     sabnzbd_config: SABnzbdConfig | None = Field(default=None, alias="sbc")
     nzbget_config: NZBGetConfig | None = Field(default=None, alias="ngc")
+    nzbdav_config: NzbDAVConfig | None = Field(default=None, alias="ndc")
     easynews_config: EasynewsConfig | None = Field(default=None, alias="enc")
 
     @model_validator(mode="after")

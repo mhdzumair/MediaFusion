@@ -285,7 +285,7 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
               <Newspaper className="h-4 w-4" />
               <AlertDescription>
                 To use Usenet streams, you need a Usenet-capable streaming provider configured (TorBox, Debrider,
-                SABnzbd, NZBGet, or Easynews) in the Provider tab.
+                SABnzbd, NZBGet, NzbDAV, or Easynews) in the Provider tab.
               </AlertDescription>
             </Alert>
           </>

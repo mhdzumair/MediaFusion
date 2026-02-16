@@ -172,6 +172,7 @@ STREAMING_SERVICE_REQUIREMENTS = {
     # Usenet providers
     "sabnzbd": ["sabnzbd_config"],
     "nzbget": ["nzbget_config"],
+    "nzbdav": ["nzbdav_config"],
     "easynews": ["easynews_config"],
     "default": ["token"],
 }

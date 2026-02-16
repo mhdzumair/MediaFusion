@@ -36,6 +36,14 @@ from streaming_providers.easynews.utils import (
     update_easynews_cache_status,
     validate_easynews_credentials,
 )
+from streaming_providers.nzbdav.utils import (
+    delete_all_usenet_from_nzbdav,
+    delete_usenet_from_nzbdav,
+    fetch_downloaded_usenet_hashes_from_nzbdav,
+    get_video_url_from_nzbdav,
+    update_nzbdav_cache_status,
+    validate_nzbdav_credentials,
+)
 from streaming_providers.nzbget.utils import (
     delete_all_usenet_from_nzbget,
     delete_usenet_from_nzbget,
@@ -227,6 +235,7 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
     # Usenet-only providers
     "sabnzbd": validate_sabnzbd_credentials,
     "nzbget": validate_nzbget_credentials,
+    "nzbdav": validate_nzbdav_credentials,
     "easynews": validate_easynews_credentials,
 }
 
@@ -236,7 +245,7 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
 # =========================================================================
 
 # Providers that support Usenet content
-USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "easynews"}
+USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav", "easynews"}
 
 # Define provider-specific Usenet cache update functions
 USENET_CACHE_UPDATE_FUNCTIONS = {
@@ -244,6 +253,7 @@ USENET_CACHE_UPDATE_FUNCTIONS = {
     "debrider": update_debrider_usenet_cache_status,
     "sabnzbd": update_sabnzbd_cache_status,
     "nzbget": update_nzbget_cache_status,
+    "nzbdav": update_nzbdav_cache_status,
     "easynews": update_easynews_cache_status,
 }
 
@@ -253,6 +263,7 @@ USENET_GET_VIDEO_URL_FUNCTIONS = {
     "debrider": get_video_url_from_usenet_debrider,
     "sabnzbd": get_video_url_from_sabnzbd,
     "nzbget": get_video_url_from_nzbget,
+    "nzbdav": get_video_url_from_nzbdav,
     "easynews": get_video_url_from_easynews,
 }
 
@@ -261,6 +272,7 @@ USENET_FETCH_DOWNLOADED_HASHES_FUNCTIONS = {
     "torbox": fetch_downloaded_usenet_hashes_from_torbox,
     "sabnzbd": fetch_downloaded_usenet_hashes_from_sabnzbd,
     "nzbget": fetch_downloaded_usenet_hashes_from_nzbget,
+    "nzbdav": fetch_downloaded_usenet_hashes_from_nzbdav,
     "easynews": fetch_downloaded_usenet_hashes_from_easynews,
 }
 
@@ -269,6 +281,7 @@ USENET_DELETE_ALL_FUNCTIONS = {
     "torbox": delete_all_usenet_from_torbox,
     "sabnzbd": delete_all_usenet_from_sabnzbd,
     "nzbget": delete_all_usenet_from_nzbget,
+    "nzbdav": delete_all_usenet_from_nzbdav,
     "easynews": delete_all_usenet_from_easynews,
 }
 
@@ -277,5 +290,6 @@ USENET_DELETE_FUNCTIONS = {
     "torbox": delete_usenet_from_torbox,
     "sabnzbd": delete_usenet_from_sabnzbd,
     "nzbget": delete_usenet_from_nzbget,
+    "nzbdav": delete_usenet_from_nzbdav,
     "easynews": delete_usenet_from_easynews,
 }

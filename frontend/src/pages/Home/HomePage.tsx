@@ -52,7 +52,7 @@ const platformFeatures = [
   {
     icon: HardDrive,
     title: 'Usenet Streams',
-    description: 'NZB indexer support with Torbox, SABnzbd, NZBGet & Easynews',
+    description: 'NZB indexer support with Torbox, SABnzbd, NZBGet, NzbDAV & Easynews',
   },
   { icon: Send, title: 'Telegram Streams', description: 'Scrape streams from Telegram & Stream via MediaFlow Proxy' },
   { icon: Radio, title: 'AceStream Support', description: 'P2P live streaming via MediaFlow Proxy & AceEngine' },
@@ -98,7 +98,7 @@ const contentSources = [
   { icon: Database, title: 'Zilean / YTS / BT4G', description: 'Multiple torrent search sources' },
   { icon: Globe, title: 'Torrentio / MediaFusion', description: 'Scrape streams from other addons' },
   { icon: Layers, title: 'Torznab API', description: 'Scrape streams from custom Torznab endpoints' },
-  { icon: HardDrive, title: 'Usenet / Newznab', description: 'NZB indexers via Torbox, SABnzbd, NZBGet & Easynews' },
+  { icon: HardDrive, title: 'Usenet / Newznab', description: 'NZB indexers via Torbox, SABnzbd, NZBGet, NzbDAV & Easynews' },
   { icon: Radio, title: 'AceStream', description: 'P2P live streams via content ID or info hash' },
   { icon: Bot, title: 'Telegram Bot', description: 'Scrape streams from Telegram channels via bot integration' },
   { icon: Rss, title: 'RSS Feeds', description: 'Custom RSS monitoring with regex' },

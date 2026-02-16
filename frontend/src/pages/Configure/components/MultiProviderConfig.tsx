@@ -31,6 +31,7 @@ import type {
   QBittorrentConfig,
   SABnzbdConfig,
   NZBGetConfig,
+  NzbDAVConfig,
   EasynewsConfig,
   StreamingProviderConfigType,
 } from './types'
@@ -176,6 +177,15 @@ function SingleProviderEditor({
       wdp: '/',
     }
     onUpdate({ ngc: { ...currentNgc, ...updates } })
+  }
+
+  const updateNzbDAVConfig = (updates: Partial<NzbDAVConfig>) => {
+    const currentNdc = provider.ndc || {
+      u: '',
+      ak: '',
+      cat: 'MediaFusion',
+    }
+    onUpdate({ ndc: { ...currentNdc, ...updates } })
   }
 
   const updateEasynewsConfig = (updates: Partial<EasynewsConfig>) => {
@@ -361,6 +371,7 @@ function SingleProviderEditor({
                   u: undefined,
                   stsn: undefined,
                   qbc: undefined,
+                  ndc: undefined,
                 })
               }}
             >
@@ -851,6 +862,58 @@ function SingleProviderEditor({
             </Accordion>
           )}
 
+          {/* NzbDAV Config */}
+          {selectedProvider?.needsNzbDAVConfig && (
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="nzbdav">
+                <AccordionTrigger>NzbDAV Configuration</AccordionTrigger>
+                <AccordionContent className="space-y-4 pt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>NzbDAV URL</Label>
+                      <Input
+                        value={provider.ndc?.u || ''}
+                        onChange={(e) => updateNzbDAVConfig({ u: e.target.value })}
+                        placeholder="http://192.168.1.100:3000"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>API Key</Label>
+                      <div className="relative">
+                        <Input
+                          type={showToken ? 'text' : 'password'}
+                          value={provider.ndc?.ak || ''}
+                          onChange={(e) => updateNzbDAVConfig({ ak: e.target.value })}
+                          placeholder="NzbDAV SABnzbd API Key"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowToken(!showToken)}
+                        >
+                          {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Input
+                        value={provider.ndc?.cat || 'MediaFusion'}
+                        onChange={(e) => updateNzbDAVConfig({ cat: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    NzbDAV provides a built-in WebDAV server and SABnzbd-compatible API on the same URL. No separate
+                    WebDAV configuration is needed.
+                  </p>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
+
           {/* Easynews Config */}
           {selectedProvider?.needsEasynewsConfig && (
             <Accordion type="single" collapsible className="w-full" defaultValue="easynews">
@@ -902,6 +965,7 @@ function SingleProviderEditor({
             selectedProvider.value !== 'qbittorrent' &&
             selectedProvider.value !== 'sabnzbd' &&
             selectedProvider.value !== 'nzbget' &&
+            selectedProvider.value !== 'nzbdav' &&
             selectedProvider.value !== 'easynews' && (
               <div className="space-y-3 pt-2 border-t">
                 <p className="text-sm font-medium">Provider Options</p>

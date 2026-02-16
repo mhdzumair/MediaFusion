@@ -14,6 +14,7 @@ interface StreamingProviderOption {
   needsQBitConfig?: boolean
   needsSABnzbdConfig?: boolean
   needsNZBGetConfig?: boolean
+  needsNzbDAVConfig?: boolean
   needsEasynewsConfig?: boolean
   hasOAuth?: boolean
   hasStoreSelect?: boolean
@@ -44,6 +45,7 @@ export const STREAMING_PROVIDERS: StreamingProviderOption[] = [
   // Usenet-only providers
   { value: 'sabnzbd', label: 'SABnzbd + WebDAV', icon: '📰', type: 'Usenet', needsSABnzbdConfig: true },
   { value: 'nzbget', label: 'NZBGet + WebDAV', icon: '📰', type: 'Usenet', needsNZBGetConfig: true },
+  { value: 'nzbdav', label: 'NzbDAV', icon: '📰', type: 'Usenet', needsNzbDAVConfig: true },
   { value: 'easynews', label: 'Easynews', icon: '📡', type: 'Usenet', needsEasynewsConfig: true },
 ]
 
