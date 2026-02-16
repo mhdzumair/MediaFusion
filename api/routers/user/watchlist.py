@@ -5,7 +5,6 @@ Provides access to content downloaded/cached in user's debrid accounts.
 """
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -28,7 +27,10 @@ from db.models import (
 )
 from db.crud import get_default_profile, get_profile_by_id
 from db import crud
+from db.schemas import StreamFileData, TorrentStreamData
+from db.schemas.config import StreamingProvider
 
+from scrapers.scraper_tasks import MetadataFetcher
 from streaming_providers import mapper
 from utils.network import get_user_public_ip
 from utils.profile_context import ProfileDataProvider
@@ -263,7 +265,7 @@ def get_watchlist_providers_from_config(config: dict) -> list[WatchlistProviderI
 
 async def fetch_info_hashes_for_provider(
     provider_service: str,
-    user_data: Any,
+    streaming_provider: StreamingProvider,
     user_ip: str | None,
 ) -> list[str]:
     """Fetch downloaded info hashes from a debrid provider."""
@@ -272,8 +274,7 @@ async def fetch_info_hashes_for_provider(
         return []
 
     try:
-        kwargs = dict(user_data=user_data, user_ip=user_ip)
-        info_hashes = await fetch_function(**kwargs)
+        info_hashes = await fetch_function(streaming_provider=streaming_provider, user_ip=user_ip)
         return info_hashes or []
     except Exception as e:
         logger.warning(f"Failed to fetch info hashes from {provider_service}: {e}")
@@ -282,7 +283,7 @@ async def fetch_info_hashes_for_provider(
 
 async def fetch_torrent_details_for_provider(
     provider_service: str,
-    user_data: Any,
+    streaming_provider: StreamingProvider,
     user_ip: str | None,
 ) -> list[dict]:
     """Fetch detailed torrent information from a debrid provider."""
@@ -291,8 +292,7 @@ async def fetch_torrent_details_for_provider(
         return []
 
     try:
-        kwargs = dict(user_data=user_data, user_ip=user_ip)
-        details = await fetch_function(**kwargs)
+        details = await fetch_function(streaming_provider=streaming_provider, user_ip=user_ip)
         return details or []
     except Exception as e:
         logger.warning(f"Failed to fetch torrent details from {provider_service}: {e}")
@@ -512,15 +512,11 @@ async def get_watchlist(
             detail=f"Provider '{provider}' is not configured in your profile",
         )
 
-    # Create a temporary user_data with just this provider for the fetch function
-    user_data = profile_ctx.user_data.model_copy()
-    user_data.streaming_provider = provider_obj
-
     # Get user IP for API calls
-    user_ip = await get_user_public_ip(request, user_data)
+    user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Fetch info hashes from the debrid provider
-    info_hashes = await fetch_info_hashes_for_provider(provider, user_data, user_ip)
+    info_hashes = await fetch_info_hashes_for_provider(provider, provider_obj, user_ip)
 
     if not info_hashes:
         return WatchlistResponse(
@@ -611,15 +607,11 @@ async def get_missing_torrents(
             detail=f"Provider '{provider}' is not configured in your profile",
         )
 
-    # Create a temporary user_data with just this provider
-    user_data = profile_ctx.user_data.model_copy()
-    user_data.streaming_provider = provider_obj
-
     # Get user IP for API calls
-    user_ip = await get_user_public_ip(request, user_data)
+    user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Fetch detailed torrent info from provider
-    torrent_details = await fetch_torrent_details_for_provider(provider, user_data, user_ip)
+    torrent_details = await fetch_torrent_details_for_provider(provider, provider_obj, user_ip)
 
     if not torrent_details:
         return MissingTorrentsResponse(
@@ -691,9 +683,6 @@ async def import_torrents(
     Parses torrent metadata, searches TMDB/IMDB for matching media,
     and creates stream entries.
     """
-    from scrapers.scraper_tasks import MetadataFetcher
-    from db.schemas import TorrentStreamData, StreamFileData
-
     # Validate provider supports import
     if provider not in IMPORT_SUPPORTED_PROVIDERS:
         raise HTTPException(
@@ -720,13 +709,11 @@ async def import_torrents(
             detail=f"Provider '{provider}' is not configured in your profile",
         )
 
-    # Create user_data for API calls
-    user_data = profile_ctx.user_data.model_copy()
-    user_data.streaming_provider = provider_obj
-    user_ip = await get_user_public_ip(request, user_data)
+    # Get user IP for API calls
+    user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Fetch torrent details
-    torrent_details = await fetch_torrent_details_for_provider(provider, user_data, user_ip)
+    torrent_details = await fetch_torrent_details_for_provider(provider, provider_obj, user_ip)
 
     # Create lookup by hash
     torrents_by_hash = {t["hash"].lower(): t for t in torrent_details}
@@ -997,13 +984,11 @@ async def advanced_import_torrents(
             detail=f"Provider '{provider}' is not configured in your profile",
         )
 
-    # Create user_data for API calls
-    user_data = profile_ctx.user_data.model_copy()
-    user_data.streaming_provider = provider_obj
-    user_ip = await get_user_public_ip(request, user_data)
+    # Get user IP for API calls
+    user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Fetch torrent details from provider
-    torrent_details = await fetch_torrent_details_for_provider(provider, user_data, user_ip)
+    torrent_details = await fetch_torrent_details_for_provider(provider, provider_obj, user_ip)
     torrents_by_hash = {t["hash"].lower(): t for t in torrent_details}
 
     # Check which are already in DB
@@ -1215,10 +1200,8 @@ async def remove_torrent_from_debrid(
             detail=f"Provider '{provider}' is not configured in your profile",
         )
 
-    # Create user_data for API calls
-    user_data = profile_ctx.user_data.model_copy()
-    user_data.streaming_provider = provider_obj
-    user_ip = await get_user_public_ip(request, user_data)
+    # Get user IP for API calls
+    user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Get the delete function
     delete_function = mapper.DELETE_TORRENT_FUNCTIONS.get(provider)
@@ -1226,8 +1209,7 @@ async def remove_torrent_from_debrid(
         return RemoveResponse(success=False, message="Delete not supported for this provider")
 
     try:
-        kwargs = dict(user_data=user_data, user_ip=user_ip, info_hash=remove_request.info_hash)
-        success = await delete_function(**kwargs)
+        success = await delete_function(streaming_provider=provider_obj, user_ip=user_ip, info_hash=remove_request.info_hash)
 
         if success:
             return RemoveResponse(success=True, message="Torrent removed from debrid account")
@@ -1279,10 +1261,8 @@ async def clear_all_torrents_from_debrid(
             detail=f"Provider '{provider}' is not configured in your profile",
         )
 
-    # Create user_data for API calls
-    user_data = profile_ctx.user_data.model_copy()
-    user_data.streaming_provider = provider_obj
-    user_ip = await get_user_public_ip(request, user_data)
+    # Get user IP for API calls
+    user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Get the clear all function
     clear_function = mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(provider)
@@ -1290,8 +1270,7 @@ async def clear_all_torrents_from_debrid(
         return RemoveResponse(success=False, message="Clear all not supported for this provider")
 
     try:
-        kwargs = dict(user_data=user_data, user_ip=user_ip)
-        await clear_function(**kwargs)
+        await clear_function(streaming_provider=provider_obj, user_ip=user_ip)
         return RemoveResponse(success=True, message="All torrents cleared from debrid account")
 
     except Exception as e:

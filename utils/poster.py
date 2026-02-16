@@ -17,7 +17,7 @@ font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
 
-async def fetch_poster_image(url: str, max_retries: int = 3) -> bytes:
+async def fetch_poster_image(url: str, max_retries: int = 2) -> bytes:
     # Check if the image is cached in Redis
     cached_image = await REDIS_ASYNC_CLIENT.get(url)
     if cached_image:
@@ -25,9 +25,9 @@ async def fetch_poster_image(url: str, max_retries: int = 3) -> bytes:
         return cached_image
 
     timeout = aiohttp.ClientTimeout(
-        total=30,
-        connect=10,
-        sock_read=15,
+        total=10,
+        connect=5,
+        sock_read=5,
     )
 
     last_exception = None
@@ -48,14 +48,15 @@ async def fetch_poster_image(url: str, max_retries: int = 3) -> bytes:
                     logging.info(f"Caching image for URL: {url}")
                     await REDIS_ASYNC_CLIENT.set(url, content, ex=3600)
                     return content
+        except ValueError:
+            raise
         except (TimeoutError, aiohttp.ClientError) as e:
             last_exception = e
             if attempt < max_retries:
-                wait_time = 2**attempt  # exponential backoff: 2s, 4s
-                logging.warning(f"Attempt {attempt}/{max_retries} failed for {url}: {e}. Retrying in {wait_time}s...")
-                await asyncio.sleep(wait_time)
+                logging.warning(f"Attempt {attempt}/{max_retries} failed for {url}: {e}. Retrying...")
+                await asyncio.sleep(1)
             else:
-                logging.error(f"All {max_retries} attempts failed for {url}: {e}")
+                logging.warning(f"All {max_retries} attempts failed for {url}: {e}")
 
     raise last_exception
 

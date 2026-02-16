@@ -257,25 +257,24 @@ function EditPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          variant="link"
-          size="sm"
-          className="text-xs px-0 h-auto text-muted-foreground hover:text-primary"
-          onClick={onAdvancedImport}
-        >
-          <Settings2 className="mr-1 h-3 w-3" />
-          Advanced Import (file annotation)
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full border-dashed border-primary/40 text-primary hover:bg-primary/10"
+        onClick={onAdvancedImport}
+      >
+        <Settings2 className="mr-2 h-4 w-4" />
+        Advanced Import with File Annotation
+      </Button>
+
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          Cancel
         </Button>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={handleSave}>
-            <Save className="mr-1.5 h-3.5 w-3.5" />
-            Save
-          </Button>
-        </div>
+        <Button size="sm" onClick={handleSave}>
+          <Save className="mr-1.5 h-3.5 w-3.5" />
+          Save
+        </Button>
       </div>
     </div>
   )

@@ -20,7 +20,6 @@ import {
 import { Film, Tv, Cloud, CloudOff, Settings, Loader2, HardDrive, Download, Trash2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { ContentCard, ContentGrid, type ContentCardData } from '@/components/content'
-import { ImportMissingDialog } from '@/components/watchlist'
 import {
   useWatchlistProviders,
   useInfiniteWatchlist,
@@ -60,9 +59,6 @@ export function WatchlistTab() {
 
   // Filters
   const [mediaType, setMediaType] = useState<'movie' | 'series' | ''>('')
-
-  // Import dialog state
-  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   // Infinite scroll ref
   const loadMoreRef = useRef<HTMLDivElement>(null)
@@ -366,16 +362,18 @@ export function WatchlistTab() {
               )}
               {isFetching && !watchlistLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
 
-              {/* Import Missing Button */}
+              {/* Import Missing Link */}
               {supportsImport && (
-                <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setImportDialogOpen(true)}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Import Missing
-                  {missingCount > 0 && (
-                    <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs">
-                      {missingCount}
-                    </Badge>
-                  )}
+                <Button variant="outline" size="sm" className="rounded-xl" asChild>
+                  <Link to="/dashboard/content-import?tab=debrid">
+                    <Download className="mr-2 h-4 w-4" />
+                    Import Missing
+                    {missingCount > 0 && (
+                      <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs">
+                        {missingCount}
+                      </Badge>
+                    )}
+                  </Link>
                 </Button>
               )}
 
@@ -492,16 +490,6 @@ export function WatchlistTab() {
         </>
       )}
 
-      {/* Import Missing Dialog */}
-      {selectedProvider && supportsImport && (
-        <ImportMissingDialog
-          open={importDialogOpen}
-          onOpenChange={setImportDialogOpen}
-          provider={selectedProvider}
-          providerName={DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider}
-          profileId={selectedProfileId}
-        />
-      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,7 @@ import {
   Globe,
   Radio,
   Send,
+  HardDrive,
 } from 'lucide-react'
 import { useImportMagnet, useImportTorrent, useAnalyzeMagnet, useAnalyzeTorrent, useIPTVImportSettings } from '@/hooks'
 import { getAppConfig } from '@/lib/api/instance'
@@ -37,6 +38,7 @@ import {
   HTTPTab,
   AceStreamTab,
   TelegramTab,
+  DebridTab,
   TorrentImportDialog,
   ImportResultBanner,
   ContentTypeSelector,
@@ -63,14 +65,19 @@ const TAB_DISABLE_KEY: Record<string, string> = {
   http: 'http',
   acestream: 'acestream',
   telegram: 'telegram',
+  debrid: 'debrid',
 }
 
 /** Ordered list of all import tab values. */
-const ALL_TABS = ['magnet', 'torrent', 'nzb', 'm3u', 'xtream', 'youtube', 'http', 'acestream', 'telegram'] as const
+const ALL_TABS = ['magnet', 'torrent', 'nzb', 'm3u', 'xtream', 'youtube', 'http', 'acestream', 'telegram', 'debrid'] as const
 
 export function ContentImportPage() {
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const locationState = location.state as LocationState | null
+
+  // Read initial tab from URL search params (e.g. ?tab=debrid)
+  const urlTab = searchParams.get('tab')
 
   // Fetch app config to determine which import types are disabled
   const { data: appConfig } = useQuery({
@@ -87,8 +94,28 @@ export function ContentImportPage() {
   /** First enabled tab, used as the default active tab. */
   const defaultTab = useMemo(() => ALL_TABS.find(isTabEnabled) ?? 'magnet', [isTabEnabled])
 
-  const [activeTab, setActiveTab] = useState('magnet')
+  const [activeTab, setActiveTab] = useState(urlTab && ALL_TABS.includes(urlTab as typeof ALL_TABS[number]) ? urlTab : 'magnet')
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+
+  // Sync tab changes back to URL params
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab)
+    if (tab === 'magnet') {
+      searchParams.delete('tab')
+    } else {
+      searchParams.set('tab', tab)
+    }
+    setSearchParams(searchParams, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  // Handle URL param changes (e.g. navigating from Watchlist with ?tab=debrid)
+  const [prevUrlTab, setPrevUrlTab] = useState(urlTab)
+  if (urlTab !== prevUrlTab) {
+    setPrevUrlTab(urlTab)
+    if (urlTab && ALL_TABS.includes(urlTab as typeof ALL_TABS[number])) {
+      setActiveTab(urlTab)
+    }
+  }
 
   // When config loads, ensure active tab is not a disabled one (during render)
   const [prevAppConfig, setPrevAppConfig] = useState(appConfig)
@@ -261,7 +288,7 @@ export function ContentImportPage() {
       {importResult && <ImportResultBanner result={importResult} onDismiss={() => setImportResult(null)} />}
 
       {/* Import Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="flex w-full flex-wrap p-1 bg-muted/50 rounded-xl gap-1">
           {isTabEnabled('magnet') && (
             <TabsTrigger
@@ -344,6 +371,13 @@ export function ContentImportPage() {
               <span className="hidden sm:inline">Telegram</span>
             </TabsTrigger>
           )}
+          <TabsTrigger
+            value="debrid"
+            className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
+            <HardDrive className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Debrid</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Magnet Link Tab */}
@@ -546,6 +580,11 @@ export function ContentImportPage() {
             <TelegramTab telegram={appConfig?.telegram} />
           </TabsContent>
         )}
+
+        {/* Debrid Import Tab */}
+        <TabsContent value="debrid" className="space-y-6">
+          <DebridTab />
+        </TabsContent>
       </Tabs>
 
       {/* Enhanced Torrent Import Dialog */}

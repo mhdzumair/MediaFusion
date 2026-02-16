@@ -311,7 +311,7 @@ export function AdvancedImportDialog({
                 <DialogDescription>Import with full metadata control and file annotation support.</DialogDescription>
               </DialogHeader>
 
-              <div className="flex-1 overflow-hidden space-y-4">
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                 {/* Torrent Info */}
                 <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
                   <p className="text-sm font-medium truncate" title={torrent.name}>
