@@ -1,6 +1,19 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { User, Settings, Lock, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, UserCog } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import {
+  User,
+  Settings,
+  Lock,
+  Eye,
+  EyeOff,
+  Save,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  UserCog,
+  Trash2,
+} from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +21,17 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { useAuth } from '@/contexts/AuthContext'
 import { authApi } from '@/lib/api/auth'
 import type { UserUpdateRequest, ChangePasswordRequest } from '@/lib/api/auth'
@@ -15,6 +39,7 @@ import type { UserUpdateRequest, ChangePasswordRequest } from '@/lib/api/auth'
 export function SettingsPage() {
   const { user, refetchUser } = useAuth()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   // Account details form state
   const [username, setUsername] = useState(user?.username || '')
@@ -69,6 +94,21 @@ export function SettingsPage() {
         type: 'error',
         text: error.message || 'Failed to change password',
       })
+    },
+  })
+
+  // Account deletion state
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: (password: string) => authApi.deleteAccount(password),
+    onSuccess: () => {
+      navigate('/')
+    },
+    onError: (error: Error) => {
+      setDeleteError(error.message || 'Failed to delete account')
     },
   })
 
@@ -375,6 +415,88 @@ export function SettingsPage() {
               <p className="text-2xl font-bold capitalize">{user?.contribution_level ?? 'New'}</p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      {/* Danger Zone */}
+      <Card className="border-destructive/50">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-destructive" />
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+          </div>
+          <CardDescription>Irreversible actions that affect your account</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Permanently delete your account and all associated data including profiles, watch history, and library
+            items. This action cannot be undone.
+          </p>
+
+          <AlertDialog
+            open={deleteDialogOpen}
+            onOpenChange={(open) => {
+              setDeleteDialogOpen(open)
+              if (!open) {
+                setDeletePassword('')
+                setDeleteError(null)
+              }
+            }}
+          >
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete My Account
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete your account, all profiles, watch history, library items, and
+                  configuration data. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="space-y-3 py-2">
+                <Label htmlFor="delete-password">Enter your password to confirm</Label>
+                <Input
+                  id="delete-password"
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => {
+                    setDeletePassword(e.target.value)
+                    setDeleteError(null)
+                  }}
+                  placeholder="Your current password"
+                />
+                {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+              </div>
+
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={!deletePassword || deleteAccountMutation.isPending}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    deleteAccountMutation.mutate(deletePassword)
+                  }}
+                >
+                  {deleteAccountMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete Account'
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>

@@ -3,6 +3,7 @@ Authentication API endpoints for user registration, login, and token management.
 """
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta
 
@@ -10,13 +11,18 @@ import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
-from sqlmodel import select
+from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.database import get_async_session
 from db.enums import UserRole
 from db.models import User, UserProfile
+from db.models.links import StreamMediaLink
+from db.models.media import Media
+from db.models.streams import Stream
 from utils.config import settings
+
+logger = logging.getLogger(__name__)
 
 # JWT Configuration
 JWT_SECRET_KEY = settings.secret_key
@@ -88,6 +94,12 @@ class ChangePasswordRequest(BaseModel):
 
     current_password: str
     new_password: str = Field(..., min_length=8)
+
+
+class DeleteAccountRequest(BaseModel):
+    """Request to delete user account. Requires password confirmation."""
+
+    password: str
 
 
 # ============================================
@@ -532,3 +544,38 @@ async def change_password(
     await session.commit()
 
     return {"message": "Password changed successfully"}
+
+
+@router.delete("/me")
+async def delete_account(
+    request: DeleteAccountRequest,
+    user: User = Depends(require_auth),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Delete the current user's account and all associated data."""
+    if not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete account for OAuth users via this endpoint",
+        )
+
+    if not verify_password(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Password is incorrect",
+        )
+
+    # SET NULL for nullable FK references that would block deletion
+    await session.exec(update(Stream).where(Stream.uploader_user_id == user.id).values(uploader_user_id=None))
+    await session.exec(
+        update(StreamMediaLink).where(StreamMediaLink.linked_by_user_id == user.id).values(linked_by_user_id=None)
+    )
+    await session.exec(update(Media).where(Media.created_by_user_id == user.id).values(created_by_user_id=None))
+
+    logger.info("Deleting account for user %s (id=%d)", user.email, user.id)
+
+    # Delete user -- cascades handle profiles, watch history, library, etc.
+    await session.delete(user)
+    await session.commit()
+
+    return {"message": "Account deleted successfully"}

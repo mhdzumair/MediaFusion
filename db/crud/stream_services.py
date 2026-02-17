@@ -674,6 +674,19 @@ async def get_movie_streams(
         else []
     )
 
+    # Apply disabled content type filtering
+    disabled = set(settings.disabled_content_types)
+    if "torrent" in disabled or "magnet" in disabled:
+        stream_data_list = []
+    if "nzb" in disabled:
+        usenet_stream_data_list = []
+    if "telegram" in disabled:
+        telegram_stream_data_list = []
+    if "iptv" in disabled or "http" in disabled:
+        formatted_http_streams = []
+    if "acestream" in disabled:
+        formatted_acestream_streams = []
+
     if (
         not stream_data_list
         and not usenet_stream_data_list
@@ -803,6 +816,19 @@ async def get_series_streams(
         else []
     )
 
+    # Apply disabled content type filtering
+    disabled = set(settings.disabled_content_types)
+    if "torrent" in disabled or "magnet" in disabled:
+        stream_data_list = []
+    if "nzb" in disabled:
+        usenet_stream_data_list = []
+    if "telegram" in disabled:
+        telegram_stream_data_list = []
+    if "iptv" in disabled or "http" in disabled:
+        formatted_http_streams = []
+    if "acestream" in disabled:
+        formatted_acestream_streams = []
+
     if (
         not stream_data_list
         and not usenet_stream_data_list
@@ -892,61 +918,63 @@ async def get_tv_streams_formatted(
         logger.warning(f"TV channel not found for video_id: {video_id}")
         return []
 
-    # Query HTTP streams
-    http_query = (
-        select(HTTPStream)
-        .join(Stream, Stream.id == HTTPStream.stream_id)
-        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-        .where(StreamMediaLink.media_id == media.id)
-        .where(Stream.is_active.is_(True))
-        .where(Stream.is_blocked.is_(False))
-        .options(joinedload(HTTPStream.stream))
-        .limit(100)
-    )
-
-    result = await session.exec(http_query)
-    http_streams = result.unique().all()
-
-    # Query YouTube streams
-    yt_query = (
-        select(YouTubeStream)
-        .join(Stream, Stream.id == YouTubeStream.stream_id)
-        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
-        .where(StreamMediaLink.media_id == media.id)
-        .where(Stream.is_active.is_(True))
-        .where(Stream.is_blocked.is_(False))
-        .options(joinedload(YouTubeStream.stream))
-        .limit(100)
-    )
-
-    yt_result = await session.exec(yt_query)
-    yt_streams = yt_result.unique().all()
-
-    # Format streams for Stremio
+    disabled = set(settings.disabled_content_types)
     formatted_streams = []
 
-    for http_stream in http_streams:
-        stream = http_stream.stream
-        formatted_streams.append(
-            StremioStream(
-                name=f"{settings.addon_name}\n{stream.name}",
-                description=f"📺 {stream.source}" if stream.source else "📺 Live",
-                url=http_stream.url,
-            )
+    # Query HTTP streams (skip if iptv/http disabled)
+    if "iptv" not in disabled and "http" not in disabled:
+        http_query = (
+            select(HTTPStream)
+            .join(Stream, Stream.id == HTTPStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media.id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .options(joinedload(HTTPStream.stream))
+            .limit(100)
         )
 
-    for yt_stream in yt_streams:
-        stream = yt_stream.stream
-        formatted_streams.append(
-            StremioStream(
-                name=f"{settings.addon_name} YouTube\n{stream.name}",
-                description="▶️ YouTube Stream",
-                externalUrl=f"https://www.youtube.com/watch?v={yt_stream.video_id}",
+        result = await session.exec(http_query)
+        http_streams = result.unique().all()
+
+        for http_stream in http_streams:
+            stream = http_stream.stream
+            formatted_streams.append(
+                StremioStream(
+                    name=f"{settings.addon_name}\n{stream.name}",
+                    description=f"📺 {stream.source}" if stream.source else "📺 Live",
+                    url=http_stream.url,
+                )
             )
+
+    # Query YouTube streams (skip if youtube disabled)
+    if "youtube" not in disabled:
+        yt_query = (
+            select(YouTubeStream)
+            .join(Stream, Stream.id == YouTubeStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media.id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .options(joinedload(YouTubeStream.stream))
+            .limit(100)
         )
 
-    # Query AceStream streams (requires enable_acestream_streams AND MediaFlow config)
-    if user_data.enable_acestream_streams and _has_mediaflow_config(user_data):
+        yt_result = await session.exec(yt_query)
+        yt_streams = yt_result.unique().all()
+
+        for yt_stream in yt_streams:
+            stream = yt_stream.stream
+            formatted_streams.append(
+                StremioStream(
+                    name=f"{settings.addon_name} YouTube\n{stream.name}",
+                    description="▶️ YouTube Stream",
+                    externalUrl=f"https://www.youtube.com/watch?v={yt_stream.video_id}",
+                )
+            )
+
+    # Query AceStream streams (skip if acestream disabled; requires enable_acestream_streams AND MediaFlow config)
+    if "acestream" not in disabled and user_data.enable_acestream_streams and _has_mediaflow_config(user_data):
         acestream_query = (
             select(AceStreamStream)
             .join(Stream, Stream.id == AceStreamStream.stream_id)

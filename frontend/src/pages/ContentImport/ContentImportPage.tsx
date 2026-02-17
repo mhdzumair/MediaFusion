@@ -52,7 +52,7 @@ interface LocationState {
 }
 
 /**
- * Maps each tab value to the disable key used in `disabled_content_imports`.
+ * Maps each tab value to the disable key used in `disabled_content_types`.
  * Both m3u and xtream are controlled by the single "iptv" key.
  */
 const TAB_DISABLE_KEY: Record<string, string> = {
@@ -97,10 +97,10 @@ export function ContentImportPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const disabledImports = useMemo(() => new Set(appConfig?.disabled_content_imports ?? []), [appConfig])
+  const disabledTypes = useMemo(() => new Set(appConfig?.disabled_content_types ?? []), [appConfig])
 
   /** Check whether a tab is enabled (its disable key is not in the disabled set). */
-  const isTabEnabled = useCallback((tab: string) => !disabledImports.has(TAB_DISABLE_KEY[tab]), [disabledImports])
+  const isTabEnabled = useCallback((tab: string) => !disabledTypes.has(TAB_DISABLE_KEY[tab]), [disabledTypes])
 
   /** First enabled tab, used as the default active tab. */
   const defaultTab = useMemo(() => ALL_TABS.find(isTabEnabled) ?? 'magnet', [isTabEnabled])

@@ -56,6 +56,12 @@ export const authApi = {
     return apiClient.post<{ message: string }>('/auth/change-password', data)
   },
 
+  deleteAccount: async (password: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>('/auth/me', { password })
+    apiClient.clearTokens()
+    return response
+  },
+
   linkConfig: async (secretStr: string): Promise<void> => {
     await apiClient.post('/auth/link-config', { secret_str: secretStr })
   },

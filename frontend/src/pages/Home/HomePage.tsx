@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -46,6 +47,7 @@ import { ThemeSelector } from '@/components/ui/theme-selector'
 import { Skeleton } from '@/components/ui/skeleton'
 
 // Platform Features - What makes MediaFusion special
+// Each feature can optionally specify disableKeys: if ANY key is in disabled_content_types, the feature is hidden.
 const platformFeatures = [
   { icon: Smartphone, title: 'Stremio & Kodi', description: 'Native support for popular media apps' },
   { icon: Globe, title: 'Torznab API', description: 'Use as indexer in *arr apps' },
@@ -53,9 +55,20 @@ const platformFeatures = [
     icon: HardDrive,
     title: 'Usenet Streams',
     description: 'NZB indexer support with Torbox, SABnzbd, NZBGet, NzbDAV & Easynews',
+    disableKeys: ['nzb'],
   },
-  { icon: Send, title: 'Telegram Streams', description: 'Scrape streams from Telegram & Stream via MediaFlow Proxy' },
-  { icon: Radio, title: 'AceStream Support', description: 'P2P live streaming via MediaFlow Proxy & AceEngine' },
+  {
+    icon: Send,
+    title: 'Telegram Streams',
+    description: 'Import streams from Telegram & stream via MediaFlow Proxy',
+    disableKeys: ['telegram'],
+  },
+  {
+    icon: Radio,
+    title: 'AceStream Support',
+    description: 'P2P live streaming via MediaFlow Proxy & AceEngine',
+    disableKeys: ['acestream'],
+  },
   { icon: Lock, title: 'API Security', description: 'Password protection for private instances' },
   { icon: Shield, title: 'Encrypted Config', description: 'Secure configuration storage' },
   { icon: Users, title: 'Multiple Profiles', description: 'Unlimited profiles with unique configurations' },
@@ -77,8 +90,9 @@ const platformFeatures = [
 ]
 
 // Streaming Providers
+// disableKeys: hide provider if any key is in disabled_content_types
 const streamingProviders = [
-  { name: 'Direct Torrent', type: 'Free', icon: '📥' },
+  { name: 'Direct P2P', type: 'Free', icon: '📥', disableKeys: ['torrent', 'magnet'] },
   { name: 'StremThru', type: 'Proxy', icon: '🔄' },
   { name: 'PikPak', type: 'Freemium', icon: '🌩️' },
   { name: 'Seedr', type: 'Freemium', icon: '🌱' },
@@ -92,26 +106,43 @@ const streamingProviders = [
   { name: 'qBittorrent', type: 'Self-hosted', icon: '🔒' },
 ]
 
-// Content Sources - What we scrape from
+// Content Sources
+// disableKeys: hide source if any key is in disabled_content_types
 const contentSources = [
   { icon: Search, title: 'Prowlarr / Jackett', description: 'User-provided indexer integration' },
-  { icon: Database, title: 'Zilean / YTS / BT4G', description: 'Multiple torrent search sources' },
-  { icon: Globe, title: 'Torrentio / MediaFusion', description: 'Scrape streams from other addons' },
-  { icon: Layers, title: 'Torznab API', description: 'Scrape streams from custom Torznab endpoints' },
+  { icon: Database, title: 'Zilean / DMM', description: 'Torrent hash lookup services' },
+  { icon: Globe, title: 'External Addons', description: 'Import streams from compatible Stremio addons' },
+  { icon: Layers, title: 'Torznab API', description: 'Connect custom Torznab-compatible indexers' },
   {
     icon: HardDrive,
     title: 'Usenet / Newznab',
     description: 'NZB indexers via Torbox, SABnzbd, NZBGet, NzbDAV & Easynews',
+    disableKeys: ['nzb'],
   },
-  { icon: Radio, title: 'AceStream', description: 'P2P live streams via content ID or info hash' },
-  { icon: Bot, title: 'Telegram Bot', description: 'Scrape streams from Telegram channels via bot integration' },
+  {
+    icon: Radio,
+    title: 'AceStream',
+    description: 'P2P live streams via content ID or info hash',
+    disableKeys: ['acestream'],
+  },
+  {
+    icon: Bot,
+    title: 'Telegram Bot',
+    description: 'Monitor Telegram channels for stream links via bot integration',
+    disableKeys: ['telegram'],
+  },
   { icon: Rss, title: 'RSS Feeds', description: 'Custom RSS monitoring with regex' },
   {
     icon: Sparkles,
-    title: 'Scrapy Spiders',
-    description: 'Scrape streams from custom scrapy spiders like TamilMV, SportsVideo etc.',
+    title: 'Custom Spiders',
+    description: 'Add custom Scrapy spiders for additional sources',
   },
-  { icon: Tv, title: 'IPTV / M3U / Xtream', description: 'Live TV import from multiple formats' },
+  {
+    icon: Tv,
+    title: 'IPTV / M3U',
+    description: 'Import your IPTV playlists and live streams',
+    disableKeys: ['iptv'],
+  },
 ]
 
 export function HomePage() {
@@ -129,6 +160,16 @@ export function HomePage() {
   const version = instanceInfo?.version || ''
   const brandingSvg = instanceInfo?.branding_svg || null
   const brandingDescription = appConfig?.branding_description || ''
+  const disabledTypes = useMemo(() => new Set(appConfig?.disabled_content_types ?? []), [appConfig])
+
+  const isDisabled = useCallback((keys?: string[]) => keys?.some((k) => disabledTypes.has(k)) ?? false, [disabledTypes])
+
+  const visiblePlatformFeatures = useMemo(
+    () => platformFeatures.filter((f) => !isDisabled(f.disableKeys)),
+    [isDisabled],
+  )
+  const visibleProviders = useMemo(() => streamingProviders.filter((p) => !isDisabled(p.disableKeys)), [isDisabled])
+  const visibleSources = useMemo(() => contentSources.filter((s) => !isDisabled(s.disableKeys)), [isDisabled])
 
   // Show loading while checking auth
   if (authLoading || instanceLoading) {
@@ -203,8 +244,8 @@ export function HomePage() {
                 <LogoText addonName={addonName} size="5xl" />
               </h1>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                The ultimate open-source streaming platform. Aggregate content from multiple sources, stream via debrid
-                services, and enjoy on Stremio, Kodi, or directly in your browser.
+                The ultimate open-source streaming platform. Aggregate streams from your configured sources, manage
+                playback via supported providers, and enjoy on Stremio, Kodi, or directly in your browser.
               </p>
             </div>
 
@@ -252,7 +293,7 @@ export function HomePage() {
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-            {platformFeatures.map((feature) => (
+            {visiblePlatformFeatures.map((feature) => (
               <Card
                 key={feature.title}
                 className="hover:border-primary/30 transition-all hover:-translate-y-1 text-center"
@@ -279,12 +320,12 @@ export function HomePage() {
               Streaming Providers
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Stream through your favorite debrid services or directly via torrent
+              Stream through your preferred providers or directly via peer-to-peer
             </p>
           </div>
 
           <div className="flex flex-wrap justify-center gap-3 max-w-4xl mx-auto">
-            {streamingProviders.map((provider) => (
+            {visibleProviders.map((provider) => (
               <Badge
                 key={provider.name}
                 variant={
@@ -316,12 +357,12 @@ export function HomePage() {
               Content Sources
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Aggregate streams from multiple sources into a unified experience
+              Connect your preferred indexers and sources into a unified experience
             </p>
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
-            {contentSources.map((source) => (
+            {visibleSources.map((source) => (
               <Card
                 key={source.title}
                 className="hover:border-primary/30 transition-all hover:-translate-y-1 text-center"
@@ -381,6 +422,15 @@ export function HomePage() {
               </span>
             </div>
             <div className="flex items-center gap-6">
+              <Link to="/privacy" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                Privacy Policy
+              </Link>
+              <Link to="/terms" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                Terms of Service
+              </Link>
+              <Link to="/dmca" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                DMCA
+              </Link>
               <a
                 href="https://github.com/mhdzumair/MediaFusion"
                 target="_blank"

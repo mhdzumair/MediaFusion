@@ -299,8 +299,7 @@ export function ScrapeContentButton({
                     {/* Info about debrid scrapers - only show if user doesn't have debrid */}
                     {!scrapeStatus.has_debrid && scrapeStatus.available_scrapers.some((s) => s.requires_debrid) && (
                       <p className="text-xs text-muted-foreground mt-2">
-                        Some indexers (Torrentio, MediaFusion) require a debrid service. Configure one in your profile
-                        to enable them.
+                        Some indexers require a debrid service. Configure one in your profile to enable them.
                       </p>
                     )}
                   </div>

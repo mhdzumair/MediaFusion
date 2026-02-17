@@ -42,8 +42,9 @@ export interface AppConfig {
   description: string
   branding_description: string // Can contain HTML
   is_public_instance: boolean
+  contact_email: string | null // Instance operator email (null if not configured)
   disabled_providers: string[]
-  disabled_content_imports: string[]
+  disabled_content_types: string[]
   authentication_required: boolean
   torznab_enabled: boolean
   telegram: TelegramFeatureConfig

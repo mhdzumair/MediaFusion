@@ -6,6 +6,7 @@ export interface StreamingProviderInfo {
   name?: string
   enabled: boolean
   priority: number
+  has_credentials: boolean
 }
 
 export interface StreamingProvidersSummary {

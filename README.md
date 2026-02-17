@@ -13,7 +13,7 @@
   ![Media Fusion Catalog](resources/images/ss1.png?raw=true)
 
 - **Enhanced Streaming with Various Providers**: Seamless playback from a diverse array of torrent and cloud storage services:
-  - 📥 **Direct Torrent** (Free)
+  - 📥 **Direct P2P** (Free)
   - 🌩️ **PikPak** (Free Quota / Premium)
   - 🌱 **Seedr.cc** (Free Quota / Premium)
   - ☁️ **OffCloud** (Free Quota / Premium)
@@ -27,20 +27,18 @@
 
   ![Media Fusion Streams](resources/images/ss2.png?raw=true)
 
-- **Advanced Scraper Support**:
-  - 🏎️ **Formula Racing**: Exclusive scraping from TorrentGalaxy for all your racing needs.
-  - 🥊 **Fighting Sports**: Catch up on all the latest fighting sports content from UFC and WWE.
-  - 🏈🏀⚾⚽🏒🏉🎾 **American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and Other Sports**: Now all scraping through sport-video.org.ua for catchup videos.
-  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Watch live sports events from DaddyLiveHD
-  - 🎥 **TamilMV**: Specialized scraping for regional contents.
-  - 🌟 **TamilBlasters**: Dedicated access to an extensive library of regional content.
-  - 📺 **TamilUltra & NowMeTV**: Get the best of Live TV channels right at your fingertips.
-  - 🔄 **Prowlarr Integration**: Supercharge your scraping streams with Prowlarr's powerful integration.
-  - 🔍 **Advanced Prowlarr Integration**: Improved Prowlarr feed scraping for more comprehensive content discovery with latest updates.
-  - 📰 **RSS Feed Scraper**: Automated RSS feed monitoring and scraping with intelligent catalog detection, and parsing with regex patterns.
-  - 🌊 **Torrentio/KnightCrawler Streams**: Optional scraping streams directly from Torrentio/KnightCrawler streams for even more variety.
-  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for cached debrid contents.
-  - 📺 **MPD DRM Scraping**: Scraping MPD & Support streaming functionality with MediaFlow MPD DRM support.
+- **Advanced Source Integration**:
+  - 🏎️ **Formula Racing**: Dedicated integration for motorsport content.
+  - 🥊 **Fighting Sports**: Coverage of UFC, WWE, and other combat sports.
+  - 🏈🏀⚾⚽🏒🏉🎾 **Multi-Sport Support**: American Football, Basketball, Baseball, Football, Hockey, Rugby/AFL, and more via configurable sources.
+  - 🏈🏀⚾⚽🏒🏉🎾🏏 **Sports Live Events**: Live sports event streams.
+  - 🎥 **Regional Content**: Specialized support for regional language content (Tamil, Malayalam, Telugu, Hindi, Kannada, etc.).
+  - 📺 **Live TV Channels**: Access live TV channels from configured sources.
+  - 🔄 **Prowlarr Integration**: Powerful indexer integration via Prowlarr for comprehensive content discovery.
+  - 📰 **RSS Feed Monitor**: Automated RSS feed monitoring with intelligent catalog detection and regex parsing.
+  - 🌊 **External Addon Streams**: Import streams from compatible Stremio addons.
+  - 🔍 **Zilean DMM Search**: Search for movies and TV shows with [Zilean DMM](https://github.com/iPromKnight/zilean) for cached content lookups.
+  - 📺 **MPD DRM Support**: MPD streaming with MediaFlow DRM support.
 
 
 - **Additional Features**:
@@ -50,7 +48,7 @@
   - ⚙️ **Stream Filters**: Customize your viewing experience with filters that sort streams by file size, resolution, seeders and much more.
   - 🖼️ **Poster with Title**: Display the poster with the title for a more visually appealing catalog on sport events.
   - 📺 **M3U Playlist Import**: Import M3U playlists for a more personalized streaming experience.
-  - ✨ **Manual Scraper Triggering UI**: Manage your scraping sources with a manual trigger UI for a more hands-on approach.
+  - ✨ **Manual Source Triggering UI**: Manage your content sources with a manual trigger UI for a more hands-on approach.
   - 🗑️ **Delete Watchlist**: Delete your watchlist from the stremio for quick control over your content.
   - 🔍 **Torznab API & Prowlarr Support**: Native [Torznab API](/resources/yaml/mediafusion.yaml) for direct integration with Prowlarr, Sonarr, and Radarr as an indexer.
   - 🔞 **Parental Controls**: Filter content based on nudity and certification ratings.
@@ -129,7 +127,7 @@
 6. Configure your MediaFusion instance URL in the extension settings
 
 #### ✨ Key Features
-- 🔍 **Auto-detection** of torrents on popular sites (1337x, PirateBay, YTS, etc.)
+- 🔍 **Auto-detection** of torrents on popular torrent listing sites
 - ⚡ **Quick Import** - One-click upload with automatic metadata detection
 - 📦 **Bulk Upload** - Select and upload multiple torrents at once from torrent sites
 - 🎯 **Smart metadata matching** with IMDb integration
@@ -202,7 +200,6 @@ A special thank you to all our contributors!
 - [cinemagoer](https://cinemagoer.readthedocs.io/en/latest/)
 - [beanie](https://roman-right.github.io/beanie/)
 - [parse-torrent-title](https://github.com/platelminto/parse-torrent-title)
-- [torrentio Stremio Add-on](https://github.com/TheBeastLT/torrentio-scraper)
 - [kubernetes](https://kubernetes.io/)
 - [docker](https://www.docker.com/)
 - [dramatiq](https://dramatiq.io/)

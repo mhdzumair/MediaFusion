@@ -27,6 +27,7 @@ import {
   Heart,
   HeartOff,
   Play,
+  MonitorPlay,
   Download,
   Copy,
   Check,
@@ -103,6 +104,24 @@ interface StreamActionDialogProps {
   onWatch?: (stream: CatalogStreamInfo, streamUrl: string) => void // Callback to open player at page level
 }
 
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  realdebrid: 'Real-Debrid',
+  alldebrid: 'AllDebrid',
+  premiumize: 'Premiumize',
+  debridlink: 'Debrid-Link',
+  torbox: 'TorBox',
+  seedr: 'Seedr',
+  offcloud: 'OffCloud',
+  pikpak: 'PikPak',
+  easydebrid: 'EasyDebrid',
+  debrider: 'Debrider',
+  qbittorrent: 'qBittorrent',
+  stremthru: 'StremThru',
+  sabnzbd: 'SABnzbd',
+  nzbget: 'NZBGet',
+  p2p: 'P2P',
+}
+
 function StreamActionDialog({
   open,
   onOpenChange,
@@ -119,6 +138,7 @@ function StreamActionDialog({
 }: StreamActionDialogProps) {
   // Check if selected provider is a debrid provider (not P2P)
   const isDebridProvider = selectedProvider && selectedProvider !== 'p2p'
+  const providerDisplayName = selectedProvider ? PROVIDER_DISPLAY_NAMES[selectedProvider] || selectedProvider : null
   const [copied, setCopied] = useState(false)
   const [fileAnnotationOpen, setFileAnnotationOpen] = useState(false)
   const [collectionAnnotationOpen, setCollectionAnnotationOpen] = useState(false)
@@ -499,8 +519,8 @@ function StreamActionDialog({
                           className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
                           disabled={trackAction.isPending}
                         >
-                          <Play className="mr-2 h-4 w-4" />
-                          Watch Now
+                          <MonitorPlay className="mr-2 h-4 w-4" />
+                          Stream via MediaFlow{providerDisplayName ? ` + ${providerDisplayName}` : ''}
                         </Button>
 
                         {/* External Players */}
@@ -575,8 +595,8 @@ function StreamActionDialog({
                           className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
                           disabled={trackAction.isPending}
                         >
-                          <Play className="mr-2 h-4 w-4" />
-                          Watch Now
+                          <MonitorPlay className="mr-2 h-4 w-4" />
+                          Stream via MediaFlow{providerDisplayName ? ` + ${providerDisplayName}` : ''}
                         </Button>
 
                         {/* External Players */}
@@ -690,9 +710,9 @@ function StreamActionDialog({
                     ? hasMediaflowProxy || isDirectProxyStream
                       ? isDirectProxyStream
                         ? isAceStreamStream
-                          ? "Click 'Watch Now' to play via MediaFlow Proxy (AceStream)."
-                          : "Click 'Watch Now' to play via MediaFlow Proxy (using your Telegram session)."
-                        : "Click 'Watch Now' to play in browser, or 'Download' to open in a new tab."
+                          ? "Click 'Stream via MediaFlow' to play via MediaFlow Proxy (AceStream)."
+                          : "Click 'Stream via MediaFlow' to play via MediaFlow Proxy (using your Telegram session)."
+                        : "Click 'Stream via MediaFlow' to play in browser, or 'Download' to open in a new tab."
                       : "Use 'Download' to open in a new tab or use an external player. Enable 'Web Browser Playback' in External Services for in-browser playback."
                     : isTorrentStream
                       ? isDebridProvider

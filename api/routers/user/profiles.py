@@ -26,6 +26,8 @@ from db.config import settings
 from db.database import get_async_session
 from db.models import User, UserProfile
 from db.schemas import UserData
+from db.schemas.config import MediaFlowConfig, StreamingProvider
+from streaming_providers.validator import validate_provider_credentials
 from utils import const
 from utils.crypto import UUID_PREFIX, crypto_utils
 from utils.profile_context import ProfileDataProvider
@@ -68,6 +70,7 @@ class StreamingProviderInfo(BaseModel):
     name: str | None = None  # Optional display name
     enabled: bool = True
     priority: int = 0
+    has_credentials: bool = False  # Whether required credentials are present
 
 
 class StreamingProvidersSummary(BaseModel):
@@ -114,6 +117,28 @@ class SetDefaultResponse(BaseModel):
 # ============================================
 
 
+def _provider_has_credentials(sp: dict, service: str) -> bool:
+    """Check whether a raw provider dict has the required credentials for its service."""
+    required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(service, const.STREAMING_SERVICE_REQUIREMENTS["default"])
+    for field in required_fields:
+        # Check both full name and short alias
+        alias_map = {
+            "token": "tk",
+            "email": "em",
+            "password": "pw",
+            "url": "url",
+            "qbittorrent_config": "qbc",
+            "sabnzbd_config": "sbc",
+            "nzbget_config": "ngc",
+            "nzbdav_config": "ndc",
+            "easynews_config": "enc",
+        }
+        alias = alias_map.get(field, field)
+        if not (sp.get(field) or sp.get(alias)):
+            return False
+    return True
+
+
 def get_streaming_providers_summary(config: dict) -> StreamingProvidersSummary:
     """Extract all streaming providers from config"""
     providers = []
@@ -133,6 +158,7 @@ def get_streaming_providers_summary(config: dict) -> StreamingProvidersSummary:
                     name=sp.get("n") or sp.get("name"),
                     enabled=enabled,
                     priority=sp.get("pr", i) if "pr" in sp else sp.get("priority", i),
+                    has_credentials=_provider_has_credentials(sp, service),
                 )
             )
 
@@ -147,16 +173,21 @@ def get_streaming_providers_summary(config: dict) -> StreamingProvidersSummary:
                         service=service,
                         enabled=True,
                         priority=0,
+                        has_credentials=_provider_has_credentials(sp, service),
                     )
                 )
 
-    # Sort by priority and filter enabled
-    enabled_providers = [p for p in providers if p.enabled]
+    # Sort by priority and filter to enabled, not disabled, and with valid credentials
+    disabled = set(settings.disabled_providers)
+    enabled_providers = [p for p in providers if p.enabled and p.service not in disabled and p.has_credentials]
     enabled_providers.sort(key=lambda p: p.priority)
+
+    # has_debrid is True only if there's at least one valid non-p2p debrid service
+    has_debrid = any(p.service != "p2p" for p in enabled_providers)
 
     return StreamingProvidersSummary(
         providers=providers,
-        has_debrid=len(enabled_providers) > 0,
+        has_debrid=has_debrid,
         primary_service=enabled_providers[0].service if enabled_providers else None,
     )
 
@@ -396,6 +427,60 @@ def get_full_config(profile: UserProfile) -> dict:
     return config
 
 
+def _build_user_data_for_validation(config: dict) -> UserData:
+    """
+    Build a minimal UserData with only the fields needed for provider credential
+    validation. Providers that are disabled or that fail to parse (e.g. missing
+    nested config like qbittorrent_config) are silently skipped — the credential
+    validator will simply not check them.
+    """
+    disabled = set(settings.disabled_providers)
+
+    providers_raw = config.get("streaming_providers") or config.get("sps") or []
+    providers: list[StreamingProvider] = []
+    for p in providers_raw:
+        if isinstance(p, dict):
+            service = p.get("sv") or p.get("service")
+            if not service or service in disabled:
+                continue
+            try:
+                providers.append(StreamingProvider.model_validate(p))
+            except Exception:
+                logger.debug("Skipping provider '%s' during validation (parse error)", service)
+        elif isinstance(p, StreamingProvider) and p.service not in disabled:
+            providers.append(p)
+
+    # Also grab legacy single-provider field
+    sp: StreamingProvider | None = None
+    sp_raw = config.get("streaming_provider") or config.get("sp")
+    if sp_raw:
+        service = (
+            sp_raw.get("sv") or sp_raw.get("service") if isinstance(sp_raw, dict) else getattr(sp_raw, "service", None)
+        )
+        if service and service not in disabled:
+            try:
+                sp = StreamingProvider.model_validate(sp_raw) if isinstance(sp_raw, dict) else sp_raw
+            except Exception:
+                logger.debug("Skipping legacy provider '%s' during validation (parse error)", service)
+
+    # MediaFlow config is needed for IP resolution during validation
+    mfc_raw = config.get("mediaflow_config") or config.get("mfc")
+    mfc = None
+    if isinstance(mfc_raw, dict):
+        try:
+            mfc = MediaFlowConfig.model_validate(mfc_raw)
+        except Exception:
+            pass
+    elif isinstance(mfc_raw, MediaFlowConfig):
+        mfc = mfc_raw
+
+    return UserData(
+        streaming_providers=providers,
+        streaming_provider=sp,
+        mediaflow_config=mfc,
+    )
+
+
 # ============================================
 # API Endpoints
 # ============================================
@@ -576,6 +661,16 @@ async def create_profile(
         config["api_password"] = api_password
         config["ap"] = api_password  # Also set alias
 
+    # Validate provider credentials before saving
+    user_data = _build_user_data_for_validation(config)
+    if user_data.get_active_providers():
+        validation_result = await validate_provider_credentials(request, user_data)
+        if validation_result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=validation_result.get("message", "Streaming provider credential validation failed"),
+            )
+
     # Save config with encrypted secrets
     save_profile_config(profile, config)
 
@@ -644,6 +739,16 @@ async def update_profile(
         if api_password:
             new_config["api_password"] = api_password
             new_config["ap"] = api_password  # Also set alias
+
+        # Validate provider credentials before saving
+        user_data = _build_user_data_for_validation(new_config)
+        if user_data.get_active_providers():
+            validation_result = await validate_provider_credentials(request, user_data)
+            if validation_result.get("status") == "error":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=validation_result.get("message", "Streaming provider credential validation failed"),
+                )
 
         # Save config with encrypted secrets
         save_profile_config(profile, new_config)

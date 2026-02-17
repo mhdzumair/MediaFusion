@@ -136,7 +136,8 @@ def build_caps_xml() -> ET.Element:
     server.set("version", settings.version)
     server.set("title", settings.addon_name)
     server.set("strapline", "Torznab API for MediaFusion")
-    server.set("email", settings.contact_email)
+    if settings.contact_email and settings.contact_email != "admin@example.com":
+        server.set("email", settings.contact_email)
     server.set("url", settings.host_url)
 
     # Limits

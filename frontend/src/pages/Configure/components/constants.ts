@@ -21,7 +21,7 @@ interface StreamingProviderOption {
 }
 
 export const STREAMING_PROVIDERS: StreamingProviderOption[] = [
-  { value: 'p2p', label: 'Direct Torrent (P2P)', icon: '🌐', type: 'Free' },
+  { value: 'p2p', label: 'Direct P2P', icon: '🌐', type: 'Free' },
   { value: 'realdebrid', label: 'Real-Debrid', icon: '🔴', type: 'Premium', needsToken: true, hasOAuth: true },
   { value: 'alldebrid', label: 'AllDebrid', icon: '🟡', type: 'Premium', needsToken: true },
   { value: 'premiumize', label: 'Premiumize', icon: '🟣', type: 'Premium', needsToken: true, hasOAuth: true },

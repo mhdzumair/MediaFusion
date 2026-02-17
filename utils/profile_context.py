@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from db.config import settings
 from db.models import UserProfile
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
@@ -71,7 +72,9 @@ def build_user_data_from_config(
         full_config["api_password"] = api_password
         full_config["ap"] = api_password
 
-    # Filter out invalid streaming providers (empty service names or missing required credentials)
+    # Filter out invalid streaming providers (empty service names, missing credentials,
+    # or providers that have been disabled by the administrator)
+    disabled_providers = set(settings.disabled_providers)
     for key in ["streaming_providers", "sps"]:
         if key in full_config and isinstance(full_config[key], list):
             valid_providers = []
@@ -80,6 +83,9 @@ def build_user_data_from_config(
                     continue
                 service = sp.get("sv") or sp.get("service")
                 if not service:
+                    continue
+                # Skip providers disabled by the administrator
+                if service in disabled_providers:
                     continue
                 # P2P doesn't require credentials
                 if service == "p2p":

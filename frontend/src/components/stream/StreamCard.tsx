@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Edit, Play, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo } from 'lucide-react'
+import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBlockTorrentStream, useDeleteTorrentStream } from '@/hooks/useAdmin'
@@ -208,11 +208,6 @@ export function StreamCard({
       }`}
       onClick={onClick}
     >
-      {/* Play indicator on hover */}
-      <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-        <Play className="h-6 w-6 text-primary/30" />
-      </div>
-
       {/* Main content */}
       <div className="flex-1 min-w-0 space-y-1 relative z-10">
         {/* Stream name (title) with Last Played badge */}

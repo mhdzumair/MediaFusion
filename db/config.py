@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     # Core Application Settings
     addon_name: str = "MediaFusion"
     version: str = "1.0.0"
-    description: str = "The Ultimate Open-source Streaming Platform for Movies, Series, Live TV. Source: https://github.com/mhdzumair/MediaFusion"
+    description: str = "Open-source streaming platform for Movies, Series, and Live TV. Source: https://github.com/mhdzumair/MediaFusion"
     branding_description: str = ""
     branding_svg: str | None = None  # Optional partner/host SVG logo URL
-    contact_email: str = "mhdzumair@gmail.com"
+    contact_email: str
     host_url: str
     secret_key: str = Field(..., max_length=32, min_length=32)
     api_password: str
@@ -41,10 +41,10 @@ class Settings(BaseSettings):
         ]
     ] = Field(default_factory=list)
 
-    # Content Import Toggles
-    # Disable specific content import types in the frontend UI.
-    # "iptv" disables both M3U and Xtream tabs, and hides the IPTV Sources page.
-    disabled_content_imports: list[
+    # Content Type Toggles
+    # Globally disable specific content types. Affects imports, stream delivery, and UI visibility.
+    # "iptv" disables both M3U and Xtream tabs, hides the IPTV Sources page, and filters IPTV streams.
+    disabled_content_types: list[
         Literal["magnet", "torrent", "nzb", "iptv", "youtube", "http", "acestream", "telegram"]
     ] = Field(default_factory=list)
 

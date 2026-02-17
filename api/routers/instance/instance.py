@@ -76,8 +76,9 @@ class AppConfig(BaseModel):
     description: str
     branding_description: str
     is_public_instance: bool
+    contact_email: str | None = None  # Instance operator email (null if not configured)
     disabled_providers: list[str]
-    disabled_content_imports: list[str]
+    disabled_content_types: list[str]
     authentication_required: bool
     torznab_enabled: bool
     telegram: TelegramFeatureConfig
@@ -117,6 +118,11 @@ async def get_app_config():
     This endpoint provides all configuration needed by the frontend UI,
     including branding, disabled providers, and authentication requirements.
     """
+    # Only expose contact_email if it's a real address (not the placeholder)
+    contact_email = settings.contact_email
+    if contact_email == "admin@example.com":
+        contact_email = None
+
     return AppConfig(
         addon_name=settings.addon_name,
         logo_url=settings.logo_url,
@@ -127,8 +133,9 @@ async def get_app_config():
         description=settings.description,
         branding_description=settings.branding_description,
         is_public_instance=settings.is_public_instance,
+        contact_email=contact_email,
         disabled_providers=settings.disabled_providers,
-        disabled_content_imports=settings.disabled_content_imports,
+        disabled_content_types=settings.disabled_content_types,
         authentication_required=settings.api_password is not None and not settings.is_public_instance,
         torznab_enabled=settings.enable_torznab_api,
         telegram=TelegramFeatureConfig(

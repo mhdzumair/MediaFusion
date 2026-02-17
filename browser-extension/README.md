@@ -1,6 +1,6 @@
 # MediaFusion Browser Extension
 
-A browser extension that allows users to easily contribute torrents to MediaFusion directly from torrent sites like 1337x, PirateBay, UIndex, and others.
+A browser extension that allows users to easily contribute torrents to MediaFusion directly from torrent listing sites.
 
 ## Features
 
@@ -13,15 +13,7 @@ A browser extension that allows users to easily contribute torrents to MediaFusi
 
 ## Supported Sites
 
-- 1337x.to
-- The Pirate Bay
-- UIndex
-- RARBG
-- YTS
-- EZTV
-- LimeTorrents
-- TorrentGalaxy
-- And many more...
+Works with a variety of popular torrent listing sites. The extension uses site-specific handlers that can be extended to support additional sites.
 
 ## Installation
 

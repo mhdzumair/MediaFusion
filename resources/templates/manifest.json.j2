@@ -2,7 +2,7 @@
   "id": "stremio.addons.{{ addon_name | lower | replace(' ', '') }}",
   "version": "{{ version }}",
   "name": "{{ addon_name }}",
-  "contactEmail": "{{ contact_email }}",
+  {% if contact_email and contact_email != "admin@example.com" %}"contactEmail": "{{ contact_email }}",{% endif %}
   "description": "{{ description }}",
   "logo": "{{ logo_url }}",
   "behaviorHints": {

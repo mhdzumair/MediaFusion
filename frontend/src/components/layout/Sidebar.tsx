@@ -92,7 +92,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     staleTime: 5 * 60 * 1000,
   })
 
-  const disabledImports = useMemo(() => new Set(appConfig?.disabled_content_imports ?? []), [appConfig])
+  const disabledTypes = useMemo(() => new Set(appConfig?.disabled_content_types ?? []), [appConfig])
 
   const isActive = (href: string) => {
     if (href === '/dashboard') {
@@ -104,7 +104,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const filterItems = (items: NavItem[]) => {
     return items.filter((item) => {
       if (item.requiredRole && !hasMinimumRole(item.requiredRole)) return false
-      if (item.hideWhenImportDisabled && disabledImports.has(item.hideWhenImportDisabled)) return false
+      if (item.hideWhenImportDisabled && disabledTypes.has(item.hideWhenImportDisabled)) return false
       return true
     })
   }
@@ -171,7 +171,20 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 border-t border-border/40 px-4 py-2">
+      <div className="shrink-0 border-t border-border/40 px-4 py-2 space-y-1.5">
+        <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/60">
+          <Link to="/privacy" onClick={onClose} className="hover:text-primary transition-colors">
+            Privacy
+          </Link>
+          <span>·</span>
+          <Link to="/terms" onClick={onClose} className="hover:text-primary transition-colors">
+            Terms
+          </Link>
+          <span>·</span>
+          <Link to="/dmca" onClick={onClose} className="hover:text-primary transition-colors">
+            DMCA
+          </Link>
+        </div>
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
           <span>

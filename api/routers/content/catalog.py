@@ -44,6 +44,7 @@ from db.models import (
     User,
 )
 from db.models.reference import format_catalog_name
+from db.models.streams import StreamType
 from db.schemas import StreamTemplate, TorrentStreamData
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import get_cached_status, store_cached_info_hashes
@@ -1437,6 +1438,25 @@ async def get_catalog_item_streams(
 
     stream_result = await session.exec(stream_query)
     streams = stream_result.unique().all()
+
+    # Filter out globally disabled content types
+    disabled = set(settings.disabled_content_types)
+    if disabled:
+        disabled_stream_types: set[StreamType] = set()
+        if "torrent" in disabled or "magnet" in disabled:
+            disabled_stream_types.add(StreamType.TORRENT)
+        if "nzb" in disabled:
+            disabled_stream_types.add(StreamType.USENET)
+        if "iptv" in disabled or "http" in disabled:
+            disabled_stream_types.add(StreamType.HTTP)
+        if "youtube" in disabled:
+            disabled_stream_types.add(StreamType.YOUTUBE)
+        if "acestream" in disabled:
+            disabled_stream_types.add(StreamType.ACESTREAM)
+        if "telegram" in disabled:
+            disabled_stream_types.add(StreamType.TELEGRAM)
+        if disabled_stream_types:
+            streams = [s for s in streams if s.stream_type not in disabled_stream_types]
 
     # Build list of available streaming providers for the response
     available_providers: list[StreamingProviderInfo] = []

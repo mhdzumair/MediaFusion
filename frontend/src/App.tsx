@@ -32,6 +32,7 @@ import { ExceptionTrackerPage } from '@/pages/ExceptionTracker'
 import { RequestMetricsPage } from '@/pages/RequestMetrics'
 import { MetadataCreatorPage } from '@/pages/MetadataCreator'
 import { SettingsPage } from '@/pages/Settings'
+import { PrivacyPolicyPage, TermsOfServicePage, DMCAPage } from '@/pages/Legal'
 
 // Create a client
 const queryClient = new QueryClient({
@@ -114,6 +115,32 @@ function AppRoutes() {
               <TelegramLoginPage />
             </OptionalAuthGuard>
           </SetupGuard>
+        }
+      />
+
+      {/* Legal pages - publicly accessible */}
+      <Route
+        path="/privacy"
+        element={
+          <PublicLayout>
+            <PrivacyPolicyPage />
+          </PublicLayout>
+        }
+      />
+      <Route
+        path="/terms"
+        element={
+          <PublicLayout>
+            <TermsOfServicePage />
+          </PublicLayout>
+        }
+      />
+      <Route
+        path="/dmca"
+        element={
+          <PublicLayout>
+            <DMCAPage />
+          </PublicLayout>
         }
       />
 

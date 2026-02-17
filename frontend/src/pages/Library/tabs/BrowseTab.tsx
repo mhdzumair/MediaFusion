@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Film, Loader2 } from 'lucide-react'
 import {
@@ -55,7 +55,6 @@ const saveState = (state: BrowseState) => {
 }
 
 export function BrowseTab() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Get initial state from URL params or session storage
@@ -314,24 +313,6 @@ export function BrowseTab() {
     setSelectedItemId(item.id)
   }
 
-  const handlePlay = (item: ContentCardData) => {
-    // Save selected item and scroll position before navigating
-    sessionStorage.setItem(BROWSE_SELECTED_ITEM_KEY, item.id.toString())
-    saveState({
-      catalogType,
-      selectedCatalog,
-      selectedGenre,
-      search,
-      sort,
-      sortDir,
-      viewMode,
-      scrollPosition: window.scrollY,
-      workingOnly,
-      myChannels,
-    })
-    navigate(`/dashboard/content/${item.type}/${item.id}`)
-  }
-
   return (
     <div ref={containerRef} className="space-y-6">
       {/* Filters */}
@@ -395,7 +376,6 @@ export function BrowseTab() {
                     item={item}
                     variant="grid"
                     showEdit
-                    onPlay={handlePlay}
                     onNavigate={handleCardClick}
                     isSelected={isSelected}
                     cardRef={isSelected ? selectedCardRef : undefined}
@@ -413,7 +393,6 @@ export function BrowseTab() {
                     item={item}
                     variant="list"
                     showEdit
-                    onPlay={handlePlay}
                     onNavigate={handleCardClick}
                     isSelected={isSelected}
                     cardRef={isSelected ? selectedCardRef : undefined}

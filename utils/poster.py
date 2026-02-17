@@ -17,7 +17,7 @@ font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
 
-async def fetch_poster_image(url: str, max_retries: int = 2) -> bytes:
+async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
     # Check if the image is cached in Redis
     cached_image = await REDIS_ASYNC_CLIENT.get(url)
     if cached_image:
