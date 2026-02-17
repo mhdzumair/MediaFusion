@@ -215,6 +215,15 @@ wheels = [
 ]
 
 [[package]]
+name = "aiosmtplib"
+version = "5.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/ad/240a7ce4e50713b111dff8b781a898d8d4770e5d6ad4899103f84c86005c/aiosmtplib-5.1.0.tar.gz", hash = "sha256:2504a23b2b63c9de6bc4ea719559a38996dba68f73f6af4eb97be20ee4c5e6c4", size = 66176 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/82/70f2c452acd7ed18c558c8ace9a8cf4fdcc70eae9a41749b5bdc53eb6f45/aiosmtplib-5.1.0-py3-none-any.whl", hash = "sha256:368029440645b486b69db7029208a7a78c6691b90d24a5332ddba35d9109d55b", size = 27778 },
+]
+
+[[package]]
 name = "aiowebdav"
 version = "0.1.0rc5"
 source = { registry = "https://pypi.org/simple" }
@@ -1540,6 +1549,7 @@ dependencies = [
     { name = "aiohttp-socks" },
     { name = "aioqbt" },
     { name = "aioseedrcc" },
+    { name = "aiosmtplib" },
     { name = "aiowebdav" },
     { name = "alembic" },
     { name = "apscheduler" },
@@ -1612,6 +1622,7 @@ requires-dist = [
     { name = "aiohttp-socks" },
     { name = "aioqbt", git = "https://github.com/mhdzumair/aioqbt.git" },
     { name = "aioseedrcc" },
+    { name = "aiosmtplib", specifier = ">=3.0.0" },
     { name = "aiowebdav" },
     { name = "alembic", specifier = ">=1.17.2" },
     { name = "apscheduler" },

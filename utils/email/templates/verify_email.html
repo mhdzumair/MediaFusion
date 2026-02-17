@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify your email</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0a0a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#141414;border-radius:12px;border:1px solid #262626;overflow:hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="padding:32px 40px 24px;text-align:center;border-bottom:1px solid #262626;">
+              {% if branding_svg %}
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 12px;">
+                <tr>
+                  <td align="center">
+                    <img src="{{ logo_url }}" alt="{{ app_name }}" width="40" height="40" style="display:inline-block;vertical-align:middle;border-radius:8px;" />
+                  </td>
+                  <td style="width:12px;"></td>
+                  <td align="center">
+                    <img src="{{ branding_svg }}" alt="" height="28" style="display:inline-block;vertical-align:middle;" />
+                  </td>
+                </tr>
+              </table>
+              {% else %}
+              <img src="{{ logo_url }}" alt="{{ app_name }}" width="48" height="48" style="display:block;margin:0 auto 12px;border-radius:10px;" />
+              {% endif %}
+              <h1 style="margin:0;font-size:22px;font-weight:600;color:#fafafa;">{{ app_name }}</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 40px;">
+              <h2 style="margin:0 0 16px;font-size:20px;font-weight:600;color:#fafafa;">Verify your email address</h2>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#a1a1aa;">
+                Thanks for signing up{% if username %}, <strong style="color:#fafafa;">{{ username }}</strong>{% endif %}! Please confirm your email address by clicking the button below.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+                <tr>
+                  <td align="center" style="border-radius:8px;background-color:#eab308;">
+                    <a href="{{ verify_url }}" target="_blank" style="display:inline-block;padding:12px 32px;font-size:15px;font-weight:600;color:#0a0a0a;text-decoration:none;border-radius:8px;">
+                      Verify Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#71717a;">
+                If the button doesn't work, copy and paste this link into your browser:
+              </p>
+              <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#a1a1aa;word-break:break-all;">
+                <a href="{{ verify_url }}" style="color:#eab308;text-decoration:underline;">{{ verify_url }}</a>
+              </p>
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#71717a;">
+                This link expires in {{ expires_in }}. If you didn't create an account, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 40px;border-top:1px solid #262626;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#52525b;">
+                &copy; {{ app_name }}. This is an automated message.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

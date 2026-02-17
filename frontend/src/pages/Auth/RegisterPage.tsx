@@ -92,11 +92,18 @@ export function RegisterPage() {
         setError('Please enter and save the API key first')
         return
       }
-      await registerUser({
+      const response = await registerUser({
         email: data.email,
         username: data.username || undefined,
         password: data.password,
       })
+
+      // If verification is required, redirect to the verify-email page
+      if ('requires_verification' in response && response.requires_verification) {
+        navigate(`/verify-email?email=${encodeURIComponent(response.email)}`, { replace: true })
+        return
+      }
+
       navigate('/', { replace: true })
     } catch (err) {
       // Check if error is due to invalid API key

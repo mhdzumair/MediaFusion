@@ -13,7 +13,15 @@ import { AuthGuard, GuestGuard, RoleGuard, OptionalAuthGuard, SetupGuard } from 
 import { HomePage } from '@/pages/Home'
 import { SetupWizardPage } from '@/pages/Setup'
 import { DashboardPage } from '@/pages/Dashboard'
-import { LoginPage, RegisterPage, ExtensionAuthPage, TelegramLoginPage } from '@/pages/Auth'
+import {
+  LoginPage,
+  RegisterPage,
+  ExtensionAuthPage,
+  TelegramLoginPage,
+  VerifyEmailPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
+} from '@/pages/Auth'
 import { ConfigurePage } from '@/pages/Configure'
 import { ContentImportPage } from '@/pages/ContentImport'
 import { ContributionsPage } from '@/pages/Contributions'
@@ -92,6 +100,38 @@ function AppRoutes() {
             <GuestGuard>
               <RegisterPage />
             </GuestGuard>
+          </SetupGuard>
+        }
+      />
+
+      {/* Email verification - accessible without auth */}
+      <Route
+        path="/verify-email"
+        element={
+          <SetupGuard>
+            <VerifyEmailPage />
+          </SetupGuard>
+        }
+      />
+
+      {/* Forgot password - guest only */}
+      <Route
+        path="/forgot-password"
+        element={
+          <SetupGuard>
+            <GuestGuard>
+              <ForgotPasswordPage />
+            </GuestGuard>
+          </SetupGuard>
+        }
+      />
+
+      {/* Reset password - accessible without auth (via email link) */}
+      <Route
+        path="/reset-password"
+        element={
+          <SetupGuard>
+            <ResetPasswordPage />
           </SetupGuard>
         }
       />

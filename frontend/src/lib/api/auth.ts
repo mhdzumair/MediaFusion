@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { AuthResponse, LoginRequest, RegisterRequest, User } from '@/types'
+import type { AuthResponse, LoginRequest, RegisterRequest, RegisterResponse, User } from '@/types'
 
 export interface UserUpdateRequest {
   username?: string
@@ -18,9 +18,12 @@ export const authApi = {
     return response
   },
 
-  register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>('/auth/register', data)
-    apiClient.setTokens(response.access_token, response.refresh_token)
+  register: async (data: RegisterRequest): Promise<AuthResponse | RegisterResponse> => {
+    const response = await apiClient.post<AuthResponse | RegisterResponse>('/auth/register', data)
+    // Only set tokens if this is a full AuthResponse (no verification required)
+    if ('access_token' in response) {
+      apiClient.setTokens(response.access_token, response.refresh_token)
+    }
     return response
   },
 
@@ -64,5 +67,21 @@ export const authApi = {
 
   linkConfig: async (secretStr: string): Promise<void> => {
     await apiClient.post('/auth/link-config', { secret_str: secretStr })
+  },
+
+  verifyEmail: async (token: string): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>('/auth/verify-email', { token })
+  },
+
+  resendVerification: async (email: string): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>('/auth/resend-verification', { email })
+  },
+
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>('/auth/forgot-password', { email })
+  },
+
+  resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>('/auth/reset-password', { token, new_password: newPassword })
   },
 }

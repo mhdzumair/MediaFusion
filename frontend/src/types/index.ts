@@ -250,6 +250,12 @@ export interface AuthResponse {
   user: User
 }
 
+export interface RegisterResponse {
+  message: string
+  email: string
+  requires_verification: boolean
+}
+
 // API response types
 export interface ApiError {
   detail: string

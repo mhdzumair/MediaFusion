@@ -73,15 +73,22 @@ export function LoginPage() {
       await login(data)
       navigate(from, { replace: true })
     } catch (err) {
-      // Check if error is due to invalid API key
-      if (err instanceof ApiRequestError && err.status === 401) {
-        const errorDetail = err.data?.detail || err.message
-        if (errorDetail.toLowerCase().includes('api key')) {
-          setApiKeyError('Invalid API key. Please check and update it.')
-          setError('Invalid API key. Please update your API key and try again.')
-          // Clear the stored API key so user can enter a new one
-          clearApiKey()
-          setApiKeyInput('')
+      if (err instanceof ApiRequestError) {
+        // Check if error is due to invalid API key
+        if (err.status === 401) {
+          const errorDetail = err.data?.detail || err.message
+          if (errorDetail.toLowerCase().includes('api key')) {
+            setApiKeyError('Invalid API key. Please check and update it.')
+            setError('Invalid API key. Please update your API key and try again.')
+            clearApiKey()
+            setApiKeyInput('')
+            return
+          }
+        }
+
+        // Check if email is not verified
+        if (err.status === 403 && err.data?.detail?.includes('not verified')) {
+          navigate(`/verify-email?email=${encodeURIComponent(data.email)}`)
           return
         }
       }
@@ -238,7 +245,15 @@ export function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"

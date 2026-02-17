@@ -3,7 +3,7 @@ import { createContext, useContext, useReducer, useEffect, useCallback, type Rea
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi, apiClient, onAuthStateChange } from '@/lib/api'
 import { hasPermission, hasMinimumRole } from '@/lib/permissions'
-import type { User, UserRole, LoginRequest, RegisterRequest } from '@/types'
+import type { User, UserRole, LoginRequest, RegisterRequest, RegisterResponse, AuthResponse } from '@/types'
 import { Permission } from '@/types'
 
 interface AuthState {
@@ -43,7 +43,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 
 interface AuthContextType extends AuthState {
   login: (data: LoginRequest) => Promise<void>
-  register: (data: RegisterRequest) => Promise<void>
+  register: (data: RegisterRequest) => Promise<AuthResponse | RegisterResponse>
   logout: () => Promise<void>
   hasPermission: (permission: Permission) => boolean
   hasMinimumRole: (role: UserRole) => boolean
@@ -157,8 +157,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerMutation = useMutation({
     mutationFn: authApi.register,
     onSuccess: (data) => {
-      dispatch({ type: 'SET_USER', payload: data.user })
-      queryClient.invalidateQueries({ queryKey: ['auth'] })
+      // Only set user/tokens if this is a full AuthResponse (no verification required)
+      if ('access_token' in data) {
+        dispatch({ type: 'SET_USER', payload: data.user })
+        queryClient.invalidateQueries({ queryKey: ['auth'] })
+      }
     },
   })
 
@@ -178,8 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loginMutation.mutateAsync(data)
   }
 
-  const register = async (data: RegisterRequest) => {
-    await registerMutation.mutateAsync(data)
+  const register = async (data: RegisterRequest): Promise<AuthResponse | RegisterResponse> => {
+    return await registerMutation.mutateAsync(data)
   }
 
   const logout = async () => {

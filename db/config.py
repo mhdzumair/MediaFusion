@@ -210,6 +210,17 @@ class Settings(BaseSettings):
     simkl_client_id: str | None = None
     simkl_client_secret: str | None = None
 
+    # Email / SMTP Settings (required for email verification and password reset)
+    # When smtp_host is None, email verification is skipped and users are auto-verified.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None  # Defaults to contact_email if not set
+    smtp_from_name: str | None = None  # Defaults to addon_name if not set
+    smtp_use_tls: bool = True  # STARTTLS on port 587
+    smtp_use_ssl: bool = False  # Implicit SSL on port 465
+
     # Content Filtering
     adult_content_regex_keywords: str = (
         r"(^|\b|\s|$|[\[._-])"

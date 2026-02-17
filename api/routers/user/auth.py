@@ -5,6 +5,7 @@ Authentication API endpoints for user registration, login, and token management.
 import hashlib
 import logging
 import secrets
+import time
 from datetime import datetime, timedelta
 
 import pytz
@@ -21,8 +22,13 @@ from db.models.links import StreamMediaLink
 from db.models.media import Media
 from db.models.streams import Stream
 from utils.config import settings
+from utils.email.service import get_email_service
 
 logger = logging.getLogger(__name__)
+
+# In-memory rate limit for resend-verification (email -> timestamp)
+_resend_cooldowns: dict[str, float] = {}
+RESEND_COOLDOWN_SECONDS = 60
 
 # JWT Configuration
 JWT_SECRET_KEY = settings.secret_key
@@ -102,6 +108,39 @@ class DeleteAccountRequest(BaseModel):
     password: str
 
 
+class RegisterResponse(BaseModel):
+    """Response for registration when email verification is required."""
+
+    message: str
+    email: str
+    requires_verification: bool
+
+
+class VerifyEmailRequest(BaseModel):
+    """Request to verify email address."""
+
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request to resend verification email."""
+
+    email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request to initiate password reset."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request to reset password with token."""
+
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+
 # ============================================
 # Password Hashing (using hashlib for simplicity)
 # ============================================
@@ -175,6 +214,31 @@ def create_refresh_token(user_id: int) -> str:
         {"sub": str(user_id), "type": "refresh"},
         timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     )
+
+
+def create_email_verify_token(user_id: int) -> str:
+    """Create email verification token (24h expiry)."""
+    return create_token(
+        {"sub": str(user_id), "type": "email_verify"},
+        timedelta(hours=24),
+    )
+
+
+def create_password_reset_token(user_id: int, password_hash: str) -> str:
+    """Create password reset token (1h expiry).
+
+    Embeds a prefix of the current password hash so the token is
+    automatically invalidated when the password changes.
+    """
+    return create_token(
+        {"sub": str(user_id), "type": "password_reset", "pwd_hash": password_hash[:16]},
+        timedelta(hours=1),
+    )
+
+
+def is_email_configured() -> bool:
+    """Check whether SMTP email sending is configured."""
+    return settings.smtp_host is not None
 
 
 # ============================================
@@ -257,12 +321,17 @@ def require_role(minimum_role: UserRole):
 # ============================================
 
 
-@router.post("/register", response_model=TokenResponse)
+@router.post("/register", response_model=TokenResponse | RegisterResponse)
 async def register(
     user_data: UserCreate,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Register a new user account."""
+    """Register a new user account.
+
+    When SMTP is configured, sends a verification email and returns a
+    RegisterResponse (no tokens). When SMTP is not configured, auto-verifies
+    and returns a TokenResponse immediately.
+    """
     # Check if email already exists
     result = await session.exec(select(User).where(User.email == user_data.email))
     existing_user = result.first()
@@ -282,18 +351,21 @@ async def register(
                 detail="Username already taken",
             )
 
+    email_service = get_email_service()
+    auto_verify = email_service is None
+
     # Create new user
     user = User(
         email=user_data.email,
         username=user_data.username,
         password_hash=hash_password(user_data.password),
         role=UserRole.USER,
-        is_verified=False,
+        is_verified=auto_verify,
         is_active=True,
-        last_login=datetime.now(pytz.UTC),
+        last_login=datetime.now(pytz.UTC) if auto_verify else None,
     )
     session.add(user)
-    await session.flush()  # Get user.id before creating profile
+    await session.flush()
 
     # Create default profile
     profile = UserProfile(
@@ -306,7 +378,21 @@ async def register(
     await session.commit()
     await session.refresh(user)
 
-    # Generate tokens
+    if not auto_verify:
+        # Send verification email
+        token = create_email_verify_token(user.id)
+        try:
+            await email_service.send_verification_email(user.email, token, user.username)
+        except Exception:
+            logger.exception("Failed to send verification email to %s", user.email)
+
+        return RegisterResponse(
+            message="Registration successful. Please check your email to verify your account.",
+            email=user.email,
+            requires_verification=True,
+        )
+
+    # No SMTP configured -- auto-verified, return tokens directly
     access_token = create_access_token(user.id, user.role.value)
     refresh_token = create_refresh_token(user.id)
 
@@ -355,6 +441,14 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
+        )
+
+    # Check email verification (only when SMTP is configured)
+    if not user.is_verified and is_email_configured():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please check your inbox for a verification link.",
+            headers={"X-Error-Code": "EMAIL_NOT_VERIFIED"},
         )
 
     # Update last login
@@ -448,6 +542,163 @@ async def logout(user: User = Depends(require_auth)):
     # In a stateless JWT system, logout is handled client-side
     # For enhanced security, you could implement a token blacklist with Redis
     return {"message": "Successfully logged out"}
+
+
+# ============================================
+# Email Verification & Password Reset
+# ============================================
+
+
+@router.post("/verify-email")
+async def verify_email(
+    request: VerifyEmailRequest,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Verify a user's email address using the token from their verification link."""
+    token_data = decode_token(request.token)
+    if not token_data or token_data.get("type") != "email_verify":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification link.",
+        )
+
+    try:
+        user_id = int(token_data["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification link.",
+        )
+
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found.",
+        )
+
+    if user.is_verified:
+        return {"message": "Email already verified. You can log in."}
+
+    user.is_verified = True
+    session.add(user)
+    await session.commit()
+
+    logger.info("Email verified for user %s (id=%d)", user.email, user.id)
+    return {"message": "Email verified successfully. You can now log in."}
+
+
+@router.post("/resend-verification")
+async def resend_verification(
+    request: ResendVerificationRequest,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Resend the verification email. Rate-limited to one request per 60 seconds per email."""
+    email_service = get_email_service()
+    if not email_service:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email service is not configured on this instance.",
+        )
+
+    # Rate limiting
+    now = time.time()
+    last_sent = _resend_cooldowns.get(request.email, 0)
+    if now - last_sent < RESEND_COOLDOWN_SECONDS:
+        remaining = int(RESEND_COOLDOWN_SECONDS - (now - last_sent))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Please wait {remaining} seconds before requesting another email.",
+        )
+
+    result = await session.exec(select(User).where(User.email == request.email))
+    user = result.first()
+
+    # Always return success to avoid leaking whether the email exists
+    if not user or user.is_verified:
+        return {"message": "If the email is registered and unverified, a new verification link has been sent."}
+
+    token = create_email_verify_token(user.id)
+    try:
+        await email_service.send_verification_email(user.email, token, user.username)
+        _resend_cooldowns[request.email] = now
+    except Exception:
+        logger.exception("Failed to resend verification email to %s", request.email)
+
+    return {"message": "If the email is registered and unverified, a new verification link has been sent."}
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Request a password reset link. Always returns success to prevent email enumeration."""
+    email_service = get_email_service()
+    if not email_service:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email service is not configured on this instance.",
+        )
+
+    result = await session.exec(select(User).where(User.email == request.email))
+    user = result.first()
+
+    if user and user.password_hash and user.is_active:
+        token = create_password_reset_token(user.id, user.password_hash)
+        try:
+            await email_service.send_password_reset_email(user.email, token, user.username)
+        except Exception:
+            logger.exception("Failed to send password reset email to %s", request.email)
+
+    return {"message": "If an account with that email exists, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    request: ResetPasswordRequest,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Reset the user's password using the token from the reset email."""
+    token_data = decode_token(request.token)
+    if not token_data or token_data.get("type") != "password_reset":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset link.",
+        )
+
+    try:
+        user_id = int(token_data["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset link.",
+        )
+
+    user = await session.get(User, user_id)
+    if not user or not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset link.",
+        )
+
+    # Verify the token was generated against the current password hash
+    # (ensures single-use: once password changes, old tokens are invalid)
+    if token_data.get("pwd_hash") != user.password_hash[:16]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link has already been used or is no longer valid.",
+        )
+
+    user.password_hash = hash_password(request.new_password)
+    # Also verify the user's email since they proved ownership via the reset link
+    if not user.is_verified:
+        user.is_verified = True
+    session.add(user)
+    await session.commit()
+
+    logger.info("Password reset for user %s (id=%d)", user.email, user.id)
+    return {"message": "Password reset successfully. You can now log in with your new password."}
 
 
 @router.get("/me", response_model=UserResponse)

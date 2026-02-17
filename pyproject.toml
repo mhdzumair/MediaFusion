@@ -69,6 +69,7 @@ dependencies = [
     "telethon>=1.37.0",
     "yt-dlp",
     "aioboto3>=13.0.0",
+    "aiosmtplib>=3.0.0",
 ]
 
 [dependency-groups]
