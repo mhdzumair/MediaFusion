@@ -714,6 +714,7 @@ class StreamFileData(BaseModel):
     season_number: int | None = None
     episode_number: int | None = None
     episode_end: int | None = None  # For multi-episode files (e.g., S01E01-E03)
+    episode_title: str | None = None  # Human-readable episode name (e.g., "Free Practice 1")
 
 
 class TorrentStreamData(BaseModel):

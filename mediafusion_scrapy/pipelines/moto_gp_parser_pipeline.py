@@ -19,33 +19,38 @@ class MotoGPParserPipeline:
         self.name_parser_patterns = {
             "smcgill1969": [
                 re.compile(
-                    r"MotoGP"  # Series name with flexible space or dot
-                    r"\.(?P<Year>\d{4})"  # Year
-                    r"x(?P<Round>\d{2})"  # Round
-                    r"\.(?P<EventAndEpisodeName>.+?)"  # Event and Episode name
-                    r"\.(?P<Broadcaster>BTSportHD|TNTSportsHD)"  # Broadcaster
-                    r"\.(?P<Resolution>4K|SD|1080p)"  # Resolution and Quality
+                    r"MotoGP"
+                    r"\.(?P<Year>\d{4})"
+                    r"x(?P<Round>\d{2})"
+                    r"\.(?P<EventAndEpisodeName>.+?)"
+                    r"\.(?P<Broadcaster>BTSportHD|TNTSportsHD)"
+                    r"\.(?P<Resolution>4K|SD|1080p)"
                 ),
                 re.compile(
-                    r"MotoGP"  # Series name with flexible space or dot
-                    r"\.(?P<Year>\d{4})"  # Year
-                    r"(?:-\d{2}-\d{2})?"  # ignore Date part starting with a hyphen
-                    r"\.(?P<EventAndEpisodeName>.+?)"  # Event and Episode name
-                    r"(?:\.(?P<Quality>WEB-DL|HDTV))?"  # Optional Quality
-                    r"(?:\.(?P<Broadcaster>BTSportHD|TNTSportsHD))?"  # Optional Broadcaster
-                    r"\.(?P<Resolution>4K|SD|1080p)"  # Resolution
+                    r"MotoGP"
+                    r"\.(?P<Year>\d{4})"
+                    r"(?:-\d{2}-\d{2})?"
+                    r"\.(?P<EventAndEpisodeName>.+?)"
+                    r"(?:\.(?P<Quality>WEB-DL|HDTV))?"
+                    r"(?:\.(?P<Broadcaster>BTSportHD|TNTSportsHD))?"
+                    r"\.(?P<Resolution>4K|SD|1080p)"
                 ),
             ],
         }
         self.default_poster = random.choice(SPORTS_ARTIFACTS["MotoGP Racing"]["poster"])
 
-        # Use shared RESOLUTION_MAP with local overrides
         self.smcgill1969_resolutions = {
             "4K": RESOLUTION_MAP.get("4K", "4k"),
             "SD": RESOLUTION_MAP.get("SD", "576p"),
             "1080p": "1080p",
         }
         self.known_countries_first_words = ["San", "Great"]
+
+        self._broadcaster_pattern = re.compile(
+            r"\.?(BTSportHD|TNTSportsHD)\.?"
+            r"(?:\d+[Pp]|4K|SD)",
+            re.IGNORECASE,
+        )
 
         self.title_parser_functions = {
             "smcgill1969": self.parse_smcgill1969_title,
@@ -54,9 +59,26 @@ class MotoGPParserPipeline:
             "smcgill1969": self.parse_smcgill1969_description,
         }
 
+    @staticmethod
+    def _normalize_title(raw: str) -> str:
+        """Normalise titles to pure dot-separated form."""
+        title = re.sub(r"\.\.+", ".", raw)
+        title = re.sub(r"\.\s+", ".", title)
+        return title.strip(". ")
+
+    def _episode_title_from_filename(self, filename: str) -> str:
+        """Derive a human-readable episode title from a torrent filename."""
+        name = re.sub(r"\.[^.]+$", "", filename)
+        name = self._broadcaster_pattern.split(name)[0]
+        name = re.sub(r"[\._](\d+[Pp]|4K|SD|UHD|2160P|1080P).*", "", name)
+        name = name.replace(".", " ").replace("_", " ").strip(" -")
+        return name or filename
+
     def process_item(self, item):
-        uploader = item["uploader"]
-        title = re.sub(r"\.\.+", ".", item["torrent_title"])
+        uploader = item.get("uploader")
+        if not uploader or uploader not in self.title_parser_functions:
+            raise DropItem(f"Unknown or missing uploader '{uploader}' for: {item.get('torrent_title')}")
+        title = self._normalize_title(item["torrent_title"])
         self.title_parser_functions[uploader](title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -92,7 +114,7 @@ class MotoGPParserPipeline:
                                     series,
                                     data.get("Year"),
                                     event,
-                                    "(smcgill1969)",  # add the uploader to the title for uniqueness
+                                    "(smcgill1969)",
                                 ],
                             )
                         ),
@@ -116,9 +138,16 @@ class MotoGPParserPipeline:
         torrent_data["poster"] = self.default_poster
         torrent_data["is_add_title_to_poster"] = True
 
+        episode_name = torrent_data.get("episode_name", "")
+
         episodes = []
         for index, file_detail in enumerate(torrent_data.get("file_data", [])):
             file_name = file_detail.get("filename", "")
+            title = (
+                self._episode_title_from_filename(file_name)
+                if len(torrent_data.get("file_data", [])) > 1
+                else episode_name
+            )
 
             episodes.append(
                 StreamFileData(
@@ -128,6 +157,7 @@ class MotoGPParserPipeline:
                     size=file_detail.get("size", 0),
                     file_index=index,
                     file_type="video",
+                    episode_title=title or None,
                 )
             )
 

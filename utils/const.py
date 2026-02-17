@@ -59,6 +59,8 @@ CATALOG_DATA = {
     "rss_feed_series": "RSS Feed Series",
     "tgx_movie": "TGx Movies",
     "tgx_series": "TGx Series",
+    "ext_to_movie": "EXT Movies",
+    "ext_to_series": "EXT Series",
     "contribution_movies": "Contribution Streams Movies",
     "contribution_series": "Contribution Streams Series",
 }
@@ -198,7 +200,11 @@ IPTV_VALID_CONTENT_TYPES = [
 ]
 
 SCRAPY_SPIDERS = {
-    "formula_tgx": "Formula TGX",
+    "formula_ext": "Formula EXT",
+    "motogp_ext": "MotoGP EXT",
+    "wwe_ext": "WWE EXT",
+    "ufc_ext": "UFC EXT",
+    "movies_tv_ext": "Movies TV EXT",
     "nowmetv": "NowMeTV",
     "nowsports": "NowSports",
     "tamilultra": "Tamil Ultra",
@@ -206,11 +212,7 @@ SCRAPY_SPIDERS = {
     "tamil_blasters": "TamilBlasters",
     "tamilmv": "TamilMV",
     "dlhd": "DaddyLiveHD",
-    "motogp_tgx": "MotoGP TGX",
     "arab_torrents": "Arab Torrents",
-    "wwe_tgx": "WWE TGX",
-    "ufc_tgx": "UFC TGX",
-    "movies_tv_tgx": "Movies TV TGX",
 }
 
 

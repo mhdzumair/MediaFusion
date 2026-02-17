@@ -60,20 +60,23 @@ class MagnetDownloadAndParsePipeline:
             raise DropItem(f"Failed to parse info_hash from magnet link: {magnet_link}")
 
         async for session in get_async_session():
-            torrent_stream = await crud.get_stream_by_info_hash(session, info_hash)
+            torrent_stream = await crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
 
         if torrent_stream:
-            if item.get("expected_sources") and torrent_stream.source not in item["expected_sources"]:
+            stream = torrent_stream.stream
+            stream_source = stream.source if stream else None
+            stream_name = stream.name if stream else None
+            if item.get("expected_sources") and stream_source not in item["expected_sources"]:
                 logging.info(
                     "Source mismatch for %s: %s != %s. Trying to re-create the data",
-                    torrent_stream.name,
+                    stream_name,
                     item["source"],
-                    torrent_stream.source,
+                    stream_source,
                 )
                 async for session in get_async_session():
                     await crud.delete_torrent_stream(session, info_hash)
             else:
-                raise DropItem(f"Torrent stream already exists: {torrent_stream.name} from {torrent_stream.source}")
+                raise DropItem(f"Torrent stream already exists: {stream_name} from {stream_source}")
 
         torrent_metadata = await torrent.info_hashes_to_torrent_metadata([info_hash], trackers)
 

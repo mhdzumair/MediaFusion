@@ -1034,6 +1034,31 @@ def is_contain_18_plus_keywords(title: str) -> bool:
     return ADULT_PARSER.parse(title).get("adult", False)
 
 
+# Shared blocklist / allowlist for filtering non-video torrent titles.
+# Used by both Scrapy spiders and indexer scrapers.
+# fmt: off
+NON_VIDEO_BLOCKLIST_KEYWORDS = [
+    ".exe", ".zip", ".rar", ".iso", ".bin", ".tar", ".7z", ".pdf", ".xyz",
+    ".epub", ".mobi", ".azw3", ".doc", ".docx", ".txt", ".rtf",
+    "setup", "install", "crack", "patch", "trainer", "readme",
+    "manual", "keygen", "license", "tutorial", "ebook", "software", "book",
+    "repack", "fitgirl",
+]
+
+VIDEO_ALLOWLIST_KEYWORDS = [
+    "mkv", "mp4", "avi", ".webm", ".mov", ".flv", "webdl", "web-dl", "webrip", "bluray",
+    "brrip", "bdrip", "dvdrip", "hdtv", "hdcam", "hdrip", "1080p", "720p", "480p", "360p",
+    "2160p", "4k", "x264", "x265", "hevc", "h264", "h265", "aac", "xvid", "movie", "series", "season",
+]
+# fmt: on
+
+
+def is_non_video_title(title: str) -> bool:
+    """Return True if the title looks like a game, application, or other non-video content."""
+    lower = title.lower()
+    return any(kw in lower for kw in NON_VIDEO_BLOCKLIST_KEYWORDS)
+
+
 def calculate_max_similarity_ratio(torrent_title: str, title: str, aka_titles: list[str] | None = None) -> int:
     # Check similarity with the main title
     title_similarity_ratio = fuzz.ratio(torrent_title.lower(), title.lower())

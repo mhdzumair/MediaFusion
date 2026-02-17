@@ -56,17 +56,73 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    # Setup formula_tgx scraper
-    if not settings.disable_formula_tgx_scheduler:
+    # Setup formula_ext scraper
+    if not settings.disable_formula_ext_scheduler:
         scheduler.add_job(
             async_send,
-            CronTrigger.from_crontab(settings.formula_tgx_scheduler_crontab),
-            name="formula_tgx",
+            CronTrigger.from_crontab(settings.formula_ext_scheduler_crontab),
+            name="formula_ext",
             kwargs={
                 "actor_send_method": run_spider.send,
-                "spider_name": "formula_tgx",
+                "spider_name": "formula_ext",
                 "scrape_all": "false",
-                "crontab_expression": settings.formula_tgx_scheduler_crontab,
+                "crontab_expression": settings.formula_ext_scheduler_crontab,
+            },
+        )
+
+    # Setup motogp_ext scraper
+    if not settings.disable_motogp_ext_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.motogp_ext_scheduler_crontab),
+            name="motogp_ext",
+            kwargs={
+                "actor_send_method": run_spider.send,
+                "spider_name": "motogp_ext",
+                "scrape_all": "false",
+                "crontab_expression": settings.motogp_ext_scheduler_crontab,
+            },
+        )
+
+    # Setup wwe_ext scraper
+    if not settings.disable_wwe_ext_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.wwe_ext_scheduler_crontab),
+            name="wwe_ext",
+            kwargs={
+                "actor_send_method": run_spider.send,
+                "spider_name": "wwe_ext",
+                "scrape_all": "false",
+                "crontab_expression": settings.wwe_ext_scheduler_crontab,
+            },
+        )
+
+    # Setup ufc_ext scraper
+    if not settings.disable_ufc_ext_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.ufc_ext_scheduler_crontab),
+            name="ufc_ext",
+            kwargs={
+                "actor_send_method": run_spider.send,
+                "spider_name": "ufc_ext",
+                "scrape_all": "false",
+                "crontab_expression": settings.ufc_ext_scheduler_crontab,
+            },
+        )
+
+    # Setup movies_tv_ext scraper
+    if not settings.disable_movies_tv_ext_scheduler:
+        scheduler.add_job(
+            async_send,
+            CronTrigger.from_crontab(settings.movies_tv_ext_scheduler_crontab),
+            name="movies_tv_ext",
+            kwargs={
+                "actor_send_method": run_spider.send,
+                "spider_name": "movies_tv_ext",
+                "scrape_all": "false",
+                "crontab_expression": settings.movies_tv_ext_scheduler_crontab,
             },
         )
 
@@ -148,19 +204,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
             },
         )
 
-    if not settings.disable_motogp_tgx_scheduler:
-        scheduler.add_job(
-            async_send,
-            CronTrigger.from_crontab(settings.motogp_tgx_scheduler_crontab),
-            name="motogp_tgx",
-            kwargs={
-                "actor_send_method": run_spider.send,
-                "spider_name": "motogp_tgx",
-                "crontab_expression": settings.motogp_tgx_scheduler_crontab,
-                "scrape_all": "false",
-            },
-        )
-
     if not settings.disable_update_seeders:
         scheduler.add_job(
             async_send,
@@ -181,45 +224,6 @@ def setup_scheduler(scheduler: AsyncIOScheduler):
                 "actor_send_method": run_spider.send,
                 "spider_name": "arab_torrents",
                 "crontab_expression": settings.arab_torrents_scheduler_crontab,
-            },
-        )
-
-    if not settings.disable_wwe_tgx_scheduler:
-        scheduler.add_job(
-            async_send,
-            CronTrigger.from_crontab(settings.wwe_tgx_scheduler_crontab),
-            name="wwe_tgx",
-            kwargs={
-                "actor_send_method": run_spider.send,
-                "spider_name": "wwe_tgx",
-                "crontab_expression": settings.wwe_tgx_scheduler_crontab,
-                "scrape_all": "false",
-            },
-        )
-
-    if not settings.disable_ufc_tgx_scheduler:
-        scheduler.add_job(
-            async_send,
-            CronTrigger.from_crontab(settings.ufc_tgx_scheduler_crontab),
-            name="ufc_tgx",
-            kwargs={
-                "actor_send_method": run_spider.send,
-                "spider_name": "ufc_tgx",
-                "crontab_expression": settings.ufc_tgx_scheduler_crontab,
-                "scrape_all": "false",
-            },
-        )
-
-    if not settings.disable_movies_tv_tgx_scheduler:
-        scheduler.add_job(
-            async_send,
-            CronTrigger.from_crontab(settings.movies_tv_tgx_scheduler_crontab),
-            name="movies_tv_tgx",
-            kwargs={
-                "actor_send_method": run_spider.send,
-                "spider_name": "movies_tv_tgx",
-                "crontab_expression": settings.movies_tv_tgx_scheduler_crontab,
-                "scrape_all": "false",
             },
         )
 

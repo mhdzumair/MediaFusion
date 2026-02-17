@@ -15,6 +15,34 @@ class FormulaParserPipeline:
     """
 
     def __init__(self):
+        _broadcasters = (
+            r"SkyF1HD|SkyF1UHD|SkyUHD|SkyF1|Sky\s*Sports.*?F1.*?(?:UHD|HD)"
+            r"|Sky\s*Sports\s*Main\s*Event\s*UHD|V\s*Sport\s*Ultra\s*HD"
+        )
+
+        # Standard short-form: F1.YYYY.R01.Event.Broadcaster.Resolution
+        self._short_form_pattern = re.compile(
+            r"(?:Formula[.\s]?)?F?(?P<Series>[123])"
+            r"\.(?P<Year>\d{4})"
+            r"(?:\.R(?P<Round>\d+))?"
+            r"\.(?P<Event>.+?)"
+            rf"\.(?P<Broadcaster>{_broadcasters})"
+            r"\.(?P<Resolution>\d+P)"
+            r"(?:\.Multi)?$",
+            re.IGNORECASE,
+        )
+
+        # Special/documentary: Formula 2.Title YYYY.Broadcaster.Resolution
+        # Year is embedded in the event field rather than after the series number.
+        self._special_form_pattern = re.compile(
+            r"(?:Formula[.\s]?)(?P<Series>[123])"
+            r"\.(?P<Event>.+?)\s(?P<Year>\d{4})"
+            rf"\.(?P<Broadcaster>{_broadcasters})"
+            r"\.(?P<Resolution>\d+P)"
+            r"(?:\.Multi)?$",
+            re.IGNORECASE,
+        )
+
         self.name_parser_patterns = {
             "egortech": [
                 re.compile(
@@ -42,7 +70,7 @@ class FormulaParserPipeline:
                     r"\.\s*(?P<Year>\d{4})"  # Year with flexible spacing
                     r"\.\s*R(?P<Round>\d+)"  # Round number with flexible spacing
                     r"\.\s*(?P<Event>\S+)"  # Event name without space before broadcaster
-                    r"\s*(?P<Broadcaster>SkyF1HD|Sky Sports Main Event UHD|Sky Sports F1 UHD|Sky Sports Arena|V Sport Ultra HD|SkyF1)"  # Broadcaster without preceding dot
+                    r"\s*(?P<Broadcaster>SkyF1HD|SkyUHD|SkyF1UHD|Sky Sports Main Event UHD|Sky Sports F1 UHD|Sky Sports Arena|V Sport Ultra HD|SkyF1)"  # Broadcaster without preceding dot
                     r"\.\s*(?P<Resolution>\d+P)"  # Resolution with flexible spacing
                 ),
                 re.compile(
@@ -174,6 +202,12 @@ class FormulaParserPipeline:
             "Saudi",
         ]
 
+        self._broadcaster_pattern = re.compile(
+            r"\.?(SkyF1(?:UHD|HD)?|Sky ?Sports.*?|F1TV|V ?Sport.*?)\.?"
+            r"(?:\d+[Pp]|4K|SD|UHD|2160P|1080P)",
+            re.IGNORECASE,
+        )
+
         self.title_parser_functions = {
             "egortech": self.parse_egortech_title,
             "F1Carreras": self.parse_f1carreras_title,
@@ -185,9 +219,41 @@ class FormulaParserPipeline:
             "smcgill1969": self.parse_smcgill1969_description,
         }
 
+    def _episode_title_from_filename(self, filename: str) -> str:
+        """Derive a human-readable episode title from a torrent filename.
+
+        Strips the file extension, broadcaster tags, resolution suffixes, and
+        replaces dots with spaces.  e.g.
+          "Free.Practice.1.SkyF1HD.1080p.mkv" -> "Free Practice 1"
+        """
+        name = re.sub(r"\.[^.]+$", "", filename)
+        name = self._broadcaster_pattern.split(name)[0]
+        name = re.sub(r"[\._](\d+[Pp]|4K|SD|UHD|2160P|1080P).*", "", name)
+        name = name.replace(".", " ").replace("_", " ").strip(" -")
+        return name or filename
+
+    @staticmethod
+    def _normalize_title(raw: str) -> str:
+        """Normalise egortech-style titles to pure dot-separated form.
+
+        Handles mixed separators like ``"Formula 1 2026. Barcelona Shakedown. SkyF1HD. 1080P"``
+        by converting ``". "`` → ``"."`` and inserting a dot between the series
+        number and year when they're separated by a space.
+        """
+        title = re.sub(r"\.\.+", ".", raw)
+        title = re.sub(r"\.\s+", ".", title)
+        title = re.sub(
+            r"(Formula\s*[123])\s+(\d{4})",
+            r"\1.\2",
+            title,
+        )
+        return title.strip(". ")
+
     def process_item(self, item):
-        uploader = item["uploader"]
-        title = re.sub(r"\.\.+", ".", item["torrent_title"])
+        uploader = item.get("uploader")
+        if not uploader or uploader not in self.title_parser_functions:
+            raise DropItem(f"Unknown or missing uploader '{uploader}' for: {item.get('torrent_title')}")
+        title = self._normalize_title(item["torrent_title"])
         self.title_parser_functions[uploader](title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -196,36 +262,50 @@ class FormulaParserPipeline:
             raise DropItem(f"Episodes not parsed: {item!r}")
         return item
 
+    def _apply_egortech_match(self, data: dict, torrent_data: dict):
+        """Apply parsed regex groups to torrent_data for egortech uploads."""
+        series = f"Formula {data['Series']}"
+        formula_round = f"R{data['Round']}" if data.get("Round") else None
+        formula_event = data.get("Event").replace(".", " ").replace(" Grand Prix", "") if data.get("Event") else None
+        torrent_data.update(
+            {
+                "title": " ".join(
+                    filter(
+                        None,
+                        [
+                            series,
+                            data.get("Year"),
+                            formula_round,
+                            formula_event,
+                            data.get("Extra"),
+                            "(egortech)",
+                        ],
+                    )
+                ),
+                "year": int(data["Year"]),
+                "resolution": data["Resolution"].lower().replace("k", "K"),
+            }
+        )
+
     def parse_egortech_title(self, title, torrent_data: dict):
         for pattern in self.name_parser_patterns.get("egortech"):
             match = pattern.match(title)
             if match:
-                data = match.groupdict()
-                series = f"Formula {data['Series']}"
-                formula_round = f"R{data['Round']}" if data.get("Round") else None
-                formula_event = (
-                    data.get("Event").replace(".", " ").replace(" Grand Prix", "") if data.get("Event") else None
-                )
-                torrent_data.update(
-                    {
-                        "title": " ".join(  # Join the series, year, round, event, and extra fields
-                            filter(
-                                None,
-                                [
-                                    series,
-                                    data.get("Year"),
-                                    formula_round,
-                                    formula_event,
-                                    data.get("Extra"),
-                                    "(egortech)",  # add the uploader to the title for uniqueness
-                                ],
-                            )
-                        ),
-                        "year": int(data["Year"]),
-                        "resolution": data["Resolution"].lower().replace("k", "K"),
-                    }
-                )
+                self._apply_egortech_match(match.groupdict(), torrent_data)
                 return
+
+        # Fallback 1: short-form (F1.YYYY... / Formula.1.YYYY...)
+        match = self._short_form_pattern.match(title)
+        if match:
+            self._apply_egortech_match(match.groupdict(), torrent_data)
+            return
+
+        # Fallback 2: special/documentary (Formula 2.Title YYYY.Broadcaster.Res)
+        match = self._special_form_pattern.match(title)
+        if match:
+            self._apply_egortech_match(match.groupdict(), torrent_data)
+            return
+
         logging.warning(f"Failed to parse title: {title}")
 
     def event_and_episode_name_parser(self, event_and_episode_name):
@@ -332,8 +412,7 @@ class FormulaParserPipeline:
             events = [item.strip() for item in re.split(r"\r?\n", contents_section) if item.strip()]
 
             for index, (event, file_detail) in enumerate(zip(events, file_data)):
-                # Parse event name (result used for side effects in parser)
-                self.episode_name_parser_egortech(event, torrent_data["created_at"])
+                parsed = self.episode_name_parser_egortech(event, torrent_data["created_at"])
                 episodes.append(
                     StreamFileData(
                         season_number=1,
@@ -342,12 +421,13 @@ class FormulaParserPipeline:
                         size=file_detail["size"],
                         file_index=index,
                         file_type="video",
+                        episode_title=parsed["title"],
                     )
                 )
         else:
-            # logic to parse episode details directly from file details when description does not contain "Contains:"
             for index, file_detail in enumerate(file_data):
                 file_name = file_detail.get("filename", "")
+                episode_title = self._episode_title_from_filename(file_name)
 
                 episodes.append(
                     StreamFileData(
@@ -357,6 +437,7 @@ class FormulaParserPipeline:
                         size=file_detail.get("size", 0),
                         file_index=index,
                         file_type="video",
+                        episode_title=episode_title,
                     )
                 )
 
@@ -392,6 +473,8 @@ class FormulaParserPipeline:
         torrent_data["poster"] = self.default_poster
         torrent_data["is_add_title_to_poster"] = True
 
+        episode_name = torrent_data.get("episode_name", "")
+
         torrent_data["episodes"] = [
             StreamFileData(
                 season_number=1,
@@ -400,6 +483,7 @@ class FormulaParserPipeline:
                 size=torrent_data.get("total_size", 0),
                 file_index=0,
                 file_type="video",
+                episode_title=episode_name or None,
             )
         ]
 
@@ -417,9 +501,12 @@ class FormulaParserPipeline:
         torrent_data["poster"] = self.default_poster
         torrent_data["is_add_title_to_poster"] = True
 
+        episode_name = torrent_data.get("episode_name", "")
+
         episodes = []
         for index, file_detail in enumerate(file_data):
             file_name = file_detail.get("filename", "")
+            title = self._episode_title_from_filename(file_name) if len(file_data) > 1 else episode_name
 
             episodes.append(
                 StreamFileData(
@@ -429,6 +516,7 @@ class FormulaParserPipeline:
                     size=file_detail.get("size", 0),
                     file_index=index,
                     file_type="video",
+                    episode_title=title or None,
                 )
             )
 

@@ -7,9 +7,10 @@ import random
 from urllib.parse import urlparse
 
 import httpx
-from scrapy import Request, signals
+from scrapy import signals
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
 from scrapy.exceptions import IgnoreRequest
+from scrapy.http import TextResponse
 from scrapy.utils.response import response_status_message
 from twisted.internet import defer, reactor
 
@@ -179,7 +180,7 @@ class TooManyRequestsRetryMiddleware(RetryMiddleware):
 
             def retry_request(_):
                 reason = response_status_message(response.status)
-                return self._retry(request, reason, spider) or response
+                return self._retry(request, reason) or response
 
             deferred.addCallback(retry_request)
             return deferred
@@ -208,6 +209,27 @@ class FlaresolverrMiddleware:
         )
 
     async def process_request(self, request):
+        spider = self.crawler.spider
+        if not hasattr(spider, "use_flaresolverr") or not spider.use_flaresolverr:
+            return None
+
+        if request.meta.get("flaresolverr_solved"):
+            return None
+
+        domain = urlparse(request.url).netloc
+        current_time = reactor.seconds()
+
+        if domain in self.solved_domains:
+            last_solved_time, solution = self.solved_domains[domain]
+            if current_time - last_solved_time < self.cache_duration:
+                spider.logger.debug(f"Applying cached FlareSolverr cookies for {domain}")
+                solution_data = solution.get("solution", {})
+                cookies = solution_data.get("cookies", [])
+                request.cookies.update({cookie["name"]: cookie["value"] for cookie in cookies})
+                user_agent = solution_data.get("userAgent")
+                if user_agent:
+                    request.headers[b"User-Agent"] = user_agent.encode()
+
         return None
 
     async def process_response(self, request, response):
@@ -263,13 +285,30 @@ class FlaresolverrMiddleware:
         raise IgnoreRequest()
 
     def _apply_solution(self, original_request, solution):
-        solution_response = solution.get("solution", {}).get("response", {})
-        return Request(
-            url=original_request.url,
-            headers=solution_response.get("headers", {}),
-            cookies={cookie["name"]: cookie["value"] for cookie in solution_response.get("cookies", [])},
-            dont_filter=True,
-            meta={"flaresolverr_solved": True, **original_request.meta},
+        """Convert a FlareSolverr solution into a Scrapy TextResponse.
+
+        FlareSolverr returns the full solved HTML in solution["solution"]["response"]
+        as a string. We wrap it in a TextResponse so Scrapy can parse it directly,
+        avoiding a second HTTP request that would hit Cloudflare again.
+        """
+        solution_data = solution.get("solution", {})
+        html_body = solution_data.get("response", "")
+        solved_url = solution_data.get("url", original_request.url)
+        cookies = solution_data.get("cookies", [])
+        user_agent = solution_data.get("userAgent", "")
+
+        headers = {}
+        if user_agent:
+            headers["User-Agent"] = user_agent
+        if cookies:
+            headers["Set-Cookie"] = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+
+        return TextResponse(
+            url=solved_url,
+            body=html_body,
+            encoding="utf-8",
+            headers=headers,
+            request=original_request,
         )
 
     async def close_spider(self, spider):

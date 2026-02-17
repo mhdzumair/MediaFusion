@@ -18,8 +18,9 @@ class MovieTVParserPipeline:
         if "file_data" not in data:
             raise DropItem(f"File data not found in item: {data}")
 
-        if data["type"] == "movie":
-            data["type"] = "series" if data["seasons"] else "movie"
+        data_type = data.get("type", "movie")
+        if data_type == "movie":
+            data["type"] = "series" if data.get("seasons") else "movie"
 
         title = data["title"]
         if data.get("imdb_id"):

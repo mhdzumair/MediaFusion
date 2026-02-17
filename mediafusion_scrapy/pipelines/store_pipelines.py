@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 
 from scrapy import signals
@@ -8,7 +9,7 @@ from sqlmodel import select
 from db import crud
 from db.database import get_async_session
 from db.enums import MediaType
-from db.models import Episode, Media, Season, SeriesMetadata
+from db.models import Media
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import TVMetaData
 
@@ -67,9 +68,12 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
             raise DropItem(f"title not found in item: {item}")
 
         async for session in get_async_session():
-            # Get or create series metadata
+            title_key = f"{item['title']}_{item['year']}"
+            prefix = item.get("catalog", ["event"])[0]
+            stable_id = f"{prefix}:{hashlib.md5(title_key.encode()).hexdigest()[:16]}"
+
             metadata = {
-                "id": None,
+                "id": stable_id,
                 "title": item["title"],
                 "year": item["year"],
                 "poster": item.get("poster"),
@@ -83,26 +87,39 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
             if not series_result:
                 raise DropItem(f"Failed to create series metadata for: {item['title']}")
 
-            meta_id = series_result["id"]
-            logging.info("Using series %s with id %s", item["title"], meta_id)
+            meta_id = stable_id
+            logging.info("Using series %s with id %s (db pk %s)", item["title"], meta_id, series_result.id)
 
             # Check if torrent stream exists
             existing_stream = await crud.get_stream_by_info_hash(session, item["info_hash"])
 
             if not existing_stream:
-                # Prepare episode files
+                # Prepare episode files (items may be dicts or StreamFileData objects)
                 episode_files = []
                 if item.get("episodes"):
                     for ep in item["episodes"]:
-                        episode_files.append(
-                            {
-                                "season_number": ep.get("season_number", 1),
-                                "episode_number": ep.get("episode_number", 1),
-                                "filename": ep.get("filename"),
-                                "size": ep.get("size"),
-                                "file_index": ep.get("file_index"),
-                            }
-                        )
+                        if isinstance(ep, dict):
+                            episode_files.append(
+                                {
+                                    "season_number": ep.get("season_number", 1),
+                                    "episode_number": ep.get("episode_number", 1),
+                                    "filename": ep.get("filename"),
+                                    "size": ep.get("size"),
+                                    "file_index": ep.get("file_index"),
+                                    "episode_title": ep.get("episode_title"),
+                                }
+                            )
+                        else:
+                            episode_files.append(
+                                {
+                                    "season_number": getattr(ep, "season_number", 1),
+                                    "episode_number": getattr(ep, "episode_number", 1),
+                                    "filename": getattr(ep, "filename", ""),
+                                    "size": getattr(ep, "size", 0),
+                                    "file_index": getattr(ep, "file_index", 0),
+                                    "episode_title": getattr(ep, "episode_title", None),
+                                }
+                            )
 
                 # Create torrent stream
                 stream_data = {
@@ -122,7 +139,7 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
                     "catalogs": item.get("catalog", []),
                     "created_at": item.get("created_at"),
                     "seeders": item.get("seeders"),
-                    "episode_files": episode_files,
+                    "files": episode_files,
                 }
 
                 await crud.store_new_torrent_streams(session, [stream_data])
@@ -132,8 +149,7 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
                     item["title"],
                 )
 
-            # Organize episodes
-            await crud.organize_episodes(session, meta_id)
+            await session.commit()
 
         await self.redis.sadd(item["scraped_info_hash_key"], item["info_hash"])
 
@@ -343,110 +359,6 @@ class SeriesStorePipeline(QueueBasedPipeline):
             self._title_media_cache[cache_key] = media.id
         return media
 
-    @staticmethod
-    async def _ensure_episodes_from_file_data(session, media, item):
-        """Create season/episode entries from torrent file_data when no external
-        metadata provider supplied episode information.
-
-        The torrent parser extracts per-file ``season_number`` and
-        ``episode_number`` from the filenames inside the torrent.  This method
-        uses that data to populate the ``season`` and ``episode`` tables so that
-        the UI can display episode information even for ``mf:`` items.
-        """
-        file_data = item.get("file_data", [])
-        if not file_data:
-            return
-
-        # Ensure series_metadata exists (it should, but be safe)
-        result = await session.exec(select(SeriesMetadata).where(SeriesMetadata.media_id == media.id))
-        series_meta = result.first()
-        if not series_meta:
-            series_meta = SeriesMetadata(media_id=media.id)
-            session.add(series_meta)
-            await session.flush()
-
-        # Collect unique (season, episode) pairs from file_data
-        episodes_to_create: dict[int, set[int]] = {}
-        for fd in file_data:
-            season_num = fd.get("season_number")
-            episode_num = fd.get("episode_number")
-            if season_num is None or episode_num is None:
-                continue
-            episodes_to_create.setdefault(season_num, set()).add(episode_num)
-
-        # Also collect from top-level parsed seasons/episodes (single-file torrents
-        # may not have per-file data but have seasons/episodes on the item).
-        item_seasons = item.get("seasons", [])
-        item_episodes = item.get("episodes", [])
-        if item_seasons and item_episodes:
-            for s in item_seasons:
-                for e in item_episodes:
-                    episodes_to_create.setdefault(s, set()).add(e)
-
-        if not episodes_to_create:
-            return
-
-        created_count = 0
-        for season_num, episode_nums in episodes_to_create.items():
-            # Get or create season
-            result = await session.exec(
-                select(Season).where(
-                    Season.series_id == series_meta.id,
-                    Season.season_number == season_num,
-                )
-            )
-            season = result.first()
-            if not season:
-                season = Season(
-                    series_id=series_meta.id,
-                    season_number=season_num,
-                    episode_count=len(episode_nums),
-                )
-                session.add(season)
-                await session.flush()
-            else:
-                # Update episode count if we know more episodes now
-                if len(episode_nums) > (season.episode_count or 0):
-                    season.episode_count = len(episode_nums)
-
-            # Create missing episodes
-            for ep_num in sorted(episode_nums):
-                result = await session.exec(
-                    select(Episode).where(
-                        Episode.season_id == season.id,
-                        Episode.episode_number == ep_num,
-                    )
-                )
-                if result.first():
-                    continue  # Already exists (from a previous torrent or provider)
-
-                episode = Episode(
-                    season_id=season.id,
-                    episode_number=ep_num,
-                    title=f"Episode {ep_num}",
-                )
-                session.add(episode)
-                created_count += 1
-
-        if created_count:
-            # Update total_seasons / total_episodes on series_metadata
-            all_seasons_result = await session.exec(select(Season).where(Season.series_id == series_meta.id))
-            all_seasons = all_seasons_result.all()
-            series_meta.total_seasons = len(all_seasons)
-            total_eps = 0
-            for s in all_seasons:
-                ep_count_result = await session.exec(select(Episode).where(Episode.season_id == s.id))
-                total_eps += len(ep_count_result.all())
-            series_meta.total_episodes = total_eps
-
-            await session.flush()
-            logging.info(
-                "Created %d episode entries from torrent file data for %s (S%s)",
-                created_count,
-                item["title"],
-                list(episodes_to_create.keys()),
-            )
-
     async def parse_item(self, item):
         if "title" not in item:
             return item
@@ -475,10 +387,6 @@ class SeriesStorePipeline(QueueBasedPipeline):
                     logging.info("Applied full metadata for series %s", item["title"])
                 except Exception as e:
                     logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)
-
-            # When no external provider supplied episode data, create episode
-            # entries from the torrent's file list so the UI still shows episodes.
-            await self._ensure_episodes_from_file_data(session, media, item)
 
             # Check if torrent stream already exists
             existing_stream = await crud.get_stream_by_info_hash(session, item["info_hash"])

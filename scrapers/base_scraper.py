@@ -2,6 +2,7 @@ import abc
 import asyncio
 import json
 import logging
+import re
 import time
 from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterable
@@ -23,7 +24,12 @@ from db.schemas import MetadataData, StreamFileData, TorrentStreamData, UserData
 from scrapers import torrent_info
 from scrapers.imdb_data import get_episode_by_date
 from utils.network import CircuitBreaker, batch_process_with_circuit_breaker
-from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
+from utils.parser import (
+    NON_VIDEO_BLOCKLIST_KEYWORDS,
+    VIDEO_ALLOWLIST_KEYWORDS,
+    calculate_max_similarity_ratio,
+    is_contain_18_plus_keywords,
+)
 from utils.torrent import extract_torrent_metadata, info_hashes_to_torrent_metadata
 
 # Redis key constants for scraper metrics storage
@@ -390,22 +396,15 @@ class ScraperError(Exception):
 
 
 class BaseScraper(abc.ABC):
-    # Blocklist & Allowlist of keywords to identify non-video files
-    # fmt: off
-    blocklist_keywords = [
-        ".exe", ".zip", ".rar", ".iso", ".bin", ".tar", ".7z", ".pdf", ".xyz",
-        ".epub", ".mobi", ".azw3", ".doc", ".docx", ".txt", ".rtf",
-        "setup", "install", "crack", "patch", "trainer", "readme",
-        "manual", "keygen", "license", "tutorial", "ebook", "software", "epub", "book",
-    ]
+    blocklist_keywords = NON_VIDEO_BLOCKLIST_KEYWORDS
+    allowlist_keywords = VIDEO_ALLOWLIST_KEYWORDS
 
-    allowlist_keywords = [
-        "mkv", "mp4", "avi", ".webm", ".mov", ".flv", "webdl", "web-dl", "webrip", "bluray",
-        "brrip", "bdrip", "dvdrip", "hdtv", "hdcam", "hdrip", "1080p", "720p", "480p", "360p",
-        "2160p", "4k", "x264", "x265", "hevc", "h264", "h265", "aac", "xvid", "movie", "series", "season",
-    ]
-
-    # fmt: on
+    # Sports-broadcaster tags that only appear in live sporting-event uploads.
+    # A real movie torrent would never contain "SkyF1HD" or "F1TV".
+    _sports_broadcaster_re = re.compile(
+        r"Sky\s*F1(?:UHD|HD)?|Sky\s*Sports|F1TV|V\s*Sport|MotoGP\s*VideoPass",
+        re.IGNORECASE,
+    )
 
     def __init__(self, cache_key_prefix: str, logger_name: str):
         self.logger = logging.getLogger(logger_name)
@@ -681,14 +680,30 @@ class BaseScraper(abc.ABC):
 
         :return: True if valid, False otherwise
         """
+        parsed_title = parsed_data["title"]
+
+        # Guard: reject sports-broadcast torrents when scraping for a movie.
+        # Torrents from live sporting events embed broadcaster tags like
+        # "SkyF1HD", "SkyUHD", "F1TV" etc. that never appear in movie
+        # releases.  This prevents e.g. "F1 2025 R01 Australian Grand Prix
+        # SkyF1HD 1080P" from being matched to the Brad Pitt "F1" movie.
+        if catalog_type == "movie" and self._sports_broadcaster_re.search(torrent_title):
+            self.metrics.record_skip("Sports broadcast mismatch")
+            self.logger.debug(
+                "Rejecting sports-broadcast torrent for movie %r: %s",
+                metadata.title,
+                torrent_title,
+            )
+            return False
+
         # Check similarity ratios
-        max_similarity_ratio = calculate_max_similarity_ratio(parsed_data["title"], metadata.title, metadata.aka_titles)
+        max_similarity_ratio = calculate_max_similarity_ratio(parsed_title, metadata.title, metadata.aka_titles)
 
         # Log and return False if similarity ratios is below the expected threshold
         if max_similarity_ratio < expected_ratio:
             self.metrics.record_skip("Title mismatch")
             self.logger.debug(
-                f"Title mismatch: '{parsed_data['title']}' vs. '{metadata.title}'. Torrent title: '{torrent_title}'"
+                f"Title mismatch: '{parsed_title}' vs. '{metadata.title}'. Torrent title: '{torrent_title}'"
             )
             return False
 
@@ -697,13 +712,13 @@ class BaseScraper(abc.ABC):
             if parsed_data.get("year") != metadata.year:
                 self.metrics.record_skip("Year mismatch")
                 self.logger.debug(
-                    f"Year mismatch for movie: {parsed_data['title']} ({parsed_data.get('year')}) vs. {metadata.title} ({metadata.year}). Torrent title: '{torrent_title}'"
+                    f"Year mismatch for movie: {parsed_title} ({parsed_data.get('year')}) vs. {metadata.title} ({metadata.year}). Torrent title: '{torrent_title}'"
                 )
                 return False
             if parsed_data.get("season"):
                 self.metrics.record_skip("Year mismatch")
                 self.logger.debug(
-                    f"Season found for movie: {parsed_data['title']} ({parsed_data.get('season')}). Torrent title: '{torrent_title}'"
+                    f"Season found for movie: {parsed_title} ({parsed_data.get('season')}). Torrent title: '{torrent_title}'"
                 )
                 return False
 
@@ -718,7 +733,7 @@ class BaseScraper(abc.ABC):
         ):
             self.metrics.record_skip("Year mismatch")
             self.logger.debug(
-                f"Year mismatch for series: {parsed_data['title']} ({parsed_year}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
+                f"Year mismatch for series: {parsed_title} ({parsed_year}) vs. {metadata.title} ({metadata.year} - {metadata.end_year}). Torrent title: '{torrent_title}'"
             )
             return False
         return True

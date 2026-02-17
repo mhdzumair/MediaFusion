@@ -11,7 +11,11 @@ class ScraperTask(BaseModel):
     """Scraper task configuration."""
 
     spider_name: Literal[
-        "formula_tgx",
+        "formula_ext",
+        "motogp_ext",
+        "wwe_ext",
+        "ufc_ext",
+        "movies_tv_ext",
         "nowmetv",
         "nowsports",
         "tamilultra",
@@ -19,11 +23,7 @@ class ScraperTask(BaseModel):
         "tamilmv",
         "tamil_blasters",
         "dlhd",
-        "motogp_tgx",
         "arab_torrents",
-        "wwe_tgx",
-        "ufc_tgx",
-        "movies_tv_tgx",
     ]
     pages: int | None = 1
     start_page: int | None = 1

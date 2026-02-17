@@ -434,11 +434,18 @@ async def search_tmdb(
     media_type: str = None,
     max_retries: int = 3,
     created_year: int | None = None,
+    min_similarity: int = 85,
+    use_partial_ratio: bool = False,
 ) -> dict[str, Any]:
     """
     Search for a movie or TV show on TMDB with strict year validation.
     When year is provided, only exact matches are considered.
     When year is None, results are sorted by proximity to created_year.
+
+    Args:
+        use_partial_ratio: When True, uses fuzz.partial_ratio instead of fuzz.ratio.
+            Useful when the search title is a known prefix/subset of the TMDB title
+            (e.g. "UFC 325" should match "UFC 325: Volkanovski vs. Lopes 2").
     """
     if TMDB_API_KEY is None:
         logging.error("TMDB API key is not set")
@@ -459,6 +466,8 @@ async def search_tmdb(
 
     params = {k: v for k, v in params.items() if v is not None}
 
+    similarity_fn = fuzz.partial_ratio if use_partial_ratio else fuzz.ratio
+
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(proxy=settings.requests_proxy_url) as client:
@@ -478,7 +487,7 @@ async def search_tmdb(
                 candidates = []
                 for result in results:
                     result_title = result.get("name") or result.get("title")
-                    if not result_title or fuzz.ratio(result_title.lower(), title.lower()) < 85:
+                    if not result_title or similarity_fn(result_title.lower(), title.lower()) < min_similarity:
                         continue
 
                     valid_year, year_score = calculate_year_score(result, year, created_year)

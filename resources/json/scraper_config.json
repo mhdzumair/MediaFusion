@@ -4,10 +4,8 @@
 	"nowmetv": "https://neelive.com/",
 	"tamilultra": "https://tamilultra.fr/",
 	"tamilbulb": "https://tamilbulb.tv/",
-	"tgx": [
-	  "torrentgalaxy.to",
-	  "tgx.rs",
-	  "torrentgalaxy.mx"
+	"ext_to": [
+	  "ext.to"
 	]
   },
   "tamil_blasters": {

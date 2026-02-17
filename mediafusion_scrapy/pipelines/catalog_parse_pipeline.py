@@ -32,8 +32,8 @@ class CatalogParsePipeline:
             catalog_name = f"{language.lower()}_{video_type}"
             if catalog_name not in CATALOG_DATA:
                 continue
-            if source == "TorrentGalaxy" and language.lower() != "english":
-                # Do not add non-english catalogs from TorrentGalaxy
+            if source == "ExtTo" and language.lower() != "english":
+                # Do not add non-english catalogs from ExtTo
                 continue
             if catalog_name not in catalogs:
                 catalogs.append(catalog_name)

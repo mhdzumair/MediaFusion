@@ -53,9 +53,11 @@ SPIDER_MIDDLEWARES = {
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 
 DOWNLOADER_MIDDLEWARES = {
-    "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 542,
     "mediafusion_scrapy.middlewares.TooManyRequestsRetryMiddleware": 543,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": 550,
+    # FlaresolverrMiddleware must have higher priority number than RetryMiddleware
+    # so it intercepts 403 responses first in process_response (reverse order).
+    "mediafusion_scrapy.middlewares.FlaresolverrMiddleware": 551,
 }
 
 EXTENSIONS = {

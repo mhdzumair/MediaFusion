@@ -1,7 +1,7 @@
 import logging
 import random
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from scrapy.exceptions import DropItem
 
@@ -42,7 +42,11 @@ class BaseParserPipeline:
         self.static_logo = static_logo or {}
 
     async def process_item(self, item):
-        title = re.sub(r"\.\.+", ".", item["torrent_title"])
+        torrent_title = item.get("torrent_title")
+        if not torrent_title:
+            raise DropItem(f"Missing torrent_title in item: {item.get('torrent_name')}")
+        title = re.sub(r"\.\.+", ".", torrent_title)
+        title = re.sub(r"\.\s+", ".", title)
         self.parse_title(title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
@@ -84,7 +88,8 @@ class BaseParserPipeline:
 
                 # Final fallback to created_at date
                 if not date:
-                    date = torrent_data["created_at"].date()
+                    created_at = torrent_data.get("created_at")
+                    date = created_at.date() if created_at else datetime.now().date()
 
                 torrent_data.update(
                     {
@@ -99,7 +104,7 @@ class BaseParserPipeline:
         logging.warning(f"Failed to parse title: {title}")
 
     def parse_description(self, torrent_data: dict):
-        description = torrent_data.pop("description")
+        description = torrent_data.pop("description", "") or ""
 
         codec_match = re.search(r"Codec info\s*=\s*(\S+)", description)
         audio_match = re.search(r"Audio\s*Codec info\s*=\s*(\S+)", description)
@@ -112,15 +117,14 @@ class BaseParserPipeline:
         if resolution_match:
             torrent_data["resolution"] = resolution_match.group(1) + "p"
 
-        largest_file = max(
-            torrent_data["file_data"],
-            key=lambda x: x["size"],
-        )
-        largest_file_index = torrent_data["file_data"].index(largest_file)
-        torrent_data["largest_file"] = {
-            "index": largest_file_index,
-            "filename": largest_file["filename"],
-        }
+        file_data = torrent_data.get("file_data", [])
+        if file_data:
+            largest_file = max(file_data, key=lambda x: x["size"])
+            largest_file_index = file_data.index(largest_file)
+            torrent_data["largest_file"] = {
+                "index": largest_file_index,
+                "filename": largest_file["filename"],
+            }
 
     async def update_imdb_data(self, torrent_data: dict):
         year = torrent_data["date"].year
@@ -130,7 +134,12 @@ class BaseParserPipeline:
         if not imdb_id:
             result = self.imdb_cache.get(f"{title}_{year}")
             if not result:
-                result = await meta_fetcher.search_metadata(title, year, torrent_data["date"])
+                result = await meta_fetcher.search_metadata(
+                    title,
+                    year,
+                    media_type=None,
+                    created_at=torrent_data["date"],
+                )
             if not result:
                 logging.warning(f"Failed to find IMDb title for {title}")
                 if not torrent_data["poster"]:
@@ -165,24 +174,62 @@ class BaseParserPipeline:
         if not result:
             result = await meta_fetcher.get_metadata(imdb_id, "series")
 
-        filtered_episode = [
-            episode for episode in result["episodes"] if episode["released"].date() == torrent_data["date"]
-        ]
+        torrent_date = torrent_data["date"]
+        filtered_episode = self._find_episode_by_date(result["episodes"], torrent_date)
         if not filtered_episode:
-            logging.warning(f"Failed to find episode for {title} on {torrent_data['date']}")
+            logging.warning(f"Failed to find episode for {title} on {torrent_date}")
             if not torrent_data["poster"]:
                 torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])
             return
-        episode = filtered_episode[0]
 
         torrent_data.update(
             dict(
-                poster=episode["thumbnail"],
-                background=episode["thumbnail"],
-                description=episode["overview"],
-                imdb_rating=episode["imdb_rating"],
+                poster=filtered_episode.get("thumbnail"),
+                background=filtered_episode.get("thumbnail"),
+                description=filtered_episode.get("overview"),
+                imdb_rating=filtered_episode.get("imdb_rating"),
             )
         )
+
+    @staticmethod
+    def _episode_date(episode: dict) -> date | None:
+        """Extract a date object from an episode's released field.
+
+        The field can be a datetime, a date, or an ISO date string.
+        """
+        released = episode.get("released")
+        if released is None:
+            return None
+        if isinstance(released, datetime):
+            return released.date()
+        if isinstance(released, date):
+            return released
+        if isinstance(released, str):
+            try:
+                return date.fromisoformat(released)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _find_episode_by_date(cls, episodes: list[dict], torrent_date: date) -> dict | None:
+        """Find an episode matching the torrent date, with ±1 day tolerance.
+
+        Torrent upload dates often differ from air dates by one day
+        (e.g. show airs on 02/09, torrent uploaded on 02/10).
+        """
+        for episode in episodes:
+            ep_date = cls._episode_date(episode)
+            if ep_date and ep_date == torrent_date:
+                return episode
+
+        date_window = {torrent_date - timedelta(days=1), torrent_date + timedelta(days=1)}
+        for episode in episodes:
+            ep_date = cls._episode_date(episode)
+            if ep_date and ep_date in date_window:
+                return episode
+
+        return None
 
 
 class WWEParserPipeline(BaseParserPipeline):
@@ -191,6 +238,7 @@ class WWEParserPipeline(BaseParserPipeline):
             "wwe raw": "tt0185103",
             "wwe monday night raw": "tt0185103",
             "wwe smackdown": "tt0227972",
+            "wwe smackdown live": "tt0227972",
             "wwe friday night smackdown": "tt0227972",
             "wwe friday smackdown": "tt0227972",
             "wwe main event": "tt2659152",
@@ -201,6 +249,7 @@ class WWEParserPipeline(BaseParserPipeline):
             "wwe raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
             "wwe monday night raw": "https://image.tmdb.org/t/p/original/6BwNeaEes8Fvd3XHxNqZRzPtsou.png",
             "wwe smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
+            "wwe smackdown live": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
             "wwe friday night smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
             "wwe friday smackdown": "https://image.tmdb.org/t/p/original/lsxhZMYlWGYfsbhezeWelbJceMI.png",
             "wwe main event": "https://image.tmdb.org/t/p/original/lHG78elMzHCasoP7kYiYUUJ2yUX.jpg",
@@ -210,13 +259,39 @@ class WWEParserPipeline(BaseParserPipeline):
 
 
 class UFCParserPipeline(BaseParserPipeline):
+    # Card-type suffixes that appear in torrent titles but not in TMDB titles
+    _card_suffix_re = re.compile(
+        r"\s+(?:Main\s+Card|Early\s+Prelims?|Prelims?|PPV)\s*$",
+        re.IGNORECASE,
+    )
+    # "PPV" can also appear mid-title (e.g. "UFC 314 PPV Volkanovski vs Lopes")
+    _ppv_mid_re = re.compile(r"\bPPV\b\s*", re.IGNORECASE)
+
     def __init__(self):
         super().__init__("ufc")
+
+    @classmethod
+    def _clean_event_title(cls, title: str) -> str:
+        """Strip card-type suffixes and PPV tags from UFC event titles for TMDB lookup.
+
+        TMDB lists a single entry per UFC event (e.g. "UFC 325: Volkanovski vs. Lopes 2"),
+        while torrent titles often include card-type variants like "UFC 325 Early Prelims"
+        or "UFC 314 PPV Volkanovski vs Lopes".
+        """
+        title = cls._card_suffix_re.sub("", title).strip()
+        title = cls._ppv_mid_re.sub("", title).strip()
+        return title
 
     async def update_imdb_data(self, torrent_data: dict):
         year = torrent_data.get("date").year
         title = torrent_data.get("event")
-        tmdb_data = await search_tmdb(title, year)
+
+        # Strip card-type suffixes for TMDB lookup
+        clean_title = self._clean_event_title(title)
+
+        # Use partial_ratio because torrent event titles are often a prefix of the
+        # TMDB title (e.g. "UFC 325" vs "UFC 325: Volkanovski vs. Lopes 2")
+        tmdb_data = await search_tmdb(clean_title, year, use_partial_ratio=True)
         if not tmdb_data:
             if not torrent_data["poster"]:
                 torrent_data["poster"] = random.choice(SPORTS_ARTIFACTS[self.event_name.upper()]["poster"])

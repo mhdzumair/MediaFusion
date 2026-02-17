@@ -23,9 +23,6 @@ CATALOG_DISPLAY_NAMES = {
     "yts_movies": "YTS Movies",
     "yts_streams": "YTS",
     "bt4g_streams": "BT4G",
-    "tgx_movie": "TorrentGalaxy Movies",
-    "tgx_series": "TorrentGalaxy Series",
-    "tgx": "TorrentGalaxy",
     "rss_feed_movies": "RSS Feeds",
     # Contribution catalogs
     "contribution_movies": "Community Movies",
@@ -102,7 +99,6 @@ def format_catalog_name(name: str) -> str:
         "Dmm": "DMM",
         "Yts": "YTS",
         "Bt4g": "BT4G",
-        "Tgx": "TGX",
         "Rss": "RSS",
         "Motogp": "MotoGP",
     }

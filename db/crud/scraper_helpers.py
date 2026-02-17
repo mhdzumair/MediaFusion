@@ -25,7 +25,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from db.crud.media import (
     add_external_id,
     get_media_by_external_id,
+    get_or_create_episode,
     get_or_create_metadata_provider,
+    get_or_create_season,
     invalidate_meta_cache,
     parse_external_id,
 )
@@ -95,8 +97,8 @@ async def fetch_last_run(spider_id: str, spider_name: str) -> dict:
     """Fetch last run info for a scrapy spider from Redis.
 
     Args:
-        spider_id: The spider identifier (e.g., "formula_tgx")
-        spider_name: Human-readable spider name (e.g., "Formula TGX")
+        spider_id: The spider identifier (e.g., "formula_ext")
+        spider_name: Human-readable spider name (e.g., "Formula EXT")
 
     Returns:
         Dict with spider info and last run details
@@ -1389,6 +1391,8 @@ async def store_new_torrent_streams(
 
         # Add stream files and episode links (v5 schema)
         # `files` is a list of StreamFileData with embedded episode info
+        # Maps (season_number, episode_number) -> episode_title
+        episode_info: dict[tuple[int, int], str] = {}
         if files := stream_data.get("files"):
             for idx, file_info in enumerate(files):
                 if isinstance(file_info, dict):
@@ -1415,16 +1419,22 @@ async def store_new_torrent_streams(
                     episode_number = file_info.get("episode_number")
 
                     if season_number is not None or episode_number is not None:
+                        s_num = season_number or 1
+                        e_num = episode_number or 1
                         file_link = FileMediaLink(
                             file_id=stream_file.id,
                             media_id=media.id,
-                            season_number=season_number or 1,
-                            episode_number=episode_number or 1,
+                            season_number=s_num,
+                            episode_number=e_num,
                             episode_end=file_info.get("episode_end"),
                             link_source=LinkSource.PTT_PARSER,
                             confidence=1.0,
                         )
                         session.add(file_link)
+                        key = (s_num, e_num)
+                        if key not in episode_info:
+                            ep_title = file_info.get("episode_title") or f"Episode {e_num}"
+                            episode_info[key] = ep_title
                     else:
                         # For movies - create a simple media link without episode info
                         file_link = FileMediaLink(
@@ -1435,6 +1445,20 @@ async def store_new_torrent_streams(
                             confidence=1.0,
                         )
                         session.add(file_link)
+
+        # Ensure Season/Episode metadata records exist for series
+        if episode_info and media.type == MediaType.SERIES:
+            sm_result = await session.exec(select(SeriesMetadata).where(SeriesMetadata.media_id == media.id))
+            sm = sm_result.first()
+            if sm:
+                for (s_num, e_num), ep_title in episode_info.items():
+                    season_obj = await get_or_create_season(session, sm.id, s_num)
+                    await get_or_create_episode(
+                        session,
+                        season_obj.id,
+                        e_num,
+                        title=ep_title,
+                    )
 
         stored += 1
 
@@ -1736,7 +1760,9 @@ async def delete_torrent_stream(
     links_result = await session.exec(links_query)
     media_ids = links_result.all()
 
-    # Delete the base stream (cascades to torrent)
+    # Delete dependent records before the base stream
+    await session.exec(sa_delete(StreamMediaLink).where(StreamMediaLink.stream_id == torrent.stream_id))
+    await session.exec(sa_delete(TorrentStream).where(TorrentStream.stream_id == torrent.stream_id))
     await session.exec(sa_delete(Stream).where(Stream.id == torrent.stream_id))
 
     # Update media stream counts
