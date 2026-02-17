@@ -16,8 +16,48 @@ from utils import const
 font_cache = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
+POSTER_FAIL_PREFIX = "poster_fail:"
+POSTER_DEAD_PREFIX = "poster_dead:"
+
+
+class PosterURLDeadError(Exception):
+    """Raised when a poster URL has been marked as dead after repeated failures."""
+
+
+async def is_poster_url_dead(url: str) -> bool:
+    """Check if a poster URL has been marked as dead in Redis."""
+    return bool(await REDIS_ASYNC_CLIENT.get(f"{POSTER_DEAD_PREFIX}{url}"))
+
+
+async def _record_poster_failure(url: str) -> None:
+    """Record a fetch failure for a poster URL.
+
+    Increments the failure counter. When the counter reaches the configured
+    threshold the URL is marked as dead so subsequent requests skip fetching.
+    """
+    fail_key = f"{POSTER_FAIL_PREFIX}{url}"
+    fail_count = await REDIS_ASYNC_CLIENT.incr(fail_key)
+    # Set/refresh TTL on the failure counter
+    await REDIS_ASYNC_CLIENT.expire(fail_key, settings.poster_failure_ttl)
+
+    if fail_count and fail_count >= settings.poster_failure_threshold:
+        dead_key = f"{POSTER_DEAD_PREFIX}{url}"
+        await REDIS_ASYNC_CLIENT.set(dead_key, b"1", ex=settings.poster_dead_ttl)
+        # Clean up the failure counter since we've promoted to dead
+        await REDIS_ASYNC_CLIENT.delete(fail_key)
+        logging.warning(
+            "Poster URL marked as dead after %d failures (cooldown %ds): %s",
+            fail_count,
+            settings.poster_dead_ttl,
+            url,
+        )
+
 
 async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
+    # Check if the poster URL is marked dead
+    if await is_poster_url_dead(url):
+        raise PosterURLDeadError(f"Poster URL is marked as dead (too many failures): {url}")
+
     # Check if the image is cached in Redis
     cached_image = await REDIS_ASYNC_CLIENT.get(url)
     if cached_image:
@@ -58,6 +98,8 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
             else:
                 logging.warning(f"All {max_retries} attempts failed for {url}: {e}")
 
+    # Record the failure in Redis for tracking
+    await _record_poster_failure(url)
     raise last_exception
 
 

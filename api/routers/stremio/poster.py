@@ -18,6 +18,7 @@ from db.models.reference import Genre
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas.media import MediaFusionEventsMetaData
 from utils import poster
+from utils.poster import PosterURLDeadError
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 router = APIRouter()
@@ -129,6 +130,10 @@ async def get_poster(
     if not poster_url:
         return raise_poster_error("Poster not found.")
 
+    # Skip fetching if the poster URL is already known to be dead
+    if await poster.is_poster_url_dead(poster_url):
+        return raise_poster_error("Poster source is temporarily unavailable.")
+
     try:
         # Create poster data using Pydantic model
         poster_data = schemas.PosterData(
@@ -149,6 +154,8 @@ async def get_poster(
             media_type="image/jpeg",
         )
 
+    except PosterURLDeadError:
+        return raise_poster_error("Poster source is temporarily unavailable.")
     except Exception as e:
         logger.exception(f"Error creating poster for {mediafusion_id}: {e}")
         return raise_poster_error("Error creating poster.")

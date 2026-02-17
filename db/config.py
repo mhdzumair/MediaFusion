@@ -162,6 +162,11 @@ class Settings(BaseSettings):
     scrape_with_aka_titles: bool = True
     enable_fetching_torrent_metadata_from_p2p: bool = True
 
+    # Poster Fetch Failure Tracking
+    poster_failure_ttl: int = 3600  # TTL in seconds for a single failure record (1 hour)
+    poster_failure_threshold: int = 3  # Number of failures before marking a poster URL as dead
+    poster_dead_ttl: int = 86400  # TTL in seconds for a dead poster URL marker (24 hours)
+
     # Exception Tracking
     enable_exception_tracking: bool = False
     exception_tracking_ttl: int = 259200  # 3 days in seconds
