@@ -318,9 +318,12 @@ class ExtToSpider(scrapy.Spider):
         )
 
         poster_image = response.css(
-            "img.img-responsive::attr(data-src), img.img-responsive::attr(src), .card-body img::attr(src)"
+            ".detail-torrent-poster img::attr(data-src), "
+            ".detail-torrent-poster img::attr(src), "
+            ".detail-torrent-poster-image img::attr(data-src), "
+            ".detail-torrent-poster-image img::attr(src)"
         ).get()
-        if poster_image:
+        if poster_image and "/static/img/" not in poster_image:
             torrent_data["poster"] = response.urljoin(poster_image)
             torrent_data["background"] = response.urljoin(poster_image)
         else:
