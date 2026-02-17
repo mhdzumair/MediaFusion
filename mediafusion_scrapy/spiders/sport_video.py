@@ -15,7 +15,7 @@ class SportVideoSpider(scrapy.Spider):
 
     custom_settings = {
         "ITEM_PIPELINES": {
-            "mediafusion_scrapy.pipelines.TorrentDownloadAndParsePipeline": 100,
+            "mediafusion_scrapy.pipelines.PlaywrightTorrentDownloadPipeline": 100,
             "mediafusion_scrapy.pipelines.SportVideoParserPipeline": 200,
             "mediafusion_scrapy.pipelines.MovieStorePipeline": 300,
             "mediafusion_scrapy.pipelines.RedisCacheURLPipeline": 400,
@@ -100,12 +100,14 @@ class SportVideoSpider(scrapy.Spider):
                     meta={"item": torrent_data},
                 )
             elif title and torrent_link:
+                full_torrent_link = response.urljoin(torrent_link)
                 # Check if URL has been scraped before
-                if self.redis.sismember(self.scraped_urls_key, torrent_link):
-                    self.logger.info(f"Skipping already scraped URL: {torrent_link}")
+                if self.redis.sismember(self.scraped_urls_key, full_torrent_link):
+                    self.logger.info(f"Skipping already scraped URL: {full_torrent_link}")
                     continue
 
-                torrent_data["torrent_link"] = response.urljoin(torrent_link)
+                torrent_data["torrent_link"] = full_torrent_link
+                torrent_data["webpage_url"] = full_torrent_link
                 yield torrent_data
 
     def parse_torrent_page(self, response):

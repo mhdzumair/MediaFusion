@@ -16,6 +16,7 @@ from .store_pipelines import (
     SeriesStorePipeline,
     TVStorePipeline,
 )
+from .playwright_torrent_pipeline import PlaywrightTorrentDownloadPipeline
 from .torrent_parser_pipeline import (
     MagnetDownloadAndParsePipeline,
     TorrentDownloadAndParsePipeline,
@@ -37,6 +38,7 @@ __all__ = [
     "LiveEventStorePipeline",
     "TorrentDownloadAndParsePipeline",
     "MagnetDownloadAndParsePipeline",
+    "PlaywrightTorrentDownloadPipeline",
     "WWEParserPipeline",
     "UFCParserPipeline",
     "CatalogParsePipeline",
