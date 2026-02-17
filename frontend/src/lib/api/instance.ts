@@ -47,6 +47,7 @@ export interface AppConfig {
   disabled_content_types: string[]
   authentication_required: boolean
   torznab_enabled: boolean
+  nzb_file_import_enabled: boolean
   telegram: TelegramFeatureConfig
 }
 

@@ -952,7 +952,6 @@ class UsenetStreamData(BaseModel):
     # UsenetStream fields
     nzb_guid: str = Field(description="Unique NZB identifier from indexer")
     nzb_url: str | None = None  # URL to fetch NZB file
-    nzb_content: bytes | None = None  # Cached NZB file content
     size: int  # Total size in bytes
     indexer: str  # Indexer source name
     group_name: str | None = None  # Usenet group (e.g., alt.binaries.movies)
@@ -1080,7 +1079,6 @@ class UsenetStreamData(BaseModel):
         return cls(
             nzb_guid=usenet_stream.nzb_guid,
             nzb_url=usenet_stream.nzb_url,
-            nzb_content=usenet_stream.nzb_content,
             size=usenet_stream.size,
             indexer=usenet_stream.indexer,
             group_name=usenet_stream.group_name,

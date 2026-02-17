@@ -309,12 +309,10 @@ async def get_video_url_from_nzbget(
 
         # Add the NZB if not exists or not complete
         if not existing:
-            if stream.nzb_content:
-                nzb_id = await nzbget.add_nzb_by_content(stream.nzb_content, stream.name, category)
-            elif stream.nzb_url:
+            if stream.nzb_url:
                 nzb_id = await nzbget.add_nzb_by_url(stream.nzb_url, category, stream.name)
             else:
-                raise ProviderException("No NZB content or URL available", "transfer_error.mp4")
+                raise ProviderException("No NZB URL available for this stream", "transfer_error.mp4")
         else:
             nzb_id = existing["nzb_id"]
 

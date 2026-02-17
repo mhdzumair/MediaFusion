@@ -224,7 +224,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         # We need a Media object for from_db; fetch it
         media = await session.get(Media, media_id)
 
-        # Exclude binary fields that can't be JSON-serialized (torrent_file, nzb_content)
+        # Exclude binary fields that can't be JSON-serialized (torrent_file)
         _torrent_exclude = {"torrent_file"}
         torrent_data = [
             TorrentStreamData.from_db(t, t.stream, media).model_dump(mode="json", exclude=_torrent_exclude)
@@ -253,10 +253,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         )
         usenet_result = await session.exec(usenet_query)
         usenet_streams = usenet_result.unique().all()
-        _usenet_exclude = {"nzb_content"}
-        usenet_data = [
-            UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude) for u in usenet_streams
-        ]
+        usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json") for u in usenet_streams]
 
         # Query telegram streams
         telegram_query = (
@@ -430,10 +427,7 @@ async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, vi
         )
         usenet_result = await session.exec(usenet_query)
         usenet_streams = usenet_result.unique().all()
-        _usenet_exclude = {"nzb_content"}
-        usenet_data = [
-            UsenetStreamData.from_db(u).model_dump(mode="json", exclude=_usenet_exclude) for u in usenet_streams
-        ]
+        usenet_data = [UsenetStreamData.from_db(u).model_dump(mode="json") for u in usenet_streams]
 
         # Telegram streams
         telegram_query = (

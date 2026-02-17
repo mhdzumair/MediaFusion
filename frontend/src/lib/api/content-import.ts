@@ -386,6 +386,86 @@ export interface AceStreamImportRequest {
   force_import?: boolean
 }
 
+// ============================================
+// NZB Import Types
+// ============================================
+
+export interface NZBFile {
+  filename: string
+  size: number
+  index: number
+}
+
+export interface NZBMatch {
+  id: string
+  title: string
+  year?: number
+  poster?: string
+  type: string
+  source: string
+  confidence?: number
+  imdb_id?: string
+  imdb_rating?: number
+  runtime?: string
+  description?: string
+  genres?: string[]
+  stars?: string[]
+  countries?: string[]
+  languages?: string[]
+  aka_titles?: string[]
+  background?: string
+  logo?: string
+  release_date?: string
+}
+
+export interface NZBAnalyzeResponse {
+  status: string
+  nzb_guid?: string
+  nzb_title?: string
+  total_size?: number
+  total_size_readable?: string
+  file_count?: number
+  files?: NZBFile[]
+  parsed_title?: string
+  year?: number
+  resolution?: string
+  quality?: string
+  codec?: string
+  audio?: string[]
+  matches?: NZBMatch[]
+  error?: string
+  indexer?: string
+  group_name?: string
+  poster?: string
+  posted_at?: string
+  is_passworded?: boolean
+}
+
+export type NZBMetaType = 'movie' | 'series'
+
+export interface NZBImportRequest {
+  meta_type: NZBMetaType
+  meta_id?: string
+  title?: string
+  indexer?: string
+  resolution?: string
+  quality?: string
+  codec?: string
+  languages?: string
+  force_import?: boolean
+  is_anonymous?: boolean
+  file_data?: string
+}
+
+export interface NZBURLImportRequest {
+  nzb_url: string
+  meta_type: NZBMetaType
+  meta_id?: string
+  title?: string
+  indexer?: string
+  is_anonymous?: boolean
+}
+
 export const contentImportApi = {
   /**
    * Analyze a magnet link
@@ -678,6 +758,57 @@ export const contentImportApi = {
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
     return apiClient.upload<ImportResponse>('/import/acestream', formData)
+  },
+
+  // ============================================
+  // NZB Import API
+  // ============================================
+
+  /**
+   * Analyze an NZB file
+   */
+  analyzeNZBFile: async (file: File, metaType: NZBMetaType): Promise<NZBAnalyzeResponse> => {
+    const formData = new FormData()
+    formData.append('nzb_file', file)
+    formData.append('meta_type', metaType)
+    return apiClient.upload<NZBAnalyzeResponse>('/import/nzb/analyze/file', formData)
+  },
+
+  /**
+   * Analyze an NZB URL
+   */
+  analyzeNZBUrl: async (url: string, metaType: NZBMetaType): Promise<NZBAnalyzeResponse> => {
+    return apiClient.post<NZBAnalyzeResponse>('/import/nzb/analyze/url', {
+      nzb_url: url,
+      meta_type: metaType,
+    })
+  },
+
+  /**
+   * Import an NZB file as a contribution
+   */
+  importNZBFile: async (data: NZBImportRequest & { nzb_file: File }): Promise<ImportResponse> => {
+    const formData = new FormData()
+    formData.append('nzb_file', data.nzb_file)
+    formData.append('meta_type', data.meta_type)
+    if (data.meta_id) formData.append('meta_id', data.meta_id)
+    if (data.title) formData.append('title', data.title)
+    if (data.indexer) formData.append('indexer', data.indexer)
+    if (data.resolution) formData.append('resolution', data.resolution)
+    if (data.quality) formData.append('quality', data.quality)
+    if (data.codec) formData.append('codec', data.codec)
+    if (data.languages) formData.append('languages', data.languages)
+    if (data.force_import) formData.append('force_import', 'true')
+    if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.file_data) formData.append('file_data', data.file_data)
+    return apiClient.upload<ImportResponse>('/import/nzb', formData)
+  },
+
+  /**
+   * Import an NZB via URL as a contribution
+   */
+  importNZBUrl: async (data: NZBURLImportRequest): Promise<ImportResponse> => {
+    return apiClient.post<ImportResponse>('/import/nzb/url', data)
   },
 }
 

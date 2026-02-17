@@ -70,6 +70,31 @@ export interface FileAnnotation {
   meta_type?: 'movie' | 'series' // Type of the linked metadata
 }
 
+// NZB import form data (simplified version of TorrentImportFormData)
+export interface NZBImportFormData {
+  contentType: ContentType
+
+  // Metadata
+  metaId?: string
+  title?: string
+  poster?: string
+  background?: string
+
+  // Technical specs
+  resolution?: string
+  quality?: string
+  codec?: string
+  audio?: string[]
+  languages?: string[]
+
+  // Catalogs
+  catalogs?: string[]
+
+  // Import options
+  forceImport?: boolean
+  isAnonymous?: boolean
+}
+
 // Selected match from analysis
 export interface SelectedMatch extends TorrentMatch {
   imdb_id?: string

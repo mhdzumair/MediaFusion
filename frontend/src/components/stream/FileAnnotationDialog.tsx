@@ -392,7 +392,7 @@ export function FileAnnotationDialog({
 
         {/* File List */}
         <ScrollArea className="flex-1 min-h-0">
-          <div className="pl-6 pr-8 py-4 space-y-2">
+          <div className="px-6 py-4 space-y-2">
             {editedFiles.map((file, index) => {
               const filename = getFilenameOnly(file.file_name)
               const folderPath = getFolderPath(file.file_name)
@@ -416,16 +416,6 @@ export function FileAnnotationDialog({
                       className="data-[state=checked]:bg-emerald-500 scale-90 flex-shrink-0"
                     />
 
-                    {/* File size badge - positioned before filename to avoid clipping */}
-                    {file.size != null && file.size > 0 && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] font-normal text-muted-foreground flex-shrink-0 whitespace-nowrap"
-                      >
-                        {formatFileSize(file.size)}
-                      </Badge>
-                    )}
-
                     <div className="flex-1 min-w-0">
                       {viewMode === 'full' && folderPath && (
                         <p className="text-[10px] text-muted-foreground/60 font-mono break-all">{folderPath}</p>
@@ -434,6 +424,15 @@ export function FileAnnotationDialog({
                         {filename}
                       </p>
                     </div>
+
+                    {file.size != null && file.size > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-normal text-muted-foreground flex-shrink-0 whitespace-nowrap"
+                      >
+                        {formatFileSize(file.size)}
+                      </Badge>
+                    )}
 
                     {file.isModified && file.included && (
                       <Badge

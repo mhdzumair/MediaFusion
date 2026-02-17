@@ -14,6 +14,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
+from db.config import settings
 from db.crud.media import get_media_by_external_id, add_external_id, parse_external_id
 from db.crud.reference import get_or_create_language
 from db.crud.scraper_helpers import get_or_create_metadata
@@ -484,6 +485,13 @@ async def analyze_torrent_file(
 
     try:
         content = await torrent_file.read()
+
+        if len(content) > settings.max_torrent_file_size:
+            return TorrentAnalyzeResponse(
+                status="error",
+                error=f"Torrent file too large. Maximum size is {settings.max_torrent_file_size // (1024 * 1024)} MB.",
+            )
+
         torrent_data = torrent.extract_torrent_metadata(content, is_raise_error=True)
 
         if not torrent_data:
@@ -764,6 +772,13 @@ async def import_torrent_file(
 
     try:
         content = await torrent_file.read()
+
+        if len(content) > settings.max_torrent_file_size:
+            return ImportResponse(
+                status="error",
+                message=f"Torrent file too large. Maximum size is {settings.max_torrent_file_size // (1024 * 1024)} MB.",
+            )
+
         torrent_data = torrent.extract_torrent_metadata(content, is_raise_error=True)
 
         if not torrent_data:

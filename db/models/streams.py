@@ -444,7 +444,6 @@ class UsenetStream(SQLModel, table=True):
 
     nzb_guid: str = Field(unique=True, index=True)  # Unique NZB identifier
     nzb_url: str | None = None  # URL to NZB file
-    nzb_content: bytes | None = Field(default=None, sa_type=LargeBinary)  # Optional NZB content
     size: int = Field(sa_type=BigInteger)
     indexer: str = Field(index=True)  # Indexer source
     group_name: str | None = None  # Usenet group

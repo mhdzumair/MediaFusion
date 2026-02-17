@@ -7,14 +7,18 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import httpx
+import PTT
 import pytz
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.routers.user.auth import require_auth
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
+from api.routers.user.auth import require_auth
+from db.config import settings
 from db.crud.media import get_media_by_external_id
 from db.crud.reference import get_or_create_language
 from db.database import get_async_session
@@ -26,7 +30,9 @@ from db.models.streams import (
     StreamType,
     UsenetStream,
 )
-from utils.nzb import parse_nzb_content, generate_nzb_hash
+from scrapers.scraper_tasks import meta_fetcher
+from utils.nzb import generate_nzb_hash, parse_nzb_content
+from utils.parser import convert_bytes_to_readable
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +73,13 @@ class NZBImportResponse(BaseModel):
     details: dict[str, Any] | None = None
 
 
+class NZBURLAnalyzeRequest(BaseModel):
+    """Request schema for analyzing an NZB via URL."""
+
+    nzb_url: str
+    meta_type: str = Field(..., pattern="^(movie|series)$")
+
+
 class NZBURLImportRequest(BaseModel):
     """Request schema for importing an NZB via URL."""
 
@@ -76,6 +89,74 @@ class NZBURLImportRequest(BaseModel):
     title: str | None = None
     indexer: str | None = None
     is_anonymous: bool | None = None  # None means use user's preference
+
+
+# ============================================
+# Shared Analysis Logic
+# ============================================
+
+
+async def _analyze_nzb_content(
+    content: bytes,
+    meta_type: str,
+    fallback_title: str = "Unknown",
+) -> NZBAnalyzeResponse:
+    """Shared logic for analyzing NZB content from any source (file or URL).
+
+    Args:
+        content: Raw NZB file bytes
+        meta_type: "movie" or "series"
+        fallback_title: Title to use if NZB metadata has none
+
+    Returns:
+        NZBAnalyzeResponse with parsed metadata and matches
+    """
+    nzb_data = parse_nzb_content(content)
+
+    if not nzb_data:
+        return NZBAnalyzeResponse(
+            status="error",
+            error="Failed to parse NZB content.",
+        )
+
+    nzb_guid = nzb_data.nzb_hash or generate_nzb_hash(content)
+
+    total_size = nzb_data.total_size
+    size_readable = convert_bytes_to_readable(total_size) if total_size > 0 else "Unknown"
+
+    nzb_title = nzb_data.title or fallback_title
+    parsed = PTT.parse_title(nzb_title)
+
+    matches = []
+    search_title = parsed.get("title", nzb_title)
+    if search_title:
+        try:
+            matches = await meta_fetcher.search_multiple_results(
+                title=search_title,
+                year=parsed.get("year"),
+                media_type=meta_type,
+            )
+        except Exception:
+            pass
+
+    files_data = [{"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)]
+
+    return NZBAnalyzeResponse(
+        status="success",
+        nzb_guid=nzb_guid,
+        nzb_title=nzb_title,
+        total_size=total_size,
+        total_size_readable=size_readable,
+        file_count=nzb_data.files_count,
+        files=files_data,
+        group_name=nzb_data.primary_group,
+        parsed_title=parsed.get("title"),
+        year=parsed.get("year"),
+        resolution=parsed.get("resolution"),
+        quality=parsed.get("quality"),
+        codec=parsed.get("codec"),
+        matches=matches,
+    )
 
 
 # ============================================
@@ -166,12 +247,11 @@ async def process_nzb_import(
     session.add(stream)
     await session.flush()
 
-    # Create UsenetStream record
+    # Create UsenetStream record (nzb_url only, no nzb_content)
     usenet_stream = UsenetStream(
         stream_id=stream.id,
         nzb_guid=nzb_guid,
         nzb_url=contribution_data.get("nzb_url"),
-        nzb_content=contribution_data.get("nzb_content"),
         size=total_size,
         indexer=indexer,
         group_name=contribution_data.get("group_name"),
@@ -243,19 +323,21 @@ async def process_nzb_import(
 # ============================================
 
 
-@router.post("/nzb/analyze", response_model=NZBAnalyzeResponse)
+@router.post("/nzb/analyze/file", response_model=NZBAnalyzeResponse)
 async def analyze_nzb_file(
     nzb_file: UploadFile = File(...),
     meta_type: str = Form(...),
     user: User = Depends(require_auth),
 ):
     """
-    Analyze an NZB file and return metadata.
-    Also searches for matching content in IMDb/TMDB.
+    Analyze an uploaded NZB file and return metadata.
+    Requires enable_nzb_file_import to be enabled in instance config.
     """
-    import PTT
-    from scrapers.scraper_tasks import meta_fetcher
-    from utils.parser import convert_bytes_to_readable
+    if not settings.enable_nzb_file_import:
+        raise HTTPException(
+            status_code=403,
+            detail="NZB file upload is not enabled on this instance. Use NZB URL import instead.",
+        )
 
     if not nzb_file.filename or not nzb_file.filename.endswith(".nzb"):
         return NZBAnalyzeResponse(
@@ -265,60 +347,51 @@ async def analyze_nzb_file(
 
     try:
         content = await nzb_file.read()
-        nzb_data = parse_nzb_content(content)
 
-        if not nzb_data:
+        if len(content) > settings.max_nzb_file_size:
             return NZBAnalyzeResponse(
                 status="error",
-                error="Failed to parse NZB file.",
+                error=f"NZB file too large. Maximum size is {settings.max_nzb_file_size // (1024 * 1024)} MB.",
             )
 
-        # Generate unique GUID from content hash
-        nzb_guid = nzb_data.nzb_hash or generate_nzb_hash(content)
-
-        # Convert size to readable format
-        total_size = nzb_data.total_size
-        size_readable = convert_bytes_to_readable(total_size) if total_size > 0 else "Unknown"
-
-        # Parse title with PTT for quality info
-        nzb_title = nzb_data.title or nzb_file.filename.replace(".nzb", "")
-        parsed = PTT.parse_title(nzb_title)
-
-        # Search for matching content
-        matches = []
-        search_title = parsed.get("title", nzb_title)
-        if search_title:
-            try:
-                matches = await meta_fetcher.search_multiple_results(
-                    title=search_title,
-                    year=parsed.get("year"),
-                    media_type=meta_type,
-                )
-            except Exception:
-                pass
-
-        # Convert NZBFile objects to dicts for JSON serialization
-        files_data = [{"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)]
-
-        return NZBAnalyzeResponse(
-            status="success",
-            nzb_guid=nzb_guid,
-            nzb_title=nzb_title,
-            total_size=total_size,
-            total_size_readable=size_readable,
-            file_count=nzb_data.files_count,
-            files=files_data,
-            group_name=nzb_data.primary_group,
-            parsed_title=parsed.get("title"),
-            year=parsed.get("year"),
-            resolution=parsed.get("resolution"),
-            quality=parsed.get("quality"),
-            codec=parsed.get("codec"),
-            matches=matches,
+        return await _analyze_nzb_content(
+            content,
+            meta_type,
+            fallback_title=nzb_file.filename.replace(".nzb", ""),
         )
 
     except Exception as e:
-        logger.exception(f"Failed to analyze NZB: {e}")
+        logger.exception(f"Failed to analyze NZB file: {e}")
+        return NZBAnalyzeResponse(
+            status="error",
+            error=f"Failed to analyze NZB: {str(e)}",
+        )
+
+
+@router.post("/nzb/analyze/url", response_model=NZBAnalyzeResponse)
+async def analyze_nzb_url(
+    data: NZBURLAnalyzeRequest,
+    user: User = Depends(require_auth),
+):
+    """
+    Analyze an NZB from a URL and return metadata.
+    Downloads the NZB, parses it, and searches for matching content.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(data.nzb_url, timeout=30.0)
+            response.raise_for_status()
+            content = response.content
+
+        return await _analyze_nzb_content(content, data.meta_type)
+
+    except httpx.HTTPError as e:
+        return NZBAnalyzeResponse(
+            status="error",
+            error=f"Failed to download NZB from URL: {str(e)}",
+        )
+    except Exception as e:
+        logger.exception(f"Failed to analyze NZB URL: {e}")
         return NZBAnalyzeResponse(
             status="error",
             error=f"Failed to analyze NZB: {str(e)}",
@@ -344,15 +417,21 @@ async def import_nzb_file(
 ):
     """
     Import an NZB file.
+    Requires enable_nzb_file_import to be enabled in instance config.
+    The NZB file is stored via the configured storage backend (local or S3)
+    and only the URL is persisted in the database.
+
     For active users, imports are auto-approved and processed immediately.
     For deactivated users, imports require manual review.
-
-    Set is_anonymous=True to contribute anonymously.
-    If not provided, uses your account's default contribution preference.
     """
+    if not settings.enable_nzb_file_import:
+        raise HTTPException(
+            status_code=403,
+            detail="NZB file upload is not enabled on this instance. Use NZB URL import instead.",
+        )
+
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
-    import PTT
 
     if not nzb_file.filename or not nzb_file.filename.endswith(".nzb"):
         return NZBImportResponse(
@@ -362,6 +441,13 @@ async def import_nzb_file(
 
     try:
         content = await nzb_file.read()
+
+        if len(content) > settings.max_nzb_file_size:
+            return NZBImportResponse(
+                status="error",
+                message=f"NZB file too large. Maximum size is {settings.max_nzb_file_size // (1024 * 1024)} MB.",
+            )
+
         nzb_data = parse_nzb_content(content)
 
         if not nzb_data:
@@ -379,8 +465,14 @@ async def import_nzb_file(
             if existing.first():
                 return NZBImportResponse(
                     status="warning",
-                    message=f"⚠️ NZB {nzb_guid[:16]}... already exists in the database.",
+                    message=f"NZB {nzb_guid[:16]}... already exists in the database.",
                 )
+
+        # Store NZB file to configured storage backend and get URL
+        from utils.nzb_storage import get_nzb_storage
+
+        storage = get_nzb_storage()
+        nzb_url = await storage.store(nzb_guid, content)
 
         # Parse title with PTT for quality info
         nzb_title = nzb_data.title or nzb_file.filename.replace(".nzb", "")
@@ -399,10 +491,10 @@ async def import_nzb_file(
                 {"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)
             ]
 
-        # Build contribution data
+        # Build contribution data (URL only, no raw content)
         contribution_data = {
             "nzb_guid": nzb_guid,
-            "nzb_content": content,
+            "nzb_url": nzb_url,
             "meta_type": meta_type,
             "meta_id": meta_id,
             "title": title or parsed.get("title") or nzb_title,
@@ -429,7 +521,7 @@ async def import_nzb_file(
             user_id=user.id,
             contribution_type="nzb",
             target_id=meta_id,
-            data={k: v for k, v in contribution_data.items() if k != "nzb_content"},  # Don't store binary in JSON
+            data=contribution_data,
             status=initial_status,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
@@ -503,13 +595,11 @@ async def import_nzb_url(
     """
     Import an NZB via URL.
     Downloads the NZB file and processes it.
+    The nzb_url is stored directly (no file storage needed).
 
     Set is_anonymous=True to contribute anonymously.
     If not provided, uses your account's default contribution preference.
     """
-    import httpx
-    import PTT
-
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = data.is_anonymous if data.is_anonymous is not None else user.contribute_anonymously
 
@@ -536,7 +626,7 @@ async def import_nzb_url(
         if existing.first():
             return NZBImportResponse(
                 status="warning",
-                message=f"⚠️ NZB {nzb_guid[:16]}... already exists in the database.",
+                message=f"NZB {nzb_guid[:16]}... already exists in the database.",
             )
 
         # Parse title with PTT
@@ -546,11 +636,10 @@ async def import_nzb_url(
         # Convert NZBFile objects to dicts
         files_data = [{"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)]
 
-        # Build contribution data
+        # Build contribution data (URL only, no raw content)
         contribution_data = {
             "nzb_guid": nzb_guid,
             "nzb_url": data.nzb_url,
-            "nzb_content": content,
             "meta_type": data.meta_type,
             "meta_id": data.meta_id,
             "title": data.title or parsed.get("title") or nzb_title,
@@ -576,7 +665,7 @@ async def import_nzb_url(
             user_id=user.id,
             contribution_type="nzb",
             target_id=data.meta_id,
-            data={k: v for k, v in contribution_data.items() if k != "nzb_content"},
+            data=contribution_data,
             status=initial_status,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
@@ -633,3 +722,31 @@ async def import_nzb_url(
             status="error",
             message=f"Failed to import NZB: {str(e)}",
         )
+
+
+# ============================================
+# Local NZB File Serving (for local storage backend)
+# ============================================
+
+
+@router.get("/nzb/{guid}/download")
+async def download_nzb_file(guid: str):
+    """
+    Serve a locally-stored NZB file.
+    Only used when nzb_file_storage_backend is set to 'local'.
+    """
+    if settings.nzb_file_storage_backend != "local":
+        raise HTTPException(status_code=404, detail="Local NZB serving is not enabled.")
+
+    from utils.nzb_storage import get_nzb_storage
+
+    storage = get_nzb_storage()
+    content = await storage.retrieve(guid)
+    if content is None:
+        raise HTTPException(status_code=404, detail="NZB file not found.")
+
+    return Response(
+        content=content,
+        media_type="application/x-nzb",
+        headers={"Content-Disposition": f'attachment; filename="{guid}.nzb"'},
+    )

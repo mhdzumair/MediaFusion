@@ -24,6 +24,10 @@ class PosterURLDeadError(Exception):
     """Raised when a poster URL has been marked as dead after repeated failures."""
 
 
+class PosterFetchError(Exception):
+    """Raised when fetching a poster image fails due to network/connection errors."""
+
+
 async def is_poster_url_dead(url: str) -> bool:
     """Check if a poster URL has been marked as dead in Redis."""
     return bool(await REDIS_ASYNC_CLIENT.get(f"{POSTER_DEAD_PREFIX}{url}"))
@@ -90,7 +94,7 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
                     return content
         except ValueError:
             raise
-        except (TimeoutError, aiohttp.ClientError) as e:
+        except (TimeoutError, OSError, aiohttp.ClientError) as e:
             last_exception = e
             if attempt < max_retries:
                 logging.warning(f"Attempt {attempt}/{max_retries} failed for {url}: {e}. Retrying...")
@@ -100,7 +104,7 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
 
     # Record the failure in Redis for tracking
     await _record_poster_failure(url)
-    raise last_exception
+    raise PosterFetchError(f"Failed to fetch poster from {url}: {last_exception}") from last_exception
 
 
 # Synchronous function for CPU-bound task: image processing

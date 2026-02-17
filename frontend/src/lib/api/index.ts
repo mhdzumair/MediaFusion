@@ -98,6 +98,12 @@ export {
   type YouTubeAnalyzeResponse,
   type HTTPAnalyzeResponse,
   type AceStreamAnalyzeResponse,
+  type NZBFile,
+  type NZBMatch,
+  type NZBAnalyzeResponse,
+  type NZBMetaType,
+  type NZBImportRequest,
+  type NZBURLImportRequest,
 } from './content-import'
 export {
   rssApi,

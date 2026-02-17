@@ -68,6 +68,7 @@ dependencies = [
     "typer>=0.20.1",
     "telethon>=1.37.0",
     "yt-dlp",
+    "aioboto3>=13.0.0",
 ]
 
 [dependency-groups]

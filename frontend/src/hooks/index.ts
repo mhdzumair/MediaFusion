@@ -102,6 +102,10 @@ export {
   useDeleteIPTVSource,
   useSyncIPTVSource,
   useImportJobStatus,
+  useAnalyzeNZBFile,
+  useAnalyzeNZBUrl,
+  useImportNZBFile,
+  useImportNZBUrl,
 } from './useContentImport'
 
 // Catalog hooks

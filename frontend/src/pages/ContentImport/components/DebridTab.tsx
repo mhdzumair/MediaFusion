@@ -345,14 +345,27 @@ export function DebridTab() {
 
   const supportsImport = selectedProvider && IMPORT_SUPPORTED_PROVIDERS.has(selectedProvider)
 
-  // Fetch missing torrents
-  const { data: missingData, isLoading: loadingMissing } = useMissingTorrents(
-    supportsImport ? selectedProvider : undefined,
-    selectedProfileId,
-    { enabled: !!supportsImport && selectedProfileId !== undefined },
-  )
+  // Manual fetch trigger -- the user must click "Fetch" to load missing torrents
+  const [fetchRequested, setFetchRequested] = useState(false)
+
+  // Fetch missing torrents (only when user explicitly requests)
+  const {
+    data: missingData,
+    isLoading: loadingMissing,
+    refetch: refetchMissing,
+  } = useMissingTorrents(supportsImport ? selectedProvider : undefined, selectedProfileId, {
+    enabled: fetchRequested && !!supportsImport && selectedProfileId !== undefined,
+  })
 
   const importMutation = useImportTorrents()
+
+  const handleFetchMissing = useCallback(() => {
+    setFetchRequested(true)
+    // If the query was already enabled once, refetch to get fresh data
+    if (fetchRequested) {
+      refetchMissing()
+    }
+  }, [fetchRequested, refetchMissing])
 
   const missingTorrents = missingData?.items || []
   const allSelected = missingTorrents.length > 0 && selectedHashes.size === missingTorrents.length
@@ -468,6 +481,7 @@ export function DebridTab() {
     setImportResults(null)
     setEditingHash(null)
     setEdits(new Map())
+    setFetchRequested(false)
   }
 
   const importProgress = importMutation.isPending ? (
@@ -601,22 +615,48 @@ export function DebridTab() {
       {supportsImport && (
         <Card className="glass border-border/50">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Download className="h-5 w-5" />
-              Missing Torrents
-              {missingTorrents.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {missingTorrents.length}
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription className="text-sm">
-              Torrents in your {DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider} account that
-              aren&apos;t in the database
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Download className="h-5 w-5" />
+                  Missing Torrents
+                  {missingTorrents.length > 0 && (
+                    <Badge variant="secondary" className="ml-1">
+                      {missingTorrents.length}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription className="text-sm mt-1">
+                  Torrents in your {DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider} account that
+                  aren&apos;t in the database
+                </CardDescription>
+              </div>
+              <Button onClick={handleFetchMissing} disabled={loadingMissing} size="sm" className="rounded-lg">
+                {loadingMissing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Fetching...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    {fetchRequested ? 'Refresh' : 'Fetch'}
+                  </>
+                )}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loadingMissing ? (
+            {!fetchRequested ? (
+              <div className="text-center py-12">
+                <Download className="h-12 w-12 mx-auto text-muted-foreground opacity-30" />
+                <p className="mt-4 font-medium">Ready to Scan</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Click the Fetch button to scan your{' '}
+                  {DEBRID_SERVICE_DISPLAY_NAMES[selectedProvider] || selectedProvider} account for missing torrents.
+                </p>
+              </div>
+            ) : loadingMissing ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>

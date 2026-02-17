@@ -540,7 +540,6 @@ async def create_usenet_stream(
     indexer: str,
     media_id: int,
     nzb_url: str | None = None,
-    nzb_content: bytes | None = None,
     group_name: str | None = None,
     uploader: str | None = None,
     files_count: int | None = None,
@@ -580,7 +579,6 @@ async def create_usenet_stream(
         indexer: Indexer source name
         media_id: Associated media ID
         nzb_url: URL to NZB file
-        nzb_content: NZB file content as bytes
         group_name: Usenet group name
         uploader: Usenet poster/uploader name
         files_count: Number of files in NZB
@@ -619,7 +617,6 @@ async def create_usenet_stream(
         stream_id=stream.id,
         nzb_guid=nzb_guid,
         nzb_url=nzb_url,
-        nzb_content=nzb_content,
         size=size,
         indexer=indexer,
         group_name=group_name,
@@ -698,7 +695,6 @@ async def update_usenet_stream(
     }
     usenet_fields = {
         "nzb_url",
-        "nzb_content",
         "size",
         "indexer",
         "group_name",

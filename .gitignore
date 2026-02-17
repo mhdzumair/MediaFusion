@@ -144,3 +144,5 @@ kodi/*.zip
 .vscode/
 *.sql
 .cursor/
+*.tar
+*.nzb

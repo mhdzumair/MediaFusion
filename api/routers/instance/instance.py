@@ -81,6 +81,7 @@ class AppConfig(BaseModel):
     disabled_content_types: list[str]
     authentication_required: bool
     torznab_enabled: bool
+    nzb_file_import_enabled: bool
     telegram: TelegramFeatureConfig
 
 
@@ -138,6 +139,7 @@ async def get_app_config():
         disabled_content_types=settings.disabled_content_types,
         authentication_required=settings.api_password is not None and not settings.is_public_instance,
         torznab_enabled=settings.enable_torznab_api,
+        nzb_file_import_enabled=settings.enable_nzb_file_import,
         telegram=TelegramFeatureConfig(
             enabled=settings.is_scrap_from_telegram,
             bot_configured=bool(settings.telegram_bot_token),

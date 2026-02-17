@@ -224,12 +224,10 @@ async def get_video_url_from_nzbdav(
                     return generate_webdav_url(streaming_provider, selected_file)
 
         if not existing:
-            if stream.nzb_content:
-                nzo_id = await client.add_nzb_by_content(stream.nzb_content, stream.name, category)
-            elif stream.nzb_url:
+            if stream.nzb_url:
                 nzo_id = await client.add_nzb_by_url(stream.nzb_url, category, stream.name)
             else:
-                raise ProviderException("No NZB content or URL available", "transfer_error.mp4")
+                raise ProviderException("No NZB URL available for this stream", "transfer_error.mp4")
         else:
             nzo_id = existing["nzo_id"]
 

@@ -183,6 +183,22 @@ class Settings(BaseSettings):
     enable_iptv_import: bool = True  # Master toggle for M3U/Xtream import feature
     allow_public_iptv_sharing: bool = True  # If False, all imported streams are private to user profile only
 
+    # NZB File Import Settings
+    enable_nzb_file_import: bool = False  # Opt-in for NZB file uploads (NZB URL import is always available)
+    nzb_file_storage_backend: Literal["local", "s3"] = "local"  # Where to store uploaded NZB files
+
+    # S3/R2 Storage Settings (shared, usable by NZB file storage + future features)
+    s3_endpoint_url: str | None = None  # e.g., https://xxx.r2.cloudflarestorage.com
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_bucket_name: str | None = None
+    s3_public_url: str | None = None  # Public URL prefix for serving files
+    s3_region: str = "auto"
+
+    # Upload Size Limits
+    max_torrent_file_size: int = 5_242_880  # 5 MB (torrent files are typically <1MB)
+    max_nzb_file_size: int = 104_857_600  # 100 MB
+
     # Torznab API Settings
     enable_torznab_api: bool = True  # Master toggle for Torznab API endpoint
 

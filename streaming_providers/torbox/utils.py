@@ -247,19 +247,12 @@ async def get_video_url_from_usenet_torbox(
                 )
                 return response["data"]
         else:
-            # Add the NZB to TorBox
-            if stream.nzb_content:
-                response = await torbox_client.add_usenet_download(stream.nzb_content, stream.name)
-            elif stream.nzb_url:
+            # Add the NZB to TorBox via URL
+            if stream.nzb_url:
                 response = await torbox_client.add_usenet_link(stream.nzb_url)
             else:
-                # No NZB content or URL - this happens with TorBox Search results
-                # which only provide the hash for cache checking, not the actual NZB file.
-                # The user would need to import this NZB from a Newznab indexer.
                 raise ProviderException(
-                    "This Usenet content is not cached and cannot be added automatically. "
-                    "TorBox Search only provides search results, not NZB files. "
-                    "Try importing the NZB from a Newznab indexer.",
+                    "No NZB URL available for this stream. Try importing the NZB from a Newznab indexer.",
                     "transfer_error.mp4",
                 )
 

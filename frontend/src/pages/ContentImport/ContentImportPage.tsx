@@ -18,9 +18,17 @@ import {
   Send,
   HardDrive,
 } from 'lucide-react'
-import { useImportMagnet, useImportTorrent, useAnalyzeMagnet, useAnalyzeTorrent, useIPTVImportSettings } from '@/hooks'
+import {
+  useImportMagnet,
+  useImportTorrent,
+  useAnalyzeMagnet,
+  useAnalyzeTorrent,
+  useImportNZBFile,
+  useImportNZBUrl,
+  useIPTVImportSettings,
+} from '@/hooks'
 import { getAppConfig } from '@/lib/api/instance'
-import type { TorrentAnalyzeResponse, ImportResponse, TorrentMetaType } from '@/lib/api'
+import type { TorrentAnalyzeResponse, ImportResponse, TorrentMetaType, NZBAnalyzeResponse } from '@/lib/api'
 import type { ContentType, ImportMode } from '@/lib/constants'
 
 // Helper to convert ContentType to TorrentMetaType (defaults to 'movie' for unsupported types like 'tv')
@@ -32,6 +40,7 @@ import {
   MagnetTab,
   TorrentTab,
   NZBTab,
+  type NZBSource,
   M3UTab,
   XtreamTab,
   YouTubeTab,
@@ -40,10 +49,12 @@ import {
   TelegramTab,
   DebridTab,
   TorrentImportDialog,
+  NZBImportDialog,
   ImportResultBanner,
   ContentTypeSelector,
   type ImportResult,
   type TorrentImportFormData,
+  type NZBImportFormData,
 } from './components'
 
 interface LocationState {
@@ -70,6 +81,7 @@ const TAB_DISABLE_KEY: Record<string, string> = {
 
 /** Ordered list of all import tab values. */
 const ALL_TABS = [
+  'debrid',
   'magnet',
   'torrent',
   'nzb',
@@ -79,7 +91,6 @@ const ALL_TABS = [
   'http',
   'acestream',
   'telegram',
-  'debrid',
 ] as const
 
 export function ContentImportPage() {
@@ -106,7 +117,7 @@ export function ContentImportPage() {
   const defaultTab = useMemo(() => ALL_TABS.find(isTabEnabled) ?? 'magnet', [isTabEnabled])
 
   const [activeTab, setActiveTab] = useState(
-    urlTab && ALL_TABS.includes(urlTab as (typeof ALL_TABS)[number]) ? urlTab : 'magnet',
+    urlTab && ALL_TABS.includes(urlTab as (typeof ALL_TABS)[number]) ? urlTab : 'debrid',
   )
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
@@ -114,7 +125,7 @@ export function ContentImportPage() {
   const handleTabChange = useCallback(
     (tab: string) => {
       setActiveTab(tab)
-      if (tab === 'magnet') {
+      if (tab === 'debrid') {
         searchParams.delete('tab')
       } else {
         searchParams.set('tab', tab)
@@ -157,6 +168,14 @@ export function ContentImportPage() {
   const importMagnet = useImportMagnet()
   const importTorrent = useImportTorrent()
   const analyzeMagnet = useAnalyzeMagnet()
+
+  // NZB import state
+  const [nzbAnalysis, setNzbAnalysis] = useState<NZBAnalyzeResponse | null>(null)
+  const [nzbDialogOpen, setNzbDialogOpen] = useState(false)
+  const [nzbSource, setNzbSource] = useState<NZBSource | null>(null)
+
+  const importNZBFile = useImportNZBFile()
+  const importNZBUrl = useImportNZBUrl()
 
   // Fetch IPTV import settings from server
   const { data: iptvSettings } = useIPTVImportSettings()
@@ -276,6 +295,66 @@ export function ContentImportPage() {
     [magnetLink, selectedFile, importMagnet, importTorrent],
   )
 
+  // Handle NZB analysis completion
+  const handleNZBAnalysis = useCallback((analysis: NZBAnalyzeResponse, source: NZBSource) => {
+    setNzbAnalysis(analysis)
+    setNzbSource(source)
+    setNzbDialogOpen(true)
+  }, [])
+
+  // Handle NZB import from dialog
+  const handleNZBImport = useCallback(
+    async (formData: NZBImportFormData): Promise<ImportResponse> => {
+      try {
+        const metaType = formData.contentType === 'series' ? 'series' : 'movie'
+        let result: ImportResponse
+
+        if (nzbSource?.type === 'file' && nzbSource.file) {
+          result = await importNZBFile.mutateAsync({
+            nzb_file: nzbSource.file,
+            meta_type: metaType,
+            meta_id: formData.metaId,
+            title: formData.title,
+            resolution: formData.resolution,
+            quality: formData.quality,
+            codec: formData.codec,
+            languages: formData.languages?.join(','),
+            force_import: formData.forceImport,
+            is_anonymous: formData.isAnonymous,
+          })
+        } else if (nzbSource?.type === 'url' && nzbSource.url) {
+          result = await importNZBUrl.mutateAsync({
+            nzb_url: nzbSource.url,
+            meta_type: metaType,
+            meta_id: formData.metaId,
+            title: formData.title,
+            is_anonymous: formData.isAnonymous,
+          })
+        } else {
+          return { status: 'error', message: 'No NZB source provided' }
+        }
+
+        if (result.status === 'success') {
+          setImportResult({ success: true, message: result.message || 'NZB imported successfully!' })
+          setNzbDialogOpen(false)
+          setNzbAnalysis(null)
+          setNzbSource(null)
+        } else if (result.status === 'warning') {
+          setImportResult({ success: true, message: result.message })
+          setNzbDialogOpen(false)
+          setNzbAnalysis(null)
+        }
+
+        return result
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'NZB import failed'
+        setImportResult({ success: false, message: errorMessage })
+        return { status: 'error', message: errorMessage }
+      }
+    },
+    [nzbSource, importNZBFile, importNZBUrl],
+  )
+
   const handleSuccess = useCallback((message: string) => {
     setImportResult({ success: true, message })
   }, [])
@@ -286,6 +365,7 @@ export function ContentImportPage() {
 
   const isImporting =
     importMagnet.isPending || importTorrent.isPending || analyzeMagnet.isPending || analyzeTorrent.isPending
+  const isNZBImporting = importNZBFile.isPending || importNZBUrl.isPending
 
   return (
     <div className="space-y-6">
@@ -306,6 +386,13 @@ export function ContentImportPage() {
       {/* Import Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="flex w-full flex-wrap p-1 bg-muted/50 rounded-xl gap-1">
+          <TabsTrigger
+            value="debrid"
+            className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
+          >
+            <HardDrive className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Debrid</span>
+          </TabsTrigger>
           {isTabEnabled('magnet') && (
             <TabsTrigger
               value="magnet"
@@ -387,13 +474,6 @@ export function ContentImportPage() {
               <span className="hidden sm:inline">Telegram</span>
             </TabsTrigger>
           )}
-          <TabsTrigger
-            value="debrid"
-            className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <HardDrive className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">Debrid</span>
-          </TabsTrigger>
         </TabsList>
 
         {/* Magnet Link Tab */}
@@ -489,18 +569,10 @@ export function ContentImportPage() {
             </Card>
 
             <NZBTab
-              onAnalysisComplete={(analysis) => {
-                // For now, show a success message - full import dialog would be similar to TorrentImportDialog
-                if (analysis.matches && analysis.matches.length > 0) {
-                  handleSuccess(
-                    `NZB analyzed: ${analysis.nzb_title || 'Unknown'} - ${analysis.matches.length} matches found`,
-                  )
-                } else {
-                  handleError('No metadata matches found for this NZB')
-                }
-              }}
+              onAnalysisComplete={handleNZBAnalysis}
               onError={handleError}
               contentType={selectedContentType}
+              fileImportEnabled={appConfig?.nzb_file_import_enabled ?? false}
             />
           </TabsContent>
         )}
@@ -616,6 +688,17 @@ export function ContentImportPage() {
         initialContentType={selectedContentType}
         importMode={importMode}
         onImportModeChange={setImportMode}
+      />
+
+      {/* NZB Import Dialog */}
+      <NZBImportDialog
+        open={nzbDialogOpen}
+        onOpenChange={setNzbDialogOpen}
+        analysis={nzbAnalysis}
+        nzbSource={nzbSource || undefined}
+        onImport={handleNZBImport}
+        isImporting={isNZBImporting}
+        initialContentType={selectedContentType}
       />
     </div>
   )

@@ -18,7 +18,7 @@ from db.models.reference import Genre
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas.media import MediaFusionEventsMetaData
 from utils import poster
-from utils.poster import PosterURLDeadError
+from utils.poster import PosterFetchError, PosterURLDeadError
 from utils.runtime_const import SPORTS_ARTIFACTS
 
 router = APIRouter()
@@ -155,6 +155,9 @@ async def get_poster(
         )
 
     except PosterURLDeadError:
+        return raise_poster_error("Poster source is temporarily unavailable.")
+    except PosterFetchError as e:
+        logger.warning("Poster fetch failed for %s: %s", mediafusion_id, e)
         return raise_poster_error("Poster source is temporarily unavailable.")
     except Exception as e:
         logger.exception(f"Error creating poster for {mediafusion_id}: {e}")

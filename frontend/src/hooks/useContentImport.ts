@@ -10,6 +10,9 @@ import {
   type TorrentImportRequest,
   type ImportJobStatus,
   type TorrentMetaType,
+  type NZBImportRequest,
+  type NZBMetaType,
+  type NZBURLImportRequest,
 } from '@/lib/api'
 
 export function useAnalyzeMagnet() {
@@ -36,6 +39,36 @@ export function useImportTorrent() {
   return useMutation({
     mutationFn: (data: Omit<TorrentImportRequest, 'magnet_link'> & { torrent_file: File }) =>
       contentImportApi.importTorrent(data),
+  })
+}
+
+// ============================================
+// NZB Import Hooks
+// ============================================
+
+export function useAnalyzeNZBFile() {
+  return useMutation({
+    mutationFn: ({ file, metaType }: { file: File; metaType: NZBMetaType }) =>
+      contentImportApi.analyzeNZBFile(file, metaType),
+  })
+}
+
+export function useAnalyzeNZBUrl() {
+  return useMutation({
+    mutationFn: ({ url, metaType }: { url: string; metaType: NZBMetaType }) =>
+      contentImportApi.analyzeNZBUrl(url, metaType),
+  })
+}
+
+export function useImportNZBFile() {
+  return useMutation({
+    mutationFn: (data: NZBImportRequest & { nzb_file: File }) => contentImportApi.importNZBFile(data),
+  })
+}
+
+export function useImportNZBUrl() {
+  return useMutation({
+    mutationFn: (data: NZBURLImportRequest) => contentImportApi.importNZBUrl(data),
   })
 }
 
