@@ -427,6 +427,52 @@ def get_full_config(profile: UserProfile) -> dict:
     return config
 
 
+def _validate_provider_configs(config: dict) -> None:
+    """
+    Check that every enabled streaming provider in the config has its required
+    credentials/configuration filled in. Raises HTTPException(400) on the first
+    provider that is missing required fields.
+    """
+    disabled = set(settings.disabled_providers)
+
+    # Human-readable names for error messages
+    field_labels = {
+        "token": "API token",
+        "email": "email",
+        "password": "password",
+        "url": "URL",
+        "qbittorrent_config": "qBittorrent configuration",
+        "sabnzbd_config": "SABnzbd configuration",
+        "nzbget_config": "NZBGet configuration",
+        "nzbdav_config": "NzbDAV configuration",
+        "easynews_config": "Easynews configuration",
+    }
+
+    providers_raw = config.get("streaming_providers") or config.get("sps") or []
+    for sp in providers_raw:
+        if not isinstance(sp, dict):
+            continue
+        service = sp.get("sv") or sp.get("service")
+        if not service or service in disabled:
+            continue
+        enabled = sp.get("en", True) if "en" in sp else sp.get("enabled", True)
+        if not enabled:
+            continue
+
+        required_fields = const.STREAMING_SERVICE_REQUIREMENTS.get(
+            service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
+        )
+        for field in required_fields:
+            if not _provider_has_credentials(sp, service):
+                label = field_labels.get(field, field)
+                provider_name = sp.get("n") or sp.get("name") or service
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Provider '{provider_name}' is missing required {label}. "
+                    f"Please complete the configuration or remove the provider.",
+                )
+
+
 def _build_user_data_for_validation(config: dict) -> UserData:
     """
     Build a minimal UserData with only the fields needed for provider credential
@@ -661,7 +707,10 @@ async def create_profile(
         config["api_password"] = api_password
         config["ap"] = api_password  # Also set alias
 
-    # Validate provider credentials before saving
+    # Reject save if any enabled provider is missing required config
+    _validate_provider_configs(config)
+
+    # Validate provider credentials against their APIs
     user_data = _build_user_data_for_validation(config)
     if user_data.get_active_providers():
         validation_result = await validate_provider_credentials(request, user_data)
@@ -740,7 +789,10 @@ async def update_profile(
             new_config["api_password"] = api_password
             new_config["ap"] = api_password  # Also set alias
 
-        # Validate provider credentials before saving
+        # Reject save if any enabled provider is missing required config
+        _validate_provider_configs(new_config)
+
+        # Validate provider credentials against their APIs
         user_data = _build_user_data_for_validation(new_config)
         if user_data.get_active_providers():
             validation_result = await validate_provider_credentials(request, user_data)

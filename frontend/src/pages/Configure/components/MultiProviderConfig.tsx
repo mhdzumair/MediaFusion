@@ -1123,24 +1123,18 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
     })
   }
 
-  const generateDefaultName = (index: number, service?: string): string => {
-    // Generate a unique name based on service type or index
-    let baseName: string
-    if (service === 'p2p') {
-      baseName = 'p2p'
-    } else if (index === 0) {
-      baseName = 'main'
-    } else {
-      baseName = `provider${index + 1}`
-    }
+  const generateDefaultName = (_index: number, service?: string): string => {
+    // Use the provider's human-readable label as the base name
+    const providerOption = service ? STREAMING_PROVIDERS.find((p) => p.value === service) : null
+    const baseName = providerOption?.label || service || 'Provider'
 
     // Check if name already exists
     const existingNames = providers.map((p) => p.n)
     if (!existingNames.includes(baseName)) return baseName
-    // If exists, append number
-    let counter = 1
-    while (existingNames.includes(`${baseName}_${counter}`)) counter++
-    return `${baseName}_${counter}`
+    // If exists, append incrementing number to ensure uniqueness
+    let counter = 2
+    while (existingNames.includes(`${baseName} ${counter}`)) counter++
+    return `${baseName} ${counter}`
   }
 
   const addProvider = () => {
@@ -1172,11 +1166,19 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
     const newProviders = [...providers]
     const currentProvider = newProviders[index]
 
-    // If service is being changed and name is still default, update name to match service
+    // If service is being changed and name is still auto-generated, update name to match new service
     if (updates.sv && updates.sv !== currentProvider.sv) {
       const currentName = currentProvider.n || ''
+      const providerLabels = new Set(STREAMING_PROVIDERS.map((p) => p.label))
+      // Detect auto-generated names: empty, legacy patterns, or any known provider label (with optional " N" suffix)
       const isDefaultName =
-        currentName === '' || currentName === 'main' || currentName.startsWith('provider') || currentName === 'p2p'
+        currentName === '' ||
+        currentName === 'main' ||
+        currentName.startsWith('main_') ||
+        currentName.startsWith('provider') ||
+        currentName === 'p2p' ||
+        providerLabels.has(currentName) ||
+        (/^.+ \d+$/.test(currentName) && providerLabels.has(currentName.replace(/ \d+$/, '')))
 
       if (isDefaultName) {
         updates.n = generateDefaultName(index, updates.sv)
