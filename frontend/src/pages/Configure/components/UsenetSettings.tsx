@@ -12,6 +12,7 @@ import {
   Settings2,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,9 +31,24 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import { testNewznabIndexer } from '@/lib/api'
 import type { ProfileConfig, NewznabIndexerConfig } from './types'
+
+// Zyclops backbone options (display name shown to user, slug sent to API)
+const ZYCLOPS_BACKBONES = [
+  { slug: 'eweka-internet-services', name: 'Eweka Internet Services' },
+  { slug: 'uzo-reto', name: 'Uzo Reto' },
+  { slug: 'base-ip', name: 'Base IP' },
+  { slug: 'omicron', name: 'Omicron' },
+  { slug: 'netnews', name: 'NetNews' },
+  { slug: 'abavia', name: 'Abavia' },
+  { slug: 'giganews', name: 'Giganews' },
+  { slug: 'elbracht', name: 'Elbracht' },
+  { slug: 'its-hosted', name: 'Its Hosted' },
+  { slug: 'usenetexpress', name: 'UsenetExpress' },
+]
 
 // Generate a simple unique ID for new indexers
 function generateIndexerId(): string {
@@ -321,6 +337,11 @@ function IndexerCard({
           <div>
             <div className="flex items-center gap-2">
               <p className="font-medium">{indexer.n}</p>
+              {indexer.uz && (
+                <Badge variant="secondary" className="text-xs bg-amber-500/10 text-amber-600">
+                  Zyclops
+                </Badge>
+              )}
               {indexer.p !== undefined && indexer.p !== 1 && (
                 <Badge variant="outline" className="text-xs">
                   Priority {indexer.p}
@@ -379,6 +400,8 @@ function IndexerDialog({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [movieCategories, setMovieCategories] = useState<number[]>(indexer?.mc ?? DEFAULT_MOVIE_CATEGORIES)
   const [tvCategories, setTvCategories] = useState<number[]>(indexer?.tc ?? DEFAULT_TV_CATEGORIES)
+  const [useZyclops, setUseZyclops] = useState(indexer?.uz ?? false)
+  const [backbones, setBackbones] = useState<string[]>(indexer?.zb ?? [])
 
   // Sync form when indexer changes (during render, not in effect)
   const [prevIndexer, setPrevIndexer] = useState(indexer)
@@ -391,6 +414,8 @@ function IndexerDialog({
     setPriority(indexer?.p ?? 1)
     setMovieCategories(indexer?.mc ?? DEFAULT_MOVIE_CATEGORIES)
     setTvCategories(indexer?.tc ?? DEFAULT_TV_CATEGORIES)
+    setUseZyclops(indexer?.uz ?? false)
+    setBackbones(indexer?.zb ?? [])
   }
 
   const handleSubmit = () => {
@@ -408,6 +433,8 @@ function IndexerDialog({
       p: priority,
       mc: movieCategories.length > 0 ? movieCategories : undefined,
       tc: tvCategories.length > 0 ? tvCategories : undefined,
+      uz: useZyclops || undefined,
+      zb: useZyclops && backbones.length > 0 ? backbones : undefined,
     })
   }
 
@@ -466,6 +493,54 @@ function IndexerDialog({
         <div className="flex items-center justify-between">
           <Label>Enabled</Label>
           <Switch checked={enabled} onCheckedChange={setEnabled} />
+        </div>
+
+        {/* Zyclops Health Checks */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Use Zyclops Health Checks</Label>
+            <Switch checked={useZyclops} onCheckedChange={setUseZyclops} />
+          </div>
+
+          {useZyclops && (
+            <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+              <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  Zyclops sends your indexer URL and API key with the proxy request and submits the newest untested NZB
+                  to enrich the health database. Many indexers prohibit this (some prohibit Stremio altogether!). Proceed
+                  at your own risk.
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <Label className="text-sm">Filter by backbone</Label>
+                <p className="text-xs text-muted-foreground">
+                  Select your usenet provider&apos;s backbone to filter results by health status
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {ZYCLOPS_BACKBONES.map((bb) => (
+                    <div key={bb.slug} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`bb-${bb.slug}`}
+                        checked={backbones.includes(bb.slug)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setBackbones([...backbones, bb.slug])
+                          } else {
+                            setBackbones(backbones.filter((s) => s !== bb.slug))
+                          }
+                        }}
+                      />
+                      <label htmlFor={`bb-${bb.slug}`} className="text-sm cursor-pointer">
+                        {bb.name}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Advanced Settings */}
