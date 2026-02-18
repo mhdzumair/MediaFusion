@@ -193,6 +193,7 @@ class MovieStorePipeline(QueueBasedPipeline):
                 "background": item.get("background"),
                 "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
                 "catalogs": item.get("catalog", []),
+                "genres": item.get("genres", []),
             }
             return await crud.get_or_create_metadata(
                 session,
@@ -225,6 +226,7 @@ class MovieStorePipeline(QueueBasedPipeline):
             "background": item.get("background"),
             "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
             "catalogs": item.get("catalog", []),
+            "genres": item.get("genres", []),
         }
         metadata["id"] = f"mf_tmp_{item['title']}_{item.get('year', 'unknown')}"
         media = await crud.get_or_create_metadata(session, metadata, "movie", is_search_imdb_title=False)

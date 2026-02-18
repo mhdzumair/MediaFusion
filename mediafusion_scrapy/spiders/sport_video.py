@@ -1,4 +1,3 @@
-import random
 from urllib.parse import urlparse
 
 import scrapy
@@ -6,7 +5,6 @@ import scrapy
 from db.redis_database import REDIS_SYNC_CLIENT
 from utils.config import config_manager
 from utils.const import CATALOG_DATA
-from utils.runtime_const import SPORTS_ARTIFACTS
 
 
 class SportVideoSpider(scrapy.Spider):
@@ -53,8 +51,6 @@ class SportVideoSpider(scrapy.Spider):
     def parse_page(self, response):
         category = response.meta["category"]
         catalog_mapped = CATALOG_DATA.get(category)
-        generic_posters = SPORTS_ARTIFACTS[catalog_mapped]["poster"]
-        generic_backgrounds = SPORTS_ARTIFACTS[catalog_mapped]["background"]
         # Generalized selector for all content blocks
         content_blocks = response.css('div[id^="wb_LayoutGrid"]')
         for content in content_blocks:
@@ -68,8 +64,10 @@ class SportVideoSpider(scrapy.Spider):
                 poster = response.urljoin(poster_path)
                 background = poster
             else:
-                poster = random.choice(generic_posters)
-                background = random.choice(generic_backgrounds)
+                # No poster from page — leave None so the poster route can pick
+                # a sport-specific image from SPORTS_ARTIFACTS and overlay the title.
+                poster = None
+                background = None
 
             torrent_data = {
                 "title": title.strip(),
@@ -78,10 +76,15 @@ class SportVideoSpider(scrapy.Spider):
                 "parsed_data": {"title": title.strip()},
                 "source": "sport-video.org.ua",
                 "is_add_title_to_poster": True,
-                "catalog": category,
+                "catalog": [category],
                 "type": "movie",
                 "scraped_url_key": self.scraped_urls_key,
             }
+
+            # Store the sport genre so the poster route can pick the right
+            # SPORTS_ARTIFACTS image when no poster URL was scraped.
+            if catalog_mapped:
+                torrent_data["genres"] = [catalog_mapped]
 
             # Extract torrent page link
             torrent_page_link = content.css('div[id^="wb_Shape"] a::attr(href)').get()
