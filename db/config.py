@@ -229,6 +229,13 @@ class Settings(BaseSettings):
     convertkit_newsletter_label: str = "Subscribe to our newsletter"
     convertkit_newsletter_default_checked: bool = False
 
+    # Operator-Configured NzbDAV Defaults
+    # When both are set, all users automatically get NzbDAV as a streaming provider
+    # without needing to configure it manually. Useful for hosted instances with
+    # NzbDAV running as a sidecar service.
+    default_nzbdav_url: str | None = None
+    default_nzbdav_api_key: str | None = None
+
     # Content Filtering
     adult_content_regex_keywords: str = (
         r"(^|\b|\s|$|[\[._-])"
