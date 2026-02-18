@@ -28,6 +28,8 @@ import {
   XCircle,
   Menu,
   MoreVertical,
+  ExternalLink,
+  Network,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -76,9 +78,12 @@ import {
   useBulkDelete,
   useBulkUpdate,
   useImportData,
+  useRelatedRecords,
 } from '../hooks/useDatabaseData'
 import { formatTimestamp, getTableTypeColor, truncateText } from '../types'
+import type { ColumnInfo } from '../types'
 import { EditRowDialog } from './EditRowDialog'
+import { RelatedRecordsPanel } from './RelatedRecordsPanel'
 
 interface TableBrowserTabProps {
   initialTable?: string
@@ -89,6 +94,12 @@ interface FilterState {
   column: string
   operator: string
   value: string
+}
+
+interface NavigationEntry {
+  table: string
+  filters: FilterState[]
+  label: string
 }
 
 // Column type badge
@@ -124,7 +135,13 @@ function ColumnTypeBadge({ dataType }: { dataType: string }) {
 }
 
 // Schema viewer component with collapsible sections
-function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['data'] }) {
+function SchemaViewer({
+  schema,
+  onNavigateTable,
+}: {
+  schema: ReturnType<typeof useTableSchema>['data']
+  onNavigateTable?: (table: string) => void
+}) {
   const [columnsOpen, setColumnsOpen] = useState(true)
   const [indexesOpen, setIndexesOpen] = useState(false)
   const [fkOpen, setFkOpen] = useState(false)
@@ -176,6 +193,15 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
                     <Badge variant="outline" className="text-[10px] px-1 text-rose-400 border-rose-500/30">
                       NN
                     </Badge>
+                  )}
+                  {col.is_foreign_key && col.foreign_key_ref && onNavigateTable && (
+                    <button
+                      onClick={() => onNavigateTable(col.foreign_key_ref!.split('.')[0])}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20 transition-colors font-mono opacity-0 group-hover:opacity-100"
+                      title={`Navigate to ${col.foreign_key_ref!.split('.')[0]}`}
+                    >
+                      →
+                    </button>
                   )}
                 </div>
               </div>
@@ -239,7 +265,16 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
                   <div className="flex items-center gap-1.5 mt-1 text-xs">
                     <span className="font-mono">{fk.columns.join(', ')}</span>
                     <span className="text-muted-foreground">→</span>
-                    <span className="font-mono text-blue-400">{fk.referenced_table}</span>
+                    {onNavigateTable ? (
+                      <button
+                        onClick={() => onNavigateTable(fk.referenced_table)}
+                        className="font-mono text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                      >
+                        {fk.referenced_table}
+                      </button>
+                    ) : (
+                      <span className="font-mono text-blue-400">{fk.referenced_table}</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -251,8 +286,18 @@ function SchemaViewer({ schema }: { schema: ReturnType<typeof useTableSchema>['d
   )
 }
 
-// Data cell renderer with expandable content
-function DataCell({ value, column }: { value: unknown; column: string }) {
+// Data cell renderer with expandable content and FK link support
+function DataCell({
+  value,
+  column,
+  columnInfo,
+  onNavigate,
+}: {
+  value: unknown
+  column: string
+  columnInfo?: ColumnInfo
+  onNavigate?: (table: string, column: string, value: string) => void
+}) {
   const [expanded, setExpanded] = useState(false)
 
   if (value === null || value === undefined) {
@@ -301,6 +346,23 @@ function DataCell({ value, column }: { value: unknown; column: string }) {
   }
 
   const strValue = String(value)
+
+  // FK link rendering
+  if (columnInfo?.is_foreign_key && columnInfo.foreign_key_ref && onNavigate) {
+    const [targetTable, targetColumn] = columnInfo.foreign_key_ref.split('.')
+    if (targetTable && targetColumn) {
+      return (
+        <button
+          onClick={() => onNavigate(targetTable, targetColumn, strValue)}
+          className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-sm font-mono group"
+          title={`Go to ${targetTable} where ${targetColumn} = ${strValue}`}
+        >
+          <span>{strValue}</span>
+          <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+        </button>
+      )
+    }
+  }
 
   // Check if it's a timestamp
   if (column.includes('_at') || column.includes('date') || column.includes('time')) {
@@ -371,6 +433,13 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
   const [bulkUpdateColumn, setBulkUpdateColumn] = useState('')
   const [bulkUpdateValue, setBulkUpdateValue] = useState('')
 
+  // FK navigation state
+  const [navigationStack, setNavigationStack] = useState<NavigationEntry[]>([])
+
+  // Related records panel state
+  const [relatedPanelOpen, setRelatedPanelOpen] = useState(false)
+  const [relatedRow, setRelatedRow] = useState<Record<string, unknown> | null>(null)
+
   const { toast } = useToast()
 
   // Queries
@@ -421,6 +490,80 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
     const pkCol = schema.columns.find((c) => c.is_primary_key)
     return pkCol?.name || 'id'
   }, [schema])
+
+  // Build a column name -> ColumnInfo lookup for FK rendering in DataCell
+  const columnInfoMap = useMemo(() => {
+    if (!schema?.columns) return new Map<string, ColumnInfo>()
+    return new Map(schema.columns.map((c) => [c.name, c]))
+  }, [schema])
+
+  // Related records query (only active when panel is open)
+  const relatedRowId = relatedRow ? String(relatedRow[idColumn]) : null
+  const { data: relatedData, isLoading: relatedLoading } = useRelatedRecords(
+    relatedPanelOpen ? selectedTable : null,
+    relatedPanelOpen ? relatedRowId : null,
+    idColumn,
+  )
+
+  // FK navigation: push current state and switch table with filter
+  const handleFKNavigate = useCallback(
+    (targetTable: string, targetColumn: string, value: string) => {
+      if (!selectedTable) return
+      setNavigationStack((prev) => [...prev, { table: selectedTable, filters, label: `${selectedTable}` }])
+      setSelectedTable(targetTable)
+      setFilters([
+        {
+          id: `fk_nav_${Date.now()}`,
+          column: targetColumn,
+          operator: 'equals',
+          value,
+        },
+      ])
+      setPage(1)
+      setSelectedRows([])
+    },
+    [selectedTable, filters],
+  )
+
+  // Navigate back to a specific breadcrumb entry
+  const handleBreadcrumbNavigate = useCallback(
+    (index: number) => {
+      const entry = navigationStack[index]
+      if (!entry) return
+      setSelectedTable(entry.table)
+      setFilters(entry.filters)
+      setPage(1)
+      setSelectedRows([])
+      setNavigationStack((prev) => prev.slice(0, index))
+    },
+    [navigationStack],
+  )
+
+  // Clear navigation history entirely
+  const handleClearNavigation = useCallback(() => {
+    setNavigationStack([])
+    setFilters([])
+    setPage(1)
+  }, [])
+
+  // Navigate to a table (from schema sidebar) without a filter
+  const handleNavigateToTable = useCallback(
+    (targetTable: string) => {
+      if (!selectedTable) return
+      setNavigationStack((prev) => [...prev, { table: selectedTable, filters, label: selectedTable }])
+      setSelectedTable(targetTable)
+      setFilters([])
+      setPage(1)
+      setSelectedRows([])
+    },
+    [selectedTable, filters],
+  )
+
+  // Open related records panel for a row
+  const handleViewRelated = useCallback((row: Record<string, unknown>) => {
+    setRelatedRow(row)
+    setRelatedPanelOpen(true)
+  }, [])
 
   // Handle sort
   const handleSort = (column: string) => {
@@ -730,6 +873,37 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           </div>
         ) : (
           <>
+            {/* FK Navigation Breadcrumb */}
+            {navigationStack.length > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted/30 border border-border/50 shrink-0 overflow-x-auto text-xs">
+                <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                {navigationStack.map((entry, index) => (
+                  <span key={index} className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleBreadcrumbNavigate(index)}
+                      className="text-blue-400 hover:text-blue-300 hover:underline transition-colors font-mono"
+                    >
+                      {entry.label}
+                    </button>
+                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  </span>
+                ))}
+                <span className="font-mono font-medium text-foreground shrink-0">{selectedTable}</span>
+                {filters.length > 0 && filters[0]?.value && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 ml-1 shrink-0">
+                    {filters[0].column} = {filters[0].value}
+                  </Badge>
+                )}
+                <button
+                  onClick={handleClearNavigation}
+                  className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title="Clear navigation"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Toolbar Row 1 - Title and Actions */}
             <div className="flex items-center justify-between shrink-0 gap-2 md:gap-4 flex-wrap">
               <div className="flex items-center gap-2 md:gap-3 min-w-0">
@@ -1012,7 +1186,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                             ))}
                           </div>
                         ) : (
-                          <SchemaViewer schema={schema} />
+                          <SchemaViewer schema={schema} onNavigateTable={handleNavigateToTable} />
                         )}
                       </div>
                     </ScrollArea>
@@ -1039,7 +1213,7 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                             ))}
                           </div>
                         ) : (
-                          <SchemaViewer schema={schema} />
+                          <SchemaViewer schema={schema} onNavigateTable={handleNavigateToTable} />
                         )}
                       </CardContent>
                     </CollapsibleContent>
@@ -1149,12 +1323,32 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                                         <TooltipContent>Edit row</TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onClick={() => handleViewRelated(row)}
+                                          >
+                                            <Network className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>View related records</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   </div>
                                 </td>
                                 {/* Data cells */}
                                 {tableData?.columns.map((col) => (
                                   <td key={col} className="p-3">
-                                    <DataCell value={row[col]} column={col} />
+                                    <DataCell
+                                      value={row[col]}
+                                      column={col}
+                                      columnInfo={columnInfoMap.get(col)}
+                                      onNavigate={handleFKNavigate}
+                                    />
                                   </td>
                                 ))}
                               </tr>
@@ -1237,6 +1431,25 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           isPending={bulkUpdateMutation.isPending}
         />
       )}
+
+      {/* Related Records Panel */}
+      <RelatedRecordsPanel
+        open={relatedPanelOpen}
+        onOpenChange={(open) => {
+          setRelatedPanelOpen(open)
+          if (!open) setRelatedRow(null)
+        }}
+        tableName={selectedTable || ''}
+        rowId={relatedRowId || ''}
+        idColumn={idColumn}
+        data={relatedData ?? null}
+        isLoading={relatedLoading}
+        onNavigate={(table, column, value) => {
+          setRelatedPanelOpen(false)
+          setRelatedRow(null)
+          handleFKNavigate(table, column, value)
+        }}
+      />
 
       {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>

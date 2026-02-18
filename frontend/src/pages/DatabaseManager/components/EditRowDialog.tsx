@@ -254,30 +254,45 @@ export function EditRowDialog({
   onSave,
   isPending = false,
 }: EditRowDialogProps) {
-  const [editedData, setEditedData] = useState<Record<string, unknown>>({})
+  const rowId = rowData?.[idColumn]
+  const stableKey = `${tableName}-${rowId !== undefined ? String(rowId) : 'new'}`
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <EditRowDialogContent
+        key={stableKey}
+        onOpenChange={onOpenChange}
+        tableName={tableName}
+        columns={columns}
+        rowData={rowData}
+        idColumn={idColumn}
+        onSave={onSave}
+        isPending={isPending}
+      />
+    </Dialog>
+  )
+}
+
+function EditRowDialogContent({
+  onOpenChange,
+  tableName,
+  columns,
+  rowData,
+  idColumn,
+  onSave,
+  isPending = false,
+}: Omit<EditRowDialogProps, 'open'>) {
+  const [editedData, setEditedData] = useState<Record<string, unknown>>(() => ({ ...rowData }))
   const [error, setError] = useState<string | null>(null)
 
-  // Initialize edited data when dialog opens (during render, not in effect)
-  const [prevOpen, setPrevOpen] = useState(open)
-  const [prevRowData, setPrevRowData] = useState(rowData)
-  if (open && rowData && (!prevOpen || prevRowData !== rowData)) {
-    setPrevOpen(open)
-    setPrevRowData(rowData)
-    setEditedData({ ...rowData })
-    setError(null)
-  }
-
-  // Get the row ID for display
   const rowId = rowData?.[idColumn]
 
-  // Calculate which fields have been modified
   const modifiedFields = useMemo(() => {
     const modified: Record<string, unknown> = {}
     for (const key of Object.keys(editedData)) {
       const originalValue = rowData[key]
       const editedValue = editedData[key]
 
-      // Handle JSON comparison
       if (typeof originalValue === 'object' && typeof editedValue === 'object') {
         if (JSON.stringify(originalValue) !== JSON.stringify(editedValue)) {
           modified[key] = editedValue
@@ -291,7 +306,6 @@ export function EditRowDialog({
 
   const hasChanges = Object.keys(modifiedFields).length > 0
 
-  // Handle field change
   const handleFieldChange = (columnName: string, value: unknown) => {
     setEditedData((prev) => ({
       ...prev,
@@ -300,7 +314,6 @@ export function EditRowDialog({
     setError(null)
   }
 
-  // Handle save
   const handleSave = async () => {
     if (!hasChanges) return
 
@@ -312,7 +325,6 @@ export function EditRowDialog({
     }
   }
 
-  // Sort columns: primary key first, then by name
   const sortedColumns = useMemo(() => {
     return [...columns].sort((a, b) => {
       if (a.is_primary_key && !b.is_primary_key) return -1
@@ -326,63 +338,61 @@ export function EditRowDialog({
   }, [columns])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            Edit Row
-            <Badge variant="secondary" className="font-mono">
-              {tableName}
+    <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogHeader className="shrink-0">
+        <DialogTitle className="flex items-center gap-2">
+          Edit Row
+          <Badge variant="secondary" className="font-mono">
+            {tableName}
+          </Badge>
+          {rowId !== undefined && (
+            <Badge variant="outline" className="font-mono">
+              {idColumn}: {String(rowId)}
             </Badge>
-            {rowId !== undefined && (
-              <Badge variant="outline" className="font-mono">
-                {idColumn}: {String(rowId)}
-              </Badge>
-            )}
-          </DialogTitle>
-          <DialogDescription>Modify the field values below. Read-only fields cannot be edited.</DialogDescription>
-        </DialogHeader>
+          )}
+        </DialogTitle>
+        <DialogDescription>Modify the field values below. Read-only fields cannot be edited.</DialogDescription>
+      </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2">
-          <div className="space-y-6 py-4">
-            {sortedColumns.map((column) => (
-              <FieldEditor
-                key={column.name}
-                column={column}
-                value={editedData[column.name]}
-                onChange={(value) => handleFieldChange(column.name, value)}
-              />
-            ))}
-          </div>
+      <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2">
+        <div className="space-y-6 py-4">
+          {sortedColumns.map((column) => (
+            <FieldEditor
+              key={column.name}
+              column={column}
+              value={editedData[column.name]}
+              onChange={(value) => handleFieldChange(column.name, value)}
+            />
+          ))}
         </div>
+      </div>
 
-        {error && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {error}
-          </div>
-        )}
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
-        <DialogFooter className="flex items-center justify-between sm:justify-between shrink-0">
-          <div className="text-sm text-muted-foreground">
-            {hasChanges ? (
-              <span className="text-primary">{Object.keys(modifiedFields).length} field(s) modified</span>
-            ) : (
-              'No changes'
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              <X className="h-4 w-4 mr-2" />
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={!hasChanges || isPending}>
-              <Save className="h-4 w-4 mr-2" />
-              {isPending ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <DialogFooter className="flex items-center justify-between sm:justify-between shrink-0">
+        <div className="text-sm text-muted-foreground">
+          {hasChanges ? (
+            <span className="text-primary">{Object.keys(modifiedFields).length} field(s) modified</span>
+          ) : (
+            'No changes'
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <X className="h-4 w-4 mr-2" />
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={!hasChanges || isPending}>
+            <Save className="h-4 w-4 mr-2" />
+            {isPending ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </div>
+      </DialogFooter>
+    </DialogContent>
   )
 }

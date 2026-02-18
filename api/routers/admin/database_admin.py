@@ -253,6 +253,26 @@ class ImportResult(BaseModel):
     execution_time_ms: float
 
 
+class RelatedReference(BaseModel):
+    """A single FK reference (incoming or outgoing) for a row."""
+
+    direction: Literal["outgoing", "incoming"]
+    table: str
+    column: str
+    referenced_table: str
+    referenced_column: str
+    row_count: int = 0
+    preview: dict[str, Any] | None = None
+
+
+class RelatedRecordsResponse(BaseModel):
+    """All FK references for a specific row."""
+
+    table: str
+    row_id: str
+    references: list[RelatedReference]
+
+
 # ============================================
 # Helper Functions
 # ============================================
@@ -269,6 +289,21 @@ def format_bytes(size_bytes: int) -> str:
         size /= 1024
         i += 1
     return f"{size:.2f} {units[i]}"
+
+
+def _coerce_row_id(value: str, pg_data_type: str) -> Any:
+    """Coerce a string row_id to the appropriate Python type for asyncpg."""
+    dt = pg_data_type.lower()
+    try:
+        if "int" in dt:
+            return int(value)
+        if dt in ("numeric", "decimal") or "float" in dt or "double" in dt or dt == "real":
+            return float(value)
+        if "bool" in dt:
+            return value.lower() in ("true", "1", "t", "yes")
+    except (ValueError, TypeError):
+        pass
+    return value
 
 
 def serialize_row(row: Any) -> dict[str, Any]:
@@ -1967,4 +2002,183 @@ async def execute_import(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Import failed: {str(e)}",
+        )
+
+
+# ============================================
+# Related Records (FK Navigation) Endpoint
+# ============================================
+
+
+@router.get(
+    "/tables/{table_name}/rows/{row_id}/related",
+    response_model=RelatedRecordsResponse,
+)
+async def get_related_records(
+    table_name: str,
+    row_id: str,
+    id_column: str = Query("id", description="Primary key column to identify the row"),
+    _admin: User = Depends(require_role(UserRole.ADMIN)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Get all foreign key references (incoming and outgoing) for a specific row."""
+    try:
+        exists_result = await session.execute(
+            text(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM information_schema.tables"
+                "  WHERE table_schema = 'public' AND table_name = :table_name"
+                ")"
+            ),
+            {"table_name": table_name},
+        )
+        if not exists_result.scalar():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Table '{table_name}' not found",
+            )
+
+        references: list[RelatedReference] = []
+
+        # Resolve the PG data type of the id_column so we can coerce the
+        # string row_id to the correct Python type for asyncpg.
+        id_type_result = await session.execute(
+            text("""
+                SELECT data_type FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+                  AND column_name = :col_name
+            """),
+            {"table_name": table_name, "col_name": id_column},
+        )
+        id_pg_type = id_type_result.scalar() or "text"
+        coerced_row_id = _coerce_row_id(row_id, id_pg_type)
+
+        # --- Outgoing FKs: this table's columns that reference other tables ---
+        outgoing_result = await session.execute(
+            text("""
+                SELECT
+                    kcu.column_name,
+                    ccu.table_name AS foreign_table,
+                    ccu.column_name AS foreign_column
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                JOIN information_schema.constraint_column_usage ccu
+                    ON tc.constraint_name = ccu.constraint_name
+                WHERE tc.table_name = :table_name
+                    AND tc.constraint_type = 'FOREIGN KEY'
+                    AND tc.table_schema = 'public'
+            """),
+            {"table_name": table_name},
+        )
+
+        outgoing_fks = outgoing_result.all()
+
+        if outgoing_fks:
+            row_result = await session.execute(
+                text(f'SELECT * FROM "{table_name}" WHERE "{id_column}" = :row_id LIMIT 1'),
+                {"row_id": coerced_row_id},
+            )
+            row = row_result.first()
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Row with {id_column}={row_id} not found in '{table_name}'",
+                )
+            row_dict = dict(row._mapping)
+
+            for fk_col, foreign_table, foreign_col in outgoing_fks:
+                fk_value = row_dict.get(fk_col)
+                preview = None
+                if fk_value is not None:
+                    try:
+                        preview_result = await session.execute(
+                            text(f'SELECT * FROM "{foreign_table}" WHERE "{foreign_col}" = :fk_value LIMIT 1'),
+                            {"fk_value": fk_value},
+                        )
+                        preview_row = preview_result.first()
+                        if preview_row:
+                            full = serialize_row(preview_row)
+                            cols = list(full.keys())[:6]
+                            preview = {c: full[c] for c in cols}
+                    except Exception:
+                        logger.debug(
+                            "Failed to fetch preview for %s.%s -> %s.%s",
+                            table_name,
+                            fk_col,
+                            foreign_table,
+                            foreign_col,
+                        )
+
+                references.append(
+                    RelatedReference(
+                        direction="outgoing",
+                        table=table_name,
+                        column=fk_col,
+                        referenced_table=foreign_table,
+                        referenced_column=foreign_col,
+                        row_count=1 if preview else 0,
+                        preview=preview,
+                    )
+                )
+
+        # --- Incoming FKs: other tables whose columns reference this table ---
+        incoming_result = await session.execute(
+            text("""
+                SELECT
+                    kcu.table_name AS source_table,
+                    kcu.column_name AS source_column,
+                    ccu.column_name AS referenced_column,
+                    c.data_type AS source_data_type
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                JOIN information_schema.constraint_column_usage ccu
+                    ON tc.constraint_name = ccu.constraint_name
+                JOIN information_schema.columns c
+                    ON c.table_schema = 'public'
+                    AND c.table_name = kcu.table_name
+                    AND c.column_name = kcu.column_name
+                WHERE ccu.table_name = :table_name
+                    AND tc.constraint_type = 'FOREIGN KEY'
+                    AND tc.table_schema = 'public'
+            """),
+            {"table_name": table_name},
+        )
+
+        for source_table, source_column, referenced_column, source_data_type in incoming_result.all():
+            coerced_id = _coerce_row_id(row_id, source_data_type)
+            try:
+                count_result = await session.execute(
+                    text(f'SELECT COUNT(*) FROM "{source_table}" WHERE "{source_column}" = :row_id'),
+                    {"row_id": coerced_id},
+                )
+                count = count_result.scalar() or 0
+            except Exception:
+                count = -1
+
+            references.append(
+                RelatedReference(
+                    direction="incoming",
+                    table=source_table,
+                    column=source_column,
+                    referenced_table=table_name,
+                    referenced_column=referenced_column,
+                    row_count=count,
+                )
+            )
+
+        return RelatedRecordsResponse(
+            table=table_name,
+            row_id=row_id,
+            references=references,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting related records: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get related records: {str(e)}",
         )

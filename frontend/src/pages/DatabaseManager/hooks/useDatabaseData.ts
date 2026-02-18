@@ -19,6 +19,8 @@ export const databaseQueryKeys = {
   tableSchema: (name: string) => [...databaseQueryKeys.all, 'schema', name] as const,
   tableData: (name: string, params?: TableDataParams) => [...databaseQueryKeys.all, 'data', name, params] as const,
   orphans: () => [...databaseQueryKeys.all, 'orphans'] as const,
+  relatedRecords: (table: string, rowId: string, idColumn: string) =>
+    [...databaseQueryKeys.all, 'related', table, rowId, idColumn] as const,
 }
 
 // ============================================
@@ -226,6 +228,21 @@ export function useCleanupOrphans() {
         queryKey: databaseQueryKeys.tables(),
       })
     },
+  })
+}
+
+// ============================================
+// Related Records (FK Navigation) Hooks
+// ============================================
+
+export function useRelatedRecords(tableName: string | null, rowId: string | null, idColumn: string = 'id') {
+  return useQuery({
+    queryKey: databaseQueryKeys.relatedRecords(tableName || '', rowId || '', idColumn),
+    queryFn: async () => {
+      if (!tableName || !rowId) throw new Error('Missing table or row ID')
+      return await databaseApi.getRelatedRecords(tableName, rowId, idColumn)
+    },
+    enabled: !!tableName && !!rowId,
   })
 }
 

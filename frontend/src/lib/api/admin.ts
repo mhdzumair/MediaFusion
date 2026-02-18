@@ -1049,6 +1049,22 @@ export interface ImportResult {
   execution_time_ms: number
 }
 
+export interface RelatedReference {
+  direction: 'outgoing' | 'incoming'
+  table: string
+  column: string
+  referenced_table: string
+  referenced_column: string
+  row_count: number
+  preview: Record<string, unknown> | null
+}
+
+export interface RelatedRecordsResponse {
+  table: string
+  row_id: string
+  references: RelatedReference[]
+}
+
 // ============================================
 // Database Admin API
 // ============================================
@@ -1283,5 +1299,18 @@ export const databaseApi = {
 
   bulkUpdate: async (request: BulkUpdateRequest): Promise<BulkOperationResult> => {
     return dbPost<BulkOperationResult>('/bulk/update', request)
+  },
+
+  // ============================================
+  // Related Records (FK Navigation)
+  // ============================================
+
+  getRelatedRecords: async (
+    tableName: string,
+    rowId: string,
+    idColumn: string = 'id',
+  ): Promise<RelatedRecordsResponse> => {
+    const params = new URLSearchParams({ id_column: idColumn })
+    return dbGet<RelatedRecordsResponse>(`/tables/${tableName}/rows/${encodeURIComponent(rowId)}/related?${params}`)
   },
 }

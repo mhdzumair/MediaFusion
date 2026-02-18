@@ -195,6 +195,26 @@ export interface ImportResult {
 }
 
 // ============================================
+// Related Records (FK Navigation) Types
+// ============================================
+
+export interface RelatedReference {
+  direction: 'outgoing' | 'incoming'
+  table: string
+  column: string
+  referenced_table: string
+  referenced_column: string
+  row_count: number
+  preview: Record<string, unknown> | null
+}
+
+export interface RelatedRecordsResponse {
+  table: string
+  row_id: string
+  references: RelatedReference[]
+}
+
+// ============================================
 // UI Helper Types
 // ============================================
 
