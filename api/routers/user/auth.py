@@ -8,6 +8,7 @@ import secrets
 import time
 from datetime import datetime, timedelta
 
+import httpx
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -49,6 +50,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     username: str | None = Field(None, min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
+    newsletter_opt_in: bool = False
 
 
 class UserLogin(BaseModel):
@@ -317,6 +319,33 @@ def require_role(minimum_role: UserRole):
 
 
 # ============================================
+# ConvertKit Newsletter Integration
+# ============================================
+
+
+async def _subscribe_to_convertkit(email: str) -> None:
+    """Subscribe an email to the configured ConvertKit form (v4 API).
+
+    Creates the subscriber first, then adds them to the form.
+    Both calls are idempotent (200 if already exists).
+    """
+    headers = {"X-Kit-Api-Key": settings.convertkit_api_key}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # Step 1: Create subscriber
+        await client.post(
+            "https://api.kit.com/v4/subscribers",
+            headers=headers,
+            json={"email_address": email},
+        )
+        # Step 2: Add subscriber to form
+        await client.post(
+            f"https://api.kit.com/v4/forms/{settings.convertkit_form_id}/subscribers",
+            headers=headers,
+            json={"email_address": email},
+        )
+
+
+# ============================================
 # API Endpoints
 # ============================================
 
@@ -377,6 +406,13 @@ async def register(
     session.add(profile)
     await session.commit()
     await session.refresh(user)
+
+    # Subscribe to ConvertKit newsletter if opted in
+    if user_data.newsletter_opt_in and settings.convertkit_api_key and settings.convertkit_form_id:
+        try:
+            await _subscribe_to_convertkit(user.email)
+        except Exception:
+            logger.exception("Failed to subscribe %s to ConvertKit newsletter", user.email)
 
     if not auto_verify:
         # Send verification email

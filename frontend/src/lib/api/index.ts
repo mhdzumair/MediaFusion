@@ -9,6 +9,7 @@ export {
   clearStoredApiKey,
   completeSetup,
   type InstanceInfo,
+  type NewsletterConfig,
   type AppConfig,
   type TelegramFeatureConfig,
   type SetupCompleteRequest,

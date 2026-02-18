@@ -40,6 +40,7 @@ class InstanceInfo(BaseModel):
     version: str
     logo_url: str
     branding_svg: str | None = None  # Optional partner/host SVG logo URL
+    newsletter: NewsletterConfig
 
 
 class SetupCompleteRequest(BaseModel):
@@ -53,6 +54,14 @@ class SetupCompleteRequest(BaseModel):
     email: EmailStr
     username: str | None = Field(None, min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
+
+
+class NewsletterConfig(BaseModel):
+    """Newsletter opt-in configuration for the frontend."""
+
+    enabled: bool  # Whether newsletter signup is available
+    label: str  # Checkbox label text
+    default_checked: bool  # Whether the checkbox is checked by default
 
 
 class TelegramFeatureConfig(BaseModel):
@@ -109,6 +118,11 @@ async def get_instance_info(
         version=settings.version,
         logo_url=settings.logo_url,
         branding_svg=settings.branding_svg,
+        newsletter=NewsletterConfig(
+            enabled=bool(settings.convertkit_api_key and settings.convertkit_form_id),
+            label=settings.convertkit_newsletter_label,
+            default_checked=settings.convertkit_newsletter_default_checked,
+        ),
     )
 
 

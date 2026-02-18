@@ -241,6 +241,7 @@ export interface RegisterRequest {
   email: string
   username?: string
   password: string
+  newsletter_opt_in?: boolean
 }
 
 export interface AuthResponse {
