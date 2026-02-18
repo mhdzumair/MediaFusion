@@ -65,6 +65,10 @@ CATALOG_DATA = {
     "contribution_series": "Contribution Streams Series",
 }
 
+# Genre names that should never be exposed in public-facing UIs or genre filters.
+# The admin panel already applies the same exclusion independently.
+ADULT_GENRE_NAMES: frozenset[str] = frozenset({"adult", "18+"})
+
 USER_UPLOAD_SUPPORTED_MOVIE_CATALOG_IDS = [
     "anime_movies",
     "arabic_movies",

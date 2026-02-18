@@ -104,7 +104,9 @@ async def get_meta(
         "background": background,
         "description": media.description,
         "year": media.year,
-        "genres": [g.name for g in media.genres] if media.genres else [],
+        "genres": [g.name for g in media.genres if g.name.lower() not in const.ADULT_GENRE_NAMES]
+        if media.genres
+        else [],
         "stars": _get_stars(media),
         "runtime": f"{media.runtime_minutes} min" if media.runtime_minutes else None,
     }

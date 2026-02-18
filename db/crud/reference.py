@@ -18,6 +18,7 @@ from db.models import (
     ParentalCertificate,
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
+from utils.const import ADULT_GENRE_NAMES
 
 
 async def get_or_create_genre(session: AsyncSession, name: str) -> Genre:
@@ -265,7 +266,7 @@ async def get_all_genres_by_type(
 
     for media_type, genre_name in rows:
         type_key = media_type.value  # MediaType enum to string
-        if type_key in genres_by_type:
+        if type_key in genres_by_type and genre_name.lower() not in ADULT_GENRE_NAMES:
             genres_by_type[type_key].append(genre_name)
 
     # Cache for 1 hour

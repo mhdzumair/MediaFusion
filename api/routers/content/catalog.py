@@ -48,7 +48,12 @@ from db.models.streams import StreamType
 from db.schemas import StreamTemplate, TorrentStreamData
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import get_cached_status, store_cached_info_hashes
-from utils.const import CERTIFICATION_MAPPING, LANGUAGE_COUNTRY_FLAGS, STREAMING_PROVIDERS_SHORT_NAMES
+from utils.const import (
+    ADULT_GENRE_NAMES,
+    CERTIFICATION_MAPPING,
+    LANGUAGE_COUNTRY_FLAGS,
+    STREAMING_PROVIDERS_SHORT_NAMES,
+)
 from utils.crypto import crypto_utils
 from utils.network import encode_mediaflow_acestream_url, get_user_public_ip
 from utils.parser import render_stream_template
@@ -414,7 +419,7 @@ async def get_genres(
     result = await session.exec(query)
     genres = result.all()
 
-    return [GenreResponse(id=g[0], name=g[1]) for g in genres]
+    return [GenreResponse(id=g[0], name=g[1]) for g in genres if g[1].lower() not in ADULT_GENRE_NAMES]
 
 
 @router.get("/{catalog_type}", response_model=CatalogListResponse)
@@ -698,7 +703,7 @@ async def browse_catalog(
         # Get genres - need to load them if we didn't do selectinload
         item_genres = []
         if hasattr(item, "genres") and item.genres:
-            item_genres = [g.name for g in item.genres]
+            item_genres = [g.name for g in item.genres if g.name.lower() not in ADULT_GENRE_NAMES]
 
         # Get external IDs from batch-fetched data
         ext_ids_dict = external_ids_by_media.get(item.id, {})
@@ -976,7 +981,7 @@ async def get_catalog_item(
             background=background,
             description=media.description,
             runtime=format_runtime(f"{media.runtime_minutes} min") if media.runtime_minutes else None,
-            genres=[g.name for g in media.genres] if media.genres else [],
+            genres=[g.name for g in media.genres if g.name.lower() not in ADULT_GENRE_NAMES] if media.genres else [],
             ratings=all_ratings,
             imdb_rating=all_ratings.imdb_rating,
             catalogs=[c.name for c in media.catalogs] if media.catalogs else [],
@@ -1149,7 +1154,7 @@ async def get_catalog_item(
             background=background,
             description=media.description,
             runtime=format_runtime(f"{media.runtime_minutes} min") if media.runtime_minutes else None,
-            genres=[g.name for g in media.genres] if media.genres else [],
+            genres=[g.name for g in media.genres if g.name.lower() not in ADULT_GENRE_NAMES] if media.genres else [],
             ratings=all_ratings,
             imdb_rating=all_ratings.imdb_rating,
             catalogs=[c.name for c in media.catalogs] if media.catalogs else [],
@@ -1216,7 +1221,7 @@ async def get_catalog_item(
             poster=poster,
             background=background,
             description=media.description,
-            genres=[g.name for g in media.genres] if media.genres else [],
+            genres=[g.name for g in media.genres if g.name.lower() not in ADULT_GENRE_NAMES] if media.genres else [],
             ratings=all_ratings,
             imdb_rating=all_ratings.imdb_rating,
             catalogs=[c.name for c in media.catalogs] if media.catalogs else [],
