@@ -183,14 +183,8 @@ class BackgroundSearchWorker:
                 await self.manager.mark_as_completed(key, self.manager.series_hash_key)
 
 
-@dramatiq.actor(
-    priority=10,
-    max_retries=3,
-    min_backoff=600000,  # 10 minutes in milliseconds
-    max_backoff=3600000,  # 1 hour in milliseconds
-)
-async def run_background_search(**kwargs):
-    """Scheduled task to run background searches"""
+async def _run_background_search_async():
+    """Async implementation of background search, run inside a fresh event loop."""
     from db import database
 
     await database.init()
@@ -201,3 +195,14 @@ async def run_background_search(**kwargs):
 
     # Process movies and series concurrently
     await asyncio.gather(worker.process_movie_batch(), worker.process_series_batch())
+
+
+@dramatiq.actor(
+    priority=10,
+    max_retries=3,
+    min_backoff=600000,  # 10 minutes in milliseconds
+    max_backoff=3600000,  # 1 hour in milliseconds
+)
+def run_background_search(**kwargs):
+    """Scheduled task to run background searches"""
+    asyncio.run(_run_background_search_async())

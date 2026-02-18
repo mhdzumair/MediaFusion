@@ -100,6 +100,9 @@ class PlaywrightTorrentDownloadPipeline:
         async with self._lock:
             if self._challenge_solved:
                 return True
+            if not self._page:
+                logger.warning("No browser page available to solve challenge")
+                return False
             try:
                 logger.info("Solving JS challenge via %s", torrent_url)
                 await self._page.goto(
@@ -148,7 +151,15 @@ class PlaywrightTorrentDownloadPipeline:
 
     async def _fetch_torrent(self, torrent_url: str) -> bytes | None:
         """Fetch a .torrent file using the browser's authenticated session."""
-        result = await self._page.evaluate(_FETCH_JS, torrent_url)
+        try:
+            result = await self._page.evaluate(_FETCH_JS, torrent_url)
+        except PlaywrightError as e:
+            if "Execution context was destroyed" in str(e):
+                logger.warning("Page context destroyed during fetch for %s; invalidating challenge", torrent_url)
+                await self._invalidate_challenge()
+            else:
+                logger.warning("Playwright error during fetch for %s: %s", torrent_url, e)
+            return None
         if not result.get("ok"):
             return None
         raw = base64.b64decode(result["data"])
