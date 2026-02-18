@@ -21,6 +21,23 @@ def _is_api_path(request: Request) -> bool:
     return request.url.path.startswith(API_PREFIX)
 
 
+def _safe_validation_errors(exc: RequestValidationError) -> list:
+    """Return validation errors as a JSON-serializable list.
+
+    Pydantic v2 stores the original exception instance in ``ctx['error']``,
+    which is not JSON-serializable.  Convert it to a plain string so that
+    ``JSONResponse`` can encode the result without raising ``TypeError``.
+    """
+    result = []
+    for error in exc.errors():
+        error_copy = dict(error)
+        ctx = error_copy.get("ctx")
+        if isinstance(ctx, dict) and isinstance(ctx.get("error"), Exception):
+            error_copy["ctx"] = {**ctx, "error": str(ctx["error"])}
+        result.append(error_copy)
+    return result
+
+
 async def api_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Wrap HTTPException as 200 + ``{error: true}`` for API paths."""
     if not _is_api_path(request):
@@ -42,10 +59,11 @@ async def api_http_exception_handler(request: Request, exc: HTTPException) -> JS
 
 async def api_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """Wrap RequestValidationError (422) as 200 + ``{error: true}`` for API paths."""
+    errors = _safe_validation_errors(exc)
     if not _is_api_path(request):
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors()},
+            content={"detail": errors},
         )
 
     return JSONResponse(
@@ -54,6 +72,6 @@ async def api_validation_exception_handler(request: Request, exc: RequestValidat
             "error": True,
             "detail": "Validation error",
             "status_code": 422,
-            "errors": exc.errors(),
+            "errors": errors,
         },
     )
