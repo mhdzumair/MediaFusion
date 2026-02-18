@@ -47,7 +47,7 @@ class SportVideoParserPipeline:
 
         item.update(
             {
-                "created_at": date_obj.strftime("%Y-%m-%d"),
+                "created_at": datetime(date_obj.year, date_obj.month, date_obj.day),
                 "year": date_obj.year,
                 "languages": [re.sub(r"[ .]", "", item.get("language", "English"))],
                 "is_search_imdb_title": False,

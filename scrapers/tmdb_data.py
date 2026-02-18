@@ -55,7 +55,7 @@ async def get_tmdb_data(
                 raise
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                logging.exception(f"TMDB ID {tmdb_id} not found")
+                logging.warning(f"TMDB ID {tmdb_id} not found")
                 return None
             if e.response.status_code == 429:  # Rate limit
                 await asyncio.sleep(2**attempt)  # Exponential backoff

@@ -16,6 +16,7 @@ from sqlalchemy import func
 from sqlalchemy import update as sa_update
 from sqlalchemy.orm import selectinload
 from sqlalchemy import delete as sa_delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -952,7 +953,7 @@ async def update_provider_metadata(
         if external_ids:
             for ext_provider, ext_id in external_ids.items():
                 if ext_id:
-                    # Check if this external ID already exists
+                    # Check if this (media_id, provider) mapping already exists to update it
                     existing_query = select(MediaExternalID).where(
                         MediaExternalID.media_id == media_id,
                         MediaExternalID.provider == ext_provider,
@@ -961,17 +962,15 @@ async def update_provider_metadata(
                     existing = result.first()
 
                     if existing:
-                        # Update if changed
                         if existing.external_id != str(ext_id):
                             existing.external_id = str(ext_id)
                     else:
-                        # Create new external ID mapping
-                        new_ext_id = MediaExternalID(
-                            media_id=media_id,
-                            provider=ext_provider,
-                            external_id=str(ext_id),
+                        stmt = (
+                            pg_insert(MediaExternalID)
+                            .values(media_id=media_id, provider=ext_provider, external_id=str(ext_id))
+                            .on_conflict_do_nothing(constraint="uq_provider_external_id")
                         )
-                        session.add(new_ext_id)
+                        await session.exec(stmt)
 
         # Also store the provider's own ID
         if provider_content_id:
@@ -983,12 +982,12 @@ async def update_provider_metadata(
             existing = result.first()
 
             if not existing:
-                new_ext_id = MediaExternalID(
-                    media_id=media_id,
-                    provider=provider_name,
-                    external_id=str(provider_content_id),
+                stmt = (
+                    pg_insert(MediaExternalID)
+                    .values(media_id=media_id, provider=provider_name, external_id=str(provider_content_id))
+                    .on_conflict_do_nothing(constraint="uq_provider_external_id")
                 )
-                session.add(new_ext_id)
+                await session.exec(stmt)
 
         await session.flush()
         return pm

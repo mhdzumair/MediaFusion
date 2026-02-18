@@ -236,9 +236,10 @@ async def create_media(
 
     # Add catalog links
     if catalogs:
-        for catalog in catalogs:
-            link = MediaCatalogLink(media_id=media.id, catalog_id=catalog.id)
-            session.add(link)
+        await session.flush()
+        catalog_links = [{"media_id": media.id, "catalog_id": catalog.id} for catalog in catalogs]
+        stmt = pg_insert(MediaCatalogLink).values(catalog_links).on_conflict_do_nothing()
+        await session.exec(stmt)
 
     await session.flush()
     return media

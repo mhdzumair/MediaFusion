@@ -2,6 +2,8 @@ import asyncio
 import base64
 import logging
 
+from playwright._impl._errors import Error as PlaywrightError
+from playwright._impl._errors import TargetClosedError
 from scrapy import signals
 from scrapy.exceptions import DropItem
 
@@ -79,6 +81,20 @@ class PlaywrightTorrentDownloadPipeline:
         self._playwright = None
         logger.info("Playwright browser session closed")
 
+    async def _reinit_page(self):
+        """Reinitialize the browser page after it has been closed unexpectedly."""
+        try:
+            if self._browser and self._browser.is_connected():
+                ctx = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+                self._page = await ctx.new_page()
+                logger.info("Reinitialized Playwright page after unexpected close")
+            else:
+                logger.warning("Browser disconnected; skipping page reinitialization")
+                self._page = None
+        except Exception:
+            logger.warning("Failed to reinitialize Playwright page", exc_info=True)
+            self._page = None
+
     async def _solve_challenge(self, torrent_url: str) -> bool:
         """Navigate to a .torrent URL so the stealth browser solves the JS challenge."""
         async with self._lock:
@@ -100,8 +116,29 @@ class PlaywrightTorrentDownloadPipeline:
 
                 logger.warning("Challenge cookie not set after navigation")
                 return False
+            except TargetClosedError:
+                logger.warning("Browser page was closed; reinitializing for next attempt")
+                self._challenge_solved = False
+                await self._reinit_page()
+                return False
+            except PlaywrightError as e:
+                if "Download is starting" in str(e):
+                    # The .torrent URL triggered a direct download — the browser navigated
+                    # successfully, so the JS challenge is already solved. Check cookies.
+                    try:
+                        cookies = await self._page.context.cookies()
+                        if any(c["name"] == "access_challenge_global" for c in cookies):
+                            self._challenge_solved = True
+                            logger.info("JS challenge solved (download triggered)")
+                            return True
+                    except Exception:
+                        pass
+                    logger.warning("Download triggered but challenge cookie not set for %s", torrent_url)
+                    return False
+                logger.warning("Playwright error solving JS challenge: %s", e)
+                return False
             except Exception:
-                logger.exception("Failed to solve JS challenge")
+                logger.warning("Failed to solve JS challenge", exc_info=True)
                 return False
 
     async def _invalidate_challenge(self):

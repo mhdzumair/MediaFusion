@@ -355,10 +355,14 @@ async def get_or_create_metadata(
 
     # Add catalogs
     if catalogs := metadata_data.get("catalogs"):
+        await session.flush()
+        catalog_links = []
         for catalog_name in catalogs:
             catalog = await get_or_create_catalog(session, catalog_name)
-            link = MediaCatalogLink(media_id=media.id, catalog_id=catalog.id)
-            session.add(link)
+            catalog_links.append({"media_id": media.id, "catalog_id": catalog.id})
+        if catalog_links:
+            stmt = pg_insert(MediaCatalogLink).values(catalog_links).on_conflict_do_nothing()
+            await session.exec(stmt)
 
     # Create type-specific metadata
     if media_type_enum == MediaType.MOVIE:
@@ -1195,6 +1199,23 @@ async def _batch_get_or_create_reference_data(
     return result_map
 
 
+def _parse_datetime_field(value: Any) -> datetime | None:
+    """Normalize uploaded_at / created_at values that may arrive as strings."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=pytz.UTC)
+            return dt
+        except ValueError:
+            pass
+    return None
+
+
 async def store_new_torrent_streams(
     session: AsyncSession,
     streams_data: list[dict[str, Any]],
@@ -1327,7 +1348,7 @@ async def store_new_torrent_streams(
             torrent_type=torrent_type,
             seeders=stream_data.get("seeders", 0),
             leechers=stream_data.get("leechers"),
-            uploaded_at=stream_data.get("uploaded_at") or stream_data.get("created_at"),
+            uploaded_at=_parse_datetime_field(stream_data.get("uploaded_at") or stream_data.get("created_at")),
             torrent_file=stream_data.get("torrent_file"),
             file_count=len(stream_data.get("files", [])) or 1,
         )
@@ -2086,8 +2107,8 @@ async def update_user_rss_feed_metrics(
 async def list_all_active_user_rss_feeds(
     session: AsyncSession,
 ) -> Sequence[RSSFeed]:
-    """List all active user RSS feeds."""
-    query = select(RSSFeed).where(RSSFeed.is_active.is_(True))
+    """List all active user RSS feeds with catalog patterns eagerly loaded."""
+    query = select(RSSFeed).where(RSSFeed.is_active.is_(True)).options(selectinload(RSSFeed.catalog_patterns))
     result = await session.exec(query)
     return result.all()
 
