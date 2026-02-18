@@ -158,7 +158,9 @@ export function RegisterPage() {
           <CardHeader className="space-y-1 text-center">
             {/* Mobile logo */}
             <div className="flex justify-center mb-4 lg:hidden">
-              <Logo size="lg" />
+              <Link to="/" className="hover:opacity-80 transition-opacity">
+                <Logo size="lg" />
+              </Link>
             </div>
             <CardTitle className="font-display text-2xl font-semibold">Create an account</CardTitle>
             <CardDescription>Sign up to save your configurations and access more features</CardDescription>

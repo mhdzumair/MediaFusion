@@ -157,7 +157,9 @@ export function VerifyEmailPage() {
           <>
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">
-                <Logo size="lg" />
+                <Link to="/" className="hover:opacity-80 transition-opacity">
+                  <Logo size="lg" />
+                </Link>
               </div>
               <div className="flex justify-center mb-2">
                 <MailCheck className="h-12 w-12 text-primary" />

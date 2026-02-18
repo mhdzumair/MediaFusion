@@ -159,7 +159,9 @@ export function LoginPage() {
           <CardHeader className="space-y-1 text-center">
             {/* Mobile logo */}
             <div className="flex justify-center mb-4 lg:hidden">
-              <Logo size="lg" />
+              <Link to="/" className="hover:opacity-80 transition-opacity">
+                <Logo size="lg" />
+              </Link>
             </div>
             <CardTitle className="font-display text-2xl font-semibold">Welcome back</CardTitle>
             <CardDescription>Sign in to your {addonName} account</CardDescription>

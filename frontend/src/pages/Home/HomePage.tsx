@@ -194,19 +194,35 @@ export function HomePage() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 flex h-16 items-center justify-between">
-          <Link to="/app/" className="hover:opacity-80 transition-opacity">
-            <LogoWithText size="lg" addonName={addonName} brandingSvg={brandingSvg} />
+          <Link to="/app/" className="hover:opacity-80 transition-opacity min-w-0">
+            <LogoWithText
+              size="lg"
+              addonName={addonName}
+              brandingSvg={brandingSvg}
+              suffixClassName="hidden sm:inline"
+              brandingClassName="hidden sm:inline"
+            />
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             <ThemeSelector />
-            <Button asChild variant="ghost">
+            <Button asChild variant="ghost" size="icon" className="sm:hidden">
+              <Link to="/login">
+                <LogIn className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <Link to="/login">
                 <LogIn className="mr-2 h-4 w-4" />
                 Login
               </Link>
             </Button>
-            <Button asChild variant="gold">
+            <Button asChild variant="gold" size="icon" className="sm:hidden">
+              <Link to="/register">
+                <UserPlus className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="gold" className="hidden sm:inline-flex">
               <Link to="/register">
                 <UserPlus className="mr-2 h-4 w-4" />
                 Register
@@ -241,7 +257,7 @@ export function HomePage() {
                 </Badge>
               )}
               <h1>
-                <LogoText addonName={addonName} size="5xl" />
+                <LogoText addonName={addonName} size="5xl" className="text-4xl sm:text-5xl md:text-6xl" />
               </h1>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
                 The ultimate open-source streaming platform. Aggregate streams from your configured sources, manage

@@ -600,6 +600,7 @@ interface LogoTextProps {
   addonName?: string
   size?: TextSize
   variant?: 'gradient' | 'themed'
+  suffixClassName?: string
 }
 
 /**
@@ -625,7 +626,13 @@ function parseAddonName(addonName: string): { mainName: string; suffix: string |
  * Automatically adapts colors for light/dark mode
  * Supports addon names with separators like "MediaFusion | ElfHosted"
  */
-export function LogoText({ className, addonName = 'MediaFusion', size = 'md', variant = 'themed' }: LogoTextProps) {
+export function LogoText({
+  className,
+  addonName = 'MediaFusion',
+  size = 'md',
+  variant = 'themed',
+  suffixClassName,
+}: LogoTextProps) {
   const { colorScheme, resolvedTheme } = useTheme()
 
   // Parse addon name to handle separators
@@ -675,8 +682,8 @@ export function LogoText({ className, addonName = 'MediaFusion', size = 'md', va
       </span>
       {suffix && (
         <>
-          <span className="text-muted-foreground font-normal text-[0.6em]">|</span>
-          <span className="text-muted-foreground font-semibold text-[0.7em]">{suffix}</span>
+          <span className={cn('text-muted-foreground font-normal text-[0.6em]', suffixClassName)}>|</span>
+          <span className={cn('text-muted-foreground font-semibold text-[0.7em]', suffixClassName)}>{suffix}</span>
         </>
       )}
     </span>
@@ -714,6 +721,8 @@ interface LogoWithTextProps extends LogoProps {
   addonName?: string
   textSize?: TextSize
   brandingSvg?: string | null
+  suffixClassName?: string
+  brandingClassName?: string
 }
 
 /**
@@ -729,6 +738,8 @@ export function LogoWithText({
   addonName = 'MediaFusion',
   textSize = 'md',
   brandingSvg,
+  suffixClassName,
+  brandingClassName,
 }: LogoWithTextProps) {
   // Map mono variant to themed for text (mono doesn't make sense for gradient text)
   const textVariant = variant === 'mono' ? 'themed' : variant
@@ -736,11 +747,11 @@ export function LogoWithText({
   return (
     <div className={cn('flex items-center gap-2.5 group', className)}>
       <Logo size={size} animated={animated} heroAnimation={heroAnimation} variant={variant} />
-      <LogoText addonName={addonName} size={textSize} variant={textVariant} />
+      <LogoText addonName={addonName} size={textSize} variant={textVariant} suffixClassName={suffixClassName} />
       {brandingSvg && (
         <>
-          <span className="text-muted-foreground/50 text-lg">×</span>
-          <BrandingLogo svgUrl={brandingSvg} size={size} />
+          <span className={cn('text-muted-foreground/50 text-lg', brandingClassName)}>×</span>
+          <BrandingLogo svgUrl={brandingSvg} size={size} className={brandingClassName} />
         </>
       )}
     </div>
