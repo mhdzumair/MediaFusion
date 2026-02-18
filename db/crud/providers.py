@@ -10,6 +10,7 @@ import logging
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
+import traceback
 
 import pytz
 from sqlalchemy import func
@@ -24,6 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from db.models import (
     AkaTitle,
     Episode,
+    EpisodeImage,
     Keyword,
     Media,
     MediaCast,
@@ -1411,8 +1413,6 @@ async def apply_multi_provider_metadata(
         if media_type == "series":
             episodes_data = merge_lists("episodes")
             if episodes_data and media.series_metadata:
-                from db.models import Season, EpisodeImage
-
                 series_id = media.series_metadata.id
                 logger.info(f"Processing {len(episodes_data)} episodes for media_id={media_id}")
 
@@ -1524,16 +1524,28 @@ async def apply_multi_provider_metadata(
                         # Handle episode thumbnail
                         thumbnail_url = ep.get("thumbnail") or ep.get("still_path")
                         if thumbnail_url and episode.id:
-                            # Check if image exists
-                            existing_img = await session.exec(
+                            # Find all existing images for this episode/provider/type
+                            existing_imgs = await session.exec(
                                 select(EpisodeImage).where(
                                     EpisodeImage.episode_id == episode.id,
-                                    EpisodeImage.is_primary.is_(True),
+                                    EpisodeImage.provider_id == provider.id,
+                                    EpisodeImage.image_type == "still",
                                 )
                             )
-                            img = existing_img.first()
-                            if img:
-                                img.url = thumbnail_url
+                            all_imgs = existing_imgs.all()
+                            primary_img = next((i for i in all_imgs if i.is_primary), None)
+                            url_match_img = next((i for i in all_imgs if i.url == thumbnail_url), None)
+
+                            if primary_img and primary_img.url == thumbnail_url:
+                                pass  # already correct, nothing to do
+                            elif url_match_img:
+                                # Another row already has the target URL — make it primary,
+                                # delete any other primary to avoid duplicate.
+                                if primary_img and primary_img.id != url_match_img.id:
+                                    await session.delete(primary_img)
+                                url_match_img.is_primary = True
+                            elif primary_img:
+                                primary_img.url = thumbnail_url
                             else:
                                 session.add(
                                     EpisodeImage(
@@ -1555,7 +1567,9 @@ async def apply_multi_provider_metadata(
 
     except Exception as e:
         logger.error(f"Error applying multi-provider metadata for media_id={media_id}: {e}")
-        import traceback
-
         traceback.print_exc()
+        try:
+            await session.rollback()
+        except Exception:
+            pass
         return False

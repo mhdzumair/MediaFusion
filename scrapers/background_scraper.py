@@ -5,7 +5,7 @@ import dramatiq
 
 from db import crud
 from db.config import settings
-from db.database import get_async_session
+from db.database import get_background_session
 from db.schemas import MetadataData
 from scrapers.base_scraper import BackgroundScraperManager, IndexerBaseScraper
 from scrapers.jackett import JackettScraper
@@ -39,7 +39,7 @@ class BackgroundSearchWorker:
 
             try:
                 metadata = None
-                async for session in get_async_session():
+                async with get_background_session() as session:
                     media = await crud.get_movie_data_by_id(session, meta_id, load_relations=True)
                     if media:
                         # Convert to MetadataData while session is active
@@ -121,7 +121,7 @@ class BackgroundSearchWorker:
 
             try:
                 metadata = None
-                async for session in get_async_session():
+                async with get_background_session() as session:
                     media = await crud.get_series_data_by_id(session, meta_id, load_relations=True)
                     if media:
                         # Convert to MetadataData while session is active
@@ -185,9 +185,6 @@ class BackgroundSearchWorker:
 
 async def _run_background_search_async():
     """Async implementation of background search, run inside a fresh event loop."""
-    from db import database
-
-    await database.init()
     worker = BackgroundSearchWorker()
 
     # Clean up any stale processing items

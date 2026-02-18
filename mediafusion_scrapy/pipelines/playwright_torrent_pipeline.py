@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 
+from playwright.async_api import async_playwright
 from playwright._impl._errors import Error as PlaywrightError
 from playwright._impl._errors import TargetClosedError
 from scrapy import signals
@@ -55,8 +56,6 @@ class PlaywrightTorrentDownloadPipeline:
         return pipeline
 
     async def _open(self):
-        from playwright.async_api import async_playwright
-
         self._playwright = await async_playwright().start()
         cdp_url = settings.playwright_cdp_url
         logger.info("Connecting to browserless at %s", cdp_url)
@@ -151,8 +150,15 @@ class PlaywrightTorrentDownloadPipeline:
 
     async def _fetch_torrent(self, torrent_url: str) -> bytes | None:
         """Fetch a .torrent file using the browser's authenticated session."""
+        if not self._page:
+            return None
         try:
             result = await self._page.evaluate(_FETCH_JS, torrent_url)
+        except TargetClosedError:
+            logger.warning("Page closed during fetch for %s; reinitializing", torrent_url)
+            await self._reinit_page()
+            await self._invalidate_challenge()
+            return None
         except PlaywrightError as e:
             if "Execution context was destroyed" in str(e):
                 logger.warning("Page context destroyed during fetch for %s; invalidating challenge", torrent_url)

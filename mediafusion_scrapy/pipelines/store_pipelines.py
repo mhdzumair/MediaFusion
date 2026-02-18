@@ -265,6 +265,10 @@ class MovieStorePipeline(QueueBasedPipeline):
                     logging.info("Applied full metadata for movie %s", item["title"])
                 except Exception as e:
                     logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        pass
 
             # Check if torrent stream already exists
             existing_stream = await crud.get_stream_by_info_hash(session, item["info_hash"])
@@ -387,6 +391,10 @@ class SeriesStorePipeline(QueueBasedPipeline):
                     logging.info("Applied full metadata for series %s", item["title"])
                 except Exception as e:
                     logging.warning("Failed to apply full metadata for %s: %s", item["title"], e)
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        pass
 
             # Check if torrent stream already exists
             existing_stream = await crud.get_stream_by_info_hash(session, item["info_hash"])

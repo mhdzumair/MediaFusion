@@ -17,7 +17,9 @@ from ratelimit import limits, sleep_and_retry
 from tenacity import retry, stop_after_attempt, wait_exponential
 from torf import Magnet, MagnetError
 
+from db import crud
 from db.config import settings
+from db.database import get_background_session
 from db.enums import TorrentType
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import MetadataData, StreamFileData, TorrentStreamData, UserData
@@ -744,10 +746,7 @@ class BaseScraper(abc.ABC):
         Store the parsed streams in the database.
         :param streams: List of TorrentStreamData objects
         """
-        from db import crud
-        from db.database import get_async_session
-
-        async for session in get_async_session():
+        async with get_background_session() as session:
             await crud.store_new_torrent_streams(session, [s.model_dump(by_alias=True) for s in streams])
             await session.commit()
 
