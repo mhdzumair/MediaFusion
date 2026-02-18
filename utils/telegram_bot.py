@@ -504,17 +504,71 @@ class TelegramContentBot:
         self.bot_token = settings.telegram_bot_token
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}" if self.bot_token else None
         self.enabled = bool(self.bot_token)
-        # Legacy state (kept for backward compatibility during transition)
-        self._pending_content: dict = {}  # user_id -> list of pending content
-        self._search_results: dict = {}  # callback_data -> search result data
-        self._telegram_user_mapping: dict = {}  # telegram_user_id -> mediafusion_user_id
-        # New conversation state management
-        self._conversations: dict[int, ConversationState] = {}  # user_id -> ConversationState
-        self._login_tokens: dict[str, dict] = {}  # login_token -> {telegram_user_id, expires_at}
         self._conversation_ttl_seconds = 30 * 60
 
     def _conversation_key(self, user_id: int) -> str:
         return f"telegram:conversation:{user_id}"
+
+    def _pending_content_key(self, user_id: int) -> str:
+        return f"telegram:pending_content:{user_id}"
+
+    def _search_result_key(self, callback_data: str) -> str:
+        return f"telegram:search_result:{callback_data}"
+
+    def _user_mapping_key(self, telegram_user_id: int) -> str:
+        return f"telegram:user_mapping:{telegram_user_id}"
+
+    # ---- pending_content helpers ----
+
+    def _get_pending_content(self, user_id: int) -> list:
+        try:
+            raw = REDIS_SYNC_CLIENT.get(self._pending_content_key(user_id))
+            return json.loads(raw) if raw else []
+        except Exception as e:
+            logger.debug(f"Failed to load pending content from Redis for user {user_id}: {e}")
+            return []
+
+    def _set_pending_content(self, user_id: int, items: list):
+        try:
+            REDIS_SYNC_CLIENT.setex(
+                self._pending_content_key(user_id),
+                2 * 60 * 60,  # 2 hours
+                json.dumps(items),
+            )
+        except Exception as e:
+            logger.debug(f"Failed to persist pending content to Redis for user {user_id}: {e}")
+
+    def _delete_pending_content(self, user_id: int):
+        try:
+            REDIS_SYNC_CLIENT.delete(self._pending_content_key(user_id))
+        except Exception as e:
+            logger.debug(f"Failed to delete pending content from Redis for user {user_id}: {e}")
+
+    # ---- search_result helpers ----
+
+    def _get_search_result(self, callback_data: str) -> dict | None:
+        try:
+            raw = REDIS_SYNC_CLIENT.get(self._search_result_key(callback_data))
+            return json.loads(raw) if raw else None
+        except Exception as e:
+            logger.debug(f"Failed to load search result from Redis: {e}")
+            return None
+
+    def _set_search_result(self, callback_data: str, data: dict):
+        try:
+            REDIS_SYNC_CLIENT.setex(
+                self._search_result_key(callback_data),
+                30 * 60,  # 30 minutes
+                json.dumps(data),
+            )
+        except Exception as e:
+            logger.debug(f"Failed to persist search result to Redis: {e}")
+
+    def _delete_search_result(self, callback_data: str):
+        try:
+            REDIS_SYNC_CLIENT.delete(self._search_result_key(callback_data))
+        except Exception as e:
+            logger.debug(f"Failed to delete search result from Redis: {e}")
 
     def _to_json_safe(self, value: Any) -> Any:
         """Convert nested values to JSON-safe structures for Redis storage."""
@@ -587,8 +641,7 @@ class TelegramContentBot:
             return None
 
     def _persist_conversation(self, state: ConversationState):
-        """Persist state in memory and Redis so it survives multi-worker routing."""
-        self._conversations[state.user_id] = state
+        """Persist state to Redis so it survives multi-worker routing."""
         try:
             REDIS_SYNC_CLIENT.setex(
                 self._conversation_key(state.user_id),
@@ -770,19 +823,20 @@ class TelegramContentBot:
     # ============================================
 
     def get_conversation(self, user_id: int) -> ConversationState | None:
-        """Get conversation state for a user."""
-        state = self._conversations.get(user_id)
-        if not state:
-            try:
-                redis_data = REDIS_SYNC_CLIENT.get(self._conversation_key(user_id))
-                if redis_data:
-                    state = self._deserialize_state(redis_data)
-                    if state:
-                        self._conversations[user_id] = state
-            except Exception as e:
-                logger.debug(f"Failed to load conversation from Redis for user {user_id}: {e}")
+        """Get conversation state for a user.
+
+        Always reads from Redis so all workers see the latest state.
+        """
+        try:
+            redis_data = REDIS_SYNC_CLIENT.get(self._conversation_key(user_id))
+            if not redis_data:
+                return None
+            state = self._deserialize_state(redis_data)
+        except Exception as e:
+            logger.debug(f"Failed to load conversation from Redis for user {user_id}: {e}")
+            return None
+
         if state and state.is_expired():
-            del self._conversations[user_id]
             try:
                 REDIS_SYNC_CLIENT.delete(self._conversation_key(user_id))
             except Exception:
@@ -812,24 +866,10 @@ class TelegramContentBot:
 
     def clear_conversation(self, user_id: int):
         """Clear conversation state for a user."""
-        if user_id in self._conversations:
-            del self._conversations[user_id]
         try:
             REDIS_SYNC_CLIENT.delete(self._conversation_key(user_id))
         except Exception:
             pass
-
-    def cleanup_expired_conversations(self):
-        """Remove expired conversation states."""
-        expired = [uid for uid, state in self._conversations.items() if state.is_expired()]
-        for uid in expired:
-            del self._conversations[uid]
-            try:
-                REDIS_SYNC_CLIENT.delete(self._conversation_key(uid))
-            except Exception:
-                pass
-        if expired:
-            logger.debug(f"Cleaned up {len(expired)} expired conversations")
 
     # ============================================
     # Authentication Check
@@ -3495,9 +3535,9 @@ class TelegramContentBot:
                 "needs_linking": False,
                 "timestamp": datetime.now().isoformat(),
             }
-            if user_id not in self._pending_content:
-                self._pending_content[user_id] = []
-            self._pending_content[user_id].append(content_info)
+            pending = self._get_pending_content(user_id)
+            pending.append(content_info)
+            self._set_pending_content(user_id, pending)
             result["success"] = True
             return result
 
@@ -3559,20 +3599,23 @@ class TelegramContentBot:
 
                         callback_data = f"select:{user_id}:{message_id}:{imdb_id}"
                         keyboard.append([{"text": button_text, "callback_data": callback_data}])
-                        # Store search result for callback
-                        self._search_results[callback_data] = {
-                            "user_id": user_id,
-                            "message_id": message_id,
-                            "file_id": file_id,
-                            "file_unique_id": file_unique_id,
-                            "file_name": file_name,
-                            "file_size": file_size,
-                            "mime_type": mime_type,
-                            "caption": caption,
-                            "imdb_id": imdb_id,
-                            "title": title,
-                            "year": year,
-                        }
+                        # Store search result in Redis for callback (shared across all workers)
+                        self._set_search_result(
+                            callback_data,
+                            {
+                                "user_id": user_id,
+                                "message_id": message_id,
+                                "file_id": file_id,
+                                "file_unique_id": file_unique_id,
+                                "file_name": file_name,
+                                "file_size": file_size,
+                                "mime_type": mime_type,
+                                "caption": caption,
+                                "imdb_id": imdb_id,
+                                "title": title,
+                                "year": year,
+                            },
+                        )
 
                     # Add "Manual Entry" button
                     keyboard.append(
@@ -3641,32 +3684,34 @@ class TelegramContentBot:
         }
 
         # Add to pending content queue (replace if exists for same message_id)
-        if user_id not in self._pending_content:
-            self._pending_content[user_id] = []
+        pending = [p for p in self._get_pending_content(user_id) if p.get("message_id") != message_id]
+        pending.append(content_info)
+        self._set_pending_content(user_id, pending)
 
-        # Remove existing entry for this message_id if present
-        self._pending_content[user_id] = [
-            p for p in self._pending_content[user_id] if p.get("message_id") != message_id
-        ]
-        # Add new entry
-        self._pending_content[user_id].append(content_info)
-
-        # Also update search_results with file info for all callbacks for this message
+        # Also update search_results in Redis with file info for all callbacks for this message
         # This ensures we can find it even if pending_content is cleared
-        for callback_key in list(self._search_results.keys()):
-            if callback_key.startswith(f"select:{user_id}:{message_id}:"):
-                # Update the search_result with file info
-                self._search_results[callback_key].update(
-                    {
-                        "chat_id": chat_id,
-                        "file_id": file_id,
-                        "file_unique_id": file_unique_id,
-                        "file_name": file_name,
-                        "file_size": file_size,
-                        "mime_type": mime_type,
-                        "caption": caption,
-                    }
-                )
+        try:
+            pattern = f"telegram:search_result:select:{user_id}:{message_id}:*"
+            matching_keys = REDIS_SYNC_CLIENT.keys(pattern) or []
+            for raw_key in matching_keys:
+                key_str = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else raw_key
+                raw_data = REDIS_SYNC_CLIENT.get(key_str)
+                if raw_data:
+                    data = json.loads(raw_data)
+                    data.update(
+                        {
+                            "chat_id": chat_id,
+                            "file_id": file_id,
+                            "file_unique_id": file_unique_id,
+                            "file_name": file_name,
+                            "file_size": file_size,
+                            "mime_type": mime_type,
+                            "caption": caption,
+                        }
+                    )
+                    REDIS_SYNC_CLIENT.setex(key_str, 30 * 60, json.dumps(data))
+        except Exception as e:
+            logger.debug(f"Failed to update search results in Redis for message {message_id}: {e}")
 
         result["success"] = True
         return result
@@ -3685,14 +3730,16 @@ class TelegramContentBot:
         Returns:
             Dict with result
         """
-        if user_id not in self._pending_content or not self._pending_content[user_id]:
+        pending = self._get_pending_content(user_id)
+        if not pending:
             return {
                 "success": False,
                 "message": "No pending content to link. Please forward a video first.",
             }
 
-        # Get the most recent pending content
-        content = self._pending_content[user_id].pop()
+        # Get the most recent pending content and save the updated list immediately
+        content = pending.pop()
+        self._set_pending_content(user_id, pending)
         content["meta_id"] = meta_id
         content["needs_linking"] = False
 
@@ -3706,14 +3753,16 @@ class TelegramContentBot:
                 }
             else:
                 # Put it back in the queue
-                self._pending_content[user_id].append(content)
+                pending.append(content)
+                self._set_pending_content(user_id, pending)
                 return {
                     "success": False,
                     "message": "Failed to store content. Please try again.",
                 }
         except Exception as e:
             logger.exception(f"Error storing forwarded content: {e}")
-            self._pending_content[user_id].append(content)
+            pending.append(content)
+            self._set_pending_content(user_id, pending)
             return {
                 "success": False,
                 "message": f"Error: {str(e)}",
@@ -3728,9 +3777,13 @@ class TelegramContentBot:
         Returns:
             MediaFusion user ID if linked, None otherwise
         """
-        # Check in-memory cache first
-        if telegram_user_id in self._telegram_user_mapping:
-            return self._telegram_user_mapping[telegram_user_id]
+        # Check Redis cache first (shared across all workers)
+        try:
+            cached = REDIS_SYNC_CLIENT.get(self._user_mapping_key(telegram_user_id))
+            if cached:
+                return int(cached)
+        except Exception as e:
+            logger.debug(f"Failed to read user mapping from Redis for {telegram_user_id}: {e}")
 
         # Check database for linked user (at user level, not profile level)
         async with get_async_session_context() as session:
@@ -3740,7 +3793,10 @@ class TelegramContentBot:
             user = result.first()
 
             if user:
-                self._telegram_user_mapping[telegram_user_id] = user.id
+                try:
+                    REDIS_SYNC_CLIENT.setex(self._user_mapping_key(telegram_user_id), 3600, str(user.id))
+                except Exception as e:
+                    logger.debug(f"Failed to cache user mapping in Redis: {e}")
                 return user.id
 
         return None
@@ -3935,12 +3991,11 @@ class TelegramContentBot:
 
     def get_pending_count(self, user_id: int) -> int:
         """Get count of pending content for a user."""
-        return len(self._pending_content.get(user_id, []))
+        return len(self._get_pending_content(user_id))
 
     def clear_pending(self, user_id: int):
         """Clear pending content for a user."""
-        if user_id in self._pending_content:
-            del self._pending_content[user_id]
+        self._delete_pending_content(user_id)
 
     async def handle_login_command(self, telegram_user_id: int, chat_id: int) -> dict:
         """Handle /login command to link Telegram account to MediaFusion.
@@ -3954,19 +4009,17 @@ class TelegramContentBot:
         """
         # Generate a secure login token
         login_token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(hours=24)
 
-        # Store login token temporarily (in production, use Redis)
-        # Format: login_token -> {telegram_user_id, expires_at}
         login_data = {
             "telegram_user_id": telegram_user_id,
-            "expires_at": expires_at.isoformat(),
         }
 
-        # For now, store in a simple dict (should use Redis in production)
-        if not hasattr(self, "_login_tokens"):
-            self._login_tokens = {}
-        self._login_tokens[login_token] = login_data
+        # Store in Redis so all workers share the same token state
+        REDIS_SYNC_CLIENT.setex(
+            f"telegram:login_token:{login_token}",
+            24 * 60 * 60,  # 24 hours in seconds
+            json.dumps(login_data),
+        )
 
         # Use frontend URL for better UX - redirects to login if not authenticated
         login_url = f"{settings.host_url}/app/telegram/login?token={login_token}"
@@ -3994,20 +4047,12 @@ class TelegramContentBot:
         Returns:
             Dict with result
         """
-        # Check if login token exists and is valid
-        if not hasattr(self, "_login_tokens"):
-            return {"success": False, "message": "No login tokens found"}
-
-        login_data = self._login_tokens.get(login_token)
-        if not login_data:
+        # Retrieve token data from Redis (shared across all workers)
+        raw = REDIS_SYNC_CLIENT.get(f"telegram:login_token:{login_token}")
+        if not raw:
             return {"success": False, "message": "Invalid login token"}
 
-        # Check expiration
-        expires_at = datetime.fromisoformat(login_data["expires_at"])
-        if datetime.now() > expires_at:
-            del self._login_tokens[login_token]
-            return {"success": False, "message": "Login token expired"}
-
+        login_data = json.loads(raw)
         telegram_user_id = login_data["telegram_user_id"]
 
         # Store mapping at user level (not profile level)
@@ -4018,7 +4063,7 @@ class TelegramContentBot:
             user = result.first()
 
             if not user:
-                del self._login_tokens[login_token]
+                REDIS_SYNC_CLIENT.delete(f"telegram:login_token:{login_token}")
                 return {"success": False, "message": "User not found"}
 
             # Update user with Telegram linking info
@@ -4028,8 +4073,11 @@ class TelegramContentBot:
             session.add(user)
             await session.commit()
 
-        # Update in-memory cache
-        self._telegram_user_mapping[telegram_user_id] = mediafusion_user_id
+        # Update Redis cache
+        try:
+            REDIS_SYNC_CLIENT.setex(self._user_mapping_key(telegram_user_id), 3600, str(mediafusion_user_id))
+        except Exception as e:
+            logger.debug(f"Failed to update user mapping cache in Redis: {e}")
 
         # Get user details for notification
         async with get_async_session_context() as session:
@@ -4068,8 +4116,8 @@ class TelegramContentBot:
         except Exception as e:
             logger.error(f"Failed to send Telegram notification after linking: {e}", exc_info=True)
 
-        # Clean up login token
-        del self._login_tokens[login_token]
+        # Clean up login token from Redis
+        REDIS_SYNC_CLIENT.delete(f"telegram:login_token:{login_token}")
 
         return {
             "success": True,
@@ -4262,12 +4310,10 @@ class TelegramContentBot:
                         # Remove pending content if msg_id provided
                         if len(parts) >= 3:
                             target_message_id = int(parts[2])
-                            if user_id in self._pending_content:
-                                self._pending_content[user_id] = [
-                                    p
-                                    for p in self._pending_content[user_id]
-                                    if p.get("message_id") != target_message_id
-                                ]
+                            pending = self._get_pending_content(user_id)
+                            updated = [p for p in pending if p.get("message_id") != target_message_id]
+                            if len(updated) != len(pending):
+                                self._set_pending_content(user_id, updated)
 
                     result["success"] = True
                     result["action"] = "cancelled"
@@ -4352,16 +4398,15 @@ class TelegramContentBot:
                         await self.answer_callback_query(callback_query_id, "❌ Unauthorized", show_alert=True)
                         return result
 
-                    # Try to get data from search_results first
-                    search_data = self._search_results.get(callback_data)
+                    # Try to get data from search_results first (shared across all workers via Redis)
+                    search_data = self._get_search_result(callback_data)
 
                     # Find pending content
                     pending_content = None
-                    if user_id in self._pending_content:
-                        for pending in self._pending_content[user_id]:
-                            if pending.get("message_id") == target_message_id:
-                                pending_content = pending.copy()
-                                break
+                    for pending in self._get_pending_content(user_id):
+                        if pending.get("message_id") == target_message_id:
+                            pending_content = pending.copy()
+                            break
 
                     if search_data:
                         content_info = {
@@ -4416,8 +4461,7 @@ class TelegramContentBot:
                             message_id,
                             f"✅ *Content Linked*\n\n*Title:* {title}{year_str}\n*IMDb:* `{imdb_id}`\n\nContent stored successfully!",
                         )
-                        if callback_data in self._search_results:
-                            del self._search_results[callback_data]
+                        self._delete_search_result(callback_data)
                         result["success"] = True
                         result["action"] = "stored"
                     else:
