@@ -180,6 +180,7 @@ STREAMING_SERVICE_REQUIREMENTS = {
     "nzbget": ["nzbget_config"],
     "nzbdav": ["nzbdav_config"],
     "easynews": ["easynews_config"],
+    "stremio_nntp": [],
     "default": ["token"],
 }
 
@@ -237,6 +238,7 @@ STREAMING_PROVIDERS_SHORT_NAMES = {
     "sabnzbd": "SAB",
     "nzbget": "NZB",
     "easynews": "EN",
+    "stremio_nntp": "NNTP",
 }
 
 CERTIFICATION_MAPPING = {

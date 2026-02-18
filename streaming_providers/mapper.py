@@ -245,7 +245,7 @@ VALIDATE_CREDENTIALS_FUNCTIONS = {
 # =========================================================================
 
 # Providers that support Usenet content
-USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav", "easynews"}
+USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav", "easynews", "stremio_nntp"}
 
 # Define provider-specific Usenet cache update functions
 USENET_CACHE_UPDATE_FUNCTIONS = {
