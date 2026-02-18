@@ -8,6 +8,12 @@ const API_BASE_URL = '/api/v1'
 // Local storage key for API key
 const API_KEY_STORAGE_KEY = 'mediafusion_api_key'
 
+export interface NewsletterConfig {
+  enabled: boolean // Whether newsletter signup is available
+  label: string // Checkbox label text
+  default_checked: boolean // Whether the checkbox is checked by default
+}
+
 export interface InstanceInfo {
   is_public: boolean
   requires_api_key: boolean
@@ -16,6 +22,7 @@ export interface InstanceInfo {
   version: string
   logo_url: string
   branding_svg: string | null // Optional partner/host SVG logo URL
+  newsletter: NewsletterConfig
 }
 
 export interface SetupCompleteRequest {

@@ -221,6 +221,14 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True  # STARTTLS on port 587
     smtp_use_ssl: bool = False  # Implicit SSL on port 465
 
+    # ConvertKit Newsletter Integration (optional)
+    # When convertkit_api_key and convertkit_form_id are both set,
+    # a newsletter opt-in checkbox is shown during registration.
+    convertkit_api_key: str | None = None
+    convertkit_form_id: str | None = None
+    convertkit_newsletter_label: str = "Subscribe to our newsletter"
+    convertkit_newsletter_default_checked: bool = True
+
     # Content Filtering
     adult_content_regex_keywords: str = (
         r"(^|\b|\s|$|[\[._-])"

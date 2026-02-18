@@ -10,6 +10,7 @@ import { ThemeSelector } from '@/components/ui/theme-selector'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import { ApiRequestError } from '@/lib/api/client'
@@ -49,7 +50,8 @@ export function RegisterPage() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [apiKeyError, setApiKeyError] = useState<string | null>(null)
   const { register: registerUser } = useAuth()
-  const { instanceInfo, isApiKeyRequired, isApiKeySet, setApiKey, clearApiKey, apiKey } = useInstance()
+  const { instanceInfo, isApiKeyRequired, isApiKeySet, setApiKey, clearApiKey, apiKey, newsletterConfig } = useInstance()
+  const [newsletterOptIn, setNewsletterOptIn] = useState(newsletterConfig.default_checked)
   const navigate = useNavigate()
 
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
@@ -96,6 +98,7 @@ export function RegisterPage() {
         email: data.email,
         username: data.username || undefined,
         password: data.password,
+        newsletter_opt_in: newsletterConfig.enabled ? newsletterOptIn : undefined,
       })
 
       // If verification is required, redirect to the verify-email page
@@ -330,6 +333,20 @@ export function RegisterPage() {
                 </div>
                 {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>}
               </div>
+
+              {/* Newsletter opt-in */}
+              {newsletterConfig.enabled && (
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="newsletter"
+                    checked={newsletterOptIn}
+                    onCheckedChange={(checked) => setNewsletterOptIn(checked === true)}
+                  />
+                  <Label htmlFor="newsletter" className="text-sm font-normal cursor-pointer">
+                    {newsletterConfig.label}
+                  </Label>
+                </div>
+              )}
             </CardContent>
             <CardFooter className="flex flex-col space-y-4">
               <Button type="submit" variant="gold" className="w-full" disabled={isSubmitting}>

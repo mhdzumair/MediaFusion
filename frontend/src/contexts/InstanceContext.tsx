@@ -8,6 +8,7 @@ import {
   clearStoredApiKey,
   apiClient,
   type InstanceInfo,
+  type NewsletterConfig,
 } from '@/lib/api'
 
 interface InstanceContextType {
@@ -18,6 +19,7 @@ interface InstanceContextType {
   isApiKeyRequired: boolean
   isApiKeySet: boolean
   setupRequired: boolean
+  newsletterConfig: NewsletterConfig
   setApiKey: (key: string) => void
   clearApiKey: () => void
   refetchInstanceInfo: () => Promise<void>
@@ -78,6 +80,10 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
   const isApiKeyRequired = useMemo(() => instanceInfo?.requires_api_key ?? false, [instanceInfo?.requires_api_key])
   const isApiKeySet = useMemo(() => !!apiKey, [apiKey])
   const setupRequired = useMemo(() => instanceInfo?.setup_required ?? false, [instanceInfo?.setup_required])
+  const newsletterConfig = useMemo<NewsletterConfig>(
+    () => instanceInfo?.newsletter ?? { enabled: false, label: '', default_checked: false },
+    [instanceInfo?.newsletter],
+  )
 
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo<InstanceContextType>(
@@ -89,6 +95,7 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
       isApiKeyRequired,
       isApiKeySet,
       setupRequired,
+      newsletterConfig,
       setApiKey: handleSetApiKey,
       clearApiKey: handleClearApiKey,
       refetchInstanceInfo: handleRefetch,
@@ -101,6 +108,7 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
       isApiKeyRequired,
       isApiKeySet,
       setupRequired,
+      newsletterConfig,
       handleSetApiKey,
       handleClearApiKey,
       handleRefetch,
