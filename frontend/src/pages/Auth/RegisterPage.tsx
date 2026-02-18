@@ -50,7 +50,8 @@ export function RegisterPage() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [apiKeyError, setApiKeyError] = useState<string | null>(null)
   const { register: registerUser } = useAuth()
-  const { instanceInfo, isApiKeyRequired, isApiKeySet, setApiKey, clearApiKey, apiKey, newsletterConfig } = useInstance()
+  const { instanceInfo, isApiKeyRequired, isApiKeySet, setApiKey, clearApiKey, apiKey, newsletterConfig } =
+    useInstance()
   const [newsletterOptIn, setNewsletterOptIn] = useState(newsletterConfig.default_checked)
   const navigate = useNavigate()
 

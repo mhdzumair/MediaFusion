@@ -332,17 +332,19 @@ async def _subscribe_to_convertkit(email: str) -> None:
     headers = {"X-Kit-Api-Key": settings.convertkit_api_key}
     async with httpx.AsyncClient(timeout=10.0) as client:
         # Step 1: Create subscriber
-        await client.post(
+        response = await client.post(
             "https://api.kit.com/v4/subscribers",
             headers=headers,
             json={"email_address": email},
         )
+        response.raise_for_status()
         # Step 2: Add subscriber to form
-        await client.post(
+        response = await client.post(
             f"https://api.kit.com/v4/forms/{settings.convertkit_form_id}/subscribers",
             headers=headers,
             json={"email_address": email},
         )
+        response.raise_for_status()
 
 
 # ============================================

@@ -30,6 +30,14 @@ from utils.bootstrap import check_setup_required, mark_setup_complete
 router = APIRouter(prefix="/api/v1/instance", tags=["Instance"])
 
 
+class NewsletterConfig(BaseModel):
+    """Newsletter opt-in configuration for the frontend."""
+
+    enabled: bool  # Whether newsletter signup is available
+    label: str  # Checkbox label text
+    default_checked: bool  # Whether the checkbox is checked by default
+
+
 class InstanceInfo(BaseModel):
     """Instance configuration information."""
 
@@ -54,14 +62,6 @@ class SetupCompleteRequest(BaseModel):
     email: EmailStr
     username: str | None = Field(None, min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
-
-
-class NewsletterConfig(BaseModel):
-    """Newsletter opt-in configuration for the frontend."""
-
-    enabled: bool  # Whether newsletter signup is available
-    label: str  # Checkbox label text
-    default_checked: bool  # Whether the checkbox is checked by default
 
 
 class TelegramFeatureConfig(BaseModel):

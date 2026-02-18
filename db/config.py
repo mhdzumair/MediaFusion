@@ -227,7 +227,7 @@ class Settings(BaseSettings):
     convertkit_api_key: str | None = None
     convertkit_form_id: str | None = None
     convertkit_newsletter_label: str = "Subscribe to our newsletter"
-    convertkit_newsletter_default_checked: bool = True
+    convertkit_newsletter_default_checked: bool = False
 
     # Content Filtering
     adult_content_regex_keywords: str = (
