@@ -123,12 +123,13 @@ class ApiClient {
           body: JSON.stringify({ refresh_token: this.refreshToken }),
         })
 
-        if (!response.ok) {
+        const data = await response.json()
+
+        if (!response.ok || data.error === true) {
           this.clearTokens()
           return false
         }
 
-        const data = await response.json()
         this.setTokens(data.access_token, data.refresh_token || this.refreshToken)
         emitAuthEvent('refreshed')
         return true
@@ -174,9 +175,17 @@ class ApiClient {
       headers,
     })
 
-    // Handle 401 errors
+    // Handle Traefik-level 429 (proxy's own rate limiting, before our API)
+    if (response.status === 429) {
+      throw new ApiRequestError('Too many requests. Please wait and try again.', 429, {
+        detail: 'Too many requests. Please wait and try again.',
+        status_code: 429,
+        error: true,
+      })
+    }
+
+    // Handle real HTTP 401 (non-wrapped, e.g. from proxy or non-API paths)
     if (response.status === 401) {
-      // Read error response first to check what type of error it is
       let error: ApiError
       try {
         error = await response.json()
@@ -184,30 +193,25 @@ class ApiClient {
         error = { detail: `HTTP error ${response.status}` }
       }
 
-      // Check if it's an API key error
       const isApiKeyError = error.detail?.toLowerCase().includes('api key') || false
-      // Check if it's an auth endpoint (login/register)
       const isAuthEndpoint = endpoint.includes('/auth/login') || endpoint.includes('/auth/register')
 
-      // For API key errors or auth endpoints, throw the actual error immediately
       if (isApiKeyError || isAuthEndpoint) {
         throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
       }
 
-      // For other 401 errors, try to refresh token (only if retry is enabled)
       if (retry) {
         const refreshed = await this.refreshAccessToken()
         if (refreshed) {
-          // Retry the request with new token
           return this.request<T>(endpoint, options, false)
         }
       }
 
-      // Refresh failed or retry disabled, clear tokens and throw session expired
       this.clearTokens()
       throw new Error('Session expired. Please log in again.')
     }
 
+    // Handle other non-2xx from proxy or non-API paths
     if (!response.ok) {
       let error: ApiError
       try {
@@ -224,7 +228,36 @@ class ApiClient {
       return {} as T
     }
 
-    return response.json()
+    const data = await response.json()
+
+    // Handle wrapped errors: API returns 200 with { error: true, detail, status_code }
+    if (data?.error === true) {
+      const statusCode = data.status_code || 500
+
+      // Wrapped 401 — attempt token refresh
+      if (statusCode === 401) {
+        const isApiKeyError = data.detail?.toLowerCase().includes('api key') || false
+        const isAuthEndpoint = endpoint.includes('/auth/login') || endpoint.includes('/auth/register')
+
+        if (isApiKeyError || isAuthEndpoint) {
+          throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
+        }
+
+        if (retry) {
+          const refreshed = await this.refreshAccessToken()
+          if (refreshed) {
+            return this.request<T>(endpoint, options, false)
+          }
+        }
+
+        this.clearTokens()
+        throw new Error('Session expired. Please log in again.')
+      }
+
+      throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
+    }
+
+    return data as T
   }
 
   async get<T>(endpoint: string): Promise<T> {
@@ -278,7 +311,16 @@ class ApiClient {
       body: formData,
     })
 
-    // Handle 401 - try to refresh token
+    // Handle Traefik-level 429
+    if (response.status === 429) {
+      throw new ApiRequestError('Too many requests. Please wait and try again.', 429, {
+        detail: 'Too many requests. Please wait and try again.',
+        status_code: 429,
+        error: true,
+      })
+    }
+
+    // Handle real HTTP 401 - try to refresh token
     if (response.status === 401 && retry) {
       const refreshed = await this.refreshAccessToken()
       if (refreshed) {
@@ -298,7 +340,25 @@ class ApiClient {
       throw new ApiRequestError(error.detail || 'An error occurred', response.status, error)
     }
 
-    return response.json()
+    const data = await response.json()
+
+    // Handle wrapped errors in upload responses
+    if (data?.error === true) {
+      const statusCode = data.status_code || 500
+
+      if (statusCode === 401 && retry) {
+        const refreshed = await this.refreshAccessToken()
+        if (refreshed) {
+          return this.upload<T>(endpoint, formData, false)
+        }
+        this.clearTokens()
+        throw new Error('Session expired. Please log in again.')
+      }
+
+      throw new ApiRequestError(data.detail || 'An error occurred', statusCode, data)
+    }
+
+    return data as T
   }
 }
 

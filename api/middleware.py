@@ -112,6 +112,15 @@ class UserDataMiddleware(BaseHTTPMiddleware):
                         },
                         headers=const.CORS_HEADERS,
                     )
+                if request.url.path.startswith("/api/v1/"):
+                    return JSONResponse(
+                        {
+                            "error": True,
+                            "detail": "Unauthorized",
+                            "status_code": 401,
+                        },
+                        headers=const.NO_CACHE_HEADERS,
+                    )
                 return JSONResponse(
                     {
                         "status": "error",
@@ -183,6 +192,15 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # Validate API key from header
         api_key = request.headers.get("X-API-Key")
         if not api_key or api_key != settings.api_password:
+            if path.startswith("/api/v1/"):
+                return JSONResponse(
+                    content={
+                        "error": True,
+                        "detail": "Invalid or missing API key",
+                        "status_code": 401,
+                    },
+                    headers=const.NO_CACHE_HEADERS,
+                )
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or missing API key"},
@@ -228,6 +246,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Check and apply rate limit
         allowed = await self.check_rate_limit_with_redis(key, limit, window)
         if not allowed:
+            if request.url.path.startswith("/api/v1/"):
+                return JSONResponse(
+                    content={
+                        "error": True,
+                        "detail": "Rate limit exceeded",
+                        "status_code": 429,
+                    },
+                    headers=const.NO_CACHE_HEADERS,
+                )
             return Response(
                 content="Rate limit exceeded",
                 status_code=429,
@@ -415,6 +442,7 @@ class TaskManager(dramatiq.Middleware):
 class TimingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
+        is_api_path = request.url.path.startswith("/api/v1/")
         try:
             response = await call_next(request)
         except RuntimeError as exc:
@@ -422,18 +450,38 @@ class TimingMiddleware(BaseHTTPMiddleware):
                 response = Response(status_code=204)
             else:
                 logging.exception(f"Internal Server Error: {exc}")
-                response = Response(
-                    status_code=500,
-                    content="Internal Server Error. Check the server log & Create GitHub Issue",
-                    headers=const.NO_CACHE_HEADERS,
-                )
+                if is_api_path:
+                    response = JSONResponse(
+                        content={
+                            "error": True,
+                            "detail": "Internal Server Error. Check the server log & Create GitHub Issue",
+                            "status_code": 500,
+                        },
+                        headers=const.NO_CACHE_HEADERS,
+                    )
+                else:
+                    response = Response(
+                        status_code=500,
+                        content="Internal Server Error. Check the server log & Create GitHub Issue",
+                        headers=const.NO_CACHE_HEADERS,
+                    )
         except Exception as e:
             logging.exception(f"Internal Server Error: {e}")
-            response = Response(
-                content="Internal Server Error. Check the server log & Create GitHub Issue",
-                status_code=500,
-                headers=const.NO_CACHE_HEADERS,
-            )
+            if is_api_path:
+                response = JSONResponse(
+                    content={
+                        "error": True,
+                        "detail": "Internal Server Error. Check the server log & Create GitHub Issue",
+                        "status_code": 500,
+                    },
+                    headers=const.NO_CACHE_HEADERS,
+                )
+            else:
+                response = Response(
+                    content="Internal Server Error. Check the server log & Create GitHub Issue",
+                    status_code=500,
+                    headers=const.NO_CACHE_HEADERS,
+                )
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = f"{process_time:.4f} seconds"
 

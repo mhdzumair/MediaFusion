@@ -3,11 +3,16 @@
 import os
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api import middleware
+from api.exception_handlers import (
+    api_http_exception_handler,
+    api_validation_exception_handler,
+)
 from api.lifespan import lifespan
 from db.config import settings
 from utils import const
@@ -28,6 +33,11 @@ def create_app() -> FastAPI:
         version=settings.version,
         lifespan=lifespan,
     )
+
+    # Exception handlers: wrap 4xx/5xx as HTTP 200 for /api/v1/* paths so that
+    # reverse proxies (e.g. Traefik) don't replace the response body.
+    app.add_exception_handler(HTTPException, api_http_exception_handler)
+    app.add_exception_handler(RequestValidationError, api_validation_exception_handler)
 
     # Configure CORS
     app.add_middleware(

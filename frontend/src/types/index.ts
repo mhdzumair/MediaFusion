@@ -261,6 +261,9 @@ export interface RegisterResponse {
 export interface ApiError {
   detail: string
   status?: string
+  status_code?: number
+  error?: boolean
+  errors?: Array<{ type: string; loc: (string | number)[]; msg: string }>
 }
 
 export interface PaginatedResponse<T> {
