@@ -5,9 +5,12 @@ set -e
 # Support both POSTGRES_URI and postgres_uri (Pydantic accepts either casing)
 PSQL_URI="${POSTGRES_URI:-${postgres_uri:-postgresql://mediafusion:mediafusion@localhost:5432/mediafusion}}"
 PSQL_URI="${PSQL_URI/postgresql+asyncpg/postgresql}"
-# Poolers (Neon, Supabase) require SSL for non-localhost; append sslmode if not present
-if [[ "$PSQL_URI" != *"sslmode="* ]] && [[ "$PSQL_URI" != *"@localhost"* ]] && [[ "$PSQL_URI" != *"@127.0.0.1"* ]]; then
-    [[ "$PSQL_URI" == *"?"* ]] && PSQL_URI="${PSQL_URI}&sslmode=require" || PSQL_URI="${PSQL_URI}?sslmode=require"
+# Use sslmode=prefer so psql attempts SSL but gracefully falls back to plain TCP for
+# local Docker setups where PostgreSQL has no SSL configured. Cloud poolers (Neon,
+# Supabase) that support SSL will still negotiate it because prefer tries SSL first.
+# Users who need strict SSL enforcement can include sslmode=require in POSTGRES_URI.
+if [[ "$PSQL_URI" != *"sslmode="* ]]; then
+    [[ "$PSQL_URI" == *"?"* ]] && PSQL_URI="${PSQL_URI}&sslmode=prefer" || PSQL_URI="${PSQL_URI}?sslmode=prefer"
 fi
 # System DB URI (preserve query string for sslmode)
 PSQL_BASE="${PSQL_URI%%\?*}"
