@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { profilesApi, type ProfileCreateRequest, type ProfileUpdateRequest } from '@/lib/api'
+import { profilesApi, type Profile, type ProfileCreateRequest, type ProfileUpdateRequest } from '@/lib/api'
 
 // Query keys
 export const profileKeys = {
@@ -53,10 +53,15 @@ export function useUpdateProfile() {
     mutationFn: ({ profileId, data }: { profileId: number; data: ProfileUpdateRequest }) =>
       profilesApi.update(profileId, data),
     onSuccess: (updatedProfile) => {
-      // Invalidate all profile-related queries to force refetch
-      queryClient.invalidateQueries({ queryKey: profileKeys.all })
-      // Also set the updated data directly for immediate UI update
+      // Immediately patch the list cache so navigating back shows current data
+      queryClient.setQueryData(profileKeys.list(), (old: Profile[] | undefined) => {
+        if (!old) return old
+        return old.map((p) => (p.id === updatedProfile.id ? updatedProfile : p))
+      })
+      // Also set the updated data directly for the detail query
       queryClient.setQueryData(profileKeys.detail(updatedProfile.id), updatedProfile)
+      // Invalidate to trigger a background refetch for eventual consistency
+      queryClient.invalidateQueries({ queryKey: profileKeys.all })
     },
   })
 }
