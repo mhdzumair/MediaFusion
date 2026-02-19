@@ -95,6 +95,7 @@ export function NZBImportDialog({
   const [prevOpen, setPrevOpen] = useState(open)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
   if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
+    const isFirstOpen = !prevOpen
     setPrevOpen(open)
     setPrevAnalysis(analysis)
     setContentType(initialContentType)
@@ -113,7 +114,7 @@ export function NZBImportDialog({
       if (firstMatch.poster) setPoster(firstMatch.poster)
       if (firstMatch.background) setBackground(firstMatch.background)
       if (firstMatch.release_date) setReleaseDate(firstMatch.release_date)
-      if (firstMatch.type) setContentType(firstMatch.type as ContentType)
+      if (isFirstOpen && firstMatch.type) setContentType(firstMatch.type as ContentType)
     } else {
       setSelectedMatchIndex(null)
     }
@@ -129,9 +130,6 @@ export function NZBImportDialog({
     if (match.poster) setPoster(match.poster)
     if (match.background) setBackground(match.background)
     if (match.release_date) setReleaseDate(match.release_date)
-    if (match.type) {
-      setContentType(match.type as ContentType)
-    }
   }, [])
 
   const handleTechSpecChange = useCallback((field: string, value: string | string[] | undefined) => {

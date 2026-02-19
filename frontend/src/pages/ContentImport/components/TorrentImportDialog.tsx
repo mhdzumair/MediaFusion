@@ -120,6 +120,7 @@ export function TorrentImportDialog({
   const [prevOpen, setPrevOpen] = useState(open)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
   if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
+    const isFirstOpen = !prevOpen
     setPrevOpen(open)
     setPrevAnalysis(analysis)
     setContentType(initialContentType)
@@ -139,7 +140,9 @@ export function TorrentImportDialog({
       if (firstMatch.poster) setPoster(firstMatch.poster)
       if (firstMatch.background) setBackground(firstMatch.background)
       if (firstMatch.release_date) setReleaseDate(firstMatch.release_date)
-      if (firstMatch.type) setContentType(firstMatch.type as ContentType)
+      // Only auto-detect content type from match on first open, not on re-analysis
+      // where the user has explicitly chosen a content type
+      if (isFirstOpen && firstMatch.type) setContentType(firstMatch.type as ContentType)
     } else {
       setSelectedMatchIndex(null)
     }
@@ -154,12 +157,7 @@ export function TorrentImportDialog({
     setTitle(match.title)
     if (match.poster) setPoster(match.poster)
     if (match.background) setBackground(match.background)
-    // Set release date if available
     if (match.release_date) setReleaseDate(match.release_date)
-    // Update content type from match
-    if (match.type) {
-      setContentType(match.type as ContentType)
-    }
   }, [])
 
   // Handle tech spec changes
@@ -345,7 +343,7 @@ export function TorrentImportDialog({
 
   // Check if series/sports needs annotation
   const needsAnnotation = useMemo(() => {
-    return (contentType === 'series' || contentType === 'sports') && analysis?.files && analysis.files.length > 1
+    return (contentType === 'series' || contentType === 'sports') && analysis?.files && analysis.files.length > 0
   }, [contentType, analysis])
 
   // Step indicator

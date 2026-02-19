@@ -216,6 +216,7 @@ export function ContentImportPage() {
   // Handle re-analyze with different content type
   const handleReanalyze = useCallback(
     async (contentType: ContentType) => {
+      setSelectedContentType(contentType)
       const metaType = toTorrentMetaType(contentType)
       if (magnetLink) {
         try {
