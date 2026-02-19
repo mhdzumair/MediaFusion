@@ -1082,14 +1082,18 @@ function SingleProviderEditor({
 export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0)
   const [disabledProviders, setDisabledProviders] = useState<string[]>([])
+  const [nzbdavConfigured, setNzbdavConfigured] = useState(false)
 
-  // Fetch disabled providers from app config
+  // Fetch disabled providers and operator defaults from app config
   useEffect(() => {
     fetch('/api/v1/instance/app-config')
       .then((res) => res.json())
       .then((data) => {
         if (data.disabled_providers) {
           setDisabledProviders(data.disabled_providers)
+        }
+        if (data.nzbdav_configured) {
+          setNzbdavConfigured(true)
         }
       })
       .catch((err) => console.error('Failed to fetch app config:', err))
@@ -1216,6 +1220,16 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {nzbdavConfigured && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              NzbDAV is pre-configured by the instance operator. Usenet streams are automatically available without any
+              additional setup.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {providers.length === 0 ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />

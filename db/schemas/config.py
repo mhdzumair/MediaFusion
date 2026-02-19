@@ -707,12 +707,34 @@ class UserData(BaseModel):
         return "desc"
 
     def get_active_providers(self) -> list[StreamingProvider]:
-        """Get all active streaming providers, sorted by priority."""
+        """Get all active streaming providers, sorted by priority.
+
+        If the operator has configured default NzbDAV settings (via env vars)
+        and the user doesn't already have an NzbDAV provider, a virtual one
+        is injected automatically.
+        """
         providers = []
         if self.streaming_providers:
             providers = [p for p in self.streaming_providers if p.enabled]
         elif self.streaming_provider:
             providers = [self.streaming_provider]
+
+        # Auto-inject operator-configured NzbDAV if user doesn't have one
+        if settings.default_nzbdav_url and settings.default_nzbdav_api_key:
+            has_nzbdav = any(p.service == "nzbdav" for p in providers)
+            if not has_nzbdav:
+                providers.append(
+                    StreamingProvider(
+                        service="nzbdav",
+                        name="operator-nzbdav",
+                        nzbdav_config=NzbDAVConfig(
+                            url=settings.default_nzbdav_url,
+                            api_key=settings.default_nzbdav_api_key,
+                        ),
+                        priority=100,  # Low priority so user providers take precedence
+                    )
+                )
+
         return sorted(providers, key=lambda p: p.priority)
 
     def get_primary_provider(self) -> StreamingProvider | None:
