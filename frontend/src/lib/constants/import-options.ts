@@ -85,6 +85,57 @@ export const IMPORT_MODE_OPTIONS = {
 
 export type ImportMode = 'single' | 'collection' | 'pack'
 
+export const LANGUAGE_OPTIONS = [
+  { value: 'English', label: 'English' },
+  { value: 'Tamil', label: 'Tamil' },
+  { value: 'Hindi', label: 'Hindi' },
+  { value: 'Malayalam', label: 'Malayalam' },
+  { value: 'Kannada', label: 'Kannada' },
+  { value: 'Telugu', label: 'Telugu' },
+  { value: 'Chinese', label: 'Chinese' },
+  { value: 'Russian', label: 'Russian' },
+  { value: 'Arabic', label: 'Arabic' },
+  { value: 'Japanese', label: 'Japanese' },
+  { value: 'Korean', label: 'Korean' },
+  { value: 'Taiwanese', label: 'Taiwanese' },
+  { value: 'Latino', label: 'Latino' },
+  { value: 'French', label: 'French' },
+  { value: 'Spanish', label: 'Spanish' },
+  { value: 'Portuguese', label: 'Portuguese' },
+  { value: 'Italian', label: 'Italian' },
+  { value: 'German', label: 'German' },
+  { value: 'Ukrainian', label: 'Ukrainian' },
+  { value: 'Polish', label: 'Polish' },
+  { value: 'Czech', label: 'Czech' },
+  { value: 'Thai', label: 'Thai' },
+  { value: 'Indonesian', label: 'Indonesian' },
+  { value: 'Vietnamese', label: 'Vietnamese' },
+  { value: 'Dutch', label: 'Dutch' },
+  { value: 'Bengali', label: 'Bengali' },
+  { value: 'Turkish', label: 'Turkish' },
+  { value: 'Greek', label: 'Greek' },
+  { value: 'Swedish', label: 'Swedish' },
+  { value: 'Romanian', label: 'Romanian' },
+  { value: 'Hungarian', label: 'Hungarian' },
+  { value: 'Finnish', label: 'Finnish' },
+  { value: 'Norwegian', label: 'Norwegian' },
+  { value: 'Danish', label: 'Danish' },
+  { value: 'Hebrew', label: 'Hebrew' },
+  { value: 'Lithuanian', label: 'Lithuanian' },
+  { value: 'Punjabi', label: 'Punjabi' },
+  { value: 'Marathi', label: 'Marathi' },
+  { value: 'Gujarati', label: 'Gujarati' },
+  { value: 'Bhojpuri', label: 'Bhojpuri' },
+  { value: 'Nepali', label: 'Nepali' },
+  { value: 'Urdu', label: 'Urdu' },
+  { value: 'Tagalog', label: 'Tagalog' },
+  { value: 'Filipino', label: 'Filipino' },
+  { value: 'Malay', label: 'Malay' },
+  { value: 'Mongolian', label: 'Mongolian' },
+  { value: 'Armenian', label: 'Armenian' },
+  { value: 'Georgian', label: 'Georgian' },
+] as const
+
 export const SPORTS_CATEGORY_OPTIONS = [
   { value: 'football', label: 'Football' },
   { value: 'american_football', label: 'American Football' },
@@ -109,3 +160,4 @@ export type QualityValue = (typeof QUALITY_OPTIONS)[number]['value']
 export type CodecValue = (typeof CODEC_OPTIONS)[number]['value']
 export type AudioValue = (typeof AUDIO_OPTIONS)[number]['value']
 export type HDRValue = (typeof HDR_OPTIONS)[number]['value']
+export type LanguageValue = (typeof LANGUAGE_OPTIONS)[number]['value']

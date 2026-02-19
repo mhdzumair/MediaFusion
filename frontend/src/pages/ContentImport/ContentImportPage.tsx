@@ -28,7 +28,14 @@ import {
   useIPTVImportSettings,
 } from '@/hooks'
 import { getAppConfig } from '@/lib/api/instance'
-import type { TorrentAnalyzeResponse, ImportResponse, TorrentMetaType, NZBAnalyzeResponse } from '@/lib/api'
+import type {
+  TorrentAnalyzeResponse,
+  ImportResponse,
+  TorrentMetaType,
+  NZBAnalyzeResponse,
+  YouTubeAnalyzeResponse,
+} from '@/lib/api'
+import { contentImportApi } from '@/lib/api'
 import type { ContentType, ImportMode } from '@/lib/constants'
 
 // Helper to convert ContentType to TorrentMetaType (defaults to 'movie' for unsupported types like 'tv')
@@ -50,6 +57,8 @@ import {
   DebridTab,
   TorrentImportDialog,
   NZBImportDialog,
+  YouTubeImportDialog,
+  type YouTubeImportFormData,
   ImportResultBanner,
   ContentTypeSelector,
   type ImportResult,
@@ -169,6 +178,11 @@ export function ContentImportPage() {
   const importTorrent = useImportTorrent()
   const analyzeMagnet = useAnalyzeMagnet()
 
+  // YouTube import state
+  const [youtubeAnalysis, setYoutubeAnalysis] = useState<YouTubeAnalyzeResponse | null>(null)
+  const [youtubeDialogOpen, setYoutubeDialogOpen] = useState(false)
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+
   // NZB import state
   const [nzbAnalysis, setNzbAnalysis] = useState<NZBAnalyzeResponse | null>(null)
   const [nzbDialogOpen, setNzbDialogOpen] = useState(false)
@@ -202,6 +216,7 @@ export function ContentImportPage() {
   // Handle re-analyze with different content type
   const handleReanalyze = useCallback(
     async (contentType: ContentType) => {
+      setSelectedContentType(contentType)
       const metaType = toTorrentMetaType(contentType)
       if (magnetLink) {
         try {
@@ -293,6 +308,60 @@ export function ContentImportPage() {
       }
     },
     [magnetLink, selectedFile, importMagnet, importTorrent],
+  )
+
+  // Handle YouTube analysis completion
+  const handleYouTubeAnalysis = useCallback((analysis: YouTubeAnalyzeResponse, url: string) => {
+    setYoutubeAnalysis(analysis)
+    setYoutubeUrl(url)
+    setYoutubeDialogOpen(true)
+  }, [])
+
+  // Handle YouTube import from dialog
+  const [youtubeImporting, setYoutubeImporting] = useState(false)
+  const handleYouTubeImport = useCallback(
+    async (formData: YouTubeImportFormData): Promise<ImportResponse> => {
+      setYoutubeImporting(true)
+      try {
+        const result = await contentImportApi.importYouTube({
+          youtube_url: youtubeUrl,
+          meta_type: formData.contentType,
+          meta_id: formData.metaId,
+          title: formData.title,
+          poster: formData.poster,
+          background: formData.background,
+          resolution: formData.resolution,
+          quality: formData.quality,
+          codec: formData.codec,
+          languages: formData.languages?.join(','),
+          catalogs: formData.catalogs?.join(','),
+          is_anonymous: formData.isAnonymous,
+          force_import: formData.forceImport,
+        })
+
+        if (result.status === 'success') {
+          setImportResult({ success: true, message: result.message || 'YouTube video imported successfully!' })
+          setYoutubeDialogOpen(false)
+          setYoutubeAnalysis(null)
+          setYoutubeUrl('')
+        } else if (result.status === 'warning') {
+          setImportResult({ success: true, message: result.message })
+          setYoutubeDialogOpen(false)
+          setYoutubeAnalysis(null)
+        } else {
+          setImportResult({ success: false, message: result.message || 'Failed to import YouTube video' })
+        }
+
+        return result
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'YouTube import failed'
+        setImportResult({ success: false, message: errorMessage })
+        return { status: 'error', message: errorMessage }
+      } finally {
+        setYoutubeImporting(false)
+      }
+    },
+    [youtubeUrl],
   )
 
   // Handle NZB analysis completion
@@ -627,7 +696,11 @@ export function ContentImportPage() {
               </CardContent>
             </Card>
 
-            <YouTubeTab onSuccess={handleSuccess} onError={handleError} contentType={selectedContentType} />
+            <YouTubeTab
+              onAnalysisComplete={handleYouTubeAnalysis}
+              onError={handleError}
+              contentType={selectedContentType}
+            />
           </TabsContent>
         )}
 
@@ -698,6 +771,17 @@ export function ContentImportPage() {
         nzbSource={nzbSource || undefined}
         onImport={handleNZBImport}
         isImporting={isNZBImporting}
+        initialContentType={selectedContentType}
+      />
+
+      {/* YouTube Import Dialog */}
+      <YouTubeImportDialog
+        open={youtubeDialogOpen}
+        onOpenChange={setYoutubeDialogOpen}
+        analysis={youtubeAnalysis}
+        youtubeUrl={youtubeUrl}
+        onImport={handleYouTubeImport}
+        isImporting={youtubeImporting}
         initialContentType={selectedContentType}
       />
     </div>

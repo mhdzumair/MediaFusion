@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -6,7 +7,14 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Monitor, Film, Cpu, Music, Sun, Languages as LanguagesIcon, ChevronDown, X } from 'lucide-react'
-import { RESOLUTION_OPTIONS, QUALITY_OPTIONS, CODEC_OPTIONS, AUDIO_OPTIONS, HDR_OPTIONS } from '@/lib/constants'
+import {
+  RESOLUTION_OPTIONS,
+  QUALITY_OPTIONS,
+  CODEC_OPTIONS,
+  AUDIO_OPTIONS,
+  HDR_OPTIONS,
+  LANGUAGE_OPTIONS,
+} from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
 interface TechSpecsEditorProps {
@@ -16,7 +24,7 @@ interface TechSpecsEditorProps {
   audio?: string[]
   hdr?: string[]
   languages?: string[]
-  availableLanguages?: string[]
+  extraLanguages?: string[]
   onChange: (field: string, value: string | string[] | undefined) => void
   compact?: boolean
 }
@@ -28,10 +36,15 @@ export function TechSpecsEditor({
   audio = [],
   hdr = [],
   languages = [],
-  availableLanguages = [],
+  extraLanguages = [],
   onChange,
   compact = false,
 }: TechSpecsEditorProps) {
+  const languageOptions = useMemo(() => {
+    const knownValues: Set<string> = new Set(LANGUAGE_OPTIONS.map((o) => o.value))
+    const extra = extraLanguages.filter((lang) => !knownValues.has(lang)).map((lang) => ({ value: lang, label: lang }))
+    return [...extra, ...LANGUAGE_OPTIONS]
+  }, [extraLanguages])
   const handleAudioToggle = (value: string) => {
     const newAudio = audio.includes(value) ? audio.filter((a) => a !== value) : [...audio, value]
     onChange('audio', newAudio.length > 0 ? newAudio : undefined)
@@ -163,22 +176,20 @@ export function TechSpecsEditor({
         </div>
 
         {/* Languages */}
-        {availableLanguages.length > 0 && (
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <LanguagesIcon className="h-3 w-3" />
-              Languages
-            </Label>
-            <MultiSelectPopover
-              values={languages}
-              options={availableLanguages.map((lang) => ({ value: lang, label: lang }))}
-              onToggle={handleLanguageToggle}
-              onClear={clearLanguages}
-              placeholder="Select languages..."
-              compact={compact}
-            />
-          </div>
-        )}
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <LanguagesIcon className="h-3 w-3" />
+            Languages
+          </Label>
+          <MultiSelectPopover
+            values={languages}
+            options={languageOptions}
+            onToggle={handleLanguageToggle}
+            onClear={clearLanguages}
+            placeholder="Select languages..."
+            compact={compact}
+          />
+        </div>
       </div>
 
       {/* Current Selection Summary */}
@@ -236,7 +247,7 @@ function MultiSelectPopover({ values, options, onToggle, onClear, placeholder, c
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[200px] p-0" align="start">
-        <ScrollArea className="h-[200px]">
+        <ScrollArea className="h-[200px]" onWheel={(e) => e.stopPropagation()}>
           <div className="p-1">
             {values.length > 0 && (
               <Button

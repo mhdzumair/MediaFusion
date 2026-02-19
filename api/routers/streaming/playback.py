@@ -35,6 +35,7 @@ from db.models import (
     PlaybackTracking,
     Stream,
     StreamFile,
+    StreamMediaLink,
     TelegramStream,
     TorrentStream,
     UsenetStream,
@@ -50,6 +51,7 @@ from utils import const, crypto, torrent, wrappers
 from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import encode_mediaflow_proxy_url, get_user_data, get_user_public_ip
+from utils.nzb_storage import generate_signed_nzb_url
 from utils.telegram_bot import telegram_content_bot
 
 # Seconds until when the Video URLs are cached
@@ -360,16 +362,22 @@ async def track_playback(
                 stream_id = ts.stream_id
                 stream_obj = ts.stream
 
-            # Extract media info for scrobbling
-            # media_links live on StreamFile, not Stream: Stream -> files -> media_links
-            first_media_link = None
-            if stream_obj and stream_obj.files:
+            # Resolve media_id: prefer StreamMediaLink (stream-level), fall back to FileMediaLink (file-level)
+            if stream_id:
+                sml_result = await session.exec(
+                    select(StreamMediaLink.media_id)
+                    .where(StreamMediaLink.stream_id == stream_id, StreamMediaLink.is_primary == True)
+                    .limit(1)
+                )
+                media_id = sml_result.first()
+
+            if not media_id and stream_obj and stream_obj.files:
                 for f in stream_obj.files:
                     if f.media_links:
-                        first_media_link = f.media_links[0]
+                        media_id = f.media_links[0].media_id
                         break
-            if first_media_link:
-                media_id = first_media_link.media_id
+
+            if media_id:
                 media = await session.get(Media, media_id)
                 if media:
                     media_title = media.title
@@ -380,50 +388,50 @@ async def track_playback(
                         select(MediaExternalID).where(MediaExternalID.media_id == media_id)
                     )
                     for ext_id in ext_ids_result.all():
-                        if ext_id.source == "imdb":
+                        if ext_id.provider == "imdb":
                             external_ids["imdb"] = ext_id.external_id
-                        elif ext_id.source == "tmdb":
+                        elif ext_id.provider == "tmdb":
                             external_ids["tmdb"] = int(ext_id.external_id) if ext_id.external_id else None
-                        elif ext_id.source == "tvdb":
+                        elif ext_id.provider == "tvdb":
                             external_ids["tvdb"] = int(ext_id.external_id) if ext_id.external_id else None
-                        elif ext_id.source == "mal":
+                        elif ext_id.provider == "mal":
                             external_ids["mal"] = int(ext_id.external_id) if ext_id.external_id else None
 
             if user_id:
-                # Authenticated user - track in PlaybackTracking table
-                existing = await session.exec(
-                    select(PlaybackTracking).where(
-                        PlaybackTracking.user_id == user_id,
-                        PlaybackTracking.stream_id == stream_id,
-                        PlaybackTracking.season == season,
-                        PlaybackTracking.episode == episode,
-                    )
-                )
-                tracking = existing.first()
-
-                if tracking:
-                    tracking.last_played_at = now
-                    tracking.play_count += 1
-                    tracking.provider_name = provider_name
-                    tracking.provider_service = provider_service
-                else:
-                    tracking = PlaybackTracking(
-                        user_id=user_id,
-                        profile_id=profile_id,
-                        stream_id=stream_id,
-                        media_id=media_id,
-                        season=season,
-                        episode=episode,
-                        provider_name=provider_name,
-                        provider_service=provider_service,
-                        first_played_at=now,
-                        last_played_at=now,
-                        play_count=1,
-                    )
-                    session.add(tracking)
-
-                # Also update watch history
                 if media_id:
+                    # Track in PlaybackTracking table (requires media_id)
+                    existing = await session.exec(
+                        select(PlaybackTracking).where(
+                            PlaybackTracking.user_id == user_id,
+                            PlaybackTracking.stream_id == stream_id,
+                            PlaybackTracking.season == season,
+                            PlaybackTracking.episode == episode,
+                        )
+                    )
+                    tracking = existing.first()
+
+                    if tracking:
+                        tracking.last_played_at = now
+                        tracking.play_count += 1
+                        tracking.provider_name = provider_name
+                        tracking.provider_service = provider_service
+                    else:
+                        tracking = PlaybackTracking(
+                            user_id=user_id,
+                            profile_id=profile_id,
+                            stream_id=stream_id,
+                            media_id=media_id,
+                            season=season,
+                            episode=episode,
+                            provider_name=provider_name,
+                            provider_service=provider_service,
+                            first_played_at=now,
+                            last_played_at=now,
+                            play_count=1,
+                        )
+                        session.add(tracking)
+
+                    # Also update watch history
                     existing_history = await session.exec(
                         select(WatchHistory).where(
                             WatchHistory.user_id == user_id,
@@ -648,6 +656,11 @@ async def get_or_create_usenet_video_url(
             f"Provider {streaming_provider.service} does not support Usenet",
             "provider_error.mp4",
         )
+
+    # For file-imported NZBs (nzb_url is None), generate a signed download URL
+    # so providers can fetch the NZB from our storage.
+    if not stream.nzb_url:
+        stream.nzb_url = generate_signed_nzb_url(nzb_guid)
 
     kwargs = dict(
         nzb_hash=nzb_guid,

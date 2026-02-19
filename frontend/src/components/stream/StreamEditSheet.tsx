@@ -19,7 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Edit, Loader2, CheckCircle2, AlertCircle, Monitor, Volume2, Film, Languages, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
-import { TagInput } from '@/components/ui/tag-input'
+import { useToast } from '@/hooks/use-toast'
+import { MultiSelect } from '@/components/ui/multi-select'
 import type { StreamFieldName as ApiStreamFieldName } from '@/lib/api'
 
 // Predefined options
@@ -28,6 +29,56 @@ const QUALITY_OPTIONS = ['WEB-DL', 'WEBRip', 'BluRay', 'BDRip', 'HDRip', 'HDTV',
 const CODEC_OPTIONS = ['x265', 'x264', 'HEVC', 'H.265', 'H.264', 'AVC', 'VP9', 'AV1']
 const AUDIO_OPTIONS = ['AAC', 'AC3', 'DTS', 'DTS-HD', 'Atmos', 'TrueHD', 'DD5.1', 'DD+', 'FLAC']
 const HDR_OPTIONS = ['HDR', 'HDR10', 'HDR10+', 'Dolby Vision', 'DV', 'HLG', 'SDR']
+const LANGUAGE_OPTIONS = [
+  'English',
+  'Tamil',
+  'Hindi',
+  'Malayalam',
+  'Kannada',
+  'Telugu',
+  'Chinese',
+  'Russian',
+  'Arabic',
+  'Japanese',
+  'Korean',
+  'Taiwanese',
+  'Latino',
+  'French',
+  'Spanish',
+  'Portuguese',
+  'Italian',
+  'German',
+  'Ukrainian',
+  'Polish',
+  'Czech',
+  'Thai',
+  'Indonesian',
+  'Vietnamese',
+  'Dutch',
+  'Bengali',
+  'Turkish',
+  'Greek',
+  'Swedish',
+  'Romanian',
+  'Hungarian',
+  'Finnish',
+  'Norwegian',
+  'Danish',
+  'Hebrew',
+  'Lithuanian',
+  'Punjabi',
+  'Marathi',
+  'Gujarati',
+  'Bhojpuri',
+  'Nepali',
+  'Urdu',
+  'Tagalog',
+  'Filipino',
+  'Malay',
+  'Mongolian',
+  'Armenian',
+  'Georgian',
+]
 
 type StreamFieldName =
   | 'name'
@@ -83,6 +134,7 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
   const [languages, setLanguages] = useState<string[]>([])
+  const { toast } = useToast()
 
   const createSuggestion = useCreateStreamSuggestion()
 
@@ -162,13 +214,13 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
     if (languagesModified) {
       result.push({
         field: 'languages',
-        currentValue: currentValues?.languages?.join(', ') || '',
-        newValue: languages.join(', '),
+        currentValue: currentValues?.languages ? JSON.stringify(currentValues.languages) : '',
+        newValue: JSON.stringify(languages),
       })
     }
 
     return result
-  }, [fields, languagesModified, currentValues?.languages, languages])
+  }, [fields, languagesModified, currentValues, languages])
 
   const modifiedCount = modifiedFields.length
 
@@ -177,12 +229,11 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
 
     setIsSubmitting(true)
     setSubmitResults([])
-    const results: { field: string; success: boolean }[] = []
+    const results: { field: string; success: boolean; autoApproved: boolean }[] = []
 
-    // Submit field corrections
     for (const { field, currentValue, newValue } of modifiedFields) {
       try {
-        await createSuggestion.mutateAsync({
+        const response = await createSuggestion.mutateAsync({
           streamId,
           data: {
             suggestion_type: 'field_correction',
@@ -192,9 +243,9 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
             reason: reason.trim() || undefined,
           },
         })
-        results.push({ field, success: true })
+        results.push({ field, success: true, autoApproved: response.was_auto_approved })
       } catch {
-        results.push({ field, success: false })
+        results.push({ field, success: false, autoApproved: false })
       }
     }
 
@@ -202,11 +253,41 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
     setIsSubmitting(false)
 
     const successCount = results.filter((r) => r.success).length
-    if (successCount > 0 && successCount === results.length) {
-      setTimeout(() => {
-        setOpen(false)
-        onSuccess?.()
-      }, 1500)
+    const failCount = results.length - successCount
+    const autoApprovedCount = results.filter((r) => r.autoApproved).length
+
+    if (successCount > 0 && failCount === 0) {
+      setOpen(false)
+      onSuccess?.()
+      if (autoApprovedCount === successCount) {
+        toast({
+          title: 'Changes Applied',
+          description: `${successCount} edit${successCount !== 1 ? 's' : ''} auto-approved and applied immediately.`,
+        })
+      } else if (autoApprovedCount > 0) {
+        const pendingCount = successCount - autoApprovedCount
+        toast({
+          title: 'Edits Submitted',
+          description: `${autoApprovedCount} auto-approved, ${pendingCount} pending moderator review.`,
+        })
+      } else {
+        toast({
+          title: 'Edits Submitted',
+          description: `${successCount} suggestion${successCount !== 1 ? 's' : ''} submitted for moderator review.`,
+        })
+      }
+    } else if (successCount > 0) {
+      toast({
+        title: 'Partially Submitted',
+        description: `${successCount} succeeded, ${failCount} failed. Check and retry failed edits.`,
+        variant: 'destructive',
+      })
+    } else {
+      toast({
+        title: 'Submission Failed',
+        description: 'Failed to submit suggestions. Please try again.',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -351,11 +432,15 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
                     </Badge>
                   )}
                 </div>
-                <TagInput
-                  value={languages}
+                <MultiSelect
+                  options={LANGUAGE_OPTIONS.map((lang) => ({ value: lang, label: lang }))}
+                  selected={languages}
                   onChange={setLanguages}
-                  placeholder="Add language (e.g., English)..."
-                  className={cn(languagesModified && 'border-emerald-500/50 bg-emerald-500/5')}
+                  placeholder="Select languages..."
+                  searchPlaceholder="Search languages..."
+                  allowCustom
+                  maxDisplayed={5}
+                  className={cn('rounded-xl', languagesModified && 'border-emerald-500/50 bg-emerald-500/5')}
                 />
               </div>
             </div>

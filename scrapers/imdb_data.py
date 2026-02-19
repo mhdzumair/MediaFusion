@@ -417,10 +417,11 @@ async def get_episode_by_date(series_id: str, series_title: str, expected_date: 
         httpx_kwargs={"proxy": settings.requests_proxy_url},
     )
 
-    filtered_episode = [ep for ep in imdb_title.episodes if ep.release_date == expected_date]
-    if not filtered_episode:
-        return
-    return filtered_episode[0]
+    for episodes_in_season in imdb_title.episodes.values():
+        for ep in episodes_in_season.values():
+            if ep.release_date == expected_date:
+                return ep
+    return None
 
 
 async def get_all_episodes(series_id: str, series_title: str) -> list[SeriesEpisodeData]:

@@ -49,7 +49,7 @@ from utils.network import encode_mediaflow_acestream_url
 
 # Providers that support Usenet content - defined here to avoid circular import
 # This should be kept in sync with streaming_providers.mapper.USENET_CAPABLE_PROVIDERS
-USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav", "easynews"}
+USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav", "easynews", "stremio_nntp"}
 
 # Redis cache settings for raw stream data
 STREAM_CACHE_TTL = 1800  # 30 minutes

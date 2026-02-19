@@ -831,15 +831,14 @@ class TorrentStreamData(BaseModel):
         if stream is None:
             stream = torrent.stream
 
-        # Get meta_id from media or from stream's media_links
-        # Note: Uses internal ID format since external_ids need async lookup
         meta_id = ""
         if media:
             meta_id = f"mf:{media.id}"
-        elif stream and stream.media_links:
-            first_link = stream.media_links[0]
-            if first_link.media:
-                meta_id = f"mf:{first_link.media.id}"
+        elif stream and stream.files:
+            for f in stream.files:
+                if f.media_links:
+                    meta_id = f"mf:{f.media_links[0].media_id}"
+                    break
 
         # Build StreamFileData list from StreamFile + FileMediaLink
         files: list[StreamFileData] = []

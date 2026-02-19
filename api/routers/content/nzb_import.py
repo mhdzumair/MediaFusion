@@ -32,7 +32,7 @@ from db.models.streams import (
 )
 from scrapers.scraper_tasks import meta_fetcher
 from utils.nzb import generate_nzb_hash, parse_nzb_content
-from utils.nzb_storage import get_nzb_storage
+from utils.nzb_storage import get_nzb_storage, verify_nzb_signature
 from utils.parser import convert_bytes_to_readable
 from utils.zyclops import submit_nzb_to_zyclops
 
@@ -478,11 +478,9 @@ async def import_nzb_file(
                     message=f"NZB {nzb_guid[:16]}... already exists in the database.",
                 )
 
-        # Store NZB file to configured storage backend and get URL
-        from utils.nzb_storage import get_nzb_storage
-
+        # Store NZB file (gzip-compressed) to configured storage backend
         storage = get_nzb_storage()
-        nzb_url = await storage.store(nzb_guid, content)
+        await storage.store(nzb_guid, content)
 
         # Parse title with PTT for quality info
         nzb_title = nzb_data.title or nzb_file.filename.replace(".nzb", "")
@@ -509,10 +507,11 @@ async def import_nzb_file(
                 {"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)
             ]
 
-        # Build contribution data (URL only, no raw content)
+        # Build contribution data — nzb_url is None for file uploads since
+        # the file is in our storage and download URLs are generated on-the-fly.
         contribution_data = {
             "nzb_guid": nzb_guid,
-            "nzb_url": nzb_url,
+            "nzb_url": None,
             "meta_type": meta_type,
             "meta_id": meta_id,
             "title": title or parsed.get("title") or nzb_title,
@@ -751,17 +750,26 @@ async def import_nzb_url(
 
 
 # ============================================
-# Local NZB File Serving (for local storage backend)
+# NZB File Download (signed, time-limited)
 # ============================================
 
 
 @router.get("/nzb/{guid}/download")
-async def download_nzb_file(guid: str):
+async def download_nzb_file(
+    guid: str,
+    expires: int | None = None,
+    sig: str | None = None,
+):
     """
-    Proxy-serve an NZB file from the configured storage backend.
-    All NZB downloads go through this endpoint regardless of whether
-    the file is stored locally or on S3/R2.
+    Serve an NZB file from the configured storage backend.
+    Requires a valid HMAC-signed URL with expiry timestamp.
     """
+    if expires is None or sig is None:
+        raise HTTPException(status_code=403, detail="Missing signature parameters.")
+
+    if not verify_nzb_signature(guid, expires, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired download link.")
+
     storage = get_nzb_storage()
     content = await storage.retrieve(guid)
     if content is None:

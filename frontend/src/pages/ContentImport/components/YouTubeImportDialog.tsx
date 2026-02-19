@@ -12,56 +12,75 @@ import {
   ArrowRight,
   CheckCircle,
   Search,
-  Newspaper,
-  Link2,
-  Calendar,
-  FileText,
   Settings2,
+  Youtube,
+  ExternalLink,
+  Clock,
+  Link2,
+  FileText,
   Image as ImageIcon,
-  Hash,
-  Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { NZBAnalyzeResponse, ImportResponse } from '@/lib/api'
+import type { YouTubeAnalyzeResponse, ImportResponse } from '@/lib/api'
 import type { ContentType } from '@/lib/constants'
-import { ContentTypeSelector } from './ContentTypeSelector'
 import { TechSpecsEditor } from './TechSpecsEditor'
 import { type ExtendedMatch } from './MatchResultsGrid'
 import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
-import type { NZBImportFormData } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 
 type ImportStep = 'review' | 'metadata' | 'confirm'
 
-interface NZBImportDialogProps {
+export interface YouTubeImportFormData {
+  contentType: ContentType
+  metaId?: string
+  title?: string
+  poster?: string
+  background?: string
+  resolution?: string
+  quality?: string
+  codec?: string
+  languages?: string[]
+  catalogs?: string[]
+  isAnonymous?: boolean
+  forceImport?: boolean
+}
+
+interface YouTubeImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  analysis: NZBAnalyzeResponse | null
-  nzbSource?: { type: 'file' | 'url'; file?: File; url?: string }
-  onImport: (formData: NZBImportFormData) => Promise<ImportResponse>
-  onReanalyze?: (contentType: ContentType) => void
+  analysis: YouTubeAnalyzeResponse | null
+  youtubeUrl: string
+  onImport: (formData: YouTubeImportFormData) => Promise<ImportResponse>
   isImporting?: boolean
   initialContentType?: ContentType
 }
 
-export function NZBImportDialog({
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+export function YouTubeImportDialog({
   open,
   onOpenChange,
   analysis,
-  nzbSource: _nzbSource,
-  initialContentType = 'movie',
+  youtubeUrl,
   onImport,
-  onReanalyze,
   isImporting = false,
-}: NZBImportDialogProps) {
+  initialContentType = 'movie',
+}: YouTubeImportDialogProps) {
   const { user } = useAuth()
-  void _nzbSource
+  void youtubeUrl
 
   const [currentStep, setCurrentStep] = useState<ImportStep>('review')
 
   // Form state
-  const [contentType, setContentType] = useState<ContentType>(initialContentType)
+  const [contentType] = useState<ContentType>(initialContentType)
   const [selectedMatchIndex, setSelectedMatchIndex] = useState<number | null>(null)
 
   // Metadata
@@ -69,20 +88,17 @@ export function NZBImportDialog({
   const [title, setTitle] = useState('')
   const [poster, setPoster] = useState('')
   const [background, setBackground] = useState('')
-  const [releaseDate, setReleaseDate] = useState('')
 
   // Tech specs
   const [resolution, setResolution] = useState<string | undefined>()
   const [quality, setQuality] = useState<string | undefined>()
   const [codec, setCodec] = useState<string | undefined>()
-  const [audio, setAudio] = useState<string[]>([])
   const [languages, setLanguages] = useState<string[]>([])
 
   // Catalogs
   const [selectedCatalogs, setSelectedCatalogs] = useState<string[]>([])
 
   // Import options
-  const [forceImport, setForceImport] = useState(false)
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
 
   // Derive selected match from index
@@ -95,16 +111,13 @@ export function NZBImportDialog({
   const [prevOpen, setPrevOpen] = useState(open)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
   if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
-    const isFirstOpen = !prevOpen
     setPrevOpen(open)
     setPrevAnalysis(analysis)
-    setContentType(initialContentType)
     setResolution(analysis.resolution)
-    setQuality(analysis.quality)
-    setCodec(analysis.codec)
-    setAudio(analysis.audio || [])
+    setQuality(undefined)
+    setCodec(undefined)
     setLanguages([])
-    setTitle(analysis.parsed_title || analysis.nzb_title || '')
+    setTitle(analysis.title || '')
 
     if (analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
@@ -113,25 +126,28 @@ export function NZBImportDialog({
       setTitle(firstMatch.title)
       if (firstMatch.poster) setPoster(firstMatch.poster)
       if (firstMatch.background) setBackground(firstMatch.background)
-      if (firstMatch.release_date) setReleaseDate(firstMatch.release_date)
-      if (isFirstOpen && firstMatch.type) setContentType(firstMatch.type as ContentType)
+      if (firstMatch.languages) setLanguages(firstMatch.languages)
     } else {
       setSelectedMatchIndex(null)
+      setMetaId('')
+      setPoster('')
+      setBackground('')
     }
 
     setCurrentStep('review')
-    setForceImport(false)
   }
 
+  // Handle match selection
   const handleMatchSelect = useCallback((match: ExtendedMatch, index: number) => {
     setSelectedMatchIndex(index)
     setMetaId(match.imdb_id || match.id)
     setTitle(match.title)
     if (match.poster) setPoster(match.poster)
     if (match.background) setBackground(match.background)
-    if (match.release_date) setReleaseDate(match.release_date)
+    if (match.languages) setLanguages(match.languages)
   }, [])
 
+  // Handle tech spec changes
   const handleTechSpecChange = useCallback((field: string, value: string | string[] | undefined) => {
     switch (field) {
       case 'resolution':
@@ -143,15 +159,13 @@ export function NZBImportDialog({
       case 'codec':
         setCodec(value as string | undefined)
         break
-      case 'audio':
-        setAudio((value as string[]) ?? [])
-        break
       case 'languages':
         setLanguages((value as string[]) ?? [])
         break
     }
   }, [])
 
+  // Navigate steps
   const goToStep = useCallback((step: ImportStep) => {
     setCurrentStep(step)
   }, [])
@@ -166,7 +180,8 @@ export function NZBImportDialog({
     else if (currentStep === 'metadata') goToStep('confirm')
   }, [currentStep, goToStep])
 
-  const buildFormData = useCallback((): NZBImportFormData => {
+  // Build import form data
+  const buildFormData = useCallback((): YouTubeImportFormData => {
     return {
       contentType,
       metaId: metaId || undefined,
@@ -176,10 +191,8 @@ export function NZBImportDialog({
       resolution: resolution || undefined,
       quality: quality || undefined,
       codec: codec || undefined,
-      audio: audio.length > 0 ? audio : undefined,
       languages: languages.length > 0 ? languages : undefined,
       catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
-      forceImport,
       isAnonymous,
     }
   }, [
@@ -191,25 +204,22 @@ export function NZBImportDialog({
     resolution,
     quality,
     codec,
-    audio,
     languages,
     selectedCatalogs,
-    forceImport,
     isAnonymous,
   ])
 
+  // Handle import
   const handleImport = useCallback(async () => {
     const formData = buildFormData()
     try {
-      const result = await onImport(formData)
-      if (result.status === 'validation_failed') {
-        setForceImport(true)
-      }
+      await onImport(formData)
     } catch (error) {
-      console.error('NZB import failed:', error)
+      console.error('Import failed:', error)
     }
   }, [buildFormData, onImport])
 
+  // Step indicator
   const steps = [
     { id: 'review', label: 'Review', icon: Search },
     { id: 'metadata', label: 'Metadata', icon: Settings2 },
@@ -224,18 +234,15 @@ export function NZBImportDialog({
         {/* Header */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
-            <Newspaper className="h-5 w-5 text-primary" />
-            Import NZB
+            <Youtube className="h-5 w-5 text-red-500" />
+            Import YouTube Video
           </DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-1">
-              <p className="font-mono text-xs bg-muted/50 p-2 rounded-md break-all text-foreground/80">
-                {analysis.nzb_title || 'Unknown NZB'}
-              </p>
-              {analysis.parsed_title && analysis.parsed_title !== analysis.nzb_title && (
+              <p className="font-medium text-sm text-foreground/80">{analysis.title || 'Unknown video'}</p>
+              {analysis.channel_name && (
                 <p className="text-xs text-muted-foreground">
-                  Detected: <span className="font-medium">{analysis.parsed_title}</span>
-                  {analysis.year && ` (${analysis.year})`}
+                  Channel: <span className="font-medium">{analysis.channel_name}</span>
                 </p>
               )}
             </div>
@@ -276,70 +283,51 @@ export function NZBImportDialog({
             {/* Step 1: Review */}
             {currentStep === 'review' && (
               <div className="space-y-6">
-                {/* NZB Info Summary */}
+                {/* Video Info Summary */}
                 <div className="p-4 rounded-xl bg-muted/50">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Size</Label>
-                      <p className="font-medium">{analysis.total_size_readable || 'Unknown'}</p>
+                  <div className="flex gap-4">
+                    {/* Thumbnail */}
+                    <div className="flex-shrink-0">
+                      <img
+                        src={analysis.thumbnail || `https://img.youtube.com/vi/${analysis.video_id}/mqdefault.jpg`}
+                        alt="Video thumbnail"
+                        className="w-48 h-auto rounded-lg object-cover"
+                      />
                     </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Files</Label>
-                      <p className="font-medium">{analysis.file_count || 0}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Quality</Label>
-                      <p className="font-medium">
-                        {[analysis.resolution, analysis.quality].filter(Boolean).join(' ') || 'Unknown'}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <Label className="text-xs text-muted-foreground">GUID</Label>
-                      <p className="font-mono text-xs truncate">{analysis.nzb_guid?.slice(0, 16) || 'N/A'}...</p>
+
+                    {/* Video Details */}
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {analysis.video_id}
+                        </Badge>
+                        {analysis.is_live && <Badge variant="destructive">Live</Badge>}
+                        {analysis.resolution && <Badge variant="outline">{analysis.resolution}</Badge>}
+                      </div>
+                      <h3 className="font-semibold text-base">{analysis.title}</h3>
+                      {analysis.channel_name && (
+                        <p className="text-sm text-muted-foreground">{analysis.channel_name}</p>
+                      )}
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        {analysis.duration_seconds != null && analysis.duration_seconds > 0 && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatDuration(analysis.duration_seconds)}
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={`https://www.youtube.com/watch?v=${analysis.video_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        View on YouTube
+                      </a>
                     </div>
                   </div>
-
-                  {/* Additional NZB-specific info */}
-                  {(analysis.group_name || analysis.indexer || analysis.is_passworded) && (
-                    <div className="mt-3 pt-3 border-t border-border/50 flex flex-wrap gap-2">
-                      {analysis.group_name && (
-                        <Badge variant="secondary" className="text-xs">
-                          <Users className="h-3 w-3 mr-1" />
-                          {analysis.group_name}
-                        </Badge>
-                      )}
-                      {analysis.indexer && (
-                        <Badge variant="secondary" className="text-xs">
-                          <Hash className="h-3 w-3 mr-1" />
-                          {analysis.indexer}
-                        </Badge>
-                      )}
-                      {analysis.is_passworded && (
-                        <Badge variant="destructive" className="text-xs">
-                          Password Protected
-                        </Badge>
-                      )}
-                    </div>
-                  )}
                 </div>
-
-                {/* Content Type Selection */}
-                <ContentTypeSelector
-                  value={contentType}
-                  importMode="single"
-                  onChange={(newType) => {
-                    setContentType(newType)
-                    setSelectedMatchIndex(null)
-                    setMetaId('')
-                    setPoster('')
-                    setBackground('')
-                    if (onReanalyze && newType !== contentType) {
-                      onReanalyze(newType)
-                    }
-                  }}
-                  showImportMode={false}
-                  excludeTypes={['tv', 'sports']}
-                />
 
                 {/* Match Results with Search */}
                 <MatchSearchSection
@@ -349,7 +337,7 @@ export function NZBImportDialog({
                   onSelectMatch={handleMatchSelect}
                   metaId={metaId}
                   onMetaIdChange={setMetaId}
-                  contentType={contentType === 'series' ? 'series' : 'movie'}
+                  contentType={contentType === 'tv' ? 'movie' : contentType === 'sports' ? 'movie' : contentType}
                 />
               </div>
             )}
@@ -381,7 +369,7 @@ export function NZBImportDialog({
                       <Input
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
-                        placeholder="Movie/Series title"
+                        placeholder="Video title"
                         className="rounded-lg"
                       />
                     </div>
@@ -399,13 +387,13 @@ export function NZBImportDialog({
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Calendar className="h-3 w-3" />
-                        Release Date
+                        <ImageIcon className="h-3 w-3" />
+                        Background URL
                       </Label>
                       <Input
-                        type="date"
-                        value={releaseDate}
-                        onChange={(e) => setReleaseDate(e.target.value)}
+                        value={background}
+                        onChange={(e) => setBackground(e.target.value)}
+                        placeholder="https://..."
                         className="rounded-lg"
                       />
                     </div>
@@ -419,8 +407,8 @@ export function NZBImportDialog({
                     resolution={resolution}
                     quality={quality}
                     codec={codec}
-                    audio={audio}
                     languages={languages}
+                    extraLanguages={selectedMatch?.languages || []}
                     onChange={handleTechSpecChange}
                   />
                 </div>
@@ -438,6 +426,24 @@ export function NZBImportDialog({
             {/* Step 3: Confirm */}
             {currentStep === 'confirm' && (
               <div className="space-y-6">
+                {/* Video Preview */}
+                <div className="p-4 rounded-xl bg-muted/50">
+                  <div className="flex gap-4">
+                    <img
+                      src={analysis.thumbnail || `https://img.youtube.com/vi/${analysis.video_id}/mqdefault.jpg`}
+                      alt="Video thumbnail"
+                      className="w-32 h-auto rounded-lg object-cover"
+                    />
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{title || analysis.title}</h3>
+                      {analysis.channel_name && (
+                        <p className="text-sm text-muted-foreground">{analysis.channel_name}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Import Summary */}
                 <div className="p-4 rounded-xl bg-muted/50">
                   <h3 className="font-medium mb-4">Import Summary</h3>
                   <div className="grid gap-3 text-sm">
@@ -454,19 +460,27 @@ export function NZBImportDialog({
                       <span className="font-mono text-xs">{metaId || 'Not set'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Quality</span>
-                      <span className="font-medium">
-                        {[resolution, quality].filter(Boolean).join(' ') || 'Not set'}
-                      </span>
+                      <span className="text-muted-foreground">Resolution</span>
+                      <span className="font-medium">{resolution || 'Not set'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Size</span>
-                      <span className="font-medium">{analysis.total_size_readable || 'Unknown'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Files</span>
-                      <span className="font-medium">{analysis.file_count || 0}</span>
-                    </div>
+                    {quality && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Quality</span>
+                        <span className="font-medium">{quality}</span>
+                      </div>
+                    )}
+                    {codec && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Codec</span>
+                        <span className="font-medium">{codec}</span>
+                      </div>
+                    )}
+                    {languages.length > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Languages</span>
+                        <span className="font-medium">{languages.join(', ')}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Catalogs</span>
                       <span className="font-medium">
@@ -531,7 +545,7 @@ export function NZBImportDialog({
                 <Button
                   onClick={handleImport}
                   disabled={isImporting || (!selectedMatch && !metaId)}
-                  className="bg-gradient-to-r from-primary to-primary/80"
+                  className="bg-gradient-to-r from-red-500 to-red-600"
                 >
                   {isImporting ? (
                     <>

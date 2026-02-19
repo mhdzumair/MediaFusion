@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -15,7 +14,6 @@ import {
   HardDrive,
   Image as ImageIcon,
   Link2,
-  AlertTriangle,
   Calendar,
   FileText,
   FileVideo,
@@ -26,7 +24,8 @@ import type { TorrentAnalyzeResponse, ImportResponse } from '@/lib/api'
 import type { ContentType, SportsCategory, ImportMode } from '@/lib/constants'
 import { ContentTypeSelector } from './ContentTypeSelector'
 import { TechSpecsEditor } from './TechSpecsEditor'
-import { MatchResultsGrid, type ExtendedMatch } from './MatchResultsGrid'
+import { type ExtendedMatch } from './MatchResultsGrid'
+import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
 import { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 import { ValidationWarningDialog } from './ValidationWarningDialog'
@@ -121,6 +120,7 @@ export function TorrentImportDialog({
   const [prevOpen, setPrevOpen] = useState(open)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
   if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
+    const isFirstOpen = !prevOpen
     setPrevOpen(open)
     setPrevAnalysis(analysis)
     setContentType(initialContentType)
@@ -140,7 +140,9 @@ export function TorrentImportDialog({
       if (firstMatch.poster) setPoster(firstMatch.poster)
       if (firstMatch.background) setBackground(firstMatch.background)
       if (firstMatch.release_date) setReleaseDate(firstMatch.release_date)
-      if (firstMatch.type) setContentType(firstMatch.type as ContentType)
+      // Only auto-detect content type from match on first open, not on re-analysis
+      // where the user has explicitly chosen a content type
+      if (isFirstOpen && firstMatch.type) setContentType(firstMatch.type as ContentType)
     } else {
       setSelectedMatchIndex(null)
     }
@@ -155,12 +157,7 @@ export function TorrentImportDialog({
     setTitle(match.title)
     if (match.poster) setPoster(match.poster)
     if (match.background) setBackground(match.background)
-    // Set release date if available
     if (match.release_date) setReleaseDate(match.release_date)
-    // Update content type from match
-    if (match.type) {
-      setContentType(match.type as ContentType)
-    }
   }, [])
 
   // Handle tech spec changes
@@ -346,7 +343,7 @@ export function TorrentImportDialog({
 
   // Check if series/sports needs annotation
   const needsAnnotation = useMemo(() => {
-    return (contentType === 'series' || contentType === 'sports') && analysis?.files && analysis.files.length > 1
+    return (contentType === 'series' || contentType === 'sports') && analysis?.files && analysis.files.length > 0
   }, [contentType, analysis])
 
   // Step indicator
@@ -484,49 +481,16 @@ export function TorrentImportDialog({
                     showImportMode={contentType !== 'sports'}
                   />
 
-                  {/* Match Results */}
-                  {analysis.matches && analysis.matches.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm font-medium">Matched Content ({analysis.matches.length})</Label>
-                        {selectedMatch && (
-                          <Badge variant="secondary" className="text-xs">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            {selectedMatch.title}
-                          </Badge>
-                        )}
-                      </div>
-                      <MatchResultsGrid
-                        matches={analysis.matches as ExtendedMatch[]}
-                        selectedIndex={selectedMatchIndex}
-                        onSelectMatch={handleMatchSelect}
-                        className="h-[250px]"
-                      />
-                    </div>
-                  )}
-
-                  {/* Manual IMDb ID Input */}
-                  {(!analysis.matches || analysis.matches.length === 0) && (
-                    <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="h-5 w-5 text-primary mt-0.5" />
-                        <div className="space-y-2 flex-1">
-                          <p className="font-medium text-primary">No matches found</p>
-                          <p className="text-sm text-muted-foreground">
-                            Please enter the IMDb ID manually to continue.
-                          </p>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="tt1234567"
-                              value={metaId}
-                              onChange={(e) => setMetaId(e.target.value)}
-                              className="max-w-xs"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {/* Match Results with Search */}
+                  <MatchSearchSection
+                    initialMatches={(analysis.matches || []) as ExtendedMatch[]}
+                    selectedIndex={selectedMatchIndex}
+                    selectedMatch={selectedMatch}
+                    onSelectMatch={handleMatchSelect}
+                    metaId={metaId}
+                    onMetaIdChange={setMetaId}
+                    contentType={contentType === 'sports' ? 'movie' : contentType === 'tv' ? 'movie' : contentType}
+                  />
                 </div>
               )}
 
@@ -598,7 +562,7 @@ export function TorrentImportDialog({
                       audio={audio}
                       hdr={hdr}
                       languages={languages}
-                      availableLanguages={analysis.languages || []}
+                      extraLanguages={analysis.languages || []}
                       onChange={handleTechSpecChange}
                     />
                   </div>

@@ -18,9 +18,63 @@ from db.database import get_async_session_context
 from db.models import User
 from db.schemas.config import TelegramChannelConfig, TelegramConfig
 from utils.profile_context import ProfileDataProvider
-from utils.telegram_bot import telegram_content_bot
+from utils.telegram_bot import ContentType, telegram_content_bot
 
 logger = logging.getLogger(__name__)
+
+# Maps settings.disabled_content_types values to bot ContentType enum members.
+# Used to gate content detection and filter help/welcome messages.
+_CONFIG_TO_CONTENT_TYPES: dict[str, set[ContentType]] = {
+    "magnet": {ContentType.MAGNET},
+    "torrent": {ContentType.TORRENT_FILE, ContentType.TORRENT_URL},
+    "nzb": {ContentType.NZB},
+    "youtube": {ContentType.YOUTUBE},
+    "http": {ContentType.HTTP},
+    "acestream": {ContentType.ACESTREAM},
+    "telegram": {ContentType.VIDEO},
+}
+
+# (config_key, emoji, label) — used to build the dynamic supported-types list.
+_CONTENT_TYPE_DISPLAY = [
+    ("magnet", "🧲", "Magnet links"),
+    ("torrent", "📦", "Torrent files (.torrent)"),
+    ("nzb", "📰", "NZB URLs"),
+    ("youtube", "▶️", "YouTube URLs"),
+    ("http", "🔗", "HTTP direct links"),
+    ("acestream", "📡", "AceStream IDs"),
+    ("telegram", "🎬", "Video files"),
+]
+
+# (config_key, emoji, label, detail) — richer format for /help.
+_CONTENT_TYPE_HELP = [
+    ("magnet", "🧲", "Magnet Link", "`magnet:?xt=urn:btih:...`"),
+    ("torrent", "📦", "Torrent File", "Upload a .torrent file"),
+    ("nzb", "📰", "NZB URL", "`https://example.com/file.nzb`"),
+    ("youtube", "▶️", "YouTube", "`https://youtube.com/watch?v=...`\n`https://youtu.be/...`"),
+    ("http", "🔗", "HTTP Direct Link", "`https://example.com/movie.mkv`"),
+    ("acestream", "📡", "AceStream ID", "40-character hex ID"),
+    ("telegram", "🎬", "Video File", "Forward or upload a video"),
+]
+
+# (config_key, label) — compact format for unknown-message hints.
+_CONTENT_TYPE_HINTS = [
+    ("magnet", "Magnet links (`magnet:?xt=...`)"),
+    ("torrent", "Torrent files (`.torrent`)"),
+    ("torrent", "Torrent URLs (https://...)"),
+    ("nzb", "NZB URLs (`.nzb`)"),
+    ("youtube", "YouTube URLs"),
+    ("http", "HTTP direct links"),
+    ("acestream", "AceStream IDs (40-char hex)"),
+    ("telegram", "Video files"),
+]
+
+
+def _get_disabled_content_types() -> set[ContentType]:
+    disabled: set[ContentType] = set()
+    for cfg_key in settings.disabled_content_types:
+        disabled |= _CONFIG_TO_CONTENT_TYPES.get(cfg_key, set())
+    return disabled
+
 
 router = APIRouter(prefix="/api/v1/telegram", tags=["Telegram"])
 
@@ -489,17 +543,14 @@ async def telegram_webhook(request: Request):
             # ============================================
 
             if text.startswith("/start"):
+                disabled_cfg = set(settings.disabled_content_types)
+                types_lines = "\n".join(
+                    f"{emoji} {label}" for cfg_key, emoji, label in _CONTENT_TYPE_DISPLAY if cfg_key not in disabled_cfg
+                )
                 welcome_message = (
                     "👋 *Welcome to MediaFusion Bot!*\n\n"
                     "I help you contribute content to your MediaFusion library.\n\n"
-                    "📋 *Supported Content Types:*\n"
-                    "🧲 Magnet links\n"
-                    "📦 Torrent files (.torrent)\n"
-                    "📰 NZB URLs\n"
-                    "▶️ YouTube URLs\n"
-                    "🔗 HTTP direct links\n"
-                    "📡 AceStream IDs\n"
-                    "🎬 Video files\n\n"
+                    f"📋 *Supported Content Types:*\n{types_lines}\n\n"
                     "📋 *How to use:*\n"
                     "1️⃣ Send me any supported content\n"
                     "2️⃣ Select Movie, Series, or Sports\n"
@@ -514,6 +565,12 @@ async def telegram_webhook(request: Request):
                 return {"ok": True}
 
             if text.startswith("/help"):
+                disabled_cfg = set(settings.disabled_content_types)
+                types_sections = "\n\n".join(
+                    f"{emoji} *{label}*\n{detail}"
+                    for cfg_key, emoji, label, detail in _CONTENT_TYPE_HELP
+                    if cfg_key not in disabled_cfg
+                )
                 help_message = (
                     "📖 *MediaFusion Bot Help*\n\n"
                     "🔹 *Commands:*\n"
@@ -523,22 +580,7 @@ async def telegram_webhook(request: Request):
                     "`/status` - Check account status\n"
                     "`/cancel` - Cancel current operation\n\n"
                     "🔹 *Contribute Content:*\n"
-                    "Just send me any of these:\n\n"
-                    "🧲 *Magnet Link*\n"
-                    "`magnet:?xt=urn:btih:...`\n\n"
-                    "📦 *Torrent File*\n"
-                    "Upload a .torrent file\n\n"
-                    "📰 *NZB URL*\n"
-                    "`https://example.com/file.nzb`\n\n"
-                    "▶️ *YouTube*\n"
-                    "`https://youtube.com/watch?v=...`\n"
-                    "`https://youtu.be/...`\n\n"
-                    "🔗 *HTTP Direct Link*\n"
-                    "`https://example.com/movie.mkv`\n\n"
-                    "📡 *AceStream ID*\n"
-                    "40-character hex ID\n\n"
-                    "🎬 *Video File*\n"
-                    "Forward or upload a video\n\n"
+                    f"Just send me any of these:\n\n{types_sections}\n\n"
                     "🔹 *Contribution Flow:*\n"
                     "1. Send content → Select type\n"
                     "2. Review matches → Select one\n"
@@ -644,6 +686,16 @@ async def telegram_webhook(request: Request):
             # Detect content type from the message
             content_type, raw_input = telegram_content_bot.detect_content_type(message)
 
+            if content_type and content_type in _get_disabled_content_types():
+                type_label = content_type.value.replace("_", " ").title()
+                await telegram_content_bot.send_reply(
+                    chat_id,
+                    f"🚫 *{type_label}* imports are currently disabled on this instance.\n\n"
+                    "Type `/help` to see which content types are available.",
+                    reply_to_message_id=message_id,
+                )
+                return {"ok": True}
+
             if content_type:
                 # Start the contribution wizard flow
                 result = await telegram_content_bot.start_contribution_flow(
@@ -688,18 +740,12 @@ async def telegram_webhook(request: Request):
 
             # Only show unknown message for non-empty text that's not a command
             if text and not text.startswith("/"):
+                disabled_cfg = set(settings.disabled_content_types)
+                hints = "\n".join(f"• {label}" for cfg_key, label in _CONTENT_TYPE_HINTS if cfg_key not in disabled_cfg)
                 unknown_message = (
                     "❓ *Not Recognized*\n\n"
                     "I couldn't detect any supported content in your message.\n\n"
-                    "🔹 *Supported formats:*\n"
-                    "• Magnet links (`magnet:?xt=...`)\n"
-                    "• Torrent files (`.torrent`)\n"
-                    "• NZB URLs (`.nzb`)\n"
-                    "• YouTube URLs\n"
-                    "• HTTP direct links\n"
-                    "• AceStream IDs (40-char hex)\n"
-                    "• Video files\n\n"
-                    "• Torrent URLs (https://...)\n\n"
+                    f"🔹 *Supported formats:*\n{hints}\n\n"
                     "Type `/help` for more info."
                 )
                 await telegram_content_bot.send_reply(chat_id, unknown_message, reply_to_message_id=message_id)

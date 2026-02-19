@@ -202,6 +202,9 @@ class Settings(BaseSettings):
     # When set, every NZB the system processes is forwarded to Zyclops for ingestion.
     # Failures are silent — never blocks or affects user-facing operations.
     zyclops_health_api_url: str | None = None  # e.g., "https://zyclops.example.com"
+    # NZB Download URL Expiry (seconds) — applies to signed NZB download links
+    # exposed to stremio_nntp clients. Other providers consume NZBs server-side.
+    nzb_download_url_expiry: int = 3600  # 1 hour
 
     # Torznab API Settings
     enable_torznab_api: bool = True  # Master toggle for Torznab API endpoint
