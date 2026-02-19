@@ -168,6 +168,7 @@ export const STREAM_TYPES = [
   { value: 'telegram', label: 'Telegram', icon: '📨' },
   { value: 'http', label: 'HTTP / Direct', icon: '🌐' },
   { value: 'acestream', label: 'AceStream', icon: '📡' },
+  { value: 'youtube', label: 'YouTube', icon: '▶️' },
 ]
 
 export const LANGUAGES = [

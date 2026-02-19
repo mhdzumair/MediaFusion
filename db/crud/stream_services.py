@@ -43,8 +43,9 @@ from db.schemas import (
 from db.schemas import (
     TorrentStreamData,
     UserData,
+    YouTubeStreamData,
 )
-from db.schemas.media import TelegramStreamData, UsenetStreamData
+from db.schemas.media import HTTPStreamData, TelegramStreamData, UsenetStreamData
 from utils.network import encode_mediaflow_acestream_url
 
 # Providers that support Usenet content - defined here to avoid circular import
@@ -297,7 +298,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         )
         http_result = await session.exec(http_query)
         http_streams = http_result.unique().all()
-        http_data = [{"name": hs.stream.name, "source": hs.stream.source, "url": hs.url} for hs in http_streams]
+        http_data = [HTTPStreamData.from_db(hs, hs.stream, media).model_dump(mode="json") for hs in http_streams]
 
         # Query AceStream streams
         acestream_query = (
@@ -331,12 +332,35 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
             for ace in acestream_streams
         ]
 
+        # Query YouTube streams
+        youtube_query = (
+            select(YouTubeStream)
+            .join(Stream, Stream.id == YouTubeStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media_id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(YouTubeStream.stream).options(
+                    selectinload(Stream.languages),
+                )
+            )
+            .limit(100)
+        )
+        youtube_result = await session.exec(youtube_query)
+        youtube_streams = youtube_result.unique().all()
+        youtube_data = [
+            YouTubeStreamData.from_db(yt, yt.stream, media).model_dump(mode="json") for yt in youtube_streams
+        ]
+
     return {
         "torrents": torrent_data,
         "usenet": usenet_data,
         "telegram": telegram_data,
         "http": http_data,
         "acestream": acestream_data,
+        "youtube": youtube_data,
     }
 
 
@@ -481,7 +505,9 @@ async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, vi
         )
         http_result = await session.exec(http_query)
         http_streams = http_result.unique().all()
-        http_data = [{"name": hs.stream.name, "source": hs.stream.source, "url": hs.url} for hs in http_streams]
+        http_data = [
+            HTTPStreamData.from_db(hs, hs.stream, media, season, episode).model_dump(mode="json") for hs in http_streams
+        ]
 
         # AceStream streams (uses StreamMediaLink, not FileMediaLink)
         acestream_query = (
@@ -515,12 +541,35 @@ async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, vi
             for ace in acestream_streams
         ]
 
+        # YouTube streams (uses StreamMediaLink, not FileMediaLink)
+        youtube_query = (
+            select(YouTubeStream)
+            .join(Stream, Stream.id == YouTubeStream.stream_id)
+            .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+            .where(StreamMediaLink.media_id == media_id)
+            .where(Stream.is_active.is_(True))
+            .where(Stream.is_blocked.is_(False))
+            .where(visibility_filter)
+            .options(
+                joinedload(YouTubeStream.stream).options(
+                    selectinload(Stream.languages),
+                )
+            )
+            .limit(100)
+        )
+        youtube_result = await session.exec(youtube_query)
+        youtube_streams = youtube_result.unique().all()
+        youtube_data = [
+            YouTubeStreamData.from_db(yt, yt.stream, media).model_dump(mode="json") for yt in youtube_streams
+        ]
+
     return {
         "torrents": torrent_data,
         "usenet": usenet_data,
         "telegram": telegram_data,
         "http": http_data,
         "acestream": acestream_data,
+        "youtube": youtube_data,
     }
 
 
@@ -541,30 +590,6 @@ async def _get_cached_series_streams(media_id: int, season: int, episode: int, v
 
     await REDIS_ASYNC_CLIENT.set(cache_key, json.dumps(data), ex=STREAM_CACHE_TTL)
     return data
-
-
-def _deserialize_http_streams(http_data: list[dict]) -> list[StremioStream]:
-    """Deserialize cached HTTP stream data into Stremio streams."""
-    return [
-        StremioStream(
-            name=f"{settings.addon_name}\n{h['name']}",
-            description=f"🎬 {h['source']}" if h.get("source") else "🎬 Direct",
-            url=h["url"],
-        )
-        for h in http_data
-    ]
-
-
-def _deserialize_http_streams_series(http_data: list[dict], season: int, episode: int) -> list[StremioStream]:
-    """Deserialize cached HTTP stream data for series into Stremio streams."""
-    return [
-        StremioStream(
-            name=f"{settings.addon_name}\n{h['name']}",
-            description=f"📺 S{season}E{episode} | {h['source']}" if h.get("source") else f"📺 S{season}E{episode}",
-            url=h["url"],
-        )
-        for h in http_data
-    ]
 
 
 def _deserialize_acestream_streams(
@@ -660,8 +685,11 @@ async def get_movie_streams(
         else []
     )
 
-    # Deserialize HTTP and AceStream directly to Stremio format
-    formatted_http_streams = _deserialize_http_streams(raw_data["http"])
+    # Deserialize stream data objects from cache
+    http_stream_data_list = [HTTPStreamData.model_validate(h) for h in raw_data.get("http", [])]
+    youtube_stream_data_list = [YouTubeStreamData.model_validate(yt) for yt in raw_data.get("youtube", [])]
+
+    # AceStream is formatted directly (requires MediaFlow config, not a parse_stream_data stream type)
     formatted_acestream_streams = (
         _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
         if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
@@ -677,16 +705,19 @@ async def get_movie_streams(
     if "telegram" in disabled:
         telegram_stream_data_list = []
     if "iptv" in disabled or "http" in disabled:
-        formatted_http_streams = []
+        http_stream_data_list = []
     if "acestream" in disabled:
         formatted_acestream_streams = []
+    if "youtube" in disabled:
+        youtube_stream_data_list = []
 
     if (
         not stream_data_list
         and not usenet_stream_data_list
         and not telegram_stream_data_list
-        and not formatted_http_streams
+        and not http_stream_data_list
         and not formatted_acestream_streams
+        and not youtube_stream_data_list
     ):
         return []
 
@@ -732,6 +763,32 @@ async def get_movie_streams(
         )
         coro_keys.append("telegram")
 
+    if http_stream_data_list:
+        coros.append(
+            parse_stream_data(
+                streams=http_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                user_ip=user_ip,
+                is_series=False,
+                is_http=True,
+            )
+        )
+        coro_keys.append("http")
+
+    if youtube_stream_data_list:
+        coros.append(
+            parse_stream_data(
+                streams=youtube_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                user_ip=user_ip,
+                is_series=False,
+                is_youtube=True,
+            )
+        )
+        coro_keys.append("youtube")
+
     # Run all parse_stream_data calls in parallel
     results = await asyncio.gather(*coros) if coros else []
 
@@ -740,8 +797,9 @@ async def get_movie_streams(
         "torrent": [],
         "usenet": [],
         "telegram": [],
-        "http": formatted_http_streams,
+        "http": [],
         "acestream": formatted_acestream_streams,
+        "youtube": [],
     }
     for key, result in zip(coro_keys, results):
         stream_groups[key] = result
@@ -803,7 +861,9 @@ async def get_series_streams(
         else []
     )
 
-    formatted_http_streams = _deserialize_http_streams_series(raw_data["http"], season, episode)
+    http_stream_data_list = [HTTPStreamData.model_validate(h) for h in raw_data.get("http", [])]
+    youtube_stream_data_list = [YouTubeStreamData.model_validate(yt) for yt in raw_data.get("youtube", [])]
+
     formatted_acestream_streams = (
         _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
         if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
@@ -819,16 +879,19 @@ async def get_series_streams(
     if "telegram" in disabled:
         telegram_stream_data_list = []
     if "iptv" in disabled or "http" in disabled:
-        formatted_http_streams = []
+        http_stream_data_list = []
     if "acestream" in disabled:
         formatted_acestream_streams = []
+    if "youtube" in disabled:
+        youtube_stream_data_list = []
 
     if (
         not stream_data_list
         and not usenet_stream_data_list
         and not telegram_stream_data_list
-        and not formatted_http_streams
+        and not http_stream_data_list
         and not formatted_acestream_streams
+        and not youtube_stream_data_list
     ):
         return []
 
@@ -880,14 +943,45 @@ async def get_series_streams(
         )
         coro_keys.append("telegram")
 
+    if http_stream_data_list:
+        coros.append(
+            parse_stream_data(
+                streams=http_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                season=season,
+                episode=episode,
+                user_ip=user_ip,
+                is_series=True,
+                is_http=True,
+            )
+        )
+        coro_keys.append("http")
+
+    if youtube_stream_data_list:
+        coros.append(
+            parse_stream_data(
+                streams=youtube_stream_data_list,
+                user_data=user_data,
+                secret_str=secret_str,
+                season=season,
+                episode=episode,
+                user_ip=user_ip,
+                is_series=True,
+                is_youtube=True,
+            )
+        )
+        coro_keys.append("youtube")
+
     results = await asyncio.gather(*coros) if coros else []
 
     stream_groups: dict[str, list[StremioStream]] = {
         "torrent": [],
         "usenet": [],
         "telegram": [],
-        "http": formatted_http_streams,
+        "http": [],
         "acestream": formatted_acestream_streams,
+        "youtube": [],
     }
     for key, result in zip(coro_keys, results):
         stream_groups[key] = result
@@ -950,7 +1044,11 @@ async def get_tv_streams_formatted(
             .where(StreamMediaLink.media_id == media.id)
             .where(Stream.is_active.is_(True))
             .where(Stream.is_blocked.is_(False))
-            .options(joinedload(YouTubeStream.stream))
+            .options(
+                joinedload(YouTubeStream.stream).options(
+                    selectinload(Stream.languages),
+                )
+            )
             .limit(100)
         )
 
@@ -961,9 +1059,9 @@ async def get_tv_streams_formatted(
             stream = yt_stream.stream
             formatted_streams.append(
                 StremioStream(
-                    name=f"{settings.addon_name} YouTube\n{stream.name}",
-                    description="▶️ YouTube Stream",
-                    externalUrl=f"https://www.youtube.com/watch?v={yt_stream.video_id}",
+                    name=f"{settings.addon_name}\n{stream.name}",
+                    description=f"▶️ {stream.source}" if stream.source else "▶️ YouTube",
+                    ytId=yt_stream.video_id,
                 )
             )
 

@@ -78,6 +78,8 @@ from db.schemas.media import (
     # Usenet stream schemas
     UsenetStreamData,
     UsenetStreamsList,
+    # YouTube stream schemas
+    YouTubeStreamData,
 )
 
 # RSS feed schemas
@@ -163,6 +165,7 @@ __all__ = [
     "TorrentStreamData",
     "TorrentStreamsList",
     "HTTPStreamData",
+    "YouTubeStreamData",
     "TVStreams",
     "TVMetaData",
     # Telegram Streams

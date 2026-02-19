@@ -290,7 +290,7 @@ class StreamTemplate(BaseModel):
 
     Available fields:
     - Stream: name, type, resolution, quality, codec, bit_depth
-    - Stream type indicators: 🧲 torrent, 📰 usenet, 🔗 http, 📺 tv
+    - Stream types: torrent, usenet, telegram, http, youtube
     - Stream arrays: audio_formats, channels, hdr_formats, languages
     - Stream info: size, seeders, source, release_group, uploader, cached
     - Service: service.name, service.shortName, service.cached
@@ -298,7 +298,7 @@ class StreamTemplate(BaseModel):
     """
 
     title: str = Field(
-        default="{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}",
+        default="{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}",
         alias="t",
         description="Title template for stream display",
     )
@@ -612,7 +612,7 @@ class UserData(BaseModel):
     max_streams: int = Field(default=25, alias="mxs")
     stream_type_grouping: Literal["mixed", "separate"] = Field(default="separate", alias="stg")
     stream_type_order: list[str] = Field(
-        default_factory=lambda: ["torrent", "usenet", "telegram", "http", "acestream"],
+        default_factory=lambda: ["torrent", "usenet", "telegram", "http", "acestream", "youtube"],
         alias="sto",
     )
     provider_grouping: Literal["mixed", "separate"] = Field(default="separate", alias="pg")

@@ -45,6 +45,9 @@ if TYPE_CHECKING:
     from db.models import (
         TorrentStream as TorrentStreamModel,
     )
+    from db.models import (
+        YouTubeStream as YouTubeStreamModel,
+    )
 
 
 # ============================================
@@ -1373,6 +1376,61 @@ class HTTPStreamData(BaseModel):
             meta_id=meta_id,
             season_number=season,
             episode_number=episode,
+        )
+
+
+# ============================================
+# YouTube Stream Schemas
+# ============================================
+
+
+class YouTubeStreamData(BaseModel):
+    """YouTube stream data for movie/series content."""
+
+    model_config = {"extra": "allow"}
+
+    stream_id: int
+    video_id: str
+    name: str
+    source: str
+
+    # Optional quality attributes
+    resolution: str | None = None
+    quality: str | None = None
+    codec: str | None = None
+    languages: list[str] = Field(default_factory=list)
+
+    # Required by AnyStreamData protocol (sort key, etc.)
+    size: int | None = None
+    created_at: datetime | None = None
+    meta_id: str = ""
+
+    @classmethod
+    def from_db(
+        cls,
+        yt_stream: "YouTubeStreamModel",
+        stream: "StreamModel" = None,
+        media: "MediaModel" = None,
+    ) -> "YouTubeStreamData":
+        """Create from database models."""
+        if stream is None:
+            stream = yt_stream.stream
+
+        meta_id = ""
+        if media:
+            meta_id = f"mf:{media.id}"
+
+        return cls(
+            stream_id=stream.id if stream else yt_stream.stream_id,
+            video_id=yt_stream.video_id,
+            name=stream.name if stream else "",
+            source=stream.source if stream else "youtube",
+            resolution=stream.resolution if stream else None,
+            quality=stream.quality if stream else None,
+            codec=stream.codec if stream else None,
+            languages=[lang.name for lang in stream.languages] if stream and stream.languages else [],
+            created_at=stream.created_at if stream else None,
+            meta_id=meta_id,
         )
 
 

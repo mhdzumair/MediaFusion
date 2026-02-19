@@ -27,6 +27,7 @@ from db.schemas import (
     TVStreams,
     UsenetStreamData,
     UserData,
+    YouTubeStreamData,
 )
 from streaming_providers import mapper
 from streaming_providers.cache_helpers import (
@@ -45,7 +46,7 @@ from utils.template_engine import render_template as engine_render_template
 from utils.validation_helper import validate_m3u8_or_mpd_url_with_cache
 
 # Union type for all stream data types that go through parse_stream_data
-AnyStreamData = Union[TorrentStreamData, UsenetStreamData, TelegramStreamData, HTTPStreamData]
+AnyStreamData = Union[TorrentStreamData, UsenetStreamData, TelegramStreamData, HTTPStreamData, YouTubeStreamData]
 
 
 async def filter_and_sort_streams(
@@ -315,16 +316,19 @@ async def parse_stream_data(
     return_rich: bool = False,
     is_usenet: bool = False,
     is_telegram: bool = False,
+    is_http: bool = False,
+    is_youtube: bool = False,
 ) -> list[Stream] | list[RichStream]:
     """
     Parse and format stream data for output.
 
     For multi-debrid support, this function iterates over all active providers
     and generates stream entries for each. For usenet streams, only usenet-capable
-    providers are used. Telegram streams bypass the provider loop entirely.
+    providers are used. Telegram, HTTP, and YouTube streams bypass the provider
+    loop entirely.
 
     Args:
-        streams: Raw torrent or usenet stream data
+        streams: Raw stream data of any supported type
         user_data: User preferences and configuration
         secret_str: Encrypted user data for URL generation
         season: Season number (for series)
@@ -335,6 +339,8 @@ async def parse_stream_data(
                     If False, returns plain Stream objects for Stremio addon.
         is_usenet: Whether these are Usenet streams
         is_telegram: Whether these are Telegram streams
+        is_http: Whether these are HTTP/direct streams
+        is_youtube: Whether these are YouTube streams
 
     Returns:
         List of Stream or RichStream objects depending on return_rich parameter
@@ -347,8 +353,8 @@ async def parse_stream_data(
     # Determine which providers to generate streams for
     active_providers = user_data.get_active_providers()
 
-    if is_telegram:
-        # Telegram doesn't use debrid providers -- process once with no provider
+    if is_telegram or is_http or is_youtube:
+        # These types don't use debrid providers -- process once with no provider
         provider_list = [None]
     elif is_usenet:
         # Usenet: only use providers that support usenet
@@ -384,12 +390,14 @@ async def parse_stream_data(
             stream_type_indicator = "📱"
         elif is_usenet:
             stream_type_indicator = "📰"
+        elif is_youtube:
+            stream_type_indicator = "▶️"
         else:
             stream_type_indicator = ""
         addon_name = f"{settings.addon_name} {streaming_provider_name} {stream_type_indicator}".strip()
 
-        # Telegram streams don't require a debrid provider
-        if is_telegram:
+        # Telegram, HTTP, and YouTube streams don't require a debrid provider
+        if is_telegram or is_http or is_youtube:
             has_streaming_provider = True
             base_proxy_url_template = ""
         elif not has_streaming_provider:
@@ -425,6 +433,8 @@ async def parse_stream_data(
             is_series=is_series,
             is_usenet=is_usenet,
             is_telegram=is_telegram,
+            is_http=is_http,
+            is_youtube=is_youtube,
             return_rich=return_rich,
             has_streaming_provider=has_streaming_provider,
             current_provider=current_provider,
@@ -507,6 +517,8 @@ def _build_stream_entries(
     is_series: bool,
     is_usenet: bool,
     is_telegram: bool,
+    is_http: bool,
+    is_youtube: bool,
     return_rich: bool,
     has_streaming_provider: bool,
     current_provider: StreamingProvider | None,
@@ -623,7 +635,14 @@ def _build_stream_entries(
             stream_id = None
 
             # Handle Telegram streams differently
-            if is_telegram:
+            if is_youtube:
+                # YouTube: use ytId field — no URL needed
+                stream_id = stream_data.video_id
+            elif is_http:
+                # HTTP: use the direct URL
+                stream_url = stream_data.url
+                stream_id = str(stream_data.stream_id)
+            elif is_telegram:
                 # Telegram streams use chat_id and message_id for playback
                 chat_id = getattr(stream_data, "chat_id", None)
                 msg_id = getattr(stream_data, "message_id", None)
@@ -672,7 +691,11 @@ def _build_stream_entries(
                     sources = [f"tracker:{tracker}" for tracker in announce_list] + [f"dht:{stream_data.info_hash}"]
 
             # Build context for template rendering
-            if is_telegram:
+            if is_youtube:
+                stream_type = "youtube"
+            elif is_http:
+                stream_type = "http"
+            elif is_telegram:
                 stream_type = "telegram"
             elif is_usenet:
                 stream_type = "usenet"
@@ -740,6 +763,7 @@ def _build_stream_entries(
                 description=description,
                 url=stream_url,
                 nzbUrl=nzb_direct_url,
+                ytId=stream_data.video_id if is_youtube else None,
                 infoHash=info_hash,
                 fileIdx=file_idx,
                 sources=sources,
