@@ -325,17 +325,20 @@ function StreamActionDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="glass border-border/50 sm:max-w-[500px]" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <DialogContent
+          className="glass border-border/50 sm:max-w-[500px] overflow-hidden"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Stream Actions</DialogTitle>
             <DialogDescription>Choose what to do with this stream</DialogDescription>
           </DialogHeader>
 
           {stream && (
-            <div className="space-y-6 py-4">
+            <div className="space-y-6 py-4 min-w-0">
               {/* Stream Info */}
               <div className="space-y-3">
-                <p className="font-medium text-sm line-clamp-2">{stream.stream_name || stream.name}</p>
+                <p className="font-medium text-sm line-clamp-2 break-all">{stream.stream_name || stream.name}</p>
                 <div className="flex flex-wrap gap-2">
                   {stream.quality && <Badge variant="secondary">{stream.quality}</Badge>}
                   {stream.resolution && <Badge variant="outline">{stream.resolution}</Badge>}
@@ -516,11 +519,13 @@ function StreamActionDialog({
                       <>
                         <Button
                           onClick={handleWatch}
-                          className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+                          className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 min-w-0"
                           disabled={trackAction.isPending}
                         >
-                          <MonitorPlay className="mr-2 h-4 w-4" />
-                          Stream via MediaFlow{providerDisplayName ? ` + ${providerDisplayName}` : ''}
+                          <MonitorPlay className="mr-2 h-4 w-4 shrink-0" />
+                          <span className="truncate">
+                            Stream via MediaFlow{providerDisplayName ? ` + ${providerDisplayName}` : ''}
+                          </span>
                         </Button>
 
                         {/* External Players */}
@@ -545,13 +550,13 @@ function StreamActionDialog({
                         onClick={handleDownload}
                         className={
                           hasMediaflowProxy
-                            ? 'rounded-xl'
-                            : 'rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70'
+                            ? 'rounded-xl min-w-0'
+                            : 'rounded-xl min-w-0 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70'
                         }
                         disabled={trackAction.isPending}
                       >
-                        <Download className="mr-2 h-4 w-4" />
-                        Download
+                        <Download className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="truncate">Download</span>
                       </Button>
 
                       <Button
@@ -563,18 +568,18 @@ function StreamActionDialog({
                           setCopied(true)
                           setTimeout(() => setCopied(false), 2000)
                         }}
-                        className="rounded-xl"
+                        className="rounded-xl min-w-0"
                         disabled={trackAction.isPending}
                       >
                         {copied ? (
                           <>
-                            <Check className="mr-2 h-4 w-4 text-emerald-500" />
-                            Copied
+                            <Check className="mr-2 h-4 w-4 shrink-0 text-emerald-500" />
+                            <span className="truncate">Copied</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="mr-2 h-4 w-4" />
-                            {isTorrentStream ? 'Copy Info Hash' : 'Copy Stream URL'}
+                            <Copy className="mr-2 h-4 w-4 shrink-0" />
+                            <span className="truncate">{isTorrentStream ? 'Copy Info Hash' : 'Copy Stream URL'}</span>
                           </>
                         )}
                       </Button>
@@ -592,11 +597,13 @@ function StreamActionDialog({
                       <>
                         <Button
                           onClick={handleWatch}
-                          className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+                          className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 min-w-0"
                           disabled={trackAction.isPending}
                         >
-                          <MonitorPlay className="mr-2 h-4 w-4" />
-                          Stream via MediaFlow{providerDisplayName ? ` + ${providerDisplayName}` : ''}
+                          <MonitorPlay className="mr-2 h-4 w-4 shrink-0" />
+                          <span className="truncate">
+                            Stream via MediaFlow{providerDisplayName ? ` + ${providerDisplayName}` : ''}
+                          </span>
                         </Button>
 
                         {/* External Players */}
@@ -606,11 +613,11 @@ function StreamActionDialog({
                           <Button
                             variant="outline"
                             onClick={handleDownload}
-                            className="rounded-xl"
+                            className="rounded-xl min-w-0"
                             disabled={trackAction.isPending}
                           >
-                            <Download className="mr-2 h-4 w-4" />
-                            Download
+                            <Download className="mr-2 h-4 w-4 shrink-0" />
+                            <span className="truncate">Download</span>
                           </Button>
 
                           <Button
@@ -620,18 +627,18 @@ function StreamActionDialog({
                               setCopied(true)
                               setTimeout(() => setCopied(false), 2000)
                             }}
-                            className="rounded-xl"
+                            className="rounded-xl min-w-0"
                             disabled={trackAction.isPending}
                           >
                             {copied ? (
                               <>
-                                <Check className="mr-2 h-4 w-4 text-emerald-500" />
-                                Copied
+                                <Check className="mr-2 h-4 w-4 shrink-0 text-emerald-500" />
+                                <span className="truncate">Copied</span>
                               </>
                             ) : (
                               <>
-                                <Copy className="mr-2 h-4 w-4" />
-                                Copy URL
+                                <Copy className="mr-2 h-4 w-4 shrink-0" />
+                                <span className="truncate">Copy URL</span>
                               </>
                             )}
                           </Button>
