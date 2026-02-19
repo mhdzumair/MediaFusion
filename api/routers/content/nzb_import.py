@@ -34,6 +34,7 @@ from scrapers.scraper_tasks import meta_fetcher
 from utils.nzb import generate_nzb_hash, parse_nzb_content
 from utils.nzb_storage import get_nzb_storage
 from utils.parser import convert_bytes_to_readable
+from utils.zyclops import submit_nzb_to_zyclops
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,14 @@ async def _analyze_nzb_content(
             status="error",
             error="Failed to parse NZB content.",
         )
+
+    # Forward NZB to Zyclops health API (fire-and-forget)
+    submit_nzb_to_zyclops(
+        content,
+        name=nzb_data.title or fallback_title,
+        pub_date=nzb_data.date,
+        password=nzb_data.password,
+    )
 
     nzb_guid = nzb_data.nzb_hash or generate_nzb_hash(content)
 
@@ -477,6 +486,14 @@ async def import_nzb_file(
 
         # Parse title with PTT for quality info
         nzb_title = nzb_data.title or nzb_file.filename.replace(".nzb", "")
+
+        # Forward NZB to Zyclops health API (fire-and-forget)
+        submit_nzb_to_zyclops(
+            content,
+            name=nzb_title,
+            pub_date=nzb_data.date,
+            password=nzb_data.password,
+        )
         parsed = PTT.parse_title(nzb_title)
 
         # Parse file_data if provided
@@ -633,6 +650,14 @@ async def import_nzb_url(
         # Parse title with PTT
         nzb_title = nzb_data.title or "Unknown"
         parsed = PTT.parse_title(nzb_title)
+
+        # Forward NZB to Zyclops health API (fire-and-forget)
+        submit_nzb_to_zyclops(
+            content,
+            name=nzb_title,
+            pub_date=nzb_data.date,
+            password=nzb_data.password,
+        )
 
         # Convert NZBFile objects to dicts
         files_data = [{"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)]

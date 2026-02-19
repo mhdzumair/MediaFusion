@@ -198,6 +198,11 @@ class Settings(BaseSettings):
     max_torrent_file_size: int = 5_242_880  # 5 MB (torrent files are typically <1MB)
     max_nzb_file_size: int = 104_857_600  # 100 MB
 
+    # Zyclops NZB Health API Integration (optional)
+    # When set, every NZB the system processes is forwarded to Zyclops for ingestion.
+    # Failures are silent — never blocks or affects user-facing operations.
+    zyclops_health_api_url: str | None = None  # e.g., "https://zyclops.example.com"
+
     # Torznab API Settings
     enable_torznab_api: bool = True  # Master toggle for Torznab API endpoint
 

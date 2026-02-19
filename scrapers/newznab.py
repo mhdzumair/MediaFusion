@@ -24,6 +24,7 @@ from db.schemas.config import NewznabIndexerConfig
 from db.schemas.media import UsenetStreamData
 from scrapers.base_scraper import BaseScraper, ScraperMetrics
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
+from utils.zyclops import submit_nzb_to_zyclops
 
 logger = logging.getLogger(__name__)
 
@@ -641,12 +642,20 @@ class NewznabScraper(BaseScraper):
             self.metrics.record_error("parse_error")
             return None
 
-    async def fetch_nzb_content(self, indexer: NewznabIndexerConfig, guid: str) -> bytes | None:
+    async def fetch_nzb_content(
+        self,
+        indexer: NewznabIndexerConfig,
+        guid: str,
+        title: str | None = None,
+        pub_date: datetime | None = None,
+    ) -> bytes | None:
         """Fetch NZB file content from indexer.
 
         Args:
             indexer: Indexer configuration
             guid: NZB GUID
+            title: Release title for Zyclops health API forwarding
+            pub_date: Publication date for Zyclops health API forwarding
 
         Returns:
             NZB file content as bytes or None on error
@@ -661,7 +670,12 @@ class NewznabScraper(BaseScraper):
         try:
             response = await self.http_client.get(url, params=params, timeout=30)
             response.raise_for_status()
-            return response.content
+            content = response.content
+
+            # Forward NZB to Zyclops health API (fire-and-forget)
+            submit_nzb_to_zyclops(content, name=title or guid, pub_date=pub_date)
+
+            return content
         except Exception as e:
             self.logger.error(f"Error fetching NZB from {indexer.name}: {e}")
             return None
