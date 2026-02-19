@@ -114,6 +114,7 @@ class ConversationStep(str, Enum):
     ANALYZING = "analyzing"
     AWAITING_MATCH = "awaiting_match"
     AWAITING_MANUAL_IMDB = "awaiting_manual_imdb"
+    AWAITING_TITLE_SEARCH = "awaiting_title_search"
     AWAITING_SPORTS_CATEGORY = "awaiting_sports_category"
     AWAITING_METADATA_REVIEW = "awaiting_metadata_review"
     AWAITING_FIELD_EDIT = "awaiting_field_edit"
@@ -1869,7 +1870,8 @@ class TelegramContentBot:
                 else:
                     match_details.append(f"{idx}. {title} ({year or 'N/A'})")
 
-        # Add manual entry and cancel
+        # Add search by title, manual entry, and cancel
+        keyboard.append([{"text": "🔍 Search by title", "callback_data": f"search_title:{state.user_id}"}])
         keyboard.append([{"text": "📝 Enter external ID manually", "callback_data": f"manual:{state.user_id}"}])
         keyboard.append([{"text": "❌ Cancel", "callback_data": f"cancel:{state.user_id}"}])
 
@@ -2203,6 +2205,139 @@ class TelegramContentBot:
             "handled": True,
             "message": result.get("message"),
             "reply_markup": result.get("reply_markup"),
+        }
+
+    async def handle_title_search_prompt(self, user_id: int, chat_id: int, message_id: int) -> dict:
+        """Show title search prompt, asking the user to type a title to search."""
+        state = self.get_conversation(user_id)
+        if not state:
+            return {"success": False, "message": "No active session found."}
+
+        state.step = ConversationStep.AWAITING_TITLE_SEARCH
+        state.touch()
+        self._persist_conversation(state)
+
+        message = (
+            "🔍 *Search by Title*\n\n"
+            "Type the title of the movie or series you want to find.\n\n"
+            "*Examples:*\n"
+            "• `The Dark Knight`\n"
+            "• `Breaking Bad`\n"
+            "• `Inception 2010`"
+        )
+
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}"}],
+            ]
+        }
+        await self.edit_message(chat_id, message_id, message, keyboard)
+        return {"success": True}
+
+    async def process_title_search(self, user_id: int, chat_id: int, text: str) -> dict:
+        """Process a title search query typed by the user.
+
+        Searches metadata providers and shows results as selectable buttons.
+        Falls back to manual ID entry if nothing is found.
+        """
+        state = self.get_conversation(user_id)
+        if not state or state.step != ConversationStep.AWAITING_TITLE_SEARCH:
+            return {"success": False, "handled": False}
+
+        query = text.strip()
+        if not query:
+            return {
+                "success": False,
+                "handled": True,
+                "message": "Please type a title to search for.",
+            }
+
+        try:
+            results = await meta_fetcher.search_multiple_results(
+                title=query,
+                limit=5,
+                media_type=state.media_type if state.media_type != "sports" else None,
+                min_similarity=50,
+            )
+        except Exception as e:
+            logger.exception(f"Title search failed for '{query}': {e}")
+            results = []
+
+        if not results:
+            state.step = ConversationStep.AWAITING_MANUAL_IMDB
+            state.touch()
+            self._persist_conversation(state)
+            return {
+                "success": True,
+                "handled": True,
+                "message": (
+                    f"❌ No results found for *{query}*.\n\n"
+                    "Please reply with an external ID instead.\n\n"
+                    "*Supported formats:*\n"
+                    "• IMDb: `tt1234567`\n"
+                    "• TMDB: `tmdb:12345`\n"
+                    "• TVDB: `tvdb:12345`\n"
+                    "• MAL: `mal:12345`\n"
+                    "• Kitsu: `kitsu:12345`"
+                ),
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "🔍 Search again", "callback_data": f"search_title:{user_id}"}],
+                        [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}"}],
+                    ]
+                },
+            }
+
+        # Build keyboard from results — same format as show_match_selection
+        keyboard = []
+        for idx, match in enumerate(results[:5], 1):
+            canonical_id = self._get_canonical_external_id(match) or ""
+            title = match.get("title", "Unknown")
+            year = match.get("year", "")
+            match_type = match.get("type", "movie")
+            type_emoji = "🎬" if match_type == "movie" else "📺"
+            ids = self._collect_match_ids(match)
+
+            short_id = ""
+            if ids.get("imdb"):
+                short_id = ids["imdb"]
+            elif ids.get("tmdb"):
+                short_id = f"tmdb:{ids['tmdb']}"
+            elif ids.get("tvdb"):
+                short_id = f"tvdb:{ids['tvdb']}"
+
+            button_text = f"{idx}. {type_emoji} {title}"
+            if year:
+                button_text += f" ({year})"
+            if short_id:
+                button_text += f" [{short_id}]"
+            if len(button_text) > 60:
+                button_text = button_text[:57] + "..."
+
+            keyboard.append(
+                [
+                    {
+                        "text": button_text,
+                        "callback_data": f"match:{state.user_id}:{canonical_id}",
+                    }
+                ]
+            )
+
+        keyboard.append([{"text": "🔍 Search again", "callback_data": f"search_title:{user_id}"}])
+        keyboard.append([{"text": "📝 Enter external ID manually", "callback_data": f"manual:{user_id}"}])
+        keyboard.append([{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}"}])
+
+        # Move back to AWAITING_MATCH so the match: callback works
+        state.step = ConversationStep.AWAITING_MATCH
+        state.search_results = results
+        state.touch()
+        self._persist_conversation(state)
+
+        return {
+            "success": True,
+            "handled": True,
+            "message": f"🔍 *Search Results for:* {query}\n\nSelect a match:",
+            "reply_markup": {"inline_keyboard": keyboard},
         }
 
     async def show_metadata_review(self, state: ConversationState, chat_id: int, message_id: int | None) -> dict:
@@ -3617,7 +3752,10 @@ class TelegramContentBot:
                             },
                         )
 
-                    # Add "Manual Entry" button
+                    # Add search, manual entry, and cancel buttons
+                    keyboard.append(
+                        [{"text": "🔍 Search by title", "callback_data": f"search_title:{user_id}:{message_id}"}]
+                    )
                     keyboard.append(
                         [{"text": "✏️ Enter IMDb ID manually", "callback_data": f"manual:{user_id}:{message_id}"}]
                     )
@@ -3632,9 +3770,12 @@ class TelegramContentBot:
                         f"Select a match or enter IMDb ID manually:"
                     )
                 else:
-                    # No matches found, ask for manual entry
-                    keyboard = [[{"text": "✏️ Enter IMDb ID", "callback_data": f"manual:{user_id}:{message_id}"}]]
-                    keyboard.append([{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}:{message_id}"}])
+                    # No matches found, offer search by title or manual entry
+                    keyboard = [
+                        [{"text": "🔍 Search by title", "callback_data": f"search_title:{user_id}:{message_id}"}],
+                        [{"text": "✏️ Enter IMDb ID", "callback_data": f"manual:{user_id}:{message_id}"}],
+                        [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}:{message_id}"}],
+                    ]
                     result["reply_markup"] = {"inline_keyboard": keyboard}
                     result["message"] = (
                         f"📹 *Video Received*\n\n"
@@ -3645,9 +3786,11 @@ class TelegramContentBot:
                     )
             except Exception as e:
                 logger.exception(f"Error searching for matches: {e}")
-                # Fallback to manual entry
-                keyboard = [[{"text": "✏️ Enter IMDb ID", "callback_data": f"manual:{user_id}:{message_id}"}]]
-                keyboard.append([{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}:{message_id}"}])
+                keyboard = [
+                    [{"text": "🔍 Search by title", "callback_data": f"search_title:{user_id}:{message_id}"}],
+                    [{"text": "✏️ Enter IMDb ID", "callback_data": f"manual:{user_id}:{message_id}"}],
+                    [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}:{message_id}"}],
+                ]
                 result["reply_markup"] = {"inline_keyboard": keyboard}
                 result["message"] = (
                     f"📹 *Video Received*\n\n"
@@ -3656,9 +3799,12 @@ class TelegramContentBot:
                     f"Please select an option:"
                 )
         else:
-            # No title to search, ask for manual entry
-            keyboard = [[{"text": "✏️ Enter IMDb ID", "callback_data": f"manual:{user_id}:{message_id}"}]]
-            keyboard.append([{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}:{message_id}"}])
+            # No title to search, offer search by title or manual entry
+            keyboard = [
+                [{"text": "🔍 Search by title", "callback_data": f"search_title:{user_id}:{message_id}"}],
+                [{"text": "✏️ Enter IMDb ID", "callback_data": f"manual:{user_id}:{message_id}"}],
+                [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}:{message_id}"}],
+            ]
             result["reply_markup"] = {"inline_keyboard": keyboard}
             result["message"] = (
                 f"📹 *Video Received*\n\n"
@@ -4217,6 +4363,52 @@ class TelegramContentBot:
                     await self.handle_sports_category_selection(user_id, chat_id, message_id, category_key)
                     result["success"] = True
                     result["action"] = "sports_category_selected"
+
+            elif action == "search_title":
+                # Title search: search_title:{user_id} (wizard) or search_title:{user_id}:{msg_id} (legacy)
+                if len(parts) >= 2:
+                    target_user_id = int(parts[1])
+
+                    if target_user_id != user_id:
+                        await self.answer_callback_query(callback_query_id, "❌ Unauthorized", show_alert=True)
+                        return result
+
+                    await self.answer_callback_query(callback_query_id)
+
+                    state = self.get_conversation(user_id)
+                    if state:
+                        await self.handle_title_search_prompt(user_id, chat_id, message_id)
+                    else:
+                        # Legacy flow — create a temporary conversation to track the search step
+                        pending = self._get_pending_content(user_id)
+                        raw_input = pending[-1] if pending else {}
+                        state = self.create_conversation(
+                            user_id,
+                            chat_id,
+                            ContentType.VIDEO,
+                            raw_input,
+                            message_id,
+                        )
+                        state.step = ConversationStep.AWAITING_TITLE_SEARCH
+                        state.touch()
+                        self._persist_conversation(state)
+                        await self.edit_message(
+                            chat_id,
+                            message_id,
+                            "🔍 *Search by Title*\n\n"
+                            "Type the title of the movie or series you want to find.\n\n"
+                            "*Examples:*\n"
+                            "• `The Dark Knight`\n"
+                            "• `Breaking Bad`\n"
+                            "• `Inception 2010`",
+                            {
+                                "inline_keyboard": [
+                                    [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}"}],
+                                ]
+                            },
+                        )
+                    result["success"] = True
+                    result["action"] = "search_title"
 
             elif action == "manual":
                 # Manual IMDb entry: manual:{user_id} (new) or manual:{user_id}:{msg_id} (legacy)

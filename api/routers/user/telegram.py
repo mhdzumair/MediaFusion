@@ -587,6 +587,18 @@ async def telegram_webhook(request: Request):
                         )
                     return {"ok": True}
 
+                elif state.step == ConversationStep.AWAITING_TITLE_SEARCH:
+                    # User typed a title to search for
+                    result = await telegram_content_bot.process_title_search(user_id, chat_id, text)
+                    if result.get("handled") and result.get("message"):
+                        await telegram_content_bot.send_reply(
+                            chat_id,
+                            result["message"],
+                            reply_to_message_id=message_id,
+                            reply_markup=result.get("reply_markup"),
+                        )
+                    return {"ok": True}
+
                 elif state.step == ConversationStep.AWAITING_POSTER_INPUT:
                     # User is providing poster image URL or uploading image
                     photo = message.get("photo")
@@ -665,7 +677,7 @@ async def telegram_webhook(request: Request):
             if imdb_match and user_id:
                 meta_id = imdb_match.group(0)
                 # Check if there's legacy pending content
-                if telegram_content_bot._pending_content.get(user_id):
+                if telegram_content_bot.get_pending_count(user_id) > 0:
                     result = await telegram_content_bot.link_pending_content(user_id, meta_id)
                     await telegram_content_bot.send_reply(chat_id, result["message"], reply_to_message_id=message_id)
                     return {"ok": True}

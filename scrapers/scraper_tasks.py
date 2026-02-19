@@ -1,8 +1,8 @@
 import asyncio
 import hashlib
+import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -558,55 +558,46 @@ class MetadataConfig:
         return sources
 
 
-@dataclass
-class CacheEntry:
-    data: dict[str, Any]
-    expires_at: datetime
-
-
 class MetadataCache:
-    def __init__(self, ttl_minutes: int = 30):
-        self.cache: dict[str, CacheEntry] = {}
-        self.ttl = timedelta(minutes=ttl_minutes)
+    """Redis-backed metadata cache shared across all workers."""
+
+    def __init__(self, ttl_seconds: int = 30 * 60):
+        self.ttl_seconds = ttl_seconds
 
     def _generate_key(self, **kwargs) -> str:
-        """Generate a cache key from the search parameters"""
-        # Sort kwargs to ensure consistent key generation
         sorted_items = sorted((k, str(v)) for k, v in kwargs.items() if v is not None and k != "self")
         key_string = ",".join(f"{k}:{v}" for k, v in sorted_items)
-        return hashlib.md5(key_string.encode()).hexdigest()
+        digest = hashlib.md5(key_string.encode()).hexdigest()
+        return f"meta_cache:{digest}"
 
-    def get(self, **kwargs) -> dict[str, Any] | None:
-        """Get cached data if it exists and is not expired"""
+    async def get(self, **kwargs) -> dict[str, Any] | None:
+        from db.redis_database import REDIS_ASYNC_CLIENT
+
         key = self._generate_key(**kwargs)
-        if key in self.cache:
-            entry = self.cache[key]
-            if datetime.now() < entry.expires_at:
-                return entry.data
-            else:
-                # Clean up expired entry
-                del self.cache[key]
+        try:
+            raw = await REDIS_ASYNC_CLIENT.get(key)
+            if raw:
+                return json.loads(raw)
+        except Exception as e:
+            logging.debug(f"MetadataCache Redis get failed for {key}: {e}")
         return None
 
-    def set(self, data: dict[str, Any], **kwargs) -> None:
-        """Cache the data with expiration time"""
-        if not data:  # Don't cache empty results
+    async def set(self, data: dict[str, Any], **kwargs) -> None:
+        from db.redis_database import REDIS_ASYNC_CLIENT
+
+        if not data:
             return
         key = self._generate_key(**kwargs)
-        self.cache[key] = CacheEntry(data=data, expires_at=datetime.now() + self.ttl)
-
-    def clear_expired(self) -> None:
-        """Remove all expired entries from the cache"""
-        now = datetime.now()
-        expired_keys = [key for key, entry in self.cache.items() if now >= entry.expires_at]
-        for key in expired_keys:
-            del self.cache[key]
+        try:
+            await REDIS_ASYNC_CLIENT.setex(key, self.ttl_seconds, json.dumps(data, default=str))
+        except Exception as e:
+            logging.debug(f"MetadataCache Redis set failed for {key}: {e}")
 
 
 class MetadataFetcher:
     def __init__(self, cache_ttl_minutes: int = 30):
         self.config = MetadataConfig(MetadataSource(settings.metadata_primary_source))
-        self.cache = MetadataCache(ttl_minutes=cache_ttl_minutes)
+        self.cache = MetadataCache(ttl_seconds=cache_ttl_minutes * 60)
 
     async def get_metadata(
         self,
@@ -618,7 +609,7 @@ class MetadataFetcher:
         Main method to fetch metadata using configured sources and fallback logic.
         """
         # Check cache first
-        cached_data = self.cache.get(
+        cached_data = await self.cache.get(
             method="get_metadata",
             title_id=title_id,
             media_type=media_type,
@@ -654,7 +645,7 @@ class MetadataFetcher:
                         f"Successfully fetched metadata from {source.value} for {title_id}: {metadata['title']}"
                     )
                     # Cache the successful result
-                    self.cache.set(
+                    await self.cache.set(
                         metadata,
                         method="get_metadata",
                         title_id=title_id,
@@ -789,7 +780,7 @@ class MetadataFetcher:
                 pass
 
         # Check cache first
-        cached_data = self.cache.get(
+        cached_data = await self.cache.get(
             method="search_metadata",
             title=title,
             year=year,
@@ -813,7 +804,7 @@ class MetadataFetcher:
                 if metadata:
                     logger.info(f"Successfully searched metadata from {source.value}: {title}:{metadata['imdb_id']}")
                     # Cache the successful result
-                    self.cache.set(
+                    await self.cache.set(
                         metadata,
                         method="search_metadata",
                         title=title,
@@ -830,8 +821,8 @@ class MetadataFetcher:
         return metadata
 
     def clear_expired_cache(self) -> None:
-        """Clear expired cache entries"""
-        self.cache.clear_expired()
+        """No-op: Redis TTL handles expiry automatically."""
+        pass
 
     async def search_multiple_results(
         self,
@@ -856,7 +847,7 @@ class MetadataFetcher:
             include_anime: Whether to search MAL/Kitsu for anime
         """
         # Check cache first
-        cached_data = self.cache.get(
+        cached_data = await self.cache.get(
             method="search_multiple_results",
             title=title,
             limit=limit,
@@ -939,8 +930,72 @@ class MetadataFetcher:
                 logging.error(f"Error searching Kitsu: {e}")
                 return []
 
-        # Fetch from all sources in parallel
+        async def get_db_candidates() -> list[dict[str, Any]]:
+            try:
+                from db.crud.media import (
+                    get_all_external_ids_batch,
+                    get_media_images,
+                    search_media,
+                )
+                from db.database import get_read_session_context
+                from db.enums import MediaType as DBMediaType
+
+                db_media_type = None
+                if media_type == "movie":
+                    db_media_type = DBMediaType.MOVIE
+                elif media_type == "series":
+                    db_media_type = DBMediaType.SERIES
+
+                async with get_read_session_context() as session:
+                    results = await search_media(session, title, db_media_type, limit=limit)
+                    if not results:
+                        return []
+
+                    media_ids = [m.id for m in results]
+                    ext_ids_batch = await get_all_external_ids_batch(session, media_ids)
+
+                    candidates = []
+                    for media in results:
+                        ext_ids = ext_ids_batch.get(media.id, {})
+                        imdb_id = ext_ids.get("imdb")
+                        if not imdb_id and not ext_ids:
+                            continue
+
+                        poster_url = None
+                        try:
+                            images = await get_media_images(session, media.id, image_type="poster")
+                            if images:
+                                poster_url = images[0].url
+                        except Exception:
+                            pass
+
+                        candidate: dict[str, Any] = {
+                            "title": media.title,
+                            "year": media.year,
+                            "type": media.type.value,
+                            "poster": poster_url,
+                            "_source_provider": "db",
+                        }
+                        if imdb_id:
+                            candidate["imdb_id"] = imdb_id
+                        if ext_ids.get("tmdb"):
+                            candidate["tmdb_id"] = ext_ids["tmdb"]
+                        if ext_ids.get("tvdb"):
+                            candidate["tvdb_id"] = ext_ids["tvdb"]
+                        if ext_ids.get("mal"):
+                            candidate["mal_id"] = ext_ids["mal"]
+                        if ext_ids.get("kitsu"):
+                            candidate["kitsu_id"] = ext_ids["kitsu"]
+
+                        candidates.append(candidate)
+                    return candidates
+            except Exception as e:
+                logging.debug(f"DB search failed for '{title}': {e}")
+                return []
+
+        # Fetch from all sources in parallel (DB first, then external providers)
         all_results = await asyncio.gather(
+            get_db_candidates(),
             get_imdb_candidates(),
             get_tmdb_candidates(),
             get_tvdb_candidates(),
@@ -948,14 +1003,29 @@ class MetadataFetcher:
             get_kitsu_candidates(),
         )
 
-        # Combine results
+        # Combine results with DB entries first, then deduplicate
         results = []
+        seen_ids: set[str] = set()
         for source_results in all_results:
-            results.extend(source_results)
+            for item in source_results:
+                dedup_key = None
+                imdb_id = item.get("imdb_id")
+                if imdb_id:
+                    dedup_key = f"imdb:{imdb_id}"
+                elif item.get("tmdb_id"):
+                    dedup_key = f"tmdb:{item['tmdb_id']}"
+                elif item.get("tvdb_id"):
+                    dedup_key = f"tvdb:{item['tvdb_id']}"
+
+                if dedup_key and dedup_key in seen_ids:
+                    continue
+                if dedup_key:
+                    seen_ids.add(dedup_key)
+                results.append(item)
 
         # Cache the results
         if results:
-            self.cache.set(
+            await self.cache.set(
                 {"results": results},
                 method="search_multiple_results",
                 title=title,
