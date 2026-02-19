@@ -224,9 +224,18 @@ class NewznabScraper(BaseScraper):
             UsenetStreamData objects
         """
         # Build URL
-        url = f"{str(indexer.url).rstrip('/')}/api"
         params["apikey"] = indexer.api_key
         params["o"] = "json"  # Request JSON output
+
+        if indexer.use_zyclops:
+            # Proxy through Zyclops health check proxy
+            url = "https://zyclops.elfhosted.com/api"
+            params["target"] = f"{str(indexer.url).rstrip('/')}/api"
+            params["single_ip"] = "true"
+            if indexer.zyclops_backbones:
+                params["backbone"] = ",".join(indexer.zyclops_backbones)
+        else:
+            url = f"{str(indexer.url).rstrip('/')}/api"
 
         try:
             response = await self.http_client.get(url, params=params, timeout=30)

@@ -361,6 +361,9 @@ class NewznabIndexerConfig(BaseModel):
     # Optional category overrides (use defaults if empty)
     movie_categories: list[int] = Field(default_factory=list, alias="mc")
     tv_categories: list[int] = Field(default_factory=list, alias="tc")
+    # Zyclops health check proxy
+    use_zyclops: bool = Field(default=False, alias="uz")
+    zyclops_backbones: list[str] = Field(default_factory=list, alias="zb")  # backbone slugs
 
     class Config:
         extra = "ignore"

@@ -62,6 +62,8 @@ export interface NewznabIndexerConfig {
   p?: number // priority
   mc?: number[] // movie_categories
   tc?: number[] // tv_categories
+  uz?: boolean // use_zyclops
+  zb?: string[] // zyclops_backbones (slugs)
 }
 
 export interface StreamingProviderConfigType {
