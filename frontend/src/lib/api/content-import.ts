@@ -299,6 +299,7 @@ export interface YouTubeAnalyzeResponse {
   thumbnail?: string
   duration_seconds?: number
   is_live?: boolean
+  resolution?: string
   matches?: TorrentMatch[]
   error?: string
 }
@@ -308,7 +309,13 @@ export interface YouTubeImportRequest {
   meta_type: 'movie' | 'series' | 'sports' | 'tv'
   meta_id?: string
   title?: string
-  languages?: string // Comma-separated
+  poster?: string
+  background?: string
+  resolution?: string
+  quality?: string
+  codec?: string
+  languages?: string
+  catalogs?: string
   is_anonymous?: boolean
   force_import?: boolean
 }
@@ -680,7 +687,13 @@ export const contentImportApi = {
     formData.append('meta_type', data.meta_type)
     if (data.meta_id) formData.append('meta_id', data.meta_id)
     if (data.title) formData.append('title', data.title)
+    if (data.poster) formData.append('poster', data.poster)
+    if (data.background) formData.append('background', data.background)
+    if (data.resolution) formData.append('resolution', data.resolution)
+    if (data.quality) formData.append('quality', data.quality)
+    if (data.codec) formData.append('codec', data.codec)
     if (data.languages) formData.append('languages', data.languages)
+    if (data.catalogs) formData.append('catalogs', data.catalogs)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
     return apiClient.upload<ImportResponse>('/import/youtube', formData)

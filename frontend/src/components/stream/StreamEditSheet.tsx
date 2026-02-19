@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Edit, Loader2, CheckCircle2, AlertCircle, Monitor, Volume2, Film, Languages, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
+import { useToast } from '@/hooks/use-toast'
 import { MultiSelect } from '@/components/ui/multi-select'
 import type { StreamFieldName as ApiStreamFieldName } from '@/lib/api'
 
@@ -133,6 +134,7 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
   const [languages, setLanguages] = useState<string[]>([])
+  const { toast } = useToast()
 
   const createSuggestion = useCreateStreamSuggestion()
 
@@ -227,12 +229,11 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
 
     setIsSubmitting(true)
     setSubmitResults([])
-    const results: { field: string; success: boolean }[] = []
+    const results: { field: string; success: boolean; autoApproved: boolean }[] = []
 
-    // Submit field corrections
     for (const { field, currentValue, newValue } of modifiedFields) {
       try {
-        await createSuggestion.mutateAsync({
+        const response = await createSuggestion.mutateAsync({
           streamId,
           data: {
             suggestion_type: 'field_correction',
@@ -242,9 +243,9 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
             reason: reason.trim() || undefined,
           },
         })
-        results.push({ field, success: true })
+        results.push({ field, success: true, autoApproved: response.was_auto_approved })
       } catch {
-        results.push({ field, success: false })
+        results.push({ field, success: false, autoApproved: false })
       }
     }
 
@@ -252,11 +253,41 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
     setIsSubmitting(false)
 
     const successCount = results.filter((r) => r.success).length
-    if (successCount > 0 && successCount === results.length) {
-      setTimeout(() => {
-        setOpen(false)
-        onSuccess?.()
-      }, 1500)
+    const failCount = results.length - successCount
+    const autoApprovedCount = results.filter((r) => r.autoApproved).length
+
+    if (successCount > 0 && failCount === 0) {
+      setOpen(false)
+      onSuccess?.()
+      if (autoApprovedCount === successCount) {
+        toast({
+          title: 'Changes Applied',
+          description: `${successCount} edit${successCount !== 1 ? 's' : ''} auto-approved and applied immediately.`,
+        })
+      } else if (autoApprovedCount > 0) {
+        const pendingCount = successCount - autoApprovedCount
+        toast({
+          title: 'Edits Submitted',
+          description: `${autoApprovedCount} auto-approved, ${pendingCount} pending moderator review.`,
+        })
+      } else {
+        toast({
+          title: 'Edits Submitted',
+          description: `${successCount} suggestion${successCount !== 1 ? 's' : ''} submitted for moderator review.`,
+        })
+      }
+    } else if (successCount > 0) {
+      toast({
+        title: 'Partially Submitted',
+        description: `${successCount} succeeded, ${failCount} failed. Check and retry failed edits.`,
+        variant: 'destructive',
+      })
+    } else {
+      toast({
+        title: 'Submission Failed',
+        description: 'Failed to submit suggestions. Please try again.',
+        variant: 'destructive',
+      })
     }
   }
 

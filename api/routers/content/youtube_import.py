@@ -87,6 +87,7 @@ class YouTubeAnalyzeResponse(BaseModel):
     thumbnail: str | None = None
     duration_seconds: int | None = None
     is_live: bool = False
+    resolution: str | None = None
     matches: list[dict[str, Any]] | None = None
     error: str | None = None
 
@@ -186,7 +187,15 @@ async def process_youtube_import(
         uploader_name = user.username or user.email or f"User #{user.id}"
         uploader_user_id = user.id
 
-    # Create YouTube stream
+    # Create YouTube stream with quality attributes
+    stream_kwargs: dict[str, Any] = {
+        "uploader": uploader_name,
+        "uploader_user_id": uploader_user_id,
+    }
+    for attr in ("resolution", "quality", "codec"):
+        if contribution_data.get(attr):
+            stream_kwargs[attr] = contribution_data[attr]
+
     yt_stream = await create_youtube_stream(
         session,
         video_id=video_id,
@@ -194,8 +203,7 @@ async def process_youtube_import(
         media_id=media.id,
         source="youtube",
         is_live=contribution_data.get("is_live", False),
-        uploader=uploader_name,
-        uploader_user_id=uploader_user_id,
+        **stream_kwargs,
     )
 
     # Add languages if provided
@@ -264,6 +272,7 @@ async def analyze_youtube_url_endpoint(
             thumbnail=video_info.thumbnail or f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
             duration_seconds=video_info.duration,
             is_live=video_info.is_live,
+            resolution=video_info.resolution,
         )
 
         # Search for matching content based on video title
@@ -294,9 +303,15 @@ async def import_youtube_video(
     meta_type: str = Form(...),
     meta_id: str = Form(None),
     title: str = Form(None),
+    poster: str = Form(None),
+    background: str = Form(None),
+    resolution: str = Form(None),
+    quality: str = Form(None),
+    codec: str = Form(None),
     languages: str = Form(None),
+    catalogs: str = Form(None),
     force_import: bool = Form(False),
-    is_anonymous: bool | None = Form(None),  # None means use user's preference
+    is_anonymous: bool | None = Form(None),
     user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -335,9 +350,15 @@ async def import_youtube_video(
             "meta_type": meta_type,
             "meta_id": meta_id,
             "title": title or f"YouTube Video ({video_id})",
+            "poster": poster,
+            "background": background,
+            "resolution": resolution,
+            "quality": quality,
+            "codec": codec,
             "languages": [lang.strip() for lang in languages.split(",") if lang.strip()] if languages else [],
+            "catalogs": [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else [],
             "is_anonymous": resolved_is_anonymous,
-            "is_live": False,  # Could be detected from YouTube API
+            "is_live": False,
         }
 
         # Auto-approve for active users

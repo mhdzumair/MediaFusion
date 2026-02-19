@@ -156,7 +156,7 @@ export function CatalogSelector({
             )}
           </div>
 
-          <ScrollArea className="h-[250px]">
+          <ScrollArea className="h-[250px]" onWheel={(e) => e.stopPropagation()}>
             <div className="p-2 space-y-1">
               {filteredCatalogs.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
