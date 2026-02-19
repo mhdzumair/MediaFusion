@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import {
   Settings,
@@ -563,6 +563,25 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
 
   const isPending = createProfile.isPending || updateProfile.isPending
 
+  const configHasErrors = useMemo(() => {
+    const isValidUrl = (v: string | undefined) => {
+      if (!v?.trim()) return false
+      try {
+        const u = new URL(v.trim())
+        return u.protocol === 'http:' || u.protocol === 'https:'
+      } catch {
+        return false
+      }
+    }
+    if (config.mfc) {
+      if (!isValidUrl(config.mfc.pu)) return true
+      if (!config.mfc.ap?.trim()) return true
+    }
+    if (config.rpc && !config.rpc.ak?.trim()) return true
+    if (config.mdb && !config.mdb.ak?.trim()) return true
+    return false
+  }, [config.mfc, config.rpc, config.mdb])
+
   // Clear status message after 5 seconds
   useEffect(() => {
     if (saveStatus) {
@@ -654,7 +673,7 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
         </Button>
 
         <div className="flex items-center gap-2">
-          <Button onClick={handleSave} disabled={isPending || !name.trim()} variant="gold">
+          <Button onClick={handleSave} disabled={isPending || !name.trim() || configHasErrors} variant="gold">
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

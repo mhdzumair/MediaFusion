@@ -116,10 +116,10 @@ export interface ProfileConfig {
   ap?: string // api_password
   ls?: (string | null)[] // language_sorting
   qf?: string[] // quality_filter
-  mfc?: MediaFlowConfigType // mediaflow_config
-  rpc?: RPDBConfigType // rpdb_config
+  mfc?: MediaFlowConfigType | null // mediaflow_config
+  rpc?: RPDBConfigType | null // rpdb_config
   lss?: boolean // live_search_streams
-  mdb?: MDBListConfigType // mdblist_config
+  mdb?: MDBListConfigType | null // mdblist_config
   ic?: IndexerConfigType // indexer_config
   // Stream display settings
   mxs?: number // max_streams (total cap)

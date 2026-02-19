@@ -168,10 +168,10 @@ export interface ProfileConfig {
   ap?: string // api_password
   ls?: (string | null)[] // language_sorting
   qf?: string[] // quality_filter
-  mfc?: MediaFlowConfig // mediaflow_config
-  rpc?: RPDBConfig // rpdb_config
+  mfc?: MediaFlowConfig | null // mediaflow_config
+  rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams
-  mdb?: MDBListConfig // mdblist_config
+  mdb?: MDBListConfig | null // mdblist_config
   st?: StreamTemplateConfig // stream_template
   ic?: IndexerConfig // indexer_config
   // Usenet settings

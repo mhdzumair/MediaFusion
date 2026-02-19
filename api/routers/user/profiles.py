@@ -4,6 +4,7 @@ User Profile Management API endpoints.
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -474,6 +475,53 @@ def _validate_provider_configs(config: dict) -> None:
                 )
 
 
+def _validate_external_services(config: dict) -> None:
+    """
+    Validate external service configs (MediaFlow, RPDB, MDBList).
+    If a service is present in the config, its required fields must be filled
+    with valid values.  Raises HTTPException(400) on the first problem found.
+    """
+    mfc = config.get("mediaflow_config") or config.get("mfc")
+    if isinstance(mfc, dict):
+        proxy_url = mfc.get("proxy_url") or mfc.get("pu") or ""
+        api_password = mfc.get("api_password") or mfc.get("ap") or ""
+
+        if not proxy_url.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MediaFlow Proxy URL is required when MediaFlow is enabled.",
+            )
+        parsed = urlparse(proxy_url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MediaFlow Proxy URL must be a valid HTTP/HTTPS URL.",
+            )
+        if not api_password.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MediaFlow API password is required when MediaFlow is enabled.",
+            )
+
+    rpc = config.get("rpdb_config") or config.get("rpc")
+    if isinstance(rpc, dict):
+        api_key = rpc.get("api_key") or rpc.get("ak") or ""
+        if not api_key.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="RPDB API key is required when RPDB is enabled.",
+            )
+
+    mdb = config.get("mdblist_config") or config.get("mdb")
+    if isinstance(mdb, dict):
+        api_key = mdb.get("api_key") or mdb.get("ak") or ""
+        if not api_key.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MDBList API key is required when MDBList is enabled.",
+            )
+
+
 def _build_user_data_for_validation(config: dict) -> UserData:
     """
     Build a minimal UserData with only the fields needed for provider credential
@@ -708,8 +756,9 @@ async def create_profile(
         config["api_password"] = api_password
         config["ap"] = api_password  # Also set alias
 
-    # Reject save if any enabled provider is missing required config
+    # Reject save if any config is incomplete
     _validate_provider_configs(config)
+    _validate_external_services(config)
 
     # Validate provider credentials against their APIs
     user_data = _build_user_data_for_validation(config)
@@ -790,8 +839,9 @@ async def update_profile(
             new_config["api_password"] = api_password
             new_config["ap"] = api_password  # Also set alias
 
-        # Reject save if any enabled provider is missing required config
+        # Reject save if any config is incomplete
         _validate_provider_configs(new_config)
+        _validate_external_services(new_config)
 
         # Validate provider credentials against their APIs
         user_data = _build_user_data_for_validation(new_config)

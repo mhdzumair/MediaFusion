@@ -148,8 +148,8 @@ export interface ProfileConfig {
   ap?: string // api_password
   ls?: string[] // language_sorting
   qf?: string[] // quality_filter
-  mfc?: MediaFlowConfig // mediaflow_config
-  rpc?: RPDBConfig // rpdb_config
+  mfc?: MediaFlowConfig | null // mediaflow_config
+  rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams
   ic?: IndexerConfig // indexer_config
   eus?: boolean // enable_usenet_streams

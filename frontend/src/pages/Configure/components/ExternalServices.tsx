@@ -18,6 +18,16 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
   const rpc = config.rpc
   const mdb = config.mdb
 
+  const isValidUrl = (value: string | undefined) => {
+    if (!value?.trim()) return false
+    try {
+      const url = new URL(value.trim())
+      return url.protocol === 'http:' || url.protocol === 'https:'
+    } catch {
+      return false
+    }
+  }
+
   const enableMediaFlow = (enabled: boolean) => {
     if (enabled) {
       onChange({ ...config, mfc: { pu: '', ap: '', pls: false, ewp: false } })
@@ -91,16 +101,24 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Proxy URL</Label>
+                    <Label>
+                      Proxy URL <span className="text-destructive">*</span>
+                    </Label>
                     <Input
                       value={mfc.pu || ''}
                       onChange={(e) => updateMediaFlow({ pu: e.target.value })}
                       placeholder="https://your-mediaflow-proxy.com"
+                      className={mfc.pu && !isValidUrl(mfc.pu) ? 'border-destructive' : ''}
                     />
+                    {mfc.pu && !isValidUrl(mfc.pu) && (
+                      <p className="text-xs text-destructive">Please enter a valid HTTP/HTTPS URL</p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label>API Password</Label>
+                    <Label>
+                      API Password <span className="text-destructive">*</span>
+                    </Label>
                     <div className="relative">
                       <Input
                         type={showMediaFlowPassword ? 'text' : 'password'}
