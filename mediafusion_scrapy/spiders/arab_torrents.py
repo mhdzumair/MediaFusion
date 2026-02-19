@@ -131,7 +131,7 @@ class ArabTorrentSpider(scrapy.Spider):
 
         item.update(
             {
-                "catalog": f"{item['language'].lower()}_{item['video_type']}",
+                "catalog": [f"{item['language'].lower()}_{item['video_type']}"],
                 "type": "series" if item["video_type"] == "series" else "movie",
                 "poster": poster,
                 "created_at": created_at,

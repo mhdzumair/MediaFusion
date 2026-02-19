@@ -22,6 +22,8 @@ class CatalogParsePipeline:
 
         torrent_name = item.get("torrent_name", "").lower()
         catalogs = item.get("catalog", [])
+        if isinstance(catalogs, str):
+            catalogs = [catalogs] if catalogs else []
         source = item.get("source")
         for language in languages:
             if language.lower() == "english" and "eng" not in torrent_name:

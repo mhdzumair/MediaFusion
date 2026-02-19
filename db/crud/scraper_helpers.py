@@ -346,6 +346,8 @@ async def get_or_create_metadata(
 
     # Add catalogs
     if catalogs := metadata_data.get("catalogs"):
+        if isinstance(catalogs, str):
+            catalogs = [catalogs]
         await session.flush()
         catalog_links = []
         for catalog_name in catalogs:
@@ -1283,6 +1285,8 @@ async def store_new_torrent_streams(
         if hdr_formats := stream_data.get("hdr_formats"):
             all_hdr_formats.update(hdr_formats)
         if catalogs := stream_data.get("catalogs"):
+            if isinstance(catalogs, str):
+                catalogs = [catalogs]
             all_catalogs.update(c for c in catalogs if isinstance(c, str) and c)
 
         streams_to_create.append((info_hash, meta_id, stream_data, media))
@@ -1390,6 +1394,8 @@ async def store_new_torrent_streams(
 
         # Collect catalog links for batch insert
         if catalogs := stream_data.get("catalogs"):
+            if isinstance(catalogs, str):
+                catalogs = [catalogs]
             for catalog_name in catalogs:
                 if isinstance(catalog_name, str) and catalog_name:
                     catalog = catalog_map.get(catalog_name)

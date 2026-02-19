@@ -14,6 +14,14 @@ from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import TVMetaData
 
 
+def _ensure_catalog_list(item: dict) -> list[str]:
+    """Normalize the 'catalog' field to always be a list of strings."""
+    catalogs = item.get("catalog", [])
+    if isinstance(catalogs, str):
+        return [catalogs] if catalogs else []
+    return list(catalogs)
+
+
 class QueueBasedPipeline:
     def __init__(self):
         self.queue = asyncio.Queue()
@@ -136,7 +144,7 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
                     "hdr": item.get("hdr"),
                     "source": item["source"],
                     "uploader": item.get("uploader"),
-                    "catalogs": item.get("catalog", []),
+                    "catalogs": _ensure_catalog_list(item),
                     "created_at": item.get("created_at"),
                     "seeders": item.get("seeders"),
                     "files": episode_files,
@@ -192,7 +200,7 @@ class MovieStorePipeline(QueueBasedPipeline):
                 "poster": item.get("poster"),
                 "background": item.get("background"),
                 "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
-                "catalogs": item.get("catalog", []),
+                "catalogs": _ensure_catalog_list(item),
                 "genres": item.get("genres", []),
             }
             return await crud.get_or_create_metadata(
@@ -225,7 +233,7 @@ class MovieStorePipeline(QueueBasedPipeline):
             "poster": item.get("poster"),
             "background": item.get("background"),
             "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
-            "catalogs": item.get("catalog", []),
+            "catalogs": _ensure_catalog_list(item),
             "genres": item.get("genres", []),
         }
         metadata["id"] = f"mf_tmp_{item['title']}_{item.get('year', 'unknown')}"
@@ -294,7 +302,7 @@ class MovieStorePipeline(QueueBasedPipeline):
                 "hdr": item.get("hdr"),
                 "source": item.get("source", ""),
                 "uploader": item.get("uploader"),
-                "catalogs": item.get("catalog", []),
+                "catalogs": _ensure_catalog_list(item),
                 "created_at": item.get("created_at"),
                 "seeders": item.get("seeders"),
                 "torrent_file": item.get("torrent_file"),
@@ -329,7 +337,7 @@ class SeriesStorePipeline(QueueBasedPipeline):
                 "poster": item.get("poster"),
                 "background": item.get("background"),
                 "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
-                "catalogs": item.get("catalog", []),
+                "catalogs": _ensure_catalog_list(item),
             }
             return await crud.get_or_create_metadata(
                 session,
@@ -357,7 +365,7 @@ class SeriesStorePipeline(QueueBasedPipeline):
             "poster": item.get("poster"),
             "background": item.get("background"),
             "is_add_title_to_poster": item.get("is_add_title_to_poster", False),
-            "catalogs": item.get("catalog", []),
+            "catalogs": _ensure_catalog_list(item),
         }
         metadata["id"] = f"mf_tmp_{item['title']}_{item.get('year', 'unknown')}"
         media = await crud.get_or_create_metadata(session, metadata, "series", is_search_imdb_title=False)
@@ -420,7 +428,7 @@ class SeriesStorePipeline(QueueBasedPipeline):
                 "hdr": item.get("hdr"),
                 "source": item.get("source", ""),
                 "uploader": item.get("uploader"),
-                "catalogs": item.get("catalog", []),
+                "catalogs": _ensure_catalog_list(item),
                 "created_at": item.get("created_at"),
                 "seeders": item.get("seeders"),
                 "torrent_file": item.get("torrent_file"),
