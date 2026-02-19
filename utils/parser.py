@@ -37,6 +37,7 @@ from streaming_providers.cache_helpers import (
 )
 from utils import const
 from utils.config import config_manager
+from utils.nzb_storage import generate_signed_nzb_url
 from utils.const import CERTIFICATION_MAPPING, STREAMING_PROVIDERS_SHORT_NAMES
 from utils.network import encode_mediaflow_proxy_url
 from utils.runtime_const import ADULT_PARSER, MANIFEST_TEMPLATE, TRACKERS
@@ -639,8 +640,13 @@ def _build_stream_entries(
                 # Usenet: use nzb_guid as stream identifier
                 stream_id = stream_data.nzb_guid
                 if current_provider and current_provider.service == "stremio_nntp":
-                    # Direct NZB streaming — Stremio v5 fetches the NZB and handles NNTP natively
-                    nzb_direct_url = stream_data.nzb_url
+                    # Direct NZB streaming — Stremio v5 fetches the NZB and handles NNTP natively.
+                    # For file-imported NZBs (nzb_url is None), generate a signed expiring URL.
+                    # For externally-sourced NZBs (scraped/URL-imported), use the original URL.
+                    if stream_data.nzb_url:
+                        nzb_direct_url = stream_data.nzb_url
+                    else:
+                        nzb_direct_url = generate_signed_nzb_url(stream_data.nzb_guid)
                 elif has_streaming_provider:
                     stream_url = base_proxy_url_template.format(stream_id)
                     if episode_data:

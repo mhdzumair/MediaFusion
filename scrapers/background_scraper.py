@@ -42,27 +42,21 @@ class BackgroundSearchWorker:
                 async with get_background_session() as session:
                     media = await crud.get_movie_data_by_id(session, meta_id, load_relations=True)
                     if media:
-                        # Convert to MetadataData while session is active
                         metadata = MetadataData.from_db(media)
                 if not metadata:
                     continue
 
-                # Process each scraper sequentially for complete scraping
                 processed_info_hashes: set[str] = set()
                 for scraper in self.scrapers:
-                    # Get healthy indexers
                     healthy_indexers = await scraper.get_healthy_indexers()
                     if not healthy_indexers:
                         continue
 
-                    # Split indexers into chunks
                     indexer_chunks = list(scraper.split_indexers_into_chunks(healthy_indexers, 3))
 
-                    # Start metrics collection
                     scraper.metrics.start()
                     scraper.metrics.meta_data = metadata
 
-                    # Create generators for title-based search
                     title_streams_generators = []
                     for chunk in indexer_chunks:
                         for query_template in scraper.MOVIE_SEARCH_QUERY_TEMPLATES:
@@ -86,18 +80,22 @@ class BackgroundSearchWorker:
                                     )
                                 )
 
-                    # Process all streams without time limit
                     try:
                         async for stream in scraper.process_streams(
                             *title_streams_generators,
-                            max_process=None,  # No limit for background
-                            max_process_time=None,  # No time limit for background
+                            max_process=None,
+                            max_process_time=None,
                         ):
                             await scraper.store_streams([stream])
                     finally:
                         scraper.metrics.stop()
                         scraper.metrics.log_summary(scraper.logger)
 
+            except RuntimeError as e:
+                if "cannot schedule new futures after shutdown" in str(e):
+                    logger.warning("Event loop shutting down, aborting movie batch")
+                    return
+                logger.exception(f"Error processing movie {meta_id}: {e}")
             except Exception as e:
                 logger.exception(f"Error processing movie {meta_id}: {e}")
             finally:
@@ -177,6 +175,11 @@ class BackgroundSearchWorker:
                         scraper.metrics.stop()
                         scraper.metrics.log_summary(scraper.logger)
 
+            except RuntimeError as e:
+                if "cannot schedule new futures after shutdown" in str(e):
+                    logger.warning("Event loop shutting down, aborting series batch")
+                    return
+                logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
             except Exception as e:
                 logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
             finally:
@@ -204,8 +207,9 @@ async def _run_background_search_async():
 @dramatiq.actor(
     priority=10,
     max_retries=3,
-    min_backoff=600000,  # 10 minutes in milliseconds
-    max_backoff=3600000,  # 1 hour in milliseconds
+    time_limit=60 * 60 * 1000,  # 1 hour
+    min_backoff=600000,  # 10 minutes
+    max_backoff=3600000,  # 1 hour
 )
 def run_background_search(**kwargs):
     """Scheduled task to run background searches"""

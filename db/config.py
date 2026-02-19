@@ -198,6 +198,10 @@ class Settings(BaseSettings):
     max_torrent_file_size: int = 5_242_880  # 5 MB (torrent files are typically <1MB)
     max_nzb_file_size: int = 104_857_600  # 100 MB
 
+    # NZB Download URL Expiry (seconds) — applies to signed NZB download links
+    # exposed to stremio_nntp clients. Other providers consume NZBs server-side.
+    nzb_download_url_expiry: int = 3600  # 1 hour
+
     # Torznab API Settings
     enable_torznab_api: bool = True  # Master toggle for Torznab API endpoint
 

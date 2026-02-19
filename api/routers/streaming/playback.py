@@ -51,6 +51,7 @@ from utils import const, crypto, torrent, wrappers
 from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import encode_mediaflow_proxy_url, get_user_data, get_user_public_ip
+from utils.nzb_storage import generate_signed_nzb_url
 from utils.telegram_bot import telegram_content_bot
 
 # Seconds until when the Video URLs are cached
@@ -655,6 +656,11 @@ async def get_or_create_usenet_video_url(
             f"Provider {streaming_provider.service} does not support Usenet",
             "provider_error.mp4",
         )
+
+    # For file-imported NZBs (nzb_url is None), generate a signed download URL
+    # so providers can fetch the NZB from our storage.
+    if not stream.nzb_url:
+        stream.nzb_url = generate_signed_nzb_url(nzb_guid)
 
     kwargs = dict(
         nzb_hash=nzb_guid,
