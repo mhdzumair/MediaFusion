@@ -22,7 +22,7 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
     if (enabled) {
       onChange({ ...config, mfc: { pu: '', ap: '', pls: false, ewp: false } })
     } else {
-      onChange({ ...config, mfc: undefined })
+      onChange({ ...config, mfc: null })
     }
   }
 
@@ -34,7 +34,7 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
     if (enabled) {
       onChange({ ...config, rpc: { ak: '' } })
     } else {
-      onChange({ ...config, rpc: undefined })
+      onChange({ ...config, rpc: null })
     }
   }
 
@@ -42,7 +42,7 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
     if (enabled) {
       onChange({ ...config, mdb: { ak: '', l: [] } })
     } else {
-      onChange({ ...config, mdb: undefined })
+      onChange({ ...config, mdb: null })
     }
   }
 

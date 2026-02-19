@@ -336,14 +336,15 @@ def unmask_config_update(new_config: dict, existing_full_config: dict) -> dict:
         """
         Deep merge overlay into base, preserving nested structures.
         Lists are replaced entirely (not merged) to allow removing items.
+        None values in overlay remove the key from the result.
         """
         result = copy.deepcopy(base)
         for key, value in overlay.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                # Recursively merge dicts
+            if value is None:
+                result.pop(key, None)
+            elif key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = deep_merge(result[key], value)
             else:
-                # Replace value (including lists - to allow removing items)
                 result[key] = copy.deepcopy(value)
         return result
 
