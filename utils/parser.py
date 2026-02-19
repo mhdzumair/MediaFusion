@@ -1005,6 +1005,10 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
             for mdblist in user_data.mdblist_config.lists
         }
 
+    selected_catalogs = [
+        cid for cid in user_data.get_enabled_catalog_ids() if not cid.startswith("mdblist_") or cid in mdblist_data
+    ]
+
     manifest_data = {
         "addon_name": addon_name,
         "version": settings.version,
@@ -1015,7 +1019,7 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
         "enable_imdb_metadata": user_data.enable_imdb_metadata,
         "enable_catalogs": user_data.enable_catalogs,
         "watchlist_providers": watchlist_providers,
-        "selected_catalogs": user_data.get_enabled_catalog_ids(),
+        "selected_catalogs": selected_catalogs,
         "genres": genres,
         "mdblist_data": mdblist_data,
     }

@@ -190,8 +190,15 @@ async def _run_background_search_async():
     # Clean up any stale processing items
     await worker.manager.cleanup_stale_processing()
 
-    # Process movies and series concurrently
-    await asyncio.gather(worker.process_movie_batch(), worker.process_series_batch())
+    results = await asyncio.gather(
+        worker.process_movie_batch(),
+        worker.process_series_batch(),
+        return_exceptions=True,
+    )
+    for idx, result in enumerate(results):
+        if isinstance(result, Exception):
+            batch_name = "movie" if idx == 0 else "series"
+            logger.exception("Background %s batch failed: %s", batch_name, result, exc_info=result)
 
 
 @dramatiq.actor(
