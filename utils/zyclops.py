@@ -55,6 +55,4 @@ def submit_nzb_to_zyclops(
     """Fire-and-forget wrapper — creates an asyncio task if Zyclops URL is configured."""
     if not settings.zyclops_health_api_url:
         return
-    asyncio.create_task(
-        _submit_nzb_to_zyclops(nzb_content, name, pub_date, password)
-    )
+    asyncio.create_task(_submit_nzb_to_zyclops(nzb_content, name, pub_date, password))
