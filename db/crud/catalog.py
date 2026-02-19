@@ -111,7 +111,7 @@ async def get_catalog_meta_list(
 
         # Apply nudity filter
         if "Disable" not in user_data.nudity_filter:
-            query = query.where(specific_model.parent_guide_nudity_status.notin_(user_data.nudity_filter))
+            query = query.where(Media.nudity_status.notin_(user_data.nudity_filter))
 
         # Apply certification filter
         if "Disable" not in user_data.certification_filter:
@@ -308,7 +308,7 @@ async def get_mdblist_meta_list(
 
         # Apply nudity filter
         if "Disable" not in user_data.nudity_filter:
-            query = query.where(specific_model.parent_guide_nudity_status.notin_(user_data.nudity_filter))
+            query = query.where(Media.nudity_status.notin_(user_data.nudity_filter))
 
         # Apply certification filter
         if "Disable" not in user_data.certification_filter:
@@ -425,7 +425,7 @@ async def search_metadata(
 
         # Apply nudity filter
         if "Disable" not in user_data.nudity_filter:
-            query = query.where(specific_model.parent_guide_nudity_status.notin_(user_data.nudity_filter))
+            query = query.where(Media.nudity_status.notin_(user_data.nudity_filter))
 
         # Apply certification filter
         if "Disable" not in user_data.certification_filter:

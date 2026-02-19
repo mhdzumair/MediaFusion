@@ -9,7 +9,7 @@ from ipytv.channel import IPTVAttr
 
 from db import crud, schemas
 from db.config import settings
-from db.database import get_async_session
+from db.database import get_background_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from utils import validation_helper
 from utils.parser import is_contain_18_plus_keywords
@@ -33,7 +33,7 @@ async def add_tv_metadata(batch, namespace: str):
             return
 
         metadata.namespace = namespace
-        async for session in get_async_session():
+        async with get_background_session() as session:
             channel_id = await crud.save_tv_channel_metadata(session, metadata)
         logging.info(f"Added TV metadata: {metadata.title}, Channel ID: {channel_id}")
 
@@ -125,7 +125,7 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
     """Validate TV streams in the database."""
     offset = page * page_size
 
-    async for session in get_async_session():
+    async with get_background_session() as session:
         tv_streams = await crud.get_all_tv_streams_paginated(session, offset, page_size)
 
         if not tv_streams:
@@ -167,7 +167,7 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
 @dramatiq.actor(time_limit=30 * 60 * 1000, priority=5)
 async def update_tv_posters_in_db(*args, **kwargs):
     """Validate TV posters in the database."""
-    async for session in get_async_session():
+    async with get_background_session() as session:
         not_working_posters = await crud.get_tv_metadata_not_working_posters(session)
         logging.info(f"Found {len(not_working_posters)} TV posters to update.")
 

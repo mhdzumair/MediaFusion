@@ -283,7 +283,8 @@ class UFCParserPipeline(BaseParserPipeline):
         return title
 
     async def update_imdb_data(self, torrent_data: dict):
-        year = torrent_data.get("date").year
+        date = torrent_data.get("date")
+        year = date.year if date else None
         title = torrent_data.get("event")
 
         # Strip card-type suffixes for TMDB lookup

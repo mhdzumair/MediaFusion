@@ -6,7 +6,7 @@ import httpx
 
 from db import crud
 from db.config import settings
-from db.database import get_async_session
+from db.database import get_background_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import MetadataData
 from scrapers.base_scraper import IndexerBaseScraper
@@ -146,7 +146,7 @@ class FeedScraper(ABC):
                 item, metadata, media_type, processed_info_hashes=processed_info_hashes
             )
             if stream:
-                async for session in get_async_session():
+                async with get_background_session() as session:
                     await crud.store_new_torrent_streams(session, [stream.model_dump(by_alias=True)])
                     await session.commit()
                 scraper.metrics.record_quality(stream.quality)
@@ -196,7 +196,7 @@ class FeedScraper(ABC):
 
         parsed_title_data["created_at"] = scraper.get_created_at(item)
 
-        async for session in get_async_session():
+        async with get_background_session() as session:
             metadata = await crud.get_or_create_metadata(
                 session,
                 parsed_title_data,
@@ -241,7 +241,7 @@ class JackettFeedScraper(FeedScraper):
 
 async def get_metadata_by_id(imdb_id: str, media_type: str):
     """Get metadata by IMDB ID"""
-    async for session in get_async_session():
+    async with get_background_session() as session:
         if media_type == "movie":
             media = await crud.get_movie_data_by_id(session, imdb_id)
             return MetadataData.from_db(media) if media else None

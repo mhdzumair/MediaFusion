@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from db import crud
-from db.database import get_async_session
+from db.database import get_background_session
 from db.models import TorrentStream
 from utils.runtime_const import TRACKERS
 
@@ -16,7 +16,7 @@ from utils.runtime_const import TRACKERS
 async def update_torrent_seeders(page=0, page_size=25, *args, **kwargs):
     offset = page * page_size
 
-    async for session in get_async_session():
+    async with get_background_session() as session:
         query = (
             select(TorrentStream)
             .options(selectinload(TorrentStream.trackers))

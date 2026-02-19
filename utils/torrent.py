@@ -28,6 +28,14 @@ from utils.parser import is_contain_18_plus_keywords
 from utils.runtime_const import TRACKERS
 from utils.validation_helper import is_video_file
 
+_VALID_TRACKER_SCHEMES = ("http://", "https://", "udp://", "wss://")
+
+
+def _filter_valid_trackers(trackers: list[str]) -> list[str]:
+    """Filter out tracker URLs with invalid schemes (e.g. asterisk-prefixed URLs)."""
+    return [t for t in trackers if any(t.startswith(s) for s in _VALID_TRACKER_SCHEMES)]
+
+
 # remove logging from demagnetize
 logging.getLogger("demagnetize").setLevel(logging.CRITICAL)
 
@@ -239,8 +247,9 @@ async def info_hashes_to_torrent_metadata(
         return torrents_data
 
     demagnetizer = Demagnetizer()
+    safe_trackers = _filter_valid_trackers(trackers) or TRACKERS
     async with acollect(
-        coros=[demagnetizer.demagnetize(Magnet(xt=info_hash, tr=trackers or TRACKERS)) for info_hash in info_hashes],
+        coros=[demagnetizer.demagnetize(Magnet(xt=info_hash, tr=safe_trackers)) for info_hash in info_hashes],
         limit=CapacityLimiter(10),
         timeout=60,
     ) as async_iterator:
@@ -293,7 +302,7 @@ def parse_magnet(magnet_link: str) -> tuple[str, list[str]]:
         magnet = Magnet.from_string(magnet_link)
     except MagnetError:
         return "", []
-    return magnet.infohash.lower(), magnet.tr
+    return magnet.infohash.lower(), _filter_valid_trackers(magnet.tr)
 
 
 def get_info_hash_from_magnet(magnet_link: str) -> str:

@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+from multiprocessing import Process
 
 import humanize
 import pytz
@@ -595,11 +596,20 @@ async def run_scheduler_job_inline(
         crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
 
         if job_meta["category"] == "scraper":
-            # Scrapy spiders need to run in a separate process
             from mediafusion_scrapy.task import run_spider_in_process
 
-            await asyncio.to_thread(run_spider_in_process, job_id, crontab_expression=crontab)
-            result_data = {"status": "completed", "spider_name": job_id}
+            def _run():
+                p = Process(target=run_spider_in_process, args=(job_id,), kwargs={"crontab_expression": crontab})
+                p.start()
+                p.join()
+                return p.exitcode
+
+            exitcode = await asyncio.to_thread(_run)
+            result_data = {
+                "status": "completed" if exitcode == 0 else "failed",
+                "spider_name": job_id,
+                "exitcode": exitcode,
+            }
 
         elif job_id == "prowlarr_feed_scraper":
             from scrapers.feed_scraper import ProwlarrFeedScraper

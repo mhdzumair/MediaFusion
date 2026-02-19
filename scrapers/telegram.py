@@ -35,7 +35,7 @@ import PTT
 
 from db import crud
 from db.config import settings
-from db.database import get_async_session
+from db.database import get_background_session
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import MetadataData, UserData
 from db.schemas.media import TelegramStreamData
@@ -659,7 +659,7 @@ async def store_telegram_streams(streams: list[TelegramStreamData]) -> int:
     """
     stored_count = 0
 
-    async for session in get_async_session():
+    async with get_background_session() as session:
         for stream in streams:
             try:
                 # Check if stream already exists

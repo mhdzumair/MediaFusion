@@ -147,6 +147,27 @@ async def get_metadata_by_id(
     return await get_media_by_external_id(session, meta_id)
 
 
+def _metadata_base_options():
+    """Shared selectinload options for all Media queries that feed into MetadataData.from_db().
+
+    Every relationship that from_db() accesses must be listed here.
+    Callers may extend this with type-specific options (e.g. series_metadata.seasons).
+    """
+    return [
+        selectinload(Media.genres),
+        selectinload(Media.catalogs),
+        selectinload(Media.aka_titles),
+        selectinload(Media.keywords),
+        selectinload(Media.images).selectinload(MediaImage.provider),
+        selectinload(Media.ratings).selectinload(MediaRating.provider),
+        selectinload(Media.mediafusion_rating),
+        selectinload(Media.external_ids),
+        selectinload(Media.movie_metadata),
+        selectinload(Media.series_metadata),
+        selectinload(Media.tv_metadata),
+    ]
+
+
 async def get_movie_data_by_id(
     session: AsyncSession,
     meta_id: str,
@@ -154,7 +175,6 @@ async def get_movie_data_by_id(
     load_relations: bool = True,
 ) -> Media | None:
     """Get movie metadata by external ID using MediaExternalID lookup."""
-    # First, resolve external_id to media_id via MediaExternalID table
     media = await get_media_by_external_id(session, meta_id, MediaType.MOVIE)
     if not media:
         return None
@@ -162,24 +182,15 @@ async def get_movie_data_by_id(
     if not load_relations:
         return media
 
-    # Reload with relations
     query = (
         select(Media)
-        .where(
-            Media.id == media.id,
-        )
+        .where(Media.id == media.id)
         .options(
-            selectinload(Media.genres),
-            selectinload(Media.catalogs),
-            selectinload(Media.aka_titles),
-            selectinload(Media.images),
-            selectinload(Media.ratings).selectinload(MediaRating.provider),
-            selectinload(Media.mediafusion_rating),
+            *_metadata_base_options(),
             selectinload(Media.cast).selectinload(MediaCast.person),
             selectinload(Media.crew).selectinload(MediaCrew.person),
             selectinload(Media.parental_certificates),
             selectinload(Media.trailers),
-            selectinload(Media.external_ids),
         )
     )
 
@@ -194,7 +205,6 @@ async def get_series_data_by_id(
     load_relations: bool = True,
 ) -> Media | None:
     """Get series metadata by external ID using MediaExternalID lookup."""
-    # First, resolve external_id to media_id via MediaExternalID table
     media = await get_media_by_external_id(session, meta_id, MediaType.SERIES)
     if not media:
         return None
@@ -202,25 +212,16 @@ async def get_series_data_by_id(
     if not load_relations:
         return media
 
-    # Reload with relations
     query = (
         select(Media)
-        .where(
-            Media.id == media.id,
-        )
+        .where(Media.id == media.id)
         .options(
-            selectinload(Media.genres),
-            selectinload(Media.catalogs),
-            selectinload(Media.aka_titles),
-            selectinload(Media.images),
-            selectinload(Media.ratings).selectinload(MediaRating.provider),
-            selectinload(Media.mediafusion_rating),
+            *_metadata_base_options(),
             selectinload(Media.series_metadata).selectinload(SeriesMetadata.seasons).selectinload(Season.episodes),
             selectinload(Media.cast).selectinload(MediaCast.person),
             selectinload(Media.crew).selectinload(MediaCrew.person),
             selectinload(Media.parental_certificates),
             selectinload(Media.trailers),
-            selectinload(Media.external_ids),
         )
     )
 
@@ -235,7 +236,6 @@ async def get_tv_data_by_id(
     load_relations: bool = True,
 ) -> Media | None:
     """Get TV channel metadata by external ID using MediaExternalID lookup."""
-    # First, resolve external_id to media_id via MediaExternalID table
     media = await get_media_by_external_id(session, meta_id, MediaType.TV)
     if not media:
         return None
@@ -243,20 +243,11 @@ async def get_tv_data_by_id(
     if not load_relations:
         return media
 
-    # Reload with relations
     query = (
         select(Media)
-        .where(
-            Media.id == media.id,
-        )
+        .where(Media.id == media.id)
         .options(
-            selectinload(Media.genres),
-            selectinload(Media.catalogs),
-            selectinload(Media.images),
-            selectinload(Media.ratings).selectinload(MediaRating.provider),
-            selectinload(Media.mediafusion_rating),
-            selectinload(Media.tv_metadata),
-            selectinload(Media.external_ids),
+            *_metadata_base_options(),
         )
     )
 

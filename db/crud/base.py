@@ -60,9 +60,7 @@ class CatalogBaseQueryBuilder(ABC, Generic[B]):
             self.base_query = self.base_query.join(specific_model, specific_model.media_id == Media.id)
 
             if "Disable" not in self.user_data.nudity_filter:
-                self.base_query = self.base_query.where(
-                    specific_model.parent_guide_nudity_status.notin_(self.user_data.nudity_filter)
-                )
+                self.base_query = self.base_query.where(Media.nudity_status.notin_(self.user_data.nudity_filter))
 
             if "Disable" not in self.user_data.certification_filter:
                 blocked_cert_exists = (

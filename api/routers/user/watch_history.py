@@ -246,7 +246,7 @@ async def verify_profile_ownership(session: AsyncSession, user: User, profile_id
 async def list_watch_history(
     profile_id: int | None = Query(None, description="Filter by profile ID"),
     media_type: str | None = Query(None, pattern="^(movie|series|tv)$"),
-    action: str | None = Query(None, pattern="^(WATCHED|DOWNLOADED|QUEUED)$", description="Filter by action type"),
+    action: str | None = Query(None, pattern="(?i)^(watched|downloaded|queued)$", description="Filter by action type"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: User = Depends(require_auth),
@@ -271,8 +271,9 @@ async def list_watch_history(
         count_query = count_query.where(WatchHistory.media_type == media_type)
 
     if action:
-        query = query.where(WatchHistory.action == WatchAction(action))
-        count_query = count_query.where(WatchHistory.action == WatchAction(action))
+        normalized_action = WatchAction(action.lower())
+        query = query.where(WatchHistory.action == normalized_action)
+        count_query = count_query.where(WatchHistory.action == normalized_action)
 
     # Get total count
     total_result = await session.exec(count_query)

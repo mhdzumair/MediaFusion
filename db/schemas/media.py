@@ -578,39 +578,33 @@ class MetadataData(BaseModel):
         tv_language = None
         seasons = []
 
-        # Get series metadata
-        if hasattr(media, "series_metadata") and media.series_metadata:
+        if media.series_metadata:
             series_meta = media.series_metadata[0] if isinstance(media.series_metadata, list) else media.series_metadata
             total_seasons = series_meta.total_seasons
             total_episodes = series_meta.total_episodes
             network = series_meta.network
-            if hasattr(series_meta, "seasons") and series_meta.seasons:
+            if series_meta.seasons:
                 seasons = [SeasonData.from_db(s) for s in series_meta.seasons]
 
-        # Get TV metadata
-        if hasattr(media, "tv_metadata") and media.tv_metadata:
+        if media.tv_metadata:
             tv_meta = media.tv_metadata[0] if isinstance(media.tv_metadata, list) else media.tv_metadata
             country = tv_meta.country
             tv_language = tv_meta.tv_language
 
-        # Build images
         media_images = MediaImages()
         if images:
             media_images = MediaImages.from_db(images)
-        elif hasattr(media, "images") and media.images:
+        elif media.images:
             media_images = MediaImages.from_db(media.images)
 
-        # Build ratings
         media_ratings = MediaRatings()
         if ratings:
             media_ratings = MediaRatings.from_db(ratings, mf_rating)
-        elif hasattr(media, "ratings") and media.ratings:
-            mf = media.mediafusion_rating if hasattr(media, "mediafusion_rating") else None
-            media_ratings = MediaRatings.from_db(media.ratings, mf)
+        elif media.ratings:
+            media_ratings = MediaRatings.from_db(media.ratings, media.mediafusion_rating)
 
-        # Build external IDs from MediaExternalID records
         ext_ids = None
-        loaded_external_ids = external_ids or (getattr(media, "external_ids", None) or [])
+        loaded_external_ids = external_ids or media.external_ids or []
         if loaded_external_ids:
             ext_ids = ExternalIDs.from_db(loaded_external_ids)
 
@@ -653,12 +647,10 @@ class MetadataData(BaseModel):
             ratings=media_ratings,
             external_ids=ext_ids,
             genres=[g.name for g in media.genres] if media.genres else [],
-            keywords=[k.name for k in media.keywords] if hasattr(media, "keywords") and media.keywords else [],
+            keywords=[k.name for k in media.keywords] if media.keywords else [],
             aka_titles=[aka.title for aka in media.aka_titles] if media.aka_titles else [],
             catalogs=[c.name for c in media.catalogs] if media.catalogs else [],
-            primary_provider=media.primary_provider.name
-            if hasattr(media, "primary_provider") and media.primary_provider
-            else None,
+            primary_provider=None,
             is_user_created=media.is_user_created,
             created_by_user_id=media.created_by_user_id,
             is_public=media.is_public,
@@ -844,27 +836,25 @@ class TorrentStreamData(BaseModel):
         meta_id = ""
         if media:
             meta_id = f"mf:{media.id}"
-        elif stream and hasattr(stream, "media_links") and stream.media_links:
+        elif stream and stream.media_links:
             first_link = stream.media_links[0]
-            if hasattr(first_link, "media") and first_link.media:
+            if first_link.media:
                 meta_id = f"mf:{first_link.media.id}"
 
         # Build StreamFileData list from StreamFile + FileMediaLink
         files: list[StreamFileData] = []
-        if stream and hasattr(stream, "files") and stream.files:
+        if stream and stream.files:
             for f in stream.files:
-                # Get file type as string
                 file_type = "video"
                 if hasattr(f.file_type, "value"):
                     file_type = f.file_type.value
                 elif f.file_type:
                     file_type = str(f.file_type)
 
-                # Check for episode linking
                 season_number = None
                 episode_number = None
                 episode_end = None
-                if hasattr(f, "media_links") and f.media_links:
+                if f.media_links:
                     for link in f.media_links:
                         if link.season_number is not None:
                             season_number = link.season_number
@@ -1093,9 +1083,7 @@ class UsenetStreamData(BaseModel):
             codec=stream.codec,
             quality=stream.quality,
             bit_depth=stream.bit_depth,
-            uploader=stream.uploader_user.username
-            if hasattr(stream, "uploader_user") and stream.uploader_user
-            else None,
+            uploader=stream.uploader_user.username if stream.uploader_user else None,
             audio_formats=audio_formats,
             channels=channels,
             hdr_formats=hdr_formats,
@@ -1235,18 +1223,17 @@ class TelegramStreamData(BaseModel):
         meta_id = ""
         if media:
             meta_id = f"mf:{media.id}"
-        elif stream and hasattr(stream, "media_links") and stream.media_links:
+        elif stream and stream.media_links:
             first_link = stream.media_links[0]
-            if hasattr(first_link, "media") and first_link.media:
+            if first_link.media:
                 meta_id = f"mf:{first_link.media.id}"
 
-        # Get episode info from file media links if available
         season_number = None
         episode_number = None
         episode_end = None
-        if stream and hasattr(stream, "files") and stream.files:
+        if stream and stream.files:
             for f in stream.files:
-                if hasattr(f, "media_links") and f.media_links:
+                if f.media_links:
                     for link in f.media_links:
                         if link.season_number is not None:
                             season_number = link.season_number
