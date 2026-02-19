@@ -192,7 +192,6 @@ class Settings(BaseSettings):
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None
     s3_bucket_name: str | None = None
-    s3_public_url: str | None = None  # Public URL prefix for serving files
     s3_region: str = "auto"
 
     # Upload Size Limits

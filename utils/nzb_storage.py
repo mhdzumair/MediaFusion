@@ -107,13 +107,8 @@ class S3NZBStorage(NZBStorage):
                 ContentType="application/x-nzb",
             )
 
-        if settings.s3_public_url:
-            url = f"{settings.s3_public_url.rstrip('/')}/{key}"
-        else:
-            url = f"{settings.s3_endpoint_url.rstrip('/')}/{settings.s3_bucket_name}/{key}"
-
-        logger.info(f"Stored NZB {guid} to S3 at {url}")
-        return url
+        logger.info(f"Stored NZB {guid} to S3 at {self._get_key(guid)}")
+        return f"{settings.host_url}/api/v1/nzb/{guid}/download"
 
     async def retrieve(self, guid: str) -> bytes | None:
         session = aioboto3.Session()

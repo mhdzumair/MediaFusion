@@ -32,6 +32,7 @@ from db.models.streams import (
 )
 from scrapers.scraper_tasks import meta_fetcher
 from utils.nzb import generate_nzb_hash, parse_nzb_content
+from utils.nzb_storage import get_nzb_storage
 from utils.parser import convert_bytes_to_readable
 
 logger = logging.getLogger(__name__)
@@ -732,14 +733,10 @@ async def import_nzb_url(
 @router.get("/nzb/{guid}/download")
 async def download_nzb_file(guid: str):
     """
-    Serve a locally-stored NZB file.
-    Only used when nzb_file_storage_backend is set to 'local'.
+    Proxy-serve an NZB file from the configured storage backend.
+    All NZB downloads go through this endpoint regardless of whether
+    the file is stored locally or on S3/R2.
     """
-    if settings.nzb_file_storage_backend != "local":
-        raise HTTPException(status_code=404, detail="Local NZB serving is not enabled.")
-
-    from utils.nzb_storage import get_nzb_storage
-
     storage = get_nzb_storage()
     content = await storage.retrieve(guid)
     if content is None:
