@@ -504,12 +504,15 @@ function IndexerDialog({
 
           {useZyclops && (
             <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
-              <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600">
+              <Alert
+                variant="destructive"
+                className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600"
+              >
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription className="text-xs">
                   Zyclops sends your indexer URL and API key with the proxy request and submits the newest untested NZB
-                  to enrich the health database. Many indexers prohibit this (some prohibit Stremio altogether!). Proceed
-                  at your own risk.
+                  to enrich the health database. Many indexers prohibit this (some prohibit Stremio altogether!).
+                  Proceed at your own risk.
                 </AlertDescription>
               </Alert>
 
