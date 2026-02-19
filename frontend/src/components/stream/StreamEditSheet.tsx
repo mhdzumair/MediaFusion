@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Edit, Loader2, CheckCircle2, AlertCircle, Monitor, Volume2, Film, Languages, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreateStreamSuggestion } from '@/hooks'
-import { TagInput } from '@/components/ui/tag-input'
+import { MultiSelect } from '@/components/ui/multi-select'
 import type { StreamFieldName as ApiStreamFieldName } from '@/lib/api'
 
 // Predefined options
@@ -28,6 +28,56 @@ const QUALITY_OPTIONS = ['WEB-DL', 'WEBRip', 'BluRay', 'BDRip', 'HDRip', 'HDTV',
 const CODEC_OPTIONS = ['x265', 'x264', 'HEVC', 'H.265', 'H.264', 'AVC', 'VP9', 'AV1']
 const AUDIO_OPTIONS = ['AAC', 'AC3', 'DTS', 'DTS-HD', 'Atmos', 'TrueHD', 'DD5.1', 'DD+', 'FLAC']
 const HDR_OPTIONS = ['HDR', 'HDR10', 'HDR10+', 'Dolby Vision', 'DV', 'HLG', 'SDR']
+const LANGUAGE_OPTIONS = [
+  'English',
+  'Tamil',
+  'Hindi',
+  'Malayalam',
+  'Kannada',
+  'Telugu',
+  'Chinese',
+  'Russian',
+  'Arabic',
+  'Japanese',
+  'Korean',
+  'Taiwanese',
+  'Latino',
+  'French',
+  'Spanish',
+  'Portuguese',
+  'Italian',
+  'German',
+  'Ukrainian',
+  'Polish',
+  'Czech',
+  'Thai',
+  'Indonesian',
+  'Vietnamese',
+  'Dutch',
+  'Bengali',
+  'Turkish',
+  'Greek',
+  'Swedish',
+  'Romanian',
+  'Hungarian',
+  'Finnish',
+  'Norwegian',
+  'Danish',
+  'Hebrew',
+  'Lithuanian',
+  'Punjabi',
+  'Marathi',
+  'Gujarati',
+  'Bhojpuri',
+  'Nepali',
+  'Urdu',
+  'Tagalog',
+  'Filipino',
+  'Malay',
+  'Mongolian',
+  'Armenian',
+  'Georgian',
+]
 
 type StreamFieldName =
   | 'name'
@@ -162,13 +212,13 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
     if (languagesModified) {
       result.push({
         field: 'languages',
-        currentValue: currentValues?.languages?.join(', ') || '',
-        newValue: languages.join(', '),
+        currentValue: currentValues?.languages ? JSON.stringify(currentValues.languages) : '',
+        newValue: JSON.stringify(languages),
       })
     }
 
     return result
-  }, [fields, languagesModified, currentValues?.languages, languages])
+  }, [fields, languagesModified, currentValues, languages])
 
   const modifiedCount = modifiedFields.length
 
@@ -351,11 +401,15 @@ export function StreamEditSheet({ streamId, streamName, currentValues, trigger, 
                     </Badge>
                   )}
                 </div>
-                <TagInput
-                  value={languages}
+                <MultiSelect
+                  options={LANGUAGE_OPTIONS.map((lang) => ({ value: lang, label: lang }))}
+                  selected={languages}
                   onChange={setLanguages}
-                  placeholder="Add language (e.g., English)..."
-                  className={cn(languagesModified && 'border-emerald-500/50 bg-emerald-500/5')}
+                  placeholder="Select languages..."
+                  searchPlaceholder="Search languages..."
+                  allowCustom
+                  maxDisplayed={5}
+                  className={cn('rounded-xl', languagesModified && 'border-emerald-500/50 bg-emerald-500/5')}
                 />
               </div>
             </div>

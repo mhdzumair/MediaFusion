@@ -23,12 +23,17 @@ from db.models import (
     AudioChannel,
     AudioFormat,
     ContributionSettings,
+    FileMediaLink,
     HDRFormat,
+    Media,
     Stream,
+    StreamFile,
+    StreamMediaLink,
     StreamSuggestion,
-    TorrentStream,
     User,
 )
+from db.models.links import StreamLanguageLink
+from db.crud.reference import get_or_create_language
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +104,57 @@ AUDIO_OPTIONS = [
     "MP3",
 ]
 HDR_OPTIONS = ["HDR10", "HDR10+", "Dolby Vision", "HLG"]
+
+LANGUAGE_OPTIONS = [
+    "English",
+    "Tamil",
+    "Hindi",
+    "Malayalam",
+    "Kannada",
+    "Telugu",
+    "Chinese",
+    "Russian",
+    "Arabic",
+    "Japanese",
+    "Korean",
+    "Taiwanese",
+    "Latino",
+    "French",
+    "Spanish",
+    "Portuguese",
+    "Italian",
+    "German",
+    "Ukrainian",
+    "Polish",
+    "Czech",
+    "Thai",
+    "Indonesian",
+    "Vietnamese",
+    "Dutch",
+    "Bengali",
+    "Turkish",
+    "Greek",
+    "Swedish",
+    "Romanian",
+    "Hungarian",
+    "Finnish",
+    "Norwegian",
+    "Danish",
+    "Hebrew",
+    "Lithuanian",
+    "Punjabi",
+    "Marathi",
+    "Gujarati",
+    "Bhojpuri",
+    "Nepali",
+    "Urdu",
+    "Tagalog",
+    "Filipino",
+    "Malay",
+    "Mongolian",
+    "Armenian",
+    "Georgian",
+]
 
 
 # ============================================
@@ -330,7 +386,7 @@ async def award_points(
 
 
 async def apply_stream_changes(
-    torrent: TorrentStream,
+    base_stream: Stream,
     suggestion_type: str,
     field_name: str | None,
     value: str | None,
@@ -340,20 +396,15 @@ async def apply_stream_changes(
 ) -> bool:
     """Apply suggested changes to stream. Returns True if successful.
 
-    Updated for v5 schema: TorrentStream has base Stream via relationship.
-    Quality attributes are on Stream, normalized tables for audio/channels/hdr.
+    Works with the base Stream table directly, so all stream types
+    (torrent, youtube, http, usenet, telegram, acestream) are supported.
     """
     try:
-        # Get the base Stream object
-        base_stream = torrent.stream
-
         if suggestion_type == "relink_media":
             # Re-link stream to different media (replaces current links)
             if not target_media_id:
                 logger.error("relink_media requires target_media_id")
                 return False
-
-            from db.models import StreamMediaLink, Media, StreamFile, FileMediaLink
 
             # Verify target media exists
             media_result = await session.exec(select(Media).where(Media.id == target_media_id))
@@ -433,8 +484,6 @@ async def apply_stream_changes(
                 logger.error("add_media_link requires target_media_id")
                 return False
 
-            from db.models import StreamMediaLink, Media
-
             # Verify target media exists
             media_result = await session.exec(select(Media).where(Media.id == target_media_id))
             target_media = media_result.first()
@@ -467,8 +516,6 @@ async def apply_stream_changes(
         elif suggestion_type == "report_broken":
             # Consensus-based blocking: Only block after multiple unique users report
             # Count approved/auto-approved broken reports for this stream from unique users
-            from db.models import StreamSuggestion
-
             broken_reports_query = select(StreamSuggestion).where(
                 StreamSuggestion.stream_id == base_stream.id,
                 StreamSuggestion.suggestion_type == "report_broken",
@@ -581,13 +628,26 @@ async def apply_stream_changes(
                         base_stream.hdr_formats.clear()
                         base_stream.hdr_formats.append(hdr_fmt)
             elif field_name == "languages":
-                # Languages require special handling through related tables
-                logger.warning("Language changes require special handling")
-                return True
-            elif field_name.startswith("episode_link:"):
-                # Handle episode link corrections: episode_link:file_id:field
-                from db.models import FileMediaLink
+                try:
+                    languages = json.loads(value) if value else []
+                except json.JSONDecodeError:
+                    languages = [v.strip() for v in value.split(",")] if value else []
 
+                existing_links = await session.exec(
+                    select(StreamLanguageLink).where(StreamLanguageLink.stream_id == base_stream.id)
+                )
+                for link in existing_links.all():
+                    await session.delete(link)
+                await session.flush()
+
+                for lang_name in languages:
+                    lang_name = lang_name.strip()
+                    if not lang_name:
+                        continue
+                    lang = await get_or_create_language(session, lang_name)
+                    lang_link = StreamLanguageLink(stream_id=base_stream.id, language_id=lang.id)
+                    session.add(lang_link)
+            elif field_name.startswith("episode_link:"):
                 parts = field_name.split(":")
                 if len(parts) == 3:
                     try:
@@ -615,7 +675,6 @@ async def apply_stream_changes(
                 return False
 
         session.add(base_stream)
-        session.add(torrent)
         return True
     except Exception as e:
         logger.error(f"Failed to apply stream change: {e}")
@@ -625,22 +684,20 @@ async def apply_stream_changes(
 def build_suggestion_response(
     suggestion: StreamSuggestion,
     username: str | None = None,
-    torrent: TorrentStream | None = None,
+    stream: Stream | None = None,
     reviewer_name: str | None = None,
     user: User | None = None,
 ) -> StreamSuggestionResponse:
     """Build a suggestion response object.
 
-    Updated for v5 schema: TorrentStream.stream has the name.
-    media_id can be derived from StreamMediaLink if eagerly loaded.
+    Accepts the base Stream directly so it works for all stream types.
     """
     stream_name = None
     media_id = None
 
-    if torrent and torrent.stream:
-        stream_name = torrent.stream.name
-        # media_id derived from media_links if loaded
-        media_links = getattr(torrent.stream, "media_links", None)
+    if stream:
+        stream_name = stream.name
+        media_links = getattr(stream, "media_links", None)
         if media_links:
             try:
                 first_link = media_links[0]
@@ -687,30 +744,26 @@ async def get_stream_editable_fields(
     """
     Get all editable fields for a stream with their current values and options.
 
-    Updated for v5 schema: Loads TorrentStream with Stream relationship
-    and normalized quality attributes.
+    Queries the base Stream table directly so all stream types are supported.
     """
-    # Query by Stream.id (base table ID), not TorrentStream.id
     query = (
-        select(TorrentStream)
-        .where(TorrentStream.stream_id == stream_id)  # stream_id is FK to Stream.id
+        select(Stream)
+        .where(Stream.id == stream_id)
         .options(
-            selectinload(TorrentStream.stream).selectinload(Stream.audio_formats),
-            selectinload(TorrentStream.stream).selectinload(Stream.channels),
-            selectinload(TorrentStream.stream).selectinload(Stream.hdr_formats),
+            selectinload(Stream.audio_formats),
+            selectinload(Stream.channels),
+            selectinload(Stream.hdr_formats),
+            selectinload(Stream.languages),
         )
     )
     result = await session.exec(query)
-    torrent = result.first()
+    base_stream = result.first()
 
-    if not torrent:
+    if not base_stream:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Stream not found",
         )
-
-    # Get base stream for quality attributes
-    base_stream = torrent.stream
 
     fields = [
         StreamFieldInfo(
@@ -771,6 +824,13 @@ async def get_stream_editable_fields(
             options=HDR_OPTIONS,
         ),
         StreamFieldInfo(
+            field_name="languages",
+            display_name="Languages",
+            current_value=json.dumps([lang.name for lang in base_stream.languages]) if base_stream.languages else None,
+            field_type="multi_select",
+            options=LANGUAGE_OPTIONS,
+        ),
+        StreamFieldInfo(
             field_name="source",
             display_name="Source",
             current_value=base_stream.source,
@@ -817,13 +877,8 @@ async def create_stream_suggestion(
             detail="target_media_id is required for relink_media/add_media_link suggestions",
         )
 
-    # Verify stream exists - query by Stream.id (base table ID)
-    # The frontend sends Stream.id, not TorrentStream.id
-    stream_query = (
-        select(TorrentStream)
-        .where(TorrentStream.stream_id == stream_id)  # stream_id is FK to Stream.id
-        .options(selectinload(TorrentStream.stream))
-    )
+    # Verify stream exists - query the base Stream table directly
+    stream_query = select(Stream).where(Stream.id == stream_id)
     stream_result = await session.exec(stream_query)
     stream = stream_result.first()
 
@@ -865,7 +920,7 @@ async def create_stream_suggestion(
         )
 
     # For report_broken: Check if stream is already blocked
-    if request.suggestion_type == "report_broken" and stream.stream and stream.stream.is_blocked:
+    if request.suggestion_type == "report_broken" and stream.is_blocked:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This stream is already blocked",
@@ -948,7 +1003,7 @@ async def create_stream_suggestion(
     return build_suggestion_response(
         suggestion,
         username=current_user.username,
-        torrent=stream,
+        stream=stream,
         reviewer_name=current_user.username if suggestion.reviewed_by else None,
         user=current_user,
     )
@@ -989,12 +1044,8 @@ async def get_stream_suggestions(
     result = await session.exec(query)
     suggestions = result.all()
 
-    # Get stream info - query by Stream.id (base table ID)
-    stream_query = (
-        select(TorrentStream)
-        .where(TorrentStream.stream_id == stream_id)  # stream_id is FK to Stream.id
-        .options(selectinload(TorrentStream.stream))
-    )
+    # Get stream info
+    stream_query = select(Stream).where(Stream.id == stream_id)
     stream_result = await session.exec(stream_query)
     stream = stream_result.first()
 
@@ -1008,7 +1059,7 @@ async def get_stream_suggestions(
         user_result = await session.exec(user_query)
         user = user_result.first()
 
-        responses.append(build_suggestion_response(s, username, torrent=stream, reviewer_name=reviewer_name, user=user))
+        responses.append(build_suggestion_response(s, username, stream=stream, reviewer_name=reviewer_name, user=user))
 
     return StreamSuggestionListResponse(
         suggestions=responses,
@@ -1048,10 +1099,7 @@ async def get_my_stream_suggestions(
 
     responses = []
     for s in suggestions:
-        # Get stream info - eager load stream relationship
-        stream_query = (
-            select(TorrentStream).where(TorrentStream.id == s.stream_id).options(selectinload(TorrentStream.stream))
-        )
+        stream_query = select(Stream).where(Stream.id == s.stream_id)
         stream_result = await session.exec(stream_query)
         stream = stream_result.first()
 
@@ -1060,7 +1108,7 @@ async def get_my_stream_suggestions(
             build_suggestion_response(
                 s,
                 current_user.username,
-                torrent=stream,
+                stream=stream,
                 reviewer_name=reviewer_name,
                 user=current_user,
             )
@@ -1107,10 +1155,7 @@ async def get_pending_stream_suggestions(
     for s in suggestions:
         username = await get_username(session, s.user_id)
 
-        # Get stream info - eager load stream relationship
-        stream_query = (
-            select(TorrentStream).where(TorrentStream.id == s.stream_id).options(selectinload(TorrentStream.stream))
-        )
+        stream_query = select(Stream).where(Stream.id == s.stream_id)
         stream_result = await session.exec(stream_query)
         stream = stream_result.first()
 
@@ -1119,7 +1164,7 @@ async def get_pending_stream_suggestions(
         user_result = await session.exec(user_query)
         user = user_result.first()
 
-        responses.append(build_suggestion_response(s, username, torrent=stream, reviewer_name=None, user=user))
+        responses.append(build_suggestion_response(s, username, stream=stream, reviewer_name=None, user=user))
 
     return StreamSuggestionListResponse(
         suggestions=responses,
@@ -1162,12 +1207,8 @@ async def review_stream_suggestion(
             detail="Suggestion has already been reviewed",
         )
 
-    # Get stream - eager load stream relationship
-    stream_query = (
-        select(TorrentStream)
-        .where(TorrentStream.id == suggestion.stream_id)
-        .options(selectinload(TorrentStream.stream))
-    )
+    # Get stream
+    stream_query = select(Stream).where(Stream.id == suggestion.stream_id)
     stream_result = await session.exec(stream_query)
     stream = stream_result.first()
 
@@ -1231,7 +1272,7 @@ async def review_stream_suggestion(
     return build_suggestion_response(
         suggestion,
         username=username,
-        torrent=stream,
+        stream=stream,
         reviewer_name=current_user.username,
         user=author,
     )
@@ -1262,12 +1303,7 @@ async def bulk_review_stream_suggestions(
             results["skipped"] += 1
             continue
 
-        # Get stream - eager load stream relationship
-        stream_query = (
-            select(TorrentStream)
-            .where(TorrentStream.id == suggestion.stream_id)
-            .options(selectinload(TorrentStream.stream))
-        )
+        stream_query = select(Stream).where(Stream.id == suggestion.stream_id)
         stream_result = await session.exec(stream_query)
         stream = stream_result.first()
 
@@ -1479,22 +1515,17 @@ async def get_broken_report_status(
     Get the broken report status for a stream.
     Shows how many users have reported it and how many more are needed to block it.
     """
-    # Get stream - query by Stream.id (base table ID)
-    stream_query = (
-        select(TorrentStream)
-        .where(TorrentStream.stream_id == stream_id)  # stream_id is FK to Stream.id
-        .options(selectinload(TorrentStream.stream))
-    )
+    stream_query = select(Stream).where(Stream.id == stream_id)
     stream_result = await session.exec(stream_query)
     stream = stream_result.first()
 
-    if not stream or not stream.stream:
+    if not stream:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Stream not found",
         )
 
-    is_blocked = stream.stream.is_blocked
+    is_blocked = stream.is_blocked
 
     # Get threshold from settings
     settings = await get_contribution_settings(session)
