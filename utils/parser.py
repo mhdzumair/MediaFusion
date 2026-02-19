@@ -615,6 +615,7 @@ def _build_stream_entries(
 
             # Build the stream URL
             stream_url = None
+            nzb_direct_url = None
             info_hash = None
             file_idx = None
             sources = None
@@ -637,7 +638,10 @@ def _build_stream_entries(
             elif is_usenet:
                 # Usenet: use nzb_guid as stream identifier
                 stream_id = stream_data.nzb_guid
-                if has_streaming_provider:
+                if current_provider and current_provider.service == "stremio_nntp":
+                    # Direct NZB streaming — Stremio v5 fetches the NZB and handles NNTP natively
+                    nzb_direct_url = stream_data.nzb_url
+                elif has_streaming_provider:
                     stream_url = base_proxy_url_template.format(stream_id)
                     if episode_data:
                         stream_url += f"/{season}/{episode}"
@@ -729,6 +733,7 @@ def _build_stream_entries(
                 name=stream_name,
                 description=description,
                 url=stream_url,
+                nzbUrl=nzb_direct_url,
                 infoHash=info_hash,
                 fileIdx=file_idx,
                 sources=sources,

@@ -47,6 +47,7 @@ export const STREAMING_PROVIDERS: StreamingProviderOption[] = [
   { value: 'nzbget', label: 'NZBGet + WebDAV', icon: '📰', type: 'Usenet', needsNZBGetConfig: true },
   { value: 'nzbdav', label: 'NzbDAV', icon: '📰', type: 'Usenet', needsNzbDAVConfig: true },
   { value: 'easynews', label: 'Easynews', icon: '📡', type: 'Usenet', needsEasynewsConfig: true },
+  { value: 'stremio_nntp', label: 'Stremio NNTP (v5 Desktop)', icon: '📡', type: 'Usenet' },
 ]
 
 export const STREMTHRU_STORES = [

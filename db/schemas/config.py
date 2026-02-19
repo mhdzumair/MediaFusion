@@ -149,6 +149,7 @@ class StreamingProvider(BaseModel):
         "nzbget",
         "nzbdav",
         "easynews",
+        "stremio_nntp",
     ] = Field(alias="sv")
     stremthru_store_name: (
         Literal[

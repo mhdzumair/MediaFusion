@@ -93,6 +93,7 @@ class Stream(BaseModel):
     infoHash: str | None = None
     fileIdx: int | None = None
     url: str | None = None
+    nzbUrl: str | None = None  # Direct NZB URL for Stremio v5 native NNTP streaming
     ytId: str | None = None
     externalUrl: str | None = None
     behaviorHints: StreamBehaviorHints | None = None
