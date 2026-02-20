@@ -19,6 +19,17 @@ from utils.lock import (
 )
 
 
+async def ensure_redis_available() -> None:
+    """Validate Redis connectivity during startup."""
+    try:
+        await REDIS_ASYNC_CLIENT.ping()
+    except Exception as error:
+        raise RuntimeError(
+            f"Cannot connect to Redis at {settings.redis_url}. "
+            "Ensure Redis is running and REDIS_URL is configured correctly."
+        ) from error
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Application lifespan context manager.
@@ -32,6 +43,7 @@ async def lifespan(_: FastAPI):
     """
     # Startup logic
     await database.init()
+    await ensure_redis_available()
 
     await torrent.init_best_trackers()
 

@@ -84,7 +84,10 @@ async def fetch_poster_image(url: str, max_retries: int = 1) -> bytes:
                 async with session.get(url, headers=const.UA_HEADER) as response:
                     response.raise_for_status()
                     content_type = response.headers.get("Content-Type", "")
-                    if not content_type.lower().startswith("image/"):
+                    if not (
+                        content_type.lower().startswith("image/")
+                        or content_type.lower().startswith("application/octet-stream")
+                    ):
                         raise ValueError(f"Unexpected content type: {content_type} for URL: {url}")
                     content = await response.read()
 

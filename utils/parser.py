@@ -30,6 +30,7 @@ from db.schemas import (
     YouTubeStreamData,
 )
 from streaming_providers import mapper
+from streaming_providers.exceptions import ProviderException
 from streaming_providers.cache_helpers import (
     get_cached_status,
     is_cache_check_done,
@@ -205,8 +206,10 @@ async def filter_and_sort_streams(
                                 cached_info_hashes,
                                 service_name,
                             )
+                    except ProviderException as error:
+                        logging.warning("Failed to update cache status for %s: %s", service, error)
                     except Exception as error:
-                        logging.exception(f"Failed to update cache status for {service}: {error}")
+                        logging.exception("Unexpected cache status update error for %s: %s", service, error)
                 # Mark check as done regardless of results so we skip the API
                 # call on subsequent requests within the TTL window.
                 await mark_cache_check_done(primary_provider, stremio_video_id)

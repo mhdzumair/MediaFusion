@@ -1592,6 +1592,7 @@ async def get_catalog_item_streams(
                                 resolution=stream.resolution,
                                 quality=stream.quality,
                                 seeders=stream.torrent_stream.seeders,
+                                cached=False,
                             )
                             # Set id attribute for cache functions (uses extra="allow")
                             stream_data.id = stream.torrent_stream.info_hash
@@ -1607,9 +1608,9 @@ async def get_catalog_item_streams(
                         )
 
                         # Update cached_statuses with results and store in Redis
-                        cached_info_hashes = [s.id for s in uncached_streams if s.cached]
+                        cached_info_hashes = [s.id for s in uncached_streams if getattr(s, "cached", False)]
                         for s in uncached_streams:
-                            cached_statuses[s.id] = s.cached
+                            cached_statuses[s.id] = getattr(s, "cached", False)
 
                         if cached_info_hashes:
                             await store_cached_info_hashes(

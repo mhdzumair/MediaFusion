@@ -772,6 +772,7 @@ class TorrentStreamData(BaseModel):
     # Stream status
     is_active: bool = True
     is_blocked: bool = False
+    cached: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

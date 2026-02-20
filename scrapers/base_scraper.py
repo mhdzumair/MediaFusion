@@ -783,40 +783,57 @@ class BaseScraper(abc.ABC):
                 return None, False
             return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, True
 
-        try:
-            response = await self.http_client.get(
-                download_url,
-                follow_redirects=False,
-                timeout=self.torrent_download_timeout,
-                headers=headers,
-            )
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code in [429, 500]:
-                raise error
-            self.logger.error(
-                f"HTTP Error getting torrent data: {download_url}, status code: {error.response.status_code}"
-            )
-            return None, False
-        except (httpx.TimeoutException, httpx.ConnectTimeout) as error:
-            self.logger.warning(f"Timeout while getting torrent data for: {download_url}")
-            raise error
-        except httpx.RequestError as error:
-            self.logger.error(f"Request error getting torrent data: {error}")
-            raise error
-        except Exception as e:
-            self.logger.exception(f"Error getting torrent data: {e}")
-            return None, False
+        max_500_retries = 2
+        for attempt in range(max_500_retries + 1):
+            try:
+                response = await self.http_client.get(
+                    download_url,
+                    follow_redirects=False,
+                    timeout=self.torrent_download_timeout,
+                    headers=headers,
+                )
 
-        if response.status_code in [301, 302, 303, 307, 308]:
-            redirect_url = response.headers.get("Location")
-            return await self.get_torrent_data(redirect_url, parsed_data, headers, episode_name_parser)
+                if response.status_code in [301, 302, 303, 307, 308]:
+                    redirect_url = response.headers.get("Location")
+                    if not redirect_url:
+                        self.logger.warning("Redirect without location while fetching torrent data: %s", download_url)
+                        return None, False
+                    return await self.get_torrent_data(redirect_url, parsed_data, headers, episode_name_parser)
 
-        response.raise_for_status()
+                response.raise_for_status()
+                return (
+                    extract_torrent_metadata(response.content, parsed_data, episode_name_parser=episode_name_parser),
+                    True,
+                )
+            except httpx.HTTPStatusError as error:
+                status_code = error.response.status_code
+                if status_code == 429:
+                    raise
+                if status_code == 500:
+                    if attempt < max_500_retries:
+                        self.logger.warning(
+                            "Transient 500 while getting torrent data (attempt %d/%d): %s",
+                            attempt + 1,
+                            max_500_retries + 1,
+                            download_url,
+                        )
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                        continue
+                    self.logger.warning("Repeated 500 while getting torrent data: %s", download_url)
+                    return None, False
+                self.logger.error("HTTP error getting torrent data: %s, status code: %d", download_url, status_code)
+                return None, False
+            except (httpx.TimeoutException, httpx.ConnectTimeout):
+                self.logger.warning(f"Timeout while getting torrent data for: {download_url}")
+                raise
+            except httpx.RequestError as error:
+                self.logger.error(f"Request error getting torrent data: {error}")
+                raise
+            except Exception as e:
+                self.logger.exception(f"Error getting torrent data: {e}")
+                return None, False
 
-        return (
-            extract_torrent_metadata(response.content, parsed_data, episode_name_parser=episode_name_parser),
-            True,
-        )
+        return None, False
 
     async def process_stream(
         self,
@@ -1016,6 +1033,11 @@ class BaseScraper(abc.ABC):
         except httpx.ReadTimeout:
             self.metrics.record_error("timeout")
             self.logger.warning("Timeout while processing search result")
+            return None
+        except httpx.HTTPStatusError as e:
+            self.metrics.record_error("http_status_error")
+            status_code = e.response.status_code if e.response else "unknown"
+            self.logger.warning("HTTP status error while processing search result (%s): %s", status_code, e)
             return None
         except Exception as e:
             self.metrics.record_error("result_processing_error")

@@ -177,15 +177,29 @@ class DebridClient(AsyncContextDecorator):
         torrent_info: dict | None = None,
     ) -> dict:
         """Wait for the torrent to reach a particular status."""
+
+        def _normalize_status(value: str | int | None) -> str:
+            if value is None:
+                return ""
+            return str(value).strip().casefold()
+
+        normalized_target = _normalize_status(target_status)
+
         # if torrent_info is available, check the status from it
         if torrent_info:
-            if torrent_info["status"] == target_status:
+            if _normalize_status(torrent_info.get("status")) == normalized_target:
                 return torrent_info
 
         for _ in range(max_retries):
             torrent_info = await self.get_torrent_info(torrent_id)
-            if torrent_info["status"] == target_status:
+            current = _normalize_status(torrent_info.get("status"))
+            if current == normalized_target:
                 return torrent_info
+            if current == "error":
+                raise ProviderException(
+                    f"Torrent entered error state: {torrent_info.get('errorMessage', 'unknown error')}",
+                    "transfer_error.mp4",
+                )
             await asyncio.sleep(retry_interval)
         raise ProviderException(
             f"Torrent did not reach {target_status} status.",

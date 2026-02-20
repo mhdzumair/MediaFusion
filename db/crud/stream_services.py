@@ -243,6 +243,7 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
             .where(visibility_filter)
             .options(
                 joinedload(UsenetStream.stream).options(
+                    selectinload(Stream.uploader_user),
                     selectinload(Stream.languages),
                     selectinload(Stream.audio_formats),
                     selectinload(Stream.channels),
@@ -440,6 +441,7 @@ async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, vi
             .where(visibility_filter)
             .options(
                 joinedload(UsenetStream.stream).options(
+                    selectinload(Stream.uploader_user),
                     selectinload(Stream.languages),
                     selectinload(Stream.audio_formats),
                     selectinload(Stream.channels),

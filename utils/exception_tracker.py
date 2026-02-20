@@ -17,6 +17,7 @@ Redis keys used:
 """
 
 import hashlib
+import json
 import logging
 import traceback as tb_module
 from datetime import datetime, timezone
@@ -47,6 +48,47 @@ def _generate_fingerprint_from_exc(exc: BaseException) -> str:
     return hashlib.md5(raw.encode()).hexdigest()
 
 
+def _iter_leaf_exceptions(exc: BaseException):
+    """Yield non-group leaf exceptions from an exception tree."""
+    if isinstance(exc, BaseExceptionGroup):
+        for child in exc.exceptions:
+            yield from _iter_leaf_exceptions(child)
+        return
+    yield exc
+
+
+def _get_primary_exception(exc: BaseException) -> BaseException:
+    """Get the first leaf exception for stable grouping and source extraction."""
+    if not isinstance(exc, BaseExceptionGroup):
+        return exc
+    for leaf in _iter_leaf_exceptions(exc):
+        return leaf
+    return exc
+
+
+def _extract_source_from_exc(exc: BaseException) -> str:
+    """Extract the innermost traceback source location from an exception."""
+    tb = tb_module.extract_tb(exc.__traceback__)
+    if not tb:
+        return ""
+    last_frame = tb[-1]
+    return f"{last_frame.filename}:{last_frame.lineno}"
+
+
+def _serialize_exception_group(exc: BaseExceptionGroup) -> str:
+    """Serialize grouped leaf exceptions for admin detail inspection."""
+    leaves = []
+    for leaf in _iter_leaf_exceptions(exc):
+        leaves.append(
+            {
+                "type": type(leaf).__name__,
+                "message": str(leaf),
+                "source": _extract_source_from_exc(leaf),
+            }
+        )
+    return json.dumps(leaves, ensure_ascii=True)
+
+
 def _generate_fingerprint_from_record(record: logging.LogRecord) -> str:
     """Generate a stable fingerprint from a log record with exc_info.
 
@@ -54,7 +96,8 @@ def _generate_fingerprint_from_record(record: logging.LogRecord) -> str:
     Otherwise falls back to the log record's own pathname:lineno.
     """
     if record.exc_info and record.exc_info[1]:
-        return _generate_fingerprint_from_exc(record.exc_info[1])
+        primary_exc = _get_primary_exception(record.exc_info[1])
+        return _generate_fingerprint_from_exc(primary_exc)
 
     # Fallback: use the location where logging.exception() was called
     raw = f"{record.pathname}:{record.lineno}:{record.getMessage()[:100]}"
@@ -94,12 +137,25 @@ class RedisExceptionHandler(logging.Handler):
 
     def _store(self, record: logging.LogRecord) -> None:
         exc = record.exc_info[1]
+        primary_exc = _get_primary_exception(exc)
         fingerprint = _generate_fingerprint_from_record(record)
         key = f"{_KEY_PREFIX}{fingerprint}"
         now = datetime.now(timezone.utc).isoformat()
         now_ts = datetime.now(timezone.utc).timestamp()
         tb_str = "".join(tb_module.format_exception(*record.exc_info))
-        source = f"{record.pathname}:{record.lineno}"
+        source = _extract_source_from_exc(primary_exc) or f"{record.pathname}:{record.lineno}"
+        message = str(primary_exc)
+        exception_type = type(primary_exc).__name__
+        mapping_common = {
+            "source": source,
+            "traceback": tb_str,
+            "message": message,
+            "type": exception_type,
+        }
+        if isinstance(exc, BaseExceptionGroup):
+            mapping_common["group_type"] = type(exc).__name__
+            mapping_common["group_message"] = str(exc)
+            mapping_common["sub_exceptions"] = _serialize_exception_group(exc)
 
         existing = REDIS_SYNC_CLIENT.hgetall(key)
 
@@ -110,9 +166,7 @@ class RedisExceptionHandler(logging.Handler):
                 mapping={
                     "count": str(count),
                     "last_seen": now,
-                    "source": source,
-                    "traceback": tb_str,
-                    "message": str(exc),
+                    **mapping_common,
                 },
             )
         else:
@@ -128,13 +182,10 @@ class RedisExceptionHandler(logging.Handler):
             REDIS_SYNC_CLIENT.hset(
                 key,
                 mapping={
-                    "type": type(exc).__name__,
-                    "message": str(exc),
-                    "traceback": tb_str,
                     "count": "1",
                     "first_seen": now,
                     "last_seen": now,
-                    "source": source,
+                    **mapping_common,
                 },
             )
 

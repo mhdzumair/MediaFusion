@@ -48,6 +48,7 @@ from db.models import (
     FileMediaLink,
     FileType,
     HDRFormat,
+    HTTPStream,
     Keyword,
     Language,
     LinkSource,
@@ -1973,10 +1974,16 @@ async def get_all_tv_streams_paginated(
     session: AsyncSession,
     offset: int,
     limit: int,
-) -> Sequence[Stream]:
-    """Get all TV streams with pagination."""
+) -> Sequence[tuple[Stream, HTTPStream]]:
+    """Get all TV HTTP streams with pagination."""
     query = (
-        select(Stream).join(StreamMediaLink).join(Media).where(Media.type == MediaType.TV).offset(offset).limit(limit)
+        select(Stream, HTTPStream)
+        .join(HTTPStream, HTTPStream.stream_id == Stream.id)
+        .join(StreamMediaLink, StreamMediaLink.stream_id == Stream.id)
+        .join(Media, Media.id == StreamMediaLink.media_id)
+        .where(Media.type == MediaType.TV)
+        .offset(offset)
+        .limit(limit)
     )
     result = await session.exec(query)
     return result.all()
@@ -1996,7 +2003,6 @@ async def update_tv_stream_status(
     session: AsyncSession,
     stream_id: int,
     is_active: bool,
-    failure_count: int = 0,
 ) -> None:
     """Update TV stream working status."""
     await session.exec(sa_update(Stream).where(Stream.id == stream_id).values(is_active=is_active))

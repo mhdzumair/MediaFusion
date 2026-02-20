@@ -133,32 +133,22 @@ async def validate_tv_streams_in_db(page=0, page_size=25, *args, **kwargs):
             return
 
         updates = []
-        deletes = []
 
-        for stream in tv_streams:
-            is_valid = await validate_live_stream_url(stream.url, stream.behaviorHints or {})
+        for stream, http_stream in tv_streams:
+            is_valid = await validate_live_stream_url(http_stream.url, http_stream.behavior_hints or {})
             logging.info(f"Stream: {stream.name}, Status: {is_valid}")
 
             if is_valid:
-                updates.append((stream.id, True, 0))
+                updates.append((stream.id, True))
             else:
-                new_failure_count = (stream.test_failure_count or 0) + 1
-                if new_failure_count >= 3:
-                    deletes.append(stream.id)
-                    logging.error(f"{stream.name} has failed 3 times and deleting it.")
-                else:
-                    updates.append((stream.id, False, new_failure_count))
-                    logging.error(f"Stream failed validation: {stream.name}")
+                updates.append((stream.id, False))
+                logging.error(f"Stream failed validation: {stream.name}")
 
         # Apply updates
-        for stream_id, is_active, failure_count in updates:
-            await crud.update_tv_stream_status(session, stream_id, is_active, failure_count)
+        for stream_id, is_active in updates:
+            await crud.update_tv_stream_status(session, stream_id, is_active)
 
-        # Apply deletes
-        for stream_id in deletes:
-            await crud.delete_tv_stream(session, stream_id)
-
-        logging.info(f"Updated {len(updates)} streams, deleted {len(deletes)} streams")
+        logging.info(f"Updated {len(updates)} streams")
 
     # Schedule the next batch in 2 minutes
     validate_tv_streams_in_db.send_with_options(args=(page + 1, page_size), delay=2 * 6000)

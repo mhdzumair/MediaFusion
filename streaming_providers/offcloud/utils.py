@@ -5,6 +5,10 @@ from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.client import OffCloud
 
 
+def _normalize_status(status: str | None) -> str:
+    return (status or "").strip().casefold()
+
+
 async def get_video_url_from_offcloud(
     info_hash: str,
     magnet_link: str,
@@ -20,10 +24,13 @@ async def get_video_url_from_offcloud(
     async with OffCloud(token=streaming_provider.token) as oc_client:
         # Check if the torrent already exists
         torrent_info = await oc_client.get_available_torrent(info_hash)
+        current_torrent_info = None
         if torrent_info:
             request_id = torrent_info.get("requestId")
-            torrent_info = await oc_client.get_torrent_info(request_id)
-            if torrent_info["status"] == "downloaded":
+            history_status = _normalize_status(torrent_info.get("status"))
+
+            # Some OffCloud history entries may already be directly downloadable.
+            if history_status == "downloaded":
                 return await oc_client.create_download_link(
                     request_id,
                     torrent_info,
@@ -32,21 +39,38 @@ async def get_video_url_from_offcloud(
                     season,
                     episode,
                 )
-            if torrent_info["status"] == "error":
+
+            current_torrent_info = await oc_client.get_torrent_info(request_id)
+            status = _normalize_status(current_torrent_info.get("status"))
+            if status == "downloaded":
+                return await oc_client.create_download_link(
+                    request_id,
+                    current_torrent_info,
+                    stream,
+                    filename,
+                    season,
+                    episode,
+                )
+            if status == "error":
                 raise ProviderException(
-                    f"Error transferring magnet link to OffCloud. {torrent_info['errorMessage']}",
+                    f"Error transferring magnet link to OffCloud. {current_torrent_info.get('errorMessage', '')}",
                     "transfer_error.mp4",
                 )
         else:
-            # If torrent doesn't exist, add it
-            if stream.torrent_file:
-                response_data = await oc_client.add_torrent_file(stream.torrent_file, stream.name)
-            else:
-                response_data = await oc_client.add_magnet_link(magnet_link)
+            # OffCloud API changes are magnet-first and stable across legacy/new APIs.
+            # Prefer magnet submission to avoid brittle file-upload endpoint variations.
+            response_data = await oc_client.add_magnet_link(magnet_link)
             request_id = response_data["requestId"]
+            current_torrent_info = response_data
 
         # Wait for download completion and get the direct link
-        torrent_info = await oc_client.wait_for_status(request_id, "downloaded", max_retries, retry_interval)
+        torrent_info = await oc_client.wait_for_status(
+            request_id,
+            "downloaded",
+            max_retries,
+            retry_interval,
+            torrent_info=current_torrent_info,
+        )
         return await oc_client.create_download_link(
             request_id,
             torrent_info,

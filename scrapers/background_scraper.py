@@ -14,6 +14,18 @@ from scrapers.prowlarr import ProwlarrScraper
 logger = logging.getLogger(__name__)
 
 
+def _is_shutdown_runtime_error(exc: BaseException) -> bool:
+    """Return True for expected runtime errors during worker shutdown."""
+    return isinstance(exc, RuntimeError) and "cannot schedule new futures after shutdown" in str(exc)
+
+
+def _is_expected_shutdown_error(exc: BaseException) -> bool:
+    """Return True if exception (including groups) is shutdown-related only."""
+    if isinstance(exc, BaseExceptionGroup):
+        return bool(exc.exceptions) and all(_is_expected_shutdown_error(sub_exc) for sub_exc in exc.exceptions)
+    return _is_shutdown_runtime_error(exc)
+
+
 class BackgroundSearchWorker:
     def __init__(self):
         self.manager = BackgroundScraperManager()
@@ -92,10 +104,15 @@ class BackgroundSearchWorker:
                         scraper.metrics.log_summary(scraper.logger)
 
             except RuntimeError as e:
-                if "cannot schedule new futures after shutdown" in str(e):
+                if _is_shutdown_runtime_error(e):
                     logger.warning("Event loop shutting down, aborting movie batch")
                     return
                 logger.exception(f"Error processing movie {meta_id}: {e}")
+            except BaseExceptionGroup as e:
+                if _is_expected_shutdown_error(e):
+                    logger.warning("Event loop shutting down, aborting movie batch")
+                    return
+                raise
             except Exception as e:
                 logger.exception(f"Error processing movie {meta_id}: {e}")
             finally:
@@ -176,10 +193,15 @@ class BackgroundSearchWorker:
                         scraper.metrics.log_summary(scraper.logger)
 
             except RuntimeError as e:
-                if "cannot schedule new futures after shutdown" in str(e):
+                if _is_shutdown_runtime_error(e):
                     logger.warning("Event loop shutting down, aborting series batch")
                     return
                 logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
+            except BaseExceptionGroup as e:
+                if _is_expected_shutdown_error(e):
+                    logger.warning("Event loop shutting down, aborting series batch")
+                    return
+                raise
             except Exception as e:
                 logger.exception(f"Error processing series {meta_id} S{season}E{episode}: {e}")
             finally:
@@ -188,20 +210,36 @@ class BackgroundSearchWorker:
 
 async def _run_background_search_async():
     """Async implementation of background search, run inside a fresh event loop."""
-    worker = BackgroundSearchWorker()
+    try:
+        worker = BackgroundSearchWorker()
 
-    # Clean up any stale processing items
-    await worker.manager.cleanup_stale_processing()
+        # Clean up any stale processing items
+        await worker.manager.cleanup_stale_processing()
 
-    results = await asyncio.gather(
-        worker.process_movie_batch(),
-        worker.process_series_batch(),
-        return_exceptions=True,
-    )
-    for idx, result in enumerate(results):
-        if isinstance(result, Exception):
-            batch_name = "movie" if idx == 0 else "series"
-            logger.exception("Background %s batch failed: %s", batch_name, result, exc_info=result)
+        results = await asyncio.gather(
+            worker.process_movie_batch(),
+            worker.process_series_batch(),
+            return_exceptions=True,
+        )
+        for idx, result in enumerate(results):
+            if isinstance(result, BaseException):
+                batch_name = "movie" if idx == 0 else "series"
+                if _is_expected_shutdown_error(result):
+                    logger.warning("Background %s batch aborted during shutdown", batch_name)
+                    continue
+                logger.exception("Background %s batch failed: %s", batch_name, result, exc_info=result)
+                if isinstance(result, BaseExceptionGroup):
+                    raise result
+    except BaseExceptionGroup as e:
+        if _is_expected_shutdown_error(e):
+            logger.warning("Background search aborted: event loop shutting down")
+            return
+        raise
+    except RuntimeError as e:
+        if _is_shutdown_runtime_error(e):
+            logger.warning("Background search aborted: event loop shutting down")
+            return
+        raise
 
 
 @dramatiq.actor(

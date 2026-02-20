@@ -13,11 +13,18 @@ from fastapi.requests import Request
 from db.config import settings
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
+from streaming_providers.exceptions import ProviderException
 from utils import crypto, runtime_const
 
 
 class CircuitBreakerOpenException(Exception):
     """Custom exception to indicate the circuit breaker is open."""
+
+    pass
+
+
+class MediaFlowProxyIPLookupError(Exception):
+    """Raised when MediaFlow proxy public IP lookup fails."""
 
     pass
 
@@ -270,13 +277,14 @@ async def get_mediaflow_proxy_public_ip(mediaflow_config) -> str | None:
         logging.error(f"Request error occurred: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-    raise Exception(f"Failed to get MediaFlow proxy public IP address. {mediaflow_config.proxy_url}")
+    raise MediaFlowProxyIPLookupError(f"Failed to get MediaFlow proxy public IP address. {mediaflow_config.proxy_url}")
 
 
 async def get_user_public_ip(
     request: Request,
     user_data: UserData | None = None,
     streaming_provider=None,
+    fail_on_mediaflow_error: bool = False,
 ) -> str | None:
     """
     Get the public IP address to use for debrid services.
@@ -300,9 +308,24 @@ async def get_user_public_ip(
             # Otherwise, return MediaFlow IP if any provider might use it
             should_use_mediaflow = streaming_provider is None or streaming_provider.use_mediaflow
             if should_use_mediaflow:
-                public_ip = await get_mediaflow_proxy_public_ip(user_data.mediaflow_config)
-                if public_ip:
-                    return public_ip
+                try:
+                    public_ip = await get_mediaflow_proxy_public_ip(user_data.mediaflow_config)
+                    if public_ip:
+                        return public_ip
+                except MediaFlowProxyIPLookupError as error:
+                    if fail_on_mediaflow_error:
+                        raise ProviderException(
+                            "Failed to get MediaFlow proxy public IP address. Please check your MediaFlow configuration.",
+                            "mediaflow_ip_error.mp4",
+                        ) from error
+                    logging.warning("MediaFlow proxy IP lookup failed, falling back to client IP: %s", error)
+                except Exception as error:
+                    if fail_on_mediaflow_error:
+                        raise ProviderException(
+                            "Failed to get MediaFlow proxy public IP address. Please check your MediaFlow configuration.",
+                            "mediaflow_ip_error.mp4",
+                        ) from error
+                    logging.warning("Unexpected MediaFlow IP lookup failure, falling back to client IP: %s", error)
     # Get the user's public IP address
     user_ip = get_client_ip(request)
     # check if the user's IP address is a private IP address

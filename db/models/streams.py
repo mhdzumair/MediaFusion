@@ -30,6 +30,7 @@ from db.models.links import (
 
 if TYPE_CHECKING:
     from db.models.reference import AudioChannel, AudioFormat, HDRFormat, Language
+    from db.models.users import User
 
 
 class StreamType(str, Enum):
@@ -143,6 +144,7 @@ class Stream(TimestampMixin, table=True):
     # MediaFusion v5+: FK to user who contributed this stream (with consent)
     # When a user opts to link their account to their contributions
     uploader_user_id: int | None = Field(default=None, foreign_key="users.id")  # partial index via __table_args__
+    uploader_user: Optional["User"] = Relationship(sa_relationship_kwargs={"lazy": "selectin"})
 
     # Torrent release group from PTT parsing (e.g., "AFG", "RARBG", "MeGusta", "NTb")
     # Extracted automatically from torrent name using PTT.parse_title

@@ -247,12 +247,10 @@ def handle_provider_exception(error: ProviderException, usage: str) -> str:
     """
     Handles exceptions raised by the provider and logs them.
     """
-    logging.error(
-        "Provider exception occurred for %s: %s",
-        usage,
-        error.message,
-        exc_info=error.video_file_name == "api_error.mp4",
-    )
+    if error.video_file_name == "api_error.mp4":
+        logging.exception("Provider exception occurred for %s: %s", usage, error.message)
+    else:
+        logging.warning("Provider exception occurred for %s: %s", usage, error.message)
     return f"{settings.host_url}/static/exceptions/{error.video_file_name}"
 
 
@@ -535,27 +533,32 @@ async def streaming_provider_endpoint(
     if not streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
 
-    user_ip = await get_user_public_ip(request, user_data)
-    cached_stream_url_key = generate_cache_key(user_ip, secret_str, info_hash, season, episode)
+    cached_stream_url_key = None
 
-    # Check for cached stream URL (pass streaming_provider for per-provider MediaFlow check)
-    cached_stream_url = await get_cached_stream_url_and_redirect(
-        cached_stream_url_key, user_data, response, streaming_provider
-    )
-    if cached_stream_url:
-        return cached_stream_url
-
-    # Fetch stream from DB
-    stream = await fetch_stream_or_404(info_hash)
-
-    # Acquire Redis lock to prevent duplicate download tasks
-    acquired, lock = await acquire_redis_lock(f"{cached_stream_url_key}_locked", timeout=60, block=True)
-    if not acquired:
-        raise HTTPException(status_code=429, detail="Too many requests.")
-
+    lock = None
     redirect_status_code = 307
 
     try:
+        user_ip = await get_user_public_ip(
+            request, user_data, streaming_provider=streaming_provider, fail_on_mediaflow_error=True
+        )
+        cached_stream_url_key = generate_cache_key(user_ip, secret_str, info_hash, season, episode)
+
+        # Check for cached stream URL (pass streaming_provider for per-provider MediaFlow check)
+        cached_stream_url = await get_cached_stream_url_and_redirect(
+            cached_stream_url_key, user_data, response, streaming_provider
+        )
+        if cached_stream_url:
+            return cached_stream_url
+
+        # Fetch stream from DB
+        stream = await fetch_stream_or_404(info_hash)
+
+        # Acquire Redis lock to prevent duplicate download tasks
+        acquired, lock = await acquire_redis_lock(f"{cached_stream_url_key}_locked", timeout=60, block=True)
+        if not acquired:
+            raise HTTPException(status_code=429, detail="Too many requests.")
+
         video_url = await get_or_create_video_url(
             stream,
             streaming_provider,
@@ -592,7 +595,8 @@ async def streaming_provider_endpoint(
     except Exception as e:
         video_url = handle_generic_exception(e, info_hash)
     finally:
-        await release_redis_lock(lock)
+        if lock:
+            await release_redis_lock(lock)
 
     return RedirectResponse(url=video_url, headers=response.headers, status_code=redirect_status_code)
 
@@ -723,27 +727,32 @@ async def usenet_playback_endpoint(
             detail=f"Provider {streaming_provider.service} does not support Usenet streams.",
         )
 
-    user_ip = await get_user_public_ip(request, user_data)
-    cached_stream_url_key = generate_usenet_cache_key(user_ip, secret_str, nzb_guid, season, episode)
+    cached_stream_url_key = None
 
-    # Check for cached stream URL
-    cached_stream_url = await get_cached_stream_url_and_redirect(
-        cached_stream_url_key, user_data, response, streaming_provider
-    )
-    if cached_stream_url:
-        return cached_stream_url
-
-    # Fetch Usenet stream from DB
-    stream = await fetch_usenet_stream_or_404(nzb_guid)
-
-    # Acquire Redis lock to prevent duplicate download tasks
-    acquired, lock = await acquire_redis_lock(f"{cached_stream_url_key}_locked", timeout=60, block=True)
-    if not acquired:
-        raise HTTPException(status_code=429, detail="Too many requests.")
-
+    lock = None
     redirect_status_code = 307
 
     try:
+        user_ip = await get_user_public_ip(
+            request, user_data, streaming_provider=streaming_provider, fail_on_mediaflow_error=True
+        )
+        cached_stream_url_key = generate_usenet_cache_key(user_ip, secret_str, nzb_guid, season, episode)
+
+        # Check for cached stream URL
+        cached_stream_url = await get_cached_stream_url_and_redirect(
+            cached_stream_url_key, user_data, response, streaming_provider
+        )
+        if cached_stream_url:
+            return cached_stream_url
+
+        # Fetch Usenet stream from DB
+        stream = await fetch_usenet_stream_or_404(nzb_guid)
+
+        # Acquire Redis lock to prevent duplicate download tasks
+        acquired, lock = await acquire_redis_lock(f"{cached_stream_url_key}_locked", timeout=60, block=True)
+        if not acquired:
+            raise HTTPException(status_code=429, detail="Too many requests.")
+
         video_url = await get_or_create_usenet_video_url(
             stream,
             streaming_provider,
@@ -778,7 +787,8 @@ async def usenet_playback_endpoint(
     except Exception as e:
         video_url = handle_generic_exception(e, nzb_guid)
     finally:
-        await release_redis_lock(lock)
+        if lock:
+            await release_redis_lock(lock)
 
     return RedirectResponse(url=video_url, headers=response.headers, status_code=redirect_status_code)
 
@@ -1145,8 +1155,6 @@ async def delete_all_watchlist(
     if not streaming_provider:
         raise HTTPException(status_code=400, detail="No streaming provider set.")
 
-    user_ip = await get_user_public_ip(request, user_data)
-
     # Get the delete watchlist function for the user's streaming provider
     delete_all_watchlist_function = mapper.DELETE_ALL_WATCHLIST_FUNCTIONS.get(streaming_provider.service)
 
@@ -1154,6 +1162,9 @@ async def delete_all_watchlist(
         raise HTTPException(status_code=400, detail="Provider does not support this action.")
 
     try:
+        user_ip = await get_user_public_ip(
+            request, user_data, streaming_provider=streaming_provider, fail_on_mediaflow_error=True
+        )
         await delete_all_watchlist_function(streaming_provider=streaming_provider, user_ip=user_ip)
         video_url = f"{settings.host_url}/static/exceptions/watchlist_deleted.mp4"
 
