@@ -691,7 +691,7 @@ class UserData(BaseModel):
 
     @field_validator("stream_type_order", mode="after")
     def validate_stream_type_order(cls, v):
-        valid_types = {"torrent", "usenet", "telegram", "http", "acestream"}
+        valid_types = {"torrent", "usenet", "telegram", "http", "acestream", "youtube"}
         for stream_type in v:
             if stream_type not in valid_types:
                 raise ValueError(f"Invalid stream type: {stream_type}")

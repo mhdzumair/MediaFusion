@@ -25,6 +25,7 @@ from db.config import settings
 from db.models import UserProfile
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import UserData
+from utils import const
 from utils.profile_crypto import profile_crypto
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,17 @@ def build_user_data_from_config(
     # Filter out invalid streaming providers (empty service names, missing credentials,
     # or providers that have been disabled by the administrator)
     disabled_providers = set(settings.disabled_providers)
+    alias_map = {
+        "token": "tk",
+        "email": "em",
+        "password": "pw",
+        "url": "u",
+        "qbittorrent_config": "qbc",
+        "sabnzbd_config": "sbc",
+        "nzbget_config": "ngc",
+        "nzbdav_config": "ndc",
+        "easynews_config": "enc",
+    }
     for key in ["streaming_providers", "sps"]:
         if key in full_config and isinstance(full_config[key], list):
             valid_providers = []
@@ -84,14 +96,12 @@ def build_user_data_from_config(
                 service = sp.get("sv") or sp.get("service")
                 if not service:
                     continue
-                # Skip providers disabled by the administrator
                 if service in disabled_providers:
                     continue
-                # P2P doesn't require credentials
-                if service == "p2p":
-                    valid_providers.append(sp)
-                # Other services require a token (or other credentials handled by validator)
-                elif sp.get("tk") or sp.get("token"):
+                required = const.STREAMING_SERVICE_REQUIREMENTS.get(
+                    service, const.STREAMING_SERVICE_REQUIREMENTS["default"]
+                )
+                if all(sp.get(f) or sp.get(alias_map.get(f, f)) for f in required):
                     valid_providers.append(sp)
             full_config[key] = valid_providers
 
