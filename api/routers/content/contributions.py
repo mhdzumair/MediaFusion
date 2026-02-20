@@ -18,6 +18,9 @@ from db.models import Contribution, StreamSuggestion, User
 
 router = APIRouter(prefix="/api/v1/contributions", tags=["Contributions"])
 
+CONTRIBUTION_TYPES = ["metadata", "stream", "torrent", "telegram", "youtube", "nzb", "http", "acestream"]
+_CONTRIBUTION_TYPE_PATTERN = "^(" + "|".join(CONTRIBUTION_TYPES) + ")$"
+
 
 # ============================================
 # Pydantic Schemas
@@ -27,7 +30,7 @@ router = APIRouter(prefix="/api/v1/contributions", tags=["Contributions"])
 class ContributionCreate(BaseModel):
     """Request schema for creating a contribution."""
 
-    contribution_type: str = Field(..., pattern="^(metadata|stream|torrent)$")
+    contribution_type: str = Field(..., pattern=_CONTRIBUTION_TYPE_PATTERN)
     target_id: str | None = None  # meta_id or stream_id
     data: dict[str, Any]  # The contribution data
 
@@ -107,7 +110,7 @@ def contribution_to_response(contribution: Contribution) -> ContributionResponse
 
 @router.get("", response_model=ContributionListResponse)
 async def list_contributions(
-    contribution_type: str | None = Query(None, pattern="^(metadata|stream|torrent)$"),
+    contribution_type: str | None = Query(None, pattern=_CONTRIBUTION_TYPE_PATTERN),
     contribution_status: ContributionStatus | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -223,9 +226,9 @@ async def get_contribution_stats(
     )
     stream_rejected = stream_rejected_result.one()
 
-    # ====== By type (legacy Contribution model only) ======
+    # ====== By type ======
     by_type = {}
-    for ctype in ["metadata", "stream", "torrent"]:
+    for ctype in CONTRIBUTION_TYPES:
         type_result = await session.exec(
             select(func.count(Contribution.id)).where(
                 Contribution.user_id == user.id,
@@ -234,7 +237,6 @@ async def get_contribution_stats(
         )
         by_type[ctype] = type_result.one()
 
-    # Add stream_suggestions as a type
     by_type["stream_suggestions"] = stream_total
 
     # ====== Combined totals ======
@@ -352,7 +354,7 @@ async def delete_contribution(
 
 @router.get("/review/pending", response_model=ContributionListResponse)
 async def list_pending_contributions(
-    contribution_type: str | None = Query(None, pattern="^(metadata|stream|torrent)$"),
+    contribution_type: str | None = Query(None, pattern=_CONTRIBUTION_TYPE_PATTERN),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: User = Depends(require_role(UserRole.MODERATOR)),
@@ -496,13 +498,12 @@ async def get_all_contribution_stats(
 
     # ====== By type ======
     by_type = {}
-    for ctype in ["metadata", "stream", "torrent"]:
+    for ctype in CONTRIBUTION_TYPES:
         type_result = await session.exec(
             select(func.count(Contribution.id)).where(Contribution.contribution_type == ctype)
         )
         by_type[ctype] = type_result.one()
 
-    # Add stream_suggestions as a type
     by_type["stream_suggestions"] = stream_total
 
     # ====== Combined totals ======

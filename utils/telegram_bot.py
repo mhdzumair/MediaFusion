@@ -27,8 +27,8 @@ from db.crud.streams import (
     create_youtube_stream,
 )
 from db.database import get_async_session_context
-from db.enums import MediaType
-from db.models import User
+from db.enums import ContributionStatus, MediaType
+from db.models import Contribution, User
 from db.models.links import MediaCatalogLink, MediaGenreLink
 from db.models.media import Media
 from db.models.streams import (
@@ -119,6 +119,7 @@ class ConversationStep(str, Enum):
     AWAITING_METADATA_REVIEW = "awaiting_metadata_review"
     AWAITING_FIELD_EDIT = "awaiting_field_edit"
     AWAITING_POSTER_INPUT = "awaiting_poster_input"  # User is providing poster image
+    AWAITING_EPISODE_INPUT = "awaiting_episode_input"  # User is providing season/episode for series
     AWAITING_CONFIRM = "awaiting_confirm"
     IMPORTING = "importing"
 
@@ -1591,6 +1592,8 @@ class TelegramContentBot:
             "quality": parsed.get("quality"),
             "codec": parsed.get("codec"),
             "audio": parsed.get("audio"),
+            "seasons": parsed.get("seasons"),
+            "episodes": parsed.get("episodes"),
             "matches": matches,
         }
 
@@ -2381,6 +2384,20 @@ class TelegramContentBot:
         audio = overrides.get("audio") or analysis.get("audio") or "Auto"
         languages = overrides.get("languages") or "English"
 
+        # Series episode info (override > analysis parsed values)
+        is_series = state.media_type == "series"
+        season_number = None
+        episode_number = None
+        if is_series:
+            season_number = overrides.get("season_number")
+            if season_number is None:
+                seasons = analysis.get("seasons")
+                season_number = seasons[0] if seasons else None
+            episode_number = overrides.get("episode_number")
+            if episode_number is None:
+                episodes = analysis.get("episodes")
+                episode_number = episodes[0] if episodes else None
+
         # Build message
         size_str = analysis.get("total_size_readable") or analysis.get("file_size_readable") or "Unknown"
 
@@ -2390,6 +2407,13 @@ class TelegramContentBot:
             poster_line = "🖼️ *Poster:* Custom ✓\n"
         elif is_sports:
             poster_line = "🖼️ *Poster:* Auto (sports)\n"
+
+        # Episode info line for series
+        episode_line = ""
+        if is_series:
+            s_display = str(season_number) if season_number is not None else "?"
+            e_display = str(episode_number) if episode_number is not None else "?"
+            episode_line = f"📺 *Season:* {s_display} | *Episode:* {e_display}\n"
 
         # Sports-specific header
         if is_sports:
@@ -2415,6 +2439,7 @@ class TelegramContentBot:
                 f"📋 *Review Import Details*\n\n"
                 f"🎬 *{title}*{year_str}\n"
                 f"🆔 {id_display}\n\n"
+                f"{episode_line}"
                 f"📦 *Size:* {size_str}\n"
                 f"📐 *Resolution:* {resolution}\n"
                 f"🎞 *Quality:* {quality}\n"
@@ -2429,27 +2454,42 @@ class TelegramContentBot:
         poster_btn_text = "🖼️ ✓ Poster" if state.custom_poster_url else "🖼️ Add Poster"
 
         # Build edit keyboard
-        keyboard = [
+        keyboard = []
+
+        # Series episode edit row (only for series)
+        if is_series:
+            s_btn = f"S{season_number}" if season_number is not None else "S?"
+            e_btn = f"E{episode_number}" if episode_number is not None else "E?"
+            keyboard.append(
+                [
+                    {"text": f"📺 {s_btn}", "callback_data": f"meta_edit:{state.user_id}:season_number"},
+                    {"text": f"📺 {e_btn}", "callback_data": f"meta_edit:{state.user_id}:episode_number"},
+                ]
+            )
+
+        keyboard.extend(
             [
-                {"text": f"📐 {resolution}", "callback_data": f"meta_edit:{state.user_id}:resolution"},
-                {"text": f"🎞 {quality}", "callback_data": f"meta_edit:{state.user_id}:quality"},
-            ],
-            [
-                {"text": f"💿 {codec}", "callback_data": f"meta_edit:{state.user_id}:codec"},
-                {"text": f"🔊 {audio}", "callback_data": f"meta_edit:{state.user_id}:audio"},
-            ],
-            [
-                {"text": f"🌐 {languages}", "callback_data": f"meta_edit:{state.user_id}:languages"},
-                {"text": poster_btn_text, "callback_data": f"add_poster:{state.user_id}"},
-            ],
-            [
-                {"text": "✅ Confirm Import", "callback_data": f"confirm:{state.user_id}"},
-            ],
-            [
-                {"text": "⬅️ Back", "callback_data": f"back:{state.user_id}"},
-                {"text": "❌ Cancel", "callback_data": f"cancel:{state.user_id}"},
-            ],
-        ]
+                [
+                    {"text": f"📐 {resolution}", "callback_data": f"meta_edit:{state.user_id}:resolution"},
+                    {"text": f"🎞 {quality}", "callback_data": f"meta_edit:{state.user_id}:quality"},
+                ],
+                [
+                    {"text": f"💿 {codec}", "callback_data": f"meta_edit:{state.user_id}:codec"},
+                    {"text": f"🔊 {audio}", "callback_data": f"meta_edit:{state.user_id}:audio"},
+                ],
+                [
+                    {"text": f"🌐 {languages}", "callback_data": f"meta_edit:{state.user_id}:languages"},
+                    {"text": poster_btn_text, "callback_data": f"add_poster:{state.user_id}"},
+                ],
+                [
+                    {"text": "✅ Confirm Import", "callback_data": f"confirm:{state.user_id}"},
+                ],
+                [
+                    {"text": "⬅️ Back", "callback_data": f"back:{state.user_id}"},
+                    {"text": "❌ Cancel", "callback_data": f"cancel:{state.user_id}"},
+                ],
+            ]
+        )
 
         if message_id:
             await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard})
@@ -2477,6 +2517,10 @@ class TelegramContentBot:
         state = self.get_conversation(user_id)
         if not state:
             return {"success": False, "message": "Session expired. Please start over."}
+
+        # Season/episode fields require text input instead of option buttons
+        if field in ("season_number", "episode_number"):
+            return await self._show_episode_input_prompt(state, chat_id, message_id, field)
 
         state.editing_field = field
         state.step = ConversationStep.AWAITING_FIELD_EDIT
@@ -2621,6 +2665,76 @@ class TelegramContentBot:
 
         return {"success": True}
 
+    async def _show_episode_input_prompt(
+        self, state: ConversationState, chat_id: int, message_id: int, field: str
+    ) -> dict:
+        """Show text-input prompt for season or episode number."""
+        state.editing_field = field
+        state.step = ConversationStep.AWAITING_EPISODE_INPUT
+        state.touch()
+        self._persist_conversation(state)
+
+        label = "Season Number" if field == "season_number" else "Episode Number"
+        message = f"📺 *Enter {label}*\n\nReply with the {label.lower()} (a number).\n\n*Example:* `3`"
+
+        keyboard = [[{"text": "⬅️ Back to Review", "callback_data": f"back_review:{state.user_id}"}]]
+        await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard})
+        return {"success": True}
+
+    async def process_episode_input(self, user_id: int, chat_id: int, text: str) -> dict:
+        """Process user-typed season or episode number."""
+        state = self.get_conversation(user_id)
+        if not state or state.step != ConversationStep.AWAITING_EPISODE_INPUT:
+            return {"success": False, "handled": False}
+
+        field = state.editing_field
+        if field not in ("season_number", "episode_number"):
+            return {"success": False, "handled": False}
+
+        stripped = text.strip()
+        if not stripped.isdigit():
+            label = "Season" if field == "season_number" else "Episode"
+            return {
+                "success": False,
+                "handled": True,
+                "message": f"Please enter a valid number for {label}.",
+            }
+
+        state.metadata_overrides[field] = int(stripped)
+        state.editing_field = None
+        state.step = ConversationStep.AWAITING_METADATA_REVIEW
+        state.touch()
+        self._persist_conversation(state)
+
+        result = await self.show_metadata_review(state, chat_id, None)
+        return {
+            "success": True,
+            "handled": True,
+            "message": result.get("message"),
+            "reply_markup": result.get("reply_markup"),
+        }
+
+    def _get_episode_info(self, state: ConversationState) -> tuple[int | None, int | None, int | None]:
+        """Resolve season/episode/episode_end from overrides and analysis."""
+        overrides = state.metadata_overrides
+        analysis = state.analysis_result or {}
+
+        season_number = overrides.get("season_number")
+        if season_number is None:
+            seasons = analysis.get("seasons")
+            season_number = seasons[0] if seasons else None
+
+        episode_number = overrides.get("episode_number")
+        episode_end = None
+        if episode_number is None:
+            episodes = analysis.get("episodes")
+            if episodes:
+                episode_number = episodes[0]
+                if len(episodes) > 1:
+                    episode_end = episodes[-1]
+
+        return season_number, episode_number, episode_end
+
     async def execute_import(self, user_id: int, chat_id: int, message_id: int) -> dict:
         """Execute the import and create the stream/contribution.
 
@@ -2724,6 +2838,31 @@ class TelegramContentBot:
             self._persist_conversation(state)
             return {"success": False, "message": str(e)}
 
+    async def _record_contribution(
+        self,
+        mf_user_id: int,
+        contribution_type: str,
+        target_id: str | None,
+        data: dict,
+    ) -> None:
+        """Create an auto-approved Contribution record for a bot import."""
+        try:
+            async with get_async_session_context() as session:
+                contribution = Contribution(
+                    user_id=mf_user_id,
+                    contribution_type=contribution_type,
+                    target_id=target_id,
+                    data=data,
+                    status=ContributionStatus.APPROVED,
+                    reviewed_by="auto",
+                    reviewed_at=datetime.now(pytz.UTC),
+                    review_notes="Auto-approved: Telegram bot import",
+                )
+                session.add(contribution)
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Failed to record contribution ({contribution_type}): {e}")
+
     async def _import_video(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import a video file as TelegramStream."""
         analysis = state.analysis_result or {}
@@ -2734,7 +2873,8 @@ class TelegramContentBot:
         if not external_id:
             return {"success": False, "error": "No external ID selected."}
 
-        # Build content info for the existing store method
+        season_number, episode_number, episode_end = self._get_episode_info(state)
+
         content_info = {
             "user_id": state.user_id,
             "chat_id": state.chat_id,
@@ -2749,9 +2889,28 @@ class TelegramContentBot:
             "resolution": overrides.get("resolution") or analysis.get("resolution"),
             "quality": overrides.get("quality") or analysis.get("quality"),
             "codec": overrides.get("codec") or analysis.get("codec"),
+            "season_number": season_number,
+            "episode_number": episode_number,
+            "episode_end": episode_end,
         }
 
         stored = await self._store_forwarded_content(content_info)
+        if stored:
+            await self._record_contribution(
+                mf_user_id,
+                "telegram",
+                external_id,
+                {
+                    "file_name": analysis.get("file_name"),
+                    "file_size": analysis.get("file_size"),
+                    "resolution": overrides.get("resolution") or analysis.get("resolution"),
+                    "quality": overrides.get("quality") or analysis.get("quality"),
+                    "codec": overrides.get("codec") or analysis.get("codec"),
+                    "meta_id": external_id,
+                    "season_number": season_number,
+                    "episode_number": episode_number,
+                },
+            )
         return {"success": stored, "auto_approved": True, "error": "Failed to store video" if not stored else None}
 
     async def _import_magnet(self, state: ConversationState, mf_user_id: int) -> dict:
@@ -2812,6 +2971,20 @@ class TelegramContentBot:
 
             await session.commit()
 
+        await self._record_contribution(
+            mf_user_id,
+            "torrent",
+            external_id,
+            {
+                "info_hash": normalized_hash,
+                "name": analysis.get("torrent_name") or analysis.get("parsed_title"),
+                "total_size": analysis.get("total_size"),
+                "meta_id": external_id,
+                "resolution": overrides.get("resolution") or analysis.get("resolution"),
+                "quality": overrides.get("quality") or analysis.get("quality"),
+                "codec": overrides.get("codec") or analysis.get("codec"),
+            },
+        )
         return {"success": True, "auto_approved": True}
 
     async def _import_torrent_file(self, state: ConversationState, mf_user_id: int) -> dict:
@@ -2872,6 +3045,17 @@ class TelegramContentBot:
 
             await session.commit()
 
+        await self._record_contribution(
+            mf_user_id,
+            "youtube",
+            external_id,
+            {
+                "video_id": video_id,
+                "title": analysis.get("title"),
+                "meta_id": external_id,
+                "resolution": overrides.get("resolution") or analysis.get("resolution"),
+            },
+        )
         return {"success": True, "auto_approved": True}
 
     async def _import_http(self, state: ConversationState, mf_user_id: int) -> dict:
@@ -2915,6 +3099,17 @@ class TelegramContentBot:
 
             await session.commit()
 
+        await self._record_contribution(
+            mf_user_id,
+            "http",
+            external_id,
+            {
+                "url": url,
+                "title": analysis.get("parsed_title"),
+                "meta_id": external_id,
+                "resolution": overrides.get("resolution") or analysis.get("resolution"),
+            },
+        )
         return {"success": True, "auto_approved": True}
 
     async def _import_nzb(self, state: ConversationState, mf_user_id: int) -> dict:
@@ -2966,6 +3161,18 @@ class TelegramContentBot:
 
             await session.commit()
 
+        await self._record_contribution(
+            mf_user_id,
+            "nzb",
+            external_id,
+            {
+                "nzb_guid": nzb_guid,
+                "nzb_url": nzb_url,
+                "title": analysis.get("nzb_name"),
+                "meta_id": external_id,
+                "resolution": overrides.get("resolution") or analysis.get("resolution"),
+            },
+        )
         return {"success": True, "auto_approved": True}
 
     async def _import_acestream(self, state: ConversationState, mf_user_id: int) -> dict:
@@ -3010,6 +3217,17 @@ class TelegramContentBot:
 
             await session.commit()
 
+        await self._record_contribution(
+            mf_user_id,
+            "acestream",
+            external_id,
+            {
+                "content_id": content_id,
+                "title": match.get("title"),
+                "meta_id": external_id,
+                "resolution": overrides.get("resolution") or analysis.get("resolution"),
+            },
+        )
         return {"success": True, "auto_approved": True}
 
     async def _import_sports(self, state: ConversationState, mf_user_id: int) -> dict:
@@ -3270,7 +3488,11 @@ class TelegramContentBot:
             else:
                 # Go back to match selection
                 return await self.show_matches(state, chat_id, message_id)
-        elif current_step in (ConversationStep.AWAITING_FIELD_EDIT, ConversationStep.AWAITING_POSTER_INPUT):
+        elif current_step in (
+            ConversationStep.AWAITING_FIELD_EDIT,
+            ConversationStep.AWAITING_POSTER_INPUT,
+            ConversationStep.AWAITING_EPISODE_INPUT,
+        ):
             # Go back to metadata review
             state.step = ConversationStep.AWAITING_METADATA_REVIEW
             return await self.show_metadata_review(state, chat_id, message_id)
@@ -4039,7 +4261,17 @@ class TelegramContentBot:
             primary_chat_id = backup_chat_id or "bot_contribution"
             primary_message_id = backup_message_id or 0
 
-            # Create the stream
+            # Resolve episode info: prefer explicit values from wizard, fall back to filename parse
+            season_number = content.get("season_number")
+            episode_number = content.get("episode_number")
+            episode_end = content.get("episode_end")
+            if season_number is None and parsed.get("seasons"):
+                season_number = parsed["seasons"][0]
+            if episode_number is None and parsed.get("episodes"):
+                episode_number = parsed["episodes"][0]
+                if episode_end is None and len(parsed["episodes"]) > 1:
+                    episode_end = parsed["episodes"][-1]
+
             await crud.create_telegram_stream(
                 session,
                 chat_id=primary_chat_id,
@@ -4060,6 +4292,9 @@ class TelegramContentBot:
                 codec=parsed.get("codec"),
                 quality=parsed.get("quality"),
                 release_group=parsed.get("group"),
+                season_number=season_number,
+                episode_number=episode_number,
+                episode_end=episode_end,
             )
 
             await session.commit()

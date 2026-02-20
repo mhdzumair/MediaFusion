@@ -63,7 +63,7 @@ import {
   useUpdateFileLinks,
 } from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
-import type { Suggestion, SuggestionStatus, StreamSuggestion, Contribution } from '@/lib/api'
+import type { Suggestion, SuggestionStatus, StreamSuggestion, Contribution, ContributionType } from '@/lib/api'
 import {
   Settings,
   Film,
@@ -1007,7 +1007,7 @@ function ContributionsTab() {
   const [reviewNotes, setReviewNotes] = useState('')
 
   const { data, isLoading, refetch } = usePendingContributions({
-    contribution_type: typeFilter === 'all' ? undefined : (typeFilter as 'torrent' | 'stream' | 'metadata'),
+    contribution_type: typeFilter === 'all' ? undefined : (typeFilter as ContributionType),
     page,
     page_size: 20,
   })
@@ -1053,6 +1053,11 @@ function ContributionsTab() {
             <SelectItem value="torrent">Torrent Imports</SelectItem>
             <SelectItem value="stream">New Streams</SelectItem>
             <SelectItem value="metadata">Metadata Fixes</SelectItem>
+            <SelectItem value="telegram">Telegram Uploads</SelectItem>
+            <SelectItem value="youtube">YouTube Imports</SelectItem>
+            <SelectItem value="nzb">NZB Imports</SelectItem>
+            <SelectItem value="http">HTTP Imports</SelectItem>
+            <SelectItem value="acestream">AceStream Imports</SelectItem>
           </SelectContent>
         </Select>
       </div>

@@ -169,7 +169,7 @@ export interface DownloadHistoryEntry {
 export interface Contribution {
   id: string
   user_id: string
-  contribution_type: 'metadata' | 'stream' | 'torrent'
+  contribution_type: 'metadata' | 'stream' | 'torrent' | 'telegram' | 'youtube' | 'nzb' | 'http' | 'acestream'
   target_id: string | null
   data: Record<string, unknown>
   status: 'pending' | 'approved' | 'rejected'

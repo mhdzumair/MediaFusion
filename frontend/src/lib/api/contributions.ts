@@ -1,6 +1,6 @@
 import { apiClient } from './client'
 
-export type ContributionType = 'metadata' | 'stream' | 'torrent'
+export type ContributionType = 'metadata' | 'stream' | 'torrent' | 'telegram' | 'youtube' | 'nzb' | 'http' | 'acestream'
 export type ContributionStatus = 'pending' | 'approved' | 'rejected'
 
 export interface ContributionData {
@@ -41,11 +41,7 @@ export interface ContributionStats {
   pending: number
   approved: number
   rejected: number
-  by_type: {
-    metadata: number
-    stream: number
-    torrent: number
-  }
+  by_type: Record<string, number>
 }
 
 export interface ContributionCreateRequest {

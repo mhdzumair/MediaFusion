@@ -27,6 +27,11 @@ import {
   ExternalLink,
   Copy,
   Check,
+  MessageSquare,
+  Youtube,
+  Download,
+  Globe,
+  Radio,
 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
@@ -64,7 +69,12 @@ const streamStatusConfig: Record<StreamSuggestionStatus, { label: string; icon: 
 const typeConfig: Record<ContributionType, { label: string; icon: typeof FileEdit; color: string }> = {
   metadata: { label: 'Metadata Fix', icon: FileEdit, color: 'text-primary bg-primary/10' },
   stream: { label: 'New Stream', icon: Magnet, color: 'text-blue-500 bg-blue-500/10' },
-  torrent: { label: 'Torrent Imports', icon: Tag, color: 'text-orange-500 bg-orange-500/10' },
+  torrent: { label: 'Torrent Import', icon: Tag, color: 'text-orange-500 bg-orange-500/10' },
+  telegram: { label: 'Telegram Upload', icon: MessageSquare, color: 'text-sky-500 bg-sky-500/10' },
+  youtube: { label: 'YouTube Import', icon: Youtube, color: 'text-red-500 bg-red-500/10' },
+  nzb: { label: 'NZB Import', icon: Download, color: 'text-green-500 bg-green-500/10' },
+  http: { label: 'HTTP Import', icon: Globe, color: 'text-violet-500 bg-violet-500/10' },
+  acestream: { label: 'AceStream Import', icon: Radio, color: 'text-amber-500 bg-amber-500/10' },
 }
 
 // Helper to format bytes
@@ -101,12 +111,43 @@ function parseContributionData(
     if (data.catalogs && Array.isArray(data.catalogs) && data.catalogs.length > 0) {
       fields.push({ label: 'Catalogs', value: (data.catalogs as string[]).join(', '), type: 'text' })
     }
-    // Show contribution visibility
-    fields.push({
-      label: 'Uploader',
-      value: data.is_anonymous === true ? 'Anonymous' : 'Linked to profile',
-      type: 'badge',
-    })
+    if (data.is_anonymous !== undefined) {
+      fields.push({
+        label: 'Uploader',
+        value: data.is_anonymous === true ? 'Anonymous' : 'Linked to profile',
+        type: 'badge',
+      })
+    }
+  } else if (type === 'telegram') {
+    if (data.file_name) fields.push({ label: 'File Name', value: String(data.file_name), type: 'text' })
+    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
+    if (data.file_size) fields.push({ label: 'Size', value: String(data.file_size), type: 'size' })
+    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
+    if (data.quality) fields.push({ label: 'Quality', value: String(data.quality), type: 'badge' })
+    if (data.codec) fields.push({ label: 'Codec', value: String(data.codec), type: 'badge' })
+    if (data.season_number != null) fields.push({ label: 'Season', value: String(data.season_number), type: 'badge' })
+    if (data.episode_number != null)
+      fields.push({ label: 'Episode', value: String(data.episode_number), type: 'badge' })
+  } else if (type === 'youtube') {
+    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
+    if (data.video_id) fields.push({ label: 'Video ID', value: String(data.video_id), type: 'code' })
+    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
+    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
+  } else if (type === 'nzb') {
+    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
+    if (data.nzb_guid) fields.push({ label: 'NZB GUID', value: String(data.nzb_guid), type: 'code' })
+    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
+    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
+  } else if (type === 'http') {
+    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
+    if (data.url) fields.push({ label: 'URL', value: String(data.url), type: 'text' })
+    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
+    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
+  } else if (type === 'acestream') {
+    if (data.title) fields.push({ label: 'Title', value: String(data.title), type: 'text' })
+    if (data.content_id) fields.push({ label: 'Content ID', value: String(data.content_id), type: 'code' })
+    if (data.meta_id) fields.push({ label: 'Media ID', value: String(data.meta_id), type: 'link' })
+    if (data.resolution) fields.push({ label: 'Resolution', value: String(data.resolution), type: 'badge' })
   } else if (type === 'metadata') {
     // For metadata contributions, show what was changed
     Object.entries(data).forEach(([key, value]) => {
@@ -545,9 +586,13 @@ export function ContributionsPage() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => setTypeFilter(undefined)}>All Types</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTypeFilter('metadata')}>Metadata Fix</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTypeFilter('stream')}>New Stream</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTypeFilter('torrent')}>Torrent Imports</DropdownMenuItem>
+                  {(Object.entries(typeConfig) as [ContributionType, (typeof typeConfig)[ContributionType]][]).map(
+                    ([key, cfg]) => (
+                      <DropdownMenuItem key={key} onClick={() => setTypeFilter(key)}>
+                        {cfg.label}
+                      </DropdownMenuItem>
+                    ),
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
