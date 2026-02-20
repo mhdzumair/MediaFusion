@@ -285,6 +285,7 @@ async def get_user_public_ip(
     user_data: UserData | None = None,
     streaming_provider=None,
     fail_on_mediaflow_error: bool = False,
+    respect_provider_mediaflow: bool = True,
 ) -> str | None:
     """
     Get the public IP address to use for debrid services.
@@ -296,6 +297,8 @@ async def get_user_public_ip(
         request: The FastAPI request object
         user_data: User's configuration data
         streaming_provider: Optional specific provider to check for MediaFlow setting
+        fail_on_mediaflow_error: Raise ProviderException when MediaFlow IP lookup fails
+        respect_provider_mediaflow: If False, ignore per-provider use_mediaflow toggle
 
     Returns:
         The public IP to use for debrid services, or None to use server IP
@@ -304,9 +307,11 @@ async def get_user_public_ip(
     if user_data and user_data.mediaflow_config:
         # Check if MediaFlow proxy URL and password are set
         if user_data.mediaflow_config.proxy_url and user_data.mediaflow_config.api_password:
-            # If a specific provider is given, check its use_mediaflow setting
-            # Otherwise, return MediaFlow IP if any provider might use it
-            should_use_mediaflow = streaming_provider is None or streaming_provider.use_mediaflow
+            # If requested, ignore provider-level toggle and always use MediaFlow when configured.
+            # This is used by UI playback where MediaFlow should always proxy debrid streams.
+            should_use_mediaflow = (
+                streaming_provider is None or not respect_provider_mediaflow or streaming_provider.use_mediaflow
+            )
             if should_use_mediaflow:
                 try:
                     public_ip = await get_mediaflow_proxy_public_ip(user_data.mediaflow_config)

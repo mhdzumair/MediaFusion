@@ -675,6 +675,8 @@ def _build_stream_entries(
                         stream_url += f"/{season}/{episode}"
                     if file_name:
                         stream_url += f"/{quote(file_name)}"
+                    # Mark addon playback URLs so backend can apply per-provider MediaFlow toggle only here.
+                    stream_url += "?stremio=1"
                 else:
                     # Usenet streams require a provider - can't be played directly
                     continue
@@ -687,6 +689,8 @@ def _build_stream_entries(
                         stream_url += f"/{season}/{episode}"
                     if file_name:
                         stream_url += f"/{quote(file_name)}"
+                    # Mark addon playback URLs so backend can apply per-provider MediaFlow toggle only here.
+                    stream_url += "?stremio=1"
                 else:
                     info_hash = stream_data.info_hash
                     file_idx = file_index

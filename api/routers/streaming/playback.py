@@ -86,33 +86,47 @@ async def get_cached_stream_url_and_redirect(
     cached_stream_url_key: str,
     user_data: schemas.UserData,
     response: Response,
+    filename: str | None = None,
     streaming_provider: schemas.StreamingProvider | None = None,
+    respect_provider_mediaflow: bool = True,
 ) -> RedirectResponse | None:
     """
     Checks for cached stream URL and returns a RedirectResponse if available.
 
     For Stremio/Kodi playback, uses per-provider use_mediaflow setting.
+    For UI playback, MediaFlow is applied whenever configured.
 
     Args:
         cached_stream_url_key: Redis cache key for the stream URL
         user_data: User's configuration data
         response: FastAPI response object for headers
+        filename: Optional filename hint for content-type mapping
         streaming_provider: Provider for per-provider MediaFlow check
+        respect_provider_mediaflow: Whether to apply per-provider use_mediaflow toggle
 
     Returns:
         RedirectResponse if cached URL exists, None otherwise
     """
     if cached_stream_url := await get_cached_stream_url(cached_stream_url_key):
+        cached_filename = filename
+        if not cached_filename:
+            if cached_filename_value := await REDIS_ASYNC_CLIENT.getex(
+                f"{cached_stream_url_key}:filename", ex=URL_CACHE_EXP
+            ):
+                cached_filename = cached_filename_value.decode("utf-8")
+
         # Check if MediaFlow is configured and per-provider setting is enabled
         should_proxy = (
             user_data.mediaflow_config
             and user_data.mediaflow_config.proxy_url
             and user_data.mediaflow_config.api_password
-            and (streaming_provider is None or streaming_provider.use_mediaflow)
+            and (not respect_provider_mediaflow or streaming_provider is None or streaming_provider.use_mediaflow)
         )
         if should_proxy:
             response_headers = {}
             file_extension = path.splitext(cached_stream_url)[-1]
+            if not file_extension and cached_filename:
+                file_extension = path.splitext(cached_filename)[-1]
             content_type = CONTENT_TYPE_HEADERS_MAPPING.get(file_extension)
             if content_type:
                 response_headers["Content-Type"] = content_type
@@ -151,7 +165,7 @@ async def get_or_create_video_url(
     filename: str | None,
     user_ip: str,
     background_tasks: BackgroundTasks,
-) -> str:
+) -> tuple[str, str | None]:
     """
     Retrieves or generates the video URL based on stream data and provider info.
     """
@@ -188,31 +202,38 @@ async def get_or_create_video_url(
         background_tasks=background_tasks,
     )
 
-    return await get_video_url(**kwargs)
+    video_url = await get_video_url(**kwargs)
+    return video_url, filename
 
 
-async def cache_stream_url(cached_stream_url_key: str, video_url: str) -> None:
+async def cache_stream_url(cached_stream_url_key: str, video_url: str, filename: str | None = None) -> None:
     """
     Caches the streaming URL in Redis for future use.
     """
     await REDIS_ASYNC_CLIENT.set(cached_stream_url_key, video_url.encode("utf-8"), ex=URL_CACHE_EXP)
+    if filename:
+        await REDIS_ASYNC_CLIENT.set(f"{cached_stream_url_key}:filename", filename.encode("utf-8"), ex=URL_CACHE_EXP)
 
 
 def apply_mediaflow_proxy_if_needed(
     video_url: str,
     user_data: schemas.UserData,
     streaming_provider: schemas.StreamingProvider | None = None,
+    respect_provider_mediaflow: bool = True,
+    filename: str | None = None,
 ) -> str:
     """
     Applies mediaflow proxy to the video URL for Stremio/Kodi playback.
 
-    Uses the per-provider use_mediaflow setting to determine if proxy should be applied.
-    Each provider can independently enable/disable MediaFlow proxy.
+    Uses the per-provider use_mediaflow setting for Stremio/Kodi playback only.
+    UI playback always uses MediaFlow when configured.
 
     Args:
         video_url: The original video URL to proxy
         user_data: User's configuration data
         streaming_provider: The streaming provider to check for MediaFlow setting
+        respect_provider_mediaflow: Whether to apply per-provider use_mediaflow toggle
+        filename: Optional filename hint for content-type mapping
 
     Returns:
         Proxied URL if MediaFlow should be applied, original URL otherwise
@@ -224,12 +245,14 @@ def apply_mediaflow_proxy_if_needed(
     if not user_data.mediaflow_config.api_password:
         return video_url
 
-    # Check per-provider MediaFlow setting (defaults to True if not set)
-    if streaming_provider and not streaming_provider.use_mediaflow:
+    # Check per-provider MediaFlow setting only for Stremio/Kodi requests.
+    if respect_provider_mediaflow and streaming_provider and not streaming_provider.use_mediaflow:
         return video_url
 
     response_headers = {}
     file_extension = path.splitext(video_url)[-1]
+    if not file_extension and filename:
+        file_extension = path.splitext(filename)[-1]
     content_type = CONTENT_TYPE_HEADERS_MAPPING.get(file_extension)
     if content_type:
         response_headers["Content-Type"] = content_type
@@ -520,6 +543,9 @@ async def streaming_provider_endpoint(
     """
     response.headers.update(const.NO_CACHE_HEADERS)
     info_hash = info_hash.lower()
+    # Stremio/Kodi URLs include ?stremio=1 and should honor per-provider use_mediaflow.
+    # UI playback should always use MediaFlow when configured.
+    respect_provider_mediaflow = request.query_params.get("stremio") == "1"
 
     # Get the specific provider by name (for multi-debrid support)
     streaming_provider = user_data.get_provider_by_name(provider_name)
@@ -540,13 +566,22 @@ async def streaming_provider_endpoint(
 
     try:
         user_ip = await get_user_public_ip(
-            request, user_data, streaming_provider=streaming_provider, fail_on_mediaflow_error=True
+            request,
+            user_data,
+            streaming_provider=streaming_provider,
+            fail_on_mediaflow_error=True,
+            respect_provider_mediaflow=respect_provider_mediaflow,
         )
         cached_stream_url_key = generate_cache_key(user_ip, secret_str, info_hash, season, episode)
 
         # Check for cached stream URL (pass streaming_provider for per-provider MediaFlow check)
         cached_stream_url = await get_cached_stream_url_and_redirect(
-            cached_stream_url_key, user_data, response, streaming_provider
+            cached_stream_url_key,
+            user_data,
+            response,
+            filename=filename,
+            streaming_provider=streaming_provider,
+            respect_provider_mediaflow=respect_provider_mediaflow,
         )
         if cached_stream_url:
             return cached_stream_url
@@ -559,7 +594,7 @@ async def streaming_provider_endpoint(
         if not acquired:
             raise HTTPException(status_code=429, detail="Too many requests.")
 
-        video_url = await get_or_create_video_url(
+        video_url, resolved_filename = await get_or_create_video_url(
             stream,
             streaming_provider,
             info_hash,
@@ -571,8 +606,14 @@ async def streaming_provider_endpoint(
         )
 
         await store_cached_info_hashes(streaming_provider, [info_hash])
-        await cache_stream_url(cached_stream_url_key, video_url)
-        video_url = apply_mediaflow_proxy_if_needed(video_url, user_data, streaming_provider)
+        await cache_stream_url(cached_stream_url_key, video_url, resolved_filename)
+        video_url = apply_mediaflow_proxy_if_needed(
+            video_url,
+            user_data,
+            streaming_provider,
+            respect_provider_mediaflow=respect_provider_mediaflow,
+            filename=resolved_filename,
+        )
         redirect_status_code = 302
 
         # Track playback in background using asyncio.create_task to preserve async context
@@ -642,7 +683,7 @@ async def get_or_create_usenet_video_url(
     filename: str | None,
     user_ip: str,
     background_tasks: BackgroundTasks,
-) -> str:
+) -> tuple[str, str | None]:
     """
     Retrieves or generates the video URL for Usenet content.
     """
@@ -677,7 +718,8 @@ async def get_or_create_usenet_video_url(
         background_tasks=background_tasks,
     )
 
-    return await get_video_url(**kwargs)
+    video_url = await get_video_url(**kwargs)
+    return video_url, filename
 
 
 # Usenet playback endpoints
@@ -708,6 +750,9 @@ async def usenet_playback_endpoint(
     Similar to torrent playback but uses Usenet-specific providers.
     """
     response.headers.update(const.NO_CACHE_HEADERS)
+    # Stremio/Kodi URLs include ?stremio=1 and should honor per-provider use_mediaflow.
+    # UI playback should always use MediaFlow when configured.
+    respect_provider_mediaflow = request.query_params.get("stremio") == "1"
 
     # Get the specific provider by name
     streaming_provider = user_data.get_provider_by_name(provider_name)
@@ -734,13 +779,22 @@ async def usenet_playback_endpoint(
 
     try:
         user_ip = await get_user_public_ip(
-            request, user_data, streaming_provider=streaming_provider, fail_on_mediaflow_error=True
+            request,
+            user_data,
+            streaming_provider=streaming_provider,
+            fail_on_mediaflow_error=True,
+            respect_provider_mediaflow=respect_provider_mediaflow,
         )
         cached_stream_url_key = generate_usenet_cache_key(user_ip, secret_str, nzb_guid, season, episode)
 
         # Check for cached stream URL
         cached_stream_url = await get_cached_stream_url_and_redirect(
-            cached_stream_url_key, user_data, response, streaming_provider
+            cached_stream_url_key,
+            user_data,
+            response,
+            filename=filename,
+            streaming_provider=streaming_provider,
+            respect_provider_mediaflow=respect_provider_mediaflow,
         )
         if cached_stream_url:
             return cached_stream_url
@@ -753,7 +807,7 @@ async def usenet_playback_endpoint(
         if not acquired:
             raise HTTPException(status_code=429, detail="Too many requests.")
 
-        video_url = await get_or_create_usenet_video_url(
+        video_url, resolved_filename = await get_or_create_usenet_video_url(
             stream,
             streaming_provider,
             nzb_guid,
@@ -763,8 +817,14 @@ async def usenet_playback_endpoint(
             user_ip,
             background_tasks,
         )
-        await cache_stream_url(cached_stream_url_key, video_url)
-        video_url = apply_mediaflow_proxy_if_needed(video_url, user_data, streaming_provider)
+        await cache_stream_url(cached_stream_url_key, video_url, resolved_filename)
+        video_url = apply_mediaflow_proxy_if_needed(
+            video_url,
+            user_data,
+            streaming_provider,
+            respect_provider_mediaflow=respect_provider_mediaflow,
+            filename=resolved_filename,
+        )
         redirect_status_code = 302
 
         # Track playback in background
