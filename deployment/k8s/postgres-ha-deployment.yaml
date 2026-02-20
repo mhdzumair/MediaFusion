@@ -119,7 +119,7 @@ spec:
           - name: POSTGRES_DB
             value: "mediafusion"
           - name: PGDATA
-            value: /var/lib/postgresql/data/pgdata
+            value: /var/lib/postgresql/pgdata
         command:
           - /bin/sh
           - -c
@@ -145,7 +145,7 @@ spec:
               -c hba_file=/tmp/pg_hba.conf
         volumeMounts:
         - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
+          mountPath: /var/lib/postgresql
         - name: postgres-hba
           mountPath: /etc/postgresql-config
         - name: postgres-init
@@ -207,9 +207,9 @@ spec:
             set -e
             
             # Ensure data directory exists with correct permissions
-            mkdir -p /var/lib/postgresql/data/pgdata
-            chown -R postgres:postgres /var/lib/postgresql/data
-            chmod 700 /var/lib/postgresql/data/pgdata
+            mkdir -p /var/lib/postgresql/pgdata
+            chown -R postgres:postgres /var/lib/postgresql
+            chmod 700 /var/lib/postgresql/pgdata
             
             # Wait for primary to be ready
             echo "Waiting for primary to be ready..."
@@ -219,18 +219,18 @@ spec:
             echo "Primary is ready!"
             
             # Check if we need to initialize
-            if [ ! -f /var/lib/postgresql/data/pgdata/PG_VERSION ]; then
+            if [ ! -f /var/lib/postgresql/pgdata/PG_VERSION ]; then
               echo "Initializing replica from primary..."
               
               # Remove any partial data
-              rm -rf /var/lib/postgresql/data/pgdata/*
+              rm -rf /var/lib/postgresql/pgdata/*
               
               # Take base backup from primary
               # -R flag creates standby.signal and postgresql.auto.conf
               su postgres -c "PGPASSWORD=$POSTGRES_PASSWORD pg_basebackup \
                 -h postgres-primary \
                 -U $POSTGRES_USER \
-                -D /var/lib/postgresql/data/pgdata \
+                -D /var/lib/postgresql/pgdata \
                 -Fp -Xs -P -R"
               
               echo "Replica base backup complete!"
@@ -250,7 +250,7 @@ spec:
                 key: POSTGRES_PASSWORD
         volumeMounts:
         - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
+          mountPath: /var/lib/postgresql
       containers:
       - name: postgres
         image: postgres:18-alpine
@@ -265,13 +265,13 @@ spec:
             cpu: "2000m"
         env:
           - name: PGDATA
-            value: /var/lib/postgresql/data/pgdata
+            value: /var/lib/postgresql/pgdata
         command:
           - /bin/sh
           - -c
           - |
             exec su postgres -c "postgres \
-              -D /var/lib/postgresql/data/pgdata \
+              -D /var/lib/postgresql/pgdata \
               -c hot_standby=on \
               -c hot_standby_feedback=on \
               -c max_standby_streaming_delay=30s \
@@ -280,7 +280,7 @@ spec:
               -c effective_cache_size=768MB"
         volumeMounts:
         - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
+          mountPath: /var/lib/postgresql
         livenessProbe:
           exec:
             command: ["pg_isready", "-U", "mediafusion", "-d", "mediafusion"]

@@ -100,7 +100,7 @@ services:
       - "-c"
       - "max_connections=100"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"

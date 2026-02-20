@@ -29,7 +29,7 @@ services:
       POSTGRES_PASSWORD: mediafusion
       POSTGRES_DB: mediafusion
     volumes:
-      - pg-primary-data:/var/lib/postgresql/data
+      - pg-primary-data:/var/lib/postgresql
     ports:
       - "5442:5432"
     healthcheck:
@@ -74,11 +74,12 @@ services:
       - -c
       - |
         set -e
+        REPLICA_PGDATA="${PGDATA:-/var/lib/postgresql/18/docker}"
         
         # Ensure data directory exists with correct permissions
-        mkdir -p /var/lib/postgresql/data
-        chown -R postgres:postgres /var/lib/postgresql/data
-        chmod 700 /var/lib/postgresql/data
+        mkdir -p "$REPLICA_PGDATA"
+        chown -R postgres:postgres /var/lib/postgresql
+        chmod 700 "$REPLICA_PGDATA"
         
         echo "Waiting for primary to be ready..."
         until pg_isready -h pg-primary -p 5432 -U mediafusion; do
@@ -87,16 +88,16 @@ services:
         echo "Primary is ready!"
         
         # Check if we need to initialize
-        if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+        if [ ! -f "$REPLICA_PGDATA/PG_VERSION" ]; then
           echo "Initializing replica from primary..."
           
           # Take base backup from primary (run as postgres user)
           # -R flag creates standby.signal and postgresql.auto.conf
-          rm -rf /var/lib/postgresql/data/*
+          rm -rf "$REPLICA_PGDATA"/*
           su postgres -c "PGPASSWORD=mediafusion pg_basebackup \
             -h pg-primary \
             -U mediafusion \
-            -D /var/lib/postgresql/data \
+            -D $REPLICA_PGDATA \
             -Fp -Xs -P -R"
           
           echo "Replica base backup complete!"
@@ -104,12 +105,12 @@ services:
         
         echo "Starting replica in standby mode..."
         exec su postgres -c "postgres \
-          -D /var/lib/postgresql/data \
+          -D $REPLICA_PGDATA \
           -c hot_standby=on \
           -c hot_standby_feedback=on \
           -c shared_buffers=128MB"
     volumes:
-      - pg-replica-data:/var/lib/postgresql/data
+      - pg-replica-data:/var/lib/postgresql
     ports:
       - "5443:5432"
     depends_on:

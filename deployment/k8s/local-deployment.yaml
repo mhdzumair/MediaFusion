@@ -218,7 +218,7 @@ spec:
           - "max_connections=200"
         volumeMounts:
         - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
+          mountPath: /var/lib/postgresql
         - name: postgres-init
           mountPath: /docker-entrypoint-initdb.d
         livenessProbe:
