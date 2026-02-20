@@ -298,6 +298,7 @@ class MaxTasksPerChild(dramatiq.Middleware):
             if self.counter <= 0:
                 self.logger.warning("Counter reached zero. Schedule message to be run later.")
                 broker.enqueue(message, delay=30000)
+                raise SkipMessage()
 
     def after_process_message(self, broker, message, *, result=None, exception=None):
         with self.counter_mu:
@@ -305,8 +306,8 @@ class MaxTasksPerChild(dramatiq.Middleware):
             self.logger.info("Remaining tasks: %d.", self.counter)
             if self.counter <= 0 and not self.signaled:
                 self.logger.warning("Counter reached zero. Signaling current process.")
-                os.kill(os.getppid(), getattr(signal, "SIGHUP", signal.SIGTERM))
                 self.signaled = True
+                os.kill(os.getpid(), getattr(signal, "SIGTERM", signal.SIGINT))
 
 
 class Retries(OriginalRetries):

@@ -2,6 +2,7 @@ import re
 from datetime import timedelta
 
 import PTT
+from PTT.adult import is_adult_content
 from fastapi.templating import Jinja2Templates
 from regex import regex
 
@@ -10,11 +11,7 @@ from db.config import settings
 from utils import const, get_json_data
 
 ADULT_PARSER = PTT.Parser()
-ADULT_PARSER.add_handler(
-    "adult",
-    PTT.handlers.create_adult_pattern(),
-    PTT.transformers.boolean,
-)
+ADULT_PARSER.add_handler("adult", is_adult_content)
 ADULT_PARSER.add_handler(
     "adult",
     regex.compile(settings.adult_content_regex_keywords, regex.IGNORECASE),
