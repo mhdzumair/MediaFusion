@@ -28,7 +28,7 @@ export interface InstanceInfo {
 export interface SetupCompleteRequest {
   api_password: string
   email: string
-  username?: string
+  username: string
   password: string
 }
 

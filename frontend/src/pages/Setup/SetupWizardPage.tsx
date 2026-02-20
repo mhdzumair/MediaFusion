@@ -17,7 +17,7 @@ const setupSchema = z
   .object({
     apiPassword: z.string().min(1, 'API password is required'),
     email: z.string().email('Please enter a valid email'),
-    username: z.string().min(3, 'Username must be at least 3 characters').optional().or(z.literal('')),
+    username: z.string().trim().min(3, 'Username must be at least 3 characters'),
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters')
@@ -78,7 +78,7 @@ export function SetupWizardPage() {
       const response = await completeSetup({
         api_password: data.apiPassword,
         email: data.email,
-        username: data.username || undefined,
+        username: data.username.trim(),
         password: data.password,
       })
 
@@ -250,9 +250,7 @@ export function SetupWizardPage() {
 
                 {/* Username */}
                 <div className="space-y-2">
-                  <Label htmlFor="username">
-                    Username <span className="text-muted-foreground text-xs">(optional)</span>
-                  </Label>
+                  <Label htmlFor="username">Username</Label>
                   <Input
                     id="username"
                     type="text"

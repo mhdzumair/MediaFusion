@@ -48,7 +48,7 @@ security = HTTPBearer(auto_error=False)
 
 class UserCreate(BaseModel):
     email: EmailStr
-    username: str | None = Field(None, min_length=3, max_length=100)
+    username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
     newsletter_opt_in: bool = False
 
@@ -372,15 +372,14 @@ async def register(
             detail="Email already registered",
         )
 
-    # Check if username already exists (if provided)
-    if user_data.username:
-        result = await session.exec(select(User).where(User.username == user_data.username))
-        existing_username = result.first()
-        if existing_username:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken",
-            )
+    # Check if username already exists
+    result = await session.exec(select(User).where(User.username == user_data.username))
+    existing_username = result.first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken",
+        )
 
     email_service = get_email_service()
     auto_verify = email_service is None

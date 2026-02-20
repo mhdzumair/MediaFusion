@@ -18,7 +18,7 @@ import { ApiRequestError } from '@/lib/api/client'
 const registerSchema = z
   .object({
     email: z.string().email('Please enter a valid email'),
-    username: z.string().min(3, 'Username must be at least 3 characters').optional().or(z.literal('')),
+    username: z.string().trim().min(3, 'Username must be at least 3 characters'),
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters')
@@ -68,6 +68,7 @@ export function RegisterPage() {
   const {
     register,
     handleSubmit,
+    setError: setFieldError,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<RegisterForm>({
@@ -97,7 +98,7 @@ export function RegisterPage() {
       }
       const response = await registerUser({
         email: data.email,
-        username: data.username || undefined,
+        username: data.username.trim(),
         password: data.password,
         newsletter_opt_in: newsletterConfig.enabled ? newsletterOptIn : undefined,
       })
@@ -119,6 +120,14 @@ export function RegisterPage() {
           // Clear the stored API key so user can enter a new one
           clearApiKey()
           setApiKeyInput('')
+          return
+        }
+      }
+
+      if (err instanceof ApiRequestError && err.status === 400) {
+        const errorDetail = (err.data?.detail || err.message || '').toLowerCase()
+        if (errorDetail.includes('username already taken')) {
+          setFieldError('username', { type: 'server', message: 'Username is already taken' })
           return
         }
       }
@@ -246,9 +255,7 @@ export function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">
-                  Username <span className="text-muted-foreground text-xs">(optional)</span>
-                </Label>
+                <Label htmlFor="username">Username</Label>
                 <Input
                   id="username"
                   type="text"

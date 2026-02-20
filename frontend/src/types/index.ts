@@ -239,7 +239,7 @@ export interface LoginRequest {
 
 export interface RegisterRequest {
   email: string
-  username?: string
+  username: string
   password: string
   newsletter_opt_in?: boolean
 }
