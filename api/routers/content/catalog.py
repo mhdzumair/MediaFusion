@@ -239,6 +239,7 @@ class StreamInfo(BaseModel):
 
     # Core identifiers
     id: int | None = None  # Stream database ID
+    torrent_stream_id: int | None = None  # TorrentStream ID (for torrent admin actions)
     info_hash: str | None = None  # Torrent info hash
     nzb_guid: str | None = None  # Usenet/NZB GUID
 
@@ -1797,6 +1798,7 @@ async def get_catalog_item_streams(
             StreamInfo(
                 # Core identifiers
                 id=stream.id,
+                torrent_stream_id=torrent.id if torrent else None,
                 info_hash=torrent.info_hash if torrent else None,
                 nzb_guid=usenet.nzb_guid if usenet else None,
                 # Display fields - now formatted!

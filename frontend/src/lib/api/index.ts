@@ -221,6 +221,7 @@ export {
   type StreamFieldName,
   type EpisodeLinkFieldName,
 } from './stream-suggestions'
+export { streamsApi } from './streams'
 export {
   episodeSuggestionsApi,
   type EpisodeSuggestionStatus,

@@ -152,6 +152,7 @@ export interface EpisodeLinkInfo {
 export interface StreamInfo {
   // Core identifiers
   id?: number // Stream database ID
+  torrent_stream_id?: number // TorrentStream ID for torrent admin actions
   info_hash?: string // For torrent streams
 
   // Stremio-compatible fields

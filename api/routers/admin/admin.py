@@ -1919,51 +1919,6 @@ async def unblock_torrent_stream(
     return {"message": "Torrent stream unblocked successfully"}
 
 
-@router.delete("/torrent-streams/{stream_id}")
-async def delete_torrent_stream(
-    stream_id: int,  # TorrentStream.id
-    _admin: User = Depends(require_role(UserRole.ADMIN)),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Delete a torrent stream (Admin only).
-
-    Deletes the TorrentStream, Stream base, and StreamMediaLink entries.
-    Updates linked Media's total_streams count.
-    """
-    query = select(TorrentStream).where(TorrentStream.id == stream_id).options(selectinload(TorrentStream.stream))
-    result = await session.exec(query)
-    torrent = result.first()
-
-    if not torrent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Torrent stream not found",
-        )
-
-    base_stream = torrent.stream
-
-    # Update linked media's total_streams count
-    links_query = select(StreamMediaLink).where(StreamMediaLink.stream_id == base_stream.id)
-    links_result = await session.exec(links_query)
-    for link in links_result.all():
-        media = await session.get(Media, link.media_id)
-        if media and media.total_streams > 0:
-            media.total_streams -= 1
-            session.add(media)
-        await session.delete(link)
-
-    # Delete TorrentStream (cascade will handle StreamFile, trackers)
-    await session.delete(torrent)
-
-    # Delete Stream base
-    await session.delete(base_stream)
-
-    await session.commit()
-
-    logger.info(f"Admin deleted torrent stream {stream_id}")
-    return {"message": "Torrent stream deleted successfully"}
-
-
 # ============================================
 # TV Stream Endpoints (New Architecture)
 # TV streams = Media (type=TV) + TVMetadata + Stream + HTTPStream + StreamMediaLink
@@ -2202,45 +2157,6 @@ async def toggle_tv_stream_active(
         "message": f"TV stream marked as {status_text}",
         "is_active": base_stream.is_active,
     }
-
-
-@router.delete("/tv-streams/{stream_id}")
-async def delete_tv_stream(
-    stream_id: int,
-    _admin: User = Depends(require_role(UserRole.ADMIN)),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Delete a TV stream (Admin only).
-
-    Deletes the Stream and HTTPStream (cascade).
-    Does NOT delete the Media/TVMetadata (channel metadata stays).
-    """
-    base_stream = await session.get(Stream, stream_id)
-    if not base_stream:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="TV stream not found",
-        )
-
-    # Delete associated HTTPStream first (if exists)
-    http_stream_query = select(HTTPStream).where(HTTPStream.stream_id == stream_id)
-    http_stream_result = await session.exec(http_stream_query)
-    http_stream = http_stream_result.first()
-    if http_stream:
-        await session.delete(http_stream)
-
-    # Delete StreamMediaLink entries
-    link_query = select(StreamMediaLink).where(StreamMediaLink.stream_id == stream_id)
-    link_result = await session.exec(link_query)
-    for link in link_result.all():
-        await session.delete(link)
-
-    # Delete base stream (cascade should handle related)
-    await session.delete(base_stream)
-    await session.commit()
-
-    logger.info(f"Admin deleted TV stream {stream_id}")
-    return {"message": "TV stream deleted successfully"}
 
 
 # ============================================

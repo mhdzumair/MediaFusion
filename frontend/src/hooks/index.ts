@@ -219,12 +219,10 @@ export {
   useUpdateTorrentStream,
   useBlockTorrentStream,
   useUnblockTorrentStream,
-  useDeleteTorrentStream,
   useTVStreamList,
   useTVStream,
   useUpdateTVStream,
   useToggleTVStreamWorking,
-  useDeleteTVStream,
   useTorrentSources as useAdminTorrentSources,
   useTVSources,
   useCountries,
@@ -259,6 +257,9 @@ export {
   useCreateAnnounceUrl,
   useDeleteAnnounceUrl,
 } from './useAdmin'
+
+// Stream hooks
+export { useDeleteStream } from './useStreams'
 
 // File Links hooks (for annotation)
 export { useStreamsNeedingAnnotation, useStreamFileLinks, useUpdateFileLinks, fileLinksKeys } from './useFileLinks'

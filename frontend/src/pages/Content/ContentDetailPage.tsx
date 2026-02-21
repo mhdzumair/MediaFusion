@@ -51,9 +51,10 @@ import {
   useProfiles,
   useDeleteEpisodeAdmin,
   useUpdateWatchProgress,
+  useDeleteStream,
   type CatalogType,
 } from '@/hooks'
-import { useBlockTorrentStream, useDeleteTorrentStream } from '@/hooks/useAdmin'
+import { useBlockTorrentStream } from '@/hooks/useAdmin'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
 import type { StreamingProviderInfo } from '@/lib/api'
@@ -152,12 +153,14 @@ function StreamActionDialog({
 
   // Moderator mutations
   const blockStream = useBlockTorrentStream()
-  const deleteStream = useDeleteTorrentStream()
+  const deleteStream = useDeleteStream()
   const isDeleting = blockStream.isPending || deleteStream.isPending
+  const isTorrentStream = stream?.stream_type === 'torrent'
+  const torrentAdminStreamId = isTorrentStream ? (stream?.torrent_stream_id ?? stream?.id) : undefined
 
   const handleBlock = async () => {
-    if (!stream?.id) return
-    await blockStream.mutateAsync(stream.id)
+    if (!torrentAdminStreamId) return
+    await blockStream.mutateAsync(torrentAdminStreamId)
     onOpenChange(false)
     onStreamDeleted?.()
   }
@@ -171,9 +174,6 @@ function StreamActionDialog({
 
   // Stream URL is pre-resolved from the Stremio endpoint
   const streamUrl = stream?.url
-
-  // Check if this is a torrent stream (has info_hash)
-  const isTorrentStream = stream && !!stream.info_hash
 
   // Check if this is a Telegram stream (doesn't require debrid)
   const isTelegramStream = stream?.stream_type === 'telegram'
@@ -436,42 +436,44 @@ function StreamActionDialog({
                   </div>
 
                   {/* Moderator Actions */}
-                  {isModerator && (
+                  {isModerator && stream?.id && (
                     <div className="pt-2 mt-2 border-t border-border/50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Moderator Actions</p>
                       <div className="flex items-center gap-2">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-primary hover:text-primary/80 hover:bg-primary/5 dark:hover:bg-primary/10"
-                              disabled={isDeleting}
-                            >
-                              {blockStream.isPending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Ban className="mr-2 h-4 w-4" />
-                              )}
-                              Block Stream
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Block this stream?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will block the stream from appearing in search results. The stream can be unblocked
-                                later from the admin panel.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleBlock} className="bg-primary hover:bg-primary/90">
+                        {isTorrentStream && torrentAdminStreamId && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-primary hover:text-primary/80 hover:bg-primary/5 dark:hover:bg-primary/10"
+                                disabled={isDeleting}
+                              >
+                                {blockStream.isPending ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Ban className="mr-2 h-4 w-4" />
+                                )}
                                 Block Stream
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Block this stream?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will block the stream from appearing in search results. The stream can be
+                                  unblocked later from the admin panel.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleBlock} className="bg-primary hover:bg-primary/90">
+                                  Block Stream
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
 
                         <AlertDialog>
                           <AlertDialogTrigger asChild>

@@ -19,8 +19,8 @@ import {
 import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useBlockTorrentStream, useDeleteTorrentStream } from '@/hooks/useAdmin'
-import { useCreateStreamSuggestion } from '@/hooks'
+import { useBlockTorrentStream } from '@/hooks/useAdmin'
+import { useCreateStreamSuggestion, useDeleteStream } from '@/hooks'
 import type { CatalogStreamInfo } from '@/lib/api'
 import { StreamEditSheet } from './StreamEditSheet'
 import { StreamReport } from './StreamReport'
@@ -60,6 +60,8 @@ export function StreamCard({
   const audioFormatsString = getAudioFormatsString(stream)
   const { hasMinimumRole, isAuthenticated } = useAuth()
   const isModerator = hasMinimumRole('moderator')
+  const isTorrentStream = stream.stream_type === 'torrent'
+  const torrentAdminStreamId = isTorrentStream ? (stream.torrent_stream_id ?? stream.id) : undefined
 
   // Dialog states for moderator actions
   const [blockDialogOpen, setBlockDialogOpen] = useState(false)
@@ -73,14 +75,14 @@ export function StreamCard({
 
   // Moderator mutations
   const blockStream = useBlockTorrentStream()
-  const deleteStream = useDeleteTorrentStream()
+  const deleteStream = useDeleteStream()
   const createSuggestion = useCreateStreamSuggestion()
 
   const isDeleting = blockStream.isPending || deleteStream.isPending
 
   const handleBlock = async () => {
-    if (!stream.id) return
-    await blockStream.mutateAsync(stream.id)
+    if (!torrentAdminStreamId) return
+    await blockStream.mutateAsync(torrentAdminStreamId)
     setBlockDialogOpen(false)
     onDeleted?.()
   }
@@ -294,21 +296,23 @@ export function StreamCard({
               />
 
               {/* Moderator Actions */}
-              {showModeratorActions && isModerator && (
+              {showModeratorActions && isModerator && stream.id && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-primary"
-                    onSelect={() => setBlockDialogOpen(true)}
-                    disabled={isDeleting}
-                  >
-                    {blockStream.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Ban className="h-4 w-4 mr-2" />
-                    )}
-                    Block Stream
-                  </DropdownMenuItem>
+                  {isTorrentStream && torrentAdminStreamId && (
+                    <DropdownMenuItem
+                      className="text-primary"
+                      onSelect={() => setBlockDialogOpen(true)}
+                      disabled={isDeleting}
+                    >
+                      {blockStream.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Ban className="h-4 w-4 mr-2" />
+                      )}
+                      Block Stream
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     className="text-red-600"
                     onSelect={() => setDeleteDialogOpen(true)}

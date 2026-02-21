@@ -146,19 +146,6 @@ export function useUnblockTorrentStream() {
   })
 }
 
-export function useDeleteTorrentStream() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (streamId: number) => adminApi.deleteTorrentStream(streamId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ADMIN_TORRENT_STREAMS_KEY })
-      queryClient.invalidateQueries({ queryKey: ADMIN_STATS_KEY })
-      queryClient.invalidateQueries({ queryKey: ADMIN_METADATA_KEY })
-    },
-  })
-}
-
 // ============================================
 // TV Streams Hooks
 // ============================================
@@ -204,18 +191,6 @@ export function useToggleTVStreamActive() {
 
 // Alias for backward compatibility
 export const useToggleTVStreamWorking = useToggleTVStreamActive
-
-export function useDeleteTVStream() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (streamId: number) => adminApi.deleteTVStream(streamId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ADMIN_TV_STREAMS_KEY })
-      queryClient.invalidateQueries({ queryKey: ADMIN_STATS_KEY })
-    },
-  })
-}
 
 // ============================================
 // Filter Options Hooks

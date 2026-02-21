@@ -674,10 +674,6 @@ export const adminApi = {
     return adminPost<{ message: string }>(`/torrent-streams/${streamId}/unblock`)
   },
 
-  deleteTorrentStream: async (streamId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/torrent-streams/${streamId}`)
-  },
-
   // ============================================
   // TV Streams
   // ============================================
@@ -697,10 +693,6 @@ export const adminApi = {
 
   toggleTVStreamActive: async (streamId: number): Promise<{ message: string; is_active: boolean }> => {
     return adminPost<{ message: string; is_active: boolean }>(`/tv-streams/${streamId}/toggle-active`)
-  },
-
-  deleteTVStream: async (streamId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/tv-streams/${streamId}`)
   },
 
   // ============================================
