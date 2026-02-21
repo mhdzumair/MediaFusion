@@ -3,6 +3,8 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+import httpx
+
 from db.config import settings
 from db.enums import TorrentType
 from db.schemas import MetadataData, TorrentStreamData
@@ -306,7 +308,22 @@ class ProwlarrScraper(IndexerBaseScraper):
         if not download_url:
             return None
 
-        torrent_data, is_torrent_downloaded = await self.get_torrent_data(download_url, parsed_data)
+        try:
+            torrent_data, is_torrent_downloaded = await self.get_torrent_data(download_url, parsed_data)
+        except httpx.HTTPStatusError as error:
+            status_code = error.response.status_code if error.response else "unknown"
+            self.logger.warning(
+                "Skipping Prowlarr result due to HTTP status error while downloading torrent metadata (%s): %s",
+                status_code,
+                download_url,
+            )
+            return None
+        except (httpx.TimeoutException, httpx.RequestError) as error:
+            self.logger.warning(
+                "Skipping Prowlarr result due to request error while downloading torrent metadata: %s",
+                error,
+            )
+            return None
 
         if not is_torrent_downloaded:
             return None

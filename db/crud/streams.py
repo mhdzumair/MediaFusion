@@ -83,7 +83,7 @@ async def get_stream_by_id(
 
     options = []
     if load_media:
-        options.append(selectinload(Stream.media_links))
+        options.append(selectinload(Stream.files).selectinload(StreamFile.media_links))
     if load_languages:
         options.append(selectinload(Stream.languages))
 

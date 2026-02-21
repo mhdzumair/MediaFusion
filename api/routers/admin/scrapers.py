@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_role
@@ -25,7 +26,7 @@ from db.crud.scraper_helpers import (
 )
 from db.database import get_async_session
 from db.enums import UserRole
-from db.models import User
+from db.models import FileMediaLink, Media, MediaExternalID, StreamFile, StreamMediaLink, User
 from db.redis_database import REDIS_ASYNC_CLIENT
 from mediafusion_scrapy.task import run_spider
 from scrapers.scraper_tasks import meta_fetcher
@@ -484,10 +485,26 @@ async def delete_torrent(
         )
 
     # Get metadata for notification
-    stream_media_links = torrent.stream.media_links if torrent.stream else []
     metadata = None
-    if stream_media_links:
-        metadata = stream_media_links[0].media
+    media_id = None
+
+    stream_media_result = await session.exec(
+        select(StreamMediaLink.media_id).where(StreamMediaLink.stream_id == torrent.stream_id).limit(1)
+    )
+    media_id = stream_media_result.first()
+
+    # Fallback for streams linked at file level only.
+    if media_id is None:
+        file_media_result = await session.exec(
+            select(FileMediaLink.media_id)
+            .join(StreamFile, StreamFile.id == FileMediaLink.file_id)
+            .where(StreamFile.stream_id == torrent.stream_id)
+            .limit(1)
+        )
+        media_id = file_media_result.first()
+
+    if media_id is not None:
+        metadata = await session.get(Media, media_id)
 
     try:
         await delete_torrent_stream(session, info_hash)
@@ -497,16 +514,16 @@ async def delete_torrent(
         if settings.telegram_bot_token and metadata:
             meta_type = metadata.type.value if metadata.type else "movie"
             # Get external ID for the media
-            meta_id = None
-            if metadata.external_ids:
-                for ext_id in metadata.external_ids:
-                    if ext_id.provider == "imdb":
-                        meta_id = ext_id.external_id
-                        break
-                if not meta_id:
-                    meta_id = f"mf{metadata.id}"
-            else:
-                meta_id = f"mf{metadata.id}"
+            imdb_ext_result = await session.exec(
+                select(MediaExternalID.external_id)
+                .where(
+                    MediaExternalID.media_id == metadata.id,
+                    MediaExternalID.provider == "imdb",
+                )
+                .limit(1)
+            )
+            imdb_id = imdb_ext_result.first()
+            meta_id = imdb_id if imdb_id else f"mf{metadata.id}"
 
             poster = f"{settings.poster_host_url}/poster/{meta_type}/{meta_id}.jpg"
             await telegram_notifier.send_block_notification(

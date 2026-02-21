@@ -279,7 +279,9 @@ async def _fetch_movie_raw_streams(media_id: int, visibility_filter) -> dict:
         )
         telegram_result = await session.exec(telegram_query)
         telegram_streams = telegram_result.unique().all()
-        telegram_data = [TelegramStreamData.from_db(tg).model_dump(mode="json") for tg in telegram_streams]
+        telegram_data = [
+            TelegramStreamData.from_db(tg, tg.stream, media).model_dump(mode="json") for tg in telegram_streams
+        ]
 
         # Query HTTP streams
         http_query = (
@@ -482,7 +484,9 @@ async def _fetch_series_raw_streams(media_id: int, season: int, episode: int, vi
         )
         telegram_result = await session.exec(telegram_query)
         telegram_streams = telegram_result.unique().all()
-        telegram_data = [TelegramStreamData.from_db(tg).model_dump(mode="json") for tg in telegram_streams]
+        telegram_data = [
+            TelegramStreamData.from_db(tg, tg.stream, media).model_dump(mode="json") for tg in telegram_streams
+        ]
 
         # HTTP streams
         http_query = (

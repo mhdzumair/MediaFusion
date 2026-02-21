@@ -475,7 +475,24 @@ async def get_or_create_season(
     existing = await get_season(session, series_id, season_number)
     if existing:
         return existing
-    return await create_season(session, series_id, season_number, **kwargs)
+
+    stmt = (
+        pg_insert(Season)
+        .values(
+            series_id=series_id,
+            season_number=season_number,
+            **kwargs,
+        )
+        .on_conflict_do_nothing(index_elements=["series_id", "season_number"])
+    )
+    await session.exec(stmt)
+    await session.flush()
+
+    season = await get_season(session, series_id, season_number)
+    if season:
+        return season
+
+    raise RuntimeError(f"Failed to get or create season series_id={series_id} season_number={season_number}")
 
 
 # =============================================================================
@@ -536,7 +553,23 @@ async def get_or_create_episode(
     existing = await get_episode(session, season_id, episode_number)
     if existing:
         return existing
-    return await create_episode(session, season_id, episode_number, **kwargs)
+
+    values = {
+        "season_id": season_id,
+        "episode_number": episode_number,
+        **kwargs,
+    }
+    values["title"] = values.get("title") or f"Episode {episode_number}"
+
+    stmt = pg_insert(Episode).values(**values).on_conflict_do_nothing(index_elements=["season_id", "episode_number"])
+    await session.exec(stmt)
+    await session.flush()
+
+    episode = await get_episode(session, season_id, episode_number)
+    if episode:
+        return episode
+
+    raise RuntimeError(f"Failed to get or create episode season_id={season_id} episode_number={episode_number}")
 
 
 # =============================================================================

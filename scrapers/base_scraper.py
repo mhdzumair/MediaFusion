@@ -14,6 +14,7 @@ from typing import Any, Literal
 import httpx
 import PTT
 from ratelimit import limits, sleep_and_retry
+from sqlmodel.ext.asyncio.session import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential
 from torf import Magnet, MagnetError
 
@@ -741,14 +742,20 @@ class BaseScraper(abc.ABC):
         return True
 
     @staticmethod
-    async def store_streams(streams: list[TorrentStreamData]):
+    async def store_streams(streams: list[TorrentStreamData], session: AsyncSession | None = None):
         """
         Store the parsed streams in the database.
         :param streams: List of TorrentStreamData objects
+        :param session: Optional existing session to reuse
         """
-        async with get_background_session() as session:
-            await crud.store_new_torrent_streams(session, [s.model_dump(by_alias=True) for s in streams])
-            await session.commit()
+        if session is None:
+            async with get_background_session() as managed_session:
+                await crud.store_new_torrent_streams(managed_session, [s.model_dump(by_alias=True) for s in streams])
+                await managed_session.commit()
+            return
+
+        await crud.store_new_torrent_streams(session, [s.model_dump(by_alias=True) for s in streams])
+        await session.commit()
 
     @property
     def search_query_timeout(self) -> int:
@@ -783,8 +790,8 @@ class BaseScraper(abc.ABC):
                 return None, False
             return {"info_hash": magnet.infohash, "announce_list": magnet.tr}, True
 
-        max_500_retries = 2
-        for attempt in range(max_500_retries + 1):
+        max_5xx_retries = 2
+        for attempt in range(max_5xx_retries + 1):
             try:
                 response = await self.http_client.get(
                     download_url,
@@ -809,17 +816,18 @@ class BaseScraper(abc.ABC):
                 status_code = error.response.status_code
                 if status_code == 429:
                     raise
-                if status_code == 500:
-                    if attempt < max_500_retries:
+                if 500 <= status_code < 600:
+                    if attempt < max_5xx_retries:
                         self.logger.warning(
-                            "Transient 500 while getting torrent data (attempt %d/%d): %s",
+                            "Transient %d while getting torrent data (attempt %d/%d): %s",
+                            status_code,
                             attempt + 1,
-                            max_500_retries + 1,
+                            max_5xx_retries + 1,
                             download_url,
                         )
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue
-                    self.logger.warning("Repeated 500 while getting torrent data: %s", download_url)
+                    self.logger.warning("Repeated %d while getting torrent data: %s", status_code, download_url)
                     return None, False
                 self.logger.error("HTTP error getting torrent data: %s, status code: %d", download_url, status_code)
                 return None, False

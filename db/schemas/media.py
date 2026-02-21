@@ -1226,10 +1226,11 @@ class TelegramStreamData(BaseModel):
         meta_id = ""
         if media:
             meta_id = f"mf:{media.id}"
-        elif stream and stream.media_links:
-            first_link = stream.media_links[0]
-            if first_link.media:
-                meta_id = f"mf:{first_link.media.id}"
+        elif stream and stream.files:
+            for file_obj in stream.files:
+                if file_obj.media_links:
+                    meta_id = f"mf:{file_obj.media_links[0].media_id}"
+                    break
 
         season_number = None
         episode_number = None
