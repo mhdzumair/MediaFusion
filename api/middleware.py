@@ -1,11 +1,14 @@
 import hashlib
+import json
 import logging
 import os
+import resource
 import signal
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from threading import Lock
 
@@ -28,6 +31,10 @@ from utils.crypto import crypto_utils
 from utils.network import get_client_ip
 from utils.parser import create_exception_stream
 from utils.request_tracker import record_request
+from utils.worker_memory_metrics import (
+    WORKER_MEMORY_METRICS_HISTORY_KEY,
+    WORKER_MEMORY_METRICS_SUMMARY_KEY,
+)
 
 
 async def find_route_handler(app, request: Request) -> Callable | None:
@@ -291,23 +298,162 @@ class MaxTasksPerChild(dramatiq.Middleware):
         self.counter_mu = Lock()
         self.counter = max_tasks
         self.signaled = False
+        self.requeue_log_emitted = False
         self.logger = dramatiq.get_logger("api.middleware", MaxTasksPerChild)
 
     def before_process_message(self, broker, message):
         with self.counter_mu:
             if self.counter <= 0:
-                self.logger.warning("Counter reached zero. Schedule message to be run later.")
+                if not self.requeue_log_emitted:
+                    self.logger.warning("Counter reached zero. Schedule message to be run later.")
+                    self.requeue_log_emitted = True
                 broker.enqueue(message, delay=30000)
                 raise SkipMessage()
 
     def after_process_message(self, broker, message, *, result=None, exception=None):
         with self.counter_mu:
-            self.counter -= 1
+            if self.signaled:
+                return
+
+            self.counter = max(self.counter - 1, 0)
             self.logger.info("Remaining tasks: %d.", self.counter)
             if self.counter <= 0 and not self.signaled:
                 self.logger.warning("Counter reached zero. Signaling current process.")
                 self.signaled = True
                 os.kill(os.getpid(), getattr(signal, "SIGTERM", signal.SIGINT))
+
+
+class WorkerMemoryTelemetry(dramatiq.Middleware):
+    def __init__(self, history_size: int = 1000):
+        self.history_size = max(history_size, 100)
+        self._snapshots: dict[str, dict[str, int | float | None]] = {}
+        self._snapshots_mu = Lock()
+        self.logger = dramatiq.get_logger("api.middleware", WorkerMemoryTelemetry)
+
+    @staticmethod
+    def _read_rss_bytes() -> int | None:
+        """Read current process RSS from /proc when available."""
+        try:
+            with open("/proc/self/status", encoding="utf-8") as status_file:
+                for line in status_file:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            return int(parts[1]) * 1024
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _read_peak_rss_bytes() -> int | None:
+        """Read process peak RSS (ru_maxrss) with platform-aware units."""
+        try:
+            max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            if max_rss <= 0:
+                return None
+            # macOS reports bytes, Linux reports KB.
+            if sys.platform == "darwin":
+                return int(max_rss)
+            return int(max_rss) * 1024
+        except Exception:
+            return None
+
+    def _create_snapshot(self) -> dict[str, int | float | None]:
+        rss = self._read_rss_bytes()
+        peak = self._read_peak_rss_bytes()
+        return {
+            "started_at": time.time(),
+            "rss_bytes": rss if rss is not None else peak,
+            "peak_rss_bytes": peak,
+        }
+
+    def before_process_message(self, broker, message):
+        with self._snapshots_mu:
+            self._snapshots[message.message_id] = self._create_snapshot()
+
+    @staticmethod
+    def _parse_int(value: bytes | str | None) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="ignore")
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _persist_entry(self, entry: dict):
+        try:
+            entry_json = json.dumps(entry, default=str)
+            REDIS_SYNC_CLIENT.lpush(WORKER_MEMORY_METRICS_HISTORY_KEY, entry_json)
+            REDIS_SYNC_CLIENT.ltrim(WORKER_MEMORY_METRICS_HISTORY_KEY, 0, self.history_size - 1)
+
+            REDIS_SYNC_CLIENT.hset(
+                WORKER_MEMORY_METRICS_SUMMARY_KEY,
+                mapping={
+                    "last_timestamp": entry.get("timestamp"),
+                    "last_actor": entry.get("actor_name"),
+                    "last_status": entry.get("status"),
+                    "last_rss_bytes": entry.get("rss_after_bytes") or entry.get("peak_rss_bytes") or 0,
+                },
+            )
+            REDIS_SYNC_CLIENT.hincrby(WORKER_MEMORY_METRICS_SUMMARY_KEY, "total_events", 1)
+            REDIS_SYNC_CLIENT.hincrby(WORKER_MEMORY_METRICS_SUMMARY_KEY, f"status:{entry.get('status')}", 1)
+            REDIS_SYNC_CLIENT.hincrby(
+                WORKER_MEMORY_METRICS_SUMMARY_KEY,
+                f"actor:{entry.get('actor_name', 'unknown')}",
+                1,
+            )
+
+            if error_type := entry.get("error_type"):
+                REDIS_SYNC_CLIENT.hincrby(WORKER_MEMORY_METRICS_SUMMARY_KEY, f"error:{error_type}", 1)
+
+            existing_peak = self._parse_int(REDIS_SYNC_CLIENT.hget(WORKER_MEMORY_METRICS_SUMMARY_KEY, "peak_rss_bytes"))
+            measured_peak = max(
+                entry.get("peak_rss_bytes") or 0,
+                entry.get("rss_after_bytes") or 0,
+            )
+            if measured_peak > existing_peak:
+                REDIS_SYNC_CLIENT.hset(WORKER_MEMORY_METRICS_SUMMARY_KEY, "peak_rss_bytes", measured_peak)
+        except Exception as exc:
+            self.logger.error("Failed to persist worker memory telemetry: %s", exc)
+
+    def _record_event(self, message, status: str, exception: Exception | None = None):
+        with self._snapshots_mu:
+            snapshot = self._snapshots.pop(message.message_id, None)
+
+        completed_at = time.time()
+        rss_after = self._read_rss_bytes()
+        peak_after = self._read_peak_rss_bytes()
+        if rss_after is None:
+            rss_after = peak_after
+        rss_before = snapshot.get("rss_bytes") if snapshot else None
+        rss_delta = None if rss_before is None or rss_after is None else rss_after - rss_before
+        duration_ms = None
+        if snapshot and snapshot.get("started_at"):
+            duration_ms = round((completed_at - float(snapshot["started_at"])) * 1000, 2)
+
+        entry = {
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "message_id": message.message_id,
+            "actor_name": message.actor_name,
+            "queue_name": getattr(message, "queue_name", None),
+            "status": status,
+            "duration_ms": duration_ms,
+            "pid": os.getpid(),
+            "rss_before_bytes": rss_before,
+            "rss_after_bytes": rss_after,
+            "rss_delta_bytes": rss_delta,
+            "peak_rss_bytes": peak_after,
+            "error_type": exception.__class__.__name__ if exception else None,
+        }
+        self._persist_entry(entry)
+
+    def after_process_message(self, broker, message, *, result=None, exception=None):
+        self._record_event(message, status="error" if exception else "success", exception=exception)
+
+    def after_skip_message(self, broker, message):
+        self._record_event(message, status="skipped")
 
 
 class Retries(OriginalRetries):
@@ -426,14 +572,23 @@ class TaskManager(dramatiq.Middleware):
                 raise SkipMessage()
 
     def after_process_message(self, broker, message, *, result=None, exception=None):
-        if exception:
-            return
+        task_info = self.get_task_info(broker, message)
+        try:
+            if exception:
+                # If task execution failed (including forced timeout/kill), clear
+                # the run marker so operators can retrigger immediately.
+                if task_info:
+                    try:
+                        REDIS_SYNC_CLIENT.delete(task_info.task_key)
+                    except Exception as redis_error:
+                        logging.error("Failed to clear task key %s: %s", task_info.task_key, redis_error)
+                return
 
-        if task_info := self.get_task_info(broker, message):
-            self._check_and_update_redis(task_info, "update")
-
-        # Cleanup cache
-        self._task_info_cache.pop(message.message_id, None)
+            if task_info:
+                self._check_and_update_redis(task_info, "update")
+        finally:
+            # Always cleanup cache entry for this message.
+            self._task_info_cache.pop(message.message_id, None)
 
     def after_skip_message(self, broker, message):
         # Cleanup cache for skipped messages

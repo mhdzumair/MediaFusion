@@ -368,6 +368,22 @@ class RedisWrapper:
         """Redis LRANGE operation."""
         return self._create_method("lrange", [])(name, start, end)
 
+    def lpush(self, name: str, *values):
+        """Redis LPUSH operation."""
+        return self._create_method("lpush", 0)(name, *values)
+
+    def rpush(self, name: str, *values):
+        """Redis RPUSH operation."""
+        return self._create_method("rpush", 0)(name, *values)
+
+    def ltrim(self, name: str, start: int, end: int):
+        """Redis LTRIM operation."""
+        return self._create_method("ltrim", False)(name, start, end)
+
+    def llen(self, name: str):
+        """Redis LLEN operation."""
+        return self._create_method("llen", 0)(name)
+
     def keys(self, pattern: str = "*"):
         """Redis KEYS operation."""
         return self._create_method("keys", [])(pattern)

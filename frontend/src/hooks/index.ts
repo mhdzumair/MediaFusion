@@ -69,6 +69,7 @@ export {
   useScrapySchedulers,
   useRedisMetrics,
   useDebridCacheMetrics,
+  useWorkerMemoryMetrics,
   useTorrentUploaders,
   useWeeklyUploaders,
   useUserStats,

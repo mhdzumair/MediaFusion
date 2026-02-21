@@ -259,6 +259,9 @@ class Settings(BaseSettings):
 
     # Time-related Settings
     meta_cache_ttl: int = 1800  # 30 minutes in seconds
+    enable_worker_memory_metrics: bool = True
+    worker_memory_metrics_history_size: int = 1000
+    enable_worker_max_tasks_per_child: bool = False
     worker_max_tasks_per_child: int = 20
 
     # Global Scheduler Settings

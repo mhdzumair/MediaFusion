@@ -97,6 +97,38 @@ export interface RedisMetrics {
   error?: string
 }
 
+export interface WorkerMemoryMetricEntry {
+  timestamp: string
+  message_id: string
+  actor_name: string
+  queue_name?: string | null
+  status: 'success' | 'error' | 'skipped' | string
+  duration_ms?: number | null
+  pid?: number | null
+  rss_before_bytes?: number | null
+  rss_after_bytes?: number | null
+  rss_delta_bytes?: number | null
+  peak_rss_bytes?: number | null
+  error_type?: string | null
+}
+
+export interface WorkerMemoryMetricsResponse {
+  timestamp: string
+  summary: {
+    total_events: number
+    status_counts: Record<string, number>
+    actor_counts: Record<string, number>
+    error_counts: Record<string, number>
+    last_timestamp?: string | null
+    last_actor?: string | null
+    last_status?: string | null
+    last_rss_bytes?: number
+    peak_rss_bytes?: number
+  }
+  entries: WorkerMemoryMetricEntry[]
+  total_entries: number
+}
+
 // Debrid cache metrics - matches the actual API response structure
 export interface DebridCacheMetrics {
   timestamp: string
@@ -325,6 +357,14 @@ export const metricsApi = {
    */
   getRedisMetrics: async (): Promise<RedisMetrics> => {
     return apiClient.get<RedisMetrics>('/admin/metrics/redis')
+  },
+
+  /**
+   * Get worker memory telemetry history.
+   * Requires admin role.
+   */
+  getWorkerMemoryMetrics: async (limit: number = 200): Promise<WorkerMemoryMetricsResponse> => {
+    return apiClient.get<WorkerMemoryMetricsResponse>(`/admin/metrics/workers/memory?limit=${limit}`)
   },
 
   /**

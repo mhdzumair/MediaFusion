@@ -40,6 +40,10 @@ from scrapers.base_scraper import (
     SCRAPER_METRICS_LATEST_KEY,
 )
 from utils import const
+from utils.worker_memory_metrics import (
+    WORKER_MEMORY_METRICS_HISTORY_KEY,
+    WORKER_MEMORY_METRICS_SUMMARY_KEY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +114,32 @@ class ScraperHistoryResponse(BaseModel):
     scraper_name: str
     history: list[ScraperMetricsSummary]
     total: int
+
+
+class WorkerMemoryMetricEntry(BaseModel):
+    """Single worker-task memory metric sample."""
+
+    timestamp: str
+    message_id: str
+    actor_name: str
+    queue_name: str | None = None
+    status: str
+    duration_ms: float | None = None
+    pid: int | None = None
+    rss_before_bytes: int | None = None
+    rss_after_bytes: int | None = None
+    rss_delta_bytes: int | None = None
+    peak_rss_bytes: int | None = None
+    error_type: str | None = None
+
+
+class WorkerMemoryMetricsResponse(BaseModel):
+    """Worker memory metrics payload for admin UI."""
+
+    timestamp: str
+    summary: dict[str, Any]
+    entries: list[WorkerMemoryMetricEntry]
+    total_entries: int
 
 
 # Prometheus gauges
@@ -226,6 +256,28 @@ async def get_debrid_cache_metrics() -> dict[str, Any]:
         return {"timestamp": datetime.now(tz=UTC).isoformat(), "error": str(e)}
 
 
+def _parse_int(value: bytes | str | None) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _decode_redis_hash(hash_data: dict[bytes | str, bytes | str]) -> dict[str, str]:
+    decoded: dict[str, str] = {}
+    for key, value in hash_data.items():
+        if isinstance(key, bytes):
+            key = key.decode("utf-8", errors="ignore")
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="ignore")
+        decoded[str(key)] = str(value)
+    return decoded
+
+
 # ============================================
 # Metrics Endpoints (Admin only)
 # ============================================
@@ -325,6 +377,85 @@ async def redis_metrics(
 ):
     """Get Redis server metrics (Admin only)."""
     return await get_redis_metrics()
+
+
+@router.get("/workers/memory", response_model=WorkerMemoryMetricsResponse)
+async def get_worker_memory_metrics(
+    response: Response,
+    limit: int = Query(200, ge=1, le=1000, description="Number of recent worker metric entries to return"),
+    _admin: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Get worker memory telemetry history from Redis (Admin only)."""
+    response.headers.update(const.NO_CACHE_HEADERS)
+
+    try:
+        raw_entries = await REDIS_ASYNC_CLIENT.lrange(WORKER_MEMORY_METRICS_HISTORY_KEY, 0, limit - 1)
+        entries: list[WorkerMemoryMetricEntry] = []
+        for raw_entry in raw_entries:
+            try:
+                if isinstance(raw_entry, bytes):
+                    raw_entry = raw_entry.decode("utf-8", errors="ignore")
+                entry_data = json.loads(raw_entry)
+                entries.append(WorkerMemoryMetricEntry(**entry_data))
+            except Exception as parse_error:
+                logger.warning(f"Failed to parse worker memory metric entry: {parse_error}")
+
+        summary_raw = await REDIS_ASYNC_CLIENT.hgetall(WORKER_MEMORY_METRICS_SUMMARY_KEY)
+        decoded_summary = _decode_redis_hash(summary_raw) if summary_raw else {}
+
+        actor_counts = {
+            key.replace("actor:", ""): _parse_int(value)
+            for key, value in decoded_summary.items()
+            if key.startswith("actor:")
+        }
+        error_counts = {
+            key.replace("error:", ""): _parse_int(value)
+            for key, value in decoded_summary.items()
+            if key.startswith("error:")
+        }
+        status_counts = {
+            key.replace("status:", ""): _parse_int(value)
+            for key, value in decoded_summary.items()
+            if key.startswith("status:")
+        }
+
+        summary = {
+            "total_events": _parse_int(decoded_summary.get("total_events")),
+            "status_counts": status_counts,
+            "actor_counts": actor_counts,
+            "error_counts": error_counts,
+            "last_timestamp": decoded_summary.get("last_timestamp"),
+            "last_actor": decoded_summary.get("last_actor"),
+            "last_status": decoded_summary.get("last_status"),
+            "last_rss_bytes": _parse_int(decoded_summary.get("last_rss_bytes")),
+            "peak_rss_bytes": _parse_int(decoded_summary.get("peak_rss_bytes")),
+        }
+
+        total_entries = await REDIS_ASYNC_CLIENT.llen(WORKER_MEMORY_METRICS_HISTORY_KEY)
+        return WorkerMemoryMetricsResponse(
+            timestamp=datetime.now(tz=UTC).isoformat(),
+            summary=summary,
+            entries=entries,
+            total_entries=total_entries or 0,
+        )
+    except Exception as e:
+        logger.error(f"Error getting worker memory metrics: {e}")
+        return WorkerMemoryMetricsResponse(
+            timestamp=datetime.now(tz=UTC).isoformat(),
+            summary={
+                "total_events": 0,
+                "status_counts": {},
+                "actor_counts": {},
+                "error_counts": {},
+                "last_timestamp": None,
+                "last_actor": None,
+                "last_status": None,
+                "last_rss_bytes": 0,
+                "peak_rss_bytes": 0,
+            },
+            entries=[],
+            total_entries=0,
+        )
 
 
 @router.get("/debrid-cache")

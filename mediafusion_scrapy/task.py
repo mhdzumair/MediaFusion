@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 from multiprocessing import Process
@@ -9,6 +10,8 @@ from scrapy.utils.project import get_project_settings
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SPIDER_PROCESS_TIMEOUT_SECONDS = int(os.getenv("SCRAPY_PROCESS_TIMEOUT_SECONDS", "3300"))
+_SPIDER_TERMINATE_GRACE_SECONDS = int(os.getenv("SCRAPY_PROCESS_TERMINATE_GRACE_SECONDS", "30"))
 
 
 def run_spider_in_process(spider_name, *args, **kwargs):
@@ -41,14 +44,49 @@ def run_spider(spider_name: str, *args, **kwargs):
     restarted within the same process.  We pipe the child's stdout/stderr
     back to the current process so Dramatiq captures the logs.
     """
-    logger.info("Starting spider %s in subprocess", spider_name)
-    p = Process(target=run_spider_in_process, args=(spider_name, *args), kwargs=kwargs)
-    p.start()
-    p.join()
-    if p.exitcode != 0:
-        logger.error("Spider %s exited with code %s", spider_name, p.exitcode)
-    else:
+    logger.info(
+        "Starting spider %s in subprocess (timeout=%ss)",
+        spider_name,
+        _SPIDER_PROCESS_TIMEOUT_SECONDS,
+    )
+    p = None
+    try:
+        p = Process(target=run_spider_in_process, args=(spider_name, *args), kwargs=kwargs)
+        p.start()
+
+        p.join(timeout=_SPIDER_PROCESS_TIMEOUT_SECONDS)
+        if p.is_alive():
+            logger.error(
+                "Spider %s exceeded timeout (%ss). Terminating subprocess pid=%s.",
+                spider_name,
+                _SPIDER_PROCESS_TIMEOUT_SECONDS,
+                p.pid,
+            )
+            p.terminate()
+            p.join(timeout=_SPIDER_TERMINATE_GRACE_SECONDS)
+            if p.is_alive():
+                logger.error(
+                    "Spider %s did not terminate gracefully. Killing subprocess pid=%s.",
+                    spider_name,
+                    p.pid,
+                )
+                p.kill()
+                p.join(timeout=5)
+            raise RuntimeError(f"Spider '{spider_name}' timed out after {_SPIDER_PROCESS_TIMEOUT_SECONDS} seconds.")
+
+        if p.exitcode != 0:
+            logger.error(
+                "Spider %s exited with code %s",
+                spider_name,
+                p.exitcode,
+            )
+            raise RuntimeError(f"Spider '{spider_name}' exited with code {p.exitcode}.")
+
         logger.info("Spider %s finished successfully", spider_name)
+    finally:
+        if p is not None and p.exitcode is not None:
+            p.close()
+        gc.collect()
 
 
 if __name__ == "__main__":

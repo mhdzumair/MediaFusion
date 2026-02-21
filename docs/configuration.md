@@ -150,7 +150,10 @@ These settings define the basic configuration and identity of your MediaFusion i
 ## Time-related Settings
 
 - **meta_cache_ttl** (default: `1800`): Metadata cache TTL in seconds (30 minutes).
-- **worker_max_tasks_per_child** (default: `20`): Max tasks per worker child process.
+- **enable_worker_memory_metrics** (default: `True`): Enable per-task worker memory telemetry to Redis for admin debugging.
+- **worker_memory_metrics_history_size** (default: `1000`): Number of recent worker memory metric events kept in Redis.
+- **enable_worker_max_tasks_per_child** (default: `False`): Enable worker recycle-by-task-count middleware.
+- **worker_max_tasks_per_child** (default: `20`): Max tasks per worker child process (used only when `enable_worker_max_tasks_per_child=true`).
 
 ## Scheduler Settings
 

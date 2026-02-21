@@ -44,6 +44,7 @@ import {
   useMetadataCount,
   useRedisMetrics,
   useDebridCacheMetrics,
+  useWorkerMemoryMetrics,
   useTorrentUploaders,
   useWeeklyUploaders,
   useSchedulerJobs,
@@ -54,12 +55,31 @@ import {
   useScraperMetrics,
   useScraperHistory,
 } from '@/hooks'
-import type { SchedulerJobInfo, RedisMetrics, ScraperMetricsData, ScraperMetricsSummary } from '@/lib/api/metrics'
+import type {
+  SchedulerJobInfo,
+  RedisMetrics,
+  ScraperMetricsData,
+  ScraperMetricsSummary,
+  WorkerMemoryMetricsResponse,
+} from '@/lib/api/metrics'
 
 function formatNumber(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
   return num.toString()
+}
+
+function formatBytes(bytes?: number | null): string {
+  if (bytes === null || bytes === undefined || Number.isNaN(bytes)) return 'N/A'
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(2)} ${units[unitIndex]}`
 }
 
 function formatDateToYYYYMMDD(date: Date): string {
@@ -589,6 +609,191 @@ function RedisMetricsDisplay({ metrics, isLoading }: { metrics?: RedisMetrics; i
   )
 }
 
+function WorkerMemoryMetricsDisplay({ data, isLoading }: { data?: WorkerMemoryMetricsResponse; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[...Array(4)].map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  const summary = data?.summary
+  const entries = data?.entries ?? []
+  const statusCounts = summary?.status_counts ?? {}
+  const actorGrowth = Object.values(
+    entries.reduce<
+      Record<
+        string,
+        {
+          actor_name: string
+          total_positive_delta: number
+          max_delta: number
+          avg_delta: number
+          samples: number
+          error_count: number
+        }
+      >
+    >((acc, entry) => {
+      const key = entry.actor_name || 'unknown'
+      const current = acc[key] ?? {
+        actor_name: key,
+        total_positive_delta: 0,
+        max_delta: 0,
+        avg_delta: 0,
+        samples: 0,
+        error_count: 0,
+      }
+
+      const delta = entry.rss_delta_bytes ?? 0
+      if (delta > 0) {
+        current.total_positive_delta += delta
+        current.max_delta = Math.max(current.max_delta, delta)
+      }
+      current.samples += 1
+      if (entry.status === 'error') {
+        current.error_count += 1
+      }
+      acc[key] = current
+      return acc
+    }, {}),
+  )
+    .map((actor) => ({
+      ...actor,
+      avg_delta: actor.samples > 0 ? actor.total_positive_delta / actor.samples : 0,
+    }))
+    .sort((a, b) => b.total_positive_delta - a.total_positive_delta)
+    .slice(0, 8)
+  const topGrowth = actorGrowth[0]?.total_positive_delta ?? 0
+
+  return (
+    <div className="space-y-6">
+      <Card className="glass border-border/50">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            Worker Memory Summary
+          </CardTitle>
+          <CardDescription>Per-task memory telemetry for all Dramatiq workers</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="p-3 rounded-lg bg-muted/50">
+              <p className="text-xs text-muted-foreground">Total Events</p>
+              <p className="text-xl font-bold">{formatNumber(summary?.total_events ?? 0)}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50">
+              <p className="text-xs text-muted-foreground">Success / Error / Skipped</p>
+              <p className="text-xl font-bold">
+                {statusCounts.success ?? 0} / {statusCounts.error ?? 0} / {statusCounts.skipped ?? 0}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50">
+              <p className="text-xs text-muted-foreground">Last RSS</p>
+              <p className="text-xl font-bold">{formatBytes(summary?.last_rss_bytes)}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50">
+              <p className="text-xs text-muted-foreground">Peak RSS</p>
+              <p className="text-xl font-bold">{formatBytes(summary?.peak_rss_bytes)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass border-border/50">
+        <CardHeader>
+          <CardTitle className="text-lg">Top Memory Growth Actors</CardTitle>
+          <CardDescription>Actors with highest cumulative positive RSS deltas in recent samples</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {actorGrowth.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No actor memory growth data available yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {actorGrowth.map((actor) => {
+                const percent = topGrowth > 0 ? (actor.total_positive_delta / topGrowth) * 100 : 0
+                return (
+                  <div key={actor.actor_name} className="p-3 rounded-lg border border-border/50 bg-muted/30">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <Badge variant="outline">{actor.actor_name}</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        samples: {actor.samples} | errors: {actor.error_count}
+                      </span>
+                    </div>
+                    <Progress value={percent} className="h-2 mb-2" />
+                    <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                      <span>Total +RSS: {formatBytes(actor.total_positive_delta)}</span>
+                      <span>Avg +RSS/sample: {formatBytes(actor.avg_delta)}</span>
+                      <span>Max +RSS/sample: {formatBytes(actor.max_delta)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="glass border-border/50">
+        <CardHeader>
+          <CardTitle className="text-lg">Recent Worker Memory Events</CardTitle>
+          <CardDescription>
+            Latest {entries.length} events (of {data?.total_entries ?? 0} retained)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No worker memory events yet.</p>
+          ) : (
+            <ScrollArea className="h-[520px] pr-2">
+              <div className="space-y-2">
+                {entries.map((entry, index) => (
+                  <div
+                    key={`${entry.message_id}-${index}`}
+                    className="p-3 rounded-lg border border-border/50 bg-muted/30"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{entry.actor_name}</Badge>
+                        <Badge
+                          variant={
+                            entry.status === 'success'
+                              ? 'secondary'
+                              : entry.status === 'error'
+                                ? 'destructive'
+                                : 'outline'
+                          }
+                        >
+                          {entry.status}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                      <span>Queue: {entry.queue_name ?? 'N/A'}</span>
+                      <span>Duration: {entry.duration_ms?.toFixed(2) ?? 'N/A'} ms</span>
+                      <span>RSS Before: {formatBytes(entry.rss_before_bytes)}</span>
+                      <span>RSS After: {formatBytes(entry.rss_after_bytes)}</span>
+                      <span>RSS Delta: {formatBytes(entry.rss_delta_bytes)}</span>
+                      <span>Peak RSS: {formatBytes(entry.peak_rss_bytes)}</span>
+                      <span>PID: {entry.pid ?? 'N/A'}</span>
+                      <span>Error: {entry.error_type ?? '-'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export function MetricsPage() {
   const [selectedWeek, setSelectedWeek] = useState(() => {
     return formatDateToYYYYMMDD(getStartOfWeek(new Date()))
@@ -601,6 +806,7 @@ export function MetricsPage() {
   const { data: schedulerData, isLoading: sjLoading, refetch: refetchSj } = useSchedulerJobs()
   const { data: redisMetrics, isLoading: rmLoading, refetch: refetchRm } = useRedisMetrics()
   const { data: debridCache, isLoading: dcLoading, refetch: refetchDc } = useDebridCacheMetrics()
+  const { data: workerMemoryMetrics, isLoading: wmLoading, refetch: refetchWm } = useWorkerMemoryMetrics(200)
   const { data: uploaders, isLoading: uLoading } = useTorrentUploaders()
   const { data: weeklyUploaders, isLoading: wuLoading } = useWeeklyUploaders(selectedWeek)
   const { data: userStats, isLoading: usLoading, refetch: refetchUs } = useUserStats()
@@ -610,7 +816,7 @@ export function MetricsPage() {
   const { data: scraperMetrics, isLoading: smLoading, refetch: refetchSm } = useScraperMetrics()
   const { data: scraperHistory, isLoading: shLoading } = useScraperHistory(selectedScraper)
 
-  const isLoading = tcLoading || tsLoading || mcLoading || sjLoading || rmLoading || dcLoading || usLoading
+  const isLoading = tcLoading || tsLoading || mcLoading || sjLoading || rmLoading || dcLoading || wmLoading || usLoading
 
   const handleRefreshAll = () => {
     refetchTc()
@@ -619,6 +825,7 @@ export function MetricsPage() {
     refetchSj()
     refetchRm()
     refetchDc()
+    refetchWm()
     refetchUs()
     refetchCs()
     refetchAs()
@@ -839,6 +1046,9 @@ export function MetricsPage() {
           </TabsTrigger>
           <TabsTrigger value="redis" className="rounded-lg">
             Redis
+          </TabsTrigger>
+          <TabsTrigger value="worker-memory" className="rounded-lg">
+            Worker Memory
           </TabsTrigger>
           <TabsTrigger value="debrid" className="rounded-lg">
             Debrid
@@ -1815,6 +2025,11 @@ export function MetricsPage() {
         {/* Redis Tab */}
         <TabsContent value="redis" className="space-y-6">
           <RedisMetricsDisplay metrics={redisMetrics} isLoading={rmLoading} />
+        </TabsContent>
+
+        {/* Worker Memory Tab */}
+        <TabsContent value="worker-memory" className="space-y-6">
+          <WorkerMemoryMetricsDisplay data={workerMemoryMetrics} isLoading={wmLoading} />
         </TabsContent>
 
         {/* Debrid Tab */}

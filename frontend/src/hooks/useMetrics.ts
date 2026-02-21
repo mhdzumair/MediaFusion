@@ -52,6 +52,15 @@ export function useDebridCacheMetrics() {
   })
 }
 
+export function useWorkerMemoryMetrics(limit: number = 200) {
+  return useQuery({
+    queryKey: [...METRICS_QUERY_KEY, 'worker-memory', limit],
+    queryFn: () => metricsApi.getWorkerMemoryMetrics(limit),
+    staleTime: 15 * 1000, // 15 seconds
+    refetchInterval: 30 * 1000, // 30 seconds
+  })
+}
+
 export function useTorrentUploaders() {
   return useQuery({
     queryKey: [...METRICS_QUERY_KEY, 'uploaders'],
