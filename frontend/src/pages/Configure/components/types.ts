@@ -152,7 +152,7 @@ export interface IndexerConfig {
 }
 
 export interface ProfileConfig {
-  sp?: StreamingProviderConfigType // streaming_provider (legacy single provider)
+  sp?: StreamingProviderConfigType | null // streaming_provider (legacy single provider)
   sps?: StreamingProviderConfigType[] // streaming_providers (multi-provider)
   cc?: CatalogConfig[] // catalog_configs (new: per-catalog configuration)
   sc?: string[] // selected_catalogs (deprecated: use cc instead)
@@ -172,8 +172,8 @@ export interface ProfileConfig {
   rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams
   mdb?: MDBListConfig | null // mdblist_config
-  st?: StreamTemplateConfig // stream_template
-  ic?: IndexerConfig // indexer_config
+  st?: StreamTemplateConfig | null // stream_template
+  ic?: IndexerConfig | null // indexer_config
   // Usenet settings
   eus?: boolean // enable_usenet_streams
   puot?: boolean // prefer_usenet_over_torrent

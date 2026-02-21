@@ -2,6 +2,7 @@
 User Profile Management API endpoints.
 """
 
+import copy
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -322,8 +323,6 @@ def unmask_config_update(new_config: dict, existing_full_config: dict) -> dict:
     Returns:
         Merged config with credentials preserved
     """
-    import copy
-
     if not new_config:
         return existing_full_config or {}
     if not existing_full_config:
@@ -333,6 +332,18 @@ def unmask_config_update(new_config: dict, existing_full_config: dict) -> dict:
         """Check if a value is the standard mask pattern."""
         return value == "••••••••"
 
+    # Keep short/long config keys in sync when removing nested config objects.
+    CLEAR_KEY_GROUPS = (
+        ("sp", "streaming_provider"),
+        ("ic", "indexer_config"),
+        ("st", "stream_template"),
+        ("mfc", "mediaflow_config"),
+        ("rpc", "rpdb_config"),
+        ("mdb", "mdblist_config"),
+        ("tgc", "telegram_config"),
+    )
+    CLEAR_KEY_ALIAS_MAP = {alias: group for group in CLEAR_KEY_GROUPS for alias in group}
+
     def deep_merge(base: dict, overlay: dict) -> dict:
         """
         Deep merge overlay into base, preserving nested structures.
@@ -341,8 +352,11 @@ def unmask_config_update(new_config: dict, existing_full_config: dict) -> dict:
         """
         result = copy.deepcopy(base)
         for key, value in overlay.items():
-            if value is None:
-                result.pop(key, None)
+            # Treat explicit null and clearable empty objects as "remove this nested config".
+            should_clear_object = isinstance(value, dict) and not value and key in CLEAR_KEY_ALIAS_MAP
+            if value is None or should_clear_object:
+                for clear_key in CLEAR_KEY_ALIAS_MAP.get(key, (key,)):
+                    result.pop(clear_key, None)
             elif key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = deep_merge(result[key], value)
             else:

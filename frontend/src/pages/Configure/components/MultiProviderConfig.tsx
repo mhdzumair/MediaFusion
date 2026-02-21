@@ -1123,7 +1123,8 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
     onChange({
       ...config,
       sps: providersWithPriority,
-      sp: undefined, // Clear legacy field
+      // Use null so backend deep-merge removes legacy single-provider field.
+      sp: null,
     })
   }
 

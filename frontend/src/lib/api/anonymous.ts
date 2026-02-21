@@ -100,7 +100,7 @@ export interface IndexerConfigType {
 }
 
 export interface ProfileConfig {
-  sp?: StreamingProviderConfigType // streaming_provider (legacy)
+  sp?: StreamingProviderConfigType | null // streaming_provider (legacy)
   sps?: StreamingProviderConfigType[] // streaming_providers (multi-provider)
   cc?: CatalogConfigType[] // catalog_configs
   sc?: string[] // selected_catalogs (deprecated)
@@ -120,7 +120,7 @@ export interface ProfileConfig {
   rpc?: RPDBConfigType | null // rpdb_config
   lss?: boolean // live_search_streams
   mdb?: MDBListConfigType | null // mdblist_config
-  ic?: IndexerConfigType // indexer_config
+  ic?: IndexerConfigType | null // indexer_config
   // Stream display settings
   mxs?: number // max_streams (total cap)
   stg?: 'mixed' | 'separate' // stream_type_grouping
@@ -349,8 +349,10 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
   }
 
   // Simple field mappings
-  // Filter out empty strings from selected_resolutions (empty string represents "Unknown" which is invalid)
-  if (config.sr) userData.selected_resolutions = config.sr.filter((r) => r !== '')
+  // Normalize legacy empty-string "Unknown" resolution to null (backend-compatible).
+  if (config.sr) {
+    userData.selected_resolutions = config.sr.map((r) => (typeof r === 'string' && r.trim() === '' ? null : r))
+  }
   if (config.ec !== undefined) userData.enable_catalogs = config.ec
   if (config.eim !== undefined) userData.enable_imdb_metadata = config.eim
   if (config.ms !== undefined) userData.max_size = config.ms

@@ -52,6 +52,30 @@ import {
 } from './components'
 import type { ProfileConfig } from './components'
 
+function sanitizeResolutionList(resolutions: ProfileConfig['sr']): ProfileConfig['sr'] {
+  if (!resolutions) return resolutions
+
+  const normalized = resolutions
+    .map((r) => (typeof r === 'string' && r.trim() === '' ? null : r))
+    .filter((r): r is string | null => r === null || (typeof r === 'string' && r.trim().length > 0))
+
+  const deduped: Array<string | null> = []
+  for (const resolution of normalized) {
+    if (!deduped.includes(resolution)) {
+      deduped.push(resolution)
+    }
+  }
+
+  return deduped
+}
+
+function sanitizeProfileConfig(config: ProfileConfig): ProfileConfig {
+  return {
+    ...config,
+    sr: sanitizeResolutionList(config.sr),
+  }
+}
+
 // Profile card for the list view
 function ProfileCard({ profile, onSelect }: { profile: Profile; onSelect: () => void }) {
   const setDefault = useSetDefaultProfile()
@@ -313,7 +337,7 @@ function AnonymousConfigEditor() {
     setError(null)
 
     try {
-      const result = await encryptUserData(config)
+      const result = await encryptUserData(sanitizeProfileConfig(config))
 
       if (result.status === 'error') {
         setError(result.message || 'Failed to generate configuration')
@@ -554,9 +578,9 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
   const [isDefault, setIsDefault] = useState(profile?.is_default || false)
   const [config, setConfig] = useState<ProfileConfig>(() => {
     if (profile?.config) {
-      return profile.config as ProfileConfig
+      return sanitizeProfileConfig(profile.config as ProfileConfig)
     }
-    return { ...DEFAULT_CONFIG }
+    return sanitizeProfileConfig({ ...DEFAULT_CONFIG })
   })
   const [activeTab, setActiveTab] = useState('provider')
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -594,25 +618,27 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
     setSaveStatus(null)
     try {
       if (isNew) {
+        const sanitizedConfig = sanitizeProfileConfig(config)
         await createProfile.mutateAsync({
           name: name || 'New Profile',
           is_default: isDefault,
-          config: config as Record<string, unknown>,
+          config: sanitizedConfig as Record<string, unknown>,
         })
         setSaveStatus({ type: 'success', message: 'Profile created successfully!' })
         setTimeout(() => onBack(), 1000) // Delay to show success message
       } else if (profile) {
+        const sanitizedConfig = sanitizeProfileConfig(config)
         const updatedProfile = await updateProfile.mutateAsync({
           profileId: profile.id,
           data: {
             name,
             is_default: isDefault,
-            config: config as Record<string, unknown>,
+            config: sanitizedConfig as Record<string, unknown>,
           },
         })
         // Update local state with the response from server
         if (updatedProfile.config) {
-          setConfig(updatedProfile.config as ProfileConfig)
+          setConfig(sanitizeProfileConfig(updatedProfile.config as ProfileConfig))
         }
         setName(updatedProfile.name)
         setIsDefault(updatedProfile.is_default)
@@ -625,7 +651,7 @@ function ProfileEditor({ profile, onBack, isNew = false }: { profile?: Profile; 
   }
 
   const handleDelete = async () => {
-    if (profile && confirm('Are you sure you want to delete this profile?')) {
+    if (profile) {
       try {
         await deleteProfile.mutateAsync(profile.id)
         onBack()

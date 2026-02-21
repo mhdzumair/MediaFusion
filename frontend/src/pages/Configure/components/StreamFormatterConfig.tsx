@@ -277,7 +277,8 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
   const resetToDefault = () => {
     onChange({
       ...config,
-      st: undefined,
+      // Use null so backend deep-merge removes custom stream template config.
+      st: null,
     })
   }
 

@@ -141,7 +141,7 @@ export const RESOLUTIONS = [
   { value: '480p', label: '480p' },
   { value: '360p', label: '360p' },
   { value: '240p', label: '240p' },
-  { value: '', label: 'Unknown' },
+  { value: null, label: 'Unknown' },
 ]
 
 export const QUALITY_GROUPS = [
@@ -245,7 +245,7 @@ export const NUDITY_LEVELS = [
 // Default profile configuration
 export const DEFAULT_CONFIG: ProfileConfig = {
   sc: [],
-  sr: ['4k', '2160p', '1440p', '1080p', '720p', '576p', '480p', '360p', '240p', ''],
+  sr: ['4k', '2160p', '1440p', '1080p', '720p', '576p', '480p', '360p', '240p', null],
   ec: true,
   eim: false,
   ms: 'inf',

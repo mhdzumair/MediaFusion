@@ -134,10 +134,10 @@ export interface IndexerConfig {
 }
 
 export interface ProfileConfig {
-  sp?: StreamingProviderConfig // streaming_provider
+  sp?: StreamingProviderConfig | null // streaming_provider
   cc?: CatalogConfig[] // catalog_configs (new: per-catalog configuration)
   sc?: string[] // selected_catalogs (deprecated: use cc instead)
-  sr?: string[] // selected_resolutions
+  sr?: (string | null)[] // selected_resolutions
   ec?: boolean // enable_catalogs
   eim?: boolean // enable_imdb_metadata
   ms?: number | string // max_size (bytes or 'inf')
@@ -146,12 +146,12 @@ export interface ProfileConfig {
   nf?: string[] // nudity_filter
   cf?: string[] // certification_filter
   ap?: string // api_password
-  ls?: string[] // language_sorting
+  ls?: (string | null)[] // language_sorting
   qf?: string[] // quality_filter
   mfc?: MediaFlowConfig | null // mediaflow_config
   rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams
-  ic?: IndexerConfig // indexer_config
+  ic?: IndexerConfig | null // indexer_config
   eus?: boolean // enable_usenet_streams
   puot?: boolean // prefer_usenet_over_torrent
   ets?: boolean // enable_telegram_streams
