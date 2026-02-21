@@ -178,68 +178,268 @@ const MODIFIERS = [
  * Convert AIOStreams syntax to MediaFusion syntax
  * This is a client-side implementation for the converter dialog
  */
+const AIO_FIELD_ALIASES: Record<string, string> = {
+  'stream.encode': 'stream.codec',
+  'stream.visualTags': 'stream.hdr_formats',
+  'stream.audioTags': 'stream.audio_formats',
+  'stream.audioChannels': 'stream.channels',
+  'stream.releaseGroup': 'stream.release_group',
+  'stream.bitDepth': 'stream.bit_depth',
+  'stream.fileName': 'stream.filename',
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stripOuterQuotes(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return trimmed
+  const first = trimmed[0]
+  const last = trimmed[trimmed.length - 1]
+  if ((first === '"' || first === "'") && first === last) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+function findConditionalSeparator(content: string): number {
+  let depth = 0
+  let inSingle = false
+  let inDouble = false
+
+  for (let i = 0; i < content.length - 1; i += 1) {
+    const char = content[i]
+    const escaped = i > 0 && content[i - 1] === '\\'
+
+    if (char === "'" && !inDouble && !escaped) {
+      inSingle = !inSingle
+    } else if (char === '"' && !inSingle && !escaped) {
+      inDouble = !inDouble
+    } else if (!inSingle && !inDouble) {
+      if (char === '[') depth += 1
+      if (char === ']') depth = Math.max(0, depth - 1)
+      if (char === '|' && content[i + 1] === '|' && depth === 0) {
+        return i
+      }
+    }
+  }
+
+  return -1
+}
+
+function splitQuotedBranches(content: string): [string, string] | null {
+  const parts: string[] = []
+  let i = 0
+
+  while (i < content.length) {
+    while (i < content.length && /\s/.test(content[i])) i += 1
+    if (i >= content.length) break
+
+    const quote = content[i]
+    if (quote !== '"' && quote !== "'") return null
+
+    let end = i + 1
+    while (end < content.length) {
+      if (content[end] === quote && content[end - 1] !== '\\') break
+      end += 1
+    }
+    if (end >= content.length) return null
+
+    parts.push(content.slice(i, end + 1))
+    i = end + 1
+  }
+
+  if (parts.length >= 2) return [parts[0], parts[1]]
+  if (parts.length === 1) return [parts[0], '""']
+  return null
+}
+
+function splitConditionalBranches(content: string): [string, string] | null {
+  const separator = findConditionalSeparator(content)
+  if (separator !== -1) {
+    const trueBranch = content.slice(0, separator).trim()
+    const falseBranch = content.slice(separator + 2).trim()
+    return [trueBranch, falseBranch]
+  }
+  return splitQuotedBranches(content)
+}
+
+function mapConditionalCheck(variablePath: string, check: string): string {
+  const normalized = check.trim()
+  if (!normalized) return variablePath
+  if (normalized === 'istrue' || normalized === 'exists') return variablePath
+  if (normalized === 'isfalse') return `not ${variablePath}`
+
+  const operators = ['>=', '<=', '!=', '>', '<', '=', '~', '$', '^']
+  for (const op of operators) {
+    if (normalized.startsWith(op)) {
+      const value = normalized.slice(op.length).trim()
+      if (!value) return variablePath
+      return `${variablePath} ${op} ${value}`
+    }
+  }
+
+  return variablePath
+}
+
+function findConditionalEnd(template: string, start: number): number {
+  let depth = 0
+  let inSingle = false
+  let inDouble = false
+
+  for (let i = start; i < template.length; i += 1) {
+    const char = template[i]
+    const escaped = i > 0 && template[i - 1] === '\\'
+
+    if (char === "'" && !inDouble && !escaped) {
+      inSingle = !inSingle
+    } else if (char === '"' && !inSingle && !escaped) {
+      inDouble = !inDouble
+    } else if (!inSingle && !inDouble) {
+      if (char === '[') {
+        depth += 1
+      } else if (char === ']') {
+        depth = Math.max(0, depth - 1)
+        if (depth === 0 && i + 1 < template.length && template[i + 1] === '}') {
+          return i + 2
+        }
+      }
+    }
+  }
+
+  return -1
+}
+
+function applyMediaFusionAliases(template: string): string {
+  let normalized = template
+
+  for (const [from, to] of Object.entries(AIO_FIELD_ALIASES)) {
+    normalized = normalized.replace(new RegExp(`\\b${escapeRegex(from)}\\b`, 'g'), to)
+  }
+
+  // AIOStreams uses rbytes; MediaFusion supports bytes.
+  normalized = normalized.replace(/\|rbytes\b/g, '|bytes')
+  return normalized
+}
+
 function convertAIOStreamsToMediaFusion(template: string): string {
   if (!template) return template
 
   let result = template
 
-  // Convert conditionals: {var::check["true"||"false"]} -> {if condition}true{else}false{/if}
-  // Pattern matches: {var::modifier["content"||"content"]}
-  const conditionalPattern = /\{([a-zA-Z_][a-zA-Z0-9_.]+)::([=<>!~$^]?\w*)\[(['"])(.+?)\3\|\|(['"])(.+?)\5\]\}/g
-
-  function convertMatch(
-    _match: string,
-    varPath: string,
-    check: string,
-    _q1: string,
-    trueVal: string,
-    _q2: string,
-    falseVal: string,
-  ): string {
-    // Recursively convert nested AIOStreams syntax
-    trueVal = convertAIOStreamsToMediaFusion(trueVal)
-    falseVal = convertAIOStreamsToMediaFusion(falseVal)
-
-    let condition: string
-    if (check === 'istrue' || check === 'exists') {
-      condition = varPath
-    } else if (check === 'isfalse') {
-      condition = `not ${varPath}`
-    } else if (check.startsWith('=')) {
-      condition = `${varPath} = ${check.slice(1)}`
-    } else if (check.startsWith('>=')) {
-      condition = `${varPath} >= ${check.slice(2)}`
-    } else if (check.startsWith('<=')) {
-      condition = `${varPath} <= ${check.slice(2)}`
-    } else if (check.startsWith('>')) {
-      condition = `${varPath} > ${check.slice(1)}`
-    } else if (check.startsWith('<')) {
-      condition = `${varPath} < ${check.slice(1)}`
-    } else if (check.startsWith('!=')) {
-      condition = `${varPath} != ${check.slice(2)}`
-    } else if (check.startsWith('~')) {
-      condition = `${varPath} ~ ${check.slice(1)}`
-    } else {
-      condition = varPath
+  // Convert conditional blocks first: {var::check["true"||"false"]}
+  let cursor = 0
+  while (cursor < result.length) {
+    if (result[cursor] !== '{') {
+      cursor += 1
+      continue
     }
 
-    if (!falseVal || falseVal === '' || falseVal === "''" || falseVal === '""') {
-      return `{if ${condition}}${trueVal}{/if}`
+    const conditionalEnd = findConditionalEnd(result, cursor)
+    if (conditionalEnd === -1) {
+      cursor += 1
+      continue
     }
-    return `{if ${condition}}${trueVal}{else}${falseVal}{/if}`
+
+    const segment = result.slice(cursor, conditionalEnd)
+    const bracketStart = segment.indexOf('[')
+    if (bracketStart === -1) {
+      cursor += 1
+      continue
+    }
+
+    const varCheck = segment.slice(1, bracketStart).trim()
+    const separatorIndex = varCheck.indexOf('::')
+    if (separatorIndex === -1) {
+      cursor += 1
+      continue
+    }
+
+    const variablePath = varCheck.slice(0, separatorIndex).trim()
+    const check = varCheck.slice(separatorIndex + 2).trim()
+    if (!variablePath || !check) {
+      cursor += 1
+      continue
+    }
+
+    const branches = splitConditionalBranches(segment.slice(bracketStart + 1, -2))
+    if (!branches) {
+      cursor += 1
+      continue
+    }
+
+    const [rawTrueBranch, rawFalseBranch] = branches
+    const trueBranch = convertAIOStreamsToMediaFusion(stripOuterQuotes(rawTrueBranch))
+    const falseBranch = convertAIOStreamsToMediaFusion(stripOuterQuotes(rawFalseBranch))
+    const condition = mapConditionalCheck(variablePath, check)
+
+    const convertedSegment = falseBranch.trim()
+      ? `{if ${condition}}${trueBranch}{else}${falseBranch}{/if}`
+      : `{if ${condition}}${trueBranch}{/if}`
+
+    result = `${result.slice(0, cursor)}${convertedSegment}${result.slice(conditionalEnd)}`
+    cursor += convertedSegment.length
   }
 
-  // Apply conversion multiple times for nested patterns
-  let prev = ''
-  while (prev !== result) {
-    prev = result
-    result = result.replace(conditionalPattern, convertMatch)
+  // Convert simple modifiers: {var::mod::mod2(arg)} -> {var|mod|mod2(arg)}
+  result = result.replace(
+    /\{([a-zA-Z_][a-zA-Z0-9_.]*)((?:::[a-zA-Z_][a-zA-Z0-9_]*(?:\([^)]*\))?)+)\}/g,
+    (_match, path: string, modifiers: string) => `{${path}${modifiers.replaceAll('::', '|')}}`,
+  )
+
+  return applyMediaFusionAliases(result)
+}
+
+type ConvertedAIOImport = {
+  preview: string
+  title?: string
+  description?: string
+}
+
+function convertAIOImportInput(input: string): ConvertedAIOImport {
+  const trimmed = input.trim()
+  if (!trimmed) return { preview: '' }
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      name?: unknown
+      title?: unknown
+      description?: unknown
+      desc?: unknown
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const rawTitle =
+        typeof parsed.name === 'string' ? parsed.name : typeof parsed.title === 'string' ? parsed.title : undefined
+      const rawDescription =
+        typeof parsed.description === 'string'
+          ? parsed.description
+          : typeof parsed.desc === 'string'
+            ? parsed.desc
+            : undefined
+
+      if (rawTitle !== undefined || rawDescription !== undefined) {
+        const convertedTitle = rawTitle !== undefined ? convertAIOStreamsToMediaFusion(rawTitle) : undefined
+        const convertedDescription =
+          rawDescription !== undefined ? convertAIOStreamsToMediaFusion(rawDescription) : undefined
+
+        const previewObject: Record<string, string> = {}
+        if (convertedTitle !== undefined) previewObject.name = convertedTitle
+        if (convertedDescription !== undefined) previewObject.description = convertedDescription
+
+        return {
+          preview: JSON.stringify(previewObject, null, 2),
+          title: convertedTitle,
+          description: convertedDescription,
+        }
+      }
+    }
+  } catch {
+    // Non-JSON input is expected for single-template imports.
   }
 
-  // Convert simple modifiers: :: -> |
-  result = result.replace(/::(\w+)/g, '|$1')
-
-  return result
+  return { preview: convertAIOStreamsToMediaFusion(input) }
 }
 
 export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) {
@@ -247,6 +447,10 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
   const [converterOpen, setConverterOpen] = useState(false)
   const [aioInput, setAioInput] = useState('')
   const [convertedOutput, setConvertedOutput] = useState('')
+  const [convertedTemplates, setConvertedTemplates] = useState<{
+    title?: string
+    description?: string
+  } | null>(null)
 
   const currentTitle = config.st?.t ?? DEFAULT_TITLE_TEMPLATE
   const currentDescription = config.st?.d ?? DEFAULT_DESCRIPTION_TEMPLATE
@@ -289,27 +493,73 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
   }
 
   const handleConvert = () => {
-    const converted = convertAIOStreamsToMediaFusion(aioInput)
-    setConvertedOutput(converted)
+    const converted = convertAIOImportInput(aioInput)
+    setConvertedOutput(converted.preview)
+    if (converted.title !== undefined || converted.description !== undefined) {
+      setConvertedTemplates({ title: converted.title, description: converted.description })
+    } else {
+      setConvertedTemplates(null)
+    }
   }
 
   const applyConvertedTitle = () => {
-    if (convertedOutput) {
-      updateTemplate('t', convertedOutput)
+    const template = convertedTemplates?.title ?? convertedOutput
+    if (template) {
+      updateTemplate('t', template)
       setConverterOpen(false)
       setAioInput('')
       setConvertedOutput('')
+      setConvertedTemplates(null)
     }
   }
 
   const applyConvertedDescription = () => {
-    if (convertedOutput) {
-      updateTemplate('d', convertedOutput)
+    const template = convertedTemplates?.description ?? convertedOutput
+    if (template) {
+      updateTemplate('d', template)
       setConverterOpen(false)
       setAioInput('')
       setConvertedOutput('')
+      setConvertedTemplates(null)
     }
   }
+
+  const applyConvertedBoth = () => {
+    if (!convertedTemplates) return
+
+    onChange({
+      ...config,
+      st: {
+        ...config.st,
+        ...(convertedTemplates.title !== undefined ? { t: convertedTemplates.title } : {}),
+        ...(convertedTemplates.description !== undefined ? { d: convertedTemplates.description } : {}),
+      },
+    })
+
+    setConverterOpen(false)
+    setAioInput('')
+    setConvertedOutput('')
+    setConvertedTemplates(null)
+  }
+
+  const closeConverter = () => {
+    setConverterOpen(false)
+    setConvertedOutput('')
+    setConvertedTemplates(null)
+  }
+
+  const canApplyBoth = Boolean(convertedTemplates?.title !== undefined && convertedTemplates?.description !== undefined)
+
+  const outputLabel = convertedTemplates ? '✅ Converted MediaFusion Templates' : '✅ Converted MediaFusion Template'
+
+  const converterPlaceholder = `Paste AIOStreams template here...
+
+Single template example:
+{stream.type::=torrent["⚡ {service.shortName}"||""]}
+
+JSON example:
+{"name":"{stream.resolution::=2160p[\\"💎 4K\\"||\\"\\"]}","description":"{stream.size::>0[\\"📦 {stream.size::rbytes}\\"||\\"\\"]}"}
+`
 
   return (
     <Card>
@@ -409,7 +659,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                     id="aio-input"
                     value={aioInput}
                     onChange={(e) => setAioInput(e.target.value)}
-                    placeholder={`Paste AIOStreams template here...\n\nExample:\n{stream.type::=torrent["{service.shortName}"||'']}`}
+                    placeholder={converterPlaceholder}
                     className="font-mono text-xs h-32 resize-none"
                   />
                 </div>
@@ -421,7 +671,7 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
 
                 {convertedOutput && (
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-emerald-600">✅ Converted MediaFusion Template</Label>
+                    <Label className="text-sm font-medium text-emerald-600">{outputLabel}</Label>
                     <Textarea
                       value={convertedOutput}
                       readOnly
@@ -431,11 +681,16 @@ export function StreamFormatterConfig({ config, onChange }: ConfigSectionProps) 
                 )}
               </div>
               <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={() => setConverterOpen(false)}>
+                <Button variant="outline" onClick={closeConverter}>
                   Cancel
                 </Button>
                 {convertedOutput && (
                   <>
+                    {canApplyBoth && (
+                      <Button variant="secondary" onClick={applyConvertedBoth}>
+                        Apply Both
+                      </Button>
+                    )}
                     <Button variant="secondary" onClick={applyConvertedTitle}>
                       Apply as Title
                     </Button>
