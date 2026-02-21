@@ -21,4 +21,13 @@ export { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 export { ValidationWarningDialog } from './ValidationWarningDialog'
 export { MultiContentWizard } from './MultiContentWizard'
 export { DebridTab } from './DebridTab'
-export type { ImportResult, TorrentImportFormData, NZBImportFormData, FileAnnotation, SelectedMatch } from './types'
+export type {
+  ImportResult,
+  TorrentBatchAnalysisItem,
+  TorrentDialogQueueItem,
+  TorrentImportSubmitOptions,
+  TorrentImportFormData,
+  NZBImportFormData,
+  FileAnnotation,
+  SelectedMatch,
+} from './types'
