@@ -9,6 +9,7 @@ They use:
 """
 
 import asyncio
+import importlib
 import json
 import logging
 import time
@@ -20,8 +21,13 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.config import settings
+from db.crud.scraper_helpers import (
+    get_or_create_metadata,
+    store_new_torrent_streams,
+    store_new_usenet_streams,
+)
 from db.crud.media import get_media_by_external_id
-from db.database import get_read_session_context
+from db.database import get_async_session_context, get_read_session_context
 from db.enums import MediaType
 from db.models import (
     AceStreamStream,
@@ -38,6 +44,7 @@ from db.models import (
 )
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import (
+    MetadataData,
     Stream as StremioStream,
 )
 from db.schemas import (
@@ -57,6 +64,144 @@ STREAM_CACHE_TTL = 1800  # 30 minutes
 STREAM_CACHE_PREFIX = "stream_data:"
 
 logger = logging.getLogger(__name__)
+_scraper_tasks_module = None
+
+
+def _get_scraper_tasks_module():
+    """Lazy-load scraper_tasks to avoid import cycles during app startup."""
+    global _scraper_tasks_module
+    if _scraper_tasks_module is None:
+        _scraper_tasks_module = importlib.import_module("scrapers.scraper_tasks")
+    return _scraper_tasks_module
+
+
+def _build_scraper_metadata(
+    media: Media | None,
+    video_id: str,
+    media_type: MediaType,
+    fetched_metadata: dict | None = None,
+) -> MetadataData | None:
+    """Build MetadataData for scraper execution from DB media or fetched metadata."""
+    if media:
+        return MetadataData(
+            id=media.id,
+            external_id=video_id,
+            type=media_type.value,
+            title=media.title,
+            original_title=media.original_title,
+            year=media.year,
+            release_date=media.release_date,
+            aka_titles=[],
+            external_ids=None,
+        )
+
+    if fetched_metadata:
+        external_id = fetched_metadata.get("imdb_id") or fetched_metadata.get("id") or video_id
+        title = fetched_metadata.get("title")
+        if title:
+            return MetadataData(
+                id=0,
+                external_id=external_id,
+                type=media_type.value,
+                title=title,
+                original_title=fetched_metadata.get("original_title"),
+                year=fetched_metadata.get("year"),
+                aka_titles=fetched_metadata.get("aka_titles") or [],
+                external_ids=None,
+            )
+    return None
+
+
+async def _persist_live_search_streams(
+    torrent_streams: list[TorrentStreamData],
+    usenet_streams: list[UsenetStreamData],
+) -> None:
+    """Persist live-scraped streams using a write session."""
+    if not torrent_streams and not usenet_streams:
+        return
+
+    try:
+        async with get_async_session_context() as write_session:
+            if torrent_streams:
+                await store_new_torrent_streams(
+                    write_session,
+                    [stream.model_dump(by_alias=True) for stream in torrent_streams],
+                )
+            if usenet_streams:
+                await store_new_usenet_streams(
+                    write_session,
+                    [stream.model_dump(by_alias=True) for stream in usenet_streams],
+                )
+            await write_session.commit()
+    except Exception as exc:
+        logger.warning("Failed to persist live search streams: %s", exc)
+
+
+async def _fetch_missing_media_for_live_search(
+    video_id: str,
+    media_type: MediaType,
+) -> tuple[Media | None, MetadataData | None]:
+    """Fetch and persist missing metadata for IMDb IDs during live search."""
+    scraper_tasks = _get_scraper_tasks_module()
+    fetched_metadata = await scraper_tasks.meta_fetcher.get_metadata(video_id, media_type=media_type.value)
+    if not fetched_metadata:
+        return None, None
+
+    scraper_metadata = _build_scraper_metadata(None, video_id, media_type, fetched_metadata)
+    if not scraper_metadata:
+        return None, None
+
+    media = None
+    try:
+        async with get_async_session_context() as write_session:
+            media = await get_or_create_metadata(write_session, fetched_metadata, media_type.value)
+            await write_session.commit()
+    except Exception as exc:
+        logger.warning("Failed to persist metadata for %s: %s", video_id, exc)
+
+    return media, scraper_metadata
+
+
+async def _run_live_search_scrapers(
+    user_data: UserData,
+    metadata: MetadataData,
+    catalog_type: str,
+    season: int | None = None,
+    episode: int | None = None,
+) -> tuple[list[TorrentStreamData], list[UsenetStreamData]]:
+    """Run enabled live scrapers and return in-memory stream results."""
+    scraper_tasks = _get_scraper_tasks_module()
+    torrent_streams: list[TorrentStreamData] = []
+    usenet_streams: list[UsenetStreamData] = []
+
+    try:
+        torrent_streams = list(
+            await scraper_tasks.run_scrapers(
+                user_data=user_data,
+                metadata=metadata,
+                catalog_type=catalog_type,
+                season=season,
+                episode=episode,
+            )
+        )
+    except Exception as exc:
+        logger.warning("Live torrent scraping failed for %s: %s", metadata.external_id, exc)
+
+    has_usenet_provider = any(sp.service in USENET_CAPABLE_PROVIDERS for sp in user_data.get_active_providers())
+    has_newznab_indexers = bool(user_data.indexer_config and user_data.indexer_config.newznab_indexers)
+    if user_data.enable_usenet_streams and (has_usenet_provider or has_newznab_indexers):
+        try:
+            usenet_streams = await scraper_tasks.run_usenet_scrapers(
+                user_data=user_data,
+                metadata=metadata,
+                catalog_type=catalog_type,
+                season=season,
+                episode=episode,
+            )
+        except Exception as exc:
+            logger.warning("Live usenet scraping failed for %s: %s", metadata.external_id, exc)
+
+    return torrent_streams, usenet_streams
 
 
 def _get_visibility_filter(user_id: int | None = None):
@@ -657,16 +802,34 @@ async def get_movie_streams(
     # Lazy import to avoid circular dependency
     from utils.parser import parse_stream_data
 
+    live_search_enabled = user_data.live_search_streams and video_id.startswith("tt")
+
     # Resolve video_id to media
     media = await get_media_by_external_id(session, video_id, MediaType.MOVIE)
+    scraper_metadata = _build_scraper_metadata(media, video_id, MediaType.MOVIE)
+
+    if not media and live_search_enabled:
+        media, scraper_metadata = await _fetch_missing_media_for_live_search(video_id, MediaType.MOVIE)
+
     if not media:
         logger.warning(f"Movie not found for video_id: {video_id}")
-        return []
+        if not scraper_metadata:
+            return []
 
     visibility_filter = _get_visibility_filter(user_id)
 
     # Get cached or fresh raw stream data
-    raw_data = await _get_cached_movie_streams(media.id, visibility_filter)
+    if media:
+        raw_data = await _get_cached_movie_streams(media.id, visibility_filter)
+    else:
+        raw_data = {
+            "torrents": [],
+            "usenet": [],
+            "telegram": [],
+            "http": [],
+            "acestream": [],
+            "youtube": [],
+        }
 
     # Deserialize stream data objects from cache
     stream_data_list = [TorrentStreamData.model_validate(t) for t in raw_data["torrents"]]
@@ -694,6 +857,29 @@ async def get_movie_streams(
     # Deserialize stream data objects from cache
     http_stream_data_list = [HTTPStreamData.model_validate(h) for h in raw_data.get("http", [])]
     youtube_stream_data_list = [YouTubeStreamData.model_validate(yt) for yt in raw_data.get("youtube", [])]
+
+    # Live search: run scrapers on-demand and merge in-memory results.
+    if live_search_enabled and scraper_metadata:
+        live_torrent_streams, live_usenet_streams = await _run_live_search_scrapers(
+            user_data=user_data,
+            metadata=scraper_metadata,
+            catalog_type="movie",
+        )
+
+        if live_torrent_streams:
+            existing_info_hashes = {stream.info_hash for stream in stream_data_list}
+            stream_data_list.extend(
+                stream for stream in live_torrent_streams if stream.info_hash not in existing_info_hashes
+            )
+
+        if live_usenet_streams:
+            existing_nzb_guids = {stream.nzb_guid for stream in usenet_stream_data_list}
+            usenet_stream_data_list.extend(
+                stream for stream in live_usenet_streams if stream.nzb_guid not in existing_nzb_guids
+            )
+
+        if live_torrent_streams or live_usenet_streams:
+            background_tasks.add_task(_persist_live_search_streams, live_torrent_streams, live_usenet_streams)
 
     # AceStream is formatted directly (requires MediaFlow config, not a parse_stream_data stream type)
     formatted_acestream_streams = (
@@ -834,16 +1020,34 @@ async def get_series_streams(
     # Lazy import to avoid circular dependency
     from utils.parser import parse_stream_data
 
+    live_search_enabled = user_data.live_search_streams and video_id.startswith("tt")
+
     # Resolve video_id to media
     media = await get_media_by_external_id(session, video_id, MediaType.SERIES)
+    scraper_metadata = _build_scraper_metadata(media, video_id, MediaType.SERIES)
+
+    if not media and live_search_enabled:
+        media, scraper_metadata = await _fetch_missing_media_for_live_search(video_id, MediaType.SERIES)
+
     if not media:
         logger.warning(f"Series not found for video_id: {video_id}")
-        return []
+        if not scraper_metadata:
+            return []
 
     visibility_filter = _get_visibility_filter(user_id)
 
     # Get cached or fresh raw stream data
-    raw_data = await _get_cached_series_streams(media.id, season, episode, visibility_filter)
+    if media:
+        raw_data = await _get_cached_series_streams(media.id, season, episode, visibility_filter)
+    else:
+        raw_data = {
+            "torrents": [],
+            "usenet": [],
+            "telegram": [],
+            "http": [],
+            "acestream": [],
+            "youtube": [],
+        }
 
     # Deserialize stream data objects from cache
     stream_data_list = [TorrentStreamData.model_validate(t) for t in raw_data["torrents"]]
@@ -869,6 +1073,30 @@ async def get_series_streams(
 
     http_stream_data_list = [HTTPStreamData.model_validate(h) for h in raw_data.get("http", [])]
     youtube_stream_data_list = [YouTubeStreamData.model_validate(yt) for yt in raw_data.get("youtube", [])]
+
+    if live_search_enabled and scraper_metadata:
+        live_torrent_streams, live_usenet_streams = await _run_live_search_scrapers(
+            user_data=user_data,
+            metadata=scraper_metadata,
+            catalog_type="series",
+            season=season,
+            episode=episode,
+        )
+
+        if live_torrent_streams:
+            existing_info_hashes = {stream.info_hash for stream in stream_data_list}
+            stream_data_list.extend(
+                stream for stream in live_torrent_streams if stream.info_hash not in existing_info_hashes
+            )
+
+        if live_usenet_streams:
+            existing_nzb_guids = {stream.nzb_guid for stream in usenet_stream_data_list}
+            usenet_stream_data_list.extend(
+                stream for stream in live_usenet_streams if stream.nzb_guid not in existing_nzb_guids
+            )
+
+        if live_torrent_streams or live_usenet_streams:
+            background_tasks.add_task(_persist_live_search_streams, live_torrent_streams, live_usenet_streams)
 
     formatted_acestream_streams = (
         _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)

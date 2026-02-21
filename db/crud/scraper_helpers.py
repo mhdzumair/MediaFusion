@@ -36,7 +36,6 @@ from db.crud.reference import (
     get_or_create_catalog,
     get_or_create_genre,
 )
-from db.crud.stream_services import invalidate_media_stream_cache
 from db.enums import MediaType, TorrentType
 from db.models import (
     AkaTitle,
@@ -1760,6 +1759,8 @@ async def store_new_usenet_streams(
 
     # Invalidate stream cache for all affected media
     if media_ids_to_update:
+        from db.crud.stream_services import invalidate_media_stream_cache
+
         for media_id in media_ids_to_update:
             await invalidate_media_stream_cache(media_id)
 
