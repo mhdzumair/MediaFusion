@@ -21,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useContinueWatching, useContributionStats, useLibraryStats } from '@/hooks'
 import { useRpdb } from '@/contexts/RpdbContext'
 import { Poster } from '@/components/ui/poster'
+import type { ContinueWatchingItem } from '@/lib/api'
 
 const quickActions = [
   {
@@ -104,6 +105,14 @@ export function DashboardPage() {
       default:
         return 'muted'
     }
+  }
+
+  const getContinueWatchingUrl = (item: ContinueWatchingItem) => {
+    if (item.media_type === 'series' && item.season && item.episode) {
+      return `/dashboard/content/${item.media_type}/${item.media_id}?season=${item.season}&episode=${item.episode}`
+    }
+
+    return `/dashboard/content/${item.media_type}/${item.media_id}`
   }
 
   return (
@@ -210,37 +219,40 @@ export function DashboardPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {continueWatching.slice(0, 5).map((item, index) => (
-              <Card
+              <Link
                 key={item.id}
-                className="overflow-hidden group hover-lift animate-fade-in"
+                to={getContinueWatchingUrl(item)}
+                className="group block animate-fade-in"
                 style={{ animationDelay: `${(index + 1) * 100}ms` }}
               >
-                <div className="aspect-[2/3] relative bg-muted">
-                  <Poster
-                    metaId={item.external_ids?.imdb || `mf:${item.media_id}`}
-                    catalogType={item.media_type === 'movie' ? 'movie' : 'series'}
-                    poster={item.poster}
-                    rpdbApiKey={rpdbApiKey}
-                    title={item.title}
-                    className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 p-3">
-                    <p className="text-white text-sm font-medium line-clamp-2">{item.title}</p>
-                    {item.season && item.episode && (
-                      <p className="text-white/60 text-xs mt-0.5">
-                        S{item.season} E{item.episode}
-                      </p>
-                    )}
-                    <div className="mt-2 h-1 bg-white/20 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all duration-300"
-                        style={{ width: `${item.progress_percent}%` }}
-                      />
+                <Card className="overflow-hidden hover-lift h-full">
+                  <div className="aspect-[2/3] relative bg-muted">
+                    <Poster
+                      metaId={item.external_ids?.imdb || `mf:${item.media_id}`}
+                      catalogType={item.media_type === 'tv' ? 'tv' : item.media_type === 'movie' ? 'movie' : 'series'}
+                      poster={item.poster}
+                      rpdbApiKey={rpdbApiKey}
+                      title={item.title}
+                      className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                      <p className="text-white text-sm font-medium line-clamp-2">{item.title}</p>
+                      {item.season && item.episode && (
+                        <p className="text-white/60 text-xs mt-0.5">
+                          S{item.season} E{item.episode}
+                        </p>
+                      )}
+                      <div className="mt-2 h-1 bg-white/20 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300"
+                          style={{ width: `${item.progress_percent}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Card>
+                </Card>
+              </Link>
             ))}
           </div>
         </div>
