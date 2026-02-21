@@ -91,6 +91,7 @@ export interface SuggestionListParams {
 
 export interface PendingSuggestionParams {
   field_name?: string
+  status?: SuggestionStatus
   page?: number
   page_size?: number
 }
@@ -127,6 +128,7 @@ export const suggestionsApi = {
   listPending: async (params?: PendingSuggestionParams): Promise<SuggestionListResponse> => {
     const searchParams = new URLSearchParams()
     if (params?.field_name) searchParams.set('field_name', params.field_name)
+    if (params?.status) searchParams.set('status', params.status)
     if (params?.page) searchParams.set('page', params.page.toString())
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString())
 

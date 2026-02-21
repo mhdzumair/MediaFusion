@@ -2,6 +2,7 @@
 Contributions API endpoints for user-submitted metadata corrections and stream additions.
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -11,6 +12,11 @@ from pydantic import BaseModel, Field
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from api.routers.content.acestream_import import process_acestream_import
+from api.routers.content.http_import import process_http_import
+from api.routers.content.nzb_import import process_nzb_import
+from api.routers.content.torrent_import import process_torrent_import
+from api.routers.content.youtube_import import process_youtube_import
 from api.routers.user.auth import require_auth, require_role
 from db.database import get_async_session, get_read_session
 from db.enums import ContributionStatus, UserRole
@@ -46,7 +52,7 @@ class ContributionResponse(BaseModel):
     """Response schema for a contribution."""
 
     id: str  # UUID string
-    user_id: int
+    user_id: int | None
     contribution_type: str
     target_id: str | None  # External ID (IMDb, TMDB)
     data: dict[str, Any]
@@ -286,17 +292,25 @@ async def create_contribution(
     Torrent and stream imports are auto-approved if the user is active.
     Metadata contributions require manual review.
     """
-    # Auto-approve torrent/stream imports for active users
-    # Metadata contributions still require review
-    should_auto_approve = user.is_active and data.contribution_type in (
-        "torrent",
-        "stream",
+    is_anonymous = data.data.get("is_anonymous") is True
+
+    # Moderators/admins auto-approve regardless of anonymity.
+    # Other users auto-approve torrent/stream imports only when active and non-anonymous.
+    is_privileged_reviewer = user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+    should_auto_approve = is_privileged_reviewer or (
+        (not is_anonymous)
+        and user.is_active
+        and data.contribution_type
+        in (
+            "torrent",
+            "stream",
+        )
     )
 
     initial_status = ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING
 
     contribution = Contribution(
-        user_id=user.id,
+        user_id=None if is_anonymous else user.id,
         contribution_type=data.contribution_type,
         target_id=data.target_id,
         data=data.data,
@@ -304,7 +318,11 @@ async def create_contribution(
         # Mark auto-approved contributions
         reviewed_by="auto" if should_auto_approve else None,
         reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
-        review_notes="Auto-approved: Active user content import" if should_auto_approve else None,
+        review_notes=(
+            "Auto-approved: Privileged reviewer"
+            if is_privileged_reviewer
+            else ("Auto-approved: Active user content import" if should_auto_approve else None)
+        ),
     )
 
     session.add(contribution)
@@ -396,10 +414,8 @@ async def review_contribution(
 ):
     """Review a contribution (approve or reject). Moderator+ only.
 
-    If approved, torrent contributions are processed and imported into the database.
+    If approved, supported content-import contributions are processed and imported.
     """
-    import logging
-
     logger = logging.getLogger(__name__)
 
     contribution = await session.get(Contribution, contribution_id)
@@ -421,27 +437,39 @@ async def review_contribution(
     contribution.reviewed_at = datetime.now(pytz.UTC)
     contribution.review_notes = review.review_notes
 
-    # If approved and it's a torrent contribution, process the import
-    if review.status == ContributionStatus.APPROVED and contribution.contribution_type == "torrent":
+    # If approved and it's a supported import contribution, process it.
+    if review.status == ContributionStatus.APPROVED and contribution.contribution_type in {
+        "torrent",
+        "nzb",
+        "youtube",
+        "http",
+        "acestream",
+    }:
         try:
-            from api.routers.content.torrent_import import process_torrent_import
+            process_fn = {
+                "torrent": process_torrent_import,
+                "nzb": process_nzb_import,
+                "youtube": process_youtube_import,
+                "http": process_http_import,
+                "acestream": process_acestream_import,
+            }.get(contribution.contribution_type)
 
-            # Get the original contributor user
-            contributor = await session.get(User, contribution.user_id)
-            if contributor:
-                import_result = await process_torrent_import(session, contribution.data, contributor)
+            if process_fn is None:
+                raise ValueError(f"Unsupported contribution type: {contribution.contribution_type}")
 
-                if import_result.get("status") == "success":
-                    contribution.review_notes = (
-                        f"{review.review_notes or ''}\nImport successful: stream_id={import_result.get('stream_id')}"
-                    ).strip()
-                elif import_result.get("status") == "exists":
-                    contribution.review_notes = (
-                        f"{review.review_notes or ''}\nTorrent already exists in database"
-                    ).strip()
+            # Anonymous contributions have no contributor user_id by design.
+            contributor = await session.get(User, contribution.user_id) if contribution.user_id is not None else None
+            import_result = await process_fn(session, contribution.data, contributor)
+
+            if import_result.get("status") == "success":
+                contribution.review_notes = (
+                    f"{review.review_notes or ''}\nImport successful: stream_id={import_result.get('stream_id')}"
+                ).strip()
+            elif import_result.get("status") == "exists":
+                contribution.review_notes = (f"{review.review_notes or ''}\nContent already exists in database").strip()
 
         except Exception as e:
-            logger.exception(f"Failed to process torrent import on approval: {e}")
+            logger.exception(f"Failed to process contribution import on approval: {e}")
             contribution.review_notes = (f"{review.review_notes or ''}\nImport processing failed: {str(e)}").strip()
 
     session.add(contribution)

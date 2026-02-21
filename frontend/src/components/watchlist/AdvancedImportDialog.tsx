@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Switch } from '@/components/ui/switch'
 import {
   Download,
   Loader2,
@@ -27,10 +28,16 @@ import {
   FolderOpen,
 } from 'lucide-react'
 import { useCombinedMetadataSearch, getBestExternalId, useAdvancedImport, type CombinedSearchResult } from '@/hooks'
+import { useAuth } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
 import { ImportFileAnnotationDialog, MultiContentWizard } from '@/pages/ContentImport/components'
 import type { MissingTorrentItem, FileAnnotationData } from '@/lib/api/watchlist'
 import type { TorrentFile, TorrentAnalyzeResponse } from '@/lib/api'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 import type { FileAnnotation } from '@/pages/ContentImport/components/types'
 import type { ImportMode } from '@/lib/constants'
 import { cn } from '@/lib/utils'
@@ -41,6 +48,8 @@ interface AdvancedImportDialogProps {
   torrent: MissingTorrentItem
   provider: string
   profileId?: number
+  initialIsAnonymous?: boolean
+  initialAnonymousDisplayName?: string
   onSuccess?: () => void
 }
 
@@ -58,8 +67,12 @@ export function AdvancedImportDialog({
   torrent,
   provider,
   profileId,
+  initialIsAnonymous,
+  initialAnonymousDisplayName,
   onSuccess,
 }: AdvancedImportDialogProps) {
+  const { user } = useAuth()
+
   // Form state
   const [contentType, setContentType] = useState<'movie' | 'series'>(torrent.parsed_type || 'movie')
   const [importMode, setImportMode] = useState<ImportMode>('single')
@@ -67,6 +80,10 @@ export function AdvancedImportDialog({
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
   const [fileAnnotations, setFileAnnotations] = useState<FileAnnotation[]>([])
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
+  const [isAnonymous, setIsAnonymous] = useState(initialIsAnonymous ?? user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(
+    initialAnonymousDisplayName ?? getStoredAnonymousDisplayName(),
+  )
 
   // Import state
   const [importResult, setImportResult] = useState<{
@@ -149,11 +166,16 @@ export function AdvancedImportDialog({
         meta_title: f.meta_title,
         meta_type: f.meta_type,
       }))
+      const normalizedAnonymousDisplayName = isAnonymous
+        ? normalizeAnonymousDisplayName(anonymousDisplayName)
+        : undefined
 
       try {
         const result = await advancedImport.mutateAsync({
           provider,
           profileId,
+          isAnonymous,
+          anonymousDisplayName: normalizedAnonymousDisplayName,
           imports: [
             {
               info_hash: torrent.info_hash,
@@ -184,7 +206,17 @@ export function AdvancedImportDialog({
         })
       }
     },
-    [torrent.info_hash, torrent.parsed_title, contentType, provider, profileId, advancedImport, onSuccess],
+    [
+      torrent.info_hash,
+      torrent.parsed_title,
+      contentType,
+      provider,
+      profileId,
+      advancedImport,
+      onSuccess,
+      isAnonymous,
+      anonymousDisplayName,
+    ],
   )
 
   const handleImport = useCallback(async () => {
@@ -213,11 +245,14 @@ export function AdvancedImportDialog({
             index: f.index,
             included: true,
           }))
+    const normalizedAnonymousDisplayName = isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined
 
     try {
       const result = await advancedImport.mutateAsync({
         provider,
         profileId,
+        isAnonymous,
+        anonymousDisplayName: normalizedAnonymousDisplayName,
         imports: [
           {
             info_hash: torrent.info_hash,
@@ -256,6 +291,8 @@ export function AdvancedImportDialog({
     profileId,
     advancedImport,
     onSuccess,
+    isAnonymous,
+    anonymousDisplayName,
   ])
 
   const handleClose = useCallback(() => {
@@ -287,23 +324,48 @@ export function AdvancedImportDialog({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent
           className={cn(
-            'flex flex-col overflow-hidden',
-            isMultiContentMode ? 'max-w-4xl h-[85vh] p-0 gap-0' : 'max-w-2xl max-h-[85vh]',
+            'flex min-h-0 flex-col overflow-hidden',
+            isMultiContentMode ? 'max-w-4xl h-[85vh] p-0 gap-0' : 'max-w-2xl h-[85vh]',
           )}
         >
           {isMultiContentMode ? (
             // Multi-content wizard mode
-            <MultiContentWizard
-              analysis={mockAnalysis}
-              importMode={importMode}
-              onComplete={handleMultiContentComplete}
-              onCancel={handleClose}
-              isImporting={advancedImport.isPending}
-            />
+            <>
+              <div className="border-b p-4">
+                <div className="space-y-2 rounded-md border border-border/50 p-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">Anonymous contribution</Label>
+                    <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
+                  </div>
+                  {isAnonymous && (
+                    <div className="space-y-1">
+                      <Input
+                        placeholder="Anonymous display name (optional)"
+                        value={anonymousDisplayName}
+                        onChange={(e) => {
+                          setAnonymousDisplayName(e.target.value)
+                          saveAnonymousDisplayName(e.target.value)
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Stream uploader uses this name. Leave empty to use &quot;Anonymous&quot;.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <MultiContentWizard
+                analysis={mockAnalysis}
+                importMode={importMode}
+                onComplete={handleMultiContentComplete}
+                onCancel={handleClose}
+                isImporting={advancedImport.isPending}
+              />
+            </>
           ) : (
             // Single content mode
             <>
-              <DialogHeader>
+              <DialogHeader className="shrink-0">
                 <DialogTitle className="flex items-center gap-2">
                   <Download className="h-5 w-5" />
                   Advanced Import
@@ -311,8 +373,8 @@ export function AdvancedImportDialog({
                 <DialogDescription>Import with full metadata control and file annotation support.</DialogDescription>
               </DialogHeader>
 
-              <ScrollArea className="flex-1 pr-1">
-                <div className="space-y-4">
+              <ScrollArea className="min-h-0 flex-1 pr-1">
+                <div className="space-y-4 pb-2">
                   {/* Torrent Info */}
                   <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
                     <p className="text-sm font-medium truncate" title={torrent.name}>
@@ -346,6 +408,28 @@ export function AdvancedImportDialog({
                       <span className="text-sm">{importResult.message}</span>
                     </div>
                   )}
+
+                  <div className="space-y-2 rounded-md border border-border/50 p-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-muted-foreground">Anonymous contribution</Label>
+                      <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
+                    </div>
+                    {isAnonymous && (
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="Anonymous display name (optional)"
+                          value={anonymousDisplayName}
+                          onChange={(e) => {
+                            setAnonymousDisplayName(e.target.value)
+                            saveAnonymousDisplayName(e.target.value)
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Stream uploader uses this name. Leave empty to use &quot;Anonymous&quot;.
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Content Type & Import Mode */}
                   <div className="space-y-3">
@@ -579,7 +663,7 @@ export function AdvancedImportDialog({
                 </div>
               </ScrollArea>
 
-              <DialogFooter>
+              <DialogFooter className="shrink-0">
                 <Button variant="outline" onClick={handleClose}>
                   {importResult?.status === 'success' ? 'Done' : 'Cancel'}
                 </Button>

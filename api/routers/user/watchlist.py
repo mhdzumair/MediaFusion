@@ -9,8 +9,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
+import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from PTT import parse_title
@@ -19,11 +21,13 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from thefuzz import fuzz
 
+from api.routers.content.anonymous_utils import normalize_anonymous_display_name
 from api.routers.user.auth import require_auth
 from db.database import get_read_session, get_async_session
-from db.enums import MediaType
+from db.enums import ContributionStatus, MediaType, UserRole
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.models import (
+    Contribution,
     Media,
     MediaImage,
     Stream,
@@ -33,7 +37,6 @@ from db.models import (
     UserProfile,
 )
 from db.crud import get_default_profile, get_profile_by_id
-from db import crud
 from db.schemas import StreamFileData, TorrentStreamData
 from db.schemas.config import StreamingProvider
 
@@ -155,6 +158,8 @@ class ImportRequest(BaseModel):
 
     info_hashes: list[str]  # Selected torrents to import
     overrides: dict[str, TorrentOverride] | None = None  # info_hash -> override
+    is_anonymous: bool | None = None
+    anonymous_display_name: str | None = None
 
 
 class ImportResultItem(BaseModel):
@@ -220,6 +225,8 @@ class AdvancedImportRequest(BaseModel):
     """Request for advanced import with file annotations."""
 
     advanced_imports: list[AdvancedTorrentImport]
+    is_anonymous: bool | None = None
+    anonymous_display_name: str | None = None
 
 
 # ============================================
@@ -1102,6 +1109,19 @@ async def import_torrents(
     # Normalize info hashes and overrides once for consistent lookups.
     requested_hashes = [info_hash.lower() for info_hash in import_request.info_hashes]
     overrides_lookup = {k.lower(): v for k, v in (import_request.overrides or {}).items()}
+    resolved_is_anonymous = (
+        import_request.is_anonymous
+        if import_request.is_anonymous is not None
+        else bool(current_user.contribute_anonymously)
+    )
+    normalized_anonymous_display_name = (
+        normalize_anonymous_display_name(import_request.anonymous_display_name) if resolved_is_anonymous else None
+    )
+    is_privileged_reviewer = current_user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+    should_auto_approve = is_privileged_reviewer or (current_user.is_active and not resolved_is_anonymous)
+    auto_review_notes = (
+        "Auto-approved: Privileged reviewer" if is_privileged_reviewer else "Auto-approved: Active user content import"
+    )
 
     profile_ctx = await ProfileDataProvider.get_context(current_user.id, session, profile_id=profile_id)
 
@@ -1175,13 +1195,13 @@ async def import_torrents(
                 prepared_items.append(prep_result.prepared_item)
 
     if prepared_items:
+        from api.routers.content.torrent_import import process_torrent_import
+
         async for write_session in get_async_session():
             for batch in iter_chunks(prepared_items, IMPORT_DB_BATCH_SIZE):
                 batch_hashes = [item.info_hash for item in batch]
                 try:
                     pre_existing_hashes = await get_existing_info_hashes(write_session, batch_hashes)
-                    stream_payloads: list[dict[str, Any]] = []
-                    prepared_with_media: dict[str, tuple[PreparedImportItem, Any]] = {}
 
                     for item in batch:
                         if item.info_hash in pre_existing_hashes:
@@ -1192,49 +1212,83 @@ async def import_torrents(
                             )
                             continue
 
-                        media_obj = await crud.get_or_create_metadata(
-                            write_session,
-                            item.metadata,
-                            item.media_type,
-                            is_search_imdb_title=False,
+                        contribution_file_data = [
+                            {
+                                "index": file.file_index,
+                                "filename": file.filename,
+                                "size": file.size,
+                                "season_number": file.season_number,
+                                "episode_number": file.episode_number,
+                                "episode_end": file.episode_end,
+                            }
+                            for file in item.stream_data.files
+                        ]
+                        contribution_data = {
+                            "info_hash": item.info_hash,
+                            "meta_type": item.media_type,
+                            "meta_id": item.external_id,
+                            "title": item.metadata.get("title") or item.stream_data.name,
+                            "name": item.stream_data.name,
+                            "total_size": item.stream_data.size,
+                            "resolution": item.stream_data.resolution,
+                            "quality": item.stream_data.quality,
+                            "codec": item.stream_data.codec,
+                            "languages": item.stream_data.languages,
+                            "file_data": contribution_file_data,
+                            "file_count": len(contribution_file_data) or 1,
+                            "is_anonymous": resolved_is_anonymous,
+                            "anonymous_display_name": (
+                                normalized_anonymous_display_name if resolved_is_anonymous else None
+                            ),
+                        }
+
+                        contribution = Contribution(
+                            user_id=None if resolved_is_anonymous else current_user.id,
+                            contribution_type="torrent",
+                            target_id=item.external_id,
+                            data=contribution_data,
+                            status=ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING,
+                            reviewed_by="auto" if should_auto_approve else None,
+                            reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
+                            review_notes=auto_review_notes if should_auto_approve else None,
                         )
-                        if not media_obj:
-                            results_by_index[item.index] = ImportResultItem(
-                                info_hash=item.info_hash,
-                                status="failed",
-                                message="Failed to create metadata",
-                            )
-                            continue
+                        write_session.add(contribution)
+                        await write_session.flush()
 
-                        meta_id = item.external_id if item.external_id.startswith("tt") else f"tt{media_obj.id}"
-                        stream_payloads.append(
-                            item.stream_data.model_copy(update={"meta_id": meta_id}).model_dump(by_alias=True)
-                        )
-                        prepared_with_media[item.info_hash] = (item, media_obj)
+                        if should_auto_approve:
+                            import_result = await process_torrent_import(write_session, contribution_data, current_user)
+                            if import_result.get("status") == "success":
+                                media_id = import_result.get("media_id")
+                                media_title = item.metadata.get("title") or item.stream_data.name
+                                if media_id:
+                                    media = await write_session.get(Media, media_id)
+                                    if media and media.title:
+                                        media_title = media.title
 
-                    if stream_payloads:
-                        await crud.store_new_torrent_streams(write_session, stream_payloads)
-
-                    post_existing_hashes = (
-                        await get_existing_info_hashes(write_session, list(prepared_with_media.keys()))
-                        if prepared_with_media
-                        else set()
-                    )
-
-                    for info_hash, (item, media_obj) in prepared_with_media.items():
-                        if info_hash in post_existing_hashes:
-                            results_by_index[item.index] = ImportResultItem(
-                                info_hash=info_hash,
-                                status="success",
-                                message=f"Imported as {media_obj.title}",
-                                media_id=media_obj.id,
-                                media_title=media_obj.title,
-                            )
+                                results_by_index[item.index] = ImportResultItem(
+                                    info_hash=item.info_hash,
+                                    status="success",
+                                    message=f"Imported as {media_title}",
+                                    media_id=media_id,
+                                    media_title=media_title,
+                                )
+                            elif import_result.get("status") == "exists":
+                                results_by_index[item.index] = ImportResultItem(
+                                    info_hash=item.info_hash,
+                                    status="skipped",
+                                    message=import_result.get("message", "Already exists in database"),
+                                )
+                            else:
+                                results_by_index[item.index] = ImportResultItem(
+                                    info_hash=item.info_hash,
+                                    status="failed",
+                                    message=import_result.get("message", "Failed to import stream"),
+                                )
                         else:
                             results_by_index[item.index] = ImportResultItem(
-                                info_hash=info_hash,
-                                status="failed",
-                                message="Failed to store imported stream",
+                                info_hash=item.info_hash,
+                                status="success",
+                                message="Submitted for moderator review",
                             )
 
                     await write_session.commit()
@@ -1298,6 +1352,20 @@ async def advanced_import_torrents(
 
     if not import_request.advanced_imports:
         raise HTTPException(status_code=400, detail="No torrents provided for import")
+
+    resolved_is_anonymous = (
+        import_request.is_anonymous
+        if import_request.is_anonymous is not None
+        else bool(current_user.contribute_anonymously)
+    )
+    normalized_anonymous_display_name = (
+        normalize_anonymous_display_name(import_request.anonymous_display_name) if resolved_is_anonymous else None
+    )
+    is_privileged_reviewer = current_user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+    should_auto_approve = is_privileged_reviewer or (current_user.is_active and not resolved_is_anonymous)
+    auto_review_notes = (
+        "Auto-approved: Privileged reviewer" if is_privileged_reviewer else "Auto-approved: Active user content import"
+    )
 
     # Get profile context
     profile_ctx = await ProfileDataProvider.get_context(current_user.id, session, profile_id=profile_id)
@@ -1420,20 +1488,50 @@ async def advanced_import_torrents(
                 "audio": parsed.get("audio", []) if isinstance(parsed.get("audio"), list) else [],
                 "hdr": parsed.get("hdr", []) if isinstance(parsed.get("hdr"), list) else [],
                 "languages": parsed.get("languages", []),
-                "is_anonymous": False,
+                "is_anonymous": resolved_is_anonymous,
+                "anonymous_display_name": (normalized_anonymous_display_name if resolved_is_anonymous else None),
             }
 
-            # Process the import
+            contribution = Contribution(
+                user_id=None if resolved_is_anonymous else current_user.id,
+                contribution_type="torrent",
+                target_id=import_data.meta_id,
+                data=contribution_data,
+                status=ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING,
+                reviewed_by="auto" if should_auto_approve else None,
+                reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
+                review_notes=auto_review_notes if should_auto_approve else None,
+            )
+
+            # Process the import immediately only for auto-approved submissions.
             async for write_session in get_async_session():
                 try:
-                    import_result = await process_torrent_import(
-                        write_session,
-                        contribution_data,
-                        current_user,
-                    )
+                    write_session.add(contribution)
+                    await write_session.flush()
+
+                    if should_auto_approve:
+                        import_result = await process_torrent_import(
+                            write_session,
+                            contribution_data,
+                            current_user,
+                        )
+                    else:
+                        import_result = None
+
                     await write_session.commit()
 
-                    if import_result.get("status") == "success":
+                    if not should_auto_approve:
+                        results.append(
+                            ImportResultItem(
+                                info_hash=info_hash_lower,
+                                status="success",
+                                message="Submitted for moderator review",
+                            )
+                        )
+                        imported += 1
+                        continue
+
+                    if import_result and import_result.get("status") == "success":
                         # Get the media title for the result
                         media_id = import_result.get("media_id")
                         linked_count = import_result.get("linked_media_count", 1)
@@ -1464,15 +1562,25 @@ async def advanced_import_torrents(
                         results.append(
                             ImportResultItem(
                                 info_hash=info_hash_lower,
-                                status="skipped",
-                                message=import_result.get("message", "Already exists"),
+                                status=(
+                                    "skipped" if import_result and import_result.get("status") == "exists" else "failed"
+                                ),
+                                message=(
+                                    import_result.get("message", "Already exists")
+                                    if import_result
+                                    else "Import did not run"
+                                ),
                             )
                         )
-                        skipped += 1
+                        if import_result and import_result.get("status") == "exists":
+                            skipped += 1
+                        else:
+                            failed += 1
 
                 except Exception as e:
                     await write_session.rollback()
                     raise e
+                break
 
         except Exception as e:
             logger.exception(f"Failed to import torrent {info_hash_lower}: {e}")

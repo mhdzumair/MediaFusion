@@ -1126,16 +1126,26 @@ async def get_my_stream_suggestions(
 @router.get("/stream-suggestions/pending", response_model=StreamSuggestionListResponse)
 async def get_pending_stream_suggestions(
     suggestion_type: str | None = Query(None),
+    status_filter: Literal["pending", "approved", "rejected", "auto_approved"] | None = Query(None, alias="status"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(require_role(UserRole.MODERATOR)),
     session: AsyncSession = Depends(get_async_session),
 ):
     """
-    Get all pending stream suggestions (moderator only).
+    Get moderator-visible stream suggestions.
+    Defaults to pending unless `status` is provided.
     """
-    query = select(StreamSuggestion).where(StreamSuggestion.status == STATUS_PENDING)
-    count_query = select(func.count(StreamSuggestion.id)).where(StreamSuggestion.status == STATUS_PENDING)
+    # Default is pending-only for backwards compatibility.
+    query = select(StreamSuggestion)
+    count_query = select(func.count(StreamSuggestion.id))
+
+    if status_filter:
+        query = query.where(StreamSuggestion.status == status_filter)
+        count_query = count_query.where(StreamSuggestion.status == status_filter)
+    else:
+        query = query.where(StreamSuggestion.status == STATUS_PENDING)
+        count_query = count_query.where(StreamSuggestion.status == STATUS_PENDING)
 
     if suggestion_type:
         query = query.where(StreamSuggestion.suggestion_type.startswith(suggestion_type))

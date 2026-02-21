@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
+import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -26,9 +27,14 @@ import {
   CloudOff,
   Settings,
 } from 'lucide-react'
-import { useWatchlistProviders, useProfiles, useMissingTorrents, useImportTorrents } from '@/hooks'
+import { useAuth, useWatchlistProviders, useProfiles, useMissingTorrents, useImportTorrents } from '@/hooks'
 import type { MissingTorrentItem, ImportResultItem } from '@/lib/api/watchlist'
 import { DEBRID_SERVICE_DISPLAY_NAMES, type WatchlistProviderInfo } from '@/lib/api'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 import { cn } from '@/lib/utils'
 import { AdvancedImportDialog } from '@/components/watchlist/AdvancedImportDialog'
 
@@ -337,6 +343,8 @@ function ImportResultDisplay({ result }: { result: ImportResultItem }) {
 }
 
 export function DebridTab() {
+  const { user } = useAuth()
+
   // Profile selection
   const { data: profiles } = useProfiles()
   const [selectedProfileId, setSelectedProfileId] = useState<number | undefined>()
@@ -350,6 +358,8 @@ export function DebridTab() {
   const [editingHash, setEditingHash] = useState<string | null>(null)
   const [edits, setEdits] = useState<Map<string, TorrentEdit>>(new Map())
   const [advancedImportTorrent, setAdvancedImportTorrent] = useState<MissingTorrentItem | null>(null)
+  const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
 
   // Set default profile on load
   if (profiles && profiles.length > 0 && selectedProfileId === undefined) {
@@ -491,6 +501,7 @@ export function DebridTab() {
     if (selectedHashes.size === 0 || !selectedProvider) return
 
     setImportResults(null)
+    const normalizedAnonymousDisplayName = isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined
 
     const overrides: Record<string, { title?: string; year?: number; type?: 'movie' | 'series' }> = {}
     edits.forEach((edit, hash) => {
@@ -504,6 +515,8 @@ export function DebridTab() {
       infoHashes: Array.from(selectedHashes),
       profileId: selectedProfileId,
       overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+      isAnonymous,
+      anonymousDisplayName: normalizedAnonymousDisplayName,
     })
 
     setImportResults(result.details)
@@ -776,6 +789,28 @@ export function DebridTab() {
                   </div>
                 </div>
 
+                <div className="space-y-2 rounded-md border border-border/50 p-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">Anonymous contribution</Label>
+                    <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
+                  </div>
+                  {isAnonymous && (
+                    <div className="space-y-1">
+                      <Input
+                        placeholder="Anonymous display name (optional)"
+                        value={anonymousDisplayName}
+                        onChange={(e) => {
+                          setAnonymousDisplayName(e.target.value)
+                          saveAnonymousDisplayName(e.target.value)
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Stream uploader uses this name. Leave empty to use &quot;Anonymous&quot;.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 {/* Progress or Results */}
                 {importProgress}
 
@@ -873,6 +908,8 @@ export function DebridTab() {
           torrent={advancedImportTorrent}
           provider={selectedProvider}
           profileId={selectedProfileId}
+          initialIsAnonymous={isAnonymous}
+          initialAnonymousDisplayName={anonymousDisplayName}
           onSuccess={handleAdvancedImportSuccess}
         />
       )}

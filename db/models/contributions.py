@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, DateTime, Index, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
@@ -29,7 +29,7 @@ class Contribution(TimestampMixin, table=True):
         default_factory=lambda: str(uuid.uuid4()),
         primary_key=True,
     )
-    user_id: int = Field(foreign_key="users.id", index=True, ondelete="CASCADE")
+    user_id: int | None = Field(default=None, foreign_key="users.id", index=True, ondelete="CASCADE")
     contribution_type: str = Field(index=True)  # 'metadata', 'stream', 'torrent'
     target_id: str | None = Field(default=None, index=True)  # Reference to media/stream
     data: dict = Field(default_factory=dict, sa_type=JSON)
@@ -39,7 +39,7 @@ class Contribution(TimestampMixin, table=True):
     review_notes: str | None = Field(default=None)
 
     # Relationships
-    user: "User" = Relationship(back_populates="contributions")
+    user: Optional["User"] = Relationship(back_populates="contributions")
 
 
 class StreamVote(TimestampMixin, table=True):

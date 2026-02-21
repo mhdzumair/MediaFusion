@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -30,8 +31,13 @@ import { CatalogSelector } from './CatalogSelector'
 import { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 import { ValidationWarningDialog } from './ValidationWarningDialog'
 import { MultiContentWizard } from './MultiContentWizard'
-import type { FileAnnotation, TorrentImportFormData } from './types'
+import type { FileAnnotation, TorrentDialogQueueItem, TorrentImportFormData, TorrentImportSubmitOptions } from './types'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 
 type ImportStep = 'review' | 'metadata' | 'confirm'
 
@@ -41,12 +47,16 @@ interface TorrentImportDialogProps {
   analysis: TorrentAnalyzeResponse | null
   magnetLink?: string // Not directly used in component but kept for parent context
   torrentFile?: File | null // Not directly used in component but kept for parent context
-  onImport: (formData: TorrentImportFormData) => Promise<ImportResponse>
+  onImport: (formData: TorrentImportFormData, options?: TorrentImportSubmitOptions) => Promise<ImportResponse>
   onReanalyze?: (contentType: ContentType) => void
   isImporting?: boolean
   initialContentType?: ContentType // Content type selected before analysis
   importMode?: ImportMode // Import mode for multi-content support
   onImportModeChange?: (mode: ImportMode) => void
+  currentIndex?: number
+  totalItems?: number
+  queueItems?: TorrentDialogQueueItem[]
+  prefillData?: Partial<TorrentImportFormData>
 }
 
 export function TorrentImportDialog({
@@ -61,6 +71,10 @@ export function TorrentImportDialog({
   isImporting = false,
   importMode = 'single',
   onImportModeChange,
+  currentIndex,
+  totalItems = 1,
+  queueItems = [],
+  prefillData,
 }: TorrentImportDialogProps) {
   const { user } = useAuth()
   // Note: magnetLink and torrentFile props are kept for parent context but handled there
@@ -104,6 +118,9 @@ export function TorrentImportDialog({
   const [forceImport, setForceImport] = useState(false)
   const [addTitleToPoster, setAddTitleToPoster] = useState(false)
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
+  const [applyToSelected, setApplyToSelected] = useState(false)
+  const [selectedQueueIndices, setSelectedQueueIndices] = useState<number[]>([])
 
   // Dialog states
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
@@ -116,33 +133,55 @@ export function TorrentImportDialog({
     return analysis.matches[selectedMatchIndex] as ExtendedMatch | null
   }, [selectedMatchIndex, analysis?.matches])
 
+  const selectableQueueItems = useMemo(() => {
+    if (typeof currentIndex !== 'number') return []
+    return queueItems.filter((item) => item.index > currentIndex)
+  }, [queueItems, currentIndex])
+
   // Initialize from analysis when dialog opens (during render, not in effect)
   const [prevOpen, setPrevOpen] = useState(open)
   const [prevAnalysis, setPrevAnalysis] = useState(analysis)
+  if (!open && prevOpen) {
+    setPrevOpen(false)
+  }
   if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
+    const prefills = prefillData || {}
     const isFirstOpen = !prevOpen
     setPrevOpen(open)
     setPrevAnalysis(analysis)
-    setContentType(initialContentType)
-    setResolution(analysis.resolution)
-    setQuality(analysis.quality)
-    setCodec(analysis.codec)
-    setAudio(analysis.audio || [])
-    setHdr(analysis.hdr || [])
-    setLanguages(analysis.languages || [])
-    setTitle(analysis.parsed_title || analysis.torrent_name || '')
+    setContentType(prefills.contentType || initialContentType)
+    setSportsCategory(prefills.sportsCategory)
+    setResolution(prefills.resolution || analysis.resolution)
+    setQuality(prefills.quality || analysis.quality)
+    setCodec(prefills.codec || analysis.codec)
+    setAudio(prefills.audio || analysis.audio || [])
+    setHdr(prefills.hdr || analysis.hdr || [])
+    setLanguages(prefills.languages || analysis.languages || [])
+    setSelectedCatalogs(prefills.catalogs || [])
+    setEpisodeParser(prefills.episodeNameParser || '')
+    setForceImport(prefills.forceImport ?? false)
+    setIsAnonymous(prefills.isAnonymous ?? user?.contribute_anonymously ?? false)
+    setAnonymousDisplayName(prefills.anonymousDisplayName || getStoredAnonymousDisplayName())
+    setFileAnnotations(prefills.fileData || [])
+    setPoster(prefills.poster || '')
+    setBackground(prefills.background || '')
+    setReleaseDate(prefills.releaseDate || '')
+    setMetaId(prefills.metaId || '')
+    setTitle(prefills.title || analysis.parsed_title || analysis.torrent_name || '')
+    setApplyToSelected(false)
+    setSelectedQueueIndices([])
 
     if (analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
       setSelectedMatchIndex(0)
-      setMetaId(firstMatch.imdb_id || firstMatch.id)
-      setTitle(firstMatch.title)
-      if (firstMatch.poster) setPoster(firstMatch.poster)
-      if (firstMatch.background) setBackground(firstMatch.background)
-      if (firstMatch.release_date) setReleaseDate(firstMatch.release_date)
+      if (!prefills.metaId) setMetaId(firstMatch.imdb_id || firstMatch.id)
+      if (!prefills.title) setTitle(firstMatch.title)
+      if (!prefills.poster && firstMatch.poster) setPoster(firstMatch.poster)
+      if (!prefills.background && firstMatch.background) setBackground(firstMatch.background)
+      if (!prefills.releaseDate && firstMatch.release_date) setReleaseDate(firstMatch.release_date)
       // Only auto-detect content type from match on first open, not on re-analysis
       // where the user has explicitly chosen a content type
-      if (isFirstOpen && firstMatch.type) setContentType(firstMatch.type as ContentType)
+      if (isFirstOpen && firstMatch.type && !prefills.contentType) setContentType(firstMatch.type as ContentType)
     } else {
       setSelectedMatchIndex(null)
     }
@@ -231,6 +270,7 @@ export function TorrentImportDialog({
       releaseDate: releaseDate || undefined,
       forceImport,
       isAnonymous,
+      anonymousDisplayName: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
       fileData: fileAnnotations.length > 0 ? fileAnnotations : undefined,
     }
   }, [
@@ -251,15 +291,19 @@ export function TorrentImportDialog({
     releaseDate,
     forceImport,
     isAnonymous,
+    anonymousDisplayName,
     fileAnnotations,
   ])
 
   // Handle import
   const handleImport = useCallback(async () => {
     const formData = buildFormData()
+    const importOptions: TorrentImportSubmitOptions | undefined = applyToSelected
+      ? { selectedQueueIndices: selectedQueueIndices }
+      : undefined
 
     try {
-      const result = await onImport(formData)
+      const result = await onImport(formData, importOptions)
 
       if (result.status === 'validation_failed') {
         // Show validation warning dialog
@@ -273,7 +317,7 @@ export function TorrentImportDialog({
     } catch (error) {
       console.error('Import failed:', error)
     }
-  }, [buildFormData, onImport])
+  }, [buildFormData, onImport, applyToSelected, selectedQueueIndices])
 
   // Handle force import from validation dialog
   const handleForceImport = useCallback(async () => {
@@ -281,8 +325,11 @@ export function TorrentImportDialog({
     setForceImport(true)
     // Trigger import with force flag
     const formData = { ...buildFormData(), forceImport: true }
-    await onImport(formData)
-  }, [buildFormData, onImport])
+    const importOptions: TorrentImportSubmitOptions | undefined = applyToSelected
+      ? { selectedQueueIndices: selectedQueueIndices }
+      : undefined
+    await onImport(formData, importOptions)
+  }, [buildFormData, onImport, applyToSelected, selectedQueueIndices])
 
   // Handle re-analyze from validation dialog
   const handleReanalyze = useCallback(() => {
@@ -312,6 +359,7 @@ export function TorrentImportDialog({
         catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
         forceImport,
         isAnonymous,
+        anonymousDisplayName: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
         fileData: annotations,
       }
 
@@ -336,6 +384,7 @@ export function TorrentImportDialog({
       selectedCatalogs,
       forceImport,
       isAnonymous,
+      anonymousDisplayName,
       onImport,
       analysis,
     ],
@@ -381,6 +430,11 @@ export function TorrentImportDialog({
             <DialogTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5 text-primary" />
               Import Torrent
+              {totalItems > 1 && typeof currentIndex === 'number' && (
+                <span className="ml-auto rounded-md bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                  Torrent {currentIndex + 1} of {totalItems}
+                </span>
+              )}
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-1">
@@ -665,14 +719,85 @@ export function TorrentImportDialog({
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {isAnonymous
-                              ? 'Uploader will show as "Anonymous"'
+                              ? 'Uploader will use your anonymous display name'
                               : 'Your username will be linked to this contribution'}
                           </p>
                         </div>
                         <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
                       </div>
+                      {isAnonymous && (
+                        <div className="p-3 rounded-lg bg-muted/20 space-y-2">
+                          <Label htmlFor="torrent-anonymous-display-name" className="text-sm">
+                            Anonymous display name (optional)
+                          </Label>
+                          <Input
+                            id="torrent-anonymous-display-name"
+                            value={anonymousDisplayName}
+                            onChange={(e) => {
+                              setAnonymousDisplayName(e.target.value)
+                              saveAnonymousDisplayName(e.target.value)
+                            }}
+                            maxLength={32}
+                            placeholder='Defaults to "Anonymous"'
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {selectableQueueItems.length > 0 && (
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Apply Metadata To Selected Torrents</Label>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between rounded-lg bg-muted/30 p-3">
+                          <div>
+                            <p className="text-sm font-medium">Apply this form to selected queue items</p>
+                            <p className="text-xs text-muted-foreground">
+                              Selected torrents will open with these values prefilled.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={applyToSelected}
+                            onCheckedChange={(checked) => {
+                              const enabled = checked === true
+                              setApplyToSelected(enabled)
+                              if (!enabled) {
+                                setSelectedQueueIndices([])
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {applyToSelected && (
+                          <div className="max-h-40 space-y-2 overflow-auto rounded-lg border bg-muted/10 p-3">
+                            {selectableQueueItems.map((item) => (
+                              <div key={item.index} className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`queue-item-${item.index}`}
+                                  checked={selectedQueueIndices.includes(item.index)}
+                                  onCheckedChange={(checked) => {
+                                    const isChecked = checked === true
+                                    setSelectedQueueIndices((prev) => {
+                                      if (isChecked) {
+                                        return [...prev, item.index].sort((a, b) => a - b)
+                                      }
+                                      return prev.filter((idx) => idx !== item.index)
+                                    })
+                                  }}
+                                />
+                                <Label
+                                  htmlFor={`queue-item-${item.index}`}
+                                  className="cursor-pointer text-sm font-normal"
+                                >
+                                  {item.label}
+                                </Label>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

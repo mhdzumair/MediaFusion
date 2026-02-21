@@ -33,7 +33,7 @@ export function useMyStreamSuggestions(params: StreamSuggestionListParams = {}) 
 }
 
 // Params for pending stream suggestions (includes suggestion_type filter)
-interface PendingStreamSuggestionParams extends Omit<StreamSuggestionListParams, 'status'> {
+interface PendingStreamSuggestionParams extends StreamSuggestionListParams {
   suggestion_type?: string
 }
 

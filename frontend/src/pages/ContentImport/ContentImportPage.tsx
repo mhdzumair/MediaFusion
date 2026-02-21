@@ -63,6 +63,9 @@ import {
   ImportResultBanner,
   ContentTypeSelector,
   type ImportResult,
+  type TorrentBatchAnalysisItem,
+  type TorrentDialogQueueItem,
+  type TorrentImportSubmitOptions,
   type TorrentImportFormData,
   type NZBImportFormData,
 } from './components'
@@ -170,9 +173,12 @@ export function ContentImportPage() {
   const [importMode, setImportMode] = useState<ImportMode>('single')
 
   // Torrent import state
-  const [torrentAnalysis, setTorrentAnalysis] = useState<TorrentAnalyzeResponse | null>(null)
+  const [magnetAnalysis, setMagnetAnalysis] = useState<TorrentAnalyzeResponse | null>(null)
   const [torrentDialogOpen, setTorrentDialogOpen] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [torrentQueue, setTorrentQueue] = useState<TorrentBatchAnalysisItem[]>([])
+  const [currentTorrentQueueIndex, setCurrentTorrentQueueIndex] = useState(0)
+  const [queuePrefillByIndex, setQueuePrefillByIndex] = useState<Record<number, Partial<TorrentImportFormData>>>({})
+  const [batchSummary, setBatchSummary] = useState({ success: 0, warning: 0, error: 0 })
   const [magnetLink, setMagnetLink] = useState('')
 
   const importMagnet = useImportMagnet()
@@ -195,18 +201,62 @@ export function ContentImportPage() {
   // Fetch IPTV import settings from server
   const { data: iptvSettings } = useIPTVImportSettings()
 
+  const currentTorrentItem = useMemo(
+    () => (torrentQueue.length > 0 ? torrentQueue[currentTorrentQueueIndex] || null : null),
+    [torrentQueue, currentTorrentQueueIndex],
+  )
+  const torrentAnalysis = magnetLink ? magnetAnalysis : currentTorrentItem?.analysis || null
+  const selectedFile = magnetLink ? null : currentTorrentItem?.file || null
+  const queueItems = useMemo<TorrentDialogQueueItem[]>(
+    () => torrentQueue.map((item, index) => ({ index, label: item.file.name })),
+    [torrentQueue],
+  )
+  const queuePrefillData = magnetLink ? undefined : queuePrefillByIndex[currentTorrentQueueIndex]
+
+  const resetTorrentDialogState = useCallback(() => {
+    setTorrentDialogOpen(false)
+    setMagnetAnalysis(null)
+    setTorrentQueue([])
+    setCurrentTorrentQueueIndex(0)
+    setQueuePrefillByIndex({})
+    setBatchSummary({ success: 0, warning: 0, error: 0 })
+    setMagnetLink('')
+  }, [])
+
+  const handleTorrentDialogOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        resetTorrentDialogState()
+      } else {
+        setTorrentDialogOpen(true)
+      }
+    },
+    [resetTorrentDialogState],
+  )
+
   // Handle magnet analysis completion
   const handleMagnetAnalysis = useCallback((analysis: TorrentAnalyzeResponse, magnet: string) => {
-    setTorrentAnalysis(analysis)
+    setMagnetAnalysis(analysis)
     setMagnetLink(magnet)
-    setSelectedFile(null)
+    setTorrentQueue([])
+    setCurrentTorrentQueueIndex(0)
+    setQueuePrefillByIndex({})
+    setBatchSummary({ success: 0, warning: 0, error: 0 })
     setTorrentDialogOpen(true)
   }, [])
 
   // Handle torrent analysis completion
-  const handleTorrentAnalysis = useCallback((analysis: TorrentAnalyzeResponse, file: File) => {
-    setTorrentAnalysis(analysis)
-    setSelectedFile(file)
+  const handleTorrentAnalysis = useCallback((items: TorrentBatchAnalysisItem[]) => {
+    if (items.length === 0) {
+      setImportResult({ success: false, message: 'No valid torrent files were analyzed' })
+      return
+    }
+
+    setTorrentQueue(items)
+    setCurrentTorrentQueueIndex(0)
+    setQueuePrefillByIndex({})
+    setBatchSummary({ success: 0, warning: 0, error: 0 })
+    setMagnetAnalysis(null)
     setMagnetLink('')
     setTorrentDialogOpen(true)
   }, [])
@@ -225,7 +275,7 @@ export function ContentImportPage() {
             magnet_link: magnetLink,
             meta_type: metaType,
           })
-          setTorrentAnalysis(result)
+          setMagnetAnalysis(result)
         } catch {
           setImportResult({ success: false, message: 'Re-analysis failed' })
         }
@@ -236,18 +286,20 @@ export function ContentImportPage() {
             file: selectedFile,
             metaType: metaType,
           })
-          setTorrentAnalysis(result)
+          setTorrentQueue((prev) =>
+            prev.map((item, index) => (index === currentTorrentQueueIndex ? { ...item, analysis: result } : item)),
+          )
         } catch {
           setImportResult({ success: false, message: 'Re-analysis failed' })
         }
       }
     },
-    [magnetLink, selectedFile, analyzeMagnet, analyzeTorrent],
+    [magnetLink, selectedFile, analyzeMagnet, analyzeTorrent, currentTorrentQueueIndex],
   )
 
   // Handle torrent import from dialog
   const handleTorrentImport = useCallback(
-    async (formData: TorrentImportFormData): Promise<ImportResponse> => {
+    async (formData: TorrentImportFormData, options?: TorrentImportSubmitOptions): Promise<ImportResponse> => {
       try {
         // Build the request data
         const requestData = {
@@ -269,6 +321,7 @@ export function ContentImportPage() {
           force_import: formData.forceImport,
           is_add_title_to_poster: false,
           is_anonymous: formData.isAnonymous,
+          anonymous_display_name: formData.anonymousDisplayName,
           file_data: formData.fileData ? JSON.stringify(formData.fileData) : undefined,
           sports_category: formData.sportsCategory,
         }
@@ -289,26 +342,93 @@ export function ContentImportPage() {
           return { status: 'error', message: 'No torrent source provided' }
         }
 
-        if (result.status === 'success') {
-          setImportResult({ success: true, message: result.message || 'Import successful!' })
-          setTorrentDialogOpen(false)
-          setTorrentAnalysis(null)
-          setSelectedFile(null)
-          setMagnetLink('')
-        } else if (result.status === 'warning') {
-          setImportResult({ success: true, message: result.message })
-          setTorrentDialogOpen(false)
-          setTorrentAnalysis(null)
+        if (!magnetLink && options?.selectedQueueIndices && options.selectedQueueIndices.length > 0) {
+          const nextPrefills = { ...queuePrefillByIndex }
+          for (const index of options.selectedQueueIndices) {
+            if (index !== currentTorrentQueueIndex && index >= 0 && index < torrentQueue.length) {
+              nextPrefills[index] = { ...formData }
+            }
+          }
+          setQueuePrefillByIndex(nextPrefills)
+        }
+
+        if (magnetLink) {
+          if (result.status === 'success') {
+            setImportResult({ success: true, message: result.message || 'Import successful!' })
+            resetTorrentDialogState()
+          } else if (result.status === 'warning') {
+            setImportResult({ success: true, message: result.message })
+            resetTorrentDialogState()
+          }
+          return result
+        }
+
+        if (
+          result.status === 'success' ||
+          result.status === 'warning' ||
+          result.status === 'error' ||
+          result.status === 'processing'
+        ) {
+          const nextBatchSummary = {
+            success: batchSummary.success + (result.status === 'success' ? 1 : 0),
+            warning: batchSummary.warning + (result.status === 'warning' ? 1 : 0),
+            error: batchSummary.error + (result.status === 'error' ? 1 : 0),
+          }
+          setBatchSummary(nextBatchSummary)
+
+          const isLastQueueItem = currentTorrentQueueIndex >= torrentQueue.length - 1
+          if (!isLastQueueItem) {
+            setCurrentTorrentQueueIndex((prev) => prev + 1)
+          } else {
+            const total = nextBatchSummary.success + nextBatchSummary.warning + nextBatchSummary.error
+            setImportResult({
+              success: nextBatchSummary.error === 0,
+              message: `Batch import complete (${total} total): ${nextBatchSummary.success} imported, ${nextBatchSummary.warning} warnings, ${nextBatchSummary.error} failed.`,
+            })
+            resetTorrentDialogState()
+          }
         }
 
         return result
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Import failed'
-        setImportResult({ success: false, message: errorMessage })
+        if (!magnetLink && torrentQueue.length > 0) {
+          const nextBatchSummary = {
+            success: batchSummary.success,
+            warning: batchSummary.warning,
+            error: batchSummary.error + 1,
+          }
+          setBatchSummary(nextBatchSummary)
+
+          const isLastQueueItem = currentTorrentQueueIndex >= torrentQueue.length - 1
+          if (!isLastQueueItem) {
+            setCurrentTorrentQueueIndex((prev) => prev + 1)
+          } else {
+            const total = nextBatchSummary.success + nextBatchSummary.warning + nextBatchSummary.error
+            setImportResult({
+              success: false,
+              message: `Batch import complete (${total} total): ${nextBatchSummary.success} imported, ${nextBatchSummary.warning} warnings, ${nextBatchSummary.error} failed.`,
+            })
+            resetTorrentDialogState()
+          }
+        } else {
+          setImportResult({ success: false, message: errorMessage })
+        }
+
         return { status: 'error', message: errorMessage }
       }
     },
-    [magnetLink, selectedFile, importMagnet, importTorrent],
+    [
+      magnetLink,
+      selectedFile,
+      importMagnet,
+      importTorrent,
+      queuePrefillByIndex,
+      currentTorrentQueueIndex,
+      torrentQueue.length,
+      batchSummary,
+      resetTorrentDialogState,
+    ],
   )
 
   // Handle YouTube analysis completion
@@ -337,6 +457,7 @@ export function ContentImportPage() {
           languages: formData.languages?.join(','),
           catalogs: formData.catalogs?.join(','),
           is_anonymous: formData.isAnonymous,
+          anonymous_display_name: formData.anonymousDisplayName,
           force_import: formData.forceImport,
         })
 
@@ -391,6 +512,7 @@ export function ContentImportPage() {
             languages: formData.languages?.join(','),
             force_import: formData.forceImport,
             is_anonymous: formData.isAnonymous,
+            anonymous_display_name: formData.anonymousDisplayName,
           })
         } else if (nzbSource?.type === 'url' && nzbSource.url) {
           result = await importNZBUrl.mutateAsync({
@@ -399,6 +521,7 @@ export function ContentImportPage() {
             meta_id: formData.metaId,
             title: formData.title,
             is_anonymous: formData.isAnonymous,
+            anonymous_display_name: formData.anonymousDisplayName,
           })
         } else {
           return { status: 'error', message: 'No NZB source provided' }
@@ -728,10 +851,14 @@ export function ContentImportPage() {
       {/* Enhanced Torrent Import Dialog */}
       <TorrentImportDialog
         open={torrentDialogOpen}
-        onOpenChange={setTorrentDialogOpen}
+        onOpenChange={handleTorrentDialogOpenChange}
         analysis={torrentAnalysis}
         magnetLink={magnetLink || undefined}
         torrentFile={selectedFile}
+        currentIndex={magnetLink ? undefined : currentTorrentQueueIndex}
+        totalItems={magnetLink ? undefined : torrentQueue.length}
+        queueItems={magnetLink ? undefined : queueItems}
+        prefillData={queuePrefillData}
         onImport={handleTorrentImport}
         onReanalyze={handleReanalyze}
         isImporting={isImporting}

@@ -1319,6 +1319,7 @@ async def store_new_torrent_streams(
             quality=stream_data.get("quality"),
             bit_depth=stream_data.get("bit_depth"),
             uploader=stream_data.get("uploader"),
+            uploader_user_id=stream_data.get("uploader_user_id"),
             release_group=stream_data.get("release_group"),
             # Boolean flags
             is_remastered=stream_data.get("is_remastered", False),

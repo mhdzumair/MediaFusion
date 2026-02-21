@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
+import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -30,8 +31,13 @@ import {
   Save,
   Settings2,
 } from 'lucide-react'
-import { useMissingTorrents, useImportTorrents } from '@/hooks'
+import { useAuth, useMissingTorrents, useImportTorrents } from '@/hooks'
 import type { MissingTorrentItem, ImportResultItem } from '@/lib/api/watchlist'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 import { cn } from '@/lib/utils'
 import { AdvancedImportDialog } from './AdvancedImportDialog'
 
@@ -314,11 +320,14 @@ export function ImportMissingDialog({
   providerName,
   profileId,
 }: ImportMissingDialogProps) {
+  const { user } = useAuth()
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
   const [importResults, setImportResults] = useState<ImportResultItem[] | null>(null)
   const [editingHash, setEditingHash] = useState<string | null>(null)
   const [edits, setEdits] = useState<Map<string, TorrentEdit>>(new Map())
   const [advancedImportTorrent, setAdvancedImportTorrent] = useState<MissingTorrentItem | null>(null)
+  const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
 
   const { data: missingData, isLoading: loadingMissing } = useMissingTorrents(provider, profileId, { enabled: open })
 
@@ -391,6 +400,7 @@ export function ImportMissingDialog({
     if (selectedHashes.size === 0) return
 
     setImportResults(null)
+    const normalizedAnonymousDisplayName = isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined
 
     // Build overrides object from edits
     const overrides: Record<string, { title?: string; year?: number; type?: 'movie' | 'series' }> = {}
@@ -405,6 +415,8 @@ export function ImportMissingDialog({
       infoHashes: Array.from(selectedHashes),
       profileId,
       overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+      isAnonymous,
+      anonymousDisplayName: normalizedAnonymousDisplayName,
     })
 
     setImportResults(result.details)
@@ -488,6 +500,28 @@ export function ImportMissingDialog({
                   <Button variant="ghost" size="sm" onClick={() => setSelectedHashes(new Set())}>
                     Clear selection
                   </Button>
+                )}
+              </div>
+
+              <div className="space-y-2 rounded-md border border-border/50 p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm text-muted-foreground">Anonymous contribution</Label>
+                  <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
+                </div>
+                {isAnonymous && (
+                  <div className="space-y-1">
+                    <Input
+                      placeholder="Anonymous display name (optional)"
+                      value={anonymousDisplayName}
+                      onChange={(e) => {
+                        setAnonymousDisplayName(e.target.value)
+                        saveAnonymousDisplayName(e.target.value)
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Stream uploader uses this name. Leave empty to use &quot;Anonymous&quot;.
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -579,6 +613,8 @@ export function ImportMissingDialog({
           torrent={advancedImportTorrent}
           provider={provider}
           profileId={profileId}
+          initialIsAnonymous={isAnonymous}
+          initialAnonymousDisplayName={anonymousDisplayName}
           onSuccess={handleAdvancedImportSuccess}
         />
       )}

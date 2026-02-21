@@ -142,6 +142,7 @@ export interface TorrentImportRequest {
   force_import?: boolean
   is_add_title_to_poster?: boolean
   is_anonymous?: boolean // Whether to show as anonymous contribution
+  anonymous_display_name?: string
 
   // File annotations for series
   file_data?: string // JSON stringified array
@@ -317,6 +318,7 @@ export interface YouTubeImportRequest {
   languages?: string
   catalogs?: string
   is_anonymous?: boolean
+  anonymous_display_name?: string
   force_import?: boolean
 }
 
@@ -353,6 +355,7 @@ export interface HTTPImportRequest {
   codec?: string
   languages?: string // Comma-separated
   is_anonymous?: boolean
+  anonymous_display_name?: string
   force_import?: boolean
 }
 
@@ -390,6 +393,7 @@ export interface AceStreamImportRequest {
   background?: string // Background/backdrop image URL
   logo?: string // Logo image URL
   is_anonymous?: boolean
+  anonymous_display_name?: string
   force_import?: boolean
 }
 
@@ -461,6 +465,7 @@ export interface NZBImportRequest {
   languages?: string
   force_import?: boolean
   is_anonymous?: boolean
+  anonymous_display_name?: string
   file_data?: string
 }
 
@@ -471,6 +476,7 @@ export interface NZBURLImportRequest {
   title?: string
   indexer?: string
   is_anonymous?: boolean
+  anonymous_display_name?: string
 }
 
 export const contentImportApi = {
@@ -517,6 +523,7 @@ export const contentImportApi = {
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_add_title_to_poster) formData.append('is_add_title_to_poster', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
     return apiClient.upload<ImportResponse>('/import/magnet', formData)
@@ -548,6 +555,7 @@ export const contentImportApi = {
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_add_title_to_poster) formData.append('is_add_title_to_poster', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     if (data.sports_category) formData.append('sports_category', data.sports_category)
     return apiClient.upload<ImportResponse>('/import/torrent', formData)
@@ -696,6 +704,7 @@ export const contentImportApi = {
     if (data.catalogs) formData.append('catalogs', data.catalogs)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     return apiClient.upload<ImportResponse>('/import/youtube', formData)
   },
 
@@ -737,6 +746,7 @@ export const contentImportApi = {
     if (data.languages) formData.append('languages', data.languages)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     return apiClient.upload<ImportResponse>('/import/http', formData)
   },
 
@@ -770,6 +780,7 @@ export const contentImportApi = {
     if (data.logo) formData.append('logo', data.logo)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     return apiClient.upload<ImportResponse>('/import/acestream', formData)
   },
 
@@ -813,6 +824,7 @@ export const contentImportApi = {
     if (data.languages) formData.append('languages', data.languages)
     if (data.force_import) formData.append('force_import', 'true')
     if (data.is_anonymous) formData.append('is_anonymous', 'true')
+    if (data.anonymous_display_name) formData.append('anonymous_display_name', data.anonymous_display_name)
     if (data.file_data) formData.append('file_data', data.file_data)
     return apiClient.upload<ImportResponse>('/import/nzb', formData)
   },

@@ -24,6 +24,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { contentImportApi, type HTTPAnalyzeResponse, type ImportResponse } from '@/lib/api'
 import type { ContentType } from '@/lib/constants'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 
 interface HTTPTabProps {
   onSuccess: (message: string) => void
@@ -121,6 +126,7 @@ export function HTTPTab({ onSuccess, onError, contentType = 'movie' }: HTTPTabPr
   const [quality, setQuality] = useState('')
   const [codec, setCodec] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
 
   // MediaFlow extractor
   const [useExtractor, setUseExtractor] = useState(false)
@@ -209,6 +215,7 @@ export function HTTPTab({ onSuccess, onError, contentType = 'movie' }: HTTPTabPr
         codec: codec || undefined,
         languages: languages || undefined,
         is_anonymous: isAnonymous,
+        anonymous_display_name: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
       })
     },
     onSuccess: (result: ImportResponse) => {
@@ -481,11 +488,31 @@ export function HTTPTab({ onSuccess, onError, contentType = 'movie' }: HTTPTabPr
           <div>
             <span className="text-sm font-medium">Anonymous contribution</span>
             <p className="text-xs text-muted-foreground">
-              {isAnonymous ? 'Uploader will show as "Anonymous"' : 'Your username will be linked to this contribution'}
+              {isAnonymous
+                ? 'Uploader will use your anonymous display name'
+                : 'Your username will be linked to this contribution'}
             </p>
           </div>
           <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
         </div>
+        {isAnonymous && (
+          <div className="p-3 rounded-xl bg-muted/20 space-y-2">
+            <Label htmlFor="http-anonymous-display-name" className="text-sm">
+              Anonymous display name (optional)
+            </Label>
+            <Input
+              id="http-anonymous-display-name"
+              value={anonymousDisplayName}
+              onChange={(e) => {
+                setAnonymousDisplayName(e.target.value)
+                saveAnonymousDisplayName(e.target.value)
+              }}
+              maxLength={32}
+              placeholder='Defaults to "Anonymous"'
+              className="rounded-xl"
+            />
+          </div>
+        )}
 
         {/* Import Button */}
         <Button

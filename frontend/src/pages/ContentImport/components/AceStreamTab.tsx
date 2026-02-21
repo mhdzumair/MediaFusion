@@ -11,6 +11,11 @@ import { Radio, Loader2, ArrowRight, Info, CheckCircle, AlertCircle, Image, Chev
 import { useMutation } from '@tanstack/react-query'
 import { contentImportApi, type AceStreamAnalyzeResponse, type ImportResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 
 interface AceStreamTabProps {
   onSuccess: (message: string) => void
@@ -54,6 +59,7 @@ export function AceStreamTab({ onSuccess, onError }: AceStreamTabProps) {
   const [background, setBackground] = useState('')
   const [logo, setLogo] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
   const [imagesOpen, setImagesOpen] = useState(false)
 
   const [analysis, setAnalysis] = useState<AceStreamAnalyzeResponse | null>(null)
@@ -114,6 +120,7 @@ export function AceStreamTab({ onSuccess, onError }: AceStreamTabProps) {
         background: background || undefined,
         logo: logo || undefined,
         is_anonymous: isAnonymous,
+        anonymous_display_name: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
       }),
     onSuccess: (result: ImportResponse) => {
       if (result.status === 'success') {
@@ -464,11 +471,31 @@ export function AceStreamTab({ onSuccess, onError }: AceStreamTabProps) {
           <div>
             <span className="text-sm font-medium">Anonymous contribution</span>
             <p className="text-xs text-muted-foreground">
-              {isAnonymous ? 'Uploader will show as "Anonymous"' : 'Your username will be linked to this contribution'}
+              {isAnonymous
+                ? 'Uploader will use your anonymous display name'
+                : 'Your username will be linked to this contribution'}
             </p>
           </div>
           <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
         </div>
+        {isAnonymous && (
+          <div className="p-3 rounded-xl bg-muted/20 space-y-2">
+            <Label htmlFor="acestream-anonymous-display-name" className="text-sm">
+              Anonymous display name (optional)
+            </Label>
+            <Input
+              id="acestream-anonymous-display-name"
+              value={anonymousDisplayName}
+              onChange={(e) => {
+                setAnonymousDisplayName(e.target.value)
+                saveAnonymousDisplayName(e.target.value)
+              }}
+              maxLength={32}
+              placeholder='Defaults to "Anonymous"'
+              className="rounded-xl"
+            />
+          </div>
+        )}
 
         {/* Import Button */}
         <Button

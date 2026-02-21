@@ -37,11 +37,9 @@ import {
   Clock,
   Eye,
   Filter,
-  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
   Loader2,
-  FileText,
   AlertTriangle,
   Inbox,
   ThumbsUp,
@@ -51,7 +49,6 @@ import {
 import {
   usePendingSuggestions,
   useReviewSuggestion,
-  useSuggestions,
   usePendingStreamSuggestions,
   useReviewStreamSuggestion,
   useStreamSuggestionStats,
@@ -59,13 +56,22 @@ import {
   useContributionSettings,
   useUpdateContributionSettings,
   useResetContributionSettings,
+  useContributions,
   usePendingContributions,
   useReviewContribution,
   useStreamsNeedingAnnotation,
   useUpdateFileLinks,
 } from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
-import type { Suggestion, SuggestionStatus, StreamSuggestion, Contribution, ContributionType } from '@/lib/api'
+import type {
+  Suggestion,
+  SuggestionStatus,
+  StreamSuggestion,
+  StreamSuggestionStatus,
+  Contribution,
+  ContributionType,
+  ContributionStatus,
+} from '@/lib/api'
 import {
   Settings,
   Film,
@@ -321,10 +327,15 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
 // Pending Suggestions Tab
 function PendingSuggestionsTab() {
   const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState<SuggestionStatus | 'all'>('all')
   const [selectedSuggestion, setSelectedSuggestion] = useState<Suggestion | null>(null)
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
 
-  const { data, isLoading, refetch } = usePendingSuggestions({ page, page_size: 20 })
+  const { data, isLoading, refetch } = usePendingSuggestions({
+    page,
+    page_size: 20,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+  })
   const reviewSuggestion = useReviewSuggestion()
 
   const handleReview = async (decision: ReviewDecision, notes?: string) => {
@@ -356,18 +367,41 @@ function PendingSuggestionsTab() {
     return (
       <div className="text-center py-12">
         <Inbox className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
-        <p className="mt-4 text-lg font-medium">No pending suggestions</p>
-        <p className="text-sm text-muted-foreground mt-2">All suggestions have been reviewed!</p>
+        <p className="mt-4 text-lg font-medium">No metadata suggestions found</p>
+        <p className="text-sm text-muted-foreground mt-2">Try changing the status filter.</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => {
+            setStatusFilter(v as SuggestionStatus | 'all')
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[180px] rounded-xl">
+            <Filter className="mr-2 h-4 w-4" />
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="auto_approved">Auto-Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="rounded-xl border border-border/50 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30">
+              <TableHead>Status</TableHead>
               <TableHead>Field</TableHead>
               <TableHead>Media</TableHead>
               <TableHead>Current → Suggested</TableHead>
@@ -378,6 +412,11 @@ function PendingSuggestionsTab() {
           <TableBody>
             {data.suggestions.map((suggestion: Suggestion) => (
               <TableRow key={suggestion.id} className="hover:bg-muted/20">
+                <TableCell>
+                  <Badge variant="outline" className={statusConfig[suggestion.status].color}>
+                    {statusConfig[suggestion.status].label}
+                  </Badge>
+                </TableCell>
                 <TableCell className="font-medium capitalize">{suggestion.field_name}</TableCell>
                 <TableCell>
                   <div className="flex max-w-sm items-center gap-3">
@@ -412,10 +451,14 @@ function PendingSuggestionsTab() {
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{formatTimeAgo(suggestion.created_at)}</TableCell>
                 <TableCell className="text-right">
-                  <Button size="sm" onClick={() => handleOpenReview(suggestion)} className="rounded-lg">
-                    <Eye className="mr-2 h-4 w-4" />
-                    Review
-                  </Button>
+                  {suggestion.status === 'pending' ? (
+                    <Button size="sm" onClick={() => handleOpenReview(suggestion)} className="rounded-lg">
+                      <Eye className="mr-2 h-4 w-4" />
+                      Review
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Reviewed</span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -458,132 +501,6 @@ function PendingSuggestionsTab() {
         onReview={handleReview}
         isReviewing={reviewSuggestion.isPending}
       />
-    </div>
-  )
-}
-
-// All Suggestions Tab (with filters)
-function AllSuggestionsTab() {
-  const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState<SuggestionStatus | 'all'>('all')
-  const [search, setSearch] = useState('')
-
-  const { data, isLoading } = useSuggestions({
-    page,
-    page_size: 20,
-    status: statusFilter === 'all' ? undefined : statusFilter,
-  })
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-16 rounded-xl" />
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search suggestions..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 rounded-xl"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as SuggestionStatus | 'all')}>
-          <SelectTrigger className="w-[150px] rounded-xl">
-            <Filter className="mr-2 h-4 w-4" />
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="auto_approved">Auto-Approved</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {!data?.suggestions.length ? (
-        <div className="text-center py-12">
-          <FileText className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
-          <p className="mt-4 text-muted-foreground">No suggestions found</p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border/50 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30">
-                <TableHead>Status</TableHead>
-                <TableHead>Field</TableHead>
-                <TableHead>Meta ID</TableHead>
-                <TableHead>Suggested Value</TableHead>
-                <TableHead>
-                  <ArrowUpDown className="h-4 w-4 inline mr-1" />
-                  Submitted
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.suggestions.map((suggestion: Suggestion) => {
-                const config = statusConfig[suggestion.status]
-                const StatusIcon = config.icon
-                return (
-                  <TableRow key={suggestion.id} className="hover:bg-muted/20">
-                    <TableCell>
-                      <Badge variant="outline" className={config.color}>
-                        <StatusIcon className="mr-1 h-3 w-3" />
-                        {config.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-medium capitalize">{suggestion.field_name}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{suggestion.media_id}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-sm">{suggestion.suggested_value}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatTimeAgo(suggestion.created_at)}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {/* Pagination */}
-      {data && data.total > 20 && (
-        <div className="flex justify-center items-center gap-2 pt-4">
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-            className="rounded-xl"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="px-4 text-sm text-muted-foreground">
-            Page {page} of {Math.ceil(data.total / 20)}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={page >= Math.ceil(data.total / 20)}
-            onClick={() => setPage((p) => p + 1)}
-            className="rounded-xl"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
     </div>
   )
 }
@@ -650,10 +567,12 @@ function formatStreamSuggestionType(type: string): string {
 function StreamSuggestionsTab() {
   const [page, setPage] = useState(1)
   const [suggestionType, setSuggestionType] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | StreamSuggestionStatus>('all')
   const { data, isLoading, refetch } = usePendingStreamSuggestions({
     page,
     page_size: 20,
     suggestion_type: suggestionType === 'all' ? undefined : suggestionType,
+    status: statusFilter === 'all' ? undefined : statusFilter,
   })
   const { data: stats } = useStreamSuggestionStats()
   const reviewSuggestion = useReviewStreamSuggestion()
@@ -715,7 +634,13 @@ function StreamSuggestionsTab() {
 
       {/* Filters */}
       <div className="flex items-center gap-4">
-        <Select value={suggestionType} onValueChange={setSuggestionType}>
+        <Select
+          value={suggestionType}
+          onValueChange={(value) => {
+            setSuggestionType(value)
+            setPage(1)
+          }}
+        >
           <SelectTrigger className="w-[180px] rounded-xl">
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Type" />
@@ -729,12 +654,31 @@ function StreamSuggestionsTab() {
             <SelectItem value="other">Other</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => {
+            setStatusFilter(value as 'all' | StreamSuggestionStatus)
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[180px] rounded-xl">
+            <Clock className="mr-2 h-4 w-4" />
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="auto_approved">Auto-Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {!data?.suggestions.length ? (
         <div className="text-center py-12">
           <Film className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
-          <p className="mt-4 text-muted-foreground">No stream suggestions pending</p>
+          <p className="mt-4 text-muted-foreground">No stream suggestions found</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -756,6 +700,18 @@ function StreamSuggestionsTab() {
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs capitalize ${
+                            suggestion.status === 'approved' || suggestion.status === 'auto_approved'
+                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
+                              : suggestion.status === 'rejected'
+                                ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                                : 'bg-amber-500/10 border-amber-500/30 text-amber-500'
+                          }`}
+                        >
+                          {suggestion.status}
+                        </Badge>
                         <Badge variant="outline" className="text-xs">
                           {formatStreamSuggestionType(suggestion.suggestion_type)}
                         </Badge>
@@ -842,7 +798,7 @@ function StreamSuggestionsTab() {
                         }}
                       >
                         <Eye className="h-4 w-4 mr-1" />
-                        Review
+                        {suggestion.status === 'pending' ? 'Review' : 'View'}
                       </Button>
                     </div>
                   </div>
@@ -1009,28 +965,36 @@ function StreamSuggestionsTab() {
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setReviewDialogOpen(false)} disabled={reviewSuggestion.isPending}>
-              Cancel
+              {selectedSuggestion?.status === 'pending' ? 'Cancel' : 'Close'}
             </Button>
-            <Button variant="destructive" onClick={() => handleReview('reject')} disabled={reviewSuggestion.isPending}>
-              {reviewSuggestion.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <XCircle className="h-4 w-4 mr-2" />
-              )}
-              Reject
-            </Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => handleReview('approve')}
-              disabled={reviewSuggestion.isPending}
-            >
-              {reviewSuggestion.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-              )}
-              Approve
-            </Button>
+            {selectedSuggestion?.status === 'pending' && (
+              <>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleReview('reject')}
+                  disabled={reviewSuggestion.isPending}
+                >
+                  {reviewSuggestion.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <XCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Reject
+                </Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => handleReview('approve')}
+                  disabled={reviewSuggestion.isPending}
+                >
+                  {reviewSuggestion.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                  )}
+                  Approve
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1077,12 +1041,14 @@ function formatBytes(bytes: number | string): string {
 function ContributionsTab() {
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | ContributionStatus>('all')
   const [selectedContribution, setSelectedContribution] = useState<Contribution | null>(null)
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
 
-  const { data, isLoading, refetch } = usePendingContributions({
+  const { data, isLoading, refetch } = useContributions({
     contribution_type: typeFilter === 'all' ? undefined : (typeFilter as ContributionType),
+    contribution_status: statusFilter === 'all' ? undefined : statusFilter,
     page,
     page_size: 20,
   })
@@ -1118,7 +1084,13 @@ function ContributionsTab() {
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex items-center gap-4">
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
+        <Select
+          value={typeFilter}
+          onValueChange={(value) => {
+            setTypeFilter(value)
+            setPage(1)
+          }}
+        >
           <SelectTrigger className="w-[180px] rounded-xl">
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Type" />
@@ -1135,18 +1107,38 @@ function ContributionsTab() {
             <SelectItem value="acestream">AceStream Imports</SelectItem>
           </SelectContent>
         </Select>
+
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => {
+            setStatusFilter(value as 'all' | ContributionStatus)
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[180px] rounded-xl">
+            <Clock className="mr-2 h-4 w-4" />
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {!data?.items.length ? (
         <div className="text-center py-12">
           <Magnet className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
-          <p className="mt-4 text-muted-foreground">No pending content imports</p>
+          <p className="mt-4 text-muted-foreground">No content imports found</p>
         </div>
       ) : (
         <div className="space-y-3">
           {data.items.map((contribution) => {
             const isTorrent = contribution.contribution_type === 'torrent'
             const isStream = contribution.contribution_type === 'stream'
+            const isPending = contribution.status === 'pending'
             const torrentData = contribution.data as Record<string, unknown>
 
             return (
@@ -1171,6 +1163,18 @@ function ContributionsTab() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-xs capitalize">
                           {contribution.contribution_type}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs capitalize ${
+                            contribution.status === 'approved'
+                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
+                              : contribution.status === 'rejected'
+                                ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                                : 'bg-amber-500/10 border-amber-500/30 text-amber-500'
+                          }`}
+                        >
+                          {contribution.status}
                         </Badge>
                         {!!torrentData.meta_type && (
                           <Badge variant="secondary" className="text-xs capitalize">
@@ -1255,7 +1259,7 @@ function ContributionsTab() {
                         }}
                       >
                         <Eye className="h-4 w-4 mr-1" />
-                        Review
+                        {isPending ? 'Review' : 'View'}
                       </Button>
                     </div>
                   </div>
@@ -1394,32 +1398,36 @@ function ContributionsTab() {
               onClick={() => setReviewDialogOpen(false)}
               disabled={reviewContribution.isPending}
             >
-              Cancel
+              {selectedContribution?.status === 'pending' ? 'Cancel' : 'Close'}
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => handleReview('rejected')}
-              disabled={reviewContribution.isPending}
-            >
-              {reviewContribution.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <XCircle className="h-4 w-4 mr-2" />
-              )}
-              Reject
-            </Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => handleReview('approved')}
-              disabled={reviewContribution.isPending}
-            >
-              {reviewContribution.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-              )}
-              Approve
-            </Button>
+            {selectedContribution?.status === 'pending' && (
+              <>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleReview('rejected')}
+                  disabled={reviewContribution.isPending}
+                >
+                  {reviewContribution.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <XCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Reject
+                </Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => handleReview('approved')}
+                  disabled={reviewContribution.isPending}
+                >
+                  {reviewContribution.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                  )}
+                  Approve
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2151,13 +2159,17 @@ export function ModeratorDashboardPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="h-auto p-1.5 bg-muted/50 rounded-xl grid grid-cols-2 sm:grid-cols-6 gap-1 w-full">
+        <TabsList
+          className={`h-auto p-1.5 bg-muted/50 rounded-xl grid grid-cols-2 ${
+            user?.role === 'admin' ? 'sm:grid-cols-5' : 'sm:grid-cols-4'
+          } gap-1 w-full`}
+        >
           <TabsTrigger
             value="contributions"
             className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
           >
             <Magnet className="mr-1.5 h-4 w-4" />
-            <span className="hidden sm:inline">Content</span> Imports
+            Content Imports
             {pendingContributionsCount > 0 && (
               <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-orange-500/20 text-orange-600">
                 {pendingContributionsCount}
@@ -2169,7 +2181,7 @@ export function ModeratorDashboardPage() {
             className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
           >
             <FileVideo className="mr-1.5 h-4 w-4" />
-            <span className="hidden sm:inline">File</span> Annotations
+            File Annotations
             {annotationCount > 0 && (
               <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs bg-cyan-500/20 text-cyan-600">
                 {annotationCount}
@@ -2200,13 +2212,6 @@ export function ModeratorDashboardPage() {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger
-            value="all"
-            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
-          >
-            <FileText className="mr-1.5 h-4 w-4" />
-            History
-          </TabsTrigger>
           {user?.role === 'admin' && (
             <TabsTrigger
               value="settings"
@@ -2232,10 +2237,6 @@ export function ModeratorDashboardPage() {
 
         <TabsContent value="pending">
           <PendingSuggestionsTab />
-        </TabsContent>
-
-        <TabsContent value="all">
-          <AllSuggestionsTab />
         </TabsContent>
 
         {user?.role === 'admin' && (

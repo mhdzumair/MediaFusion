@@ -6,6 +6,20 @@ export interface ImportResult {
   message: string
 }
 
+export interface TorrentBatchAnalysisItem {
+  file: File
+  analysis: TorrentAnalyzeResponse
+}
+
+export interface TorrentDialogQueueItem {
+  index: number
+  label: string
+}
+
+export interface TorrentImportSubmitOptions {
+  selectedQueueIndices?: number[]
+}
+
 export interface TorrentImportState {
   analysis: TorrentAnalyzeResponse | null
   dialogOpen: boolean
@@ -44,6 +58,7 @@ export interface TorrentImportFormData {
   // Import options
   forceImport?: boolean
   isAnonymous?: boolean // Whether to contribute anonymously
+  anonymousDisplayName?: string
 
   // File annotations for series
   fileData?: FileAnnotation[]
@@ -93,6 +108,7 @@ export interface NZBImportFormData {
   // Import options
   forceImport?: boolean
   isAnonymous?: boolean
+  anonymousDisplayName?: string
 }
 
 // Selected match from analysis

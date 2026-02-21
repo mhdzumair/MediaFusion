@@ -165,9 +165,10 @@ export const streamSuggestionsApi = {
 
   // Get pending suggestions (moderator only)
   getPendingSuggestions: async (
-    params: Omit<StreamSuggestionListParams, 'status'> & { suggestion_type?: string } = {},
+    params: StreamSuggestionListParams & { suggestion_type?: string } = {},
   ): Promise<StreamSuggestionListResponse> => {
     const searchParams = new URLSearchParams()
+    if (params.status) searchParams.set('status', params.status)
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
     if (params.suggestion_type) searchParams.set('suggestion_type', params.suggestion_type)

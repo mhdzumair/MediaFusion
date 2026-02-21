@@ -27,7 +27,7 @@ from db.crud.streams import (
     create_youtube_stream,
 )
 from db.database import get_async_session_context
-from db.enums import ContributionStatus, MediaType
+from db.enums import ContributionStatus, MediaType, UserRole
 from db.models import Contribution, User
 from db.models.links import MediaCatalogLink, MediaGenreLink
 from db.models.media import Media
@@ -40,6 +40,7 @@ from db.models.streams import (
     YouTubeStream,
 )
 from db.models.providers import MediaImage, MetadataProvider
+from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from utils.sports_parser import (
     SPORTS_CATEGORIES,
     detect_sports_category,
@@ -120,6 +121,7 @@ class ConversationStep(str, Enum):
     AWAITING_FIELD_EDIT = "awaiting_field_edit"
     AWAITING_POSTER_INPUT = "awaiting_poster_input"  # User is providing poster image
     AWAITING_EPISODE_INPUT = "awaiting_episode_input"  # User is providing season/episode for series
+    AWAITING_ANONYMOUS_NAME = "awaiting_anonymous_name"  # User is providing temporary anonymous display name
     AWAITING_CONFIRM = "awaiting_confirm"
     IMPORTING = "importing"
 
@@ -156,6 +158,7 @@ class ConversationState:
     message_id: int | None = None  # the wizard message being edited
     original_message_id: int | None = None  # original content message ID
     custom_poster_url: str | None = None  # user-provided poster URL
+    anonymous_display_name: str | None = None  # per-contribution anonymous display name
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -605,6 +608,7 @@ class TelegramContentBot:
             "message_id": state.message_id,
             "original_message_id": state.original_message_id,
             "custom_poster_url": state.custom_poster_url,
+            "anonymous_display_name": state.anonymous_display_name,
             "created_at": state.created_at.isoformat(),
             "updated_at": state.updated_at.isoformat(),
         }
@@ -631,6 +635,7 @@ class TelegramContentBot:
                 message_id=payload.get("message_id"),
                 original_message_id=payload.get("original_message_id"),
                 custom_poster_url=payload.get("custom_poster_url"),
+                anonymous_display_name=payload.get("anonymous_display_name"),
                 created_at=datetime.fromisoformat(payload.get("created_at"))
                 if payload.get("created_at")
                 else datetime.now(),
@@ -2735,6 +2740,98 @@ class TelegramContentBot:
 
         return season_number, episode_number, episode_end
 
+    async def _resolve_telegram_uploader(
+        self,
+        session,
+        mf_user_id: int,
+        anonymous_display_name: str | None = None,
+    ) -> tuple[str, int | None, bool]:
+        """Resolve uploader identity for Telegram imports."""
+        user = await session.get(User, mf_user_id)
+        is_anonymous = bool(user and user.contribute_anonymously)
+        uploader_name, uploader_user_id = resolve_uploader_identity(
+            user,
+            is_anonymous,
+            anonymous_display_name if is_anonymous else None,
+        )
+        return uploader_name, uploader_user_id, is_anonymous
+
+    async def _is_linked_user_anonymous(self, mf_user_id: int) -> bool:
+        """Check if a linked MediaFusion user currently contributes anonymously."""
+        async with get_async_session_context() as session:
+            user = await session.get(User, mf_user_id)
+            return bool(user and user.contribute_anonymously)
+
+    async def show_anonymous_name_prompt(self, user_id: int, chat_id: int, message_id: int) -> dict:
+        """Prompt user for a one-time anonymous display name."""
+        state = self.get_conversation(user_id)
+        if not state:
+            return {"success": False, "message": "Session expired. Please start over."}
+
+        state.step = ConversationStep.AWAITING_ANONYMOUS_NAME
+        state.touch()
+        self._persist_conversation(state)
+
+        message = (
+            "🕶️ *Anonymous Contribution*\n\n"
+            "Send a custom display name for this contribution.\n"
+            "• Max 32 chars\n"
+            "• Allowed: letters, numbers, spaces, `.` `_` `-`\n\n"
+            "_Send text now, or skip to use_ *Anonymous*."
+        )
+        keyboard = [
+            [{"text": "⏭ Skip (use Anonymous)", "callback_data": f"anon_skip:{user_id}"}],
+            [{"text": "⬅️ Back to Review", "callback_data": f"back_review:{user_id}"}],
+            [{"text": "❌ Cancel", "callback_data": f"cancel:{user_id}"}],
+        ]
+        await self.edit_message(chat_id, message_id, message, {"inline_keyboard": keyboard})
+        return {"success": True}
+
+    async def process_anonymous_name_input(self, user_id: int, chat_id: int, text: str) -> dict:
+        """Handle per-contribution anonymous display name input."""
+        state = self.get_conversation(user_id)
+        if not state or state.step != ConversationStep.AWAITING_ANONYMOUS_NAME:
+            return {"success": False, "handled": False}
+
+        normalized_name = normalize_anonymous_display_name(text)
+        if not normalized_name:
+            return {
+                "success": False,
+                "handled": True,
+                "message": "⚠️ Invalid name. Use up to 32 chars with letters, numbers, spaces, `.`, `_`, or `-`.",
+            }
+
+        state.anonymous_display_name = normalized_name
+        state.touch()
+        self._persist_conversation(state)
+
+        target_message_id = state.message_id
+        if not target_message_id:
+            return {"success": False, "handled": True, "message": "Session message expired. Please /cancel and retry."}
+
+        await self.execute_import(user_id, chat_id, target_message_id)
+        return {"success": True, "handled": True}
+
+    async def handle_confirm_import(self, user_id: int, chat_id: int, message_id: int) -> dict:
+        """Handle confirm click, including anonymous-name prompt when needed."""
+        state = self.get_conversation(user_id)
+        if not state:
+            return {"success": False, "message": "Session expired. Please start over."}
+
+        is_linked, mf_user_id = await self.check_user_linked(state.user_id)
+        if not is_linked or not mf_user_id:
+            await self.edit_message(chat_id, message_id, "❌ *Account not linked*\n\nPlease run /login first.")
+            return {"success": False}
+
+        if await self._is_linked_user_anonymous(mf_user_id):
+            state.anonymous_display_name = None
+            state.touch()
+            self._persist_conversation(state)
+            return await self.show_anonymous_name_prompt(user_id, chat_id, message_id)
+
+        await self.execute_import(user_id, chat_id, message_id)
+        return {"success": True}
+
     async def execute_import(self, user_id: int, chat_id: int, message_id: int) -> dict:
         """Execute the import and create the stream/contribution.
 
@@ -2844,24 +2941,46 @@ class TelegramContentBot:
         contribution_type: str,
         target_id: str | None,
         data: dict,
-    ) -> None:
-        """Create an auto-approved Contribution record for a bot import."""
+        *,
+        is_anonymous: bool = False,
+        anonymous_display_name: str | None = None,
+    ) -> bool:
+        """Create a Contribution record and return whether it was auto-approved."""
         try:
             async with get_async_session_context() as session:
+                linked_user = await session.get(User, mf_user_id)
+                if linked_user is None:
+                    logger.warning("Failed to record contribution (%s): user not found", contribution_type)
+                    return False
+
+                is_privileged_reviewer = linked_user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+                should_auto_approve = is_privileged_reviewer or (linked_user.is_active and not is_anonymous)
+
+                contribution_data = dict(data)
+                contribution_data["is_anonymous"] = is_anonymous
+                if is_anonymous and anonymous_display_name:
+                    contribution_data["anonymous_display_name"] = anonymous_display_name
+
                 contribution = Contribution(
-                    user_id=mf_user_id,
+                    user_id=None if is_anonymous else mf_user_id,
                     contribution_type=contribution_type,
                     target_id=target_id,
-                    data=data,
-                    status=ContributionStatus.APPROVED,
-                    reviewed_by="auto",
-                    reviewed_at=datetime.now(pytz.UTC),
-                    review_notes="Auto-approved: Telegram bot import",
+                    data=contribution_data,
+                    status=ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING,
+                    reviewed_by="auto" if should_auto_approve else None,
+                    reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
+                    review_notes=(
+                        "Auto-approved: Privileged reviewer"
+                        if is_privileged_reviewer
+                        else ("Auto-approved: Active user content import" if should_auto_approve else None)
+                    ),
                 )
                 session.add(contribution)
                 await session.commit()
+                return should_auto_approve
         except Exception as e:
             logger.warning(f"Failed to record contribution ({contribution_type}): {e}")
+        return False
 
     async def _import_video(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import a video file as TelegramStream."""
@@ -2872,6 +2991,7 @@ class TelegramContentBot:
         external_id = self._get_canonical_external_id(match)
         if not external_id:
             return {"success": False, "error": "No external ID selected."}
+        is_anonymous = await self._is_linked_user_anonymous(mf_user_id)
 
         season_number, episode_number, episode_end = self._get_episode_info(state)
 
@@ -2892,11 +3012,13 @@ class TelegramContentBot:
             "season_number": season_number,
             "episode_number": episode_number,
             "episode_end": episode_end,
+            "anonymous_display_name": state.anonymous_display_name if is_anonymous else None,
         }
 
         stored = await self._store_forwarded_content(content_info)
+        auto_approved = False
         if stored:
-            await self._record_contribution(
+            auto_approved = await self._record_contribution(
                 mf_user_id,
                 "telegram",
                 external_id,
@@ -2910,8 +3032,14 @@ class TelegramContentBot:
                     "season_number": season_number,
                     "episode_number": episode_number,
                 },
+                is_anonymous=is_anonymous,
+                anonymous_display_name=state.anonymous_display_name if is_anonymous else None,
             )
-        return {"success": stored, "auto_approved": True, "error": "Failed to store video" if not stored else None}
+        return {
+            "success": stored,
+            "auto_approved": auto_approved,
+            "error": "Failed to store video" if not stored else None,
+        }
 
     async def _import_magnet(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import a magnet link as TorrentStream."""
@@ -2945,14 +3073,11 @@ class TelegramContentBot:
             if existing.first():
                 return {"success": False, "error": "Stream with this info hash already exists."}
 
-            # Get uploader name with anonymity preference
-            user = await session.get(User, mf_user_id)
-            if user and user.contribute_anonymously:
-                uploader_name = "Anonymous"
-                uploader_user_id = None
-            else:
-                uploader_name = user.username or user.email if user else f"User #{mf_user_id}"
-                uploader_user_id = mf_user_id
+            uploader_name, uploader_user_id, is_anonymous = await self._resolve_telegram_uploader(
+                session,
+                mf_user_id,
+                state.anonymous_display_name,
+            )
 
             # Create the torrent stream
             await create_torrent_stream(
@@ -2971,7 +3096,7 @@ class TelegramContentBot:
 
             await session.commit()
 
-        await self._record_contribution(
+        auto_approved = await self._record_contribution(
             mf_user_id,
             "torrent",
             external_id,
@@ -2983,9 +3108,13 @@ class TelegramContentBot:
                 "resolution": overrides.get("resolution") or analysis.get("resolution"),
                 "quality": overrides.get("quality") or analysis.get("quality"),
                 "codec": overrides.get("codec") or analysis.get("codec"),
+                "is_anonymous": is_anonymous,
+                "anonymous_display_name": state.anonymous_display_name if is_anonymous else None,
             },
+            is_anonymous=is_anonymous,
+            anonymous_display_name=state.anonymous_display_name if is_anonymous else None,
         )
-        return {"success": True, "auto_approved": True}
+        return {"success": True, "auto_approved": auto_approved}
 
     async def _import_torrent_file(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import a torrent file."""
@@ -3031,6 +3160,12 @@ class TelegramContentBot:
             if existing.first():
                 return {"success": False, "error": "This YouTube video is already in the database."}
 
+            uploader_name, uploader_user_id, is_anonymous = await self._resolve_telegram_uploader(
+                session,
+                mf_user_id,
+                state.anonymous_display_name,
+            )
+
             # Create the YouTube stream (uses kwargs for extra fields)
             await create_youtube_stream(
                 session,
@@ -3039,13 +3174,14 @@ class TelegramContentBot:
                 media_id=media.id,
                 source="telegram_bot",
                 is_live=analysis.get("is_live", False),
-                uploader_user_id=mf_user_id,
+                uploader=uploader_name,
+                uploader_user_id=uploader_user_id,
                 resolution=overrides.get("resolution") or analysis.get("resolution"),
             )
 
             await session.commit()
 
-        await self._record_contribution(
+        auto_approved = await self._record_contribution(
             mf_user_id,
             "youtube",
             external_id,
@@ -3054,9 +3190,13 @@ class TelegramContentBot:
                 "title": analysis.get("title"),
                 "meta_id": external_id,
                 "resolution": overrides.get("resolution") or analysis.get("resolution"),
+                "is_anonymous": is_anonymous,
+                "anonymous_display_name": state.anonymous_display_name if is_anonymous else None,
             },
+            is_anonymous=is_anonymous,
+            anonymous_display_name=state.anonymous_display_name if is_anonymous else None,
         )
-        return {"success": True, "auto_approved": True}
+        return {"success": True, "auto_approved": auto_approved}
 
     async def _import_http(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import an HTTP direct link."""
@@ -3082,6 +3222,12 @@ class TelegramContentBot:
                 if not media:
                     return {"success": False, "error": f"Could not find or create media for {external_id}"}
 
+            uploader_name, uploader_user_id, is_anonymous = await self._resolve_telegram_uploader(
+                session,
+                mf_user_id,
+                state.anonymous_display_name,
+            )
+
             # Create the HTTP stream
             await create_http_stream(
                 session,
@@ -3091,7 +3237,8 @@ class TelegramContentBot:
                 source="telegram_bot",
                 size=analysis.get("file_size"),
                 format=analysis.get("content_type"),
-                uploader_user_id=mf_user_id,
+                uploader=uploader_name,
+                uploader_user_id=uploader_user_id,
                 resolution=overrides.get("resolution") or analysis.get("resolution"),
                 quality=overrides.get("quality") or analysis.get("quality"),
                 codec=overrides.get("codec") or analysis.get("codec"),
@@ -3099,7 +3246,7 @@ class TelegramContentBot:
 
             await session.commit()
 
-        await self._record_contribution(
+        auto_approved = await self._record_contribution(
             mf_user_id,
             "http",
             external_id,
@@ -3108,9 +3255,13 @@ class TelegramContentBot:
                 "title": analysis.get("parsed_title"),
                 "meta_id": external_id,
                 "resolution": overrides.get("resolution") or analysis.get("resolution"),
+                "is_anonymous": is_anonymous,
+                "anonymous_display_name": state.anonymous_display_name if is_anonymous else None,
             },
+            is_anonymous=is_anonymous,
+            anonymous_display_name=state.anonymous_display_name if is_anonymous else None,
         )
-        return {"success": True, "auto_approved": True}
+        return {"success": True, "auto_approved": auto_approved}
 
     async def _import_nzb(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import an NZB URL."""
@@ -3144,6 +3295,12 @@ class TelegramContentBot:
             if existing.first():
                 return {"success": False, "error": "This NZB is already in the database."}
 
+            uploader_name, uploader_user_id, is_anonymous = await self._resolve_telegram_uploader(
+                session,
+                mf_user_id,
+                state.anonymous_display_name,
+            )
+
             # Create the Usenet stream
             await create_usenet_stream(
                 session,
@@ -3156,12 +3313,13 @@ class TelegramContentBot:
                 resolution=overrides.get("resolution") or analysis.get("resolution"),
                 quality=overrides.get("quality") or analysis.get("quality"),
                 codec=overrides.get("codec") or analysis.get("codec"),
-                uploader_user_id=mf_user_id,
+                uploader=uploader_name,
+                uploader_user_id=uploader_user_id,
             )
 
             await session.commit()
 
-        await self._record_contribution(
+        auto_approved = await self._record_contribution(
             mf_user_id,
             "nzb",
             external_id,
@@ -3171,9 +3329,13 @@ class TelegramContentBot:
                 "title": analysis.get("nzb_name"),
                 "meta_id": external_id,
                 "resolution": overrides.get("resolution") or analysis.get("resolution"),
+                "is_anonymous": is_anonymous,
+                "anonymous_display_name": state.anonymous_display_name if is_anonymous else None,
             },
+            is_anonymous=is_anonymous,
+            anonymous_display_name=state.anonymous_display_name if is_anonymous else None,
         )
-        return {"success": True, "auto_approved": True}
+        return {"success": True, "auto_approved": auto_approved}
 
     async def _import_acestream(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import an AceStream content ID."""
@@ -3204,6 +3366,12 @@ class TelegramContentBot:
             if existing.first():
                 return {"success": False, "error": "This AceStream is already in the database."}
 
+            uploader_name, uploader_user_id, is_anonymous = await self._resolve_telegram_uploader(
+                session,
+                mf_user_id,
+                state.anonymous_display_name,
+            )
+
             # Create the AceStream
             await create_acestream_stream(
                 session,
@@ -3211,13 +3379,14 @@ class TelegramContentBot:
                 name=match.get("title") or "AceStream",
                 media_id=media.id,
                 source="telegram_bot",
-                uploader_user_id=mf_user_id,
+                uploader=uploader_name,
+                uploader_user_id=uploader_user_id,
                 resolution=overrides.get("resolution") or analysis.get("resolution"),
             )
 
             await session.commit()
 
-        await self._record_contribution(
+        auto_approved = await self._record_contribution(
             mf_user_id,
             "acestream",
             external_id,
@@ -3226,9 +3395,13 @@ class TelegramContentBot:
                 "title": match.get("title"),
                 "meta_id": external_id,
                 "resolution": overrides.get("resolution") or analysis.get("resolution"),
+                "is_anonymous": is_anonymous,
+                "anonymous_display_name": state.anonymous_display_name if is_anonymous else None,
             },
+            is_anonymous=is_anonymous,
+            anonymous_display_name=state.anonymous_display_name if is_anonymous else None,
         )
-        return {"success": True, "auto_approved": True}
+        return {"success": True, "auto_approved": auto_approved}
 
     async def _import_sports(self, state: ConversationState, mf_user_id: int) -> dict:
         """Import sports content.
@@ -3300,14 +3473,11 @@ class TelegramContentBot:
             if not existing_link.first():
                 session.add(MediaCatalogLink(media_id=media.id, catalog_id=catalog.id))
 
-            # Get uploader name with anonymity preference
-            user = await session.get(User, mf_user_id)
-            if user and user.contribute_anonymously:
-                uploader_name = "Anonymous"
-                uploader_user_id = None
-            else:
-                uploader_name = user.username or user.email if user else f"User #{mf_user_id}"
-                uploader_user_id = mf_user_id
+            uploader_name, uploader_user_id, _ = await self._resolve_telegram_uploader(
+                session,
+                mf_user_id,
+                state.anonymous_display_name,
+            )
 
             # Create the appropriate stream based on content type
             content_type = state.content_type
@@ -3393,6 +3563,7 @@ class TelegramContentBot:
                     "resolution": overrides.get("resolution") or analysis.get("resolution"),
                     "quality": overrides.get("quality") or analysis.get("quality"),
                     "codec": overrides.get("codec") or analysis.get("codec"),
+                    "anonymous_display_name": state.anonymous_display_name,
                 }
                 await session.commit()
                 stored = await self._store_forwarded_content(content_info)
@@ -3416,7 +3587,8 @@ class TelegramContentBot:
                     media_id=media.id,
                     source="telegram_bot",
                     is_live=analysis.get("is_live", False),
-                    uploader_user_id=mf_user_id,
+                    uploader=uploader_name,
+                    uploader_user_id=uploader_user_id,
                     resolution=overrides.get("resolution") or analysis.get("resolution"),
                 )
 
@@ -3439,7 +3611,8 @@ class TelegramContentBot:
                     resolution=overrides.get("resolution") or analysis.get("resolution"),
                     quality=overrides.get("quality") or analysis.get("quality"),
                     codec=overrides.get("codec") or analysis.get("codec"),
-                    uploader_user_id=mf_user_id,
+                    uploader=uploader_name,
+                    uploader_user_id=uploader_user_id,
                 )
 
             else:
@@ -3492,6 +3665,7 @@ class TelegramContentBot:
             ConversationStep.AWAITING_FIELD_EDIT,
             ConversationStep.AWAITING_POSTER_INPUT,
             ConversationStep.AWAITING_EPISODE_INPUT,
+            ConversationStep.AWAITING_ANONYMOUS_NAME,
         ):
             # Go back to metadata review
             state.step = ConversationStep.AWAITING_METADATA_REVIEW
@@ -4213,21 +4387,16 @@ class TelegramContentBot:
             # Get MediaFusion user ID if linked
             mf_user_id = await self._get_mediafusion_user_id(content["user_id"])
 
-            # Determine uploader name and user_id with anonymity preference
+            # Determine uploader name and user_id with anonymity preference.
             uploader_name = None
             uploader_user_id = None
 
             if mf_user_id:
-                # User is linked - check their anonymity preference
-                user = await session.get(User, mf_user_id)
-                if user:
-                    if user.contribute_anonymously:
-                        # User prefers anonymous contributions
-                        uploader_name = "Anonymous"
-                        uploader_user_id = None
-                    else:
-                        uploader_name = user.username or user.email or f"User #{mf_user_id}"
-                        uploader_user_id = mf_user_id
+                uploader_name, uploader_user_id, _ = await self._resolve_telegram_uploader(
+                    session,
+                    mf_user_id,
+                    content.get("anonymous_display_name"),
+                )
             else:
                 # Unlinked user - use Telegram user ID (masked)
                 telegram_id_str = str(content["user_id"])
@@ -4711,10 +4880,29 @@ class TelegramContentBot:
                         await self.answer_callback_query(callback_query_id, "❌ Unauthorized", show_alert=True)
                         return result
 
-                    await self.answer_callback_query(callback_query_id, "⏳ Importing...")
-                    await self.execute_import(user_id, chat_id, message_id)
+                    await self.answer_callback_query(callback_query_id)
+                    await self.handle_confirm_import(user_id, chat_id, message_id)
                     result["success"] = True
                     result["action"] = "import_executed"
+
+            elif action == "anon_skip":
+                # Skip custom anonymous name: anon_skip:{user_id}
+                if len(parts) >= 2:
+                    target_user_id = int(parts[1])
+
+                    if target_user_id != user_id:
+                        await self.answer_callback_query(callback_query_id, "❌ Unauthorized", show_alert=True)
+                        return result
+
+                    await self.answer_callback_query(callback_query_id, "Using default anonymous name")
+                    state = self.get_conversation(user_id)
+                    if state:
+                        state.anonymous_display_name = None
+                        state.touch()
+                        self._persist_conversation(state)
+                    await self.execute_import(user_id, chat_id, message_id)
+                    result["success"] = True
+                    result["action"] = "anonymous_name_skipped"
 
             elif action == "cancel":
                 # Cancel: cancel:{user_id} (new) or cancel:{user_id}:{msg_id} (legacy)

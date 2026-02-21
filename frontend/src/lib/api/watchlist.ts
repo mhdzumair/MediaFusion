@@ -81,6 +81,8 @@ export interface TorrentOverride {
 export interface ImportRequest {
   info_hashes: string[]
   overrides?: Record<string, TorrentOverride>
+  is_anonymous?: boolean
+  anonymous_display_name?: string
 }
 
 export interface ImportResultItem {
@@ -133,6 +135,8 @@ export interface AdvancedTorrentImport {
 
 export interface AdvancedImportRequest {
   advanced_imports: AdvancedTorrentImport[]
+  is_anonymous?: boolean
+  anonymous_display_name?: string
 }
 
 // API client
@@ -179,6 +183,8 @@ export const watchlistApi = {
     infoHashes: string[],
     profileId?: number,
     overrides?: Record<string, TorrentOverride>,
+    isAnonymous?: boolean,
+    anonymousDisplayName?: string,
   ): Promise<ImportResponse> => {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())
@@ -186,6 +192,8 @@ export const watchlistApi = {
     return apiClient.post<ImportResponse>(`/watchlist/${provider}/import${query ? `?${query}` : ''}`, {
       info_hashes: infoHashes,
       overrides: overrides && Object.keys(overrides).length > 0 ? overrides : undefined,
+      is_anonymous: isAnonymous,
+      anonymous_display_name: anonymousDisplayName || undefined,
     })
   },
 
@@ -219,12 +227,16 @@ export const watchlistApi = {
     provider: string,
     imports: AdvancedTorrentImport[],
     profileId?: number,
+    isAnonymous?: boolean,
+    anonymousDisplayName?: string,
   ): Promise<ImportResponse> => {
     const params = new URLSearchParams()
     if (profileId) params.append('profile_id', profileId.toString())
     const query = params.toString()
     return apiClient.post<ImportResponse>(`/watchlist/${provider}/import/advanced${query ? `?${query}` : ''}`, {
       advanced_imports: imports,
+      is_anonymous: isAnonymous,
+      anonymous_display_name: anonymousDisplayName || undefined,
     })
   },
 }

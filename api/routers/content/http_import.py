@@ -13,13 +13,14 @@ from fastapi import APIRouter, Depends, Form
 from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.user.auth import require_auth
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from db.crud.media import get_media_by_external_id
 from db.crud.reference import get_or_create_language
 from db.crud.streams import create_http_stream, get_http_stream_by_url_for_media
 from db.database import get_async_session
-from db.enums import ContributionStatus, MediaType
+from db.enums import ContributionStatus, MediaType, UserRole
 from db.models import Contribution, Media, User
 from db.models.streams import (
     StreamLanguageLink,
@@ -152,6 +153,7 @@ class HTTPImportRequest(BaseModel):
     languages: str | None = None  # Comma-separated
 
     is_anonymous: bool | None = None  # None means use user's preference
+    anonymous_display_name: str | None = None
     force_import: bool = False
 
 
@@ -172,7 +174,7 @@ class HTTPImportResponse(BaseModel):
 async def process_http_import(
     session: AsyncSession,
     contribution_data: dict,
-    user: User,
+    user: User | None,
 ) -> dict:
     """
     Process an HTTP import - creates the actual HTTPStream record in the database.
@@ -190,8 +192,8 @@ async def process_http_import(
     meta_id = contribution_data.get("meta_id")
     title = contribution_data.get("title", "HTTP Stream")
 
-    # Anonymous contribution handling
     is_anonymous = contribution_data.get("is_anonymous", False)
+    anonymous_display_name = contribution_data.get("anonymous_display_name")
 
     if not url:
         raise ValueError("Missing url in contribution data")
@@ -230,13 +232,7 @@ async def process_http_import(
     if existing:
         return {"status": "exists", "message": "HTTP stream already exists for this media"}
 
-    # Determine uploader name and user_id based on anonymous preference
-    if is_anonymous:
-        uploader_name = "Anonymous"
-        uploader_user_id = None
-    else:
-        uploader_name = user.username or user.email or f"User #{user.id}"
-        uploader_user_id = user.id
+    uploader_name, uploader_user_id = resolve_uploader_identity(user, is_anonymous, anonymous_display_name)
 
     # Build behavior_hints with headers
     behavior_hints = None
@@ -367,6 +363,7 @@ async def import_http_stream(
     languages: str = Form(None),
     force_import: bool = Form(False),
     is_anonymous: bool | None = Form(None),  # None means use user's preference
+    anonymous_display_name: str | None = Form(None),
     user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -389,6 +386,7 @@ async def import_http_stream(
 
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
+    normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
 
     if not validate_url(url):
         return HTTPImportResponse(
@@ -443,21 +441,27 @@ async def import_http_stream(
             "codec": codec,
             "languages": [lang.strip() for lang in languages.split(",") if lang.strip()] if languages else [],
             "is_anonymous": resolved_is_anonymous,
+            "anonymous_display_name": normalized_anonymous_display_name,
         }
 
-        # Auto-approve for active users
-        should_auto_approve = user.is_active
+        # Anonymous contributions are always reviewed manually.
+        is_privileged_reviewer = user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+        should_auto_approve = is_privileged_reviewer or (user.is_active and not resolved_is_anonymous)
         initial_status = ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING
 
         contribution = Contribution(
-            user_id=user.id,
+            user_id=None if resolved_is_anonymous else user.id,
             contribution_type="http",
             target_id=meta_id,
             data=contribution_data,
             status=initial_status,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
-            review_notes="Auto-approved: Active user HTTP import" if should_auto_approve else None,
+            review_notes=(
+                "Auto-approved: Privileged reviewer"
+                if is_privileged_reviewer
+                else ("Auto-approved: Active user HTTP import" if should_auto_approve else None)
+            ),
         )
 
         session.add(contribution)

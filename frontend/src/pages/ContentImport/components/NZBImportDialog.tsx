@@ -31,6 +31,11 @@ import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
 import type { NZBImportFormData } from './types'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 
 type ImportStep = 'review' | 'metadata' | 'confirm'
 
@@ -84,6 +89,7 @@ export function NZBImportDialog({
   // Import options
   const [forceImport, setForceImport] = useState(false)
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
 
   // Derive selected match from index
   const selectedMatch = useMemo(() => {
@@ -181,6 +187,7 @@ export function NZBImportDialog({
       catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
       forceImport,
       isAnonymous,
+      anonymousDisplayName: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
     }
   }, [
     contentType,
@@ -196,6 +203,7 @@ export function NZBImportDialog({
     selectedCatalogs,
     forceImport,
     isAnonymous,
+    anonymousDisplayName,
   ])
 
   const handleImport = useCallback(async () => {
@@ -487,12 +495,29 @@ export function NZBImportDialog({
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {isAnonymous
-                            ? 'Uploader will show as "Anonymous"'
+                            ? 'Uploader will use your anonymous display name'
                             : 'Your username will be linked to this contribution'}
                         </p>
                       </div>
                       <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
                     </div>
+                    {isAnonymous && (
+                      <div className="p-3 rounded-lg bg-muted/20 space-y-2">
+                        <Label htmlFor="nzb-anonymous-display-name" className="text-sm">
+                          Anonymous display name (optional)
+                        </Label>
+                        <Input
+                          id="nzb-anonymous-display-name"
+                          value={anonymousDisplayName}
+                          onChange={(e) => {
+                            setAnonymousDisplayName(e.target.value)
+                            saveAnonymousDisplayName(e.target.value)
+                          }}
+                          maxLength={32}
+                          placeholder='Defaults to "Anonymous"'
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

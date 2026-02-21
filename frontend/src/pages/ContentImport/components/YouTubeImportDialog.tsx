@@ -28,6 +28,11 @@ import { type ExtendedMatch } from './MatchResultsGrid'
 import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  getStoredAnonymousDisplayName,
+  normalizeAnonymousDisplayName,
+  saveAnonymousDisplayName,
+} from '@/lib/anonymousDisplayName'
 
 type ImportStep = 'review' | 'metadata' | 'confirm'
 
@@ -43,6 +48,7 @@ export interface YouTubeImportFormData {
   languages?: string[]
   catalogs?: string[]
   isAnonymous?: boolean
+  anonymousDisplayName?: string
   forceImport?: boolean
 }
 
@@ -100,6 +106,7 @@ export function YouTubeImportDialog({
 
   // Import options
   const [isAnonymous, setIsAnonymous] = useState(user?.contribute_anonymously ?? false)
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(getStoredAnonymousDisplayName())
 
   // Derive selected match from index
   const selectedMatch = useMemo(() => {
@@ -194,6 +201,7 @@ export function YouTubeImportDialog({
       languages: languages.length > 0 ? languages : undefined,
       catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
       isAnonymous,
+      anonymousDisplayName: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
     }
   }, [
     contentType,
@@ -207,6 +215,7 @@ export function YouTubeImportDialog({
     languages,
     selectedCatalogs,
     isAnonymous,
+    anonymousDisplayName,
   ])
 
   // Handle import
@@ -501,12 +510,29 @@ export function YouTubeImportDialog({
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {isAnonymous
-                            ? 'Uploader will show as "Anonymous"'
+                            ? 'Uploader will use your anonymous display name'
                             : 'Your username will be linked to this contribution'}
                         </p>
                       </div>
                       <Switch checked={isAnonymous} onCheckedChange={setIsAnonymous} />
                     </div>
+                    {isAnonymous && (
+                      <div className="p-3 rounded-lg bg-muted/20 space-y-2">
+                        <Label htmlFor="youtube-anonymous-display-name" className="text-sm">
+                          Anonymous display name (optional)
+                        </Label>
+                        <Input
+                          id="youtube-anonymous-display-name"
+                          value={anonymousDisplayName}
+                          onChange={(e) => {
+                            setAnonymousDisplayName(e.target.value)
+                            saveAnonymousDisplayName(e.target.value)
+                          }}
+                          maxLength={32}
+                          placeholder='Defaults to "Anonymous"'
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

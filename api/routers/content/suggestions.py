@@ -646,19 +646,28 @@ async def get_my_contribution_info(
 @router.get("/suggestions/pending", response_model=SuggestionListResponse)
 async def list_pending_suggestions(
     field_name: str | None = Query(None),
+    suggestion_status: SuggestionStatusLiteral | None = Query(None, alias="status"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(require_role(UserRole.MODERATOR)),
     session: AsyncSession = Depends(get_async_session),
 ):
     """
-    List all pending suggestions (moderator only).
+    List moderator-visible metadata suggestions.
+    Defaults to pending unless `status` is provided.
     """
     offset = (page - 1) * page_size
 
-    # Base query for pending suggestions
-    base_query = select(MetadataSuggestion).where(MetadataSuggestion.status == STATUS_PENDING)
-    count_query = select(func.count(MetadataSuggestion.id)).where(MetadataSuggestion.status == STATUS_PENDING)
+    # Base query. Default is pending-only for backwards compatibility.
+    base_query = select(MetadataSuggestion)
+    count_query = select(func.count(MetadataSuggestion.id))
+
+    if suggestion_status:
+        base_query = base_query.where(MetadataSuggestion.status == suggestion_status)
+        count_query = count_query.where(MetadataSuggestion.status == suggestion_status)
+    else:
+        base_query = base_query.where(MetadataSuggestion.status == STATUS_PENDING)
+        count_query = count_query.where(MetadataSuggestion.status == STATUS_PENDING)
 
     # Filter by field name
     if field_name:

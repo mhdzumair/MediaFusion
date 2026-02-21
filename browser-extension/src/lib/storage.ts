@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   authToken: undefined,
   user: undefined,
   defaultContentType: 'movie',
+  anonymousDisplayName: '',
   autoAnalyze: true,
   showNotifications: true,
 }

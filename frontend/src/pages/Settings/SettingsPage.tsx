@@ -35,6 +35,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { authApi } from '@/lib/api/auth'
 import type { UserUpdateRequest, ChangePasswordRequest } from '@/lib/api/auth'
+import { getStoredAnonymousDisplayName, saveAnonymousDisplayName } from '@/lib/anonymousDisplayName'
 
 export function SettingsPage() {
   const { user, refetchUser } = useAuth()
@@ -44,6 +45,8 @@ export function SettingsPage() {
   // Account details form state
   const [username, setUsername] = useState(user?.username || '')
   const [contributeAnonymously, setContributeAnonymously] = useState(user?.contribute_anonymously ?? false)
+  const storedAnonymousDisplayName = getStoredAnonymousDisplayName()
+  const [anonymousDisplayName, setAnonymousDisplayName] = useState(storedAnonymousDisplayName)
 
   // Password change form state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -123,8 +126,21 @@ export function SettingsPage() {
       updates.contribute_anonymously = contributeAnonymously
     }
 
+    const normalizedAnonymousDisplayName = anonymousDisplayName.trim().replace(/\s+/g, ' ')
+    const hasAnonymousDisplayNameChanges = normalizedAnonymousDisplayName !== storedAnonymousDisplayName
+
+    if (hasAnonymousDisplayNameChanges) {
+      saveAnonymousDisplayName(normalizedAnonymousDisplayName)
+    }
+
     if (Object.keys(updates).length > 0) {
       updateAccountMutation.mutate(updates)
+      return
+    }
+
+    if (hasAnonymousDisplayNameChanges) {
+      setAccountMessage({ type: 'success', text: 'Account settings updated successfully!' })
+      setTimeout(() => setAccountMessage(null), 3000)
     }
   }
 
@@ -149,7 +165,9 @@ export function SettingsPage() {
   }
 
   const hasAccountChanges =
-    username !== (user?.username || '') || contributeAnonymously !== (user?.contribute_anonymously ?? false)
+    username !== (user?.username || '') ||
+    contributeAnonymously !== (user?.contribute_anonymously ?? false) ||
+    anonymousDisplayName.trim().replace(/\s+/g, ' ') !== storedAnonymousDisplayName
 
   return (
     <div className="container max-w-4xl py-8 space-y-8">
@@ -260,6 +278,21 @@ export function SettingsPage() {
               checked={contributeAnonymously}
               onCheckedChange={setContributeAnonymously}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="anonymous-display-name">Anonymous Display Name</Label>
+            <Input
+              id="anonymous-display-name"
+              type="text"
+              value={anonymousDisplayName}
+              onChange={(e) => setAnonymousDisplayName(e.target.value)}
+              placeholder='Defaults to "Anonymous"'
+              maxLength={32}
+            />
+            <p className="text-sm text-muted-foreground">
+              Stored locally in this browser and used for anonymous contributions in the web UI.
+            </p>
           </div>
 
           <div className="rounded-lg bg-muted/50 p-4">

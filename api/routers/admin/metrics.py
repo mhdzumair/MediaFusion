@@ -371,13 +371,14 @@ async def get_weekly_top_uploaders_endpoint(
 
         for stat in raw_results:
             uploader_name = stat.get("name")
+            uploader_user_id = stat.get("user_id")
             count = stat.get("count", 0)
             latest_upload = stat.get("latest_upload")  # Already ISO string
 
             if count <= 0:
                 continue
 
-            if not uploader_name or uploader_name.strip() == "" or uploader_name.lower() == "anonymous":
+            if uploader_user_id is None:
                 anonymous_total += count
                 if anonymous_latest is None or (latest_upload and latest_upload > anonymous_latest):
                     anonymous_latest = latest_upload

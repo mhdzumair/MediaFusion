@@ -84,12 +84,16 @@ export function useImportTorrents() {
       infoHashes,
       profileId,
       overrides,
+      isAnonymous,
+      anonymousDisplayName,
     }: {
       provider: string
       infoHashes: string[]
       profileId?: number
       overrides?: Record<string, { title?: string; year?: number; type?: 'movie' | 'series' }>
-    }) => watchlistApi.importTorrents(provider, infoHashes, profileId, overrides),
+      isAnonymous?: boolean
+      anonymousDisplayName?: string
+    }) => watchlistApi.importTorrents(provider, infoHashes, profileId, overrides, isAnonymous, anonymousDisplayName),
     onSuccess: (_data, variables) => {
       // Invalidate both missing and list queries after import
       queryClient.invalidateQueries({ queryKey: watchlistKeys.missing(variables.provider, variables.profileId) })
@@ -143,11 +147,15 @@ export function useAdvancedImport() {
       provider,
       imports,
       profileId,
+      isAnonymous,
+      anonymousDisplayName,
     }: {
       provider: string
       imports: AdvancedTorrentImport[]
       profileId?: number
-    }) => watchlistApi.advancedImport(provider, imports, profileId),
+      isAnonymous?: boolean
+      anonymousDisplayName?: string
+    }) => watchlistApi.advancedImport(provider, imports, profileId, isAnonymous, anonymousDisplayName),
     onSuccess: (_data, variables) => {
       // Invalidate both missing and list queries after import
       queryClient.invalidateQueries({ queryKey: watchlistKeys.missing(variables.provider, variables.profileId) })

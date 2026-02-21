@@ -232,6 +232,30 @@ export function SettingsTab({ settings, onUpdate, onConfigured, onLogout }: Sett
         </CardContent>
       </Card>
 
+      {/* Anonymous Display Name */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Anonymous Display Name</CardTitle>
+          <CardDescription className="text-xs">
+            Used when your account contributes anonymously.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="anonymousDisplayName" className="text-xs">
+              Custom Name (optional)
+            </Label>
+            <Input
+              id="anonymousDisplayName"
+              value={settings.anonymousDisplayName || ''}
+              onChange={(e) => onUpdate({ anonymousDisplayName: e.target.value })}
+              placeholder="Anonymous Voyager"
+              maxLength={32}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Links */}
       <div className="flex justify-center gap-4 pt-2">
         <a

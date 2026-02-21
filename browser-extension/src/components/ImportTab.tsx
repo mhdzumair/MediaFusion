@@ -237,10 +237,12 @@ export function ImportTab({ settings, prefilledData }: ImportTabProps) {
     setQuickImporting(true)
 
     try {
+      const anonymousDisplayName = settings.anonymousDisplayName?.trim() || undefined
       const request = {
         meta_type: contentType,
         // Let backend auto-detect everything
         sports_category: contentType === 'sports' ? sportsCategory : undefined,
+        anonymous_display_name: anonymousDisplayName,
       }
 
       let result
@@ -293,6 +295,7 @@ export function ImportTab({ settings, prefilledData }: ImportTabProps) {
 
     try {
       const annotationsToUse = annotations || fileAnnotations
+      const anonymousDisplayName = settings.anonymousDisplayName?.trim() || undefined
       
       // Get the meta_id from the selected match in the correct format
       // IMDB IDs are used directly, others are prefixed with provider
@@ -330,6 +333,7 @@ export function ImportTab({ settings, prefilledData }: ImportTabProps) {
         poster: streamDetails.posterUrl,
         // Episode name parser
         episode_name_parser: streamDetails.episodeNameParser,
+        anonymous_display_name: anonymousDisplayName,
       }
       
       // Store the request for potential retry with force_import

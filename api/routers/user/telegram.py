@@ -652,6 +652,17 @@ async def telegram_webhook(request: Request):
                         )
                     return {"ok": True}
 
+                elif state.step == ConversationStep.AWAITING_ANONYMOUS_NAME:
+                    result = await telegram_content_bot.process_anonymous_name_input(user_id, chat_id, text)
+                    if result.get("handled") and result.get("message"):
+                        await telegram_content_bot.send_reply(
+                            chat_id,
+                            result["message"],
+                            reply_to_message_id=message_id,
+                            reply_markup=result.get("reply_markup"),
+                        )
+                    return {"ok": True}
+
                 elif state.step == ConversationStep.AWAITING_POSTER_INPUT:
                     # User is providing poster image URL or uploading image
                     photo = message.get("photo")

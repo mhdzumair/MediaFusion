@@ -122,6 +122,7 @@ export interface TorrentImportRequest {
   force_import?: boolean
   is_add_title_to_poster?: boolean
   is_anonymous?: boolean
+  anonymous_display_name?: string
   
   // File annotations for series/collections
   file_data?: string  // JSON stringified array
@@ -216,6 +217,7 @@ export interface ExtensionSettings {
   apiKey?: string  // X-API-Key for private instances
   user?: User
   defaultContentType: ContentType
+  anonymousDisplayName?: string
   autoAnalyze: boolean
   showNotifications: boolean
 }

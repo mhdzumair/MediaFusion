@@ -222,6 +222,7 @@ class ApiClient {
     if (request.file_data) formData.append('file_data', request.file_data)
     if (request.force_import) formData.append('force_import', 'true')
     if (request.is_anonymous) formData.append('is_anonymous', 'true')
+    if (request.anonymous_display_name) formData.append('anonymous_display_name', request.anonymous_display_name)
     if (request.sports_category) formData.append('sports_category', request.sports_category)
     if (request.episode_name_parser) formData.append('episode_name_parser', request.episode_name_parser)
 
@@ -290,6 +291,7 @@ class ApiClient {
     if (request.file_data) formData.append('file_data', request.file_data)
     if (request.force_import) formData.append('force_import', 'true')
     if (request.is_anonymous) formData.append('is_anonymous', 'true')
+    if (request.anonymous_display_name) formData.append('anonymous_display_name', request.anonymous_display_name)
     if (request.sports_category) formData.append('sports_category', request.sports_category)
     if (request.episode_name_parser) formData.append('episode_name_parser', request.episode_name_parser)
 

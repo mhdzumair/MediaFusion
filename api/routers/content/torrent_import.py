@@ -14,12 +14,13 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
+from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from db.config import settings
 from db.crud.media import get_media_by_external_id, add_external_id, parse_external_id
 from db.crud.reference import get_or_create_language
 from db.crud.scraper_helpers import get_or_create_metadata
 from db.database import get_async_session
-from db.enums import ContributionStatus, MediaType, TorrentType
+from db.enums import ContributionStatus, MediaType, TorrentType, UserRole
 from db.models import Contribution, Media, Stream, StreamFile, StreamMediaLink, User
 from db.models.streams import (
     FileMediaLink,
@@ -119,7 +120,7 @@ router = APIRouter(prefix="/api/v1/import", tags=["Content Import"])
 async def process_torrent_import(
     session: AsyncSession,
     contribution_data: dict,
-    user: User,
+    user: User | None,
 ) -> dict:
     """
     Process a torrent import - creates the actual TorrentStream record in the database.
@@ -140,8 +141,8 @@ async def process_torrent_import(
     name = contribution_data.get("name", title)
     total_size = contribution_data.get("total_size", 0)
 
-    # Anonymous contribution handling
     is_anonymous = contribution_data.get("is_anonymous", False)
+    anonymous_display_name = contribution_data.get("anonymous_display_name")
 
     if not info_hash:
         raise ValueError("Missing info_hash in contribution data")
@@ -181,13 +182,7 @@ async def process_torrent_import(
             if provider and ext_id:
                 await add_external_id(session, media.id, provider, ext_id)
 
-    # Determine uploader name and user_id based on anonymous preference
-    if is_anonymous:
-        uploader_name = "Anonymous"
-        uploader_user_id = None
-    else:
-        uploader_name = user.username or user.email or f"User #{user.id}"
-        uploader_user_id = user.id
+    uploader_name, uploader_user_id = resolve_uploader_identity(user, is_anonymous, anonymous_display_name)
 
     # Create Stream base record
     stream = Stream(
@@ -568,6 +563,7 @@ async def import_magnet(
     file_data: str = Form(None),  # JSON stringified array
     force_import: bool = Form(False),
     is_anonymous: bool | None = Form(None),  # None means use user's preference
+    anonymous_display_name: str | None = Form(None),
     user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -582,7 +578,7 @@ async def import_magnet(
     """
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
-    from db.config import settings
+    normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
 
     if not settings.enable_fetching_torrent_metadata_from_p2p:
         raise HTTPException(
@@ -655,21 +651,26 @@ async def import_magnet(
             "poster": poster,
             "background": background,
             "is_anonymous": resolved_is_anonymous,
+            "anonymous_display_name": normalized_anonymous_display_name,
         }
 
-        # Auto-approve for active users
-        should_auto_approve = user.is_active
+        is_privileged_reviewer = user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+        should_auto_approve = is_privileged_reviewer or (user.is_active and not resolved_is_anonymous)
         initial_status = ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING
 
         contribution = Contribution(
-            user_id=user.id,
+            user_id=None if resolved_is_anonymous else user.id,
             contribution_type="torrent",
             target_id=meta_id,
             data=contribution_data,
             status=initial_status,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
-            review_notes="Auto-approved: Active user content import" if should_auto_approve else None,
+            review_notes=(
+                "Auto-approved: Privileged reviewer"
+                if is_privileged_reviewer
+                else ("Auto-approved: Active user content import" if should_auto_approve else None)
+            ),
         )
 
         session.add(contribution)
@@ -749,6 +750,7 @@ async def import_torrent_file(
     file_data: str = Form(None),  # JSON stringified array
     force_import: bool = Form(False),
     is_anonymous: bool | None = Form(None),  # None means use user's preference
+    anonymous_display_name: str | None = Form(None),
     user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -763,6 +765,7 @@ async def import_torrent_file(
     """
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
+    normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
 
     if not torrent_file.filename or not torrent_file.filename.endswith(".torrent"):
         return ImportResponse(
@@ -831,21 +834,26 @@ async def import_torrent_file(
             "poster": poster,
             "background": background,
             "is_anonymous": resolved_is_anonymous,
+            "anonymous_display_name": normalized_anonymous_display_name,
         }
 
-        # Auto-approve for active users
-        should_auto_approve = user.is_active
+        is_privileged_reviewer = user.role in {UserRole.MODERATOR, UserRole.ADMIN}
+        should_auto_approve = is_privileged_reviewer or (user.is_active and not resolved_is_anonymous)
         initial_status = ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING
 
         contribution = Contribution(
-            user_id=user.id,
+            user_id=None if resolved_is_anonymous else user.id,
             contribution_type="torrent",
             target_id=meta_id,
             data=contribution_data,
             status=initial_status,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
-            review_notes="Auto-approved: Active user content import" if should_auto_approve else None,
+            review_notes=(
+                "Auto-approved: Privileged reviewer"
+                if is_privileged_reviewer
+                else ("Auto-approved: Active user content import" if should_auto_approve else None)
+            ),
         )
 
         session.add(contribution)
