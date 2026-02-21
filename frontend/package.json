@@ -42,7 +42,10 @@
     "react-dom": "^19.2.0",
     "react-dropzone": "^14.3.8",
     "react-hook-form": "^7.69.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.11.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.2.1"
   },

@@ -4,6 +4,7 @@ export {
   instanceApi,
   getInstanceInfo,
   getAppConfig,
+  getReleaseNotes,
   getStoredApiKey,
   setStoredApiKey,
   clearStoredApiKey,
@@ -11,6 +12,9 @@ export {
   type InstanceInfo,
   type NewsletterConfig,
   type AppConfig,
+  type ReleaseNote,
+  type ReleaseNotesParams,
+  type ReleaseNotesResponse,
   type TelegramFeatureConfig,
   type SetupCompleteRequest,
 } from './instance'

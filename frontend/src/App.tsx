@@ -41,6 +41,7 @@ import { RequestMetricsPage } from '@/pages/RequestMetrics'
 import { MetadataCreatorPage } from '@/pages/MetadataCreator'
 import { SettingsPage } from '@/pages/Settings'
 import { PrivacyPolicyPage, TermsOfServicePage, DMCAPage } from '@/pages/Legal'
+import { ReleaseNotesPage } from '@/pages/ReleaseNotes'
 
 // Create a client
 const queryClient = new QueryClient({
@@ -180,6 +181,14 @@ function AppRoutes() {
         element={
           <PublicLayout>
             <DMCAPage />
+          </PublicLayout>
+        }
+      />
+      <Route
+        path="/release-notes"
+        element={
+          <PublicLayout>
+            <ReleaseNotesPage />
           </PublicLayout>
         }
       />

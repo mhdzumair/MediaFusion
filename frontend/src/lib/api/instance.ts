@@ -59,6 +59,39 @@ export interface AppConfig {
   telegram: TelegramFeatureConfig
 }
 
+export interface ReleaseNote {
+  tag_name: string
+  name: string
+  published_at: string | null
+  html_url: string
+  body: string
+  prerelease: boolean
+  reactions: {
+    total_count: number
+    '+1': number
+    '-1': number
+    laugh: number
+    hooray: number
+    confused: number
+    heart: number
+    rocket: number
+    eyes: number
+  }
+}
+
+export interface ReleaseNotesResponse {
+  page: number
+  per_page: number
+  has_more: boolean
+  releases: ReleaseNote[]
+}
+
+export interface ReleaseNotesParams {
+  page?: number
+  perPage?: number
+}
+const GITHUB_RELEASES_API = 'https://api.github.com/repos/mhdzumair/MediaFusion/releases'
+
 /**
  * Get instance information.
  * This endpoint is always accessible (no auth/API key required).
@@ -81,6 +114,67 @@ export async function getAppConfig(): Promise<AppConfig> {
     throw new Error('Failed to fetch app config')
   }
   return response.json()
+}
+
+/**
+ * Get release notes directly from GitHub Releases API.
+ * Includes both stable and prerelease entries (excluding drafts).
+ */
+export async function getReleaseNotes(params: ReleaseNotesParams = {}): Promise<ReleaseNotesResponse> {
+  const page = params.page ?? 1
+  const perPage = params.perPage ?? 10
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(page))
+  searchParams.set('per_page', String(perPage))
+  const url = `${GITHUB_RELEASES_API}?${searchParams.toString()}`
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error('GitHub API rate limit reached. Please try again later.')
+    }
+    throw new Error('Failed to fetch release notes from GitHub.')
+  }
+  const payload = await response.json()
+  if (!Array.isArray(payload)) {
+    throw new Error('Unexpected release notes response format')
+  }
+
+  const releases: ReleaseNote[] = payload
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .filter((item) => !item.draft)
+    .map((item) => ({
+      tag_name: String(item.tag_name ?? ''),
+      name: String(item.name ?? item.tag_name ?? ''),
+      published_at: (item.published_at as string | null) ?? null,
+      html_url: String(item.html_url ?? ''),
+      body: String(item.body ?? ''),
+      prerelease: Boolean(item.prerelease),
+      reactions: {
+        total_count: Number((item.reactions as Record<string, unknown> | undefined)?.total_count ?? 0),
+        '+1': Number((item.reactions as Record<string, unknown> | undefined)?.['+1'] ?? 0),
+        '-1': Number((item.reactions as Record<string, unknown> | undefined)?.['-1'] ?? 0),
+        laugh: Number((item.reactions as Record<string, unknown> | undefined)?.laugh ?? 0),
+        hooray: Number((item.reactions as Record<string, unknown> | undefined)?.hooray ?? 0),
+        confused: Number((item.reactions as Record<string, unknown> | undefined)?.confused ?? 0),
+        heart: Number((item.reactions as Record<string, unknown> | undefined)?.heart ?? 0),
+        rocket: Number((item.reactions as Record<string, unknown> | undefined)?.rocket ?? 0),
+        eyes: Number((item.reactions as Record<string, unknown> | undefined)?.eyes ?? 0),
+      },
+    }))
+    .filter((item) => item.tag_name.length > 0 && item.html_url.length > 0)
+
+  return {
+    page,
+    per_page: perPage,
+    has_more: payload.length === perPage,
+    releases,
+  }
 }
 
 /**
@@ -149,6 +243,7 @@ export async function completeSetup(data: SetupCompleteRequest): Promise<import(
 export const instanceApi = {
   getInstanceInfo,
   getAppConfig,
+  getReleaseNotes,
   getStoredApiKey,
   setStoredApiKey,
   clearStoredApiKey,
