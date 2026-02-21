@@ -37,6 +37,10 @@ export interface Suggestion {
   username: string | null
   media_id: number // Internal media ID
   media_title: string | null
+  media_type: 'movie' | 'series' | 'tv' | null
+  media_year: number | null
+  media_poster_url: string | null
+  media_background_url: string | null
   field_name: string
   current_value: string | null
   suggested_value: string

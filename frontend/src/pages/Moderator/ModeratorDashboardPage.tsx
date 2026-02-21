@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -99,6 +101,27 @@ function formatTimeAgo(dateString: string): string {
   return date.toLocaleDateString()
 }
 
+function getMediaTypeLabel(mediaType: Suggestion['media_type']): string {
+  if (mediaType === 'movie') return 'Movie'
+  if (mediaType === 'series') return 'Series'
+  if (mediaType === 'tv') return 'TV'
+  return 'Unknown type'
+}
+
+function getSuggestionMediaSummary(suggestion: Suggestion): string {
+  const parts = [
+    getMediaTypeLabel(suggestion.media_type),
+    suggestion.media_year?.toString(),
+    `#${suggestion.media_id}`,
+  ].filter((part): part is string => Boolean(part))
+  return parts.join(' • ')
+}
+
+function getSuggestionContentPath(suggestion: Suggestion): string | null {
+  if (!suggestion.media_type) return null
+  return `/dashboard/content/${suggestion.media_type}/${suggestion.media_id}`
+}
+
 const statusConfig: Record<SuggestionStatus, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: 'Pending', color: 'bg-primary/10 text-primary border-primary/30', icon: Clock },
   approved: {
@@ -142,11 +165,12 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
   }
 
   if (!suggestion) return null
+  const contentPath = getSuggestionContentPath(suggestion)
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[720px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5 text-primary" />
@@ -156,15 +180,47 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
           </DialogHeader>
 
           <div className="space-y-6 py-4">
+            {/* Media Context */}
+            <div className="rounded-lg border border-border/50 bg-muted/20 p-4">
+              <div className="flex items-start gap-4">
+                <div className="h-24 w-16 shrink-0 overflow-hidden rounded-md border border-border/50 bg-muted">
+                  {suggestion.media_poster_url ? (
+                    <img
+                      src={suggestion.media_poster_url}
+                      alt={suggestion.media_title || 'Media poster'}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                      <Film className="h-5 w-5" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Media</p>
+                      <p className="truncate text-base font-semibold">{suggestion.media_title || 'Unknown title'}</p>
+                    </div>
+                    {contentPath ? (
+                      <Button asChild variant="outline" size="sm" className="h-8 rounded-lg">
+                        <Link to={contentPath}>
+                          <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                          Open
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{getSuggestionMediaSummary(suggestion)}</p>
+                </div>
+              </div>
+            </div>
+
             {/* Suggestion Details */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Field</label>
                 <p className="font-medium capitalize">{suggestion.field_name}</p>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Media ID</label>
-                <p className="font-mono text-sm">{suggestion.media_id}</p>
               </div>
             </div>
 
@@ -172,15 +228,15 @@ function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }:
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Current Value</label>
-                <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
-                  <p className="text-sm break-words">{suggestion.current_value || '(empty)'}</p>
-                </div>
+                <ScrollArea className="max-h-52 rounded-lg border border-red-500/20 bg-red-500/5">
+                  <p className="whitespace-pre-wrap break-all p-3 text-sm">{suggestion.current_value || '(empty)'}</p>
+                </ScrollArea>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Suggested Value</label>
-                <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                  <p className="text-sm break-words">{suggestion.suggested_value}</p>
-                </div>
+                <ScrollArea className="max-h-52 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                  <p className="whitespace-pre-wrap break-all p-3 text-sm">{suggestion.suggested_value}</p>
+                </ScrollArea>
               </div>
             </div>
 
@@ -313,7 +369,7 @@ function PendingSuggestionsTab() {
           <TableHeader>
             <TableRow className="bg-muted/30">
               <TableHead>Field</TableHead>
-              <TableHead>Meta ID</TableHead>
+              <TableHead>Media</TableHead>
               <TableHead>Current → Suggested</TableHead>
               <TableHead>Submitted</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -323,16 +379,35 @@ function PendingSuggestionsTab() {
             {data.suggestions.map((suggestion: Suggestion) => (
               <TableRow key={suggestion.id} className="hover:bg-muted/20">
                 <TableCell className="font-medium capitalize">{suggestion.field_name}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{suggestion.media_id}</TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2 max-w-xs">
-                    <span className="text-xs text-red-500 truncate max-w-[100px]">
-                      {suggestion.current_value || '(empty)'}
-                    </span>
-                    <span className="text-muted-foreground">→</span>
-                    <span className="text-xs text-emerald-500 truncate max-w-[100px]">
-                      {suggestion.suggested_value}
-                    </span>
+                  <div className="flex max-w-sm items-center gap-3">
+                    <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-border/50 bg-muted">
+                      {suggestion.media_poster_url ? (
+                        <img
+                          src={suggestion.media_poster_url}
+                          alt={suggestion.media_title || 'Media poster'}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                          <Film className="h-4 w-4" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{suggestion.media_title || 'Unknown title'}</p>
+                      <p className="truncate text-xs text-muted-foreground">{getSuggestionMediaSummary(suggestion)}</p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="max-w-xs space-y-1">
+                    <p className="truncate text-xs text-red-500">
+                      <span className="text-muted-foreground">Current:</span> {suggestion.current_value || '(empty)'}
+                    </p>
+                    <p className="truncate text-xs text-emerald-500">
+                      <span className="text-muted-foreground">Suggested:</span> {suggestion.suggested_value}
+                    </p>
                   </div>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{formatTimeAgo(suggestion.created_at)}</TableCell>
@@ -1220,7 +1295,7 @@ function ContributionsTab() {
 
       {/* Review Dialog */}
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5 text-primary" />

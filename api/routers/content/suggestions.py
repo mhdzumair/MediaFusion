@@ -5,7 +5,7 @@ Includes auto-approval for trusted users and points-based reputation system.
 
 import logging
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypedDict
 
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,7 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from api.routers.user.auth import require_auth, require_role
 from db.database import get_async_session
 from db.enums import UserRole
-from db.models import ContributionSettings, Media, MetadataSuggestion, User
+from db.models import ContributionSettings, Media, MediaImage, MetadataSuggestion, User
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,10 @@ class SuggestionResponse(BaseModel):
     username: str | None = None
     media_id: int  # Internal media ID
     media_title: str | None = None
+    media_type: str | None = None
+    media_year: int | None = None
+    media_poster_url: str | None = None
+    media_background_url: str | None = None
     field_name: str
     current_value: str | None = None
     suggested_value: str
@@ -186,11 +190,75 @@ async def get_contribution_settings(session: AsyncSession) -> ContributionSettin
     return settings
 
 
-async def get_media_title(session: AsyncSession, media_id: int) -> str | None:
-    """Get the title for a media item by media_id"""
-    query = select(Media.title).where(Media.id == media_id)
-    result = await session.exec(query)
-    return result.first()
+class MediaContext(TypedDict):
+    media_title: str | None
+    media_type: str | None
+    media_year: int | None
+    media_poster_url: str | None
+    media_background_url: str | None
+
+
+def _empty_media_context() -> MediaContext:
+    return {
+        "media_title": None,
+        "media_type": None,
+        "media_year": None,
+        "media_poster_url": None,
+        "media_background_url": None,
+    }
+
+
+async def get_media_context_map(session: AsyncSession, media_ids: list[int]) -> dict[int, MediaContext]:
+    """Get media context (title/type/year/primary images) for multiple media IDs."""
+    if not media_ids:
+        return {}
+
+    unique_media_ids = list(dict.fromkeys(media_ids))
+    context_by_media_id: dict[int, MediaContext] = {media_id: _empty_media_context() for media_id in unique_media_ids}
+
+    media_query = select(Media).where(Media.id.in_(unique_media_ids))
+    media_result = await session.exec(media_query)
+    for media in media_result.all():
+        context_by_media_id[media.id].update(
+            {
+                "media_title": media.title,
+                "media_type": media.type.value if media.type else None,
+                "media_year": media.year,
+            }
+        )
+
+    images_query = (
+        select(MediaImage)
+        .where(
+            MediaImage.media_id.in_(unique_media_ids),
+            MediaImage.image_type.in_(["poster", "background", "backdrop"]),
+        )
+        .order_by(
+            MediaImage.media_id,
+            MediaImage.image_type,
+            MediaImage.is_primary.desc(),
+            MediaImage.display_order.asc(),
+            MediaImage.id.asc(),
+        )
+    )
+    images_result = await session.exec(images_query)
+    for image in images_result.all():
+        media_context = context_by_media_id.get(image.media_id)
+        if not media_context:
+            continue
+
+        if image.image_type == "poster" and not media_context["media_poster_url"]:
+            media_context["media_poster_url"] = image.url
+        elif image.image_type in ("background", "backdrop") and not media_context["media_background_url"]:
+            media_context["media_background_url"] = image.url
+
+    return context_by_media_id
+
+
+async def get_media_context(session: AsyncSession, media_id: int) -> MediaContext:
+    """Get media context (title/type/year/primary images) for a single media ID."""
+    context_map = await get_media_context_map(session, [media_id])
+    return context_map.get(media_id, _empty_media_context())
 
 
 async def get_username(session: AsyncSession, user_id: int) -> str | None:
@@ -427,12 +495,18 @@ async def create_suggestion(
     await session.commit()
     await session.refresh(suggestion)
 
+    media_context = await get_media_context(session, suggestion.media_id)
+
     return SuggestionResponse(
         id=suggestion.id,
         user_id=suggestion.user_id,
         username=current_user.username,
         media_id=suggestion.media_id,
-        media_title=meta.title,
+        media_title=media_context["media_title"] or meta.title,
+        media_type=media_context["media_type"] or (meta.type.value if meta.type else None),
+        media_year=media_context["media_year"] if media_context["media_year"] is not None else meta.year,
+        media_poster_url=media_context["media_poster_url"],
+        media_background_url=media_context["media_background_url"],
         field_name=suggestion.field_name,
         current_value=suggestion.current_value,
         suggested_value=suggestion.suggested_value,
@@ -482,10 +556,12 @@ async def list_my_suggestions(
     count_result = await session.exec(count_query)
     total = count_result.one()
 
-    # Build responses with meta titles
+    media_context_map = await get_media_context_map(session, [s.media_id for s in suggestions])
+
+    # Build responses with media context
     responses = []
     for s in suggestions:
-        media_title = await get_media_title(session, s.media_id)
+        media_context = media_context_map.get(s.media_id, _empty_media_context())
         reviewer_name = await get_username(session, int(s.reviewed_by)) if s.reviewed_by else None
         responses.append(
             SuggestionResponse(
@@ -493,7 +569,11 @@ async def list_my_suggestions(
                 user_id=s.user_id,
                 username=current_user.username,
                 media_id=s.media_id,
-                media_title=media_title,
+                media_title=media_context["media_title"],
+                media_type=media_context["media_type"],
+                media_year=media_context["media_year"],
+                media_poster_url=media_context["media_poster_url"],
+                media_background_url=media_context["media_background_url"],
                 field_name=s.field_name,
                 current_value=s.current_value,
                 suggested_value=s.suggested_value,
@@ -596,10 +676,12 @@ async def list_pending_suggestions(
     count_result = await session.exec(count_query)
     total = count_result.one()
 
+    media_context_map = await get_media_context_map(session, [s.media_id for s in suggestions])
+
     # Build responses with user contribution info
     responses = []
     for s in suggestions:
-        media_title = await get_media_title(session, s.media_id)
+        media_context = media_context_map.get(s.media_id, _empty_media_context())
         username = await get_username(session, s.user_id)
 
         # Get user contribution info
@@ -613,7 +695,11 @@ async def list_pending_suggestions(
                 user_id=s.user_id,
                 username=username,
                 media_id=s.media_id,
-                media_title=media_title,
+                media_title=media_context["media_title"],
+                media_type=media_context["media_type"],
+                media_year=media_context["media_year"],
+                media_poster_url=media_context["media_poster_url"],
+                media_background_url=media_context["media_background_url"],
                 field_name=s.field_name,
                 current_value=s.current_value,
                 suggested_value=s.suggested_value,
@@ -844,7 +930,7 @@ async def get_suggestion(
             detail="Access denied",
         )
 
-    media_title = await get_media_title(session, suggestion.media_id)
+    media_context = await get_media_context(session, suggestion.media_id)
     username = await get_username(session, suggestion.user_id)
     reviewer_name = await get_username(session, int(suggestion.reviewed_by)) if suggestion.reviewed_by else None
 
@@ -858,7 +944,11 @@ async def get_suggestion(
         user_id=suggestion.user_id,
         username=username,
         media_id=suggestion.media_id,
-        media_title=media_title,
+        media_title=media_context["media_title"],
+        media_type=media_context["media_type"],
+        media_year=media_context["media_year"],
+        media_poster_url=media_context["media_poster_url"],
+        media_background_url=media_context["media_background_url"],
         field_name=suggestion.field_name,
         current_value=suggestion.current_value,
         suggested_value=suggestion.suggested_value,
@@ -987,7 +1077,7 @@ async def review_suggestion(
     if author:
         await session.refresh(author)
 
-    media_title = await get_media_title(session, suggestion.media_id)
+    media_context = await get_media_context(session, suggestion.media_id)
     username = await get_username(session, suggestion.user_id)
 
     return SuggestionResponse(
@@ -995,7 +1085,11 @@ async def review_suggestion(
         user_id=suggestion.user_id,
         username=username,
         media_id=suggestion.media_id,
-        media_title=media_title,
+        media_title=media_context["media_title"],
+        media_type=media_context["media_type"],
+        media_year=media_context["media_year"],
+        media_poster_url=media_context["media_poster_url"],
+        media_background_url=media_context["media_background_url"],
         field_name=suggestion.field_name,
         current_value=suggestion.current_value,
         suggested_value=suggestion.suggested_value,
