@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
-    <ScrollArea className="relative w-full">
+    <ScrollArea className="relative w-full" containScroll={false}>
       <table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} />
       <ScrollBar orientation="horizontal" />
     </ScrollArea>

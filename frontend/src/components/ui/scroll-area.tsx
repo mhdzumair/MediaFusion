@@ -52,7 +52,10 @@ const ScrollArea = React.forwardRef<React.ElementRef<typeof ScrollAreaPrimitive.
         <ScrollAreaPrimitive.Viewport
           ref={viewportRef}
           onWheelCapture={handleWheelCapture}
-          className="h-full w-full overscroll-contain rounded-[inherit] [&>div]:!block"
+          className={cn(
+            'h-full w-full rounded-[inherit] [&>div]:!block',
+            containScroll ? 'overscroll-contain' : 'overscroll-auto',
+          )}
         >
           {children}
         </ScrollAreaPrimitive.Viewport>
