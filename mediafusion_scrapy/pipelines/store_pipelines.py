@@ -74,6 +74,9 @@ class EventSeriesStorePipeline(QueueBasedPipeline):
         if "title" not in item:
             logging.warning(f"title not found in item: {item}")
             raise DropItem(f"title not found in item: {item}")
+        if item.get("year") is None:
+            logging.warning(f"year not found in item: {item}")
+            raise DropItem(f"year not found in item: {item}")
 
         async for session in get_async_session():
             title_key = f"{item['title']}_{item['year']}"

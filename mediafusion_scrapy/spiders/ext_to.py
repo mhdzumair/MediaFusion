@@ -69,6 +69,24 @@ class ExtToSpider(scrapy.Spider):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.redis.aclose()
 
+    @staticmethod
+    def _username_from_user_href(href: str | None) -> str | None:
+        """Extract username from ext.to user profile URLs."""
+        if not href:
+            return None
+        match = re.search(r"/user/([^/?#]+)/?", href)
+        if not match:
+            return None
+        return match.group(1)
+
+    def _infer_uploader_from_torrent_name(self, torrent_name: str) -> str | None:
+        """Infer uploader from torrent naming conventions.
+
+        Base implementation does not infer anything; subclasses can override
+        with catalog-specific rules.
+        """
+        return None
+
     async def start(self):
         domain = self.allowed_domains[0] if self.allowed_domains else "ext.to"
 
@@ -108,21 +126,23 @@ class ExtToSpider(scrapy.Spider):
                 link = row.css("td.text-left .float-left a")
 
         if not link:
-            return None, None
+            return None, None, None
 
         name_parts = link.css("b ::text").getall()
         if not name_parts:
-            return None, None
+            return None, None, None
 
         torrent_name = "".join(name_parts).strip()
         detail_link = link.attrib.get("href")
-        return torrent_name, detail_link
+        uploader_href = row.css('a[href*="/user/"]::attr(href)').get()
+        row_uploader = self._username_from_user_href(uploader_href)
+        return torrent_name, detail_link, row_uploader
 
     async def parse(self, response, **kwargs):
         is_profile_page = response.meta.get("is_profile_page", False)
-        uploader = response.meta.get("uploader_profile")
+        page_uploader = response.meta.get("uploader_profile")
         search_query = response.meta.get("search_query", "")
-        source_label = f"profile:{uploader}" if is_profile_page else f"search:{search_query}"
+        source_label = f"profile:{page_uploader}" if is_profile_page else f"search:{search_query}"
         self.logger.info(f"Parsing {source_label} from {response.url}")
 
         rows = response.css("table.table-striped.table-hover tbody tr")
@@ -131,7 +151,7 @@ class ExtToSpider(scrapy.Spider):
             return
 
         for row in rows:
-            torrent_name, detail_link = self._extract_row_data(row, is_profile_page)
+            torrent_name, detail_link, row_uploader = self._extract_row_data(row, is_profile_page)
             if not torrent_name or not detail_link:
                 continue
 
@@ -164,6 +184,8 @@ class ExtToSpider(scrapy.Spider):
 
             detail_url = response.urljoin(detail_link)
             ext_id = detail_link.rstrip("/").rsplit("-", 1)[-1] if detail_link else None
+            inferred_uploader = self._infer_uploader_from_torrent_name(torrent_name)
+            item_uploader = page_uploader or row_uploader or inferred_uploader
 
             torrent_data = {
                 "torrent_title": torrent_name,
@@ -175,7 +197,7 @@ class ExtToSpider(scrapy.Spider):
                 "unique_id": ext_id,
                 "source": "ExtTo",
                 "catalog_source": "ext_to",
-                "uploader": uploader,
+                "uploader": item_uploader,
                 "catalog": self.catalog,
                 "scraped_info_hash_key": self.scraped_info_hash_key,
                 "imdb_id": imdb_id,
@@ -195,7 +217,7 @@ class ExtToSpider(scrapy.Spider):
             )
 
         if self.scrape_all:
-            next_req = self._follow_next_page(response, is_profile_page, uploader, search_query)
+            next_req = self._follow_next_page(response, is_profile_page, page_uploader, search_query)
             if next_req:
                 yield next_req
 
@@ -252,9 +274,9 @@ class ExtToSpider(scrapy.Spider):
         uploader_href = response.css('a.simple-user[href*="/user/"]::attr(href)').get()
         if not uploader_href:
             uploader_href = response.css('.detail-torrent-poster-info a[href*="/user/"]::attr(href)').get()
-        if uploader_href:
-            return uploader_href.strip("/").split("/")[-1]
-        return None
+
+        uploader = self._username_from_user_href(uploader_href)
+        return uploader
 
     async def parse_torrent_details(self, response):
         torrent_data = deepcopy(response.meta["torrent_data"])
@@ -273,8 +295,18 @@ class ExtToSpider(scrapy.Spider):
         torrent_data["magnet_link"] = magnet_link
         torrent_data["announce_list"] = announce_list
 
-        if not torrent_data.get("uploader"):
-            torrent_data["uploader"] = self._extract_uploader(response)
+        detected_uploader = torrent_data.get("uploader") or self._extract_uploader(response)
+        inferred_uploader = self._infer_uploader_from_torrent_name(torrent_data.get("torrent_title", ""))
+        if inferred_uploader and detected_uploader and detected_uploader.lower() != inferred_uploader.lower():
+            self.logger.debug(
+                "Overriding extracted uploader '%s' with inferred uploader '%s' for %s",
+                detected_uploader,
+                inferred_uploader,
+                torrent_data.get("torrent_title"),
+            )
+            torrent_data["uploader"] = inferred_uploader
+        else:
+            torrent_data["uploader"] = detected_uploader or inferred_uploader
 
         if await self.redis.sismember(self.scraped_info_hash_key, info_hash):
             self.logger.info(f"Torrent already scraped: {torrent_data['torrent_name']}")
@@ -362,6 +394,21 @@ class FormulaExtSpider(ExtToSpider):
 
     keyword_patterns = re.compile(r"formula[ .+]*[1234e]+", re.IGNORECASE)
     scraped_info_hash_key = "formula_ext_scraped_info_hash"
+
+    _known_uploader_aliases = {
+        "egortech": "egortech",
+        "f1carreras": "F1Carreras",
+        "smcgill1969": "smcgill1969",
+    }
+
+    def _infer_uploader_from_torrent_name(self, torrent_name: str) -> str | None:
+        if not torrent_name:
+            return None
+
+        for alias, canonical in self._known_uploader_aliases.items():
+            if re.search(rf"(?i)(?:^|[.\-_\[\]\s]){re.escape(alias)}(?:$|[.\-_\[\]\s])", torrent_name):
+                return canonical
+        return None
 
     custom_settings = {
         "ITEM_PIPELINES": {

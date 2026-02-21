@@ -253,10 +253,18 @@ class FormulaParserPipeline:
         uploader = item.get("uploader")
         if not uploader or uploader not in self.title_parser_functions:
             raise DropItem(f"Unknown or missing uploader '{uploader}' for: {item.get('torrent_title')}")
+
+        # Ignore generic title/year values inferred from torrent metadata.
+        # Formula content must be parsed from uploader-specific naming rules.
+        item.pop("title", None)
+        item.pop("year", None)
+
         title = self._normalize_title(item["torrent_title"])
         self.title_parser_functions[uploader](title, item)
         if not item.get("title"):
             raise DropItem(f"Title not parsed: {title}")
+        if not item.get("year"):
+            raise DropItem(f"Year not parsed: {title}")
         self.description_parser_functions[uploader](item)
         if not item.get("episodes"):
             raise DropItem(f"Episodes not parsed: {item!r}")
