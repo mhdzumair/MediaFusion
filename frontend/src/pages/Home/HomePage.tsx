@@ -252,9 +252,11 @@ export function HomePage() {
 
             <div className="space-y-4">
               {version && (
-                <Badge variant="secondary" className="text-sm px-4 py-1">
-                  v{version}
-                </Badge>
+                <Link to="/release-notes" className="inline-block">
+                  <Badge variant="secondary" className="text-sm px-4 py-1 hover:bg-secondary/80 transition-colors">
+                    v{version}
+                  </Badge>
+                </Link>
               )}
               <h1>
                 <LogoText addonName={addonName} size="5xl" className="text-4xl sm:text-5xl md:text-6xl" />
@@ -434,7 +436,15 @@ export function HomePage() {
             <div className="flex items-center gap-3">
               <Logo size="sm" />
               <span className="text-sm text-muted-foreground">
-                {addonName} {version && `v${version}`}
+                {addonName}{' '}
+                {version ? (
+                  <Link
+                    to="/release-notes"
+                    className="hover:text-primary transition-colors underline-offset-2 hover:underline"
+                  >
+                    v{version}
+                  </Link>
+                ) : null}
               </span>
             </div>
             <div className="flex items-center gap-6">
