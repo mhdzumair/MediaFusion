@@ -143,6 +143,14 @@ export function ScrapeContentButton({
 
   const scraperSummary = getScraperSummary(scrapeStatus)
 
+  // Scrapers currently shown in the UI (respecting debrid requirement)
+  const visibleScrapers = scrapeStatus
+    ? scrapeStatus.available_scrapers.filter((scraper) => !scraper.requires_debrid || scrapeStatus.has_debrid)
+    : []
+  const visibleScraperIds = visibleScrapers.map((scraper) => scraper.id)
+  const allVisibleSelected =
+    visibleScraperIds.length > 0 && visibleScraperIds.every((scraperId) => selectedScrapers.has(scraperId))
+
   // For series, require episode selection
   const needsEpisodeSelection = mediaType === 'series' && (season === undefined || episode === undefined)
 
@@ -153,6 +161,20 @@ export function ScrapeContentButton({
         return status?.can_scrape && (!status.requires_debrid || scrapeStatus.has_debrid)
       })
     : false
+
+  const toggleSelectAllVisible = () => {
+    setSelectedScrapers((prev) => {
+      const next = new Set(prev)
+
+      if (allVisibleSelected) {
+        visibleScraperIds.forEach((scraperId) => next.delete(scraperId))
+      } else {
+        visibleScraperIds.forEach((scraperId) => next.add(scraperId))
+      }
+
+      return next
+    })
+  }
 
   return (
     <TooltipProvider>
@@ -230,7 +252,20 @@ export function ScrapeContentButton({
                   {/* Scraper Selection */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground font-medium">Select Indexers</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground font-medium">Select Indexers</span>
+                        {visibleScraperIds.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={toggleSelectAllVisible}
+                            className="h-6 px-2 text-xs"
+                          >
+                            {allVisibleSelected ? 'Deselect all' : 'Select all'}
+                          </Button>
+                        )}
+                      </div>
                       <Badge
                         variant="outline"
                         className={cn(
@@ -244,56 +279,54 @@ export function ScrapeContentButton({
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                      {scrapeStatus.available_scrapers
-                        .filter((scraper) => !scraper.requires_debrid || scrapeStatus.has_debrid) // Show debrid scrapers only if user has debrid
-                        .map((scraper) => {
-                          const status = scrapeStatus.scraper_statuses?.[scraper.id]
-                          const isSelected = selectedScrapers.has(scraper.id)
-                          const canScrape = status?.can_scrape ?? true
+                      {visibleScrapers.map((scraper) => {
+                        const status = scrapeStatus.scraper_statuses?.[scraper.id]
+                        const isSelected = selectedScrapers.has(scraper.id)
+                        const canScrape = status?.can_scrape ?? true
 
-                          return (
-                            <label
-                              key={scraper.id}
-                              className={cn(
-                                'flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors',
-                                isSelected
-                                  ? canScrape
-                                    ? 'bg-emerald-500/10 border-emerald-500/30'
-                                    : 'bg-primary/10 border-primary/30'
-                                  : 'bg-muted/30 border-border/50 hover:bg-muted/50',
-                              )}
-                            >
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => toggleScraper(scraper.id)}
-                                className="h-3.5 w-3.5"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  {canScrape ? (
-                                    <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-shrink-0" />
-                                  ) : (
-                                    <Clock className="h-3 w-3 text-primary flex-shrink-0" />
-                                  )}
-                                  <p className="font-medium truncate">{scraper.name}</p>
-                                  {scraper.requires_debrid && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-[9px] px-1 py-0 h-3.5 bg-blue-500/10 text-blue-600 border-blue-500/30"
-                                    >
-                                      Debrid
-                                    </Badge>
-                                  )}
-                                </div>
-                                {!canScrape && status && status.cooldown_remaining > 0 && (
-                                  <p className="text-muted-foreground text-[10px]">
-                                    Cooldown: {formatCooldown(status.cooldown_remaining)}
-                                  </p>
+                        return (
+                          <label
+                            key={scraper.id}
+                            className={cn(
+                              'flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors',
+                              isSelected
+                                ? canScrape
+                                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                                  : 'bg-primary/10 border-primary/30'
+                                : 'bg-muted/30 border-border/50 hover:bg-muted/50',
+                            )}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleScraper(scraper.id)}
+                              className="h-3.5 w-3.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                {canScrape ? (
+                                  <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+                                ) : (
+                                  <Clock className="h-3 w-3 text-primary flex-shrink-0" />
+                                )}
+                                <p className="font-medium truncate">{scraper.name}</p>
+                                {scraper.requires_debrid && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] px-1 py-0 h-3.5 bg-blue-500/10 text-blue-600 border-blue-500/30"
+                                  >
+                                    Debrid
+                                  </Badge>
                                 )}
                               </div>
-                            </label>
-                          )
-                        })}
+                              {!canScrape && status && status.cooldown_remaining > 0 && (
+                                <p className="text-muted-foreground text-[10px]">
+                                  Cooldown: {formatCooldown(status.cooldown_remaining)}
+                                </p>
+                              )}
+                            </div>
+                          </label>
+                        )
+                      })}
                     </div>
 
                     {/* Info about debrid scrapers - only show if user doesn't have debrid */}
