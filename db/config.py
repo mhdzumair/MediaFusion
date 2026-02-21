@@ -118,6 +118,12 @@ class Settings(BaseSettings):
     jackett_background_title_search: bool = True
     jackett_feed_scrape_interval_hour: int = 3
 
+    # Torznab Scraping Settings
+    # List of Torznab endpoint objects (JSON array) used for global scraping.
+    # Expected keys per endpoint: name, url, optional headers, categories, priority, enabled, id.
+    is_scrap_from_torznab: bool = True
+    torznab_endpoints: list[dict] = Field(default_factory=list)
+
     background_search_interval_hours: int = 72
     background_search_crontab: str = "*/3 * * * *"
 

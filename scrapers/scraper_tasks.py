@@ -5,11 +5,13 @@ import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import dramatiq
 
 from db.config import settings
 from db.schemas import MetadataData, TorrentStreamData, UserData
+from db.schemas.config import IndexerConfig, TorznabEndpointConfig
 from scrapers.base_scraper import BaseScraper
 from scrapers.bt4g import BT4GScraper
 from scrapers.imdb_data import get_imdb_title_data, search_imdb, search_multiple_imdb
@@ -76,6 +78,95 @@ CACHED_DATA = [
     (JackettScraper.cache_key_prefix, runtime_const.JACKETT_SEARCH_TTL),
     (TelegramScraper.CACHE_KEY_PREFIX, runtime_const.TELEGRAM_SEARCH_TTL),
 ]
+
+
+def _normalize_torznab_url(url: str) -> str:
+    """Normalize endpoint URL for stable deduplication."""
+    if not url:
+        return ""
+
+    raw_url = url.strip()
+    try:
+        parts = urlsplit(raw_url)
+        normalized_query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)), doseq=True)
+        return urlunsplit(
+            (
+                parts.scheme.lower(),
+                parts.netloc.lower(),
+                parts.path.rstrip("/"),
+                normalized_query,
+                "",
+            )
+        )
+    except Exception:
+        return raw_url.rstrip("/").lower()
+
+
+def _parse_indexer_config(indexer_config: IndexerConfig | dict | None) -> IndexerConfig | None:
+    """Safely parse user indexer config from model or raw dict."""
+    if isinstance(indexer_config, IndexerConfig):
+        return indexer_config
+    if isinstance(indexer_config, dict):
+        try:
+            return IndexerConfig.model_validate(indexer_config)
+        except Exception as exc:
+            logger.warning("Failed to parse indexer config for Torznab: %s", exc)
+    return None
+
+
+def _get_global_torznab_endpoints() -> list[TorznabEndpointConfig]:
+    """Build validated Torznab endpoints from global env settings."""
+    if not settings.is_scrap_from_torznab or not settings.torznab_endpoints:
+        return []
+
+    global_endpoints: list[TorznabEndpointConfig] = []
+    for idx, endpoint_data in enumerate(settings.torznab_endpoints):
+        if not isinstance(endpoint_data, dict):
+            logger.warning(
+                "Skipping invalid TORZNAB_ENDPOINTS entry at index %s: expected object, got %s",
+                idx,
+                type(endpoint_data).__name__,
+            )
+            continue
+
+        payload = dict(endpoint_data)
+        if "id" not in payload and "i" not in payload:
+            payload["id"] = f"global-torznab-{idx + 1}"
+        if "name" not in payload and "n" not in payload:
+            payload["name"] = f"Global Torznab {idx + 1}"
+
+        try:
+            endpoint = TorznabEndpointConfig.model_validate(payload)
+        except Exception as exc:
+            logger.warning("Skipping invalid global Torznab endpoint at index %s: %s", idx, exc)
+            continue
+
+        if endpoint.enabled:
+            global_endpoints.append(endpoint)
+
+    return global_endpoints
+
+
+def get_effective_torznab_endpoints(indexer_config: IndexerConfig | dict | None) -> list[TorznabEndpointConfig]:
+    """Merge enabled user and global Torznab endpoints with URL deduplication."""
+    parsed_indexer_config = _parse_indexer_config(indexer_config)
+    user_endpoints = parsed_indexer_config.torznab_endpoints if parsed_indexer_config else []
+    global_endpoints = _get_global_torznab_endpoints()
+
+    merged_endpoints: list[TorznabEndpointConfig] = []
+    seen_urls: set[str] = set()
+
+    # User endpoints first so user-specific config wins on duplicates.
+    for endpoint in [*user_endpoints, *global_endpoints]:
+        if not endpoint.enabled:
+            continue
+        normalized_url = _normalize_torznab_url(endpoint.url)
+        if not normalized_url or normalized_url in seen_urls:
+            continue
+        seen_urls.add(normalized_url)
+        merged_endpoints.append(endpoint)
+
+    return merged_endpoints
 
 
 async def run_scrapers(
@@ -182,8 +273,6 @@ def _create_prowlarr_task(
     episode: int | None,
 ):
     """Create Prowlarr scraper task based on user config or global settings."""
-    from db.schemas.config import IndexerConfig
-
     # Check if user has custom Prowlarr config
     if ic and isinstance(ic, IndexerConfig) and ic.prowlarr:
         prowlarr_cfg = ic.prowlarr
@@ -226,8 +315,6 @@ def _create_jackett_task(
     episode: int | None,
 ):
     """Create Jackett scraper task based on user config or global settings."""
-    from db.schemas.config import IndexerConfig
-
     # Check if user has custom Jackett config
     if ic and isinstance(ic, IndexerConfig) and ic.jackett:
         jackett_cfg = ic.jackett
@@ -269,17 +356,13 @@ def _create_torznab_task(
     season: int | None,
     episode: int | None,
 ):
-    """Create Torznab scraper task if user has configured endpoints."""
-    from db.schemas.config import IndexerConfig
-
-    # Torznab is always user-specific (no global config)
-    if ic and isinstance(ic, IndexerConfig) and ic.torznab_endpoints:
-        enabled_endpoints = [e for e in ic.torznab_endpoints if e.enabled]
-        if enabled_endpoints:
-            return tg.create_task(
-                TorznabScraper(enabled_endpoints).scrape_and_parse(user_data, metadata, catalog_type, season, episode),
-                name="TorznabScraper",
-            )
+    """Create Torznab scraper task using merged user and global endpoints."""
+    enabled_endpoints = get_effective_torznab_endpoints(ic)
+    if enabled_endpoints:
+        return tg.create_task(
+            TorznabScraper(enabled_endpoints).scrape_and_parse(user_data, metadata, catalog_type, season, episode),
+            name="TorznabScraper",
+        )
     return None
 
 

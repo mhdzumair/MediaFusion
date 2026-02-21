@@ -99,7 +99,7 @@ SCRAPER_CONFIG = {
     },
     "torznab": {
         "name": "Custom Torznab",
-        "enabled": False,  # Only enabled per-user via profile config
+        "enabled": settings.is_scrap_from_torznab,
         "requires_debrid": False,
         "ttl": runtime_const.TORZNAB_SEARCH_TTL,
         "description": "Search via custom Torznab endpoints",
@@ -221,6 +221,25 @@ def get_full_profile_config(profile: UserProfile) -> dict:
     return config
 
 
+def _sanitize_user_data_config(config: dict) -> dict:
+    """Sanitize known legacy/invalid profile values before UserData validation."""
+    sanitized = dict(config)
+
+    for key in ("sr", "selected_resolutions"):
+        resolutions = sanitized.get(key)
+        if not isinstance(resolutions, list):
+            continue
+
+        cleaned_resolutions = [res for res in resolutions if isinstance(res, str) and res.strip()]
+        if cleaned_resolutions:
+            sanitized[key] = cleaned_resolutions
+        else:
+            # Remove invalid/empty list and let UserData defaults apply.
+            sanitized.pop(key, None)
+
+    return sanitized
+
+
 async def get_user_data_from_profile(
     session: AsyncSession, user: User, profile_id: int | None = None
 ) -> tuple[UserData | None, bool, set[str]]:
@@ -303,6 +322,20 @@ async def get_user_data_from_profile(
         logger.info(f"User profile: has_debrid={has_debrid}, provider_names={provider_names}")
         return user_data, True, provider_names
     except Exception as e:
+        sanitized_config = _sanitize_user_data_config(config)
+        if sanitized_config != config:
+            try:
+                user_data = UserData.model_validate(sanitized_config)
+                logger.warning(
+                    "Recovered UserData validation after sanitizing profile config for user %s: %s",
+                    user.id,
+                    e,
+                )
+                logger.info(f"User profile: has_debrid={has_debrid}, provider_names={provider_names}")
+                return user_data, True, provider_names
+            except Exception:
+                pass
+
         logger.warning(f"Failed to build UserData from profile config: {e}")
         return None, has_debrid, provider_names  # Return has_debrid status even if UserData build fails
 
@@ -347,16 +380,8 @@ def get_available_scrapers(
                     elif not config["enabled"]:
                         is_enabled = False
             elif scraper_id == "torznab":
-                # Torznab is only available if user has configured endpoints
-                if indexer_config:
-                    tz_endpoints = indexer_config.get("tz", [])
-                    if tz_endpoints and len(tz_endpoints) > 0:
-                        # Check if any endpoint is enabled
-                        is_enabled = any(ep.get("en", True) for ep in tz_endpoints)
-                    else:
-                        is_enabled = False
-                else:
-                    is_enabled = False
+                # Torznab is available when merged user/global endpoint set is non-empty
+                is_enabled = len(scraper_tasks.get_effective_torznab_endpoints(indexer_config)) > 0
             elif scraper_id == "torbox_search":
                 # TorBox Search is only available if user has TorBox configured
                 is_enabled = "torbox" in streaming_providers and has_debrid
@@ -373,7 +398,6 @@ def get_available_scrapers(
             elif scraper_id == "easynews":
                 # Easynews is only available if user has Easynews configured as a streaming provider
                 is_enabled = "easynews" in streaming_providers
-                logger.info(f"Easynews available check: 'easynews' in {streaming_providers} = {is_enabled}")
 
         if is_enabled:
             scrapers.append(
@@ -392,14 +416,12 @@ def get_available_scrapers(
 
 def _get_torznab_cache_prefix(indexer_config: dict | None) -> str | None:
     """Generate the torznab cache prefix matching TorznabScraper._generate_cache_prefix."""
-    if not indexer_config:
-        return None
-    tz_endpoints = indexer_config.get("tz", [])
-    if not tz_endpoints:
+    effective_endpoints = scraper_tasks.get_effective_torznab_endpoints(indexer_config)
+    if not effective_endpoints:
         return None
 
     # Get enabled endpoint URLs (matching TorznabScraper logic)
-    urls = sorted(ep.get("u", "") for ep in tz_endpoints if ep.get("en", True))
+    urls = sorted(endpoint.url for endpoint in effective_endpoints)
     if not urls:
         return None
 
@@ -445,14 +467,7 @@ async def get_scraper_cooldown_status(
                     elif not config["enabled"]:
                         is_enabled = False
             elif scraper_id == "torznab":
-                if indexer_config:
-                    tz_endpoints = indexer_config.get("tz", [])
-                    if tz_endpoints and len(tz_endpoints) > 0:
-                        is_enabled = any(ep.get("en", True) for ep in tz_endpoints)
-                    else:
-                        is_enabled = False
-                else:
-                    is_enabled = False
+                is_enabled = len(scraper_tasks.get_effective_torznab_endpoints(indexer_config)) > 0
             elif scraper_id == "torbox_search":
                 # TorBox Search is only enabled if user has TorBox configured
                 is_enabled = "torbox" in streaming_providers and has_debrid
@@ -469,7 +484,6 @@ async def get_scraper_cooldown_status(
             elif scraper_id == "easynews":
                 # Easynews is only enabled if user has Easynews configured
                 is_enabled = "easynews" in streaming_providers
-                logger.info(f"Easynews cooldown check: 'easynews' in {streaming_providers} = {is_enabled}")
 
         if not is_enabled:
             continue
