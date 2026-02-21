@@ -296,7 +296,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
           </DialogHeader>
 
           {analysis && (
-            <ScrollArea className="flex-1 overflow-y-auto pr-4">
+            <ScrollArea className="flex-1 pr-4">
               <div className="space-y-4">
                 {/* Summary - Clickable filters with dynamic counts */}
                 <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-muted/50">
@@ -429,7 +429,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                       </Button>
                     )}
                   </div>
-                  <div className="rounded-xl border border-border/50 max-h-[200px] overflow-y-auto">
+                  <ScrollArea className="max-h-[200px] rounded-xl border border-border/50">
                     <div className="divide-y divide-border/50">
                       {filteredChannels.length === 0 ? (
                         <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
@@ -508,7 +508,7 @@ export function M3UTab({ onSuccess, onError, iptvSettings }: M3UTabProps) {
                         })
                       )}
                     </div>
-                  </div>
+                  </ScrollArea>
                 </div>
               </div>
             </ScrollArea>

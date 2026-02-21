@@ -135,9 +135,9 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
                             <CollapsibleTrigger asChild>
                               <div className="cursor-pointer">
                                 {isExpanded ? (
-                                  <pre className="whitespace-pre-wrap break-all text-xs bg-muted/50 p-3 rounded-lg max-h-[300px] overflow-auto">
-                                    {displayValue}
-                                  </pre>
+                                  <ScrollArea className="h-[300px] rounded-lg bg-muted/50 p-3">
+                                    <pre className="whitespace-pre-wrap break-all text-xs">{displayValue}</pre>
+                                  </ScrollArea>
                                 ) : (
                                   <div className="flex items-center gap-2">
                                     <span className="truncate max-w-[400px] text-muted-foreground">
@@ -220,9 +220,11 @@ export function ListViewer({ data, type, onDeleteItem, className }: ListViewerPr
                                     <AlertDialogTitle>Delete Item</AlertDialogTitle>
                                     <AlertDialogDescription>
                                       Remove this item from the {type}?
-                                      <code className="block mt-2 p-2 bg-muted rounded text-xs break-all max-h-[100px] overflow-auto">
-                                        {item.length > 200 ? item.slice(0, 200) + '...' : item}
-                                      </code>
+                                      <ScrollArea className="mt-2 h-[100px] rounded bg-muted p-2">
+                                        <code className="block text-xs break-all">
+                                          {item.length > 200 ? item.slice(0, 200) + '...' : item}
+                                        </code>
+                                      </ScrollArea>
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>

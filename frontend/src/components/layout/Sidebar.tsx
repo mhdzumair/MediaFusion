@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/ui/logo'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import { getAppConfig } from '@/lib/api/instance'
@@ -140,35 +141,37 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        <div className="space-y-1">
-          {filterItems(userNavItems).map((item) => (
-            <NavLink key={item.href} item={item} />
-          ))}
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="px-3 py-4">
+          <div className="space-y-1">
+            {filterItems(userNavItems).map((item) => (
+              <NavLink key={item.href} item={item} />
+            ))}
+          </div>
+
+          {hasMinimumRole('moderator') && (
+            <>
+              <SectionLabel>Moderation</SectionLabel>
+              <div className="space-y-1">
+                {filterItems(modNavItems).map((item) => (
+                  <NavLink key={item.href} item={item} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {hasMinimumRole('admin') && (
+            <>
+              <SectionLabel>Administration</SectionLabel>
+              <div className="space-y-1">
+                {filterItems(adminNavItems).map((item) => (
+                  <NavLink key={item.href} item={item} />
+                ))}
+              </div>
+            </>
+          )}
         </div>
-
-        {hasMinimumRole('moderator') && (
-          <>
-            <SectionLabel>Moderation</SectionLabel>
-            <div className="space-y-1">
-              {filterItems(modNavItems).map((item) => (
-                <NavLink key={item.href} item={item} />
-              ))}
-            </div>
-          </>
-        )}
-
-        {hasMinimumRole('admin') && (
-          <>
-            <SectionLabel>Administration</SectionLabel>
-            <div className="space-y-1">
-              {filterItems(adminNavItems).map((item) => (
-                <NavLink key={item.href} item={item} />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      </ScrollArea>
 
       {/* Footer */}
       <div className="shrink-0 border-t border-border/40 px-4 py-2 space-y-1.5">
@@ -187,9 +190,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </div>
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          <span>
-            {instanceInfo?.addon_name || 'MediaFusion'} v{instanceInfo?.version || '...'}
-          </span>
+          <Link
+            to="/release-notes"
+            onClick={onClose}
+            className="hover:text-primary transition-colors underline-offset-2 hover:underline"
+          >
+            v{instanceInfo?.version || '...'}
+          </Link>
         </div>
       </div>
     </div>

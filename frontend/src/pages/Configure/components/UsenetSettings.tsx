@@ -22,6 +22,16 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -76,6 +86,7 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null)
 
   // Test results
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
@@ -90,10 +101,13 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
 
   // Update parent config
   const updateConfig = (newEnableUsenet: boolean, newPreferUsenet: boolean, newIndexers: NewznabIndexerConfig[]) => {
+    const existingIc: NonNullable<ProfileConfig['ic']> = config.ic || {}
+    const hasOtherIndexerConfig = !!(existingIc.pr || existingIc.jk || existingIc.tz?.length)
+
     // Store Newznab indexers in indexer_config.nz (ic.nz)
     const updatedIc = {
-      ...(config.ic || {}),
-      nz: newIndexers.length > 0 ? newIndexers : undefined,
+      ...existingIc,
+      nz: newIndexers.length > 0 ? newIndexers : hasOtherIndexerConfig ? [] : undefined,
     }
     // Clean up ic if it's empty
     const hasIndexerConfig = updatedIc.pr || updatedIc.jk || updatedIc.tz?.length || updatedIc.nz?.length
@@ -102,7 +116,8 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
       ...config,
       eus: newEnableUsenet,
       puot: newPreferUsenet,
-      ic: hasIndexerConfig ? updatedIc : undefined,
+      // Use null to remove ic on backend; undefined/omission keeps stale data via deep-merge.
+      ic: hasIndexerConfig ? updatedIc : null,
     })
   }
 
@@ -252,9 +267,7 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
                             setDialogOpen(true)
                           }}
                           onDelete={() => {
-                            if (confirm(`Delete indexer "${indexer.n}"?`)) {
-                              deleteIndexer(index)
-                            }
+                            setPendingDeleteIndex(index)
                           }}
                           onTest={() => testIndexer(indexer)}
                           isTesting={testingId === indexer.i}
@@ -307,6 +320,38 @@ export function UsenetSettings({ config, onChange }: UsenetSettingsProps) {
           </>
         )}
       </CardContent>
+
+      <AlertDialog
+        open={pendingDeleteIndex !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteIndex(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Newznab Indexer</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete{' '}
+              {pendingDeleteIndex !== null ? `"${indexers[pendingDeleteIndex]?.n || 'this indexer'}"` : 'this indexer'}?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                if (pendingDeleteIndex !== null) {
+                  deleteIndexer(pendingDeleteIndex)
+                }
+                setPendingDeleteIndex(null)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

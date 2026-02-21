@@ -248,7 +248,7 @@ export function AsyncMultiSelect({
           />
         </div>
 
-        <ScrollArea className="max-h-[250px]" ref={scrollRef}>
+        <ScrollArea className="h-[250px]" ref={scrollRef}>
           <div className="p-1">
             {isLoading ? (
               <div className="flex items-center justify-center py-6">

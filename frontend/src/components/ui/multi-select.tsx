@@ -150,7 +150,7 @@ export function MultiSelect({
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <ScrollArea className="max-h-[200px]">
+          <ScrollArea className="h-[200px]">
             <div className="p-1">
               {canAddCustom && (
                 <button

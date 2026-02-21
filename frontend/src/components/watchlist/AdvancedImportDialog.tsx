@@ -311,266 +311,273 @@ export function AdvancedImportDialog({
                 <DialogDescription>Import with full metadata control and file annotation support.</DialogDescription>
               </DialogHeader>
 
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                {/* Torrent Info */}
-                <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
-                  <p className="text-sm font-medium truncate" title={torrent.name}>
-                    {torrent.name}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <HardDrive className="h-3 w-3" />
-                      {formatBytes(torrent.size)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <FileVideo className="h-3 w-3" />
-                      {torrentFiles.length} video{torrentFiles.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Import Result */}
-                {importResult && (
-                  <div
-                    className={cn(
-                      'p-3 rounded-lg border flex items-center gap-2',
-                      importResult.status === 'success' && 'bg-green-500/10 border-green-500/30',
-                      importResult.status === 'failed' && 'bg-red-500/10 border-red-500/30',
-                      importResult.status === 'skipped' && 'bg-yellow-500/10 border-yellow-500/30',
-                    )}
-                  >
-                    {importResult.status === 'success' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-                    {importResult.status === 'failed' && <XCircle className="h-4 w-4 text-red-500" />}
-                    {importResult.status === 'skipped' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
-                    <span className="text-sm">{importResult.message}</span>
-                  </div>
-                )}
-
-                {/* Content Type & Import Mode */}
-                <div className="space-y-3">
-                  <Label>Content Type & Import Mode</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setContentType('movie')
-                        setImportMode('single')
-                        setSelectedMedia(null)
-                      }}
-                      className={cn(
-                        'p-3 rounded-lg border-2 text-left transition-all',
-                        contentType === 'movie'
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border/50 hover:border-primary/30',
-                      )}
-                    >
-                      <Film
-                        className={cn(
-                          'h-4 w-4 mb-1',
-                          contentType === 'movie' ? 'text-primary' : 'text-muted-foreground',
-                        )}
-                      />
-                      <p className={cn('text-sm font-medium', contentType === 'movie' && 'text-primary')}>Movie</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setContentType('series')
-                        setImportMode('single')
-                        setSelectedMedia(null)
-                      }}
-                      className={cn(
-                        'p-3 rounded-lg border-2 text-left transition-all',
-                        contentType === 'series'
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border/50 hover:border-primary/30',
-                      )}
-                    >
-                      <Tv
-                        className={cn(
-                          'h-4 w-4 mb-1',
-                          contentType === 'series' ? 'text-primary' : 'text-muted-foreground',
-                        )}
-                      />
-                      <p className={cn('text-sm font-medium', contentType === 'series' && 'text-primary')}>Series</p>
-                    </button>
-                  </div>
-
-                  {/* Import Mode Sub-options */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {importModeOptions.map((option) => {
-                      const Icon = option.icon
-                      const isSelected = importMode === option.value
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setImportMode(option.value as ImportMode)}
-                          className={cn(
-                            'p-2 rounded-lg border text-left transition-all flex items-center gap-2',
-                            isSelected ? 'border-primary/50 bg-primary/5' : 'border-border/30 hover:border-primary/30',
-                          )}
-                        >
-                          <Icon className={cn('h-4 w-4', isSelected ? 'text-primary' : 'text-muted-foreground')} />
-                          <div>
-                            <p className={cn('text-xs font-medium', isSelected && 'text-primary')}>{option.label}</p>
-                            <p className="text-[10px] text-muted-foreground">{option.description}</p>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Metadata Search */}
-                <div className="space-y-2">
-                  <Label>Search Metadata</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search for title..."
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
-
-                {/* Search Results */}
-                {(isSearching || searchResults.length > 0) && (
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                      {searchResults.length} results
-                      {isFetchingSearch && (
-                        <span className="flex items-center gap-1 text-muted-foreground/70">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          loading more...
-                        </span>
-                      )}
-                    </Label>
-                    <ScrollArea className="h-[180px] border rounded-lg">
-                      <div className="p-2 space-y-1">
-                        {isSearching && searchResults.length === 0 ? (
-                          <div className="flex items-center justify-center py-8">
-                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                          </div>
-                        ) : (
-                          searchResults.map((result) => (
-                            <button
-                              key={result.id}
-                              type="button"
-                              className={cn(
-                                'w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors',
-                                selectedMedia?.id === result.id
-                                  ? 'bg-primary/20 border border-primary'
-                                  : 'hover:bg-muted',
-                              )}
-                              onClick={() => handleSelectMedia(result)}
-                            >
-                              {result.poster ? (
-                                <img
-                                  src={result.poster}
-                                  alt={result.title}
-                                  className="w-10 h-14 object-cover rounded"
-                                />
-                              ) : (
-                                <div className="w-10 h-14 bg-muted rounded flex items-center justify-center">
-                                  {contentType === 'movie' ? (
-                                    <Film className="h-4 w-4 text-muted-foreground" />
-                                  ) : (
-                                    <Tv className="h-4 w-4 text-muted-foreground" />
-                                  )}
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{result.title}</p>
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                  {result.year && <span>{result.year}</span>}
-                                  {result.imdb_id && <span>• {result.imdb_id}</span>}
-                                  {result.source === 'internal' ? (
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
-                                    >
-                                      In Library
-                                    </Badge>
-                                  ) : (
-                                    result.provider && (
-                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                        {result.provider.toUpperCase()}
-                                      </Badge>
-                                    )
-                                  )}
-                                </div>
-                              </div>
-                              {selectedMedia?.id === result.id && (
-                                <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                              )}
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                )}
-
-                {/* Selected Media */}
-                {selectedMedia && (
-                  <div className="p-3 rounded-lg border border-primary bg-primary/5">
-                    <div className="flex items-center gap-3">
-                      {selectedMedia.poster ? (
-                        <img
-                          src={selectedMedia.poster}
-                          alt={selectedMedia.title}
-                          className="w-12 h-16 object-cover rounded"
-                        />
-                      ) : (
-                        <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
-                          {contentType === 'movie' ? (
-                            <Film className="h-5 w-5 text-muted-foreground" />
-                          ) : (
-                            <Tv className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium">{selectedMedia.title}</p>
-                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          {selectedMedia.year && <span>{selectedMedia.year}</span>}
-                          {selectedMedia.imdb_id && <span>• {selectedMedia.imdb_id}</span>}
-                          {selectedMedia.source === 'internal' ? (
-                            <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
-                              In Library
-                            </Badge>
-                          ) : (
-                            selectedMedia.provider && (
-                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                {selectedMedia.provider.toUpperCase()}
-                              </Badge>
-                            )
-                          )}
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="text-primary border-primary">
-                        Selected
-                      </Badge>
+              <ScrollArea className="flex-1 pr-1">
+                <div className="space-y-4">
+                  {/* Torrent Info */}
+                  <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                    <p className="text-sm font-medium truncate" title={torrent.name}>
+                      {torrent.name}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <HardDrive className="h-3 w-3" />
+                        {formatBytes(torrent.size)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <FileVideo className="h-3 w-3" />
+                        {torrentFiles.length} video{torrentFiles.length !== 1 ? 's' : ''}
+                      </span>
                     </div>
                   </div>
-                )}
 
-                {/* File Annotation Button */}
-                {torrentFiles.length > 1 && (
-                  <Button variant="outline" className="w-full" onClick={() => setAnnotationDialogOpen(true)}>
-                    <FileVideo className="h-4 w-4 mr-2" />
-                    Annotate Files ({fileAnnotations.length || torrentFiles.length})
-                    {fileAnnotations.length > 0 && (
-                      <Badge variant="secondary" className="ml-2">
-                        Configured
-                      </Badge>
-                    )}
-                  </Button>
-                )}
-              </div>
+                  {/* Import Result */}
+                  {importResult && (
+                    <div
+                      className={cn(
+                        'p-3 rounded-lg border flex items-center gap-2',
+                        importResult.status === 'success' && 'bg-green-500/10 border-green-500/30',
+                        importResult.status === 'failed' && 'bg-red-500/10 border-red-500/30',
+                        importResult.status === 'skipped' && 'bg-yellow-500/10 border-yellow-500/30',
+                      )}
+                    >
+                      {importResult.status === 'success' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                      {importResult.status === 'failed' && <XCircle className="h-4 w-4 text-red-500" />}
+                      {importResult.status === 'skipped' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
+                      <span className="text-sm">{importResult.message}</span>
+                    </div>
+                  )}
+
+                  {/* Content Type & Import Mode */}
+                  <div className="space-y-3">
+                    <Label>Content Type & Import Mode</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setContentType('movie')
+                          setImportMode('single')
+                          setSelectedMedia(null)
+                        }}
+                        className={cn(
+                          'p-3 rounded-lg border-2 text-left transition-all',
+                          contentType === 'movie'
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border/50 hover:border-primary/30',
+                        )}
+                      >
+                        <Film
+                          className={cn(
+                            'h-4 w-4 mb-1',
+                            contentType === 'movie' ? 'text-primary' : 'text-muted-foreground',
+                          )}
+                        />
+                        <p className={cn('text-sm font-medium', contentType === 'movie' && 'text-primary')}>Movie</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setContentType('series')
+                          setImportMode('single')
+                          setSelectedMedia(null)
+                        }}
+                        className={cn(
+                          'p-3 rounded-lg border-2 text-left transition-all',
+                          contentType === 'series'
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border/50 hover:border-primary/30',
+                        )}
+                      >
+                        <Tv
+                          className={cn(
+                            'h-4 w-4 mb-1',
+                            contentType === 'series' ? 'text-primary' : 'text-muted-foreground',
+                          )}
+                        />
+                        <p className={cn('text-sm font-medium', contentType === 'series' && 'text-primary')}>Series</p>
+                      </button>
+                    </div>
+
+                    {/* Import Mode Sub-options */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {importModeOptions.map((option) => {
+                        const Icon = option.icon
+                        const isSelected = importMode === option.value
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setImportMode(option.value as ImportMode)}
+                            className={cn(
+                              'p-2 rounded-lg border text-left transition-all flex items-center gap-2',
+                              isSelected
+                                ? 'border-primary/50 bg-primary/5'
+                                : 'border-border/30 hover:border-primary/30',
+                            )}
+                          >
+                            <Icon className={cn('h-4 w-4', isSelected ? 'text-primary' : 'text-muted-foreground')} />
+                            <div>
+                              <p className={cn('text-xs font-medium', isSelected && 'text-primary')}>{option.label}</p>
+                              <p className="text-[10px] text-muted-foreground">{option.description}</p>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Metadata Search */}
+                  <div className="space-y-2">
+                    <Label>Search Metadata</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search for title..."
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Search Results */}
+                  {(isSearching || searchResults.length > 0) && (
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                        {searchResults.length} results
+                        {isFetchingSearch && (
+                          <span className="flex items-center gap-1 text-muted-foreground/70">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            loading more...
+                          </span>
+                        )}
+                      </Label>
+                      <ScrollArea className="h-[180px] border rounded-lg">
+                        <div className="p-2 space-y-1">
+                          {isSearching && searchResults.length === 0 ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            searchResults.map((result) => (
+                              <button
+                                key={result.id}
+                                type="button"
+                                className={cn(
+                                  'w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors',
+                                  selectedMedia?.id === result.id
+                                    ? 'bg-primary/20 border border-primary'
+                                    : 'hover:bg-muted',
+                                )}
+                                onClick={() => handleSelectMedia(result)}
+                              >
+                                {result.poster ? (
+                                  <img
+                                    src={result.poster}
+                                    alt={result.title}
+                                    className="w-10 h-14 object-cover rounded"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-14 bg-muted rounded flex items-center justify-center">
+                                    {contentType === 'movie' ? (
+                                      <Film className="h-4 w-4 text-muted-foreground" />
+                                    ) : (
+                                      <Tv className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{result.title}</p>
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    {result.year && <span>{result.year}</span>}
+                                    {result.imdb_id && <span>• {result.imdb_id}</span>}
+                                    {result.source === 'internal' ? (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
+                                      >
+                                        In Library
+                                      </Badge>
+                                    ) : (
+                                      result.provider && (
+                                        <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                          {result.provider.toUpperCase()}
+                                        </Badge>
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+                                {selectedMedia?.id === result.id && (
+                                  <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                                )}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+
+                  {/* Selected Media */}
+                  {selectedMedia && (
+                    <div className="p-3 rounded-lg border border-primary bg-primary/5">
+                      <div className="flex items-center gap-3">
+                        {selectedMedia.poster ? (
+                          <img
+                            src={selectedMedia.poster}
+                            alt={selectedMedia.title}
+                            className="w-12 h-16 object-cover rounded"
+                          />
+                        ) : (
+                          <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
+                            {contentType === 'movie' ? (
+                              <Film className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                              <Tv className="h-5 w-5 text-muted-foreground" />
+                            )}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium">{selectedMedia.title}</p>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            {selectedMedia.year && <span>{selectedMedia.year}</span>}
+                            {selectedMedia.imdb_id && <span>• {selectedMedia.imdb_id}</span>}
+                            {selectedMedia.source === 'internal' ? (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700"
+                              >
+                                In Library
+                              </Badge>
+                            ) : (
+                              selectedMedia.provider && (
+                                <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                  {selectedMedia.provider.toUpperCase()}
+                                </Badge>
+                              )
+                            )}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="text-primary border-primary">
+                          Selected
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* File Annotation Button */}
+                  {torrentFiles.length > 1 && (
+                    <Button variant="outline" className="w-full" onClick={() => setAnnotationDialogOpen(true)}>
+                      <FileVideo className="h-4 w-4 mr-2" />
+                      Annotate Files ({fileAnnotations.length || torrentFiles.length})
+                      {fileAnnotations.length > 0 && (
+                        <Badge variant="secondary" className="ml-2">
+                          Configured
+                        </Badge>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </ScrollArea>
 
               <DialogFooter>
                 <Button variant="outline" onClick={handleClose}>

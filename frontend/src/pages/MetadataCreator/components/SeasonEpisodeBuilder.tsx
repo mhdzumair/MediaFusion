@@ -387,86 +387,88 @@ export function SeasonEpisodeBuilder({
                           </div>
 
                           {season.episodes && season.episodes.length > 0 ? (
-                            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                              {season.episodes.map((episode, episodeIndex) => (
-                                <div
-                                  key={episodeIndex}
-                                  className={cn(
-                                    'flex items-center gap-2 py-1.5 px-2 rounded',
-                                    'hover:bg-muted/30 group',
-                                  )}
-                                >
-                                  {editingEpisode?.seasonIndex === seasonIndex &&
-                                  editingEpisode?.episodeIndex === episodeIndex ? (
-                                    <>
-                                      <Input
-                                        type="number"
-                                        min="1"
-                                        value={episode.episode_number}
-                                        onChange={(e) =>
-                                          updateEpisode(seasonIndex, episodeIndex, {
-                                            episode_number: parseInt(e.target.value) || 1,
-                                          })
-                                        }
-                                        className="h-7 w-14 text-xs"
-                                      />
-                                      <Input
-                                        value={episode.title}
-                                        onChange={(e) =>
-                                          updateEpisode(seasonIndex, episodeIndex, {
-                                            title: e.target.value,
-                                          })
-                                        }
-                                        className="h-7 flex-1 text-xs"
-                                        autoFocus
-                                      />
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 text-green-500"
-                                        onClick={() => setEditingEpisode(null)}
-                                      >
-                                        <Check className="h-3 w-3" />
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="text-xs text-muted-foreground w-8">
-                                        E{episode.episode_number}
-                                      </span>
-                                      <span className="text-sm flex-1 truncate">{episode.title}</span>
-                                      <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6"
-                                          onClick={() => setEditingEpisode({ seasonIndex, episodeIndex })}
-                                        >
-                                          <Edit2 className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                          onClick={() =>
-                                            handleDeleteClick({
-                                              type: 'episode',
-                                              seasonIndex,
-                                              episodeIndex,
+                            <ScrollArea className="max-h-[200px]">
+                              <div className="space-y-1">
+                                {season.episodes.map((episode, episodeIndex) => (
+                                  <div
+                                    key={episodeIndex}
+                                    className={cn(
+                                      'flex items-center gap-2 py-1.5 px-2 rounded',
+                                      'hover:bg-muted/30 group',
+                                    )}
+                                  >
+                                    {editingEpisode?.seasonIndex === seasonIndex &&
+                                    editingEpisode?.episodeIndex === episodeIndex ? (
+                                      <>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          value={episode.episode_number}
+                                          onChange={(e) =>
+                                            updateEpisode(seasonIndex, episodeIndex, {
+                                              episode_number: parseInt(e.target.value) || 1,
                                             })
                                           }
+                                          className="h-7 w-14 text-xs"
+                                        />
+                                        <Input
+                                          value={episode.title}
+                                          onChange={(e) =>
+                                            updateEpisode(seasonIndex, episodeIndex, {
+                                              title: e.target.value,
+                                            })
+                                          }
+                                          className="h-7 flex-1 text-xs"
+                                          autoFocus
+                                        />
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 text-green-500"
+                                          onClick={() => setEditingEpisode(null)}
                                         >
-                                          <Trash2 className="h-3 w-3" />
+                                          <Check className="h-3 w-3" />
                                         </Button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-xs text-muted-foreground w-8">
+                                          E{episode.episode_number}
+                                        </span>
+                                        <span className="text-sm flex-1 truncate">{episode.title}</span>
+                                        <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6"
+                                            onClick={() => setEditingEpisode({ seasonIndex, episodeIndex })}
+                                          >
+                                            <Edit2 className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                            onClick={() =>
+                                              handleDeleteClick({
+                                                type: 'episode',
+                                                seasonIndex,
+                                                episodeIndex,
+                                              })
+                                            }
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </ScrollArea>
                           ) : (
                             <p className="text-xs text-muted-foreground py-2">No episodes yet. Add some above.</p>
                           )}

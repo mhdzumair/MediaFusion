@@ -292,7 +292,7 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
           </DialogHeader>
 
           {analysis && (
-            <ScrollArea className="flex-1 overflow-y-auto pr-4">
+            <ScrollArea className="flex-1 pr-4">
               <div className="space-y-4">
                 {/* Account Info */}
                 {analysis.account_info && (
@@ -353,23 +353,25 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                       <Switch checked={importLive} onCheckedChange={setImportLive} />
                     </div>
                     {importLive && analysis.live_categories.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50 max-h-[80px] overflow-y-auto">
-                        {analysis.live_categories.slice(0, 15).map((cat) => (
-                          <Badge
-                            key={cat.id}
-                            variant={selectedLiveCats.has(cat.id) ? 'default' : 'outline'}
-                            className="cursor-pointer text-xs"
-                            onClick={() => toggleCategory('live', cat.id)}
-                          >
-                            {cat.name} ({cat.count})
-                          </Badge>
-                        ))}
-                        {analysis.live_categories.length > 15 && (
-                          <Badge variant="secondary" className="text-xs">
-                            +{analysis.live_categories.length - 15} more
-                          </Badge>
-                        )}
-                      </div>
+                      <ScrollArea className="mt-2 max-h-[80px] border-t border-border/50 pt-2">
+                        <div className="flex flex-wrap gap-1">
+                          {analysis.live_categories.slice(0, 15).map((cat) => (
+                            <Badge
+                              key={cat.id}
+                              variant={selectedLiveCats.has(cat.id) ? 'default' : 'outline'}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleCategory('live', cat.id)}
+                            >
+                              {cat.name} ({cat.count})
+                            </Badge>
+                          ))}
+                          {analysis.live_categories.length > 15 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{analysis.live_categories.length - 15} more
+                            </Badge>
+                          )}
+                        </div>
+                      </ScrollArea>
                     )}
                   </div>
 
@@ -388,23 +390,25 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                       <Switch checked={importVod} onCheckedChange={setImportVod} />
                     </div>
                     {importVod && analysis.vod_categories.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50 max-h-[80px] overflow-y-auto">
-                        {analysis.vod_categories.slice(0, 15).map((cat) => (
-                          <Badge
-                            key={cat.id}
-                            variant={selectedVodCats.has(cat.id) ? 'default' : 'outline'}
-                            className="cursor-pointer text-xs"
-                            onClick={() => toggleCategory('vod', cat.id)}
-                          >
-                            {cat.name} ({cat.count})
-                          </Badge>
-                        ))}
-                        {analysis.vod_categories.length > 15 && (
-                          <Badge variant="secondary" className="text-xs">
-                            +{analysis.vod_categories.length - 15} more
-                          </Badge>
-                        )}
-                      </div>
+                      <ScrollArea className="mt-2 max-h-[80px] border-t border-border/50 pt-2">
+                        <div className="flex flex-wrap gap-1">
+                          {analysis.vod_categories.slice(0, 15).map((cat) => (
+                            <Badge
+                              key={cat.id}
+                              variant={selectedVodCats.has(cat.id) ? 'default' : 'outline'}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleCategory('vod', cat.id)}
+                            >
+                              {cat.name} ({cat.count})
+                            </Badge>
+                          ))}
+                          {analysis.vod_categories.length > 15 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{analysis.vod_categories.length - 15} more
+                            </Badge>
+                          )}
+                        </div>
+                      </ScrollArea>
                     )}
                   </div>
 
@@ -423,23 +427,25 @@ export function XtreamTab({ onSuccess, onError, iptvSettings }: XtreamTabProps) 
                       <Switch checked={importSeries} onCheckedChange={setImportSeries} />
                     </div>
                     {importSeries && analysis.series_categories.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50 max-h-[80px] overflow-y-auto">
-                        {analysis.series_categories.slice(0, 15).map((cat) => (
-                          <Badge
-                            key={cat.id}
-                            variant={selectedSeriesCats.has(cat.id) ? 'default' : 'outline'}
-                            className="cursor-pointer text-xs"
-                            onClick={() => toggleCategory('series', cat.id)}
-                          >
-                            {cat.name} ({cat.count})
-                          </Badge>
-                        ))}
-                        {analysis.series_categories.length > 15 && (
-                          <Badge variant="secondary" className="text-xs">
-                            +{analysis.series_categories.length - 15} more
-                          </Badge>
-                        )}
-                      </div>
+                      <ScrollArea className="mt-2 max-h-[80px] border-t border-border/50 pt-2">
+                        <div className="flex flex-wrap gap-1">
+                          {analysis.series_categories.slice(0, 15).map((cat) => (
+                            <Badge
+                              key={cat.id}
+                              variant={selectedSeriesCats.has(cat.id) ? 'default' : 'outline'}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleCategory('series', cat.id)}
+                            >
+                              {cat.name} ({cat.count})
+                            </Badge>
+                          ))}
+                          {analysis.series_categories.length > 15 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{analysis.series_categories.length - 15} more
+                            </Badge>
+                          )}
+                        </div>
+                      </ScrollArea>
                     )}
                   </div>
                 </div>

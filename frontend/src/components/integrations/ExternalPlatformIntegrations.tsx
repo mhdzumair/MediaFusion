@@ -21,6 +21,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -317,6 +327,7 @@ function PlatformCard({
   const disconnect = useDisconnectIntegration()
   const updateSettings = useUpdateIntegrationSettings()
   const triggerSync = useTriggerSync()
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false)
 
   // Skip rendering if platform info is not found
   if (!info) {
@@ -324,10 +335,13 @@ function PlatformCard({
     return null
   }
 
-  const handleDisconnect = async () => {
-    if (confirm(`Are you sure you want to disconnect ${info.name}?`)) {
-      await disconnect.mutateAsync(platform)
-    }
+  const handleDisconnect = () => {
+    setDisconnectDialogOpen(true)
+  }
+
+  const confirmDisconnect = async () => {
+    await disconnect.mutateAsync(platform)
+    setDisconnectDialogOpen(false)
   }
 
   const handleSyncToggle = async (enabled: boolean) => {
@@ -503,6 +517,23 @@ function PlatformCard({
           <ExternalLink className="h-3 w-3" />
         </a>
       </CardContent>
+
+      <AlertDialog open={disconnectDialogOpen} onOpenChange={setDisconnectDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect {info.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will stop syncing your watch history with {info.name}. You can reconnect anytime.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={confirmDisconnect}>
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

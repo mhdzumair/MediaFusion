@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -176,9 +177,9 @@ function JobDetailDialog({
           {job.last_run_state && (
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground">Last Run Stats</label>
-              <div className="p-3 rounded-lg bg-muted/50 font-mono text-xs max-h-32 overflow-auto">
+              <ScrollArea className="h-32 rounded-lg bg-muted/50 p-3 font-mono text-xs">
                 <pre>{JSON.stringify(job.last_run_state, null, 2)}</pre>
-              </div>
+              </ScrollArea>
             </div>
           )}
 
@@ -197,34 +198,36 @@ function JobDetailDialog({
             ) : history?.entries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No execution history available</p>
             ) : (
-              <div className="space-y-1 max-h-40 overflow-auto">
-                {history?.entries.map((entry, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      'flex items-center justify-between p-2 rounded text-xs',
-                      entry.status === 'success'
-                        ? 'bg-emerald-500/10'
-                        : entry.status === 'failed'
-                          ? 'bg-red-500/10'
-                          : 'bg-muted/50',
-                    )}
-                  >
-                    <span className="text-muted-foreground">{entry.run_at}</span>
-                    <div className="flex items-center gap-2">
-                      {entry.items_scraped !== null && <span>{entry.items_scraped} items</span>}
-                      {entry.duration_seconds !== null && <span>{entry.duration_seconds.toFixed(1)}s</span>}
-                      {entry.status === 'success' ? (
-                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                      ) : entry.status === 'failed' ? (
-                        <XCircle className="h-3 w-3 text-red-500" />
-                      ) : (
-                        <Clock className="h-3 w-3" />
+              <ScrollArea className="h-40">
+                <div className="space-y-1">
+                  {history?.entries.map((entry, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        'flex items-center justify-between p-2 rounded text-xs',
+                        entry.status === 'success'
+                          ? 'bg-emerald-500/10'
+                          : entry.status === 'failed'
+                            ? 'bg-red-500/10'
+                            : 'bg-muted/50',
                       )}
+                    >
+                      <span className="text-muted-foreground">{entry.run_at}</span>
+                      <div className="flex items-center gap-2">
+                        {entry.items_scraped !== null && <span>{entry.items_scraped} items</span>}
+                        {entry.duration_seconds !== null && <span>{entry.duration_seconds.toFixed(1)}s</span>}
+                        {entry.status === 'success' ? (
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                        ) : entry.status === 'failed' ? (
+                          <XCircle className="h-3 w-3 text-red-500" />
+                        ) : (
+                          <Clock className="h-3 w-3" />
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
         </div>

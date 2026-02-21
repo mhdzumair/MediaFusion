@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -211,7 +212,7 @@ export function StreamFilters({
               </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 overscroll-contain">
+            <ScrollArea className="flex-1 overscroll-contain">
               <div className="p-3 sm:p-4 space-y-4 sm:space-y-5">
                 {/* Last Played Filter */}
                 {hasLastPlayed && (
@@ -407,22 +408,24 @@ export function StreamFilters({
                 {sourceOptions.length > 0 && (
                   <div className="space-y-2.5">
                     <Label className="text-xs sm:text-sm font-medium">Source</Label>
-                    <div className="flex flex-wrap gap-1.5 sm:gap-2 max-h-28 overflow-y-auto">
-                      {sourceOptions.map((source) => (
-                        <Badge
-                          key={source}
-                          variant={filters.sourceFilter.includes(source) ? 'default' : 'outline'}
-                          className="cursor-pointer py-1 sm:py-1.5 px-2 sm:px-3 text-[11px] sm:text-xs hover:bg-primary/10"
-                          onClick={() => toggleArrayFilter('sourceFilter', source)}
-                        >
-                          {source}
-                        </Badge>
-                      ))}
-                    </div>
+                    <ScrollArea className="max-h-28">
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        {sourceOptions.map((source) => (
+                          <Badge
+                            key={source}
+                            variant={filters.sourceFilter.includes(source) ? 'default' : 'outline'}
+                            className="cursor-pointer py-1 sm:py-1.5 px-2 sm:px-3 text-[11px] sm:text-xs hover:bg-primary/10"
+                            onClick={() => toggleArrayFilter('sourceFilter', source)}
+                          >
+                            {source}
+                          </Badge>
+                        ))}
+                      </div>
+                    </ScrollArea>
                   </div>
                 )}
               </div>
-            </div>
+            </ScrollArea>
           </PopoverContent>
         </Popover>
 

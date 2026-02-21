@@ -138,9 +138,9 @@ export function HashViewer({ data, onDeleteItem, className }: HashViewerProps) {
                             <CollapsibleTrigger asChild>
                               <div className="cursor-pointer">
                                 {isExpanded ? (
-                                  <pre className="whitespace-pre-wrap break-all text-xs bg-muted/50 p-3 rounded-lg max-h-[300px] overflow-auto">
-                                    {displayValue}
-                                  </pre>
+                                  <ScrollArea className="h-[300px] rounded-lg bg-muted/50 p-3">
+                                    <pre className="whitespace-pre-wrap break-all text-xs">{displayValue}</pre>
+                                  </ScrollArea>
                                 ) : (
                                   <div className="flex items-center gap-2">
                                     <span className="truncate max-w-[300px] text-muted-foreground">

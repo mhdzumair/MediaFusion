@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -90,60 +91,62 @@ function RegexTestModal({ open, onClose, fieldName, sourceContent, initialPatter
           <DialogDescription>Test your regex pattern against the extracted content</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto space-y-4">
-          <div className="space-y-2">
-            <Label>Source Content</Label>
-            <Textarea value={sourceContent} readOnly className="font-mono text-xs h-24 bg-muted" />
-          </div>
+        <ScrollArea className="flex-1">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Source Content</Label>
+              <Textarea value={sourceContent} readOnly className="font-mono text-xs h-24 bg-muted" />
+            </div>
 
-          <div className="space-y-2">
-            <Label>Regex Pattern</Label>
-            <Input
-              value={pattern}
-              onChange={(e) => setPattern(e.target.value)}
-              placeholder="Enter regex pattern"
-              className="font-mono"
-            />
-          </div>
+            <div className="space-y-2">
+              <Label>Regex Pattern</Label>
+              <Input
+                value={pattern}
+                onChange={(e) => setPattern(e.target.value)}
+                placeholder="Enter regex pattern"
+                className="font-mono"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label>Result</Label>
-            <div
-              className={cn(
-                'p-3 rounded-lg border font-mono text-sm',
-                result.error
-                  ? 'bg-red-500/10 border-red-500/30'
-                  : result.match
-                    ? 'bg-emerald-500/10 border-emerald-500/30'
-                    : 'bg-muted',
-              )}
-            >
-              {result.error ? (
-                <span className="text-red-500">{result.error}</span>
-              ) : result.match ? (
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-muted-foreground">Full match:</span>{' '}
-                    <span className="text-emerald-500">{result.match}</span>
-                  </div>
-                  {result.groups.length > 0 && (
+            <div className="space-y-2">
+              <Label>Result</Label>
+              <div
+                className={cn(
+                  'p-3 rounded-lg border font-mono text-sm',
+                  result.error
+                    ? 'bg-red-500/10 border-red-500/30'
+                    : result.match
+                      ? 'bg-emerald-500/10 border-emerald-500/30'
+                      : 'bg-muted',
+                )}
+              >
+                {result.error ? (
+                  <span className="text-red-500">{result.error}</span>
+                ) : result.match ? (
+                  <div className="space-y-2">
                     <div>
-                      <span className="text-muted-foreground">Capture groups:</span>
-                      {result.groups.map((g, i) => (
-                        <div key={i} className="ml-2">
-                          <span className="text-muted-foreground">Group {i + 1}:</span>{' '}
-                          <span className="text-primary">{g}</span>
-                        </div>
-                      ))}
+                      <span className="text-muted-foreground">Full match:</span>{' '}
+                      <span className="text-emerald-500">{result.match}</span>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <span className="text-muted-foreground">Enter a pattern to test</span>
-              )}
+                    {result.groups.length > 0 && (
+                      <div>
+                        <span className="text-muted-foreground">Capture groups:</span>
+                        {result.groups.map((g, i) => (
+                          <div key={i} className="ml-2">
+                            <span className="text-muted-foreground">Group {i + 1}:</span>{' '}
+                            <span className="text-primary">{g}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">Enter a pattern to test</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </ScrollArea>
 
         <div className="flex justify-end gap-2 pt-4 border-t">
           <Button variant="outline" onClick={onClose}>
@@ -479,7 +482,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
           </div>
 
           {/* Content */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <ScrollArea className="flex-1 min-h-0">
             <div className="p-6">
               {/* Step 1: URL */}
               {currentStep === 'url' && (
@@ -634,11 +637,10 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-hidden rounded-lg">
-                          <pre className="text-xs bg-black/50 p-3 font-mono overflow-x-auto max-h-48">
-                            {JSON.stringify(testResult.sample_item, null, 2)}
-                          </pre>
-                        </div>
+                        <ScrollArea className="max-h-48 rounded-lg bg-black/50">
+                          <pre className="p-3 font-mono text-xs">{JSON.stringify(testResult.sample_item, null, 2)}</pre>
+                          <ScrollBar orientation="horizontal" />
+                        </ScrollArea>
                       </CardContent>
                     </Card>
                   )}
@@ -840,11 +842,10 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-hidden rounded-lg">
-                          <pre className="text-xs bg-black/50 p-3 font-mono overflow-x-auto max-h-40">
-                            {JSON.stringify(testResult.sample_item, null, 2)}
-                          </pre>
-                        </div>
+                        <ScrollArea className="max-h-40 rounded-lg bg-black/50">
+                          <pre className="p-3 font-mono text-xs">{JSON.stringify(testResult.sample_item, null, 2)}</pre>
+                          <ScrollBar orientation="horizontal" />
+                        </ScrollArea>
                       </CardContent>
                     </Card>
                   )}
@@ -994,7 +995,7 @@ export function RSSFeedWizard({ open, onClose, feed, onSuccess }: RSSFeedWizardP
                 </div>
               )}
             </div>
-          </div>
+          </ScrollArea>
 
           {/* Footer */}
           <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/30">

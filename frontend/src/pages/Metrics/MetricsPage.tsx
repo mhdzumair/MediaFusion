@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   BarChart3,
   Database,
@@ -347,69 +348,71 @@ function ScraperHistoryPanel({
         ) : history.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">No history available</p>
         ) : (
-          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-            {history.map((run, idx) => {
-              const hasErrors = run.total_items.errors > 0
-              const wasSkipped = run.skip_scraping
+          <ScrollArea className="h-[500px] pr-2">
+            <div className="space-y-3">
+              {history.map((run, idx) => {
+                const hasErrors = run.total_items.errors > 0
+                const wasSkipped = run.skip_scraping
 
-              return (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg border ${wasSkipped ? 'bg-muted/30 border-muted' : hasErrors ? 'bg-red-500/5 border-red-500/20' : 'bg-muted/50 border-border/30'}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">{new Date(run.timestamp).toLocaleString()}</span>
-                    <Badge
-                      variant={wasSkipped ? 'outline' : hasErrors ? 'destructive' : 'secondary'}
-                      className="text-xs"
-                    >
-                      {wasSkipped ? 'Skipped' : hasErrors ? 'Errors' : `${run.duration_seconds.toFixed(1)}s`}
-                    </Badge>
-                  </div>
+                return (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-lg border ${wasSkipped ? 'bg-muted/30 border-muted' : hasErrors ? 'bg-red-500/5 border-red-500/20' : 'bg-muted/50 border-border/30'}`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">{new Date(run.timestamp).toLocaleString()}</span>
+                      <Badge
+                        variant={wasSkipped ? 'outline' : hasErrors ? 'destructive' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {wasSkipped ? 'Skipped' : hasErrors ? 'Errors' : `${run.duration_seconds.toFixed(1)}s`}
+                      </Badge>
+                    </div>
 
-                  {!wasSkipped && (
-                    <>
-                      {run.meta_title && (
-                        <p className="text-xs text-muted-foreground truncate mb-1">
-                          {run.meta_title} {run.season && `S${run.season}`}
-                          {run.episode && `E${run.episode}`}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-4 text-xs">
-                        <span className="flex items-center gap-1">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                          {run.total_items.found} found
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Activity className="h-3 w-3 text-blue-500" />
-                          {run.total_items.processed} processed
-                        </span>
-                        {run.total_items.errors > 0 && (
-                          <span className="flex items-center gap-1 text-red-400">
-                            <XCircle className="h-3 w-3" />
-                            {run.total_items.errors} errors
-                          </span>
+                    {!wasSkipped && (
+                      <>
+                        {run.meta_title && (
+                          <p className="text-xs text-muted-foreground truncate mb-1">
+                            {run.meta_title} {run.season && `S${run.season}`}
+                            {run.episode && `E${run.episode}`}
+                          </p>
                         )}
-                      </div>
-
-                      {/* Quality distribution preview */}
-                      {Object.keys(run.quality_distribution).length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {Object.entries(run.quality_distribution)
-                            .slice(0, 5)
-                            .map(([quality, count]) => (
-                              <Badge key={quality} variant="outline" className="text-[10px] px-1.5 py-0">
-                                {quality}: {count}
-                              </Badge>
-                            ))}
+                        <div className="flex items-center gap-4 text-xs">
+                          <span className="flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                            {run.total_items.found} found
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Activity className="h-3 w-3 text-blue-500" />
+                            {run.total_items.processed} processed
+                          </span>
+                          {run.total_items.errors > 0 && (
+                            <span className="flex items-center gap-1 text-red-400">
+                              <XCircle className="h-3 w-3" />
+                              {run.total_items.errors} errors
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+
+                        {/* Quality distribution preview */}
+                        {Object.keys(run.quality_distribution).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {Object.entries(run.quality_distribution)
+                              .slice(0, 5)
+                              .map(([quality, count]) => (
+                                <Badge key={quality} variant="outline" className="text-[10px] px-1.5 py-0">
+                                  {quality}: {count}
+                                </Badge>
+                              ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>
@@ -1463,20 +1466,22 @@ export function MetricsPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                    {torrentSources?.map((source) => (
-                      <div key={source.name} className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium truncate">{source.name}</span>
-                          <span className="text-muted-foreground">{formatNumber(source.count)}</span>
+                  <ScrollArea className="h-[400px] pr-2">
+                    <div className="space-y-4">
+                      {torrentSources?.map((source) => (
+                        <div key={source.name} className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium truncate">{source.name}</span>
+                            <span className="text-muted-foreground">{formatNumber(source.count)}</span>
+                          </div>
+                          <Progress
+                            value={(source.count / (torrentCount?.total_torrents ?? 1)) * 100}
+                            className="h-1.5"
+                          />
                         </div>
-                        <Progress
-                          value={(source.count / (torrentCount?.total_torrents ?? 1)) * 100}
-                          className="h-1.5"
-                        />
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
                 )}
               </CardContent>
             </Card>
@@ -1499,17 +1504,19 @@ export function MetricsPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                    {uploaders?.map((uploader, idx) => (
-                      <div key={uploader.name} className="flex items-center gap-3">
-                        <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10 text-sm font-medium">
-                          {idx + 1}
+                  <ScrollArea className="h-[400px] pr-2">
+                    <div className="space-y-3">
+                      {uploaders?.map((uploader, idx) => (
+                        <div key={uploader.name} className="flex items-center gap-3">
+                          <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10 text-sm font-medium">
+                            {idx + 1}
+                          </div>
+                          <span className="font-medium truncate flex-1">{uploader.name}</span>
+                          <Badge variant="secondary">{formatNumber(uploader.count)}</Badge>
                         </div>
-                        <span className="font-medium truncate flex-1">{uploader.name}</span>
-                        <Badge variant="secondary">{formatNumber(uploader.count)}</Badge>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
                 )}
               </CardContent>
             </Card>
@@ -1560,17 +1567,19 @@ export function MetricsPage() {
               ) : weeklyUploaders?.error ? (
                 <p className="text-center text-muted-foreground py-8">{weeklyUploaders.error}</p>
               ) : weeklyUploaders?.uploaders && weeklyUploaders.uploaders.length > 0 ? (
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                  {weeklyUploaders.uploaders.map((uploader, idx) => (
-                    <div key={uploader.name} className="flex items-center gap-3">
-                      <div className="flex items-center justify-center h-8 w-8 rounded-full bg-pink-500/10 text-sm font-medium">
-                        {idx + 1}
+                <ScrollArea className="h-[400px] pr-2">
+                  <div className="space-y-3">
+                    {weeklyUploaders.uploaders.map((uploader, idx) => (
+                      <div key={uploader.name} className="flex items-center gap-3">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-full bg-pink-500/10 text-sm font-medium">
+                          {idx + 1}
+                        </div>
+                        <span className="font-medium truncate flex-1">{uploader.name}</span>
+                        <Badge variant="secondary">{formatNumber(uploader.count)}</Badge>
                       </div>
-                      <span className="font-medium truncate flex-1">{uploader.name}</span>
-                      <Badge variant="secondary">{formatNumber(uploader.count)}</Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               ) : (
                 <p className="text-center text-muted-foreground py-8">No uploads for this week</p>
               )}

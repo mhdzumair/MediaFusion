@@ -20,9 +20,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -109,7 +120,7 @@ function IndexerHealthList({ indexers, title }: { indexers: IndexerHealth[]; tit
       </button>
 
       {expanded && (
-        <div className="max-h-64 overflow-y-auto">
+        <ScrollArea className="max-h-64">
           <div className="divide-y divide-border">
             {indexers.map((indexer, idx) => (
               <div key={idx} className="flex items-center justify-between px-3 py-2 text-sm">
@@ -128,7 +139,7 @@ function IndexerHealthList({ indexers, title }: { indexers: IndexerHealth[]; tit
               </div>
             ))}
           </div>
-        </div>
+        </ScrollArea>
       )}
     </div>
   )
@@ -262,6 +273,7 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
   // Torznab dialog state
   const [torznabDialogOpen, setTorznabDialogOpen] = useState(false)
   const [editingEndpointIndex, setEditingEndpointIndex] = useState<number | null>(null)
+  const [pendingDeleteEndpointIndex, setPendingDeleteEndpointIndex] = useState<number | null>(null)
 
   // Sync local state when config changes from outside (during render, not in effect)
   const [prevConfigIc, setPrevConfigIc] = useState(config.ic)
@@ -290,10 +302,22 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
     newTorznab: TorznabEndpoint[],
   ) => {
     const indexerConfig = uiToProfileConfig(newProwlarr, newJackett, newTorznab)
-    onChange({
-      ...config,
-      ic: indexerConfig,
-    })
+    const nextConfig: ProfileConfig = { ...config }
+    const hasOtherIndexerConfig = !!(indexerConfig.pr || indexerConfig.jk)
+
+    // Explicitly clear tz when it becomes empty but other indexer config remains.
+    if (newTorznab.length === 0 && hasOtherIndexerConfig) {
+      indexerConfig.tz = []
+    }
+
+    // Send null (not undefined/omission) so backend deep-merge actually removes stale ic fields.
+    if (Object.keys(indexerConfig).length === 0) {
+      nextConfig.ic = null
+    } else {
+      nextConfig.ic = indexerConfig
+    }
+
+    onChange(nextConfig)
   }
 
   const testProwlarrMutation = useMutation({
@@ -652,9 +676,7 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
                         setTorznabDialogOpen(true)
                       }}
                       onDelete={() => {
-                        if (confirm('Delete this endpoint?')) {
-                          deleteTorznabEndpointLocal(index)
-                        }
+                        setPendingDeleteEndpointIndex(index)
                       }}
                       onTest={async () => {
                         try {
@@ -721,6 +743,40 @@ export function IndexerSettings({ config, onChange }: IndexerSettingsProps) {
           </AccordionItem>
         </Accordion>
       </CardContent>
+
+      <AlertDialog
+        open={pendingDeleteEndpointIndex !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteEndpointIndex(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Torznab Endpoint</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete{' '}
+              {pendingDeleteEndpointIndex !== null
+                ? `"${torznabEndpoints[pendingDeleteEndpointIndex]?.name || 'this endpoint'}"`
+                : 'this endpoint'}
+              ? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                if (pendingDeleteEndpointIndex !== null) {
+                  deleteTorznabEndpointLocal(pendingDeleteEndpointIndex)
+                }
+                setPendingDeleteEndpointIndex(null)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

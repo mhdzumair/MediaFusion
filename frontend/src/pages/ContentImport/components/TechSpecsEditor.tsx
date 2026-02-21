@@ -247,7 +247,7 @@ function MultiSelectPopover({ values, options, onToggle, onClear, placeholder, c
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[200px] p-0" align="start">
-        <ScrollArea className="h-[200px]" onWheel={(e) => e.stopPropagation()}>
+        <ScrollArea className="h-[200px]">
           <div className="p-1">
             {values.length > 0 && (
               <Button

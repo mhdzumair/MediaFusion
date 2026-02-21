@@ -433,7 +433,7 @@ export function RefreshMetadataButton({
 
         {/* Link External ID Dialog */}
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
-          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ArrowRightLeft className="h-5 w-5 text-emerald-500" />
@@ -444,327 +444,335 @@ export function RefreshMetadataButton({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
-              {/* Current IDs */}
-              <div className="p-3 rounded-xl bg-muted/50">
-                <Label className="text-xs text-muted-foreground">Current External IDs</Label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {externalIds?.imdb && (
-                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                      🎬 IMDb: {externalIds.imdb}
-                    </Badge>
-                  )}
-                  {externalIds?.tmdb && (
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
-                      🎞️ TMDB: {externalIds.tmdb}
-                    </Badge>
-                  )}
-                  {externalIds?.tvdb && (
-                    <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
-                      📺 TVDB: {externalIds.tvdb}
-                    </Badge>
-                  )}
-                  {externalIds?.mal && (
-                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                      🎌 MAL: {externalIds.mal}
-                    </Badge>
-                  )}
-                  {externalIds?.kitsu && (
-                    <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/30">
-                      🦊 Kitsu: {externalIds.kitsu}
-                    </Badge>
-                  )}
-                  {isInternalId && (
-                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                      Internal: {canonicalExternalId}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-
-              {/* Search section */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Search External Providers</Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Search by title..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    className="flex-1 rounded-xl"
-                  />
-                  <Button
-                    onClick={handleSearch}
-                    disabled={searchMutation.isPending || !searchQuery.trim()}
-                    className="rounded-xl"
-                  >
-                    {searchMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
+            <ScrollArea className="max-h-[60vh] pr-1">
+              <div className="space-y-4 py-4">
+                {/* Current IDs */}
+                <div className="p-3 rounded-xl bg-muted/50">
+                  <Label className="text-xs text-muted-foreground">Current External IDs</Label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {externalIds?.imdb && (
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                        🎬 IMDb: {externalIds.imdb}
+                      </Badge>
                     )}
-                  </Button>
+                    {externalIds?.tmdb && (
+                      <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
+                        🎞️ TMDB: {externalIds.tmdb}
+                      </Badge>
+                    )}
+                    {externalIds?.tvdb && (
+                      <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
+                        📺 TVDB: {externalIds.tvdb}
+                      </Badge>
+                    )}
+                    {externalIds?.mal && (
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                        🎌 MAL: {externalIds.mal}
+                      </Badge>
+                    )}
+                    {externalIds?.kitsu && (
+                      <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/30">
+                        🦊 Kitsu: {externalIds.kitsu}
+                      </Badge>
+                    )}
+                    {isInternalId && (
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                        Internal: {canonicalExternalId}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Search Results */}
-              {searchResults.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Results from all providers</Label>
-                  <ScrollArea className="h-52 rounded-xl border">
-                    <div className="p-2 space-y-2">
-                      {searchResults.map((result, idx) => {
-                        const providerConfig = PROVIDERS.find((p) => p.id === result.provider)
-                        const availableIds = getAvailableIds(result)
-                        const newIdsCount = availableIds.filter(
-                          (item) => !externalIds?.[item.provider as keyof ExternalIds],
-                        ).length
-                        return (
-                          <div
-                            key={`${result.id}-${idx}`}
-                            className={cn(
-                              'flex gap-3 p-2 rounded-lg cursor-pointer transition-colors',
-                              selectedResult?.id === result.id
-                                ? 'bg-primary/20 border border-primary/50'
-                                : 'hover:bg-muted',
-                            )}
-                            onClick={() => handleSelectResult(result)}
-                          >
-                            {result.poster ? (
-                              <img src={result.poster} alt={result.title} className="w-12 h-18 object-cover rounded" />
-                            ) : (
-                              <div className="w-12 h-18 bg-muted rounded flex items-center justify-center">
-                                <Film className="h-6 w-6 text-muted-foreground" />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-sm truncate">{result.title}</p>
-                                {providerConfig && (
-                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                                    {providerConfig.icon} {providerConfig.name}
-                                  </Badge>
-                                )}
-                                {newIdsCount > 0 && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                                  >
-                                    +{newIdsCount} new
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                                {result.year && (
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="h-3 w-3" />
-                                    {result.year}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {result.imdb_id && (
-                                  <code
-                                    className={cn(
-                                      'text-[10px] px-1 rounded',
-                                      externalIds?.imdb === result.imdb_id
-                                        ? 'text-emerald-600 bg-emerald-500/10'
-                                        : externalIds?.imdb
-                                          ? 'text-primary bg-primary/10'
-                                          : 'text-muted-foreground bg-muted',
-                                    )}
-                                  >
-                                    IMDb: {result.imdb_id}
-                                    {externalIds?.imdb === result.imdb_id && ' ✓'}
-                                  </code>
-                                )}
-                                {result.tmdb_id && (
-                                  <code
-                                    className={cn(
-                                      'text-[10px] px-1 rounded',
-                                      String(externalIds?.tmdb) === String(result.tmdb_id)
-                                        ? 'text-emerald-600 bg-emerald-500/10'
-                                        : externalIds?.tmdb
-                                          ? 'text-primary bg-primary/10'
-                                          : 'text-muted-foreground bg-muted',
-                                    )}
-                                  >
-                                    TMDB: {result.tmdb_id}
-                                    {String(externalIds?.tmdb) === String(result.tmdb_id) && ' ✓'}
-                                  </code>
-                                )}
-                                {result.tvdb_id && (
-                                  <code
-                                    className={cn(
-                                      'text-[10px] px-1 rounded',
-                                      String(externalIds?.tvdb) === String(result.tvdb_id)
-                                        ? 'text-emerald-600 bg-emerald-500/10'
-                                        : externalIds?.tvdb
-                                          ? 'text-primary bg-primary/10'
-                                          : 'text-muted-foreground bg-muted',
-                                    )}
-                                  >
-                                    TVDB: {result.tvdb_id}
-                                    {String(externalIds?.tvdb) === String(result.tvdb_id) && ' ✓'}
-                                  </code>
-                                )}
+                {/* Search section */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Search External Providers</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search by title..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                      className="flex-1 rounded-xl"
+                    />
+                    <Button
+                      onClick={handleSearch}
+                      disabled={searchMutation.isPending || !searchQuery.trim()}
+                      className="rounded-xl"
+                    >
+                      {searchMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Search Results */}
+                {searchResults.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Results from all providers</Label>
+                    <ScrollArea className="h-52 rounded-xl border">
+                      <div className="p-2 space-y-2">
+                        {searchResults.map((result, idx) => {
+                          const providerConfig = PROVIDERS.find((p) => p.id === result.provider)
+                          const availableIds = getAvailableIds(result)
+                          const newIdsCount = availableIds.filter(
+                            (item) => !externalIds?.[item.provider as keyof ExternalIds],
+                          ).length
+                          return (
+                            <div
+                              key={`${result.id}-${idx}`}
+                              className={cn(
+                                'flex gap-3 p-2 rounded-lg cursor-pointer transition-colors',
+                                selectedResult?.id === result.id
+                                  ? 'bg-primary/20 border border-primary/50'
+                                  : 'hover:bg-muted',
+                              )}
+                              onClick={() => handleSelectResult(result)}
+                            >
+                              {result.poster ? (
+                                <img
+                                  src={result.poster}
+                                  alt={result.title}
+                                  className="w-12 h-18 object-cover rounded"
+                                />
+                              ) : (
+                                <div className="w-12 h-18 bg-muted rounded flex items-center justify-center">
+                                  <Film className="h-6 w-6 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium text-sm truncate">{result.title}</p>
+                                  {providerConfig && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                      {providerConfig.icon} {providerConfig.name}
+                                    </Badge>
+                                  )}
+                                  {newIdsCount > 0 && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                    >
+                                      +{newIdsCount} new
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                  {result.year && (
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" />
+                                      {result.year}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {result.imdb_id && (
+                                    <code
+                                      className={cn(
+                                        'text-[10px] px-1 rounded',
+                                        externalIds?.imdb === result.imdb_id
+                                          ? 'text-emerald-600 bg-emerald-500/10'
+                                          : externalIds?.imdb
+                                            ? 'text-primary bg-primary/10'
+                                            : 'text-muted-foreground bg-muted',
+                                      )}
+                                    >
+                                      IMDb: {result.imdb_id}
+                                      {externalIds?.imdb === result.imdb_id && ' ✓'}
+                                    </code>
+                                  )}
+                                  {result.tmdb_id && (
+                                    <code
+                                      className={cn(
+                                        'text-[10px] px-1 rounded',
+                                        String(externalIds?.tmdb) === String(result.tmdb_id)
+                                          ? 'text-emerald-600 bg-emerald-500/10'
+                                          : externalIds?.tmdb
+                                            ? 'text-primary bg-primary/10'
+                                            : 'text-muted-foreground bg-muted',
+                                      )}
+                                    >
+                                      TMDB: {result.tmdb_id}
+                                      {String(externalIds?.tmdb) === String(result.tmdb_id) && ' ✓'}
+                                    </code>
+                                  )}
+                                  {result.tvdb_id && (
+                                    <code
+                                      className={cn(
+                                        'text-[10px] px-1 rounded',
+                                        String(externalIds?.tvdb) === String(result.tvdb_id)
+                                          ? 'text-emerald-600 bg-emerald-500/10'
+                                          : externalIds?.tvdb
+                                            ? 'text-primary bg-primary/10'
+                                            : 'text-muted-foreground bg-muted',
+                                      )}
+                                    >
+                                      TVDB: {result.tvdb_id}
+                                      {String(externalIds?.tvdb) === String(result.tvdb_id) && ' ✓'}
+                                    </code>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+
+                {/* Selected result - IDs to link */}
+                {selectedResult && (
+                  <div className="space-y-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium flex items-center gap-2">
+                        <Link2 className="h-4 w-4 text-primary" />
+                        IDs to link from "{selectedResult.title}"
+                      </Label>
+                      <span className="text-xs text-muted-foreground">{idsToLink.length} selected</span>
+                    </div>
+                    <div className="space-y-2">
+                      {getAvailableIds(selectedResult).map(({ provider, id }) => {
+                        const providerConfig = PROVIDERS.find((p) => p.id === provider)
+                        const currentLinkedId = externalIds?.[provider as keyof ExternalIds]
+                        const alreadyLinked = !!currentLinkedId
+                        const isSameId = alreadyLinked && String(currentLinkedId) === String(id)
+                        const isSelected = idsToLink.some((item) => item.provider === provider)
+
+                        return (
+                          <label
+                            key={provider}
+                            className={cn(
+                              'flex items-center gap-3 p-2 rounded-lg transition-colors cursor-pointer',
+                              isSameId && !isSelected && 'bg-muted/30',
+                              isSelected && 'bg-emerald-500/10 border border-emerald-500/30',
+                              !isSelected && !isSameId && 'hover:bg-muted/50',
+                            )}
+                          >
+                            <Checkbox checked={isSelected} onCheckedChange={() => toggleIdToLink(provider, id)} />
+                            <span className="text-lg">{providerConfig?.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{providerConfig?.name}</p>
+                              <code className="text-xs text-muted-foreground">{id}</code>
+                            </div>
+                            {alreadyLinked &&
+                              (isSameId ? (
+                                <Badge variant="secondary" className="text-[10px] gap-1">
+                                  <Check className="h-3 w-3" />
+                                  Same ID
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/30"
+                                >
+                                  Current: {currentLinkedId}
+                                </Badge>
+                              ))}
+                          </label>
                         )
                       })}
                     </div>
-                  </ScrollArea>
-                </div>
-              )}
-
-              {/* Selected result - IDs to link */}
-              {selectedResult && (
-                <div className="space-y-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium flex items-center gap-2">
-                      <Link2 className="h-4 w-4 text-primary" />
-                      IDs to link from "{selectedResult.title}"
-                    </Label>
-                    <span className="text-xs text-muted-foreground">{idsToLink.length} selected</span>
                   </div>
-                  <div className="space-y-2">
-                    {getAvailableIds(selectedResult).map(({ provider, id }) => {
-                      const providerConfig = PROVIDERS.find((p) => p.id === provider)
-                      const currentLinkedId = externalIds?.[provider as keyof ExternalIds]
-                      const alreadyLinked = !!currentLinkedId
-                      const isSameId = alreadyLinked && String(currentLinkedId) === String(id)
-                      const isSelected = idsToLink.some((item) => item.provider === provider)
+                )}
 
-                      return (
-                        <label
-                          key={provider}
-                          className={cn(
-                            'flex items-center gap-3 p-2 rounded-lg transition-colors cursor-pointer',
-                            isSameId && !isSelected && 'bg-muted/30',
-                            isSelected && 'bg-emerald-500/10 border border-emerald-500/30',
-                            !isSelected && !isSameId && 'hover:bg-muted/50',
-                          )}
-                        >
-                          <Checkbox checked={isSelected} onCheckedChange={() => toggleIdToLink(provider, id)} />
-                          <span className="text-lg">{providerConfig?.icon}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">{providerConfig?.name}</p>
-                            <code className="text-xs text-muted-foreground">{id}</code>
-                          </div>
-                          {alreadyLinked &&
-                            (isSameId ? (
-                              <Badge variant="secondary" className="text-[10px] gap-1">
-                                <Check className="h-3 w-3" />
-                                Same ID
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/30"
-                              >
-                                Current: {currentLinkedId}
-                              </Badge>
-                            ))}
-                        </label>
-                      )
-                    })}
+                {/* Manual entry section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-px bg-border" />
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setLinkMode(linkMode === 'manual' ? 'search' : 'manual')}
+                    >
+                      {linkMode === 'manual' ? 'Use search results' : 'Or enter ID manually'}
+                    </button>
+                    <div className="flex-1 h-px bg-border" />
                   </div>
-                </div>
-              )}
 
-              {/* Manual entry section */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-px bg-border" />
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={() => setLinkMode(linkMode === 'manual' ? 'search' : 'manual')}
-                  >
-                    {linkMode === 'manual' ? 'Use search results' : 'Or enter ID manually'}
-                  </button>
-                  <div className="flex-1 h-px bg-border" />
+                  {linkMode === 'manual' && (
+                    <>
+                      <div className="grid grid-cols-[120px_1fr] gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-sm">Provider</Label>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" className="w-full justify-between rounded-xl">
+                                <span className="flex items-center gap-2">
+                                  <span>{currentProviderConfig?.icon}</span>
+                                  <span>{currentProviderConfig?.name}</span>
+                                </span>
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-48">
+                              {PROVIDERS.map((provider) => (
+                                <div
+                                  key={provider.id}
+                                  className={cn(
+                                    'flex items-center gap-2 p-2 cursor-pointer hover:bg-muted rounded-lg',
+                                    selectedProvider === provider.id && 'bg-primary/10',
+                                  )}
+                                  onClick={() => {
+                                    setSelectedProvider(provider.id)
+                                    setNewExternalId('')
+                                  }}
+                                >
+                                  <span>{provider.icon}</span>
+                                  <span className="text-sm">{provider.name}</span>
+                                </div>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm">External ID</Label>
+                          <Input
+                            placeholder={currentProviderConfig?.idPlaceholder || 'Enter ID'}
+                            value={newExternalId}
+                            onChange={(e) => setNewExternalId(e.target.value)}
+                            className="rounded-xl font-mono"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedProvider === 'imdb'
+                          ? 'IMDb ID starts with "tt" (e.g., tt1234567)'
+                          : `Enter the ${currentProviderConfig?.name} ID (e.g., ${currentProviderConfig?.idFormat})`}
+                      </p>
+                    </>
+                  )}
                 </div>
 
-                {linkMode === 'manual' && (
-                  <>
-                    <div className="grid grid-cols-[120px_1fr] gap-3">
-                      <div className="space-y-2">
-                        <Label className="text-sm">Provider</Label>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between rounded-xl">
-                              <span className="flex items-center gap-2">
-                                <span>{currentProviderConfig?.icon}</span>
-                                <span>{currentProviderConfig?.name}</span>
-                              </span>
-                              <ChevronDown className="h-3 w-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-48">
-                            {PROVIDERS.map((provider) => (
-                              <div
-                                key={provider.id}
-                                className={cn(
-                                  'flex items-center gap-2 p-2 cursor-pointer hover:bg-muted rounded-lg',
-                                  selectedProvider === provider.id && 'bg-primary/10',
-                                )}
-                                onClick={() => {
-                                  setSelectedProvider(provider.id)
-                                  setNewExternalId('')
-                                }}
-                              >
-                                <span>{provider.icon}</span>
-                                <span className="text-sm">{provider.name}</span>
-                              </div>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm">External ID</Label>
-                        <Input
-                          placeholder={currentProviderConfig?.idPlaceholder || 'Enter ID'}
-                          value={newExternalId}
-                          onChange={(e) => setNewExternalId(e.target.value)}
-                          className="rounded-xl font-mono"
-                        />
-                      </div>
-                    </div>
+                {/* Fetch metadata option */}
+                <label className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 cursor-pointer">
+                  <Checkbox
+                    checked={fetchMetadataOnLink}
+                    onCheckedChange={(checked) => setFetchMetadataOnLink(checked as boolean)}
+                  />
+                  <div>
+                    <p className="text-sm font-medium">Fetch metadata from provider(s)</p>
                     <p className="text-xs text-muted-foreground">
-                      {selectedProvider === 'imdb'
-                        ? 'IMDb ID starts with "tt" (e.g., tt1234567)'
-                        : `Enter the ${currentProviderConfig?.name} ID (e.g., ${currentProviderConfig?.idFormat})`}
+                      Update title, description, poster, and other details
                     </p>
-                  </>
+                  </div>
+                </label>
+
+                {/* Status messages */}
+                {(linkMutation.isError || linkMultipleMutation.isError) && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      {(linkMutation.error as Error)?.message ||
+                        (linkMultipleMutation.error as Error)?.message ||
+                        'Linking failed'}
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
-
-              {/* Fetch metadata option */}
-              <label className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 cursor-pointer">
-                <Checkbox
-                  checked={fetchMetadataOnLink}
-                  onCheckedChange={(checked) => setFetchMetadataOnLink(checked as boolean)}
-                />
-                <div>
-                  <p className="text-sm font-medium">Fetch metadata from provider(s)</p>
-                  <p className="text-xs text-muted-foreground">Update title, description, poster, and other details</p>
-                </div>
-              </label>
-
-              {/* Status messages */}
-              {(linkMutation.isError || linkMultipleMutation.isError) && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    {(linkMutation.error as Error)?.message ||
-                      (linkMultipleMutation.error as Error)?.message ||
-                      'Linking failed'}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
+            </ScrollArea>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button variant="outline" onClick={() => setLinkDialogOpen(false)} className="rounded-xl">

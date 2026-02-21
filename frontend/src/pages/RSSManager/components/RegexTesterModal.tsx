@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Check, X, TestTube2, AlertCircle, Copy } from 'lucide-react'
@@ -212,24 +213,26 @@ export function RegexTesterModal({
                     Found {matches.length} match{matches.length !== 1 ? 'es' : ''}
                   </div>
 
-                  <div className="max-h-40 overflow-auto space-y-1">
-                    {matches.map((match, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between p-2 bg-muted rounded text-xs font-mono group"
-                      >
-                        <span className="truncate">{match}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
-                          onClick={() => copyToClipboard(match)}
+                  <ScrollArea className="h-40">
+                    <div className="space-y-1">
+                      {matches.map((match, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-2 bg-muted rounded text-xs font-mono group"
                         >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
+                          <span className="truncate">{match}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
+                            onClick={() => copyToClipboard(match)}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
                 </div>
               )}
             </div>

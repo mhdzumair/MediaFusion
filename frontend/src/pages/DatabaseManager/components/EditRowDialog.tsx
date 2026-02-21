@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -354,7 +355,7 @@ function EditRowDialogContent({
         <DialogDescription>Modify the field values below. Read-only fields cannot be edited.</DialogDescription>
       </DialogHeader>
 
-      <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2">
+      <ScrollArea className="flex-1 min-h-0 pr-2 -mr-2">
         <div className="space-y-6 py-4">
           {sortedColumns.map((column) => (
             <FieldEditor
@@ -365,7 +366,7 @@ function EditRowDialogContent({
             />
           ))}
         </div>
-      </div>
+      </ScrollArea>
 
       {error && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">

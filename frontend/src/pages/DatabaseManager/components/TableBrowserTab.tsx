@@ -37,7 +37,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -875,33 +875,36 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
           <>
             {/* FK Navigation Breadcrumb */}
             {navigationStack.length > 0 && (
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted/30 border border-border/50 shrink-0 overflow-x-auto text-xs">
-                <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                {navigationStack.map((entry, index) => (
-                  <span key={index} className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => handleBreadcrumbNavigate(index)}
-                      className="text-blue-400 hover:text-blue-300 hover:underline transition-colors font-mono"
-                    >
-                      {entry.label}
-                    </button>
-                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                  </span>
-                ))}
-                <span className="font-mono font-medium text-foreground shrink-0">{selectedTable}</span>
-                {filters.length > 0 && filters[0]?.value && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 ml-1 shrink-0">
-                    {filters[0].column} = {filters[0].value}
-                  </Badge>
-                )}
-                <button
-                  onClick={handleClearNavigation}
-                  className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                  title="Clear navigation"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                </button>
-              </div>
+              <ScrollArea className="shrink-0 rounded-lg border border-border/50 bg-muted/30 text-xs">
+                <div className="flex items-center gap-1.5 px-3 py-2">
+                  <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  {navigationStack.map((entry, index) => (
+                    <span key={index} className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleBreadcrumbNavigate(index)}
+                        className="text-blue-400 hover:text-blue-300 hover:underline transition-colors font-mono"
+                      >
+                        {entry.label}
+                      </button>
+                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                    </span>
+                  ))}
+                  <span className="font-mono font-medium text-foreground shrink-0">{selectedTable}</span>
+                  {filters.length > 0 && filters[0]?.value && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 ml-1 shrink-0">
+                      {filters[0].column} = {filters[0].value}
+                    </Badge>
+                  )}
+                  <button
+                    onClick={handleClearNavigation}
+                    className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    title="Clear navigation"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
             )}
 
             {/* Toolbar Row 1 - Title and Actions */}
@@ -1224,8 +1227,8 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
               {/* Data Grid */}
               <Card className="flex-1 min-w-0 bg-card/50 border-border/50 flex flex-col overflow-hidden">
                 <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-                  {/* Table container with horizontal scroll */}
-                  <div className="flex-1 overflow-auto relative">
+                  {/* Table container with both-axis scroll */}
+                  <ScrollArea className="flex-1 relative">
                     <table className="w-full text-xs md:text-sm border-collapse min-w-max">
                       <thead className="sticky top-0 z-20 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
                         <tr className="border-b border-border/50">
@@ -1357,7 +1360,9 @@ export function TableBrowserTab({ initialTable }: TableBrowserTabProps) {
                         )}
                       </tbody>
                     </table>
-                  </div>
+                    <ScrollBar orientation="horizontal" />
+                    <ScrollBar orientation="vertical" />
+                  </ScrollArea>
 
                   {/* Pagination - Responsive */}
                   <div className="flex items-center justify-between p-2 md:p-3 border-t border-border/50 shrink-0 bg-card/50 gap-2">
