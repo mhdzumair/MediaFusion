@@ -1,8 +1,12 @@
 import asyncio
+import logging
 
 from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.offcloud.client import OffCloud
+
+logger = logging.getLogger(__name__)
+OFFCLOUD_TORRENT_DETAILS_CONCURRENCY = 6
 
 
 def _normalize_status(status: str | None) -> str:
@@ -118,38 +122,47 @@ async def fetch_torrent_details_from_oc(streaming_provider: StreamingProvider, *
     try:
         async with OffCloud(token=streaming_provider.token) as oc_client:
             available_torrents = await oc_client.get_user_torrent_list()
-            result = []
-            for torrent in available_torrents:
-                if "btih:" not in torrent.get("originalLink", ""):
-                    continue
+            sem = asyncio.Semaphore(OFFCLOUD_TORRENT_DETAILS_CONCURRENCY)
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
+            btih_torrents = [t for t in available_torrents if "btih:" in t.get("originalLink", "")]
+            if target_hashes:
+                btih_torrents = [
+                    torrent
+                    for torrent in btih_torrents
+                    if torrent["originalLink"].split("btih:")[1].split("&")[0].lower() in target_hashes
+                ]
 
+            async def fetch_torrent_details(torrent: dict) -> dict:
                 info_hash = torrent["originalLink"].split("btih:")[1].split("&")[0].lower()
+                base = {
+                    "id": torrent.get("requestId"),
+                    "hash": info_hash,
+                    "filename": torrent.get("fileName", ""),
+                    "size": torrent.get("fileSize", 0),
+                    "files": [],
+                }
 
-                # Get detailed info for files
+                request_id = torrent.get("requestId")
+                if not request_id:
+                    return base
+
                 try:
-                    torrent_info = await oc_client.get_torrent_info(torrent["requestId"])
-                    files = []
+                    async with sem:
+                        torrent_info = await oc_client.get_torrent_info(request_id)
                     if "fileName" in torrent_info:
-                        files.append(
+                        base["files"] = [
                             {
                                 "id": None,
                                 "path": torrent_info.get("fileName", ""),
                                 "size": torrent_info.get("fileSize", 0),
                             }
-                        )
-                except Exception:
-                    files = []
+                        ]
+                except Exception as error:
+                    logger.debug("Failed to fetch OffCloud torrent details for id=%s: %s", request_id, error)
 
-                result.append(
-                    {
-                        "id": torrent.get("requestId"),
-                        "hash": info_hash,
-                        "filename": torrent.get("fileName", ""),
-                        "size": torrent.get("fileSize", 0),
-                        "files": files,
-                    }
-                )
-            return result
+                return base
+
+            return await asyncio.gather(*(fetch_torrent_details(t) for t in btih_torrents))
     except ProviderException:
         return []
 

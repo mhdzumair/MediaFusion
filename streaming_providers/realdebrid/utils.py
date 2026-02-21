@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
@@ -6,6 +7,47 @@ from streaming_providers.parser import (
     select_file_index_from_torrent,
 )
 from streaming_providers.realdebrid.client import RealDebrid
+
+logger = logging.getLogger(__name__)
+
+RD_TORRENT_LIST_PAGE_SIZE = 100
+RD_TORRENT_LIST_MAX_PAGES = 100
+RD_TORRENT_DETAILS_CONCURRENCY = 6
+
+
+async def _get_all_torrents(rd_client: RealDebrid) -> list[dict]:
+    """Fetch all torrents with safe pagination fallback."""
+    all_torrents: list[dict] = []
+    seen_ids: set[str] = set()
+
+    for page in range(1, RD_TORRENT_LIST_MAX_PAGES + 1):
+        page_data = await rd_client.get_user_torrent_list(page=page, limit=RD_TORRENT_LIST_PAGE_SIZE)
+        if not page_data:
+            break
+
+        if not isinstance(page_data, list):
+            return []
+
+        # If API ignores limit and returns a full unbounded list in one response,
+        # avoid looping forever and just return this payload as-is.
+        if page == 1 and len(page_data) > RD_TORRENT_LIST_PAGE_SIZE:
+            return page_data
+
+        newly_added = 0
+        for torrent in page_data:
+            torrent_id = str(torrent.get("id", ""))
+            if torrent_id and torrent_id in seen_ids:
+                continue
+            if torrent_id:
+                seen_ids.add(torrent_id)
+            all_torrents.append(torrent)
+            newly_added += 1
+
+        # Stop if this page had no new items or we reached final page.
+        if newly_added == 0 or len(page_data) < RD_TORRENT_LIST_PAGE_SIZE:
+            break
+
+    return all_torrents
 
 
 async def create_download_link(
@@ -163,7 +205,7 @@ async def fetch_downloaded_info_hashes_from_rd(
     """Fetches the info_hashes of all torrents downloaded in the RealDebrid account."""
     try:
         async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
-            available_torrents = await rd_client.get_user_torrent_list()
+            available_torrents = await _get_all_torrents(rd_client)
             return [torrent["hash"] for torrent in available_torrents if torrent["status"] == "downloaded"]
 
     except ProviderException:
@@ -177,14 +219,33 @@ async def fetch_torrent_details_from_rd(streaming_provider: StreamingProvider, u
     """
     try:
         async with RealDebrid(token=streaming_provider.token, user_ip=user_ip) as rd_client:
-            available_torrents = await rd_client.get_user_torrent_list()
-            result = []
-            for torrent in available_torrents:
-                if torrent["status"] != "downloaded":
-                    continue
-                # Get detailed info for each torrent to get file list
+            available_torrents = await _get_all_torrents(rd_client)
+            downloaded_torrents = [torrent for torrent in available_torrents if torrent.get("status") == "downloaded"]
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
+            if target_hashes:
+                downloaded_torrents = [
+                    torrent for torrent in downloaded_torrents if str(torrent.get("hash", "")).lower() in target_hashes
+                ]
+            semaphore = asyncio.Semaphore(RD_TORRENT_DETAILS_CONCURRENCY)
+
+            async def fetch_torrent_details(torrent: dict) -> dict:
+                torrent_id = torrent.get("id")
+                info_hash = str(torrent.get("hash", "")).lower()
+                base_data = {
+                    "id": torrent_id,
+                    "hash": info_hash,
+                    "filename": torrent.get("filename", ""),
+                    "size": torrent.get("bytes", 0),
+                    "files": [],
+                }
+
+                if not torrent_id or not info_hash:
+                    return base_data
+
                 try:
-                    torrent_info = await rd_client.get_torrent_info(torrent["id"])
+                    async with semaphore:
+                        torrent_info = await rd_client.get_torrent_info(torrent_id)
+
                     files = []
                     for f in torrent_info.get("files", []):
                         if f.get("selected", 0) == 1:
@@ -195,27 +256,17 @@ async def fetch_torrent_details_from_rd(streaming_provider: StreamingProvider, u
                                     "size": f.get("bytes", 0),
                                 }
                             )
-                    result.append(
-                        {
-                            "id": torrent["id"],
-                            "hash": torrent["hash"].lower(),
-                            "filename": torrent.get("filename", ""),
-                            "size": torrent.get("bytes", 0),
-                            "files": files,
-                        }
+                    base_data["files"] = files
+                    return base_data
+                except Exception as error:
+                    logger.debug(
+                        "Failed to fetch RealDebrid torrent details for id=%s: %s",
+                        torrent_id,
+                        error,
                     )
-                except Exception:
-                    # If we can't get detailed info, still include basic info
-                    result.append(
-                        {
-                            "id": torrent["id"],
-                            "hash": torrent["hash"].lower(),
-                            "filename": torrent.get("filename", ""),
-                            "size": torrent.get("bytes", 0),
-                            "files": [],
-                        }
-                    )
-            return result
+                    return base_data
+
+            return await asyncio.gather(*(fetch_torrent_details(torrent) for torrent in downloaded_torrents))
 
     except ProviderException:
         return []

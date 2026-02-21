@@ -13,6 +13,8 @@ from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
 from utils import crypto
 
+PIKPAK_TORRENT_DETAILS_CONCURRENCY = 6
+
 
 async def get_torrent_file_by_info_hash(pikpak: PikPakApi, my_pack_folder_id: str, info_hash: str):
     """Gets the folder_id of a folder with a given info_hash in the root directory."""
@@ -386,45 +388,58 @@ async def fetch_torrent_details_from_pikpak(streaming_provider: StreamingProvide
             my_pack_folder_id = await get_my_pack_folder_id(pikpak)
             file_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
 
-            result = []
-            for item in file_list_content["files"]:
+            sem = asyncio.Semaphore(PIKPAK_TORRENT_DETAILS_CONCURRENCY)
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
+            magnet_items = [
+                item
+                for item in file_list_content["files"]
+                if item.get("params", {}).get("url", "").startswith("magnet:")
+            ]
+            if target_hashes:
+                magnet_items = [
+                    item
+                    for item in magnet_items
+                    if item.get("params", {}).get("url", "").split(":")[-1].lower() in target_hashes
+                ]
+
+            async def fetch_item_details(item: dict) -> dict:
                 magnet_url = item.get("params", {}).get("url", "")
-                if not magnet_url.startswith("magnet:"):
-                    continue
-
                 info_hash = magnet_url.split(":")[-1].lower()
+                base = {
+                    "id": item.get("id"),
+                    "hash": info_hash,
+                    "filename": item.get("name", ""),
+                    "size": int(item.get("size", 0)),
+                    "files": [],
+                }
 
-                # Get files from the folder/file
-                files = []
-                if item["kind"] == "drive#folder":
-                    folder_files = await get_files_from_folder(pikpak, item["id"])
-                    for f in folder_files:
-                        files.append(
-                            {
-                                "id": f.get("id"),
-                                "path": f.get("name", ""),
-                                "size": int(f.get("size", 0)),
-                            }
-                        )
-                else:
-                    files.append(
+                if item["kind"] != "drive#folder":
+                    base["files"] = [
                         {
                             "id": item.get("id"),
                             "path": item.get("name", ""),
                             "size": int(item.get("size", 0)),
                         }
-                    )
+                    ]
+                    return base
 
-                result.append(
-                    {
-                        "id": item.get("id"),
-                        "hash": info_hash,
-                        "filename": item.get("name", ""),
-                        "size": int(item.get("size", 0)),
-                        "files": files,
-                    }
-                )
-            return result
+                try:
+                    async with sem:
+                        folder_files = await get_files_from_folder(pikpak, item["id"])
+                    base["files"] = [
+                        {
+                            "id": file_item.get("id"),
+                            "path": file_item.get("name", ""),
+                            "size": int(file_item.get("size", 0)),
+                        }
+                        for file_item in folder_files
+                    ]
+                except Exception as error:
+                    logging.debug("Failed to fetch PikPak folder details for id=%s: %s", item.get("id"), error)
+
+                return base
+
+            return await asyncio.gather(*(fetch_item_details(item) for item in magnet_items))
     except ProviderException:
         return []
 

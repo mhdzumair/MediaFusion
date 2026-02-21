@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import {
   FileInput,
   Magnet,
@@ -435,6 +436,8 @@ export function ContentImportPage() {
   const isImporting =
     importMagnet.isPending || importTorrent.isPending || analyzeMagnet.isPending || analyzeTorrent.isPending
   const isNZBImporting = importNZBFile.isPending || importNZBUrl.isPending
+  const importTabTriggerClass =
+    'shrink-0 sm:flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm'
 
   return (
     <div className="space-y-6">
@@ -454,96 +457,70 @@ export function ContentImportPage() {
 
       {/* Import Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="flex w-full flex-wrap p-1 bg-muted/50 rounded-xl gap-1">
-          <TabsTrigger
-            value="debrid"
-            className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-          >
-            <HardDrive className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">Debrid</span>
-          </TabsTrigger>
-          {isTabEnabled('magnet') && (
-            <TabsTrigger
-              value="magnet"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Magnet className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-              <span className="hidden sm:inline">Magnet</span>
+        <ScrollArea className="-mx-1 px-1 pb-1">
+          <TabsList className="h-auto w-max min-w-full flex-nowrap gap-1 rounded-xl bg-muted/50 p-1">
+            <TabsTrigger value="debrid" className={importTabTriggerClass}>
+              <HardDrive className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Debrid</span>
             </TabsTrigger>
-          )}
-          {isTabEnabled('torrent') && (
-            <TabsTrigger
-              value="torrent"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Upload className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-              <span className="hidden sm:inline">Torrent</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('nzb') && (
-            <TabsTrigger
-              value="nzb"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Newspaper className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-              <span className="hidden sm:inline">NZB</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('m3u') && (
-            <TabsTrigger
-              value="m3u"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <FileVideo className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-              <span className="hidden sm:inline">M3U</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('xtream') && (
-            <TabsTrigger
-              value="xtream"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Tv className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-              <span className="hidden sm:inline">Xtream</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('youtube') && (
-            <TabsTrigger
-              value="youtube"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Youtube className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-red-500" />
-              <span className="hidden sm:inline">YouTube</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('http') && (
-            <TabsTrigger
-              value="http"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Globe className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
-              <span className="hidden sm:inline">HTTP</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('acestream') && (
-            <TabsTrigger
-              value="acestream"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Radio className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-green-500" />
-              <span className="hidden sm:inline">AceStream</span>
-            </TabsTrigger>
-          )}
-          {isTabEnabled('telegram') && (
-            <TabsTrigger
-              value="telegram"
-              className="flex-1 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs md:text-sm"
-            >
-              <Send className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-blue-500" />
-              <span className="hidden sm:inline">Telegram</span>
-            </TabsTrigger>
-          )}
-        </TabsList>
+            {isTabEnabled('magnet') && (
+              <TabsTrigger value="magnet" className={importTabTriggerClass}>
+                <Magnet className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Magnet</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('torrent') && (
+              <TabsTrigger value="torrent" className={importTabTriggerClass}>
+                <Upload className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Torrent</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('nzb') && (
+              <TabsTrigger value="nzb" className={importTabTriggerClass}>
+                <Newspaper className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">NZB</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('m3u') && (
+              <TabsTrigger value="m3u" className={importTabTriggerClass}>
+                <FileVideo className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">M3U</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('xtream') && (
+              <TabsTrigger value="xtream" className={importTabTriggerClass}>
+                <Tv className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Xtream</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('youtube') && (
+              <TabsTrigger value="youtube" className={importTabTriggerClass}>
+                <Youtube className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-red-500" />
+                <span className="hidden sm:inline">YouTube</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('http') && (
+              <TabsTrigger value="http" className={importTabTriggerClass}>
+                <Globe className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">HTTP</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('acestream') && (
+              <TabsTrigger value="acestream" className={importTabTriggerClass}>
+                <Radio className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-green-500" />
+                <span className="hidden sm:inline">AceStream</span>
+              </TabsTrigger>
+            )}
+            {isTabEnabled('telegram') && (
+              <TabsTrigger value="telegram" className={importTabTriggerClass}>
+                <Send className="mr-1.5 h-3.5 w-3.5 md:h-4 md:w-4 text-blue-500" />
+                <span className="hidden sm:inline">Telegram</span>
+              </TabsTrigger>
+            )}
+          </TabsList>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+        <p className="px-1 text-[11px] text-muted-foreground sm:hidden">Swipe left/right to view all import tabs</p>
 
         {/* Magnet Link Tab */}
         {isTabEnabled('magnet') && (

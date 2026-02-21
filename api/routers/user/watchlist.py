@@ -4,7 +4,12 @@ Debrid Watchlist API endpoints.
 Provides access to content downloaded/cached in user's debrid accounts.
 """
 
+import asyncio
+import json
 import logging
+import re
+from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -12,10 +17,12 @@ from PTT import parse_title
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from thefuzz import fuzz
 
 from api.routers.user.auth import require_auth
 from db.database import get_read_session, get_async_session
 from db.enums import MediaType
+from db.redis_database import REDIS_ASYNC_CLIENT
 from db.models import (
     Media,
     MediaImage,
@@ -39,6 +46,11 @@ from utils.profile_crypto import profile_crypto
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/watchlist", tags=["watchlist"])
+
+TORRENT_DETAILS_CACHE_TTL_SECONDS = 120
+IMPORT_PREPARE_CONCURRENCY = 6
+IMPORT_DB_BATCH_SIZE = 25
+TORRENT_DETAILS_CACHE_KEY_PREFIX = "watchlist:torrent_details"
 
 
 # ============================================
@@ -100,6 +112,12 @@ class MissingTorrentFile(BaseModel):
     size: int
 
 
+class MissingExternalIds(BaseModel):
+    imdb: str | None = None
+    tmdb: str | None = None
+    tvdb: str | None = None
+
+
 class MissingTorrentItem(BaseModel):
     """A torrent in the debrid account that is not in our database."""
 
@@ -111,6 +129,8 @@ class MissingTorrentItem(BaseModel):
     parsed_title: str | None = None
     parsed_year: int | None = None
     parsed_type: str | None = None  # movie, series
+    matched_title: str | None = None
+    external_ids: MissingExternalIds | None = None
 
 
 class MissingTorrentsResponse(BaseModel):
@@ -211,6 +231,358 @@ class AdvancedImportRequest(BaseModel):
 WATCHLIST_SUPPORTED_PROVIDERS = set(mapper.FETCH_DOWNLOADED_INFO_HASHES_FUNCTIONS.keys())
 
 
+@dataclass(slots=True)
+class PreparedImportItem:
+    index: int
+    info_hash: str
+    media_type: str
+    external_id: str
+    metadata: dict[str, Any]
+    stream_data: TorrentStreamData
+
+
+@dataclass(slots=True)
+class ImportPreparationResult:
+    index: int
+    prepared_item: PreparedImportItem | None = None
+    result_item: ImportResultItem | None = None
+    metadata_search_ms: float = 0.0
+
+
+def _torrent_cache_key(user_id: int, profile_id: int | None, provider: str) -> str:
+    return f"{TORRENT_DETAILS_CACHE_KEY_PREFIX}:{user_id}:{profile_id or 0}:{provider}"
+
+
+async def get_cached_torrent_details(
+    user_id: int,
+    profile_id: int | None,
+    provider: str,
+) -> dict[str, dict[str, Any]] | None:
+    cache_key = _torrent_cache_key(user_id, profile_id, provider)
+    cached_data = await REDIS_ASYNC_CLIENT.get(cache_key)
+    if not cached_data:
+        return None
+
+    try:
+        if isinstance(cached_data, bytes):
+            cached_data = cached_data.decode()
+        parsed = json.loads(cached_data)
+        if not isinstance(parsed, dict):
+            return None
+        return parsed
+    except Exception as error:
+        logger.debug("Failed to parse cached torrent details for key=%s: %s", cache_key, error)
+        return None
+
+
+async def set_cached_torrent_details(
+    user_id: int,
+    profile_id: int | None,
+    provider: str,
+    torrent_details: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    torrents_by_hash: dict[str, dict[str, Any]] = {}
+    for torrent in torrent_details:
+        info_hash = str(torrent.get("hash", "")).lower()
+        if info_hash:
+            torrents_by_hash[info_hash] = torrent
+
+    cache_key = _torrent_cache_key(user_id, profile_id, provider)
+    if torrents_by_hash:
+        await REDIS_ASYNC_CLIENT.set(
+            cache_key,
+            json.dumps(torrents_by_hash),
+            ex=TORRENT_DETAILS_CACHE_TTL_SECONDS,
+        )
+    else:
+        await REDIS_ASYNC_CLIENT.delete(cache_key)
+
+    return torrents_by_hash
+
+
+def build_stream_files_from_torrent(torrent_files: list[dict[str, Any]]) -> list[StreamFileData]:
+    files = []
+    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"}
+
+    for idx, file_info in enumerate(torrent_files):
+        file_path = file_info.get("path", "")
+        if any(file_path.lower().endswith(ext) for ext in video_extensions):
+            files.append(
+                StreamFileData(
+                    file_index=idx,
+                    filename=file_path.split("/")[-1] if "/" in file_path else file_path,
+                    size=file_info.get("size", 0),
+                    file_type="video",
+                )
+            )
+
+    # If no video files found but we have files, use the largest one
+    if not files and torrent_files:
+        largest = max(torrent_files, key=lambda x: x.get("size", 0))
+        files.append(
+            StreamFileData(
+                file_index=0,
+                filename=largest.get("path", "").split("/")[-1]
+                if "/" in largest.get("path", "")
+                else largest.get("path", ""),
+                size=largest.get("size", 0),
+                file_type="video",
+            )
+        )
+
+    return files
+
+
+def iter_chunks(items: list[PreparedImportItem], chunk_size: int):
+    for start in range(0, len(items), chunk_size):
+        yield items[start : start + chunk_size]
+
+
+def build_missing_external_ids(match: dict[str, Any]) -> MissingExternalIds | None:
+    imdb_id = match.get("imdb_id")
+    tmdb_id = match.get("tmdb_id")
+    tvdb_id = match.get("tvdb_id")
+
+    fallback_id = match.get("id")
+    if fallback_id is not None:
+        fallback_id = str(fallback_id)
+        if not imdb_id and fallback_id.startswith("tt"):
+            imdb_id = fallback_id
+        elif not tmdb_id and fallback_id.isdigit():
+            tmdb_id = fallback_id
+
+    if not imdb_id and not tmdb_id and not tvdb_id:
+        return None
+
+    return MissingExternalIds(
+        imdb=str(imdb_id) if imdb_id else None,
+        tmdb=str(tmdb_id) if tmdb_id else None,
+        tvdb=str(tvdb_id) if tvdb_id else None,
+    )
+
+
+def normalize_title_for_matching(title: str | None) -> str:
+    if not title:
+        return ""
+    normalized = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def get_match_similarity_threshold(normalized_title: str) -> int:
+    compact_length = len(normalized_title.replace(" ", ""))
+    if compact_length <= 4:
+        return 96
+    if compact_length <= 8:
+        return 90
+    return 78
+
+
+def select_best_missing_external_match(
+    title: str,
+    year: int | None,
+    candidates: list[dict[str, Any]],
+) -> tuple[MissingExternalIds | None, str | None]:
+    normalized_title = normalize_title_for_matching(title)
+    if not normalized_title:
+        return None, None
+
+    min_similarity = get_match_similarity_threshold(normalized_title)
+    best_score = -1
+    best_external_ids: MissingExternalIds | None = None
+    best_title: str | None = None
+
+    for candidate in candidates:
+        external_ids = build_missing_external_ids(candidate)
+        if not external_ids:
+            continue
+
+        candidate_title = str(candidate.get("title") or "")
+        normalized_candidate_title = normalize_title_for_matching(candidate_title)
+        if not normalized_candidate_title:
+            continue
+
+        similarity = fuzz.token_set_ratio(normalized_title, normalized_candidate_title)
+        if similarity < min_similarity:
+            continue
+
+        score = similarity
+        candidate_year = candidate.get("year")
+        if year and isinstance(candidate_year, int):
+            if candidate_year == year:
+                score += 8
+            elif abs(candidate_year - year) <= 1:
+                score += 2
+
+        if external_ids.imdb:
+            score += 2
+        if external_ids.tmdb:
+            score += 1
+
+        if score > best_score:
+            best_score = score
+            best_external_ids = external_ids
+            best_title = candidate_title
+
+    return best_external_ids, best_title
+
+
+async def prepare_import_item(
+    index: int,
+    info_hash: str,
+    torrent: dict[str, Any],
+    override: TorrentOverride | None,
+    meta_fetcher: MetadataFetcher,
+) -> ImportPreparationResult:
+    try:
+        torrent_name = torrent.get("filename", "")
+        parsed = parse_title(torrent_name, True) if torrent_name else {}
+
+        if override:
+            if override.title:
+                parsed["title"] = override.title
+            if override.year:
+                parsed["year"] = override.year
+
+        if not parsed.get("title"):
+            return ImportPreparationResult(
+                index=index,
+                result_item=ImportResultItem(
+                    info_hash=info_hash,
+                    status="failed",
+                    message="Could not parse title from torrent name",
+                ),
+            )
+
+        # Determine media type (use override if provided)
+        if override and override.type:
+            media_type = override.type
+        else:
+            media_type = parse_torrent_for_type(parsed, torrent.get("files", []))
+
+        search_results = await meta_fetcher.search_multiple_results(
+            title=parsed["title"],
+            year=parsed.get("year"),
+            media_type=media_type,
+            limit=5,
+            min_similarity=70,
+        )
+
+        if not search_results:
+            return ImportPreparationResult(
+                index=index,
+                result_item=ImportResultItem(
+                    info_hash=info_hash,
+                    status="failed",
+                    message=f"No TMDB/IMDB match found for '{parsed['title']}'",
+                ),
+            )
+
+        best_match = search_results[0]
+        raw_external_id = best_match.get("imdb_id") or best_match.get("id")
+        if not raw_external_id:
+            return ImportPreparationResult(
+                index=index,
+                result_item=ImportResultItem(
+                    info_hash=info_hash,
+                    status="failed",
+                    message="No valid external ID found",
+                ),
+            )
+        external_id = str(raw_external_id)
+
+        metadata = {
+            "id": external_id,
+            "title": best_match.get("title", parsed["title"]),
+            "year": best_match.get("year", parsed.get("year")),
+            "poster": best_match.get("poster"),
+            "background": best_match.get("background"),
+            "description": best_match.get("description"),
+            "genres": best_match.get("genres", []),
+        }
+
+        stream_data = TorrentStreamData(
+            info_hash=info_hash,
+            meta_id=external_id,
+            name=torrent_name,
+            size=torrent.get("size", 0),
+            source="debrid_import",
+            files=build_stream_files_from_torrent(torrent.get("files", [])),
+            resolution=parsed.get("resolution"),
+            codec=parsed.get("codec"),
+            quality=parsed.get("quality"),
+            bit_depth=parsed.get("bit_depth"),
+            release_group=parsed.get("group"),
+            audio_formats=parsed.get("audio", []) if isinstance(parsed.get("audio"), list) else [],
+            channels=parsed.get("channels", []) if isinstance(parsed.get("channels"), list) else [],
+            hdr_formats=parsed.get("hdr", []) if isinstance(parsed.get("hdr"), list) else [],
+            languages=parsed.get("languages", []),
+        )
+
+        return ImportPreparationResult(
+            index=index,
+            prepared_item=PreparedImportItem(
+                index=index,
+                info_hash=info_hash,
+                media_type=media_type,
+                external_id=external_id,
+                metadata=metadata,
+                stream_data=stream_data,
+            ),
+        )
+    except Exception as error:
+        logger.exception("Failed to prepare import item for %s: %s", info_hash, error)
+        return ImportPreparationResult(
+            index=index,
+            result_item=ImportResultItem(
+                info_hash=info_hash,
+                status="failed",
+                message=str(error)[:200],
+            ),
+        )
+
+
+async def find_missing_external_match_in_db(
+    session: AsyncSession,
+    title: str,
+    year: int | None,
+    media_type: str,
+) -> tuple[MissingExternalIds | None, str | None]:
+    db_media_type = MediaType.SERIES if media_type == "series" else MediaType.MOVIE
+
+    query = (
+        select(Media)
+        .options(selectinload(Media.external_ids))
+        .where(Media.type == db_media_type)
+        .where(Media.title_tsv.match(title))
+        .order_by(Media.popularity.desc().nullslast())
+        .limit(12)
+    )
+    result = await session.exec(query)
+    media_candidates = result.all()
+
+    if not media_candidates:
+        return None, None
+
+    candidates: list[dict[str, Any]] = []
+    for media in media_candidates:
+        candidate: dict[str, Any] = {"title": media.title, "year": media.year}
+        if hasattr(media, "external_ids") and media.external_ids:
+            for ext_id in media.external_ids:
+                if ext_id.provider == "imdb":
+                    candidate["imdb_id"] = ext_id.external_id
+                elif ext_id.provider == "tmdb":
+                    candidate["tmdb_id"] = ext_id.external_id
+                elif ext_id.provider == "tvdb":
+                    candidate["tvdb_id"] = ext_id.external_id
+        candidates.append(candidate)
+
+    return select_best_missing_external_match(
+        title=title,
+        year=year,
+        candidates=candidates,
+    )
+
+
 async def get_profile_with_secrets(
     user_id: int, session: AsyncSession, profile_id: int | None = None
 ) -> UserProfile | None:
@@ -285,6 +657,7 @@ async def fetch_torrent_details_for_provider(
     provider_service: str,
     streaming_provider: StreamingProvider,
     user_ip: str | None,
+    target_hashes: set[str] | None = None,
 ) -> list[dict]:
     """Fetch detailed torrent information from a debrid provider."""
     fetch_function = mapper.FETCH_TORRENT_DETAILS_FUNCTIONS.get(provider_service)
@@ -292,7 +665,11 @@ async def fetch_torrent_details_for_provider(
         return []
 
     try:
-        details = await fetch_function(streaming_provider=streaming_provider, user_ip=user_ip)
+        details = await fetch_function(
+            streaming_provider=streaming_provider,
+            user_ip=user_ip,
+            target_hashes=target_hashes,
+        )
         return details or []
     except Exception as e:
         logger.warning(f"Failed to fetch torrent details from {provider_service}: {e}")
@@ -610,10 +987,23 @@ async def get_missing_torrents(
     # Get user IP for API calls
     user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
-    # Fetch detailed torrent info from provider
-    torrent_details = await fetch_torrent_details_for_provider(provider, provider_obj, user_ip)
+    all_hashes = await fetch_info_hashes_for_provider(provider, provider_obj, user_ip)
+    existing_hashes = await get_existing_info_hashes(session, all_hashes)
+    missing_hashes = [info_hash.lower() for info_hash in all_hashes if info_hash.lower() not in existing_hashes]
+    missing_hash_set = set(missing_hashes)
 
-    if not torrent_details:
+    torrent_details: list[dict[str, Any]] = []
+    if missing_hash_set:
+        # Fetch detailed torrent info only for hashes that are missing in DB.
+        torrent_details = await fetch_torrent_details_for_provider(
+            provider,
+            provider_obj,
+            user_ip,
+            target_hashes=missing_hash_set,
+        )
+        await set_cached_torrent_details(current_user.id, profile_id, provider, torrent_details)
+
+    if not missing_hashes or not torrent_details:
         return MissingTorrentsResponse(
             items=[],
             total=0,
@@ -621,15 +1011,12 @@ async def get_missing_torrents(
             provider_name=provider_obj.name,
         )
 
-    # Get info hashes that already exist in our database
-    all_hashes = [t["hash"] for t in torrent_details]
-    existing_hashes = await get_existing_info_hashes(session, all_hashes)
-
     # Filter to only missing torrents and parse metadata
-    missing_items = []
+    missing_items: list[MissingTorrentItem] = []
+    metadata_candidates: list[tuple[int, str, int | None, str]] = []
     for torrent in torrent_details:
         info_hash = torrent["hash"].lower()
-        if info_hash in existing_hashes:
+        if info_hash not in missing_hash_set:
             continue
 
         # Parse torrent name for metadata
@@ -648,17 +1035,36 @@ async def get_missing_torrents(
         # Determine type
         parsed_type = parse_torrent_for_type(parsed, torrent.get("files", []))
 
-        missing_items.append(
-            MissingTorrentItem(
-                info_hash=info_hash,
-                name=torrent_name,
-                size=torrent.get("size", 0),
-                files=files,
-                parsed_title=parsed.get("title"),
-                parsed_year=parsed.get("year"),
-                parsed_type=parsed_type,
-            )
+        missing_item = MissingTorrentItem(
+            info_hash=info_hash,
+            name=torrent_name,
+            size=torrent.get("size", 0),
+            files=files,
+            parsed_title=parsed.get("title"),
+            parsed_year=parsed.get("year"),
+            parsed_type=parsed_type,
         )
+        missing_items.append(missing_item)
+        if missing_item.parsed_title:
+            metadata_candidates.append(
+                (len(missing_items) - 1, missing_item.parsed_title, missing_item.parsed_year, parsed_type)
+            )
+
+    if metadata_candidates:
+        for item_index, title, year, media_type in metadata_candidates:
+            try:
+                external_ids, matched_title = await find_missing_external_match_in_db(
+                    session=session,
+                    title=title,
+                    year=year,
+                    media_type=media_type,
+                )
+                if external_ids:
+                    missing_items[item_index].external_ids = external_ids
+                if matched_title:
+                    missing_items[item_index].matched_title = matched_title
+            except Exception:
+                logger.exception("Failed to resolve external IDs for missing torrent title=%s", title)
 
     return MissingTorrentsResponse(
         items=missing_items,
@@ -693,10 +1099,12 @@ async def import_torrents(
     if not import_request.info_hashes:
         raise HTTPException(status_code=400, detail="No torrents selected for import")
 
-    # Get profile context
+    # Normalize info hashes and overrides once for consistent lookups.
+    requested_hashes = [info_hash.lower() for info_hash in import_request.info_hashes]
+    overrides_lookup = {k.lower(): v for k, v in (import_request.overrides or {}).items()}
+
     profile_ctx = await ProfileDataProvider.get_context(current_user.id, session, profile_id=profile_id)
 
-    # Find provider
     provider_obj = None
     for sp in profile_ctx.user_data.get_active_providers():
         if sp.service == provider:
@@ -708,235 +1116,158 @@ async def import_torrents(
             status_code=400,
             detail=f"Provider '{provider}' is not configured in your profile",
         )
-
-    # Get user IP for API calls
     user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
+    cached_torrents_by_hash = await get_cached_torrent_details(current_user.id, profile_id, provider)
+    cache_hit = bool(cached_torrents_by_hash) and all(
+        info_hash in cached_torrents_by_hash for info_hash in requested_hashes
+    )
+    if cache_hit:
+        torrents_by_hash = cached_torrents_by_hash or {}
+    else:
+        torrent_details = await fetch_torrent_details_for_provider(
+            provider,
+            provider_obj,
+            user_ip,
+            target_hashes=set(requested_hashes),
+        )
+        torrents_by_hash = await set_cached_torrent_details(current_user.id, profile_id, provider, torrent_details)
+    existing_hashes = await get_existing_info_hashes(session, requested_hashes)
 
-    # Fetch torrent details
-    torrent_details = await fetch_torrent_details_for_provider(provider, provider_obj, user_ip)
-
-    # Create lookup by hash
-    torrents_by_hash = {t["hash"].lower(): t for t in torrent_details}
-
-    # Check which are already in DB
-    existing_hashes = await get_existing_info_hashes(session, import_request.info_hashes)
-
-    # Initialize metadata fetcher
     meta_fetcher = MetadataFetcher()
+    results_by_index: dict[int, ImportResultItem] = {}
+    prep_candidates: list[tuple[int, str, dict[str, Any], TorrentOverride | None]] = []
 
-    results = []
-    imported = 0
-    failed = 0
-    skipped = 0
-
-    for info_hash in import_request.info_hashes:
-        info_hash_lower = info_hash.lower()
-
-        # Skip if already exists
-        if info_hash_lower in existing_hashes:
-            results.append(
-                ImportResultItem(
-                    info_hash=info_hash_lower,
-                    status="skipped",
-                    message="Already exists in database",
-                )
+    for index, info_hash in enumerate(requested_hashes):
+        if info_hash in existing_hashes:
+            results_by_index[index] = ImportResultItem(
+                info_hash=info_hash,
+                status="skipped",
+                message="Already exists in database",
             )
-            skipped += 1
             continue
 
-        # Get torrent details
-        torrent = torrents_by_hash.get(info_hash_lower)
+        torrent = torrents_by_hash.get(info_hash)
         if not torrent:
-            results.append(
-                ImportResultItem(
-                    info_hash=info_hash_lower,
-                    status="failed",
-                    message="Torrent not found in debrid account",
-                )
+            results_by_index[index] = ImportResultItem(
+                info_hash=info_hash,
+                status="failed",
+                message="Torrent not found in debrid account",
             )
-            failed += 1
             continue
 
-        try:
-            # Parse torrent name
-            torrent_name = torrent.get("filename", "")
-            parsed = parse_title(torrent_name, True) if torrent_name else {}
+        prep_candidates.append((index, info_hash, torrent, overrides_lookup.get(info_hash)))
 
-            # Apply user overrides if provided
-            override = import_request.overrides.get(info_hash_lower) if import_request.overrides else None
-            if override:
-                if override.title:
-                    parsed["title"] = override.title
-                if override.year:
-                    parsed["year"] = override.year
+    prepared_items: list[PreparedImportItem] = []
 
-            if not parsed.get("title"):
-                results.append(
-                    ImportResultItem(
-                        info_hash=info_hash_lower,
-                        status="failed",
-                        message="Could not parse title from torrent name",
-                    )
-                )
-                failed += 1
-                continue
+    if prep_candidates:
+        semaphore = asyncio.Semaphore(IMPORT_PREPARE_CONCURRENCY)
 
-            # Determine media type (use override if provided)
-            if override and override.type:
-                media_type = override.type
-            else:
-                media_type = parse_torrent_for_type(parsed, torrent.get("files", []))
+        async def run_preparation(candidate: tuple[int, str, dict[str, Any], TorrentOverride | None]):
+            index, info_hash, torrent, override = candidate
+            async with semaphore:
+                return await prepare_import_item(index, info_hash, torrent, override, meta_fetcher)
 
-            # Search for metadata
-            search_results = await meta_fetcher.search_multiple_results(
-                title=parsed["title"],
-                year=parsed.get("year"),
-                media_type=media_type,
-                limit=5,
-                min_similarity=70,
-            )
+        preparation_results = await asyncio.gather(*(run_preparation(candidate) for candidate in prep_candidates))
+        for prep_result in preparation_results:
+            if prep_result.result_item:
+                results_by_index[prep_result.index] = prep_result.result_item
+            elif prep_result.prepared_item:
+                prepared_items.append(prep_result.prepared_item)
 
-            if not search_results:
-                results.append(
-                    ImportResultItem(
-                        info_hash=info_hash_lower,
-                        status="failed",
-                        message=f"No TMDB/IMDB match found for '{parsed['title']}'",
-                    )
-                )
-                failed += 1
-                continue
+    if prepared_items:
+        async for write_session in get_async_session():
+            for batch in iter_chunks(prepared_items, IMPORT_DB_BATCH_SIZE):
+                batch_hashes = [item.info_hash for item in batch]
+                try:
+                    pre_existing_hashes = await get_existing_info_hashes(write_session, batch_hashes)
+                    stream_payloads: list[dict[str, Any]] = []
+                    prepared_with_media: dict[str, tuple[PreparedImportItem, Any]] = {}
 
-            # Use best match
-            best_match = search_results[0]
-            external_id = best_match.get("imdb_id") or best_match.get("id")
+                    for item in batch:
+                        if item.info_hash in pre_existing_hashes:
+                            results_by_index[item.index] = ImportResultItem(
+                                info_hash=item.info_hash,
+                                status="skipped",
+                                message="Already exists in database",
+                            )
+                            continue
 
-            if not external_id:
-                results.append(
-                    ImportResultItem(
-                        info_hash=info_hash_lower,
-                        status="failed",
-                        message="No valid external ID found",
-                    )
-                )
-                failed += 1
-                continue
-
-            # Get or create metadata in DB
-            metadata = {
-                "id": external_id,
-                "title": best_match.get("title", parsed["title"]),
-                "year": best_match.get("year", parsed.get("year")),
-                "poster": best_match.get("poster"),
-                "background": best_match.get("background"),
-                "description": best_match.get("description"),
-                "genres": best_match.get("genres", []),
-            }
-
-            media_obj = None
-            async for write_session in get_async_session():
-                media_obj = await crud.get_or_create_metadata(
-                    write_session,
-                    metadata,
-                    media_type,
-                    is_search_imdb_title=False,
-                )
-                await write_session.commit()
-
-            if not media_obj:
-                results.append(
-                    ImportResultItem(
-                        info_hash=info_hash_lower,
-                        status="failed",
-                        message="Failed to create metadata",
-                    )
-                )
-                failed += 1
-                continue
-
-            meta_id = f"tt{media_obj.id}" if not external_id.startswith("tt") else external_id
-
-            # Build files list
-            files = []
-            video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"}
-            for idx, f in enumerate(torrent.get("files", [])):
-                file_path = f.get("path", "")
-                if any(file_path.lower().endswith(ext) for ext in video_extensions):
-                    files.append(
-                        StreamFileData(
-                            file_index=idx,
-                            filename=file_path.split("/")[-1] if "/" in file_path else file_path,
-                            size=f.get("size", 0),
-                            file_type="video",
+                        media_obj = await crud.get_or_create_metadata(
+                            write_session,
+                            item.metadata,
+                            item.media_type,
+                            is_search_imdb_title=False,
                         )
+                        if not media_obj:
+                            results_by_index[item.index] = ImportResultItem(
+                                info_hash=item.info_hash,
+                                status="failed",
+                                message="Failed to create metadata",
+                            )
+                            continue
+
+                        meta_id = item.external_id if item.external_id.startswith("tt") else f"tt{media_obj.id}"
+                        stream_payloads.append(
+                            item.stream_data.model_copy(update={"meta_id": meta_id}).model_dump(by_alias=True)
+                        )
+                        prepared_with_media[item.info_hash] = (item, media_obj)
+
+                    if stream_payloads:
+                        await crud.store_new_torrent_streams(write_session, stream_payloads)
+
+                    post_existing_hashes = (
+                        await get_existing_info_hashes(write_session, list(prepared_with_media.keys()))
+                        if prepared_with_media
+                        else set()
                     )
 
-            # If no video files found but we have files, use the largest one
-            if not files and torrent.get("files"):
-                largest = max(torrent["files"], key=lambda x: x.get("size", 0))
-                files.append(
-                    StreamFileData(
-                        file_index=0,
-                        filename=largest.get("path", "").split("/")[-1]
-                        if "/" in largest.get("path", "")
-                        else largest.get("path", ""),
-                        size=largest.get("size", 0),
-                        file_type="video",
-                    )
-                )
+                    for info_hash, (item, media_obj) in prepared_with_media.items():
+                        if info_hash in post_existing_hashes:
+                            results_by_index[item.index] = ImportResultItem(
+                                info_hash=info_hash,
+                                status="success",
+                                message=f"Imported as {media_obj.title}",
+                                media_id=media_obj.id,
+                                media_title=media_obj.title,
+                            )
+                        else:
+                            results_by_index[item.index] = ImportResultItem(
+                                info_hash=info_hash,
+                                status="failed",
+                                message="Failed to store imported stream",
+                            )
 
-            # Create stream data
-            stream_data = TorrentStreamData(
-                info_hash=info_hash_lower,
-                meta_id=meta_id,
-                name=torrent_name,
-                size=torrent.get("size", 0),
-                source="debrid_import",
-                files=files,
-                # Quality attributes from PTT
-                resolution=parsed.get("resolution"),
-                codec=parsed.get("codec"),
-                quality=parsed.get("quality"),
-                bit_depth=parsed.get("bit_depth"),
-                release_group=parsed.get("group"),
-                audio_formats=parsed.get("audio", []) if isinstance(parsed.get("audio"), list) else [],
-                channels=parsed.get("channels", []) if isinstance(parsed.get("channels"), list) else [],
-                hdr_formats=parsed.get("hdr", []) if isinstance(parsed.get("hdr"), list) else [],
-                languages=parsed.get("languages", []),
+                    await write_session.commit()
+                except Exception as error:
+                    await write_session.rollback()
+                    logger.exception("Failed to import torrent batch for provider=%s: %s", provider, error)
+                    for item in batch:
+                        if item.index not in results_by_index:
+                            results_by_index[item.index] = ImportResultItem(
+                                info_hash=item.info_hash,
+                                status="failed",
+                                message=str(error)[:200],
+                            )
+            break
+    # Fill any unreported slot defensively to keep response length deterministic.
+    for index, info_hash in enumerate(requested_hashes):
+        if index not in results_by_index:
+            results_by_index[index] = ImportResultItem(
+                info_hash=info_hash,
+                status="failed",
+                message="Import did not produce a result",
             )
 
-            # Store in database
-            async for write_session in get_async_session():
-                await crud.store_new_torrent_streams(write_session, [stream_data.model_dump(by_alias=True)])
-                await write_session.commit()
-
-            results.append(
-                ImportResultItem(
-                    info_hash=info_hash_lower,
-                    status="success",
-                    message=f"Imported as {media_obj.title}",
-                    media_id=media_obj.id,
-                    media_title=media_obj.title,
-                )
-            )
-            imported += 1
-
-        except Exception as e:
-            logger.exception(f"Failed to import torrent {info_hash_lower}: {e}")
-            results.append(
-                ImportResultItem(
-                    info_hash=info_hash_lower,
-                    status="failed",
-                    message=str(e)[:200],
-                )
-            )
-            failed += 1
+    ordered_results = [results_by_index[index] for index in range(len(requested_hashes))]
+    imported = sum(1 for result in ordered_results if result.status == "success")
+    failed = sum(1 for result in ordered_results if result.status == "failed")
+    skipped = sum(1 for result in ordered_results if result.status == "skipped")
 
     return ImportResponse(
         imported=imported,
         failed=failed,
         skipped=skipped,
-        details=results,
+        details=ordered_results,
     )
 
 
@@ -988,7 +1319,13 @@ async def advanced_import_torrents(
     user_ip = await get_user_public_ip(request, profile_ctx.user_data, streaming_provider=provider_obj)
 
     # Fetch torrent details from provider
-    torrent_details = await fetch_torrent_details_for_provider(provider, provider_obj, user_ip)
+    requested_hashes = {imp.info_hash.lower() for imp in import_request.advanced_imports}
+    torrent_details = await fetch_torrent_details_for_provider(
+        provider,
+        provider_obj,
+        user_ip,
+        target_hashes=requested_hashes,
+    )
     torrents_by_hash = {t["hash"].lower(): t for t in torrent_details}
 
     # Check which are already in DB

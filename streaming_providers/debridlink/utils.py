@@ -112,10 +112,14 @@ async def fetch_torrent_details_from_dl(streaming_provider: StreamingProvider, *
             available_torrents = await dl_client.get_user_torrent_list()
             if "error" in available_torrents:
                 return []
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
 
             result = []
             for torrent in available_torrents["value"]:
                 if torrent["downloadPercent"] != 100:
+                    continue
+                torrent_hash = torrent.get("hashString", "").lower()
+                if target_hashes and torrent_hash not in target_hashes:
                     continue
                 files = []
                 for f in torrent.get("files", []):
@@ -129,7 +133,7 @@ async def fetch_torrent_details_from_dl(streaming_provider: StreamingProvider, *
                 result.append(
                     {
                         "id": torrent.get("id"),
-                        "hash": torrent.get("hashString", "").lower(),
+                        "hash": torrent_hash,
                         "filename": torrent.get("name", ""),
                         "size": torrent.get("size", 0),
                         "files": files,

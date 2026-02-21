@@ -126,8 +126,13 @@ class RealDebrid(DebridClient):
     async def get_active_torrents(self):
         return await self._make_request("GET", f"{self.BASE_URL}/torrents/activeCount")
 
-    async def get_user_torrent_list(self):
-        return await self._make_request("GET", f"{self.BASE_URL}/torrents")
+    async def get_user_torrent_list(self, page: int | None = None, limit: int | None = None):
+        params = {}
+        if page is not None:
+            params["page"] = page
+        if limit is not None:
+            params["limit"] = limit
+        return await self._make_request("GET", f"{self.BASE_URL}/torrents", params=params or None)
 
     async def get_user_downloads(self):
         return await self._make_request("GET", f"{self.BASE_URL}/downloads")

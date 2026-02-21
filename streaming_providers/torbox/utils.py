@@ -119,8 +119,12 @@ async def fetch_torrent_details_from_torbox(streaming_provider: StreamingProvide
             available_torrents = await torbox_client.get_user_torrent_list()
             if not available_torrents.get("data"):
                 return []
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
             result = []
             for torrent in available_torrents["data"]:
+                torrent_hash = torrent.get("hash", "").lower()
+                if target_hashes and torrent_hash not in target_hashes:
+                    continue
                 files = []
                 for f in torrent.get("files", []):
                     files.append(
@@ -133,7 +137,7 @@ async def fetch_torrent_details_from_torbox(streaming_provider: StreamingProvide
                 result.append(
                     {
                         "id": torrent.get("id"),
-                        "hash": torrent.get("hash", "").lower(),
+                        "hash": torrent_hash,
                         "filename": torrent.get("name", ""),
                         "size": torrent.get("size", 0),
                         "files": files,

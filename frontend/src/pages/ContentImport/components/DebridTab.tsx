@@ -50,6 +50,10 @@ interface TorrentEdit {
   type?: 'movie' | 'series'
 }
 
+function hasResolvedExternalIds(torrent: MissingTorrentItem): boolean {
+  return Boolean(torrent.external_ids?.imdb || torrent.external_ids?.tmdb || torrent.external_ids?.tvdb)
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -84,6 +88,16 @@ function TorrentItem({
   const displayYear = edit?.year || torrent.parsed_year
   const displayType = edit?.type || torrent.parsed_type
   const hasEdits = edit && (edit.title || edit.year || edit.type)
+  const externalIdPairs = useMemo(() => {
+    if (!torrent.external_ids) return []
+    return (
+      [
+        ['IMDb', torrent.external_ids.imdb],
+        ['TMDB', torrent.external_ids.tmdb],
+        ['TVDB', torrent.external_ids.tvdb],
+      ] as const
+    ).filter(([, value]) => Boolean(value))
+  }, [torrent.external_ids])
 
   return (
     <div
@@ -133,6 +147,23 @@ function TorrentItem({
                 )}
               </p>
             )}
+            <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+              <span>External IDs:</span>
+              {externalIdPairs.length > 0 ? (
+                externalIdPairs.map(([label, value]) => (
+                  <Badge key={label} variant="outline" className="font-mono text-[10px] px-1 py-0">
+                    {label}:{value}
+                  </Badge>
+                ))
+              ) : (
+                <span className="italic">Not matched</span>
+              )}
+              {externalIdPairs.length > 0 && torrent.matched_title && (
+                <span className="truncate max-w-full" title={torrent.matched_title}>
+                  ({torrent.matched_title})
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -367,7 +398,15 @@ export function DebridTab() {
     }
   }, [fetchRequested, refetchMissing])
 
-  const missingTorrents = missingData?.items || []
+  const missingTorrents = useMemo(() => missingData?.items || [], [missingData?.items])
+  const matchedTorrents = useMemo(
+    () => missingTorrents.filter((torrent) => hasResolvedExternalIds(torrent)),
+    [missingTorrents],
+  )
+  const unmatchedTorrents = useMemo(
+    () => missingTorrents.filter((torrent) => !hasResolvedExternalIds(torrent)),
+    [missingTorrents],
+  )
   const allSelected = missingTorrents.length > 0 && selectedHashes.size === missingTorrents.length
   const someSelected = selectedHashes.size > 0
 
@@ -392,6 +431,14 @@ export function DebridTab() {
       setSelectedHashes(new Set(missingTorrents.map((t) => t.info_hash)))
     }
   }
+
+  const handleSelectMatchedOnly = useCallback(() => {
+    setSelectedHashes(new Set(matchedTorrents.map((t) => t.info_hash)))
+  }, [matchedTorrents])
+
+  const handleSelectUnmatchedOnly = useCallback(() => {
+    setSelectedHashes(new Set(unmatchedTorrents.map((t) => t.info_hash)))
+  }, [unmatchedTorrents])
 
   const handleSelect = (infoHash: string, selected: boolean) => {
     const newSet = new Set(selectedHashes)
@@ -672,8 +719,8 @@ export function DebridTab() {
             ) : (
               <>
                 {/* Selection header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Checkbox
                       checked={allSelected}
                       onCheckedChange={handleSelectAll}
@@ -684,6 +731,28 @@ export function DebridTab() {
                         ? `${selectedHashes.size} of ${missingTorrents.length} selected`
                         : `${missingTorrents.length} missing torrent(s)`}
                     </span>
+                    <Badge variant="outline" className="text-[10px]">
+                      Matched: {matchedTorrents.length}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      Not matched: {unmatchedTorrents.length}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectMatchedOnly}
+                      disabled={importMutation.isPending || matchedTorrents.length === 0}
+                    >
+                      Select matched
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectUnmatchedOnly}
+                      disabled={importMutation.isPending || unmatchedTorrents.length === 0}
+                    >
+                      Select not matched
+                    </Button>
                   </div>
                   <div className="flex items-center gap-2">
                     {someSelected && !importMutation.isPending && (
@@ -747,7 +816,36 @@ export function DebridTab() {
                 {/* Torrent list */}
                 <ScrollArea className="h-[400px] pr-4">
                   <div className="space-y-2">
-                    {missingTorrents.map((torrent) => (
+                    {matchedTorrents.length > 0 && (
+                      <div className="flex items-center gap-2 pb-1 pt-0.5">
+                        <Badge variant="secondary" className="h-5 px-2 text-[10px]">
+                          Matched
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{matchedTorrents.length} item(s)</span>
+                      </div>
+                    )}
+                    {matchedTorrents.map((torrent) => (
+                      <TorrentItem
+                        key={torrent.info_hash}
+                        torrent={torrent}
+                        selected={selectedHashes.has(torrent.info_hash)}
+                        onSelect={(selected) => handleSelect(torrent.info_hash, selected)}
+                        disabled={importMutation.isPending}
+                        isEditing={editingHash === torrent.info_hash}
+                        onEditClick={() => setEditingHash(editingHash === torrent.info_hash ? null : torrent.info_hash)}
+                        edit={edits.get(torrent.info_hash)}
+                      />
+                    ))}
+
+                    {unmatchedTorrents.length > 0 && (
+                      <div className="flex items-center gap-2 pb-1 pt-3">
+                        <Badge variant="destructive" className="h-5 px-2 text-[10px]">
+                          Not matched
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{unmatchedTorrents.length} item(s)</span>
+                      </div>
+                    )}
+                    {unmatchedTorrents.map((torrent) => (
                       <TorrentItem
                         key={torrent.info_hash}
                         torrent={torrent}

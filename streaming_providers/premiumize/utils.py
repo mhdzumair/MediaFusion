@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from os.path import basename
 from typing import Any
 
@@ -6,6 +7,9 @@ from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
 from streaming_providers.premiumize.client import Premiumize
+
+logger = logging.getLogger(__name__)
+PREMIUMIZE_TORRENT_DETAILS_CONCURRENCY = 6
 
 
 async def create_or_get_folder_id(pm_client: Premiumize, info_hash: str):
@@ -147,37 +151,54 @@ async def fetch_torrent_details_from_premiumize(streaming_provider: StreamingPro
             if "content" not in available_folders:
                 return []
 
-            result = []
-            for folder in available_folders["content"]:
-                # Only process folders that look like info hashes
-                if not folder["name"] or len(folder["name"]) not in (40, 32):
-                    continue
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
+            sem = asyncio.Semaphore(PREMIUMIZE_TORRENT_DETAILS_CONCURRENCY)
+            hash_folders = [
+                folder
+                for folder in available_folders["content"]
+                if folder.get("name") and len(folder["name"]) in (40, 32)
+            ]
+            if target_hashes:
+                hash_folders = [folder for folder in hash_folders if folder["name"].lower() in target_hashes]
 
-                # Get files from the folder
-                folder_content = await pm_client.get_folder_list(folder["id"])
-                files = []
-                total_size = 0
-                for f in folder_content.get("content", []):
-                    if "video" in f.get("mime_type", ""):
-                        files.append(
-                            {
-                                "id": f.get("id"),
-                                "path": f.get("name", ""),
-                                "size": f.get("size", 0),
-                            }
-                        )
-                        total_size += f.get("size", 0)
+            async def fetch_folder_details(folder: dict[str, Any]) -> dict:
+                base = {
+                    "id": folder.get("id"),
+                    "hash": folder["name"].lower(),
+                    "filename": folder.get("name", ""),
+                    "size": 0,
+                    "files": [],
+                }
 
-                result.append(
-                    {
-                        "id": folder.get("id"),
-                        "hash": folder["name"].lower(),
-                        "filename": folder.get("name", ""),
-                        "size": total_size,
-                        "files": files,
-                    }
-                )
-            return result
+                folder_id = folder.get("id")
+                if not folder_id:
+                    return base
+
+                try:
+                    async with sem:
+                        folder_content = await pm_client.get_folder_list(folder_id)
+
+                    files = []
+                    total_size = 0
+                    for file_item in folder_content.get("content", []):
+                        if "video" in file_item.get("mime_type", ""):
+                            files.append(
+                                {
+                                    "id": file_item.get("id"),
+                                    "path": file_item.get("name", ""),
+                                    "size": file_item.get("size", 0),
+                                }
+                            )
+                            total_size += file_item.get("size", 0)
+
+                    base["files"] = files
+                    base["size"] = total_size
+                except Exception as error:
+                    logger.debug("Failed to fetch Premiumize folder details for id=%s: %s", folder_id, error)
+
+                return base
+
+            return await asyncio.gather(*(fetch_folder_details(folder) for folder in hash_folders))
 
     except ProviderException:
         return []

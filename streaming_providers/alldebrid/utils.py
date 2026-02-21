@@ -171,9 +171,13 @@ async def fetch_torrent_details_from_ad(streaming_provider: StreamingProvider, u
             magnets = available_torrents["data"]["magnets"]
             if isinstance(magnets, dict):
                 magnets = list(magnets.values())
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
 
             result = []
             for magnet in magnets:
+                magnet_hash = magnet.get("hash", "").lower()
+                if target_hashes and magnet_hash not in target_hashes:
+                    continue
                 files = []
                 # AllDebrid has nested file structure, flatten it
                 flat_files = flatten_files(magnet.get("files", []))
@@ -188,7 +192,7 @@ async def fetch_torrent_details_from_ad(streaming_provider: StreamingProvider, u
                 result.append(
                     {
                         "id": magnet.get("id"),
-                        "hash": magnet.get("hash", "").lower(),
+                        "hash": magnet_hash,
                         "filename": magnet.get("filename", ""),
                         "size": magnet.get("size", 0),
                         "files": files,

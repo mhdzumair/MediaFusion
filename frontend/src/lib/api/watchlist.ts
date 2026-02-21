@@ -46,6 +46,12 @@ export interface MissingTorrentFile {
   size: number
 }
 
+export interface MissingExternalIds {
+  imdb?: string
+  tmdb?: string
+  tvdb?: string
+}
+
 export interface MissingTorrentItem {
   info_hash: string
   name: string
@@ -54,6 +60,8 @@ export interface MissingTorrentItem {
   parsed_title?: string
   parsed_year?: number
   parsed_type?: 'movie' | 'series'
+  matched_title?: string
+  external_ids?: MissingExternalIds
 }
 
 export interface MissingTorrentsResponse {

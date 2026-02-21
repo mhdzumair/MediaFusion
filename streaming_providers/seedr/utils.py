@@ -22,6 +22,9 @@ class TorrentStatus(Enum):
     NOT_FOUND = "not_found"
 
 
+SEEDR_TORRENT_DETAILS_CONCURRENCY = 4
+
+
 def clean_filename(name: str | None, replace: str = "") -> str:
     """Clean filename of special characters."""
     if not name:
@@ -273,38 +276,56 @@ async def fetch_torrent_details_from_seedr(streaming_provider: StreamingProvider
     try:
         async with get_seedr_client(streaming_provider) as seedr:
             contents = await seedr.list_contents()
-            result = []
-            for folder in contents["folders"]:
-                # Only process folders that look like info hashes
-                if len(folder["name"]) not in (40, 32):
-                    continue
+            sem = asyncio.Semaphore(SEEDR_TORRENT_DETAILS_CONCURRENCY)
+            target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
+            hash_folders = [folder for folder in contents["folders"] if len(folder["name"]) in (40, 32)]
+            if target_hashes:
+                hash_folders = [folder for folder in hash_folders if folder["name"].lower() in target_hashes]
 
-                # Get files from the folder
-                folder_content = await seedr.list_contents(folder["id"])
-                files = []
-                # Check subfolders for actual content
-                for subfolder in folder_content.get("folders", []):
-                    subfolder_files = await get_files_from_folder(seedr, subfolder["id"])
-                    for f in subfolder_files:
-                        if f.get("play_video"):
-                            files.append(
-                                {
-                                    "id": f.get("folder_file_id"),
-                                    "path": f.get("name", ""),
-                                    "size": f.get("size", 0),
-                                }
-                            )
+            async def fetch_subfolder_files(subfolder: dict[str, Any]) -> list[dict[str, Any]]:
+                subfolder_id = subfolder.get("id")
+                if not subfolder_id:
+                    return []
+                async with sem:
+                    return await get_files_from_folder(seedr, subfolder_id)
 
-                result.append(
-                    {
-                        "id": folder.get("id"),
-                        "hash": folder["name"].lower(),
-                        "filename": folder.get("name", ""),
-                        "size": folder.get("size", 0),
-                        "files": files,
-                    }
-                )
-            return result
+            async def fetch_folder_details(folder: dict[str, Any]) -> dict:
+                folder_id = folder.get("id")
+                base = {
+                    "id": folder_id,
+                    "hash": folder["name"].lower(),
+                    "filename": folder.get("name", ""),
+                    "size": folder.get("size", 0),
+                    "files": [],
+                }
+
+                if not folder_id:
+                    return base
+
+                try:
+                    async with sem:
+                        folder_content = await seedr.list_contents(folder_id)
+
+                    subfolder_results = await asyncio.gather(
+                        *(fetch_subfolder_files(subfolder) for subfolder in folder_content.get("folders", []))
+                    )
+                    files = []
+                    for subfolder_files in subfolder_results:
+                        for file_item in subfolder_files:
+                            if file_item.get("play_video"):
+                                files.append(
+                                    {
+                                        "id": file_item.get("folder_file_id"),
+                                        "path": file_item.get("name", ""),
+                                        "size": file_item.get("size", 0),
+                                    }
+                                )
+                    base["files"] = files
+                except Exception as error:
+                    logging.debug("Failed to fetch Seedr folder details for id=%s: %s", folder_id, error)
+                return base
+
+            return await asyncio.gather(*(fetch_folder_details(folder) for folder in hash_folders))
     except ProviderException:
         return []
 
