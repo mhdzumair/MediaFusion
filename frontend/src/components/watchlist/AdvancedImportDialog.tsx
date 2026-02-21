@@ -53,12 +53,41 @@ interface AdvancedImportDialogProps {
   onSuccess?: () => void
 }
 
+const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.m4v']
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+function hasEpisodePattern(value: string): boolean {
+  const normalized = value.replace(/[._-]/g, ' ')
+  return (
+    /\bS\d{1,3}\s*E\d{1,3}(?:\s*(?:E|[-~])\s*\d{1,3})?\b/i.test(normalized) ||
+    /\b\d{1,3}x\d{1,3}(?:\s*-\s*\d{1,3})?\b/i.test(normalized) ||
+    /\bseason\s*\d{1,3}\D+episode\s*\d{1,3}\b/i.test(normalized) ||
+    /\bE(?:P)?\s*\d{1,3}\b/i.test(normalized)
+  )
+}
+
+function inferInitialContentType(torrent: MissingTorrentItem): 'movie' | 'series' {
+  const videoPaths = torrent.files
+    .filter((file) => VIDEO_EXTENSIONS.some((ext) => file.path.toLowerCase().endsWith(ext)))
+    .map((file) => file.path.split('/').pop() || file.path)
+
+  if (videoPaths.some((path) => hasEpisodePattern(path))) {
+    return 'series'
+  }
+  if (torrent.parsed_type) {
+    return torrent.parsed_type
+  }
+  if (videoPaths.length > 3) {
+    return 'series'
+  }
+  return 'movie'
 }
 
 export function AdvancedImportDialog({
@@ -74,7 +103,7 @@ export function AdvancedImportDialog({
   const { user } = useAuth()
 
   // Form state
-  const [contentType, setContentType] = useState<'movie' | 'series'>(torrent.parsed_type || 'movie')
+  const [contentType, setContentType] = useState<'movie' | 'series'>(inferInitialContentType(torrent))
   const [importMode, setImportMode] = useState<ImportMode>('single')
   const [searchQuery, setSearchQuery] = useState(torrent.parsed_title || '')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
@@ -113,15 +142,16 @@ export function AdvancedImportDialog({
 
   // Convert torrent files to TorrentFile format for annotation dialog
   const torrentFiles: TorrentFile[] = useMemo(() => {
-    const videoExtensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.m4v']
     return torrent.files
-      .filter((f) => videoExtensions.some((ext) => f.path.toLowerCase().endsWith(ext)))
+      .filter((f) => VIDEO_EXTENSIONS.some((ext) => f.path.toLowerCase().endsWith(ext)))
       .map((f, idx) => ({
         filename: f.path.split('/').pop() || f.path,
         size: f.size,
         index: idx,
       }))
   }, [torrent.files])
+
+  const showAnnotationButton = torrentFiles.length > 1 || (contentType === 'series' && torrentFiles.length > 0)
 
   // Create a mock analysis object for the MultiContentWizard
   const mockAnalysis: TorrentAnalyzeResponse = useMemo(
@@ -299,13 +329,14 @@ export function AdvancedImportDialog({
     onOpenChange(false)
     // Reset state after close
     setTimeout(() => {
+      setContentType(inferInitialContentType(torrent))
       setSearchQuery(torrent.parsed_title || '')
       setSelectedMedia(null)
       setFileAnnotations([])
       setImportResult(null)
       setImportMode('single')
     }, 200)
-  }, [onOpenChange, torrent.parsed_title])
+  }, [onOpenChange, torrent])
 
   // Import mode options based on content type
   const importModeOptions =
@@ -649,10 +680,10 @@ export function AdvancedImportDialog({
                   )}
 
                   {/* File Annotation Button */}
-                  {torrentFiles.length > 1 && (
+                  {showAnnotationButton && (
                     <Button variant="outline" className="w-full" onClick={() => setAnnotationDialogOpen(true)}>
                       <FileVideo className="h-4 w-4 mr-2" />
-                      Annotate Files ({fileAnnotations.length || torrentFiles.length})
+                      {`${contentType === 'series' ? 'Annotate Episode Files' : 'Annotate Files'} (${fileAnnotations.length || torrentFiles.length})`}
                       {fileAnnotations.length > 0 && (
                         <Badge variant="secondary" className="ml-2">
                           Configured
