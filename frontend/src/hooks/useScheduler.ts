@@ -64,7 +64,8 @@ export function useRunSchedulerJob() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (jobId: string) => schedulerApi.run(jobId),
+    mutationFn: ({ jobId, forceRun = false }: { jobId: string; forceRun?: boolean }) =>
+      schedulerApi.run(jobId, forceRun),
     onSuccess: () => {
       // Invalidate scheduler data to refresh running status
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })

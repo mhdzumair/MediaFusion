@@ -511,6 +511,9 @@ class TaskManager(dramatiq.Middleware):
         task_name = message.actor_name
         args = message.args
         kwargs = message.kwargs.copy()
+        if kwargs.pop("force_run", False):
+            logging.info(f"Force run enabled for task {task_name}; skipping interval guard.")
+            return None
         actor = broker.get_actor(task_name)
         min_interval = getattr(actor, "_minimum_run_interval", None)
         set_cache_expiry = False

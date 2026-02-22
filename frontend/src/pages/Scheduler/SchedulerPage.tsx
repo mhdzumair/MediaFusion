@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -356,6 +357,7 @@ export function SchedulerPage() {
   const [selectedJob, setSelectedJob] = useState<SchedulerJobInfo | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [confirmRun, setConfirmRun] = useState<ConfirmRunState | null>(null)
+  const [forceRun, setForceRun] = useState(false)
 
   const {
     data: jobsData,
@@ -400,12 +402,15 @@ export function SchedulerPage() {
           })
         }
       } else {
-        await runJob.mutateAsync(job.id)
+        await runJob.mutateAsync({ jobId: job.id, forceRun })
         toast({
-          title: 'Job Queued',
-          description: `${job.display_name} has been queued for execution.`,
+          title: forceRun ? 'Job Force-Queued' : 'Job Queued',
+          description: forceRun
+            ? `${job.display_name} has been force-queued and will bypass interval throttling.`
+            : `${job.display_name} has been queued for execution.`,
         })
       }
+      setForceRun(false)
       setConfirmRun(null)
     } catch (error) {
       toast({
@@ -577,10 +582,13 @@ export function SchedulerPage() {
                 <JobRow
                   key={job.id}
                   job={job}
-                  onRun={() => setConfirmRun({ job, mode: 'queue' })}
+                  onRun={() => {
+                    setForceRun(false)
+                    setConfirmRun({ job, mode: 'queue' })
+                  }}
                   onRunInline={() => setConfirmRun({ job, mode: 'inline' })}
                   onViewDetails={() => handleViewDetails(job)}
-                  isRunning={runJob.isPending && runJob.variables === job.id}
+                  isRunning={runJob.isPending && runJob.variables?.jobId === job.id}
                   isRunningInline={runJobInline.isPending && runJobInline.variables === job.id}
                 />
               ))}
@@ -593,7 +601,15 @@ export function SchedulerPage() {
       <JobDetailDialog job={selectedJob} open={detailsOpen} onOpenChange={setDetailsOpen} />
 
       {/* Confirm Run Dialog */}
-      <AlertDialog open={!!confirmRun} onOpenChange={() => setConfirmRun(null)}>
+      <AlertDialog
+        open={!!confirmRun}
+        onOpenChange={(open) => {
+          if (!open) {
+            setForceRun(false)
+            setConfirmRun(null)
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
@@ -622,6 +638,13 @@ export function SchedulerPage() {
                 <>
                   This will queue <strong>{confirmRun?.job.display_name}</strong> for immediate execution. The job will
                   run in the background.
+                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-3">
+                    <div>
+                      <p className="text-sm font-medium">Force run</p>
+                      <p className="text-xs text-muted-foreground">Bypass interval throttling for this manual run.</p>
+                    </div>
+                    <Switch checked={forceRun} onCheckedChange={setForceRun} aria-label="Force run scheduled job" />
+                  </div>
                 </>
               )}
             </AlertDialogDescription>
@@ -646,7 +669,7 @@ export function SchedulerPage() {
                   ) : (
                     <Play className="mr-2 h-4 w-4" />
                   )}
-                  {confirmRun?.mode === 'inline' ? 'Run Inline' : 'Queue Now'}
+                  {confirmRun?.mode === 'inline' ? 'Run Inline' : forceRun ? 'Force Queue' : 'Queue Now'}
                 </>
               )}
             </AlertDialogAction>

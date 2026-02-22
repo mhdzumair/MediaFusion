@@ -104,8 +104,13 @@ export const schedulerApi = {
    * Manually run a scheduler job (admin only)
    * This queues the job for execution in the background worker
    */
-  run: async (jobId: string): Promise<ManualRunResponse> => {
-    return apiClient.post<ManualRunResponse>(`/admin/schedulers/${jobId}/run`)
+  run: async (jobId: string, forceRun: boolean = false): Promise<ManualRunResponse> => {
+    const searchParams = new URLSearchParams()
+    if (forceRun) {
+      searchParams.set('force_run', 'true')
+    }
+    const query = searchParams.toString()
+    return apiClient.post<ManualRunResponse>(`/admin/schedulers/${jobId}/run${query ? `?${query}` : ''}`)
   },
 
   /**

@@ -460,6 +460,10 @@ async def get_scheduler_job(
 @router.post("/schedulers/{job_id}/run", response_model=ManualRunResponse)
 async def run_scheduler_job(
     job_id: str,
+    force_run: bool = Query(
+        False,
+        description="If true, bypass TaskManager minimum interval guard for this manual run.",
+    ),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     """
@@ -489,58 +493,104 @@ async def run_scheduler_job(
             from mediafusion_scrapy.task import run_spider
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(run_spider.send, spider_name=job_id, crontab_expression=crontab)
+            await asyncio.to_thread(
+                run_spider.send,
+                spider_name=job_id,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "prowlarr_feed_scraper":
             from scrapers.feed_scraper import run_prowlarr_feed_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(run_prowlarr_feed_scraper.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                run_prowlarr_feed_scraper.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "jackett_feed_scraper":
             from scrapers.feed_scraper import run_jackett_feed_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(run_jackett_feed_scraper.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                run_jackett_feed_scraper.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "rss_feed_scraper":
             from scrapers.rss_scraper import run_rss_feed_scraper
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(run_rss_feed_scraper.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                run_rss_feed_scraper.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "validate_tv_streams_in_db":
             from scrapers.tv import validate_tv_streams_in_db
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(validate_tv_streams_in_db.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                validate_tv_streams_in_db.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "update_seeders":
             from scrapers.trackers import update_torrent_seeders
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(update_torrent_seeders.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                update_torrent_seeders.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "cleanup_expired_scraper_task":
             from scrapers.scraper_tasks import cleanup_expired_scraper_task
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(cleanup_expired_scraper_task.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                cleanup_expired_scraper_task.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "cleanup_expired_cache_task":
             from streaming_providers.cache_helpers import cleanup_expired_cache
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(cleanup_expired_cache.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                cleanup_expired_cache.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         elif job_id == "background_search":
             from scrapers.background_scraper import run_background_search
 
             crontab = getattr(settings, job_meta["crontab_setting"], "0 0 * * *")
-            await asyncio.to_thread(run_background_search.send, crontab_expression=crontab)
+            await asyncio.to_thread(
+                run_background_search.send,
+                crontab_expression=crontab,
+                force_run=force_run,
+            )
         else:
             raise HTTPException(
                 status_code=status.HTTP_501_NOT_IMPLEMENTED,
                 detail=f"Manual run not implemented for job '{job_id}'",
             )
 
-        logger.info(f"Manual run triggered for scheduler job: {job_id} by user: {current_user.username}")
+        logger.info(
+            "Manual run triggered for scheduler job: %s by user: %s (force_run=%s)",
+            job_id,
+            current_user.username,
+            force_run,
+        )
 
         return ManualRunResponse(
             success=True,
-            message=f"Job '{job_meta['display_name']}' has been queued for execution",
+            message=(
+                f"Job '{job_meta['display_name']}' has been force-queued for execution"
+                if force_run
+                else f"Job '{job_meta['display_name']}' has been queued for execution"
+            ),
             job_id=job_id,
         )
 
