@@ -40,6 +40,7 @@ class Settings(BaseSettings):
             "debrider",
         ]
     ] = Field(default_factory=list)
+    max_streaming_providers_per_profile: int = Field(default=5, ge=1)
 
     # Content Type Toggles
     # Globally disable specific content types. Affects imports, stream delivery, and UI visibility.

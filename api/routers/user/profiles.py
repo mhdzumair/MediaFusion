@@ -465,6 +465,16 @@ def _validate_provider_configs(config: dict) -> None:
     }
 
     providers_raw = config.get("streaming_providers") or config.get("sps") or []
+    if isinstance(providers_raw, list) and len(providers_raw) > settings.max_streaming_providers_per_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Maximum number of streaming providers "
+                f"({settings.max_streaming_providers_per_profile}) reached. "
+                "Remove an existing provider to continue."
+            ),
+        )
+
     for sp in providers_raw:
         if not isinstance(sp, dict):
             continue

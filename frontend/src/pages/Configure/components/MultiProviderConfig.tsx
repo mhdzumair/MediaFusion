@@ -66,7 +66,7 @@ const getRandomSignupLink = (links: string | string[] | undefined): string | nul
   return links
 }
 
-const MAX_PROVIDERS = 5
+const DEFAULT_MAX_PROVIDERS = 5
 
 interface SingleProviderEditorProps {
   provider: StreamingProviderConfigType
@@ -1083,6 +1083,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0)
   const [disabledProviders, setDisabledProviders] = useState<string[]>([])
   const [nzbdavConfigured, setNzbdavConfigured] = useState(false)
+  const [maxProviders, setMaxProviders] = useState(DEFAULT_MAX_PROVIDERS)
 
   // Fetch disabled providers and operator defaults from app config
   useEffect(() => {
@@ -1091,6 +1092,12 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
       .then((data) => {
         if (data.disabled_providers) {
           setDisabledProviders(data.disabled_providers)
+        }
+        if (
+          Number.isInteger(data.max_streaming_providers_per_profile) &&
+          data.max_streaming_providers_per_profile > 0
+        ) {
+          setMaxProviders(data.max_streaming_providers_per_profile)
         }
         if (data.nzbdav_configured) {
           setNzbdavConfigured(true)
@@ -1143,7 +1150,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
   }
 
   const addProvider = () => {
-    if (providers.length >= MAX_PROVIDERS) return
+    if (providers.length >= maxProviders) return
 
     const newProvider: StreamingProviderConfigType = {
       n: generateDefaultName(providers.length),
@@ -1216,7 +1223,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
             </CardDescription>
           </div>
           <Badge variant="secondary">
-            {providers.filter((p) => p.en !== false && p.sv).length} active / {MAX_PROVIDERS} max
+            {providers.filter((p) => p.en !== false && p.sv).length} active / {maxProviders} max
           </Badge>
         </div>
       </CardHeader>
@@ -1262,7 +1269,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
           </div>
         )}
 
-        {providers.length < MAX_PROVIDERS && (
+        {providers.length < maxProviders && (
           <Button variant="outline" className="w-full" onClick={addProvider}>
             <Plus className="h-4 w-4 mr-2" />
             Add Streaming Provider
