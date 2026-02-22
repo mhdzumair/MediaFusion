@@ -372,6 +372,13 @@ async def parse_stream_data(
         torrent_capable_providers = [p for p in active_providers if p.service in mapper.GET_VIDEO_URL_FUNCTIONS]
         if torrent_capable_providers:
             provider_list = torrent_capable_providers
+        elif any(p.service == "p2p" for p in active_providers):
+            # Explicit P2P provider configured.
+            provider_list = [None]
+        elif active_providers:
+            # User has providers, but none can play torrents (e.g., usenet-only setup).
+            # Do not emit torrent entries for these providers.
+            return []
         else:
             # Fallback to direct P2P only when there is no torrent-capable provider.
             provider_list = [None] if "p2p" not in settings.disabled_providers else []

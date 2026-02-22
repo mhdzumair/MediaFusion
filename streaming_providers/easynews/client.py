@@ -1,5 +1,6 @@
 """Easynews API client for direct Usenet streaming."""
 
+import json
 from typing import Any
 from urllib.parse import quote
 
@@ -57,12 +58,28 @@ class Easynews:
 
         try:
             async with self.session.get(url, params=params) as response:
-                if response.status == 401:
+                if response.status in {401, 403}:
                     raise ProviderException("Invalid Easynews credentials", "invalid_token.mp4")
                 response.raise_for_status()
-                return await response.json()
+                try:
+                    # Easynews can return JSON payloads with text/html content-type.
+                    # Allow JSON decoding regardless of declared mimetype.
+                    return await response.json(content_type=None)
+                except json.JSONDecodeError:
+                    response_text = await response.text()
+                    normalized_response = response_text.lower()
+                    if "easynews" in normalized_response and (
+                        "login" in normalized_response
+                        or "username" in normalized_response
+                        or "password" in normalized_response
+                    ):
+                        raise ProviderException("Invalid Easynews credentials", "invalid_token.mp4")
+                    raise ProviderException(
+                        "Easynews API returned non-JSON response",
+                        "provider_error.mp4",
+                    )
         except aiohttp.ClientResponseError as e:
-            if e.status == 401:
+            if e.status in {401, 403}:
                 raise ProviderException("Invalid Easynews credentials", "invalid_token.mp4")
             raise ProviderException(f"Easynews API error: {e}", "provider_error.mp4")
         except aiohttp.ClientError as e:
@@ -79,6 +96,14 @@ class Easynews:
             except ValueError:
                 return 0
         return 0
+
+    @staticmethod
+    def _parse_optional_text(value: Any) -> str | None:
+        """Normalize response values that should be text-only."""
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return None
 
     async def search(
         self,
@@ -152,8 +177,8 @@ class Easynews:
                 "group": item.get("6"),  # Newsgroup
                 "extension": extension,  # File extension
                 "duration": item.get("14"),  # Video duration
-                "resolution": item.get("15"),  # Video resolution
-                "codec": item.get("16"),  # Video codec
+                "resolution": self._parse_optional_text(item.get("15")),  # Video resolution
+                "codec": self._parse_optional_text(item.get("16")),  # Video codec
                 "sig": item.get("sig"),  # Signature for download
                 # Response-derived URL building fields
                 "down_url": down_url,
@@ -333,5 +358,9 @@ class Easynews:
             # Try a simple search to verify credentials
             await self.search("test", max_results=1)
             return True
-        except ProviderException:
-            return False
+        except ProviderException as error:
+            # Only map true auth failures to False; bubble up transport/API errors
+            # so callers don't report every failure as invalid credentials.
+            if "Invalid Easynews credentials" in error.message:
+                return False
+            raise

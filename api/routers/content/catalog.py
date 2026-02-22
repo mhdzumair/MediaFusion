@@ -1629,6 +1629,10 @@ async def get_catalog_item_streams(
     provider_supports_usenet = (
         selected_provider_obj and selected_provider_obj.service in mapper.USENET_CAPABLE_PROVIDERS
     )
+    # Check if selected provider supports torrent playback
+    provider_supports_torrent = (
+        selected_provider_obj and selected_provider_obj.service in mapper.GET_VIDEO_URL_FUNCTIONS
+    )
 
     # Check if user has MediaFlow configured for Telegram streams
     has_mediaflow_telegram = (
@@ -1658,6 +1662,10 @@ async def get_catalog_item_streams(
 
         # Skip Usenet streams if provider doesn't support them
         if usenet and not provider_supports_usenet:
+            continue
+
+        # Skip torrent streams if provider doesn't support torrent playback
+        if torrent and selected_provider_obj and not is_p2p_provider and not provider_supports_torrent:
             continue
 
         # Skip Telegram streams if user doesn't have MediaFlow configured

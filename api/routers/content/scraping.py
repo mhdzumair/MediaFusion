@@ -286,8 +286,6 @@ async def get_user_data_from_profile(
     streaming_providers = config.get("sps") or config.get("streaming_providers", [])
     streaming_provider = config.get("sp") or config.get("streaming_provider")
 
-    logger.debug(f"streaming_providers: {streaming_providers}, streaming_provider: {streaming_provider}")
-
     # Services that are NOT debrid (don't set has_debrid for these)
     non_debrid_services = {"easynews", "sabnzbd", "nzbget"}
 
@@ -319,7 +317,6 @@ async def get_user_data_from_profile(
     # Build UserData from config
     try:
         user_data = UserData.model_validate(config)
-        logger.info(f"User profile: has_debrid={has_debrid}, provider_names={provider_names}")
         return user_data, True, provider_names
     except Exception as e:
         sanitized_config = _sanitize_user_data_config(config)
@@ -331,7 +328,6 @@ async def get_user_data_from_profile(
                     user.id,
                     e,
                 )
-                logger.info(f"User profile: has_debrid={has_debrid}, provider_names={provider_names}")
                 return user_data, True, provider_names
             except Exception:
                 pass
@@ -353,7 +349,6 @@ def get_available_scrapers(
         indexer_config: User's indexer configuration from profile (ic field)
         streaming_providers: Set of streaming provider names (e.g., {"torbox", "realdebrid"})
     """
-    logger.info(f"get_available_scrapers: has_debrid={has_debrid}, streaming_providers={streaming_providers}")
     if streaming_providers is None:
         streaming_providers = set()
     scrapers = []
