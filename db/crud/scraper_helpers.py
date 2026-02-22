@@ -1231,6 +1231,7 @@ async def store_new_torrent_streams(
     valid_streams = []
     info_hashes = []
     external_ids = []
+    seen_info_hashes = set()
 
     for stream_data in streams_data:
         info_hash = stream_data.get("id") or stream_data.get("info_hash")
@@ -1240,6 +1241,10 @@ async def store_new_torrent_streams(
             continue
 
         info_hash = info_hash.lower()
+        if info_hash in seen_info_hashes:
+            continue
+
+        seen_info_hashes.add(info_hash)
         info_hashes.append(info_hash)
         external_ids.append(meta_id)
         valid_streams.append((info_hash, meta_id, stream_data))
@@ -1539,6 +1544,7 @@ async def store_new_usenet_streams(
     valid_streams = []
     nzb_guids = []
     external_ids = []
+    seen_nzb_guids = set()
 
     for stream_data in streams_data:
         nzb_guid = stream_data.get("nzb_guid") or stream_data.get("id")
@@ -1547,6 +1553,10 @@ async def store_new_usenet_streams(
         if not nzb_guid or not meta_id:
             continue
 
+        if nzb_guid in seen_nzb_guids:
+            continue
+
+        seen_nzb_guids.add(nzb_guid)
         nzb_guids.append(nzb_guid)
         external_ids.append(meta_id)
         valid_streams.append((nzb_guid, meta_id, stream_data))

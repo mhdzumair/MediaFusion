@@ -204,6 +204,49 @@ async def _run_live_search_scrapers(
     return torrent_streams, usenet_streams
 
 
+def _merge_unique_torrent_streams(
+    existing_streams: list[TorrentStreamData],
+    live_streams: list[TorrentStreamData],
+) -> list[TorrentStreamData]:
+    """Merge live torrent streams while keeping info_hash values unique."""
+    if not live_streams:
+        return []
+
+    existing_info_hashes = {stream.info_hash.lower() for stream in existing_streams}
+    unique_live_streams: list[TorrentStreamData] = []
+
+    for stream in live_streams:
+        info_hash = stream.info_hash.lower()
+        if info_hash in existing_info_hashes:
+            continue
+        existing_info_hashes.add(info_hash)
+        unique_live_streams.append(stream)
+
+    existing_streams.extend(unique_live_streams)
+    return unique_live_streams
+
+
+def _merge_unique_usenet_streams(
+    existing_streams: list[UsenetStreamData],
+    live_streams: list[UsenetStreamData],
+) -> list[UsenetStreamData]:
+    """Merge live usenet streams while keeping nzb_guid values unique."""
+    if not live_streams:
+        return []
+
+    existing_nzb_guids = {stream.nzb_guid for stream in existing_streams}
+    unique_live_streams: list[UsenetStreamData] = []
+
+    for stream in live_streams:
+        if stream.nzb_guid in existing_nzb_guids:
+            continue
+        existing_nzb_guids.add(stream.nzb_guid)
+        unique_live_streams.append(stream)
+
+    existing_streams.extend(unique_live_streams)
+    return unique_live_streams
+
+
 def _get_visibility_filter(user_id: int | None = None):
     """Get visibility filter for streams.
 
@@ -866,20 +909,13 @@ async def get_movie_streams(
             catalog_type="movie",
         )
 
-        if live_torrent_streams:
-            existing_info_hashes = {stream.info_hash for stream in stream_data_list}
-            stream_data_list.extend(
-                stream for stream in live_torrent_streams if stream.info_hash not in existing_info_hashes
-            )
+        unique_live_torrent_streams = _merge_unique_torrent_streams(stream_data_list, live_torrent_streams)
+        unique_live_usenet_streams = _merge_unique_usenet_streams(usenet_stream_data_list, live_usenet_streams)
 
-        if live_usenet_streams:
-            existing_nzb_guids = {stream.nzb_guid for stream in usenet_stream_data_list}
-            usenet_stream_data_list.extend(
-                stream for stream in live_usenet_streams if stream.nzb_guid not in existing_nzb_guids
+        if unique_live_torrent_streams or unique_live_usenet_streams:
+            background_tasks.add_task(
+                _persist_live_search_streams, unique_live_torrent_streams, unique_live_usenet_streams
             )
-
-        if live_torrent_streams or live_usenet_streams:
-            background_tasks.add_task(_persist_live_search_streams, live_torrent_streams, live_usenet_streams)
 
     # AceStream is formatted directly (requires MediaFlow config, not a parse_stream_data stream type)
     formatted_acestream_streams = (
@@ -1083,20 +1119,13 @@ async def get_series_streams(
             episode=episode,
         )
 
-        if live_torrent_streams:
-            existing_info_hashes = {stream.info_hash for stream in stream_data_list}
-            stream_data_list.extend(
-                stream for stream in live_torrent_streams if stream.info_hash not in existing_info_hashes
-            )
+        unique_live_torrent_streams = _merge_unique_torrent_streams(stream_data_list, live_torrent_streams)
+        unique_live_usenet_streams = _merge_unique_usenet_streams(usenet_stream_data_list, live_usenet_streams)
 
-        if live_usenet_streams:
-            existing_nzb_guids = {stream.nzb_guid for stream in usenet_stream_data_list}
-            usenet_stream_data_list.extend(
-                stream for stream in live_usenet_streams if stream.nzb_guid not in existing_nzb_guids
+        if unique_live_torrent_streams or unique_live_usenet_streams:
+            background_tasks.add_task(
+                _persist_live_search_streams, unique_live_torrent_streams, unique_live_usenet_streams
             )
-
-        if live_torrent_streams or live_usenet_streams:
-            background_tasks.add_task(_persist_live_search_streams, live_torrent_streams, live_usenet_streams)
 
     formatted_acestream_streams = (
         _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
