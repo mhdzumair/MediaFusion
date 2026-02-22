@@ -512,20 +512,27 @@ class BaseScraper(abc.ABC):
 
                     # Yield items as they become available
                     async for stream in queue_processor():
-                        yield stream
+                        try:
+                            yield stream
+                        except (GeneratorExit, asyncio.CancelledError):
+                            self.logger.debug("Stream processing consumer stopped early")
+                            return
         except TimeoutError:
             self.logger.warning(
                 f"Stream processing timed out after {max_process_time} seconds. Processed {streams_processed} streams"
             )
             self.metrics.record_skip("Max process time")
-        except ExceptionGroup as eg:
+        except BaseExceptionGroup as eg:
             for e in eg.exceptions:
+                if isinstance(e, (GeneratorExit, asyncio.CancelledError)):
+                    self.logger.debug("Stream processing stopped due to consumer cancellation")
+                    continue
                 if isinstance(e, MaxProcessLimitReached):
                     self.logger.info(f"Stream processing cancelled after reaching max process limit of {max_process}")
                     self.metrics.record_skip("Max process limit")
-                else:
-                    self.logger.exception(f"An error occurred during stream processing: {e}")
-                    self.metrics.record_error(f"unexpected_stream_processing_error {e}")
+                    continue
+                self.logger.exception(f"An error occurred during stream processing: {e}")
+                self.metrics.record_error(f"unexpected_stream_processing_error {e}")
         except Exception as e:
             self.logger.exception(f"An error occurred during stream processing: {e}")
             self.metrics.record_error(f"unexpected_stream_processing_error {e}")

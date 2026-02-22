@@ -114,7 +114,7 @@ class MediaReview(TimestampMixin, table=True):
 
     # Source: either external provider OR user (one must be set)
     provider_id: int | None = Field(default=None, foreign_key="rating_provider.id")
-    user_id: int | None = Field(default=None, foreign_key="users.id")
+    user_id: int | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
 
     # Review content
     author: str | None = None

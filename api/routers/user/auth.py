@@ -13,15 +13,12 @@ import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
-from sqlmodel import select, update
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.database import get_async_session
 from db.enums import UserRole
 from db.models import User, UserProfile
-from db.models.links import StreamMediaLink
-from db.models.media import Media
-from db.models.streams import Stream
 from utils.config import settings
 from utils.email.service import get_email_service
 
@@ -852,13 +849,6 @@ async def delete_account(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password is incorrect",
         )
-
-    # SET NULL for nullable FK references that would block deletion
-    await session.exec(update(Stream).where(Stream.uploader_user_id == user.id).values(uploader_user_id=None))
-    await session.exec(
-        update(StreamMediaLink).where(StreamMediaLink.linked_by_user_id == user.id).values(linked_by_user_id=None)
-    )
-    await session.exec(update(Media).where(Media.created_by_user_id == user.id).values(created_by_user_id=None))
 
     logger.info("Deleting account for user %s (id=%d)", user.email, user.id)
 

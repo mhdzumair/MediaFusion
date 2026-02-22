@@ -143,7 +143,9 @@ class Stream(TimestampMixin, table=True):
 
     # MediaFusion v5+: FK to user who contributed this stream (with consent)
     # When a user opts to link their account to their contributions
-    uploader_user_id: int | None = Field(default=None, foreign_key="users.id")  # partial index via __table_args__
+    uploader_user_id: int | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )  # partial index via __table_args__
     uploader_user: Optional["User"] = Relationship(sa_relationship_kwargs={"lazy": "selectin"})
 
     # Torrent release group from PTT parsing (e.g., "AFG", "RARBG", "MeGusta", "NTb")
@@ -523,7 +525,7 @@ class TelegramUserForward(SQLModel, table=True):
 
     id: int = Field(default=None, primary_key=True)
     telegram_stream_id: int = Field(foreign_key="telegram_stream.id", index=True)
-    user_id: int = Field(foreign_key="users.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True, ondelete="CASCADE")
 
     # Telegram user ID (for the user's DM with the bot)
     telegram_user_id: int

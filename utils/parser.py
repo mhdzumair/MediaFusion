@@ -366,8 +366,15 @@ async def parse_stream_data(
             # No usenet-capable provider configured -- usenet streams can't be played
             return []
     else:
-        # Torrent: use all active providers; fall back to P2P (None) if none configured
-        provider_list = active_providers if active_providers else [None]
+        # Torrent: only use providers that implement torrent playback.
+        # Usenet-only providers (sabnzbd/nzbget/nzbdav/easynews/stremio_nntp) must not
+        # produce /playback URLs for torrent streams.
+        torrent_capable_providers = [p for p in active_providers if p.service in mapper.GET_VIDEO_URL_FUNCTIONS]
+        if torrent_capable_providers:
+            provider_list = torrent_capable_providers
+        else:
+            # Fallback to direct P2P only when there is no torrent-capable provider.
+            provider_list = [None] if "p2p" not in settings.disabled_providers else []
 
     # Process each provider concurrently for cache checking and stream building
     async def _process_single_provider(

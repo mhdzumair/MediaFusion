@@ -139,7 +139,7 @@ async def get_meta(
         )
     elif catalog_type == MediaType.TV:
         # Get TV-specific metadata
-        tv_meta = media.tv_metadata[0] if media.tv_metadata else None
+        tv_meta = media.tv_metadata
 
         meta_response = public_schemas.Meta(
             language=tv_meta.tv_language if tv_meta else None,

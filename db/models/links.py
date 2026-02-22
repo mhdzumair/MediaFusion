@@ -154,6 +154,7 @@ class StreamMediaLink(SQLModel, table=True):
     linked_by_user_id: int | None = Field(
         default=None,
         foreign_key="users.id",  # index via __table_args__
+        ondelete="SET NULL",
     )
 
     # File-level granularity for multi-movie torrents

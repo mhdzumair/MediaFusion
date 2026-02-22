@@ -1431,6 +1431,7 @@ async def store_new_torrent_streams(
         # Maps (season_number, episode_number) -> episode_title
         episode_info: dict[tuple[int, int], str] = {}
         if files := stream_data.get("files"):
+            used_file_indexes: set[int] = set()
             for idx, file_info in enumerate(files):
                 if isinstance(file_info, dict):
                     # Create StreamFile
@@ -1440,9 +1441,19 @@ async def store_new_torrent_streams(
                     except ValueError:
                         file_type = FileType.VIDEO
 
+                    # Ensure file_index is unique per stream.
+                    raw_file_index = file_info.get("file_index")
+                    try:
+                        file_index = int(raw_file_index) if raw_file_index is not None else idx
+                    except (TypeError, ValueError):
+                        file_index = idx
+                    while file_index in used_file_indexes:
+                        file_index += 1
+                    used_file_indexes.add(file_index)
+
                     stream_file = StreamFile(
                         stream_id=stream.id,
-                        file_index=file_info.get("file_index", idx),
+                        file_index=file_index,
                         filename=file_info.get("filename", ""),
                         file_path=file_info.get("file_path"),
                         size=file_info.get("size", 0),

@@ -186,6 +186,12 @@ async def get_or_create_video_url(
     file_index = episode_data.file_index if episode_data else (main_file.file_index if main_file else 0)
 
     get_video_url = mapper.GET_VIDEO_URL_FUNCTIONS.get(streaming_provider.service)
+    if not get_video_url:
+        raise ProviderException(
+            f"Provider {streaming_provider.service} does not support torrent playback",
+            "provider_error.mp4",
+        )
+
     kwargs = dict(
         info_hash=info_hash,
         magnet_link=magnet_link,

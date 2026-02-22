@@ -122,6 +122,7 @@ class Episode(SQLModel, table=True):
     created_by_user_id: int | None = Field(
         default=None,
         foreign_key="users.id",
+        ondelete="SET NULL",
         description="User who created this episode (for user-created content)",
     )
     is_user_created: bool = Field(
@@ -209,7 +210,7 @@ class Media(TimestampMixin, table=True):
 
     # Provider attribution
     primary_provider_id: int | None = Field(default=None, foreign_key="metadata_provider.id")
-    created_by_user_id: int | None = Field(default=None, foreign_key="users.id")
+    created_by_user_id: int | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     is_user_created: bool = Field(default=False, index=True)
     is_public: bool = Field(default=True)  # Visibility for user-created
 
@@ -220,10 +221,10 @@ class Media(TimestampMixin, table=True):
     )
 
     # Metadata refresh tracking
-    last_refreshed_by_user_id: int | None = Field(default=None, foreign_key="users.id")
+    last_refreshed_by_user_id: int | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     last_refreshed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     migrated_from_id: str | None = None  # Original mf ID before migration
-    migrated_by_user_id: int | None = Field(default=None, foreign_key="users.id")
+    migrated_by_user_id: int | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     migrated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
     # Content guidance (applies to all media types)
@@ -232,7 +233,7 @@ class Media(TimestampMixin, table=True):
     # Content moderation - blocking
     is_blocked: bool = Field(default=False, index=True)
     blocked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    blocked_by_user_id: int | None = Field(default=None, foreign_key="users.id")
+    blocked_by_user_id: int | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     block_reason: str | None = Field(default=None, max_length=500)
 
     # Poster generation
@@ -240,7 +241,7 @@ class Media(TimestampMixin, table=True):
 
     # Scraping tracking
     last_scraped_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    last_scraped_by_user_id: int | None = Field(default=None, foreign_key="users.id")
+    last_scraped_by_user_id: int | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
 
     # Aggregates
     total_streams: int = Field(default=0, index=True)
