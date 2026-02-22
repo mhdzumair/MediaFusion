@@ -27,6 +27,7 @@ def get_cache_key(
     genre: str | None,
     user_data: UserData,
     is_watchlist: bool,
+    is_personal_catalog: bool,
     namespace: str,
     sort: str | None = None,
     sort_dir: str | None = None,
@@ -40,6 +41,7 @@ def get_cache_key(
         genre: Optional genre filter
         user_data: User preferences and filters
         is_watchlist: Whether this is a watchlist query
+        is_personal_catalog: Whether this is a user-specific personal catalog query
         namespace: TV namespace (deprecated)
         sort: Sort field (latest, popular, rating, year, title, release_date)
         sort_dir: Sort direction (asc, desc)
@@ -47,7 +49,7 @@ def get_cache_key(
     Returns:
         Cache key string or None if caching should be disabled
     """
-    if is_watchlist or catalog_type == MediaType.EVENTS:
+    if is_watchlist or is_personal_catalog or catalog_type == MediaType.EVENTS:
         return None
 
     key_parts = [catalog_type.value, catalog_id, str(skip), genre or ""]
@@ -156,6 +158,7 @@ async def get_catalog(
     # Check if the catalog belongs to any active provider's watchlist
     watchlist_provider = None
     is_watchlist_catalog = False
+    is_personal_catalog = catalog_id.startswith("my_library_")
     for provider in user_data.get_active_providers():
         if catalog_id.startswith(f"{provider.service}_watchlist_"):
             watchlist_provider = provider
@@ -185,6 +188,7 @@ async def get_catalog(
         genre,
         user_data,
         is_watchlist_catalog,
+        is_personal_catalog,
         namespace,
         sort,
         sort_dir,

@@ -124,6 +124,11 @@ export const CATALOGS = {
     { id: 'fighting', name: 'Fighting (WWE, UFC)' },
     { id: 'other_sports', name: 'Other Sports' },
   ],
+  Personal: [
+    { id: 'my_library_movies', name: 'My Library Movies' },
+    { id: 'my_library_series', name: 'My Library Series' },
+    { id: 'my_library_tv', name: 'My Library TV' },
+  ],
   Search: [
     { id: 'mediafusion_search_movies', name: 'MediaFusion Search Movies' },
     { id: 'mediafusion_search_series', name: 'MediaFusion Search Series' },

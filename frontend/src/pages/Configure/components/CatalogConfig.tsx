@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import { CATALOGS } from './constants'
 import type { ConfigSectionProps, CatalogConfig as CatalogConfigType } from './types'
@@ -30,6 +31,7 @@ const ORDER_OPTIONS = [
 ]
 
 export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
+  const { isAuthenticated } = useAuth()
   const [search, setSearch] = useState('')
   const [showReorder, setShowReorder] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
@@ -56,9 +58,15 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
 
   // Get the effective catalog configs (migrated if necessary)
   const catalogConfigs = getMigratedCatalogConfigs()
+  const isCatalogVisible = (catalogId: string): boolean => isAuthenticated || !catalogId.startsWith('my_library_')
+  const visibleCatalogConfigs = catalogConfigs.filter((c) => isCatalogVisible(c.ci))
+
+  const visibleCatalogs = Object.fromEntries(
+    Object.entries(CATALOGS).filter(([category]) => isAuthenticated || category !== 'Personal'),
+  ) as Record<string, Array<{ id: string; name: string }>>
 
   // Get enabled catalog IDs in order
-  const enabledCatalogIds = catalogConfigs.filter((c) => c.en !== false).map((c) => c.ci)
+  const enabledCatalogIds = visibleCatalogConfigs.filter((c) => c.en !== false).map((c) => c.ci)
 
   // Get config for a specific catalog
   const getCatalogConfig = (catalogId: string): CatalogConfigType | undefined => {
@@ -116,7 +124,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
   }
 
   const selectAll = (category: string) => {
-    const categoryItems = CATALOGS[category as keyof typeof CATALOGS] || []
+    const categoryItems = visibleCatalogs[category] || []
     const categoryIds = categoryItems.map((c) => c.id)
     const allSelected = categoryIds.every((id) => isCatalogEnabled(id))
 
@@ -143,7 +151,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
   }
 
   const selectAllCatalogs = () => {
-    const allIds = Object.values(CATALOGS)
+    const allIds = Object.values(visibleCatalogs)
       .flat()
       .map((c) => c.id)
     const allSelected = allIds.every((id) => isCatalogEnabled(id))
@@ -169,7 +177,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
   }
 
   const moveCatalog = (catalogId: string, direction: 'up' | 'down') => {
-    const enabledConfigs = catalogConfigs.filter((c) => c.en !== false)
+    const enabledConfigs = visibleCatalogConfigs.filter((c) => c.en !== false)
     const currentIndex = enabledConfigs.findIndex((c) => c.ci === catalogId)
     if (currentIndex === -1) return
 
@@ -180,9 +188,10 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
     const newEnabled = [...enabledConfigs]
     ;[newEnabled[currentIndex], newEnabled[newIndex]] = [newEnabled[newIndex], newEnabled[currentIndex]]
 
-    // Rebuild full list: enabled first (in order), then disabled
-    const disabledConfigs = catalogConfigs.filter((c) => c.en === false)
-    updateCatalogConfigs([...newEnabled, ...disabledConfigs])
+    // Rebuild full list: visible enabled (ordered), visible disabled, then hidden configs.
+    const visibleDisabledConfigs = visibleCatalogConfigs.filter((c) => c.en === false)
+    const hiddenConfigs = catalogConfigs.filter((c) => !isCatalogVisible(c.ci))
+    updateCatalogConfigs([...newEnabled, ...visibleDisabledConfigs, ...hiddenConfigs])
   }
 
   // Get MDBList catalogs from config
@@ -201,14 +210,14 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
     }
 
     // Check MediaFusion catalogs
-    for (const items of Object.values(CATALOGS)) {
+    for (const items of Object.values(visibleCatalogs)) {
       const catalog = items.find((c) => c.id === id)
       if (catalog) return catalog.name
     }
     return id
   }
 
-  const filteredCatalogs = Object.entries(CATALOGS).reduce(
+  const filteredCatalogs = Object.entries(visibleCatalogs).reduce(
     (acc, [category, items]) => {
       const filtered = items.filter(
         (item) =>
@@ -220,7 +229,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
       }
       return acc
     },
-    {} as Record<string, (typeof CATALOGS)['Movies']>,
+    {} as Record<string, Array<{ id: string; name: string }>>,
   )
 
   // Render sort settings popover for a catalog
@@ -343,7 +352,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
             {showReorder ? 'Done Reordering' : 'Reorder'}
           </Button>
           <Button variant="outline" size="sm" onClick={selectAllCatalogs}>
-            {enabledCatalogIds.length === Object.values(CATALOGS).flat().length ? 'Deselect All' : 'Select All'}
+            {enabledCatalogIds.length === Object.values(visibleCatalogs).flat().length ? 'Deselect All' : 'Select All'}
           </Button>
         </div>
 
@@ -354,7 +363,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
             <ScrollArea className="h-[300px] pr-4">
               <div className="space-y-1">
                 {catalogConfigs
-                  .filter((c) => c.en !== false)
+                  .filter((c) => c.en !== false && isCatalogVisible(c.ci))
                   .map((cfg, index) => (
                     <div key={cfg.ci} className="flex items-center gap-2 p-2 rounded-lg border bg-background">
                       <Badge variant="outline" className="w-8 justify-center shrink-0">
@@ -382,7 +391,7 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
                           size="icon"
                           className="h-7 w-7"
                           onClick={() => moveCatalog(cfg.ci, 'down')}
-                          disabled={index === catalogConfigs.filter((c) => c.en !== false).length - 1}
+                          disabled={index === visibleCatalogConfigs.filter((c) => c.en !== false).length - 1}
                         >
                           <ChevronDown className="h-4 w-4" />
                         </Button>
@@ -423,7 +432,9 @@ export function CatalogConfig({ config, onChange }: ConfigSectionProps) {
                   {items.map((catalog) => {
                     const isSelected = isCatalogEnabled(catalog.id)
                     const cfg = getCatalogConfig(catalog.id)
-                    const position = catalogConfigs.filter((c) => c.en !== false).findIndex((c) => c.ci === catalog.id)
+                    const position = visibleCatalogConfigs
+                      .filter((c) => c.en !== false)
+                      .findIndex((c) => c.ci === catalog.id)
                     return (
                       <div
                         key={catalog.id}

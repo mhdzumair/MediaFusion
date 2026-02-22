@@ -1045,6 +1045,10 @@ async def generate_manifest(user_data: UserData, genres: dict) -> dict:
     selected_catalogs = [
         cid for cid in user_data.get_enabled_catalog_ids() if not cid.startswith("mdblist_") or cid in mdblist_data
     ]
+    # Personal library catalogs require an authenticated user context.
+    # Hide them from anonymous manifests so they don't appear with empty results.
+    if not user_data.user_id:
+        selected_catalogs = [cid for cid in selected_catalogs if not cid.startswith("my_library_")]
 
     manifest_data = {
         "addon_name": addon_name,

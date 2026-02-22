@@ -39,6 +39,7 @@ from db.models import (
     StreamMediaLink,
     TorrentStream,
     TVMetadata,
+    UserLibraryItem,
 )
 from db.schemas import UserData
 
@@ -46,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 # Type alias for catalog sort options
 CatalogSortOption = Literal["latest", "popular", "rating", "year", "title", "release_date"]
+MY_LIBRARY_CATALOG_TYPE_MAP: dict[str, MediaType] = {
+    "my_library_movies": MediaType.MOVIE,
+    "my_library_series": MediaType.SERIES,
+    "my_library_tv": MediaType.TV,
+}
 
 
 async def get_catalog_meta_list(
@@ -85,9 +91,22 @@ async def get_catalog_meta_list(
     """
     # Build base query - use media.id internally, external_id translation happens at Stremio boundary
     query = select(Media.id, Media.title).where(Media.type == catalog_type)
+    is_my_library_catalog = catalog_id in MY_LIBRARY_CATALOG_TYPE_MAP
 
+    # Handle personal My Library catalogs
+    if is_my_library_catalog:
+        if not user_data.user_id:
+            return public_schemas.Metas(metas=[])
+
+        expected_type = MY_LIBRARY_CATALOG_TYPE_MAP[catalog_id]
+        if catalog_type != expected_type:
+            return public_schemas.Metas(metas=[])
+
+        query = query.join(UserLibraryItem, UserLibraryItem.media_id == Media.id).where(
+            UserLibraryItem.user_id == user_data.user_id
+        )
     # Handle watchlist catalog
-    if is_watchlist_catalog and info_hashes:
+    elif is_watchlist_catalog and info_hashes:
         # Join through TorrentStream to find media by info_hash
         query = (
             query.join(StreamMediaLink, StreamMediaLink.media_id == Media.id)
@@ -105,7 +124,7 @@ async def get_catalog_meta_list(
             )
 
     # Add content filters for movies and series
-    if catalog_type in [MediaType.MOVIE, MediaType.SERIES]:
+    if catalog_type in [MediaType.MOVIE, MediaType.SERIES] and not is_my_library_catalog:
         specific_model = MovieMetadata if catalog_type == MediaType.MOVIE else SeriesMetadata
         query = query.join(specific_model, specific_model.media_id == Media.id)
 
@@ -127,7 +146,7 @@ async def get_catalog_meta_list(
             query = query.where(~blocked_cert_exists)
 
     # Add TV-specific filters
-    if catalog_type == MediaType.TV:
+    if catalog_type == MediaType.TV and not is_my_library_catalog:
         query = (
             query.join(TVMetadata, TVMetadata.media_id == Media.id)
             .join(StreamMediaLink, StreamMediaLink.media_id == Media.id)
@@ -150,7 +169,9 @@ async def get_catalog_meta_list(
     nulls_position = "nulls_first" if sort_dir == "asc" else "nulls_last"
 
     if sort == "latest":
-        order_expr = order_func(Media.last_stream_added)
+        order_expr = (
+            order_func(UserLibraryItem.added_at) if is_my_library_catalog else order_func(Media.last_stream_added)
+        )
         query = query.order_by(getattr(order_expr, nulls_position)())
     elif sort in ("popular", "rating"):
         # Sort by IMDb rating with fallback to total_streams
