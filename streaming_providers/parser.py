@@ -146,7 +146,8 @@ class TorrentFileProcessor:
         self.file_key = file_key
         self.name_key = name_key
         self.size_key = size_key
-        self.files = torrent_info[file_key]
+        raw_files = torrent_info.get(file_key)
+        self.files = raw_files if isinstance(raw_files, list) else []
         self.file_infos = self._process_files()
         self._video_files: list[FileInfo] | None = None
         self._episodes: list[StreamFileData] | None = None
@@ -307,7 +308,9 @@ async def select_file_index_from_torrent(
     Select the file index from the torrent info with minimal processing.
     Only processes all files if initial filename match fails.
     """
-    files = torrent_info[file_key]
+    raw_files = torrent_info.get(file_key)
+    files = raw_files if isinstance(raw_files, list) else []
+    normalized_torrent_info = {**torrent_info, file_key: files}
 
     # Quick filename match without full processing
     if filename:
@@ -320,7 +323,7 @@ async def select_file_index_from_torrent(
     # get file sizes if callback provided
     if file_size_callback:
         await file_size_callback(files)
-    processor = TorrentFileProcessor(torrent_info, file_key, name_key, size_key)
+    processor = TorrentFileProcessor(normalized_torrent_info, file_key, name_key, size_key)
 
     # Check if there are any video files
     video_files = processor.get_video_files()

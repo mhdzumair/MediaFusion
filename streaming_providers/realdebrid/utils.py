@@ -94,10 +94,11 @@ async def create_download_link(
 
     response = await rd_client.create_download_link(torrent_info["links"][link_index])
 
-    if not response.get("mimeType", "").startswith("video"):
+    mime_type = str(response.get("mimeType") or "")
+    if not mime_type.startswith("video"):
         # await rd_client.delete_torrent(torrent_info["id"])
         raise ProviderException(
-            f"Requested file is not a video file, deleting torrent and retrying. {response['mimeType']}",
+            f"Requested file is not a video file, deleting torrent and retrying. {mime_type}",
             "torrent_not_downloaded.mp4",
         )
 

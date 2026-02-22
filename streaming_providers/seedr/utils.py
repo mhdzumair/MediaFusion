@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import re
+from binascii import Error as BinasciiError
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -41,7 +42,7 @@ async def get_seedr_client(streaming_provider: StreamingProvider) -> AsyncGenera
             if "error" in response:
                 raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
             yield seedr
-    except SyntaxError:
+    except (SyntaxError, BinasciiError, TypeError, ValueError):
         raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
     except ProviderException as error:
         raise error

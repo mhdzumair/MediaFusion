@@ -56,6 +56,11 @@ class MDBListScraper:
             return None
 
     @staticmethod
+    def _has_valid_imdb_id(item: dict) -> bool:
+        imdb_id = item.get("imdb_id")
+        return isinstance(imdb_id, str) and imdb_id.startswith("tt")
+
+    @staticmethod
     def _convert_to_meta(item: dict, media_type: str) -> schemas.Meta:
         """Convert MDBList item to Meta object"""
         genres = item.get("genre", [])
@@ -101,7 +106,7 @@ class MDBListScraper:
                 break
 
             # Filter valid IMDb IDs for the specific media type
-            new_ids = [item["imdb_id"] for item in items if item.get("imdb_id", "").startswith("tt")]
+            new_ids = [item["imdb_id"] for item in items if self._has_valid_imdb_id(item)]
 
             if not new_ids:
                 break
@@ -147,9 +152,7 @@ class MDBListScraper:
 
         items = batch.get("movies" if list_config.catalog_type == "movie" else "shows", [])
         meta_list = [
-            self._convert_to_meta(item, list_config.catalog_type)
-            for item in items
-            if item.get("imdb_id", "").startswith("tt")
+            self._convert_to_meta(item, list_config.catalog_type) for item in items if self._has_valid_imdb_id(item)
         ]
 
         # Calculate the slice we need from this batch

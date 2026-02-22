@@ -16,6 +16,23 @@ from utils import crypto
 PIKPAK_TORRENT_DETAILS_CONCURRENCY = 6
 
 
+def _raise_pikpak_provider_exception(error: Exception) -> None:
+    error_message = str(error).lower()
+    if "invalid username or password" in error_message:
+        raise ProviderException("Invalid PikPak credentials", "invalid_credentials.mp4")
+    if "invalid token" in error_message or "unauthorized" in error_message:
+        raise ProviderException("Invalid PikPak token", "invalid_token.mp4")
+    if "too frequent" in error_message or "try again later" in error_message:
+        raise ProviderException(
+            "PikPak is temporarily unavailable. Please try again later.",
+            "debrid_service_down_error.mp4",
+        )
+    raise ProviderException(
+        "Failed to connect to PikPak. Please try again later.",
+        "debrid_service_down_error.mp4",
+    )
+
+
 async def get_torrent_file_by_info_hash(pikpak: PikPakApi, my_pack_folder_id: str, info_hash: str):
     """Gets the folder_id of a folder with a given info_hash in the root directory."""
     files_list_content = await pikpak.file_list(parent_id=my_pack_folder_id)
@@ -37,8 +54,8 @@ async def check_torrent_status(pikpak: PikPakApi, info_hash: str) -> dict | None
     """Checks the status of a torrent with a given info_hash or torrent_name."""
     try:
         available_task = await pikpak.offline_list()
-    except PikpakException:
-        raise ProviderException("Invalid PikPak token", "invalid_token.mp4")
+    except PikpakException as error:
+        _raise_pikpak_provider_exception(error)
     for task in available_task["tasks"]:
         magnet_link = task.get("params", {}).get("url", "")
         if info_hash in magnet_link:
@@ -162,14 +179,9 @@ async def initialize_pikpak(streaming_provider: StreamingProvider):
         try:
             await pikpak.login()
         except PikpakException as error:
-            if "Invalid username or password" == str(error):
-                raise ProviderException("Invalid PikPak credentials", "invalid_credentials.mp4")
             logging.error(f"Failed to connect to PikPak: {error}")
-            raise ProviderException(
-                "Failed to connect to PikPak. Please try again later.",
-                "debrid_service_down_error.mp4",
-            )
-        except httpx.ReadTimeout:
+            _raise_pikpak_provider_exception(error)
+        except (httpx.ReadTimeout, httpx.TimeoutException, httpx.RequestError):
             raise ProviderException(
                 "Failed to connect to PikPak. Please try again later.",
                 "debrid_service_down_error.mp4",
@@ -305,40 +317,45 @@ async def get_video_url_from_pikpak(
     retry_interval=0,
     **kwargs,
 ) -> str:
-    async with initialize_pikpak(streaming_provider) as pikpak:
-        await handle_torrent_status(pikpak, info_hash, max_retries, retry_interval)
+    try:
+        async with initialize_pikpak(streaming_provider) as pikpak:
+            await handle_torrent_status(pikpak, info_hash, max_retries, retry_interval)
 
-        my_pack_folder_id = await get_my_pack_folder_id(pikpak)
-        selected_file = await retrieve_or_download_file(
-            pikpak,
-            my_pack_folder_id,
-            filename,
-            magnet_link,
-            info_hash,
-            stream,
-            season,
-            episode,
-            max_retries,
-            retry_interval,
-        )
+            my_pack_folder_id = await get_my_pack_folder_id(pikpak)
+            selected_file = await retrieve_or_download_file(
+                pikpak,
+                my_pack_folder_id,
+                filename,
+                magnet_link,
+                info_hash,
+                stream,
+                season,
+                episode,
+                max_retries,
+                retry_interval,
+            )
 
-        file_data = await pikpak.get_download_url(selected_file["id"])
+            file_data = await pikpak.get_download_url(selected_file["id"])
 
-        media_link = next(
-            (
-                media["link"]["url"]
-                for media in file_data.get("medias", [])
-                if media.get("link") and media["link"].get("url")
-            ),
-            None,
-        )
-        if media_link:
-            # Validate the media link
-            if await validate_medialink(media_link):
-                return media_link
-            else:
-                raise ProviderException("Invalid media link", "pikpak_invalid_media_link.mp4")
-        return file_data["web_content_link"]
+            media_link = next(
+                (
+                    media["link"]["url"]
+                    for media in file_data.get("medias", [])
+                    if media.get("link") and media["link"].get("url")
+                ),
+                None,
+            )
+            if media_link:
+                # Validate the media link
+                if await validate_medialink(media_link):
+                    return media_link
+                else:
+                    raise ProviderException("Invalid media link", "pikpak_invalid_media_link.mp4")
+            return file_data["web_content_link"]
+    except ProviderException:
+        raise
+    except (PikpakException, httpx.TimeoutException, httpx.RequestError) as error:
+        _raise_pikpak_provider_exception(error)
 
 
 async def validate_medialink(media_link: str) -> bool:

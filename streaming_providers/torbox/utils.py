@@ -157,6 +157,13 @@ async def select_file_id_from_torrent(
     episode: int | None,
 ) -> int:
     """Select the file id from the torrent info."""
+    files = torrent_info.get("files")
+    if not isinstance(files, list) or not files:
+        raise ProviderException(
+            "Torrent files are not available yet.",
+            "torrent_not_downloaded.mp4",
+        )
+
     file_index = await select_file_index_from_torrent(
         torrent_info=torrent_info,
         torrent_stream=stream,
@@ -166,7 +173,7 @@ async def select_file_id_from_torrent(
         name_key="short_name",
         is_filename_trustable=True,
     )
-    return torrent_info["files"][file_index]["id"]
+    return files[file_index]["id"]
 
 
 async def delete_all_torrents_from_torbox(streaming_provider: StreamingProvider, **kwargs: Any) -> None:
