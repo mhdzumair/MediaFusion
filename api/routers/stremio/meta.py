@@ -74,7 +74,7 @@ async def get_meta(
     elif catalog_type == MediaType.TV:
         media = await crud.get_tv_data_by_id(session, meta_id)
     else:
-        media = await crud.get_metadata_by_id(session, meta_id)
+        media = await crud.get_metadata_by_id(session, meta_id, load_relations=True)
 
     if not media:
         raise HTTPException(status_code=404, detail="Metadata not found")

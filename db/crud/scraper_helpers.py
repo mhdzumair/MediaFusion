@@ -144,14 +144,31 @@ async def get_metadata_by_id(
     load_relations: bool = False,
 ) -> Media | None:
     """Get metadata by external ID (e.g., IMDb ID)."""
-    return await get_media_by_external_id(session, meta_id)
+    media = await get_media_by_external_id(session, meta_id)
+    if not media:
+        return None
+
+    if not load_relations:
+        return media
+
+    query = (
+        select(Media)
+        .where(Media.id == media.id)
+        .options(
+            *_metadata_base_options(),
+        )
+    )
+
+    result = await session.exec(query)
+    return result.first()
 
 
 def _metadata_base_options():
-    """Shared selectinload options for all Media queries that feed into MetadataData.from_db().
+    """Shared selectinload options for Media metadata queries.
 
-    Every relationship that from_db() accesses must be listed here.
-    Callers may extend this with type-specific options (e.g. series_metadata.seasons).
+    Any relationship accessed by metadata API serializers should be listed here
+    so load_relations=True avoids async lazy-loading.
+    Callers may extend this with type-specific options (e.g. series seasons).
     """
     return [
         selectinload(Media.genres),
@@ -165,6 +182,10 @@ def _metadata_base_options():
         selectinload(Media.movie_metadata),
         selectinload(Media.series_metadata),
         selectinload(Media.tv_metadata),
+        selectinload(Media.cast).selectinload(MediaCast.person),
+        selectinload(Media.crew).selectinload(MediaCrew.person),
+        selectinload(Media.parental_certificates),
+        selectinload(Media.trailers),
     ]
 
 
@@ -187,10 +208,6 @@ async def get_movie_data_by_id(
         .where(Media.id == media.id)
         .options(
             *_metadata_base_options(),
-            selectinload(Media.cast).selectinload(MediaCast.person),
-            selectinload(Media.crew).selectinload(MediaCrew.person),
-            selectinload(Media.parental_certificates),
-            selectinload(Media.trailers),
         )
     )
 
@@ -218,10 +235,6 @@ async def get_series_data_by_id(
         .options(
             *_metadata_base_options(),
             selectinload(Media.series_metadata).selectinload(SeriesMetadata.seasons).selectinload(Season.episodes),
-            selectinload(Media.cast).selectinload(MediaCast.person),
-            selectinload(Media.crew).selectinload(MediaCrew.person),
-            selectinload(Media.parental_certificates),
-            selectinload(Media.trailers),
         )
     )
 
