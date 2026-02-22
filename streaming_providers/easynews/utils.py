@@ -149,6 +149,10 @@ async def get_video_url_from_easynews(
     Returns:
         Direct streaming URL
     """
+    # Prefer persisted URL from scraper output; this avoids fragile playback-time re-search.
+    if stream.nzb_url:
+        return stream.nzb_url
+
     async with initialize_easynews(streaming_provider) as easynews:
         # Try to find by filename first
         search_query = stream.name
@@ -176,6 +180,12 @@ async def get_video_url_from_easynews(
             file_id=best_result["id"],
             filename=best_result["filename"],
             sig=best_result.get("sig"),
+            down_url=best_result.get("down_url"),
+            dl_farm=best_result.get("dl_farm"),
+            dl_port=best_result.get("dl_port"),
+            file_hash=best_result.get("file_hash"),
+            file_title=best_result.get("file_title"),
+            file_extension=best_result.get("file_extension"),
         )
 
 

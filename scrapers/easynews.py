@@ -268,8 +268,18 @@ class EasynewsScraper(BaseScraper):
             # Get signature for download URL
             sig = item.get("sig")
 
-            # Generate download URL (with credentials embedded)
-            download_url = self._client.generate_download_url(file_id, filename, sig)
+            # Generate download URL (response-derived URL shape, legacy fallback retained)
+            download_url = self._client.generate_download_url(
+                file_id=file_id,
+                filename=filename,
+                sig=sig,
+                down_url=item.get("down_url"),
+                dl_farm=item.get("dl_farm"),
+                dl_port=item.get("dl_port"),
+                file_hash=item.get("file_hash"),
+                file_title=item.get("file_title"),
+                file_extension=item.get("file_extension"),
+            )
 
             # Build files list for series
             files: list[StreamFileData] = []
