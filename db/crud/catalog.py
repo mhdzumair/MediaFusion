@@ -54,6 +54,24 @@ MY_LIBRARY_CATALOG_TYPE_MAP: dict[str, MediaType] = {
 }
 
 
+def _deduplicate_media_rows_by_external_id(
+    rows: list[tuple[int, str]],
+    external_ids: dict[int, str],
+) -> list[tuple[int, str]]:
+    """Deduplicate media rows by canonical external ID while preserving order."""
+    deduped_rows: list[tuple[int, str]] = []
+    seen_external_ids: set[str] = set()
+
+    for media_id, title in rows:
+        canonical_external_id = external_ids.get(media_id, f"mf:{media_id}")
+        if canonical_external_id in seen_external_ids:
+            continue
+        seen_external_ids.add(canonical_external_id)
+        deduped_rows.append((media_id, title))
+
+    return deduped_rows
+
+
 async def get_catalog_meta_list(
     session: AsyncSession,
     catalog_type: MediaType,
@@ -213,21 +231,23 @@ async def get_catalog_meta_list(
     if not data:
         return public_schemas.Metas(metas=[])
 
-    # Extract media_ids and titles - data is (media_id, title) tuples
+    # Extract media_ids - data is (media_id, title) tuples
     media_ids = [row[0] for row in data]
-    titles_map = {row[0]: row[1] for row in data}
 
     # Batch translate media_ids to external_ids for Stremio response
     external_ids = await get_canonical_external_ids_batch(session, media_ids)
+
+    # Deduplicate by canonical external ID to avoid duplicate entries across media rows.
+    deduped_data = _deduplicate_media_rows_by_external_id(data, external_ids)
 
     # Build Stremio response with external_ids
     metas = [
         public_schemas.Meta(
             id=external_ids.get(media_id, f"mf:{media_id}"),
-            name=titles_map[media_id],
+            name=title,
             type=catalog_type,
         )
-        for media_id in media_ids
+        for media_id, title in deduped_data
     ]
     return public_schemas.Metas(metas=metas)
 
@@ -470,6 +490,7 @@ async def search_metadata(
                 Stream.is_active.is_(True),
                 Stream.is_blocked.is_(False),
             )
+            .correlate(Media)
             .exists()
         )
         query = query.where(stream_exists)
@@ -492,20 +513,22 @@ async def search_metadata(
     if not data:
         return public_schemas.Metas(metas=[])
 
-    # Extract media_ids and titles - data is (media_id, title) tuples
+    # Extract media_ids - data is (media_id, title) tuples
     media_ids = [row[0] for row in data]
-    titles_map = {row[0]: row[1] for row in data}
 
     # Batch translate media_ids to external_ids for Stremio response
     external_ids = await get_canonical_external_ids_batch(session, media_ids)
+
+    # Deduplicate by canonical external ID to avoid duplicate entries across media rows.
+    deduped_data = _deduplicate_media_rows_by_external_id(data, external_ids)
 
     # Build Stremio response with external_ids
     metas = [
         public_schemas.Meta(
             id=external_ids.get(media_id, f"mf:{media_id}"),
-            name=titles_map[media_id],
+            name=title,
             type=catalog_type,
         )
-        for media_id in media_ids
+        for media_id, title in deduped_data
     ]
     return public_schemas.Metas(metas=metas)

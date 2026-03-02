@@ -25,6 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from db.crud.media import (
     add_external_id,
     get_media_by_external_id,
+    get_media_by_title_year,
     get_or_create_episode,
     get_or_create_metadata_provider,
     get_or_create_season,
@@ -289,8 +290,6 @@ async def get_or_create_metadata(
         Created or existing Media object
     """
     external_id = metadata_data.get("id") or metadata_data.get("imdb_id")
-    if not external_id:
-        return None
 
     # Map string type to enum
     type_map = {
@@ -300,10 +299,47 @@ async def get_or_create_metadata(
     }
     media_type_enum = type_map.get(media_type, MediaType.MOVIE)
 
-    # Check if exists
-    existing = await get_media_by_external_id(session, external_id, media_type_enum)
-    if existing:
-        return existing
+    title = metadata_data.get("title")
+    year_value = metadata_data.get("year")
+    year: int | None = year_value if isinstance(year_value, int) else None
+
+    # Try to find existing media by any available provider ID.
+    candidate_external_ids: list[str] = []
+    if external_id and not str(external_id).startswith("mf_tmp_"):
+        candidate_external_ids.append(str(external_id))
+
+    if imdb_id := metadata_data.get("imdb_id"):
+        candidate_external_ids.append(str(imdb_id))
+
+    provider_field_map = {
+        "tmdb": "tmdb_id",
+        "tvdb": "tvdb_id",
+        "mal": "mal_id",
+        "kitsu": "kitsu_id",
+    }
+    for provider, field in provider_field_map.items():
+        provider_id = metadata_data.get(field)
+        if provider_id:
+            candidate_external_ids.append(f"{provider}:{provider_id}")
+
+    seen_candidate_ids: set[str] = set()
+    for candidate_external_id in candidate_external_ids:
+        if candidate_external_id in seen_candidate_ids:
+            continue
+        seen_candidate_ids.add(candidate_external_id)
+        existing = await get_media_by_external_id(session, candidate_external_id, media_type_enum)
+        if existing:
+            return existing
+
+    # Fallback for temporary IDs (mf_tmp_...) where no provider ID was linked.
+    if title and year is not None:
+        existing_by_title_year = await get_media_by_title_year(session, title, year, media_type_enum)
+        if existing_by_title_year:
+            return existing_by_title_year
+
+    # Do not persist non-resolvable temporary IDs as primary external IDs.
+    if external_id and str(external_id).startswith("mf_tmp_"):
+        external_id = None
 
     # Determine end_date from end_year if not provided directly
     end_date = metadata_data.get("end_date")
@@ -395,7 +431,7 @@ async def get_or_create_metadata(
 async def _create_external_id_from_metadata(
     session: AsyncSession,
     media_id: int,
-    external_id: str,
+    external_id: str | None,
     metadata_data: dict[str, Any],
 ) -> None:
     """Create MediaExternalID records from scraped metadata.
@@ -404,9 +440,10 @@ async def _create_external_id_from_metadata(
     corresponding MediaExternalID records for the new multi-provider architecture.
     """
     # Parse and add the primary external_id
-    provider, provider_id = parse_external_id(external_id)
-    if provider and provider_id:
-        await add_external_id(session, media_id, provider, provider_id)
+    if external_id:
+        provider, provider_id = parse_external_id(str(external_id))
+        if provider and provider_id:
+            await add_external_id(session, media_id, provider, provider_id)
 
     # Add additional provider IDs if available in metadata
     # IMDb ID
@@ -1867,13 +1904,88 @@ async def migrate_torrent_streams(
     if not old_media or not new_media:
         return 0
 
-    # Update stream links
-    result = await session.exec(
-        sa_update(StreamMediaLink).where(StreamMediaLink.media_id == old_media.id).values(media_id=new_media.id)
-    )
+    migration_stats = await migrate_media_links(session, old_media.id, new_media.id)
 
     await session.flush()
-    return result.rowcount
+    return migration_stats["stream_links_migrated"]
+
+
+async def migrate_media_links(
+    session: AsyncSession,
+    from_media_id: int,
+    to_media_id: int,
+) -> dict[str, int]:
+    """Migrate stream/file links from one media to another, avoiding duplicates."""
+    if from_media_id == to_media_id:
+        return {
+            "stream_links_migrated": 0,
+            "stream_links_deleted_as_duplicates": 0,
+            "file_links_migrated": 0,
+            "file_links_deleted_as_duplicates": 0,
+        }
+
+    # Migrate StreamMediaLink rows.
+    old_stream_links_result = await session.exec(
+        select(StreamMediaLink).where(StreamMediaLink.media_id == from_media_id)
+    )
+    old_stream_links = old_stream_links_result.all()
+
+    existing_stream_keys_result = await session.exec(
+        select(StreamMediaLink.stream_id, StreamMediaLink.file_index, StreamMediaLink.filename).where(
+            StreamMediaLink.media_id == to_media_id
+        )
+    )
+    existing_stream_keys = set(existing_stream_keys_result.all())
+
+    stream_links_migrated = 0
+    stream_links_deleted_as_duplicates = 0
+
+    for link in old_stream_links:
+        link_key = (link.stream_id, link.file_index, link.filename)
+        if link_key in existing_stream_keys:
+            await session.delete(link)
+            stream_links_deleted_as_duplicates += 1
+            continue
+
+        link.media_id = to_media_id
+        session.add(link)
+        existing_stream_keys.add(link_key)
+        stream_links_migrated += 1
+
+    # Migrate FileMediaLink rows.
+    old_file_links_result = await session.exec(select(FileMediaLink).where(FileMediaLink.media_id == from_media_id))
+    old_file_links = old_file_links_result.all()
+
+    existing_file_keys_result = await session.exec(
+        select(FileMediaLink.file_id, FileMediaLink.season_number, FileMediaLink.episode_number).where(
+            FileMediaLink.media_id == to_media_id
+        )
+    )
+    existing_file_keys = set(existing_file_keys_result.all())
+
+    file_links_migrated = 0
+    file_links_deleted_as_duplicates = 0
+
+    for link in old_file_links:
+        link_key = (link.file_id, link.season_number, link.episode_number)
+        if link_key in existing_file_keys:
+            await session.delete(link)
+            file_links_deleted_as_duplicates += 1
+            continue
+
+        link.media_id = to_media_id
+        session.add(link)
+        existing_file_keys.add(link_key)
+        file_links_migrated += 1
+
+    await session.flush()
+
+    return {
+        "stream_links_migrated": stream_links_migrated,
+        "stream_links_deleted_as_duplicates": stream_links_deleted_as_duplicates,
+        "file_links_migrated": file_links_migrated,
+        "file_links_deleted_as_duplicates": file_links_deleted_as_duplicates,
+    }
 
 
 # =============================================================================

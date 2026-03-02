@@ -94,6 +94,7 @@ export interface MetadataItem {
   aka_titles: string[]
 
   // Content moderation
+  is_user_created?: boolean
   is_blocked?: boolean
   blocked_at?: string
   block_reason?: string

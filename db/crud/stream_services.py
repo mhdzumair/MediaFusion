@@ -26,7 +26,7 @@ from db.crud.scraper_helpers import (
     store_new_torrent_streams,
     store_new_usenet_streams,
 )
-from db.crud.media import get_media_by_external_id
+from db.crud.media import get_media_by_external_id, get_related_media_ids_by_external_id
 from db.database import get_async_session_context, get_read_session_context
 from db.enums import MediaType
 from db.models import (
@@ -95,6 +95,22 @@ async def _get_media_by_external_id_with_retry(
 
     return await run_db_operation_with_retry(
         operation=_lookup_media,
+        operation_name=operation_name,
+        on_retry=_log_db_retry_attempt(operation_name),
+    )
+
+
+async def _get_related_media_ids_by_external_id_with_retry(
+    video_id: str,
+    media_type: MediaType,
+    operation_name: str,
+) -> list[int]:
+    async def _lookup_media_ids() -> list[int]:
+        async with get_read_session_context() as read_session:
+            return await get_related_media_ids_by_external_id(read_session, video_id, media_type)
+
+    return await run_db_operation_with_retry(
+        operation=_lookup_media_ids,
         operation_name=operation_name,
         on_retry=_log_db_retry_attempt(operation_name),
     )
@@ -278,6 +294,98 @@ def _merge_unique_usenet_streams(
 
     existing_streams.extend(unique_live_streams)
     return unique_live_streams
+
+
+def _dedupe_raw_streams(
+    streams: list[dict[str, Any]],
+    key_builder,
+) -> list[dict[str, Any]]:
+    """Deduplicate raw stream dicts while preserving order."""
+    deduped: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+
+    for stream in streams:
+        dedupe_key = key_builder(stream)
+        if dedupe_key is None:
+            dedupe_key = f"json:{json.dumps(stream, sort_keys=True, default=str)}"
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        deduped.append(stream)
+
+    return deduped
+
+
+def _merge_raw_stream_payloads(payloads: list[dict[str, list[dict[str, Any]]]]) -> dict[str, list[dict[str, Any]]]:
+    """Merge raw stream payloads across media IDs and deduplicate by stable keys."""
+    merged: dict[str, list[dict[str, Any]]] = {
+        "torrents": [],
+        "usenet": [],
+        "telegram": [],
+        "http": [],
+        "acestream": [],
+        "youtube": [],
+    }
+
+    for payload in payloads:
+        for stream_type in merged:
+            merged[stream_type].extend(payload.get(stream_type, []))
+
+    def _norm(value: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value).lower()
+
+    merged["torrents"] = _dedupe_raw_streams(
+        merged["torrents"],
+        lambda s: f"info_hash:{_norm(s.get('info_hash'))}" if s.get("info_hash") else None,
+    )
+    merged["usenet"] = _dedupe_raw_streams(
+        merged["usenet"],
+        lambda s: f"nzb_guid:{_norm(s.get('nzb_guid'))}" if s.get("nzb_guid") else None,
+    )
+    merged["telegram"] = _dedupe_raw_streams(
+        merged["telegram"],
+        lambda s: (
+            f"telegram_stream_id:{_norm(s.get('telegram_stream_id'))}"
+            if s.get("telegram_stream_id")
+            else (
+                f"chat_message:{_norm(s.get('chat_id'))}:{_norm(s.get('message_id'))}"
+                if s.get("chat_id") is not None and s.get("message_id") is not None
+                else (f"file_unique_id:{_norm(s.get('file_unique_id'))}" if s.get("file_unique_id") else None)
+            )
+        ),
+    )
+    merged["http"] = _dedupe_raw_streams(
+        merged["http"],
+        lambda s: (
+            f"stream_id:{_norm(s.get('stream_id'))}"
+            if s.get("stream_id")
+            else (f"url:{_norm(s.get('url'))}" if s.get("url") else None)
+        ),
+    )
+    merged["acestream"] = _dedupe_raw_streams(
+        merged["acestream"],
+        lambda s: (
+            f"info_hash:{_norm(s.get('info_hash'))}"
+            if s.get("info_hash")
+            else (
+                f"content_id:{_norm(s.get('content_id'))}"
+                if s.get("content_id")
+                else (f"name:{_norm(s.get('stream_name'))}" if s.get("stream_name") else None)
+            )
+        ),
+    )
+    merged["youtube"] = _dedupe_raw_streams(
+        merged["youtube"],
+        lambda s: (
+            f"stream_id:{_norm(s.get('stream_id'))}"
+            if s.get("stream_id")
+            else (f"video_id:{_norm(s.get('video_id'))}" if s.get("video_id") else None)
+        ),
+    )
+
+    return merged
 
 
 def _get_visibility_filter(user_id: int | None = None):
@@ -1012,10 +1120,23 @@ async def get_movie_streams(
             return []
 
     visibility_filter = _get_visibility_filter(user_id)
+    related_media_ids: list[int] = []
+
+    if media:
+        related_media_ids = await _get_related_media_ids_by_external_id_with_retry(
+            video_id,
+            MediaType.MOVIE,
+            f"movie related media lookup video_id={video_id}",
+        )
+        if media.id not in related_media_ids:
+            related_media_ids.insert(0, media.id)
 
     # Get cached or fresh raw stream data
-    if media:
-        raw_data = await _get_cached_movie_streams(media.id, visibility_filter, user_id)
+    if related_media_ids:
+        raw_payloads = await asyncio.gather(
+            *[_get_cached_movie_streams(media_id, visibility_filter, user_id) for media_id in related_media_ids]
+        )
+        raw_data = _merge_raw_stream_payloads(raw_payloads)
     else:
         raw_data = {
             "torrents": [],
@@ -1243,10 +1364,26 @@ async def get_series_streams(
             return []
 
     visibility_filter = _get_visibility_filter(user_id)
+    related_media_ids: list[int] = []
+
+    if media:
+        related_media_ids = await _get_related_media_ids_by_external_id_with_retry(
+            video_id,
+            MediaType.SERIES,
+            f"series related media lookup video_id={video_id}",
+        )
+        if media.id not in related_media_ids:
+            related_media_ids.insert(0, media.id)
 
     # Get cached or fresh raw stream data
-    if media:
-        raw_data = await _get_cached_series_streams(media.id, season, episode, visibility_filter, user_id)
+    if related_media_ids:
+        raw_payloads = await asyncio.gather(
+            *[
+                _get_cached_series_streams(media_id, season, episode, visibility_filter, user_id)
+                for media_id in related_media_ids
+            ]
+        )
+        raw_data = _merge_raw_stream_payloads(raw_payloads)
     else:
         raw_data = {
             "torrents": [],

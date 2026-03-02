@@ -183,6 +183,7 @@ from db.crud.scraper_helpers import (
     list_all_active_user_rss_feeds,
     list_all_user_rss_feeds_with_users,
     list_user_rss_feeds,
+    migrate_media_links,
     migrate_torrent_streams,
     # TV helpers
     save_tv_channel_metadata,
@@ -567,6 +568,7 @@ __all__ = [
     "update_user_rss_feed_metrics",
     "list_all_active_user_rss_feeds",
     "list_user_rss_feeds",
+    "migrate_media_links",
     "list_all_user_rss_feeds_with_users",
     "get_user_rss_feed",
     "get_user_rss_feed_by_url",

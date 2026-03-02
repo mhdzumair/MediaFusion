@@ -4,8 +4,10 @@ Migrated from scrapers/routes.py - admin-only functionality with proper auth.
 """
 
 import logging
+from datetime import datetime
 from typing import Literal
 
+import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import select
@@ -20,10 +22,12 @@ from db.crud.scraper_helpers import (
     get_metadata_by_id,
     get_movie_data_by_id,
     get_series_data_by_id,
+    migrate_media_links,
     migrate_torrent_streams,
     update_meta_stream,
     update_metadata,
 )
+from db.crud.stream_services import invalidate_media_stream_cache
 from db.database import get_async_session
 from db.enums import UserRole
 from db.models import FileMediaLink, Media, MediaExternalID, StreamFile, StreamMediaLink, User
@@ -100,6 +104,13 @@ class UpdateImagesRequest(BaseModel):
     poster: str | None = Field(None, description="New poster URL")
     background: str | None = Field(None, description="New background URL")
     logo: str | None = Field(None, description="New logo URL")
+
+
+class MigrateMediaRequest(BaseModel):
+    """Request to merge duplicate media entries by internal IDs."""
+
+    from_media_id: int = Field(..., ge=1, description="Source media ID to migrate and delete")
+    to_media_id: int = Field(..., ge=1, description="Target media ID to keep")
 
 
 class DeleteTorrentRequest(BaseModel):
@@ -400,6 +411,83 @@ async def run_dmm_hashlist_full_ingestion_endpoint(
 # ============================================
 # Metadata Management Endpoints
 # ============================================
+
+
+@router.post("/migrate-media")
+async def migrate_media(
+    request: MigrateMediaRequest,
+    moderator: User = Depends(require_role(UserRole.MODERATOR)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Merge duplicate non-user-created media entries by internal IDs."""
+    if request.from_media_id == request.to_media_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="from_media_id and to_media_id must be different.",
+        )
+
+    from_media = await session.get(Media, request.from_media_id)
+    to_media = await session.get(Media, request.to_media_id)
+    if not from_media or not to_media:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or both media IDs were not found.",
+        )
+
+    if from_media.type != to_media.type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both media entries must have the same media type.",
+        )
+
+    if from_media.is_user_created or to_media.is_user_created:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only non-user-created media can be migrated with this endpoint.",
+        )
+
+    old_canonical_id = await crud.get_canonical_external_id(session, from_media.id)
+    target_meta_id = f"mf:{to_media.id}"
+    source_meta_id = f"mf:{from_media.id}"
+
+    migration_stats = await migrate_media_links(session, from_media.id, to_media.id)
+
+    to_media.migrated_from_id = old_canonical_id
+    to_media.migrated_by_user_id = moderator.id
+    to_media.migrated_at = datetime.now(pytz.UTC)
+    session.add(to_media)
+
+    deleted = await delete_metadata(session, source_meta_id, new_media_id=to_media.id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete source media after migration.",
+        )
+
+    await update_meta_stream(session, target_meta_id, to_media.type.value)
+    await invalidate_media_stream_cache(from_media.id)
+    await invalidate_media_stream_cache(to_media.id)
+    await crud.invalidate_meta_cache(source_meta_id)
+    await crud.invalidate_meta_cache(target_meta_id)
+
+    await session.commit()
+
+    logger.info(
+        "Moderator %s migrated media %s -> %s (streams=%s, files=%s)",
+        moderator.username,
+        request.from_media_id,
+        request.to_media_id,
+        migration_stats["stream_links_migrated"],
+        migration_stats["file_links_migrated"],
+    )
+
+    return {
+        "status": "success",
+        "message": f"Migrated media {request.from_media_id} to {request.to_media_id}",
+        "from_media_id": request.from_media_id,
+        "to_media_id": request.to_media_id,
+        **migration_stats,
+    }
 
 
 @router.post("/migrate-id")

@@ -99,6 +99,22 @@ export interface RunDMMHashlistFullRequest {
   backfill_commits?: number
 }
 
+export interface MigrateMediaRequest {
+  from_media_id: number
+  to_media_id: number
+}
+
+export interface MigrateMediaResponse {
+  status: string
+  message: string
+  from_media_id: number
+  to_media_id: number
+  stream_links_migrated: number
+  stream_links_deleted_as_duplicates: number
+  file_links_migrated: number
+  file_links_deleted_as_duplicates: number
+}
+
 export const scrapersApi = {
   /**
    * Run a scraper task
@@ -173,6 +189,14 @@ export const scrapersApi = {
    */
   runDMMHashlistFull: async (payload: RunDMMHashlistFullRequest): Promise<Record<string, unknown>> => {
     return apiClient.post('/admin/scrapers/dmm-hashlist/run-full', payload)
+  },
+
+  /**
+   * Migrate duplicate media links from one media ID to another.
+   * Moderator/Admin only.
+   */
+  migrateMedia: async (payload: MigrateMediaRequest): Promise<MigrateMediaResponse> => {
+    return apiClient.post('/admin/scrapers/migrate-media', payload)
   },
 
   // ============================================

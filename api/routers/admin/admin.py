@@ -5,7 +5,7 @@ Admin-only access.
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -124,6 +124,7 @@ class MetadataResponse(BaseModel):
     description: str | None = None
 
     # Content moderation
+    is_user_created: bool = False
     is_blocked: bool = False
     blocked_at: datetime | None = None
     block_reason: str | None = None
@@ -418,8 +419,10 @@ async def get_metadata_with_relations(session: AsyncSession, media_id: int) -> t
             selectinload(Media.genres),
             selectinload(Media.catalogs),
             selectinload(Media.aka_titles),
+            selectinload(Media.parental_certificates),
+            selectinload(Media.cast).selectinload(MediaCast.person),
             selectinload(Media.images),
-            selectinload(Media.ratings),
+            selectinload(Media.ratings).selectinload(MediaRating.provider),
         )
     )
     result = await session.exec(query)
@@ -431,25 +434,11 @@ async def get_metadata_with_relations(session: AsyncSession, media_id: int) -> t
     # Get type-specific metadata with relationships
     specific = None
     if base.type == MediaType.MOVIE:
-        query = (
-            select(MovieMetadata)
-            .where(MovieMetadata.media_id == base.id)
-            .options(
-                selectinload(MovieMetadata.stars),
-                selectinload(MovieMetadata.parental_certificates),
-            )
-        )
+        query = select(MovieMetadata).where(MovieMetadata.media_id == base.id)
         result = await session.exec(query)
         specific = result.first()
     elif base.type == MediaType.SERIES:
-        query = (
-            select(SeriesMetadata)
-            .where(SeriesMetadata.media_id == base.id)
-            .options(
-                selectinload(SeriesMetadata.stars),
-                selectinload(SeriesMetadata.parental_certificates),
-            )
-        )
+        query = select(SeriesMetadata).where(SeriesMetadata.media_id == base.id)
         result = await session.exec(query)
         specific = result.first()
     elif base.type == MediaType.TV:
@@ -511,6 +500,7 @@ def format_metadata_response(
         is_add_title_to_poster=False,  # Deprecated - handled differently now
         background=background,
         description=base.description,
+        is_user_created=base.is_user_created,
         runtime=str(base.runtime_minutes) if base.runtime_minutes else None,
         website=None,  # No longer stored on Media
         total_streams=base.total_streams,
@@ -520,6 +510,8 @@ def format_metadata_response(
         genres=[g.name for g in base.genres] if base.genres else [],
         catalogs=[c.name for c in base.catalogs] if base.catalogs else [],
         aka_titles=[a.title for a in base.aka_titles] if base.aka_titles else [],
+        stars=[cast.person.name for cast in sorted(base.cast or [], key=lambda c: c.display_order) if cast.person],
+        parental_certificates=[p.name for p in base.parental_certificates] if base.parental_certificates else [],
         imdb_rating=imdb_rating,
         tmdb_rating=tmdb_rating,
     )
@@ -530,12 +522,6 @@ def format_metadata_response(
         if hasattr(specific, "parent_guide_nudity_status"):
             response.parent_guide_nudity_status = (
                 specific.parent_guide_nudity_status.value if specific.parent_guide_nudity_status else None
-            )
-        if hasattr(specific, "stars"):
-            response.stars = [s.name for s in specific.stars] if specific.stars else []
-        if hasattr(specific, "parental_certificates"):
-            response.parental_certificates = (
-                [p.name for p in specific.parental_certificates] if specific.parental_certificates else []
             )
 
         # Series-specific - end_date
@@ -600,6 +586,24 @@ def format_torrent_stream_response(
             for f in (torrent.files or [])
         ],
     )
+
+
+def _parse_media_id_search(search: str) -> int | None:
+    normalized_search = search.strip()
+    if normalized_search.startswith("#"):
+        normalized_search = normalized_search[1:]
+    if normalized_search.isdigit():
+        return int(normalized_search)
+    return None
+
+
+def _build_metadata_search_condition(search: str):
+    search_pattern = f"%{search.strip()}%"
+    conditions = [Media.title.ilike(search_pattern)]
+    parsed_media_id = _parse_media_id_search(search)
+    if parsed_media_id is not None:
+        conditions.append(Media.id == parsed_media_id)
+    return or_(*conditions)
 
 
 async def format_tv_stream_response(
@@ -874,6 +878,8 @@ async def list_metadata(
         selectinload(Media.genres),
         selectinload(Media.catalogs),
         selectinload(Media.aka_titles),
+        selectinload(Media.parental_certificates),
+        selectinload(Media.cast).selectinload(MediaCast.person),
         selectinload(Media.images),
         selectinload(Media.ratings).selectinload(MediaRating.provider),
     )
@@ -888,13 +894,7 @@ async def list_metadata(
         query = query.where(Media.type == type_map[media_type])
 
     if search:
-        search_pattern = f"%{search}%"
-        query = query.where(
-            or_(
-                Media.title.ilike(search_pattern),
-                Media.id.ilike(search_pattern),
-            )
-        )
+        query = query.where(_build_metadata_search_condition(search))
 
     if has_streams is not None:
         if has_streams:
@@ -912,13 +912,7 @@ async def list_metadata(
         }
         count_query = count_query.where(Media.type == type_map[media_type])
     if search:
-        search_pattern = f"%{search}%"
-        count_query = count_query.where(
-            or_(
-                Media.title.ilike(search_pattern),
-                Media.id.ilike(search_pattern),
-            )
-        )
+        count_query = count_query.where(_build_metadata_search_condition(search))
     if has_streams is not None:
         if has_streams:
             count_query = count_query.where(Media.total_streams > 0)
@@ -955,8 +949,6 @@ async def get_metadata(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Get a specific metadata entry (Admin only). Uses media_id (internal ID)."""
-    from db.crud.media import get_all_external_ids_dict
-
     result = await get_metadata_with_relations(session, media_id)
     if not result:
         raise HTTPException(
@@ -996,8 +988,6 @@ async def update_metadata(
     if "end_date" in update_dict:
         end_date_str = update_dict.pop("end_date")
         if end_date_str is not None:
-            from datetime import date
-
             try:
                 update_dict["end_date"] = date.fromisoformat(end_date_str)
             except (ValueError, TypeError):

@@ -14,6 +14,7 @@ import pytz
 from fastapi import HTTPException
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func
+from sqlalchemy import tuple_
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
@@ -151,6 +152,88 @@ async def get_media_by_external_id(
         return result.first()
 
     return None
+
+
+async def get_related_media_ids_by_external_id(
+    session: AsyncSession,
+    external_id: str,
+    media_type: MediaType | None = None,
+) -> list[int]:
+    """Get media IDs related by strict external-ID matching.
+
+    Resolution strategy:
+    1) Resolve the input external ID to its primary media ID(s)
+    2) Load all provider IDs attached to that primary media
+    3) Return all media IDs that match any of those exact (provider, external_id) pairs
+
+    This is strict matching only (no title/year fuzzy matching).
+    """
+    if external_id is None:
+        return []
+
+    external_id = str(external_id).strip()
+    if not external_id:
+        return []
+
+    # MediaFusion internal ID path.
+    if external_id.startswith("mf:"):
+        try:
+            internal_id = int(external_id[3:])
+        except ValueError:
+            return []
+
+        query = select(Media.id).where(Media.id == internal_id)
+        if media_type:
+            query = query.where(Media.type == media_type)
+        result = await session.exec(query)
+        media_id = result.first()
+        return [media_id] if media_id is not None else []
+
+    provider, provider_external_id = parse_external_id(external_id)
+    if not provider or not provider_external_id or provider == "mediafusion":
+        return []
+
+    # Step 1: Resolve primary media IDs for the input provider ID.
+    primary_query = select(MediaExternalID.media_id).where(
+        MediaExternalID.provider == provider,
+        MediaExternalID.external_id == provider_external_id,
+    )
+    if media_type:
+        primary_query = primary_query.join(Media, Media.id == MediaExternalID.media_id).where(Media.type == media_type)
+    primary_result = await session.exec(primary_query)
+    primary_media_ids = list(dict.fromkeys(primary_result.all()))
+
+    if not primary_media_ids:
+        return []
+
+    # Step 2: Load all exact provider ID pairs from primary media IDs.
+    ext_pairs_query = select(MediaExternalID.provider, MediaExternalID.external_id).where(
+        MediaExternalID.media_id.in_(primary_media_ids)
+    )
+    ext_pairs_result = await session.exec(ext_pairs_query)
+    ext_pairs = list(dict.fromkeys(ext_pairs_result.all()))
+    if not ext_pairs:
+        return primary_media_ids
+
+    # Step 3: Find all media that match any exact pair.
+    related_query = select(MediaExternalID.media_id).where(
+        tuple_(MediaExternalID.provider, MediaExternalID.external_id).in_(ext_pairs)
+    )
+    if media_type:
+        related_query = related_query.join(Media, Media.id == MediaExternalID.media_id).where(Media.type == media_type)
+    related_result = await session.exec(related_query)
+    related_media_ids = related_result.all()
+
+    # Keep primary IDs first, then append any additional IDs while preserving order.
+    ordered_media_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for media_id in [*primary_media_ids, *related_media_ids]:
+        if media_id in seen_ids:
+            continue
+        seen_ids.add(media_id)
+        ordered_media_ids.append(media_id)
+
+    return ordered_media_ids
 
 
 async def resolve_external_id(
@@ -1011,7 +1094,23 @@ async def add_external_id(
         MediaExternalID.external_id == external_id,
     )
     result = await session.exec(query)
-    return result.first()
+    external_id_record = result.first()
+
+    # Keep canonical external-id cache accurate when links change.
+    await invalidate_external_id_cache(media_id)
+
+    # If this provider ID is already linked to a different media, log it for diagnostics.
+    if external_id_record and external_id_record.media_id != media_id:
+        logger.warning(
+            "External ID conflict: provider=%s external_id=%s requested_media_id=%s existing_media_id=%s",
+            provider.lower(),
+            external_id,
+            media_id,
+            external_id_record.media_id,
+        )
+        await invalidate_external_id_cache(external_id_record.media_id)
+
+    return external_id_record
 
 
 async def get_external_ids_for_media(
@@ -1306,6 +1405,11 @@ async def bulk_add_external_ids(
     stmt = stmt.on_conflict_do_nothing(constraint="uq_provider_external_id")
     result = await session.execute(stmt)
     await session.flush()
+
+    # Invalidate canonical external-id cache for all touched media IDs.
+    touched_media_ids = {eid["media_id"] for eid in normalized}
+    if touched_media_ids:
+        await asyncio.gather(*(invalidate_external_id_cache(media_id) for media_id in touched_media_ids))
 
     return result.rowcount
 

@@ -3,7 +3,7 @@ import { CheckCircle2, Clock, XCircle } from 'lucide-react'
 import type { Contribution, Suggestion, SuggestionStatus } from '@/lib/api'
 
 export type ReviewDecision = 'approve' | 'reject'
-export type ModeratorTab = 'contributions' | 'annotations' | 'streams' | 'pending' | 'settings'
+export type ModeratorTab = 'contributions' | 'annotations' | 'streams' | 'pending' | 'migration' | 'settings'
 
 export function formatTimeAgo(dateString: string): string {
   const date = new Date(dateString)

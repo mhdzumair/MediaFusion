@@ -150,6 +150,8 @@ export {
   type DMMHashlistStatusResponse,
   type RunDMMHashlistRequest,
   type RunDMMHashlistFullRequest,
+  type MigrateMediaRequest,
+  type MigrateMediaResponse,
   type ScrapeStatusResponse,
   type ScrapeRequest,
   type ScrapeResponse,

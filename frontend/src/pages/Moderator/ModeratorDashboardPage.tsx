@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { Clock, FileVideo, Film, Magnet, Settings, Shield, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { ArrowRightLeft, Clock, FileVideo, Film, Magnet, Settings, Shield, ThumbsDown, ThumbsUp } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,6 +18,7 @@ import {
   AnnotationRequestsTab,
   ContributionsTab,
   ContributionSettingsTab,
+  MediaMigrationTab,
   PendingSuggestionsTab,
   StreamSuggestionsTab,
   type ModeratorTab,
@@ -48,7 +49,11 @@ export function ModeratorDashboardPage() {
 
   const tabParam = searchParams.get('tab')
   const activeTab: ModeratorTab =
-    tabParam === 'contributions' || tabParam === 'annotations' || tabParam === 'streams' || tabParam === 'pending'
+    tabParam === 'contributions' ||
+    tabParam === 'annotations' ||
+    tabParam === 'streams' ||
+    tabParam === 'pending' ||
+    tabParam === 'migration'
       ? tabParam
       : tabParam === 'settings' && isAdmin
         ? tabParam
@@ -99,6 +104,7 @@ export function ModeratorDashboardPage() {
       value === 'annotations' ||
       value === 'streams' ||
       value === 'pending' ||
+      value === 'migration' ||
       (value === 'settings' && isAdmin)
         ? (value as ModeratorTab)
         : 'contributions'
@@ -200,7 +206,7 @@ export function ModeratorDashboardPage() {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList
           className={`h-auto p-1.5 bg-muted/50 rounded-xl grid grid-cols-2 ${
-            user?.role === 'admin' ? 'sm:grid-cols-5' : 'sm:grid-cols-4'
+            user?.role === 'admin' ? 'sm:grid-cols-6' : 'sm:grid-cols-5'
           } gap-1 w-full`}
         >
           <TabsTrigger
@@ -251,6 +257,13 @@ export function ModeratorDashboardPage() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger
+            value="migration"
+            className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm py-2 px-3 text-sm"
+          >
+            <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+            Migration
+          </TabsTrigger>
           {user?.role === 'admin' && (
             <TabsTrigger
               value="settings"
@@ -285,6 +298,10 @@ export function ModeratorDashboardPage() {
             statusFilter={metadataStatusFilter}
             onStatusFilterChange={(status) => updateModeratorParam('metadataStatus', status, 'all')}
           />
+        </TabsContent>
+
+        <TabsContent value="migration">
+          <MediaMigrationTab />
         </TabsContent>
 
         {user?.role === 'admin' && (
