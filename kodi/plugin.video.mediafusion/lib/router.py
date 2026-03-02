@@ -7,6 +7,7 @@ import xbmcgui
 import xbmcplugin
 
 from .parser import parse_stream_entry
+from .source_select_window import open_source_select_window
 from .utils import (
     ADDON_HANDLE,
     BASE_URL,
@@ -270,16 +271,88 @@ def list_episodes(params):
     xbmcplugin.endOfDirectory(ADDON_HANDLE)
 
 
+def _build_kodi_stream_url(catalog_type, video_id, page, page_size):
+    base_path = f"/{SECRET_STR}/kodi/stream/{catalog_type}/{video_id}.json"
+    query = parse.urlencode({"page": page, "page_size": page_size})
+    return parse.urljoin(BASE_URL, f"{base_path}?{query}")
+
+
+def _build_stream_options(stream_entries, video_id, season, episode, is_imdb):
+    stream_options = []
+    elementum_available = is_elementum_installed_and_enabled()
+    elementum_warning_shown = False
+
+    for stream_entry in stream_entries:
+        if "stream" not in stream_entry or "metadata" not in stream_entry:
+            log("Received non-structured stream payload from Kodi endpoint", xbmc.LOGERROR)
+            continue
+
+        parsed_stream = parse_stream_entry(stream_entry)
+        stream = parsed_stream["stream"]
+        main_label = parsed_stream["main_label"]
+        detail_label = parsed_stream["detail_label"]
+        video_info = parsed_stream["video_info"]
+        plot = parsed_stream["plot"]
+
+        if "url" in stream:
+            video_url = stream.get("url")
+        elif "infoHash" in stream:
+            if not elementum_available:
+                if not elementum_warning_shown:
+                    xbmcgui.Dialog().notification(
+                        "MediaFusion",
+                        "Elementum is not installed. Torrent streams were skipped.",
+                        xbmcgui.NOTIFICATION_WARNING,
+                    )
+                    elementum_warning_shown = True
+                continue
+            magnet_link = convert_info_hash_to_magnet(stream.get("infoHash"), stream.get("sources", []))
+            video_url = f"plugin://plugin.video.elementum/play?uri={parse.quote_plus(magnet_link)}"
+        else:
+            continue
+
+        stream_options.append(
+            {
+                "main_label": main_label,
+                "detail_label": detail_label,
+                "list_primary": parsed_stream.get("list_primary", main_label),
+                "list_secondary": parsed_stream.get("list_secondary", detail_label),
+                "detail_title": parsed_stream.get("detail_title", detail_label),
+                "detail_badges": parsed_stream.get("detail_badges", ""),
+                "plot": plot,
+                "sort_cached": parsed_stream.get("sort_cached", 1),
+                "sort_resolution": parsed_stream.get("sort_resolution", 0),
+                "sort_seeders": parsed_stream.get("sort_seeders", 0),
+                "sort_size": parsed_stream.get("sort_size", 0),
+                "stream_type_raw": parsed_stream.get("stream_type_raw", ""),
+                "video_info": video_info,
+                "video_url": video_url,
+                "headers": parse.urlencode(stream.get("behaviorHints", {}).get("proxyHeaders", {}).get("request", {})),
+                "imdb": video_id if is_imdb else None,
+                "season": season,
+                "episode": episode,
+            }
+        )
+
+    return stream_options
+
+
 def get_streams(params):
-    kodi_url = parse.urljoin(
-        BASE_URL,
-        f"/{SECRET_STR}/kodi/stream/{params['catalog_type']}/{params['video_id']}.json",
+    page_size = 25
+    current_page = 1
+    response = fetch_data(
+        _build_kodi_stream_url(
+            params["catalog_type"],
+            params["video_id"],
+            current_page,
+            page_size,
+        )
     )
-    response = fetch_data(kodi_url)
     if not response:
         return
 
     streams = response.get("streams", [])
+    has_more = bool(response.get("has_more"))
     if not streams:
         xbmcgui.Dialog().notification("MediaFusion", "No streams available", xbmcgui.NOTIFICATION_ERROR)
         return
@@ -290,91 +363,87 @@ def get_streams(params):
     else:
         video_id, season, episode = params["video_id"], None, None
 
-    for stream_entry in streams:
-        if "stream" not in stream_entry or "metadata" not in stream_entry:
-            log("Received non-structured stream payload from Kodi endpoint", xbmc.LOGERROR)
-            continue
-        parsed_stream = parse_stream_entry(stream_entry)
-        stream = parsed_stream["stream"]
-        main_label = parsed_stream["main_label"]
-        detail_label = parsed_stream["detail_label"]
-        video_info = parsed_stream["video_info"]
-        plot = parsed_stream["plot"]
+    stream_options = _build_stream_options(streams, video_id, season, episode, is_imdb)
 
-        li = xbmcgui.ListItem(label=main_label, offscreen=True)
-        if detail_label:
-            li.setLabel2(detail_label)
-        tags = li.getVideoInfoTag()
-        tags.setTitle(main_label)
-        tags.setPlot(plot)
+    if not stream_options:
+        xbmcgui.Dialog().notification("MediaFusion", "No playable streams available", xbmcgui.NOTIFICATION_ERROR)
+        return
 
-        supported_video_info = {
-            "size": video_info.get("size"),
-        }
-        if is_imdb:
-            supported_video_info["imdbnumber"] = video_id
-        if season:
-            supported_video_info["season"] = int(season)
-            supported_video_info["episode"] = int(episode)
-            supported_video_info["mediatype"] = "episode"
-        else:
-            supported_video_info["mediatype"] = "video"
-        li.setInfo("video", supported_video_info)
+    def _load_more_streams():
+        nonlocal current_page, has_more
+        if not has_more:
+            return [], False
 
-        tags.addVideoStream(
-            xbmc.VideoStreamDetail(
-                width=int(video_info["width"]),
-                height=int(video_info["height"]),
-                language=video_info.get("language"),
-                codec=video_info.get("codec"),
-                hdrtype=video_info.get("hdr"),
+        next_page = current_page + 1
+        next_response = fetch_data(
+            _build_kodi_stream_url(
+                params["catalog_type"],
+                params["video_id"],
+                next_page,
+                page_size,
             )
         )
-        if video_info.get("audio_codec") or video_info.get("audio_channels"):
-            tags.addAudioStream(
-                xbmc.AudioStreamDetail(
-                    language=video_info.get("language"),
-                    codec=video_info.get("audio_codec"),
-                    channels=int(video_info.get("audio_channels") or 0),
-                )
-            )
+        if not next_response:
+            return [], has_more
 
-        li.setProperty("IsPlayable", "true")
+        next_stream_entries = next_response.get("streams", [])
+        has_more = bool(next_response.get("has_more"))
+        current_page = next_page
+        next_stream_options = _build_stream_options(next_stream_entries, video_id, season, episode, is_imdb)
+        return next_stream_options, has_more
 
-        if "url" in stream:
-            video_url = stream.get("url")
-        elif "infoHash" in stream:
-            if not is_elementum_installed_and_enabled():
-                xbmcgui.Dialog().notification(
-                    "MediaFusion",
-                    "Elementum is not installed. Please install Elementum to play p2p torrents.",
-                    xbmcgui.NOTIFICATION_ERROR,
-                )
-                return
-            magnet_link = convert_info_hash_to_magnet(stream.get("infoHash"), stream.get("sources", []))
-            video_url = f"plugin://plugin.video.elementum/play?uri={parse.quote_plus(magnet_link)}"
-        else:
-            continue
+    selected_option = open_source_select_window(
+        stream_options,
+        has_more=has_more,
+        on_load_more=_load_more_streams,
+    )
+    if not selected_option:
+        xbmcplugin.setResolvedUrl(ADDON_HANDLE, False, xbmcgui.ListItem())
+        return
 
-        playback_params = {
-            "video_url": video_url,
-            "headers": parse.urlencode(stream.get("behaviorHints", {}).get("proxyHeaders", {}).get("request", {})),
-        }
-        if is_imdb:
-            playback_params["imdb"] = video_id
-        if season is not None:
-            playback_params["season"] = season
-            playback_params["episode"] = episode
+    _resolve_playback(
+        video_url=selected_option["video_url"],
+        headers=selected_option.get("headers", ""),
+        imdb=selected_option.get("imdb"),
+        season=selected_option.get("season"),
+        episode=selected_option.get("episode"),
+        direct_play=True,
+    )
 
-        playback_url = build_url("play_video", **playback_params)
-        xbmcplugin.addDirectoryItem(
-            handle=ADDON_HANDLE,
-            url=playback_url,
-            listitem=li,
-            isFolder=False,
-            totalItems=len(streams),
-        )
-    xbmcplugin.endOfDirectory(ADDON_HANDLE)
+
+def _resolve_playback(video_url, headers="", imdb=None, season=None, episode=None, direct_play=False):
+    li = xbmcgui.ListItem(path=video_url)
+    li.setProperty("IsPlayable", "true")
+
+    is_http_stream = video_url.startswith(("http://", "https://"))
+    if headers and is_http_stream:
+        parsed_headers = parse.parse_qs(headers)
+        formatted_headers = "&".join([f"{k}={v[0]}" for k, v in parsed_headers.items()])
+        if formatted_headers:
+            li.setPath(f"{video_url}|{formatted_headers}")
+            li.setProperty("inputstream", "inputstream.ffmpegdirect")
+            if video_url.endswith(".ts"):
+                li.setMimeType("video/mp2t")
+            elif video_url.endswith(".mpd"):
+                li.setMimeType("application/dash+xml")
+            elif video_url.endswith(".m3u8"):
+                li.setMimeType("application/vnd.apple.mpegurl")
+
+    if season and episode:
+        try:
+            li.setInfo("video", {"season": int(season), "episode": int(episode)})
+        except (TypeError, ValueError):
+            li.setInfo("video", {"season": season, "episode": episode})
+    if imdb:
+        li.setInfo("video", {"imdbnumber": imdb})
+        ids = json.dumps({"imdb": imdb})
+        xbmcgui.Window(10000).setProperty("script.trakt.ids", ids)
+
+    if direct_play:
+        xbmc.Player().play(li.getPath(), li)
+        return
+
+    xbmcplugin.setResolvedUrl(ADDON_HANDLE, True, li)
 
 
 def play_video(params):
@@ -382,30 +451,13 @@ def play_video(params):
     imdb = params.get("imdb", None)
     season = params.get("season", None)
     episode = params.get("episode", None)
-    li = xbmcgui.ListItem(path=video_url)
-
-    # If headers are present, append them to the URL for ffmpegdirect inputstream
-    if "headers" in params:
-        headers = parse.parse_qs(params["headers"])
-        formatted_headers = "&".join([f"{k}={v[0]}" for k, v in headers.items()])
-        li.setPath(f"{video_url}|{formatted_headers}")
-
-        li.setProperty("inputstream", "inputstream.ffmpegdirect")
-        if video_url.endswith(".ts"):
-            li.setMimeType("video/mp2t")
-        elif video_url.endswith(".mpd"):
-            li.setMimeType("application/dash+xml")
-        elif video_url.endswith(".m3u8"):
-            li.setMimeType("application/vnd.apple.mpegurl")
-
-    if season:
-        li.setInfo("video", {"season": season, "episode": episode})
-    if imdb:
-        li.setInfo("video", {"imdbnumber": imdb})
-        ids = json.dumps({"imdb": imdb})
-        xbmcgui.Window(10000).setProperty("script.trakt.ids", ids)
-
-    xbmcplugin.setResolvedUrl(ADDON_HANDLE, True, li)
+    _resolve_playback(
+        video_url=video_url,
+        headers=params.get("headers", ""),
+        imdb=imdb,
+        season=season,
+        episode=episode,
+    )
 
 
 def addon_router():

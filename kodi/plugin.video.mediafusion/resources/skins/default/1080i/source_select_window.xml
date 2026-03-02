@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window>
+    <defaultcontrol always="true">1100</defaultcontrol>
+    <coordinates>
+        <system>1</system>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>100%</width>
+            <height>100%</height>
+            <texture colordiffuse="FF0D111B">white.png</texture>
+        </control>
+
+        <control type="image">
+            <left>30</left>
+            <top>86</top>
+            <width>1860</width>
+            <height>964</height>
+            <texture colordiffuse="D9121824">white.png</texture>
+        </control>
+
+        <control type="button" id="1102">
+            <left>2%</left>
+            <top>2%</top>
+            <width>50</width>
+            <height>50</height>
+            <focusedcolor>FFFFFF00</focusedcolor>
+            <texturefocus colordiffuse="FF4B0082">triangle-left.png</texturefocus>
+            <texturenofocus colordiffuse="FF8080FF">triangle-left.png</texturenofocus>
+        </control>
+
+        <control type="button" id="1101">
+            <left>1848</left>
+            <top>2%</top>
+            <width>56</width>
+            <height>44</height>
+            <font>font16</font>
+            <label>X</label>
+            <textcolor>FFFFFFFF</textcolor>
+            <focusedcolor>FFFFFF00</focusedcolor>
+            <texturefocus colordiffuse="80FFFFFF">white.png</texturefocus>
+            <texturenofocus colordiffuse="40FFFFFF">white.png</texturenofocus>
+            <align>center</align>
+            <aligny>center</aligny>
+        </control>
+
+        <control type="label" id="1200">
+            <left>0</left>
+            <top>4%</top>
+            <width>100%</width>
+            <height>40</height>
+            <font>font20</font>
+            <label>MediaFusion Source Select</label>
+            <align>center</align>
+            <textcolor>FFFFFFFF</textcolor>
+        </control>
+
+        <control type="label" id="1203">
+            <left>60</left>
+            <top>112</top>
+            <width>1080</width>
+            <height>30</height>
+            <font>font12</font>
+            <textcolor>FF9FB2C8</textcolor>
+            <label>Showing 0/0 | Cached: 0</label>
+        </control>
+
+        <control type="button" id="1301">
+            <left>1280</left>
+            <top>108</top>
+            <width>260</width>
+            <height>42</height>
+            <font>font12</font>
+            <label>Sort: SMART</label>
+            <textcolor>FFFFFFFF</textcolor>
+            <focusedcolor>FFFFFFFF</focusedcolor>
+            <texturefocus colordiffuse="AA4B0082">white.png</texturefocus>
+            <texturenofocus colordiffuse="553B4B60">white.png</texturenofocus>
+            <align>center</align>
+            <aligny>center</aligny>
+        </control>
+
+        <control type="button" id="1302">
+            <left>1550</left>
+            <top>108</top>
+            <width>290</width>
+            <height>42</height>
+            <font>font12</font>
+            <label>Filter: ALL</label>
+            <textcolor>FFFFFFFF</textcolor>
+            <focusedcolor>FFFFFFFF</focusedcolor>
+            <texturefocus colordiffuse="AA4B0082">white.png</texturefocus>
+            <texturenofocus colordiffuse="553B4B60">white.png</texturenofocus>
+            <align>center</align>
+            <aligny>center</aligny>
+        </control>
+
+        <control type="list" id="1100">
+            <left>60</left>
+            <top>160</top>
+            <width>1020</width>
+            <height>860</height>
+            <onup>1100</onup>
+            <ondown>1100</ondown>
+            <viewtype label="500">list</viewtype>
+            <scrolltime>200</scrolltime>
+            <itemlayout height="74" width="1020">
+                <control type="image">
+                    <left>0</left>
+                    <top>0</top>
+                    <width>1020</width>
+                    <height>74</height>
+                    <texture colordiffuse="332A3445">white.png</texture>
+                </control>
+                <control type="image">
+                    <left>14</left>
+                    <top>10</top>
+                    <width>58</width>
+                    <height>54</height>
+                    <texture colordiffuse="553A4862">white.png</texture>
+                </control>
+                <control type="label">
+                    <left>14</left>
+                    <top>24</top>
+                    <width>58</width>
+                    <height>20</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(mf.logo)]</label>
+                </control>
+                <control type="label">
+                    <left>86</left>
+                    <top>8</top>
+                    <width>918</width>
+                    <height>28</height>
+                    <font>font14</font>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <left>86</left>
+                    <top>40</top>
+                    <width>720</width>
+                    <height>24</height>
+                    <font>font12</font>
+                    <textcolor>FF9FB2C8</textcolor>
+                    <label>$INFO[ListItem.Label2]</label>
+                </control>
+                <control type="label">
+                    <left>812</left>
+                    <top>40</top>
+                    <width>84</width>
+                    <height>22</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FF90CAF9</textcolor>
+                    <label>$INFO[ListItem.Property(mf.type)]</label>
+                </control>
+                <control type="label">
+                    <left>900</left>
+                    <top>40</top>
+                    <width>104</width>
+                    <height>22</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FF81C784</textcolor>
+                    <label>$INFO[ListItem.Property(mf.cache)]</label>
+                    <visible>String.IsEqual(ListItem.Property(mf.cache),CACHED)</visible>
+                </control>
+                <control type="label">
+                    <left>900</left>
+                    <top>40</top>
+                    <width>104</width>
+                    <height>22</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FFFFCC80</textcolor>
+                    <label>$INFO[ListItem.Property(mf.cache)]</label>
+                    <visible>String.IsEqual(ListItem.Property(mf.cache),UNCACHED)</visible>
+                </control>
+            </itemlayout>
+            <focusedlayout height="74" width="1020">
+                <control type="image">
+                    <left>0</left>
+                    <top>0</top>
+                    <width>1020</width>
+                    <height>74</height>
+                    <texture colordiffuse="AA4B0082">white.png</texture>
+                </control>
+                <control type="image">
+                    <left>14</left>
+                    <top>10</top>
+                    <width>58</width>
+                    <height>54</height>
+                    <texture colordiffuse="AA273A5C">white.png</texture>
+                </control>
+                <control type="label">
+                    <left>14</left>
+                    <top>24</top>
+                    <width>58</width>
+                    <height>20</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(mf.logo)]</label>
+                </control>
+                <control type="label">
+                    <left>86</left>
+                    <top>8</top>
+                    <width>918</width>
+                    <height>28</height>
+                    <font>font14</font>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <left>86</left>
+                    <top>40</top>
+                    <width>720</width>
+                    <height>24</height>
+                    <font>font12</font>
+                    <textcolor>FFE6F0FF</textcolor>
+                    <label>$INFO[ListItem.Label2]</label>
+                </control>
+                <control type="label">
+                    <left>812</left>
+                    <top>40</top>
+                    <width>84</width>
+                    <height>22</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FFE1F5FE</textcolor>
+                    <label>$INFO[ListItem.Property(mf.type)]</label>
+                </control>
+                <control type="label">
+                    <left>900</left>
+                    <top>40</top>
+                    <width>104</width>
+                    <height>22</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FFC8E6C9</textcolor>
+                    <label>$INFO[ListItem.Property(mf.cache)]</label>
+                    <visible>String.IsEqual(ListItem.Property(mf.cache),CACHED)</visible>
+                </control>
+                <control type="label">
+                    <left>900</left>
+                    <top>40</top>
+                    <width>104</width>
+                    <height>22</height>
+                    <font>font12</font>
+                    <align>center</align>
+                    <textcolor>FFFFE0B2</textcolor>
+                    <label>$INFO[ListItem.Property(mf.cache)]</label>
+                    <visible>String.IsEqual(ListItem.Property(mf.cache),UNCACHED)</visible>
+                </control>
+            </focusedlayout>
+        </control>
+
+        <control type="group">
+            <left>1110</left>
+            <top>160</top>
+            <width>740</width>
+            <height>860</height>
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>740</width>
+                <height>860</height>
+                <texture colordiffuse="55273140">white.png</texture>
+            </control>
+            <control type="label" id="1201">
+                <left>20</left>
+                <top>18</top>
+                <width>700</width>
+                <height>30</height>
+                <font>font14</font>
+                <textcolor>FFFFFFFF</textcolor>
+                <label>-</label>
+            </control>
+            <control type="label" id="1204">
+                <left>20</left>
+                <top>56</top>
+                <width>700</width>
+                <height>56</height>
+                <font>font12</font>
+                <textcolor>FF9FB2C8</textcolor>
+                <label>-</label>
+            </control>
+            <control type="textbox" id="1202">
+                <left>20</left>
+                <top>126</top>
+                <width>700</width>
+                <height>714</height>
+                <font>font12</font>
+                <textcolor>FFFFFFFF</textcolor>
+                <align>left</align>
+            </control>
+        </control>
+    </controls>
+</window>

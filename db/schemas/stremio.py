@@ -164,3 +164,7 @@ class RichStreams(BaseModel):
     """Collection of rich streams for Kodi/raw stream clients."""
 
     streams: list[RichStream] | None = Field(default_factory=list)
+    page: int | None = None
+    page_size: int | None = None
+    total: int | None = None
+    has_more: bool | None = None

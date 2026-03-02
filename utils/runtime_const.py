@@ -46,6 +46,10 @@ BT4G_SEARCH_TTL = int(timedelta(hours=settings.bt4g_search_interval_hour).total_
 JACKETT_SEARCH_TTL = int(timedelta(hours=settings.jackett_search_interval_hour).total_seconds())
 # Torznab TTL - same as Jackett since they use the same protocol
 TORZNAB_SEARCH_TTL = JACKETT_SEARCH_TTL
+# Newznab TTL - same as Jackett since they use similar indexer refresh patterns
+NEWZNAB_SEARCH_TTL = JACKETT_SEARCH_TTL
+# Easynews TTL - aligned with Prowlarr cadence for live search freshness
+EASYNEWS_SEARCH_TTL = PROWLARR_SEARCH_TTL
 # TorBox Search API TTL - same as Prowlarr
 TORBOX_SEARCH_TTL = PROWLARR_SEARCH_TTL
 # Telegram search TTL

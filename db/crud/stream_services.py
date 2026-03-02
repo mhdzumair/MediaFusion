@@ -354,6 +354,7 @@ def _format_acestream_streams(
 def _combine_streams_by_type(
     user_data: UserData,
     stream_groups: dict[str, list[Any]],
+    disable_stream_cap: bool = False,
 ) -> list[Any]:
     """Combine stream groups based on user's type grouping and ordering preferences.
 
@@ -386,6 +387,9 @@ def _combine_streams_by_type(
         combined = []
         for stream_type in type_order:
             combined.extend(stream_groups.get(stream_type, []))
+
+    if disable_stream_cap:
+        return combined
 
     # Apply total stream cap
     return combined[: user_data.max_streams]
@@ -980,6 +984,7 @@ async def get_movie_streams(
     background_tasks: BackgroundTasks,
     user_id: int | None = None,
     return_rich: bool = False,
+    disable_stream_cap: bool = False,
 ) -> list[StremioStream] | list[RichStream]:
     """
     Get formatted streams for a movie.
@@ -1113,6 +1118,7 @@ async def get_movie_streams(
                 user_ip=user_ip,
                 is_series=False,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("torrent")
@@ -1127,6 +1133,7 @@ async def get_movie_streams(
                 is_series=False,
                 is_usenet=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("usenet")
@@ -1141,6 +1148,7 @@ async def get_movie_streams(
                 is_series=False,
                 is_telegram=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("telegram")
@@ -1155,6 +1163,7 @@ async def get_movie_streams(
                 is_series=False,
                 is_http=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("http")
@@ -1169,6 +1178,7 @@ async def get_movie_streams(
                 is_series=False,
                 is_youtube=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("youtube")
@@ -1188,7 +1198,11 @@ async def get_movie_streams(
     for key, result in zip(coro_keys, results):
         stream_groups[key] = result
 
-    return _combine_streams_by_type(user_data, stream_groups)
+    return _combine_streams_by_type(
+        user_data,
+        stream_groups,
+        disable_stream_cap=disable_stream_cap,
+    )
 
 
 async def get_series_streams(
@@ -1201,6 +1215,7 @@ async def get_series_streams(
     background_tasks: BackgroundTasks,
     user_id: int | None = None,
     return_rich: bool = False,
+    disable_stream_cap: bool = False,
 ) -> list[StremioStream] | list[RichStream]:
     """
     Get formatted streams for a series episode.
@@ -1334,6 +1349,7 @@ async def get_series_streams(
                 user_ip=user_ip,
                 is_series=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("torrent")
@@ -1350,6 +1366,7 @@ async def get_series_streams(
                 is_series=True,
                 is_usenet=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("usenet")
@@ -1366,6 +1383,7 @@ async def get_series_streams(
                 is_series=True,
                 is_telegram=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("telegram")
@@ -1382,6 +1400,7 @@ async def get_series_streams(
                 is_series=True,
                 is_http=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("http")
@@ -1398,6 +1417,7 @@ async def get_series_streams(
                 is_series=True,
                 is_youtube=True,
                 return_rich=return_rich,
+                disable_total_stream_cap=disable_stream_cap,
             )
         )
         coro_keys.append("youtube")
@@ -1415,7 +1435,11 @@ async def get_series_streams(
     for key, result in zip(coro_keys, results):
         stream_groups[key] = result
 
-    return _combine_streams_by_type(user_data, stream_groups)
+    return _combine_streams_by_type(
+        user_data,
+        stream_groups,
+        disable_stream_cap=disable_stream_cap,
+    )
 
 
 async def get_tv_streams_formatted(

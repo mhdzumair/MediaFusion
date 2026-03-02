@@ -106,6 +106,7 @@ async def filter_and_sort_streams(
     stremio_video_id: str,
     user_ip: str | None = None,
     provider_override: StreamingProvider | None = None,
+    disable_total_stream_cap: bool = False,
 ) -> tuple[list[AnyStreamData], dict]:
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
@@ -357,7 +358,8 @@ async def filter_and_sort_streams(
             streams_count_per_resolution[stream.filtered_resolution] = count + 1
 
     # Step 5: Apply total stream cap
-    limited_streams = limited_streams[: user_data.max_streams]
+    if not disable_total_stream_cap:
+        limited_streams = limited_streams[: user_data.max_streams]
 
     return limited_streams, filtered_reasons
 
@@ -375,6 +377,7 @@ async def parse_stream_data(
     is_telegram: bool = False,
     is_http: bool = False,
     is_youtube: bool = False,
+    disable_total_stream_cap: bool = False,
 ) -> list[Stream] | list[RichStream]:
     """
     Parse and format stream data for output.
@@ -443,7 +446,12 @@ async def parse_stream_data(
     ) -> tuple[list[Stream] | list[RichStream], dict]:
         """Process a single provider: filter, cache-check, and build stream entries."""
         filtered_streams, filtered_reasons = await filter_and_sort_streams(
-            streams, user_data, stremio_video_id, user_ip, provider_override=current_provider
+            streams,
+            user_data,
+            stremio_video_id,
+            user_ip,
+            provider_override=current_provider,
+            disable_total_stream_cap=disable_total_stream_cap,
         )
 
         if not filtered_streams:

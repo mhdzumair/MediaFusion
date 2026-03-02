@@ -7,6 +7,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     HTTPException,
+    Query,
     Request,
     Response,
 )
@@ -149,6 +150,8 @@ async def get_kodi_streams(
     secret_str: str = Depends(get_secret_str),
     season: int = None,
     episode: int = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user_data: schemas.UserData = Depends(get_user_data),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
@@ -171,6 +174,7 @@ async def get_kodi_streams(
             background_tasks,
             user_data.user_id,
             return_rich=True,
+            disable_stream_cap=True,
         )
     else:
         fetched_streams = await crud.get_series_streams(
@@ -183,6 +187,18 @@ async def get_kodi_streams(
             background_tasks,
             user_data.user_id,
             return_rich=True,
+            disable_stream_cap=True,
         )
 
-    return {"streams": fetched_streams}
+    total = len(fetched_streams)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated_streams = fetched_streams[start_idx:end_idx]
+
+    return {
+        "streams": paginated_streams,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "has_more": end_idx < total,
+    }
