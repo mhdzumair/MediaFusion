@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
 import httpx
@@ -64,10 +65,32 @@ class TorznabScraper(BaseScraper):
         """Generate unique cache prefix based on endpoint URLs."""
         if not endpoints:
             return "torznab"
-        # Create hash from sorted endpoint URLs for consistent caching
-        urls = sorted(e.url for e in endpoints if e.enabled)
+        # Create hash from normalized endpoint URLs for stable caching.
+        urls = sorted(self._normalize_endpoint_url(str(e.url)) for e in endpoints if e.enabled)
         url_hash = hashlib.md5(":".join(urls).encode()).hexdigest()[:8]
         return f"torznab:{url_hash}"
+
+    @staticmethod
+    def _normalize_endpoint_url(url: str) -> str:
+        """Normalize endpoint URL for deterministic cache namespace hashes."""
+        if not url:
+            return ""
+
+        raw_url = str(url).strip()
+        try:
+            parts = urlsplit(raw_url)
+            normalized_query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)), doseq=True)
+            return urlunsplit(
+                (
+                    parts.scheme.lower(),
+                    parts.netloc.lower(),
+                    parts.path.rstrip("/"),
+                    normalized_query,
+                    "",
+                )
+            )
+        except Exception:
+            return raw_url.rstrip("/").lower()
 
     @BaseScraper.cache(ttl=TORZNAB_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))

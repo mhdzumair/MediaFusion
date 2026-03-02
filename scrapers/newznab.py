@@ -14,6 +14,7 @@ import hashlib
 import logging
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -24,6 +25,7 @@ from db.schemas.config import NewznabIndexerConfig
 from db.schemas.media import UsenetStreamData
 from scrapers.base_scraper import BaseScraper, ScraperMetrics
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
+from utils.runtime_const import NEWZNAB_SEARCH_TTL
 from utils.zyclops import submit_nzb_to_zyclops
 
 logger = logging.getLogger(__name__)
@@ -48,10 +50,59 @@ class NewznabScraper(BaseScraper):
         Args:
             indexers: List of configured Newznab indexers
         """
-        super().__init__(cache_key_prefix="newznab", logger_name=__name__)
         self.indexers = [i for i in indexers if i.enabled]
+        self._indexers_cache_suffix = self._generate_indexers_cache_suffix(self.indexers)
+        super().__init__(cache_key_prefix="newznab", logger_name=__name__)
         self.metrics = ScraperMetrics("newznab")
 
+    @staticmethod
+    def _normalize_indexer_url(url: str) -> str:
+        """Normalize indexer URL for stable cache key generation."""
+        if not url:
+            return ""
+
+        raw_url = str(url).strip()
+        try:
+            parts = urlsplit(raw_url)
+            normalized_query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)), doseq=True)
+            return urlunsplit(
+                (
+                    parts.scheme.lower(),
+                    parts.netloc.lower(),
+                    parts.path.rstrip("/"),
+                    normalized_query,
+                    "",
+                )
+            )
+        except Exception:
+            return raw_url.rstrip("/").lower()
+
+    def _generate_indexers_cache_suffix(self, indexers: list[NewznabIndexerConfig]) -> str:
+        """Generate a stable hash from enabled indexer links."""
+        if not indexers:
+            return "default"
+
+        normalized_urls = sorted(
+            self._normalize_indexer_url(str(indexer.url)) for indexer in indexers if indexer.enabled
+        )
+        if not normalized_urls:
+            return "default"
+        return hashlib.md5("|".join(normalized_urls).encode()).hexdigest()[:10]
+
+    def get_cache_key(
+        self,
+        user_data,
+        metadata: MetadataData,
+        catalog_type: str,
+        season: str = None,
+        episode: str = None,
+        *_args,
+        **_kwargs,
+    ) -> str:
+        base_cache_key = super().get_cache_key(user_data, metadata, catalog_type, season, episode, *_args, **_kwargs)
+        return f"{base_cache_key}:{self._indexers_cache_suffix}"
+
+    @BaseScraper.cache(ttl=NEWZNAB_SEARCH_TTL)
     async def _scrape_and_parse(
         self,
         user_data: UserData,

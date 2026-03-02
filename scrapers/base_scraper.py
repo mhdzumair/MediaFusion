@@ -836,6 +836,15 @@ class BaseScraper(abc.ABC):
         current_time = int(time.time())
         await REDIS_ASYNC_CLIENT.zremrangebyscore(scraper_prefix, 0, current_time - ttl)
 
+    @staticmethod
+    async def remove_expired_items_by_pattern(scraper_prefix_pattern: str, ttl: int = 3600):
+        """
+        Remove expired items from cache keys matching a pattern.
+        """
+        current_time = int(time.time())
+        async for key in REDIS_ASYNC_CLIENT.scan_iter(match=scraper_prefix_pattern, count=100):
+            await REDIS_ASYNC_CLIENT.zremrangebyscore(key, 0, current_time - ttl)
+
     async def get_torrent_data(
         self,
         download_url: str,

@@ -76,7 +76,20 @@ CACHED_DATA = [
     (YTSScraper.cache_key_prefix, runtime_const.YTS_SEARCH_TTL),
     (BT4GScraper.cache_key_prefix, runtime_const.BT4G_SEARCH_TTL),
     (JackettScraper.cache_key_prefix, runtime_const.JACKETT_SEARCH_TTL),
+    ("torznab", runtime_const.TORZNAB_SEARCH_TTL),
+    ("newznab", runtime_const.NEWZNAB_SEARCH_TTL),
+    ("easynews", runtime_const.EASYNEWS_SEARCH_TTL),
+    (TorBoxSearchScraper.cache_key_prefix, runtime_const.TORBOX_SEARCH_TTL),
     (TelegramScraper.CACHE_KEY_PREFIX, runtime_const.TELEGRAM_SEARCH_TTL),
+]
+
+# Dynamic cache namespaces used when endpoint URLs are user-specific.
+# These require scan-based cleanup because keys are suffix-hashed (e.g. torznab:abcd1234).
+DYNAMIC_CACHED_DATA_PATTERNS = [
+    ("torznab:*", runtime_const.TORZNAB_SEARCH_TTL),
+    ("newznab:*", runtime_const.NEWZNAB_SEARCH_TTL),
+    ("jackett:*", runtime_const.JACKETT_SEARCH_TTL),
+    ("prowlarr:*", runtime_const.PROWLARR_SEARCH_TTL),
 ]
 
 
@@ -609,6 +622,8 @@ async def cleanup_expired_scraper_task(**kwargs):
     logging.info("Cleaning up expired scraper items")
     for cache_key_prefix, ttl in CACHED_DATA:
         await BaseScraper.remove_expired_items(cache_key_prefix, ttl)
+    for cache_key_pattern, ttl in DYNAMIC_CACHED_DATA_PATTERNS:
+        await BaseScraper.remove_expired_items_by_pattern(cache_key_pattern, ttl)
 
 
 class MetadataSource(Enum):

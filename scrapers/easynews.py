@@ -17,6 +17,7 @@ from db.schemas.media import UsenetStreamData
 from scrapers.base_scraper import BaseScraper, ScraperMetrics
 from streaming_providers.easynews.client import Easynews
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
+from utils.runtime_const import EASYNEWS_SEARCH_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class EasynewsScraper(BaseScraper):
             await self._client.__aexit__(exc_type, exc_val, exc_tb)
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
+    @BaseScraper.cache(ttl=EASYNEWS_SEARCH_TTL)
     async def _scrape_and_parse(
         self,
         user_data: UserData,

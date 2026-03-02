@@ -16,6 +16,7 @@ import httpx
 from db.schemas import MetadataData, StreamFileData, TorrentStreamData, UserData, UsenetStreamData
 from scrapers.base_scraper import BaseScraper
 from utils.parser import calculate_max_similarity_ratio, is_contain_18_plus_keywords
+from utils.runtime_const import TORBOX_SEARCH_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class TorBoxSearchScraper(BaseScraper):
 
         return []
 
+    @BaseScraper.cache(ttl=TORBOX_SEARCH_TTL)
     async def scrape_usenet(
         self,
         user_data: UserData,
