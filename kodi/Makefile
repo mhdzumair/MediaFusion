@@ -3,12 +3,17 @@ ADDON_DIR = plugin.video.mediafusion
 REPO_DIR = repository.mediafusion
 BUILD_DIR = build
 DIST_DIR = dist
-VERSION := $(shell sed -ne "s/.*version=\"\([0-9a-z\.\-]*\)\"\sname=.*/\1/p" $(ADDON_DIR)/addon.xml)
-RANDOM_STRING = $(shell head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
-NEW_VERSION := $(VERSION)-$(RANDOM_STRING)
+VERSION := $(shell python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("$(ADDON_DIR)/addon.xml").getroot().attrib.get("version",""))')
+DEV_BUILD_TS := $(shell date +%y%m%d%H%M%S)
+RANDOM_HASH := $(shell head /dev/urandom | tr -dc a-z0-9 | head -c 8)
+NEW_VERSION := $(VERSION).$(DEV_BUILD_TS)
 ZIP_FILE := $(ADDON_DIR)-$(VERSION).zip
-DEV_ZIP_FILE := $(ADDON_DIR)-dev-$(NEW_VERSION).zip
+DEV_ZIP_FILE := $(ADDON_DIR)-dev-$(NEW_VERSION)-$(RANDOM_HASH).zip
 REPO_ZIP_FILE := $(REPO_DIR)-$(VERSION).zip
+
+ifeq ($(strip $(VERSION)),)
+$(error Failed to detect addon version from $(ADDON_DIR)/addon.xml)
+endif
 
 # Default target
 all: $(ZIP_FILE) repository
@@ -22,7 +27,7 @@ $(ZIP_FILE): install_dependencies
 # Install dependencies
 install_dependencies: prepare_build
 	@echo "Installing dependencies..."
-	@pip install -r requirements.txt -t $(BUILD_DIR)/$(ADDON_DIR)/lib
+	@pip3 install -r requirements.txt -t $(BUILD_DIR)/$(ADDON_DIR)/lib
 
 # Prepare build directory
 prepare_build: clean
@@ -66,6 +71,8 @@ dev: $(DEV_ZIP_FILE)
 
 # Create the dev zip file
 $(DEV_ZIP_FILE): install_dev_dependencies
+	@echo "Stamping dev addon version: $(NEW_VERSION)"
+	@python3 -c 'import pathlib,xml.etree.ElementTree as ET; p=pathlib.Path("$(BUILD_DIR)/$(ADDON_DIR)/addon.xml"); tree=ET.parse(p); root=tree.getroot(); assert root.attrib.get("id")=="plugin.video.mediafusion", "Unexpected addon id"; root.set("version","$(NEW_VERSION)"); tree.write(p, encoding="UTF-8", xml_declaration=True)'
 	@echo "Creating dev zip file for $(ADDON_DIR)..."
 	@cd build && zip -r ../$(DEV_ZIP_FILE) $(ADDON_DIR)
 	@echo "Dev zip file created: $(DEV_ZIP_FILE)"
@@ -75,8 +82,8 @@ $(DEV_ZIP_FILE): install_dev_dependencies
 # Install dev dependencies
 install_dev_dependencies: prepare_build
 	@echo "Installing dev dependencies..."
-	@pip install -r requirements.txt -t $(BUILD_DIR)/$(ADDON_DIR)/lib
-	@pip install -r dev-requirements.txt -t $(BUILD_DIR)/$(ADDON_DIR)/lib
+	@pip3 install -r requirements.txt -t $(BUILD_DIR)/$(ADDON_DIR)/lib
+	@pip3 install -r dev-requirements.txt -t $(BUILD_DIR)/$(ADDON_DIR)/lib
 
 # Phony targets
 .PHONY: all clean dev install_dependencies install_dev_dependencies repository prepare_build

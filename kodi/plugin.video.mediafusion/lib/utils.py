@@ -27,8 +27,12 @@ if not SECRET_STR:
 
 def fetch_data(url):
     session = requests.session()
+    headers = {}
+    api_password = ADDON.getSetting("api_password")
+    if api_password and "/api/v1/" in url:
+        headers["X-API-Key"] = api_password
     try:
-        response = session.get(url)
+        response = session.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
     except requests.ConnectionError as e:

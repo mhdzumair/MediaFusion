@@ -114,3 +114,75 @@ async def get_streams(
         fetched_streams = await crud.get_tv_streams_formatted(video_id, get_request_namespace(request), user_data)
 
     return {"streams": fetched_streams}
+
+
+@router.get(
+    "/{secret_str}/kodi/stream/{catalog_type}/{video_id}.json",
+    response_model=schemas.RichStreams,
+    response_model_exclude_none=True,
+    tags=["stream"],
+)
+@router.get(
+    "/kodi/stream/{catalog_type}/{video_id}.json",
+    response_model=schemas.RichStreams,
+    response_model_exclude_none=True,
+    tags=["stream"],
+)
+@router.get(
+    "/{secret_str}/kodi/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
+    response_model=schemas.RichStreams,
+    response_model_exclude_none=True,
+    tags=["stream"],
+)
+@router.get(
+    "/kodi/stream/{catalog_type}/{video_id}:{season}:{episode}.json",
+    response_model=schemas.RichStreams,
+    response_model_exclude_none=True,
+    tags=["stream"],
+)
+@wrappers.auth_required
+@wrappers.rate_limit(20, 60 * 60, "kodi_stream")
+async def get_kodi_streams(
+    catalog_type: Literal["movie", "series"],
+    video_id: str,
+    request: Request,
+    secret_str: str = Depends(get_secret_str),
+    season: int = None,
+    episode: int = None,
+    user_data: schemas.UserData = Depends(get_user_data),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """Get Kodi-focused rich stream payloads with structured metadata."""
+    if "p2p" in settings.disabled_providers and not user_data.has_any_provider():
+        return {"streams": []}
+
+    user_ip = await get_user_public_ip(request, user_data)
+    if season is None or episode is None:
+        season = episode = 1
+
+    if catalog_type == "movie":
+        if video_id.startswith("dl"):
+            raise HTTPException(status_code=404, detail="Meta ID not found.")
+        fetched_streams = await crud.get_movie_streams(
+            video_id,
+            user_data,
+            secret_str,
+            user_ip,
+            background_tasks,
+            user_data.user_id,
+            return_rich=True,
+        )
+    else:
+        fetched_streams = await crud.get_series_streams(
+            video_id,
+            season,
+            episode,
+            user_data,
+            secret_str,
+            user_ip,
+            background_tasks,
+            user_data.user_id,
+            return_rich=True,
+        )
+
+    return {"streams": fetched_streams}

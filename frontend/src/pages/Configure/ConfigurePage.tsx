@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom'
 import {
   Settings,
   Plus,
@@ -189,8 +189,8 @@ function ProfileCard({ profile, onSelect }: { profile: Profile; onSelect: () => 
 }
 
 // Kodi pairing code card (reusable for both anonymous and authenticated flows)
-function KodiPairingCard({ manifestUrl }: { manifestUrl: string }) {
-  const [kodiCode, setKodiCode] = useState('')
+function KodiPairingCard({ manifestUrl, initialCode = '' }: { manifestUrl: string; initialCode?: string }) {
+  const [kodiCode, setKodiCode] = useState(initialCode)
   const [linking, setLinking] = useState(false)
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -262,7 +262,15 @@ function KodiPairingCard({ manifestUrl }: { manifestUrl: string }) {
 }
 
 // Anonymous Install URLs component
-function AnonymousInstallUrls({ encryptedStr, onReset }: { encryptedStr: string; onReset: () => void }) {
+function AnonymousInstallUrls({
+  encryptedStr,
+  onReset,
+  initialKodiCode,
+}: {
+  encryptedStr: string
+  onReset: () => void
+  initialKodiCode?: string
+}) {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const urls = generateManifestUrls(encryptedStr)
 
@@ -305,7 +313,7 @@ function AnonymousInstallUrls({ encryptedStr, onReset }: { encryptedStr: string;
         </CardContent>
       </Card>
 
-      <KodiPairingCard manifestUrl={urls.manifestUrl} />
+      <KodiPairingCard manifestUrl={urls.manifestUrl} initialCode={initialKodiCode} />
 
       <div className="flex flex-col sm:flex-row gap-3">
         <Button variant="outline" onClick={onReset} className="flex-1">
@@ -336,6 +344,7 @@ function AnonymousConfigEditor() {
   const [loadedSecretStr, setLoadedSecretStr] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const secretStrParam = searchParams.get('secret_str')
+  const kodiCodeParam = searchParams.get('kodi_code') ?? ''
 
   // API Key input state for private instances
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -403,7 +412,13 @@ function AnonymousConfigEditor() {
 
   // If we have an encrypted string, show the install URLs
   if (encryptedStr) {
-    return <AnonymousInstallUrls encryptedStr={encryptedStr} onReset={() => setEncryptedStr(null)} />
+    return (
+      <AnonymousInstallUrls
+        encryptedStr={encryptedStr}
+        onReset={() => setEncryptedStr(null)}
+        initialKodiCode={kodiCodeParam}
+      />
+    )
   }
 
   const handleGenerate = async () => {
@@ -1198,6 +1213,7 @@ export function ConfigurePage() {
   const { isAuthenticated, isLoading } = useAuth()
   const [searchParams] = useSearchParams()
   const hasAnonymousSecret = !!searchParams.get('secret_str')
+  const kodiCode = searchParams.get('kodi_code')
 
   // Show loading state while checking auth
   if (isLoading) {
@@ -1216,6 +1232,12 @@ export function ConfigurePage() {
         </div>
       </div>
     )
+  }
+
+  // Kodi linking for signed-in users lives in Integrations.
+  // Redirect whenever a kodi_code is present, even if secret_str is included.
+  if (isAuthenticated && kodiCode) {
+    return <Navigate to={`/dashboard/integrations?kodi_code=${encodeURIComponent(kodiCode)}`} replace />
   }
 
   // Show anonymous config for non-authenticated users

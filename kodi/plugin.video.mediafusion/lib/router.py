@@ -6,7 +6,7 @@ import xbmc
 import xbmcgui
 import xbmcplugin
 
-from .parser import format_stream_label, parse_stream_info
+from .parser import parse_stream_entry
 from .utils import (
     ADDON_HANDLE,
     BASE_URL,
@@ -271,11 +271,11 @@ def list_episodes(params):
 
 
 def get_streams(params):
-    url = parse.urljoin(
+    kodi_url = parse.urljoin(
         BASE_URL,
-        f"/{SECRET_STR}/stream/{params['catalog_type']}/{params['video_id']}.json",
+        f"/{SECRET_STR}/kodi/stream/{params['catalog_type']}/{params['video_id']}.json",
     )
-    response = fetch_data(url)
+    response = fetch_data(kodi_url)
     if not response:
         return
 
@@ -290,14 +290,23 @@ def get_streams(params):
     else:
         video_id, season, episode = params["video_id"], None, None
 
-    for stream in streams:
-        main_label, detail_label = format_stream_label(stream["name"], stream["description"])
-        video_info = parse_stream_info(stream["name"], stream["description"], stream.get("behaviorHints", {}))
+    for stream_entry in streams:
+        if "stream" not in stream_entry or "metadata" not in stream_entry:
+            log("Received non-structured stream payload from Kodi endpoint", xbmc.LOGERROR)
+            continue
+        parsed_stream = parse_stream_entry(stream_entry)
+        stream = parsed_stream["stream"]
+        main_label = parsed_stream["main_label"]
+        detail_label = parsed_stream["detail_label"]
+        video_info = parsed_stream["video_info"]
+        plot = parsed_stream["plot"]
 
         li = xbmcgui.ListItem(label=main_label, offscreen=True)
+        if detail_label:
+            li.setLabel2(detail_label)
         tags = li.getVideoInfoTag()
         tags.setTitle(main_label)
-        tags.setPlot(detail_label)
+        tags.setPlot(plot)
 
         supported_video_info = {
             "size": video_info.get("size"),
@@ -321,6 +330,14 @@ def get_streams(params):
                 hdrtype=video_info.get("hdr"),
             )
         )
+        if video_info.get("audio_codec") or video_info.get("audio_channels"):
+            tags.addAudioStream(
+                xbmc.AudioStreamDetail(
+                    language=video_info.get("language"),
+                    codec=video_info.get("audio_codec"),
+                    channels=int(video_info.get("audio_channels") or 0),
+                )
+            )
 
         li.setProperty("IsPlayable", "true")
 

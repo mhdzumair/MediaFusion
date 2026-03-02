@@ -143,6 +143,12 @@ class RichStreamMetadata(BaseModel):
     uploader: str | None = None
     uploaded_at: str | None = None
     cached: bool = False
+    stream_type: str | None = None
+    provider_name: str | None = None
+    provider_short_name: str | None = None
+    filename: str | None = None
+    video_width: int | None = None
+    video_height: int | None = None
 
 
 class RichStream(BaseModel):
@@ -152,3 +158,9 @@ class RichStream(BaseModel):
     stream: Stream
     # Rich metadata for frontend (for catalog API)
     metadata: RichStreamMetadata
+
+
+class RichStreams(BaseModel):
+    """Collection of rich streams for Kodi/raw stream clients."""
+
+    streams: list[RichStream] | None = Field(default_factory=list)

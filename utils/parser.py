@@ -83,6 +83,23 @@ def _calculate_age_fields(created_at: datetime | None) -> tuple[str | None, int 
     return f"{age_hours // (24 * 30)}mo", age_hours
 
 
+def _resolution_to_dimensions(resolution: str | None) -> tuple[int | None, int | None]:
+    if not resolution:
+        return None, None
+    resolution_map = {
+        "4k": (2160, 3840),
+        "2160p": (2160, 3840),
+        "1440p": (1440, 2560),
+        "1080p": (1080, 1920),
+        "720p": (720, 1280),
+        "576p": (576, 720),
+        "480p": (480, 640),
+        "360p": (360, 480),
+        "240p": (240, 320),
+    }
+    return resolution_map.get(resolution.lower(), (None, None))
+
+
 async def filter_and_sort_streams(
     streams: list[AnyStreamData],
     user_data: UserData,
@@ -938,6 +955,7 @@ def _build_stream_entries(
                     rich_seeders = getattr(stream_data, "grabs", 0) or 0
                 else:
                     rich_seeders = seeders or 0
+                video_height, video_width = _resolution_to_dimensions(stream_data.resolution)
                 rich_metadata = RichStreamMetadata(
                     id=stream_id,
                     info_hash=stream_id,  # For Usenet this is nzb_guid, for Telegram chat:msg
@@ -945,8 +963,18 @@ def _build_stream_entries(
                     resolution=stream_data.resolution,
                     quality=getattr(stream_data, "quality", None),
                     codec=getattr(stream_data, "codec", None),
+                    bit_depth=getattr(stream_data, "bit_depth", None),
                     audio_formats=list(audio_formats),
+                    channels=list(getattr(stream_data, "channels", []) or []),
                     hdr_formats=list(hdr_formats),
+                    is_remastered=bool(getattr(stream_data, "is_remastered", False)),
+                    is_upscaled=bool(getattr(stream_data, "is_upscaled", False)),
+                    is_proper=bool(getattr(stream_data, "is_proper", False)),
+                    is_repack=bool(getattr(stream_data, "is_repack", False)),
+                    is_extended=bool(getattr(stream_data, "is_extended", False)),
+                    is_complete=bool(getattr(stream_data, "is_complete", False)),
+                    is_dubbed=bool(getattr(stream_data, "is_dubbed", False)),
+                    is_subbed=bool(getattr(stream_data, "is_subbed", False)),
                     source=stream_data.source or "Unknown",
                     languages=list(languages),
                     size=file_size,
@@ -955,6 +983,12 @@ def _build_stream_entries(
                     uploader=uploader or getattr(stream_data, "poster", None),
                     uploaded_at=stream_data.created_at.isoformat() if stream_data.created_at else None,
                     cached=cached,
+                    stream_type=stream_type,
+                    provider_name=current_provider.service if current_provider else "p2p",
+                    provider_short_name=streaming_provider_name,
+                    filename=file_name or stream_data.name,
+                    video_width=video_width,
+                    video_height=video_height,
                 )
                 stream_list.append(RichStream(stream=stremio_stream, metadata=rich_metadata))
             else:

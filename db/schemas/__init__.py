@@ -112,6 +112,7 @@ from db.schemas.stremio import (
     Metas,
     PosterData,
     RichStream,
+    RichStreams,
     RichStreamMetadata,
     Stream,
     StreamBehaviorHints,
@@ -132,6 +133,7 @@ __all__ = [
     "Streams",
     "RichStreamMetadata",
     "RichStream",
+    "RichStreams",
     # Config
     "QBittorrentConfig",
     "MediaFlowConfig",

@@ -248,9 +248,6 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         "/api/v1/instance/",  # Must be accessible to know if key is needed
         "/api/v1/telegram/webhook",  # Telegram webhook - uses secret token authentication instead
         "/api/v1/telegram/login",  # Telegram login - uses login token authentication instead
-        "/api/v1/kodi/qr-code/",  # QR code image - secured by short-lived Redis code
-        "/api/v1/kodi/get-manifest/",  # Kodi addon poll - secured by short-lived one-time Redis code
-        "/api/v1/kodi/generate-setup-code",  # Kodi addon - validates api_password from secret_str body
         "/health",
         "/docs",
         "/redoc",

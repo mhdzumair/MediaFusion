@@ -46,6 +46,7 @@ from db.schemas import (
     # Config
     QBittorrentConfig,
     RichStream,
+    RichStreams,
     RichStreamMetadata,
     RPDBConfig,
     RSSFeed,
@@ -97,6 +98,7 @@ __all__ = [
     "Streams",
     "RichStreamMetadata",
     "RichStream",
+    "RichStreams",
     # Config
     "QBittorrentConfig",
     "MediaFlowConfig",

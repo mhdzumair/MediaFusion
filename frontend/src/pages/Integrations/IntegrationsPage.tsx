@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +28,7 @@ import { getAppConfig, associateKodiManifest } from '@/lib/api'
 import { ExternalPlatformIntegrations } from '@/components/integrations/ExternalPlatformIntegrations'
 
 export function IntegrationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: profiles, isLoading: profilesLoading } = useProfiles()
   const { user } = useAuth()
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
@@ -58,6 +60,7 @@ export function IntegrationsPage() {
   const [kodiLinking, setKodiLinking] = useState(false)
   const [kodiLinkStatus, setKodiLinkStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [kodiLinkError, setKodiLinkError] = useState<string | null>(null)
+  const kodiCodeFromQuery = searchParams.get('kodi_code')?.trim() ?? ''
 
   // Build Torznab API key based on whether authentication is required
   const torznabApiKey = user?.uuid
@@ -68,6 +71,11 @@ export function IntegrationsPage() {
   const torznabUrl = appConfig?.host_url ? `${appConfig.host_url}/torznab` : null
 
   const selectedProfile = profiles?.find((p) => p.id === selectedProfileId)
+
+  useEffect(() => {
+    if (!kodiCodeFromQuery) return
+    setKodiCode((prev) => prev || kodiCodeFromQuery)
+  }, [kodiCodeFromQuery])
 
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
@@ -86,6 +94,11 @@ export function IntegrationsPage() {
       await associateKodiManifest(kodiCode.trim(), manifestData.manifest_url)
       setKodiLinkStatus('success')
       setKodiCode('')
+      if (kodiCodeFromQuery) {
+        const nextParams = new URLSearchParams(searchParams)
+        nextParams.delete('kodi_code')
+        setSearchParams(nextParams, { replace: true })
+      }
     } catch (error) {
       setKodiLinkStatus('error')
       setKodiLinkError(error instanceof Error ? error.message : 'Failed to link Kodi device')

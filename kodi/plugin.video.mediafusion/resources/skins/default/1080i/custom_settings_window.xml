@@ -98,9 +98,31 @@
                 <texturenofocus colordiffuse="40FFFFFF">white.png</texturenofocus>
             </control>
 
+            <!-- API Password Label -->
+            <control type="label" id="312">
+                <top>200</top>
+                <width>100%</width>
+                <height>30</height>
+                <font>font16</font>
+                <label>API Password (Optional):</label>
+                <textcolor>FFFFFFFF</textcolor>
+            </control>
+
+            <!-- API Password Value -->
+            <control type="button" id="313">
+                <top>240</top>
+                <width>100%</width>
+                <height>40</height>
+                <font>font16</font>
+                <textcolor>FF00FF00</textcolor>
+                <focusedcolor>FFFFFF00</focusedcolor>
+                <texturefocus colordiffuse="80FFFFFF">white.png</texturefocus>
+                <texturenofocus colordiffuse="40FFFFFF">white.png</texturenofocus>
+            </control>
+
             <!-- Configure Secret button -->
             <control type="button" id="305">
-                <top>200</top>
+                <top>300</top>
                 <width>80%</width>
                 <height>50</height>
                 <font>font16</font>
@@ -115,9 +137,9 @@
 
             <!-- Instructions -->
             <control type="textbox" id="304">
-                <top>280</top>
+                <top>380</top>
                 <width>100%</width>
-                <height>50%</height>
+                <height>35%</height>
                 <font>font14</font>
                 <textcolor>FFFFFFFF</textcolor>
                 <align>left</align>

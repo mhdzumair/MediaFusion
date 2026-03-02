@@ -13,6 +13,7 @@ import importlib
 import json
 import logging
 import time
+from typing import Any
 
 from fastapi import BackgroundTasks
 from sqlalchemy import or_
@@ -45,6 +46,8 @@ from db.retry_utils import run_db_operation_with_retry
 from db.redis_database import REDIS_ASYNC_CLIENT
 from db.schemas import (
     MetadataData,
+    RichStream,
+    RichStreamMetadata,
     Stream as StremioStream,
 )
 from db.schemas import (
@@ -350,8 +353,8 @@ def _format_acestream_streams(
 
 def _combine_streams_by_type(
     user_data: UserData,
-    stream_groups: dict[str, list[StremioStream]],
-) -> list[StremioStream]:
+    stream_groups: dict[str, list[Any]],
+) -> list[Any]:
     """Combine stream groups based on user's type grouping and ordering preferences.
 
     For "separate" mode: concatenate groups in the user's preferred stream_type_order.
@@ -365,7 +368,7 @@ def _combine_streams_by_type(
         ordered_lists = [stream_groups.get(t, []) for t in type_order]
         # Filter out empty lists
         ordered_lists = [lst for lst in ordered_lists if lst]
-        combined: list[StremioStream] = []
+        combined: list[Any] = []
         iterators = [iter(lst) for lst in ordered_lists]
         while iterators:
             exhausted = []
@@ -880,6 +883,95 @@ def _deserialize_acestream_streams(
     return formatted
 
 
+def _extract_resolution_dimensions(resolution: str | None) -> tuple[int | None, int | None]:
+    """Map a resolution label to height/width values for Kodi stream details."""
+    if not resolution:
+        return None, None
+
+    normalized = resolution.lower()
+    if normalized in {"4k", "2160p"}:
+        return 2160, 3840
+    if normalized == "1440p":
+        return 1440, 2560
+    if normalized == "1080p":
+        return 1080, 1920
+    if normalized == "720p":
+        return 720, 1280
+    if normalized == "576p":
+        return 576, 720
+    if normalized == "480p":
+        return 480, 640
+    if normalized == "360p":
+        return 360, 480
+    if normalized == "240p":
+        return 240, 320
+    return None, None
+
+
+def _deserialize_acestream_rich_streams(
+    acestream_data: list[dict], user_data: UserData, user_ip: str | None = None
+) -> list[RichStream]:
+    """Deserialize cached AceStream data into rich stream payloads for Kodi."""
+    if not acestream_data or not _has_mediaflow_config(user_data):
+        return []
+
+    mediaflow_config = user_data.mediaflow_config
+    rich_streams = []
+    for ace in acestream_data:
+        try:
+            url = encode_mediaflow_acestream_url(
+                mediaflow_proxy_url=mediaflow_config.proxy_url,
+                content_id=ace.get("content_id"),
+                info_hash=ace.get("info_hash"),
+                api_password=mediaflow_config.api_password,
+            )
+        except ValueError:
+            continue
+
+        desc_parts = ["📡 AceStream"]
+        if ace.get("resolution"):
+            desc_parts.append(ace["resolution"])
+        if ace.get("quality"):
+            desc_parts.append(ace["quality"])
+        if ace.get("codec"):
+            desc_parts.append(ace["codec"])
+        if ace.get("source") and ace["source"] != "acestream":
+            desc_parts.append(f"| {ace['source']}")
+
+        stream_name = ace.get("stream_name") or "AceStream"
+        stremio_stream = StremioStream(
+            name=f"{settings.addon_name}\n{stream_name}",
+            description=" ".join(desc_parts),
+            url=url,
+            behaviorHints={"filename": stream_name},
+        )
+        video_height, video_width = _extract_resolution_dimensions(ace.get("resolution"))
+        stream_id = str(ace.get("content_id") or ace.get("info_hash") or stream_name)
+        rich_streams.append(
+            RichStream(
+                stream=stremio_stream,
+                metadata=RichStreamMetadata(
+                    id=stream_id,
+                    info_hash=str(ace.get("info_hash") or stream_id),
+                    name=stream_name,
+                    resolution=ace.get("resolution"),
+                    quality=ace.get("quality"),
+                    codec=ace.get("codec"),
+                    source=ace.get("source") or "AceStream",
+                    languages=ace.get("languages") or [],
+                    cached=False,
+                    stream_type="acestream",
+                    provider_name="acestream",
+                    provider_short_name="Ace",
+                    filename=stream_name,
+                    video_width=video_width,
+                    video_height=video_height,
+                ),
+            )
+        )
+    return rich_streams
+
+
 async def get_movie_streams(
     video_id: str,
     user_data: UserData,
@@ -887,7 +979,8 @@ async def get_movie_streams(
     user_ip: str | None,
     background_tasks: BackgroundTasks,
     user_id: int | None = None,
-) -> list[StremioStream]:
+    return_rich: bool = False,
+) -> list[StremioStream] | list[RichStream]:
     """
     Get formatted streams for a movie.
 
@@ -973,9 +1066,13 @@ async def get_movie_streams(
 
     # AceStream is formatted directly (requires MediaFlow config, not a parse_stream_data stream type)
     formatted_acestream_streams = (
-        _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
-        if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
-        else []
+        _deserialize_acestream_rich_streams(raw_data["acestream"], user_data, user_ip)
+        if return_rich and user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
+        else (
+            _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
+            if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
+            else []
+        )
     )
 
     # Apply disabled content type filtering
@@ -1015,6 +1112,7 @@ async def get_movie_streams(
                 secret_str=secret_str,
                 user_ip=user_ip,
                 is_series=False,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("torrent")
@@ -1028,6 +1126,7 @@ async def get_movie_streams(
                 user_ip=user_ip,
                 is_series=False,
                 is_usenet=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("usenet")
@@ -1041,6 +1140,7 @@ async def get_movie_streams(
                 user_ip=user_ip,
                 is_series=False,
                 is_telegram=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("telegram")
@@ -1054,6 +1154,7 @@ async def get_movie_streams(
                 user_ip=user_ip,
                 is_series=False,
                 is_http=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("http")
@@ -1067,6 +1168,7 @@ async def get_movie_streams(
                 user_ip=user_ip,
                 is_series=False,
                 is_youtube=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("youtube")
@@ -1075,7 +1177,7 @@ async def get_movie_streams(
     results = await asyncio.gather(*coros) if coros else []
 
     # Map results back to stream groups
-    stream_groups: dict[str, list[StremioStream]] = {
+    stream_groups: dict[str, list[Any]] = {
         "torrent": [],
         "usenet": [],
         "telegram": [],
@@ -1098,7 +1200,8 @@ async def get_series_streams(
     user_ip: str | None,
     background_tasks: BackgroundTasks,
     user_id: int | None = None,
-) -> list[StremioStream]:
+    return_rich: bool = False,
+) -> list[StremioStream] | list[RichStream]:
     """
     Get formatted streams for a series episode.
 
@@ -1182,9 +1285,13 @@ async def get_series_streams(
             )
 
     formatted_acestream_streams = (
-        _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
-        if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
-        else []
+        _deserialize_acestream_rich_streams(raw_data["acestream"], user_data, user_ip)
+        if return_rich and user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
+        else (
+            _deserialize_acestream_streams(raw_data["acestream"], user_data, user_ip)
+            if user_data.enable_acestream_streams and _has_mediaflow_config(user_data)
+            else []
+        )
     )
 
     # Apply disabled content type filtering
@@ -1226,6 +1333,7 @@ async def get_series_streams(
                 episode=episode,
                 user_ip=user_ip,
                 is_series=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("torrent")
@@ -1241,6 +1349,7 @@ async def get_series_streams(
                 user_ip=user_ip,
                 is_series=True,
                 is_usenet=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("usenet")
@@ -1256,6 +1365,7 @@ async def get_series_streams(
                 user_ip=user_ip,
                 is_series=True,
                 is_telegram=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("telegram")
@@ -1271,6 +1381,7 @@ async def get_series_streams(
                 user_ip=user_ip,
                 is_series=True,
                 is_http=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("http")
@@ -1286,13 +1397,14 @@ async def get_series_streams(
                 user_ip=user_ip,
                 is_series=True,
                 is_youtube=True,
+                return_rich=return_rich,
             )
         )
         coro_keys.append("youtube")
 
     results = await asyncio.gather(*coros) if coros else []
 
-    stream_groups: dict[str, list[StremioStream]] = {
+    stream_groups: dict[str, list[Any]] = {
         "torrent": [],
         "usenet": [],
         "telegram": [],

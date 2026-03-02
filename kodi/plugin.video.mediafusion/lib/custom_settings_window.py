@@ -1,6 +1,6 @@
 import subprocess
 import time
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import requests
 import xbmc
@@ -44,6 +44,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
         self.addon = xbmcaddon.Addon("plugin.video.mediafusion")
         self.base_url = self.addon.getSetting("base_url")
         self.secret_string = self.addon.getSetting("secret_string")
+        self.api_password = self.addon.getSetting("api_password").strip()
         self.is_running = True
         self.poll_interval = 5  # Poll every 5 seconds
         self.configure_url = ""
@@ -53,6 +54,8 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
         self.base_url_control = self.getControl(301)
         self.secret_string_label = self.getControl(311)
         self.secret_string_control = self.getControl(302)
+        self.api_password_label = self.getControl(312)
+        self.api_password_control = self.getControl(313)
         self.qr_code_image = self.getControl(303)
         self.instruction_label = self.getControl(304)
         self.configure_button = self.getControl(305)
@@ -63,6 +66,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
 
         self.update_url_display()
         self.update_secret_display()
+        self.update_api_password_display()
         self.update_instructions()
         self.open_config_button.setVisible(False)
 
@@ -76,6 +80,8 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
             self.edit_base_url()
         elif controlId == 302:  # Secret String
             self.edit_secret_string()
+        elif controlId == 313:  # API Password
+            self.edit_api_password()
         elif controlId == 305:  # Configure button
             self.configure_secret()
         elif controlId == 306:  # Open Configuration Page button
@@ -102,6 +108,17 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
             self.addon.setSetting("secret_string", self.secret_string)
             self.update_secret_display()
 
+    def edit_api_password(self):
+        new_api_password = xbmcgui.Dialog().input(
+            "Enter API Password (Optional)",
+            self.api_password,
+            option=xbmcgui.ALPHANUM_HIDE_INPUT,
+        )
+        if new_api_password is not None:
+            self.api_password = new_api_password.strip()
+            self.addon.setSetting("api_password", self.api_password)
+            self.update_api_password_display()
+
     def update_url_display(self):
         if self.base_url:
             display_url = self.base_url[:30] + "..." if len(self.base_url) > 33 else self.base_url
@@ -115,12 +132,33 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
         else:
             self.secret_string_control.setLabel("Not set")
 
+    def update_api_password_display(self):
+        if self.api_password:
+            self.api_password_control.setLabel("*" * len(self.api_password))
+        else:
+            self.api_password_control.setLabel("Not set (optional)")
+
+    def _get_api_headers(self):
+        headers = {}
+        if self.api_password:
+            headers["X-API-Key"] = self.api_password.strip()
+        return headers
+
+    def _append_headers_to_url(self, url):
+        """Append Kodi-style HTTP headers to URL: url|Header=Value&Header2=Value2."""
+        headers = self._get_api_headers()
+        if not headers:
+            return url
+        header_query = "&".join(f"{key}={quote(value, safe='')}" for key, value in headers.items())
+        return f"{url}|{header_query}"
+
     def update_instructions(self):
         instructions = (
             "1. Set the MediaFusion Base URL\n"
-            "2. Click 'Configure Secret' to generate a setup code\n"
-            "3. Scan the QR code or Open the Configuration page or use the setup code on your device\n"
-            "4. Complete the setup process on your device"
+            "2. Optionally set API password (private instances)\n"
+            "3. Click 'Configure Secret' to generate a setup code\n"
+            "4. Scan the QR code, open the configuration page, or enter the setup code on your device\n"
+            "5. Complete the setup process on your device"
         )
         self.instruction_label.setText(instructions)
 
@@ -130,6 +168,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
             response = requests.post(
                 urljoin(self.base_url, "api/v1/kodi/generate-setup-code"),
                 json=data,
+                headers=self._get_api_headers(),
                 timeout=15,
             )
             response.raise_for_status()
@@ -143,7 +182,7 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
             self.configure_url = data["configure_url"]
             expires_in = data["expires_in"]
 
-            self.qr_code_image.setImage(qr_code_url)
+            self.qr_code_image.setImage(self._append_headers_to_url(qr_code_url))
             start_time = time.time()
             last_poll_time = 0
 
@@ -195,7 +234,11 @@ class CustomSettingsWindow(xbmcgui.WindowXMLDialog):
 
     def poll_for_secret(self, code):
         try:
-            response = requests.get(urljoin(self.base_url, f"api/v1/kodi/get-manifest/{code}"), timeout=10)
+            response = requests.get(
+                urljoin(self.base_url, f"api/v1/kodi/get-manifest/{code}"),
+                headers=self._get_api_headers(),
+                timeout=10,
+            )
             if response.status_code == 200:
                 data = response.json()
                 error_detail, error_status_code = _extract_wrapped_api_error(data)
