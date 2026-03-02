@@ -540,10 +540,11 @@ class TelegramUserForward(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", index=True, ondelete="CASCADE")
 
     # Telegram user ID (for the user's DM with the bot)
-    telegram_user_id: int
+    telegram_user_id: int = Field(sa_type=BigInteger)
 
-    # The forwarded copy's location (in user's DM with bot)
-    forwarded_chat_id: str  # User's Telegram ID as string (bot DM chat_id)
+    # The forwarded copy's location in the user's DM with bot.
+    # Uses MediaFlow peer identifier format (e.g. @bot_username, with numeric fallback).
+    forwarded_chat_id: str
     forwarded_message_id: int  # Message ID of the forwarded copy
 
     created_at: datetime = Field(

@@ -1744,7 +1744,7 @@ async def create_telegram_user_forward(
         telegram_stream_id: ID of the TelegramStream
         user_id: MediaFusion user ID
         telegram_user_id: User's Telegram ID
-        forwarded_chat_id: Chat ID where content was forwarded (user's DM with bot)
+        forwarded_chat_id: MediaFlow peer identifier for the bot DM where content was forwarded
         forwarded_message_id: Message ID of the forwarded copy
 
     Returns:
@@ -1763,6 +1763,21 @@ async def create_telegram_user_forward(
     await session.commit()
     await session.refresh(forward)
     return forward
+
+
+async def delete_telegram_user_forward(
+    session: AsyncSession,
+    telegram_stream_id: int,
+    user_id: int,
+) -> bool:
+    """Delete a single cached forward record for a specific stream+user pair."""
+    stmt = sa_delete(TelegramUserForward).where(
+        TelegramUserForward.telegram_stream_id == telegram_stream_id,
+        TelegramUserForward.user_id == user_id,
+    )
+    result = await session.exec(stmt)
+    await session.commit()
+    return bool(result.rowcount)
 
 
 async def delete_telegram_user_forwards_for_stream(

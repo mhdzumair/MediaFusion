@@ -8,6 +8,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
+from time import monotonic
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -905,6 +906,10 @@ class TelegramContentBot:
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}" if self.bot_token else None
         self.enabled = bool(self.bot_token)
         self._conversation_ttl_seconds = 30 * 60
+        self._bot_identity_cache_ttl_seconds = 3600
+        self._cached_bot_id: int | None = None
+        self._cached_bot_username: str | None = None
+        self._bot_identity_checked_at: float = 0.0
 
     def _conversation_key(self, user_id: int) -> str:
         return f"telegram:conversation:{user_id}"
@@ -917,6 +922,66 @@ class TelegramContentBot:
 
     def _user_mapping_key(self, telegram_user_id: int) -> str:
         return f"telegram:user_mapping:{telegram_user_id}"
+
+    async def get_bot_identity(self) -> tuple[int | None, str | None]:
+        """Return bot (id, username) from getMe with lightweight in-process caching."""
+        if not self.enabled or not self.base_url:
+            return None, None
+
+        now = monotonic()
+        if (
+            self._bot_identity_checked_at > 0
+            and (now - self._bot_identity_checked_at) < self._bot_identity_cache_ttl_seconds
+        ):
+            return self._cached_bot_id, self._cached_bot_username
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.base_url}/getMe") as response:
+                    response_data = await response.json()
+                    if response.ok and response_data.get("ok"):
+                        result = response_data.get("result", {})
+                        raw_id = result.get("id")
+                        username = result.get("username")
+                        self._cached_bot_id = int(raw_id) if raw_id is not None else None
+                        self._cached_bot_username = str(username).strip().lstrip("@") if username else None
+                        self._bot_identity_checked_at = now
+                        return self._cached_bot_id, self._cached_bot_username
+
+                    logger.warning(
+                        "Failed to resolve Telegram bot identity via getMe: %s",
+                        response_data.get("description", "Unknown error"),
+                    )
+        except Exception as exc:
+            logger.warning("Error resolving Telegram bot identity via getMe: %s", exc)
+
+        # Prevent repeated getMe calls on every playback when the API is failing.
+        self._bot_identity_checked_at = now
+        return self._cached_bot_id, self._cached_bot_username
+
+    async def get_mediaflow_bot_peer(self) -> str | None:
+        """Resolve preferred MediaFlow peer identifier for bot DM access."""
+        configured_username = (settings.telegram_bot_username or "").strip().lstrip("@")
+        bot_id, resolved_username = await self.get_bot_identity()
+
+        if configured_username:
+            # If configured username doesn't match getMe, prefer stable numeric bot ID.
+            if resolved_username and configured_username.lower() != resolved_username.lower():
+                logger.warning(
+                    "Configured TELEGRAM_BOT_USERNAME (%s) differs from getMe username (%s). "
+                    "Using numeric bot ID fallback for MediaFlow.",
+                    configured_username,
+                    resolved_username,
+                )
+                if bot_id:
+                    return str(bot_id)
+            return f"@{configured_username}"
+
+        if bot_id:
+            return str(bot_id)
+        if resolved_username:
+            return f"@{resolved_username}"
+        return None
 
     # ---- pending_content helpers ----
 

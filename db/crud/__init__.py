@@ -266,6 +266,7 @@ from db.crud.streams import (
     update_telegram_stream_file_id,
     # Telegram user forwards (per-user forwarded copies for MediaFlow)
     create_telegram_user_forward,
+    delete_telegram_user_forward,
     delete_telegram_user_forwards_for_stream,
     delete_telegram_user_forwards_for_user,
     get_telegram_user_forward,
@@ -586,6 +587,7 @@ __all__ = [
     "update_telegram_stream_file_id",
     # Telegram user forwards
     "create_telegram_user_forward",
+    "delete_telegram_user_forward",
     "delete_telegram_user_forwards_for_stream",
     "delete_telegram_user_forwards_for_user",
     "get_telegram_user_forward",

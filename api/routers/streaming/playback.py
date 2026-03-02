@@ -945,6 +945,36 @@ async def _get_telegram_stream_by_chat_message(chat_id: str, message_id: int):
     return None
 
 
+async def _resolve_mediaflow_forward_chat_id(telegram_user_id: int) -> str:
+    """Resolve the chat identifier MediaFlow should use for bot DM playback."""
+    bot_peer = await telegram_content_bot.get_mediaflow_bot_peer()
+    if bot_peer:
+        return bot_peer
+    return str(telegram_user_id)
+
+
+def _should_refresh_user_forward(
+    existing_forward,
+    expected_forwarded_chat_id: str,
+    telegram_user_id: int,
+) -> bool:
+    """Return True if an existing cached forward should be recreated."""
+    # Legacy rows stored viewer's Telegram user ID as chat peer, which fails MediaFlow lookups.
+    if existing_forward.forwarded_chat_id == str(telegram_user_id) and expected_forwarded_chat_id != str(
+        telegram_user_id
+    ):
+        return True
+
+    # If we now have a configured @bot_username peer, align cached @peer rows to it.
+    if (
+        expected_forwarded_chat_id.startswith("@")
+        and existing_forward.forwarded_chat_id.startswith("@")
+        and existing_forward.forwarded_chat_id != expected_forwarded_chat_id
+    ):
+        return True
+    return False
+
+
 async def _get_or_create_user_forward(
     telegram_stream_id: int,
     file_id: str,
@@ -970,13 +1000,6 @@ async def _get_or_create_user_forward(
         HTTPException if sending fails
     """
 
-    # Check if forward already exists
-    async with get_async_session_context() as session:
-        existing = await crud.get_telegram_user_forward(session, telegram_stream_id, user_id)
-        if existing:
-            logging.debug(f"Found existing forward for stream {telegram_stream_id}, user {user_id}")
-            return existing
-
     # Get user's Telegram ID from their profile
     async with get_async_session_context() as session:
         query = select(User).where(User.id == user_id)
@@ -989,49 +1012,97 @@ async def _get_or_create_user_forward(
             )
 
         telegram_user_id = int(user.telegram_user_id)
+        expected_forwarded_chat_id = await _resolve_mediaflow_forward_chat_id(telegram_user_id)
 
-    # Send the video to user's DM using file_id
-    logging.info(f"Sending Telegram video to user {user_id} (tg:{telegram_user_id}) using file_id")
+    # Fast path: return a valid cached row without taking lock.
+    async with get_async_session_context() as session:
+        existing = await crud.get_telegram_user_forward(session, telegram_stream_id, user_id)
+        if existing and not _should_refresh_user_forward(existing, expected_forwarded_chat_id, telegram_user_id):
+            logging.debug(
+                "Reusing Telegram forward cache: stream %s, user %s, chat_id=%s, message_id=%s",
+                telegram_stream_id,
+                user_id,
+                existing.forwarded_chat_id,
+                existing.forwarded_message_id,
+            )
+            return existing
 
-    result = await telegram_content_bot.send_video_to_user(
-        chat_id=telegram_user_id,
-        file_id=file_id,
-        caption=f"🎬 {stream_name}" if stream_name else None,
-    )
+    # Lock per (stream, user) to prevent duplicate sends from concurrent HEAD/GET.
+    lock_key = f"telegram_forward:{telegram_stream_id}:{user_id}"
+    acquired, lock = await acquire_redis_lock(lock_key, timeout=60, block=True)
+    if not acquired:
+        raise HTTPException(status_code=429, detail="Too many requests.")
 
-    if not result or "message_id" not in result:
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to send video to your Telegram. Make sure you've started the bot with /start.",
-        )
-
-    forwarded_message_id = result["message_id"]
-    forwarded_chat_id = str(telegram_user_id)  # Bot DM chat_id is the user's Telegram ID
-
-    # Store the forward record (handle race: concurrent HEAD/GET may both create)
     try:
-        async with get_async_session_context() as session:
-            forward = await crud.create_telegram_user_forward(
-                session,
-                telegram_stream_id=telegram_stream_id,
-                user_id=user_id,
-                telegram_user_id=telegram_user_id,
-                forwarded_chat_id=forwarded_chat_id,
-                forwarded_message_id=forwarded_message_id,
-            )
-            logging.info(
-                f"Created forward record: stream {telegram_stream_id} -> user {user_id}, "
-                f"new chat_id={forwarded_chat_id}, message_id={forwarded_message_id}"
-            )
-            return forward
-    except IntegrityError:
-        # Race: another request created the record first; fetch it
+        # Re-check after lock. Another request may have already created it.
         async with get_async_session_context() as session:
             existing = await crud.get_telegram_user_forward(session, telegram_stream_id, user_id)
-            if existing:
-                logging.debug(f"Forward already exists (race): stream {telegram_stream_id}, user {user_id}")
+            if existing and not _should_refresh_user_forward(existing, expected_forwarded_chat_id, telegram_user_id):
+                logging.debug(
+                    "Forward cache became available while waiting lock: stream %s, user %s",
+                    telegram_stream_id,
+                    user_id,
+                )
                 return existing
-        raise
+            if existing:
+                await crud.delete_telegram_user_forward(session, telegram_stream_id, user_id)
+                logging.info(
+                    "Refreshing stale Telegram forward cache: stream %s, user %s, old_chat_id=%s, new_chat_id=%s",
+                    telegram_stream_id,
+                    user_id,
+                    existing.forwarded_chat_id,
+                    expected_forwarded_chat_id,
+                )
+
+        # Send the video to user's DM using file_id.
+        logging.info(f"Sending Telegram video to user {user_id} (tg:{telegram_user_id}) using file_id")
+        result = await telegram_content_bot.send_video_to_user(
+            chat_id=telegram_user_id,
+            file_id=file_id,
+            caption=f"🎬 {stream_name}" if stream_name else None,
+        )
+
+        if not result or "message_id" not in result:
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to send video to your Telegram. Make sure you've started the bot with /start.",
+            )
+
+        forwarded_message_id = result["message_id"]
+        forwarded_chat_id = expected_forwarded_chat_id
+        if forwarded_chat_id.startswith("@"):
+            logging.debug("Using bot-username forward chat_id for MediaFlow: %s", forwarded_chat_id)
+        else:
+            logging.warning(
+                "TELEGRAM_BOT_USERNAME not configured, falling back to numeric chat_id for MediaFlow playback."
+            )
+
+        # Store the forward record (race-safe for retries and concurrent requests).
+        try:
+            async with get_async_session_context() as session:
+                forward = await crud.create_telegram_user_forward(
+                    session,
+                    telegram_stream_id=telegram_stream_id,
+                    user_id=user_id,
+                    telegram_user_id=telegram_user_id,
+                    forwarded_chat_id=forwarded_chat_id,
+                    forwarded_message_id=forwarded_message_id,
+                )
+                logging.info(
+                    f"Created forward record: stream {telegram_stream_id} -> user {user_id}, "
+                    f"new chat_id={forwarded_chat_id}, message_id={forwarded_message_id}"
+                )
+                return forward
+        except IntegrityError:
+            # Race: another request created the record first; fetch it
+            async with get_async_session_context() as session:
+                existing = await crud.get_telegram_user_forward(session, telegram_stream_id, user_id)
+                if existing:
+                    logging.debug(f"Forward already exists (race): stream {telegram_stream_id}, user {user_id}")
+                    return existing
+            raise
+    finally:
+        await release_redis_lock(lock)
 
 
 def _build_mediaflow_telegram_url(
