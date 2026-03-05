@@ -1,11 +1,16 @@
 import { apiClient } from './client'
 import type { User, UserRole } from '@/types'
 
+export type UserSortField = 'user' | 'role' | 'contribution' | 'status' | 'joined'
+export type UserSortOrder = 'asc' | 'desc'
+
 export interface UserListParams {
   page?: number
   per_page?: number
   role?: UserRole
   search?: string
+  sort_by?: UserSortField
+  sort_order?: UserSortOrder
 }
 
 export interface UserListResponse {
@@ -41,6 +46,8 @@ export const usersApi = {
     if (params.per_page) searchParams.append('per_page', params.per_page.toString())
     if (params.role) searchParams.append('role', params.role)
     if (params.search) searchParams.append('search', params.search)
+    if (params.sort_by) searchParams.append('sort_by', params.sort_by)
+    if (params.sort_order) searchParams.append('sort_order', params.sort_order)
 
     const query = searchParams.toString()
     return apiClient.get<UserListResponse>(`/users${query ? `?${query}` : ''}`)

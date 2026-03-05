@@ -2,6 +2,9 @@
 User Management API endpoints for admin operations.
 """
 
+from typing import Literal
+
+from sqlalchemy import case
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlmodel import func, select
@@ -14,6 +17,9 @@ from db.models import User
 from utils.email.service import get_email_service
 
 router = APIRouter(prefix="/api/v1/users", tags=["User Management"])
+
+UserSortField = Literal["user", "role", "contribution", "status", "joined"]
+SortDirection = Literal["asc", "desc"]
 
 
 # ============================================
@@ -44,6 +50,26 @@ class SendUploadWarningRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+def _get_user_sort_expression(sort_by: UserSortField):
+    """Return a safe SQL expression for user sorting."""
+    if sort_by == "user":
+        return func.lower(func.coalesce(User.username, User.email))
+    if sort_by == "role":
+        return case(
+            (User.role == UserRole.USER, 1),
+            (User.role == UserRole.PAID_USER, 2),
+            (User.role == UserRole.MODERATOR, 3),
+            (User.role == UserRole.ADMIN, 4),
+            else_=0,
+        )
+    if sort_by == "contribution":
+        return User.contribution_points
+    if sort_by == "status":
+        # Keep parity with frontend ranking: active => +2, verified => +1
+        return case((User.is_active.is_(True), 2), else_=0) + case((User.is_verified.is_(True), 1), else_=0)
+    return User.created_at
+
+
 # ============================================
 # API Endpoints
 # ============================================
@@ -55,6 +81,8 @@ async def list_users(
     per_page: int = Query(20, ge=1, le=100),
     role: str | None = None,
     search: str | None = None,
+    sort_by: UserSortField = Query("joined"),
+    sort_order: SortDirection = Query("desc"),
     _admin: User = Depends(require_role(UserRole.ADMIN)),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -81,9 +109,15 @@ async def list_users(
     total_result = await session.exec(count_query)
     total = total_result.one()
 
-    # Apply pagination
+    # Apply ordering and pagination
+    sort_expression = _get_user_sort_expression(sort_by)
+    if sort_order == "asc":
+        query = query.order_by(sort_expression.asc().nulls_last(), User.id.asc())
+    else:
+        query = query.order_by(sort_expression.desc().nulls_last(), User.id.desc())
+
     offset = (page - 1) * per_page
-    query = query.offset(offset).limit(per_page).order_by(User.created_at.desc())
+    query = query.offset(offset).limit(per_page)
 
     result = await session.exec(query)
     users = result.all()

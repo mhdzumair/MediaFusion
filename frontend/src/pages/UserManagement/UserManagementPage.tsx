@@ -64,6 +64,7 @@ import {
   useUsers,
   useUserStats,
 } from '@/hooks'
+import type { UserSortField, UserSortOrder } from '@/lib/api/users'
 import type { UserRole } from '@/types'
 
 const roleConfig: Record<UserRole, { label: string; icon: typeof Shield; color: string }> = {
@@ -74,8 +75,8 @@ const roleConfig: Record<UserRole, { label: string; icon: typeof Shield; color: 
 }
 
 const allRoles: UserRole[] = ['admin', 'moderator', 'paid_user', 'user']
-type SortField = 'user' | 'role' | 'contribution' | 'status' | 'joined'
-type SortDirection = 'asc' | 'desc'
+type SortField = UserSortField
+type SortDirection = UserSortOrder
 
 export function UserManagementPage() {
   const [page, setPage] = useState(1)
@@ -94,6 +95,8 @@ export function UserManagementPage() {
     per_page: 20,
     search: search || undefined,
     role: roleFilter,
+    sort_by: sortField,
+    sort_order: sortDirection,
   })
   const { data: userStats } = useUserStats()
   const updateUser = useUpdateUser()
@@ -166,50 +169,6 @@ export function UserManagementPage() {
     setSortField(field)
     setSortDirection(field === 'contribution' || field === 'joined' ? 'desc' : 'asc')
   }
-
-  const sortedUsers = (() => {
-    if (!usersData?.items) return []
-
-    const roleSortOrder: Record<UserRole, number> = {
-      admin: 4,
-      moderator: 3,
-      paid_user: 2,
-      user: 1,
-    }
-
-    const sorted = [...usersData.items]
-    sorted.sort((a, b) => {
-      let comparison = 0
-
-      switch (sortField) {
-        case 'user': {
-          const aName = (a.username || a.email || '').toLowerCase()
-          const bName = (b.username || b.email || '').toLowerCase()
-          comparison = aName.localeCompare(bName)
-          break
-        }
-        case 'role':
-          comparison = roleSortOrder[a.role] - roleSortOrder[b.role]
-          break
-        case 'contribution':
-          comparison = (a.contribution_points ?? 0) - (b.contribution_points ?? 0)
-          break
-        case 'status': {
-          const aStatusRank = (a.is_active ? 2 : 0) + (a.is_verified ? 1 : 0)
-          const bStatusRank = (b.is_active ? 2 : 0) + (b.is_verified ? 1 : 0)
-          comparison = aStatusRank - bStatusRank
-          break
-        }
-        case 'joined':
-          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          break
-      }
-
-      return sortDirection === 'asc' ? comparison : -comparison
-    })
-
-    return sorted
-  })()
 
   const selectedUser = usersData?.items.find((u) => u.id === editUserId)
   const warningEmailUser = usersData?.items.find((u) => u.id === warningEmailDialogUserId)
@@ -450,7 +409,7 @@ export function UserManagementPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedUsers.map((user) => {
+                    {(usersData?.items ?? []).map((user) => {
                       const role = roleConfig[user.role]
                       const RoleIcon = role?.icon ?? UserIcon
 
