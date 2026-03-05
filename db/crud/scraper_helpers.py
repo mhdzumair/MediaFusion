@@ -1259,6 +1259,23 @@ def _parse_datetime_field(value: Any) -> datetime | None:
     return None
 
 
+def _normalize_string_values(value: Any) -> list[str]:
+    """Normalize incoming string/list values into a clean list of strings."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        normalized_values: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                cleaned = item.strip()
+                if cleaned:
+                    normalized_values.append(cleaned)
+        return normalized_values
+    return []
+
+
 async def store_new_torrent_streams(
     session: AsyncSession,
     streams_data: list[dict[str, Any]],
@@ -1331,7 +1348,8 @@ async def store_new_torrent_streams(
         media_ids_to_update.add(media.id)
 
         # Collect reference data names
-        if languages := stream_data.get("languages"):
+        languages = _normalize_string_values(stream_data.get("languages"))
+        if languages:
             all_languages.update(languages)
         if audio_formats := stream_data.get("audio_formats"):
             all_audio_formats.update(audio_formats)
@@ -1417,7 +1435,8 @@ async def store_new_torrent_streams(
         # Media stream counts will be updated in batch at the end
 
         # Add languages (using pre-fetched map)
-        if languages := stream_data.get("languages"):
+        languages = _normalize_string_values(stream_data.get("languages"))
+        if languages:
             for lang_name in languages:
                 lang = language_map.get(lang_name)
                 if lang:
@@ -1642,7 +1661,8 @@ async def store_new_usenet_streams(
     all_hdrs = set()
 
     for _, _, stream_data in valid_streams:
-        if langs := stream_data.get("languages"):
+        langs = _normalize_string_values(stream_data.get("languages"))
+        if langs:
             all_languages.update(langs)
         if audio := stream_data.get("audio_formats"):
             all_audio_formats.update(audio)
@@ -1733,7 +1753,8 @@ async def store_new_usenet_streams(
         session.add(stream_link)
 
         # Add language links
-        if languages := stream_data.get("languages"):
+        languages = _normalize_string_values(stream_data.get("languages"))
+        if languages:
             for lang_name in languages:
                 if lang := lang_map.get(lang_name):
                     lang_link = StreamLanguageLink(stream_id=stream.id, language_id=lang.id)

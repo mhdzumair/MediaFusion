@@ -128,6 +128,32 @@ def _build_existing_torrent_warning_message(
     )
 
 
+def _parse_csv_form_values(raw_value: str | None) -> list[str]:
+    """Parse comma-separated form values into a clean list."""
+    if not raw_value:
+        return []
+    return [value.strip() for value in raw_value.split(",") if value.strip()]
+
+
+def _normalize_string_list(raw_value: Any) -> list[str]:
+    """Normalize an arbitrary value to a list of non-empty strings."""
+    if not raw_value:
+        return []
+    if isinstance(raw_value, str):
+        return _parse_csv_form_values(raw_value)
+    if isinstance(raw_value, list):
+        return [value.strip() for value in raw_value if isinstance(value, str) and value.strip()]
+    return []
+
+
+def _resolve_import_languages(form_languages: str | None, torrent_data: dict[str, Any]) -> list[str]:
+    """Prefer user-provided languages; fallback to parsed torrent languages."""
+    parsed_form_languages = _parse_csv_form_values(form_languages)
+    if parsed_form_languages:
+        return parsed_form_languages
+    return _normalize_string_list(torrent_data.get("languages"))
+
+
 async def fetch_and_create_media_from_external(
     session: AsyncSession,
     external_id: str,
@@ -462,6 +488,8 @@ class TorrentAnalyzeResponse(BaseModel):
     quality: str | None = None
     codec: str | None = None
     audio: list[str] | None = None
+    hdr: list[str] | None = None
+    languages: list[str] | None = None
     matches: list[dict[str, Any]] | None = None
     error: str | None = None
 
@@ -552,7 +580,9 @@ async def analyze_magnet(
             resolution=torrent_data.get("resolution"),
             quality=torrent_data.get("quality"),
             codec=torrent_data.get("codec"),
-            audio=torrent_data.get("audio"),
+            audio=_normalize_string_list(torrent_data.get("audio")),
+            hdr=_normalize_string_list(torrent_data.get("hdr")),
+            languages=_normalize_string_list(torrent_data.get("languages")),
             matches=matches,
         )
 
@@ -637,7 +667,9 @@ async def analyze_torrent_file(
             resolution=torrent_data.get("resolution"),
             quality=torrent_data.get("quality"),
             codec=torrent_data.get("codec"),
-            audio=torrent_data.get("audio"),
+            audio=_normalize_string_list(torrent_data.get("audio")),
+            hdr=_normalize_string_list(torrent_data.get("hdr")),
+            languages=_normalize_string_list(torrent_data.get("languages")),
             matches=matches,
         )
 
@@ -774,13 +806,13 @@ async def import_magnet(
             "title": resolved_title,
             "name": torrent_data.get("torrent_name"),
             "total_size": torrent_data.get("total_size"),
-            "catalogs": [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else [],
-            "languages": [lang.strip() for lang in languages.split(",") if lang.strip()] if languages else [],
+            "catalogs": _parse_csv_form_values(catalogs),
+            "languages": _resolve_import_languages(languages, torrent_data),
             "resolution": resolution or torrent_data.get("resolution"),
             "quality": quality or torrent_data.get("quality"),
             "codec": codec or torrent_data.get("codec"),
-            "audio": [a.strip() for a in audio.split(",") if a.strip()] if audio else [],
-            "hdr": [h.strip() for h in hdr.split(",") if h.strip()] if hdr else [],
+            "audio": _parse_csv_form_values(audio),
+            "hdr": _parse_csv_form_values(hdr),
             "file_data": parsed_file_data,
             "file_count": len(parsed_file_data) or len(torrent_data.get("file_data", [])) or 1,
             "poster": poster,
@@ -1002,13 +1034,13 @@ async def import_torrent_file(
             "title": resolved_title,
             "name": torrent_data.get("torrent_name"),
             "total_size": torrent_data.get("total_size"),
-            "catalogs": [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else [],
-            "languages": [lang.strip() for lang in languages.split(",") if lang.strip()] if languages else [],
+            "catalogs": _parse_csv_form_values(catalogs),
+            "languages": _resolve_import_languages(languages, torrent_data),
             "resolution": resolution or torrent_data.get("resolution"),
             "quality": quality or torrent_data.get("quality"),
             "codec": codec or torrent_data.get("codec"),
-            "audio": [a.strip() for a in audio.split(",") if a.strip()] if audio else [],
-            "hdr": [h.strip() for h in hdr.split(",") if h.strip()] if hdr else [],
+            "audio": _parse_csv_form_values(audio),
+            "hdr": _parse_csv_form_values(hdr),
             "file_data": parsed_file_data,
             "file_count": len(parsed_file_data) or len(torrent_data.get("file_data", [])) or 1,
             "poster": poster,
