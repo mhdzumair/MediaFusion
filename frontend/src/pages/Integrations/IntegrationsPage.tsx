@@ -61,6 +61,15 @@ export function IntegrationsPage() {
   const [kodiLinkStatus, setKodiLinkStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [kodiLinkError, setKodiLinkError] = useState<string | null>(null)
   const kodiCodeFromQuery = searchParams.get('kodi_code')?.trim() ?? ''
+  const simklOAuthFromQuery = searchParams.get('simkl_oauth')?.trim() ?? ''
+  const simklCodeFromQuery = searchParams.get('simkl_code')?.trim() ?? ''
+  const simklErrorFromQuery = searchParams.get('simkl_error')?.trim() ?? ''
+  const simklErrorDescriptionFromQuery = searchParams.get('simkl_error_description')?.trim() ?? ''
+  const [simklOAuthCallback, setSimklOAuthCallback] = useState<{
+    code: string | null
+    error: string | null
+    errorDescription: string | null
+  } | null>(null)
 
   // Build Torznab API key based on whether authentication is required
   const torznabApiKey = user?.uuid
@@ -76,6 +85,36 @@ export function IntegrationsPage() {
     if (!kodiCodeFromQuery) return
     setKodiCode((prev) => prev || kodiCodeFromQuery)
   }, [kodiCodeFromQuery])
+
+  useEffect(() => {
+    if (simklOAuthFromQuery !== '1') return
+    if (!simklCodeFromQuery && !simklErrorFromQuery && !simklErrorDescriptionFromQuery) return
+
+    setSimklOAuthCallback({
+      code: simklCodeFromQuery || null,
+      error: simklErrorFromQuery || null,
+      errorDescription: simklErrorDescriptionFromQuery || null,
+    })
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('simkl_oauth')
+    nextParams.delete('simkl_code')
+    nextParams.delete('simkl_error')
+    nextParams.delete('simkl_error_description')
+    nextParams.delete('simkl_state')
+    setSearchParams(nextParams, { replace: true })
+  }, [
+    simklOAuthFromQuery,
+    simklCodeFromQuery,
+    simklErrorFromQuery,
+    simklErrorDescriptionFromQuery,
+    searchParams,
+    setSearchParams,
+  ])
+
+  const handleSimklOAuthCallbackConsumed = () => {
+    setSimklOAuthCallback(null)
+  }
 
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
@@ -594,7 +633,12 @@ export function IntegrationsPage() {
         </Card>
 
         {/* External Platform Integrations (Trakt, Simkl, etc.) */}
-        {user && <ExternalPlatformIntegrations />}
+        {user && (
+          <ExternalPlatformIntegrations
+            simklOAuthCallback={simklOAuthCallback}
+            onSimklOAuthCallbackConsumed={handleSimklOAuthCallbackConsumed}
+          />
+        )}
       </div>
     </TooltipProvider>
   )

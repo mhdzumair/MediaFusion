@@ -131,13 +131,21 @@ interface ConnectDialogProps {
   platform: IntegrationType
   open: boolean
   onOpenChange: (open: boolean) => void
+  simklOAuthCallback: SimklOAuthCallbackPayload | null
 }
 
-function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
+type SimklOAuthCallbackPayload = {
+  code: string | null
+  error: string | null
+  errorDescription: string | null
+}
+
+function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback }: ConnectDialogProps) {
   const [code, setCode] = useState('')
   const [customClientId, setCustomClientId] = useState('')
   const [customClientSecret, setCustomClientSecret] = useState('')
   const [step, setStep] = useState<'auth' | 'code'>('auth')
+  const [connectError, setConnectError] = useState<string | null>(null)
 
   const getOAuthUrl = useOAuthUrl()
   const connectTrakt = useConnectTrakt()
@@ -145,9 +153,24 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
 
   const info = PLATFORM_INFO[platform]
   const isLoading = getOAuthUrl.isPending || connectTrakt.isPending || connectSimkl.isPending
+  const callbackCode = platform === 'simkl' ? simklOAuthCallback?.code || '' : ''
+  const callbackError =
+    platform === 'simkl' && simklOAuthCallback?.error
+      ? `SIMKL authorization failed: ${simklOAuthCallback.errorDescription ?? 'Authorization was rejected by Simkl.'}`
+      : null
+  const effectiveStep = step === 'auth' && callbackCode ? 'code' : step
+  const effectiveCode = code || callbackCode
+
+  const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error && error.message.trim()) {
+      return error.message
+    }
+    return 'Failed to connect. Please retry and confirm your credentials.'
+  }
 
   const handleGetAuthUrl = async () => {
     try {
+      setConnectError(null)
       const result = await getOAuthUrl.mutateAsync({
         platform,
         clientId: customClientId || undefined,
@@ -155,24 +178,25 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
       window.open(result.auth_url, '_blank')
       setStep('code')
     } catch (error) {
-      console.error('Failed to get auth URL:', error)
+      setConnectError(getErrorMessage(error))
     }
   }
 
-  const handleConnect = async () => {
+  const connectWithCode = async (authCode: string) => {
     try {
+      setConnectError(null)
       // Only pass custom credentials if BOTH are provided
       const hasCustomCreds = customClientId && customClientSecret
 
       if (platform === 'trakt') {
         await connectTrakt.mutateAsync({
-          code,
+          code: authCode,
           clientId: hasCustomCreds ? customClientId : undefined,
           clientSecret: hasCustomCreds ? customClientSecret : undefined,
         })
       } else if (platform === 'simkl') {
         await connectSimkl.mutateAsync({
-          code,
+          code: authCode,
           clientId: hasCustomCreds ? customClientId : undefined,
           clientSecret: hasCustomCreds ? customClientSecret : undefined,
         })
@@ -180,9 +204,14 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
       onOpenChange(false)
       setCode('')
       setStep('auth')
+      setConnectError(null)
     } catch (error) {
-      console.error('Failed to connect:', error)
+      setConnectError(getErrorMessage(error))
     }
+  }
+
+  const handleConnect = async () => {
+    await connectWithCode(effectiveCode)
   }
 
   const handleClose = () => {
@@ -191,6 +220,7 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
     setStep('auth')
     setCustomClientId('')
     setCustomClientSecret('')
+    setConnectError(null)
   }
 
   return (
@@ -202,13 +232,13 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
             Connect {info.name}
           </DialogTitle>
           <DialogDescription>
-            {step === 'auth'
+            {effectiveStep === 'auth'
               ? `Authorize MediaFusion to access your ${info.name} account`
               : `Enter the authorization code from ${info.name}`}
           </DialogDescription>
         </DialogHeader>
 
-        {step === 'auth' ? (
+        {effectiveStep === 'auth' ? (
           <div className="space-y-4 py-4">
             {(platform === 'trakt' || platform === 'simkl') && (
               <div className="space-y-4">
@@ -265,6 +295,7 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
               Click the button below to open {info.name} authorization page. After authorizing, you'll receive a code to
               paste here.
             </p>
+            {(connectError || callbackError) && <p className="text-sm text-red-500">{connectError || callbackError}</p>}
           </div>
         ) : (
           <div className="space-y-4 py-4">
@@ -273,10 +304,11 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
               <Input
                 id="auth-code"
                 placeholder="Paste the code here"
-                value={code}
+                value={effectiveCode}
                 onChange={(e) => setCode(e.target.value)}
               />
             </div>
+            {(connectError || callbackError) && <p className="text-sm text-red-500">{connectError || callbackError}</p>}
           </div>
         )}
 
@@ -284,14 +316,14 @@ function ConnectDialog({ platform, open, onOpenChange }: ConnectDialogProps) {
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          {step === 'auth' ? (
+          {effectiveStep === 'auth' ? (
             <Button onClick={handleGetAuthUrl} disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Open {info.name}
               <ExternalLink className="ml-2 h-4 w-4" />
             </Button>
           ) : (
-            <Button onClick={handleConnect} disabled={!code || isLoading}>
+            <Button onClick={handleConnect} disabled={!effectiveCode || isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Connect
             </Button>
@@ -538,10 +570,19 @@ function PlatformCard({
   )
 }
 
-export function ExternalPlatformIntegrations() {
+interface ExternalPlatformIntegrationsProps {
+  simklOAuthCallback?: SimklOAuthCallbackPayload | null
+  onSimklOAuthCallbackConsumed?: () => void
+}
+
+export function ExternalPlatformIntegrations({
+  simklOAuthCallback = null,
+  onSimklOAuthCallbackConsumed,
+}: ExternalPlatformIntegrationsProps) {
   const { data, isLoading } = useIntegrations()
   const syncAll = useTriggerSyncAll()
   const [connectPlatform, setConnectPlatform] = useState<IntegrationType | null>(null)
+  const activeConnectPlatform = connectPlatform ?? (simklOAuthCallback ? 'simkl' : null)
 
   const hasConnectedPlatforms = data?.integrations.some((i) => i.connected && PLATFORM_INFO[i.platform].supported)
 
@@ -599,11 +640,16 @@ export function ExternalPlatformIntegrations() {
       </div>
 
       {/* Connect Dialog */}
-      {connectPlatform && (
+      {activeConnectPlatform && (
         <ConnectDialog
-          platform={connectPlatform}
-          open={!!connectPlatform}
-          onOpenChange={(open) => !open && setConnectPlatform(null)}
+          platform={activeConnectPlatform}
+          open={!!activeConnectPlatform}
+          onOpenChange={(open) => {
+            if (open) return
+            setConnectPlatform(null)
+            onSimklOAuthCallbackConsumed?.()
+          }}
+          simklOAuthCallback={activeConnectPlatform === 'simkl' ? simklOAuthCallback : null}
         />
       )}
     </div>

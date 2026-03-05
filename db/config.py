@@ -321,7 +321,9 @@ class Settings(BaseSettings):
     trakt_client_id: str | None = None
     trakt_client_secret: str | None = None
     # Get Simkl credentials from: https://simkl.com/settings/developer/
+    # and register callback URL: <HOST_URL>/api/v1/integrations/simkl/callback.
     simkl_client_id: str | None = None
+    # Client secret for Simkl app that uses callback URL <HOST_URL>/api/v1/integrations/simkl/callback.
     simkl_client_secret: str | None = None
 
     # Email / SMTP Settings (required for email verification and password reset)

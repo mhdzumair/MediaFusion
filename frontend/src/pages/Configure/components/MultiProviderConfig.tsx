@@ -1246,8 +1246,7 @@ export function MultiProviderConfig({ config, onChange }: ConfigSectionProps) {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              No streaming providers configured. Add a provider to enable debrid streaming. Without a provider, only P2P
-              streaming will be available.
+              No streaming providers configured. Add a provider to enable debrid streaming.
             </AlertDescription>
           </Alert>
         ) : (

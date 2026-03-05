@@ -7,6 +7,7 @@ Simkl API documentation: https://simkl.docs.apiary.io/
 import logging
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote_plus
 
 import httpx
 
@@ -20,10 +21,16 @@ logger = logging.getLogger(__name__)
 # Simkl API endpoints
 SIMKL_API_URL = "https://api.simkl.com"
 SIMKL_AUTH_URL = "https://simkl.com/oauth"
+SIMKL_CALLBACK_PATH = "/api/v1/integrations/simkl/callback"
 
 # Default client ID
 DEFAULT_SIMKL_CLIENT_ID = getattr(settings, "simkl_client_id", None)
 DEFAULT_SIMKL_CLIENT_SECRET = getattr(settings, "simkl_client_secret", None)
+
+
+def get_simkl_redirect_uri() -> str:
+    """Build Simkl OAuth callback URL from HOST_URL."""
+    return f"{settings.host_url.rstrip('/')}{SIMKL_CALLBACK_PATH}"
 
 
 class SimklSyncService(BaseSyncService[SimklConfig]):
@@ -97,7 +104,7 @@ class SimklSyncService(BaseSyncService[SimklConfig]):
                         "refresh_token": self.config.refresh_token,
                         "client_id": self.client_id,
                         "client_secret": self.client_secret,
-                        "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+                        "redirect_uri": get_simkl_redirect_uri(),
                         "grant_type": "refresh_token",
                     },
                 )
@@ -395,7 +402,8 @@ class SimklSyncService(BaseSyncService[SimklConfig]):
 def get_simkl_auth_url(client_id: str | None = None) -> str:
     """Get Simkl OAuth authorization URL."""
     cid = client_id or DEFAULT_SIMKL_CLIENT_ID
-    return f"{SIMKL_AUTH_URL}/authorize?response_type=code&client_id={cid}&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
+    redirect_uri = quote_plus(get_simkl_redirect_uri())
+    return f"{SIMKL_AUTH_URL}/authorize?response_type=code&client_id={cid}&redirect_uri={redirect_uri}"
 
 
 async def exchange_simkl_code(
@@ -423,7 +431,7 @@ async def exchange_simkl_code(
                     "code": code,
                     "client_id": cid,
                     "client_secret": secret,
-                    "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+                    "redirect_uri": get_simkl_redirect_uri(),
                     "grant_type": "authorization_code",
                 },
             )

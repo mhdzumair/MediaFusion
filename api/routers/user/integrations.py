@@ -11,8 +11,10 @@ integrations.
 
 import logging
 from datetime import datetime
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -26,6 +28,7 @@ from api.services.sync import (
     get_simkl_auth_url,
     get_trakt_auth_url,
 )
+from db.config import settings
 from db.database import get_async_session, get_async_session_context, get_read_session, get_read_session_context
 from db.enums import IntegrationType, SyncDirection
 from db.models import ProfileIntegration, User, UserProfile
@@ -246,6 +249,33 @@ async def get_oauth_url(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"OAuth not supported for {platform}",
         )
+
+
+@router.get("/simkl/callback", include_in_schema=False)
+async def simkl_oauth_callback(
+    code: str | None = Query(None, description="OAuth authorization code"),
+    error: str | None = Query(None, description="OAuth error code"),
+    error_description: str | None = Query(None, description="OAuth error description"),
+    state: str | None = Query(None, description="OAuth state parameter"),
+):
+    """Handle Simkl OAuth callback and redirect to Integrations page."""
+    query_params: dict[str, str] = {"simkl_oauth": "1"}
+
+    if code:
+        query_params["simkl_code"] = code
+    if error:
+        query_params["simkl_error"] = error
+    if error_description:
+        query_params["simkl_error_description"] = error_description
+    if state:
+        query_params["simkl_state"] = state
+
+    if not code and not error:
+        query_params["simkl_error"] = "missing_code"
+        query_params["simkl_error_description"] = "Missing authorization code in callback."
+
+    redirect_url = f"{settings.host_url.rstrip('/')}/integrations?{urlencode(query_params)}"
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.post("/trakt/connect")
