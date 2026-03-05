@@ -357,7 +357,7 @@ class Settings(BaseSettings):
         r"(\b|\s|$|[\]._-])"
     )
     adult_content_filter_in_torrent_title: bool = True
-    max_upload_contributions_per_hour: int = 12
+    max_upload_contributions_per_hour: int = 10000
     upload_warning_email_cooldown_minutes: int = 180
 
     # Time-related Settings
