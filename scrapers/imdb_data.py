@@ -168,18 +168,23 @@ async def get_imdb_title_data(imdb_id: str, media_type: str) -> dict | None:
         episodes = []
         for episodes_in_season in imdb_title.episodes.values():
             for episode in episodes_in_season.values():
+                try:
+                    season_num = int(episode.season)
+                    episode_num = int(episode.episode)
+                except (ValueError, TypeError):
+                    continue
                 episodes.append(
                     SeriesEpisodeData(
-                        season_number=episode.season,
-                        episode_number=episode.episode,
+                        season_number=season_num,
+                        episode_number=episode_num,
                         title=episode.title,
                         overview=episode.plot.get("en-US") if hasattr(episode, "plot") and episode.plot else None,
                         released=episode.release_date,
                         imdb_rating=episode.rating if hasattr(episode, "rating") else None,
                         thumbnail=modify_imdb_image_url(getattr(episode, "primary_image", None), ImageType.THUMBNAIL)
                         or (
-                            f"https://episodes.metahub.space/{episode.imdb_id}/{episode.season}/{episode.episode}/w780.jpg"
-                            if hasattr(episode, "imdb_id") and episode.imdb_id and episode.season and episode.episode
+                            f"https://episodes.metahub.space/{episode.imdb_id}/{season_num}/{episode_num}/w780.jpg"
+                            if hasattr(episode, "imdb_id") and episode.imdb_id
                             else None
                         ),
                     ).model_dump()
