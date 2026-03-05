@@ -1145,6 +1145,7 @@ class TelegramStreamData(BaseModel):
     message_id: int = Field(description="Message ID containing the file")
     file_id: str | None = None  # Telegram file_id for Bot API (bot-specific)
     file_unique_id: str | None = None  # Universal file identifier (same across all bots)
+    document_id: int | None = None  # Stable Telegram document ID (decoded from file_id)
     file_name: str | None = None  # Original filename
     mime_type: str | None = None  # MIME type (video/mp4, etc.)
     size: int | None = None  # File size in bytes
@@ -1254,6 +1255,7 @@ class TelegramStreamData(BaseModel):
             message_id=telegram_stream.message_id,
             file_id=telegram_stream.file_id,
             file_unique_id=telegram_stream.file_unique_id,
+            document_id=telegram_stream.document_id,
             file_name=telegram_stream.file_name,
             mime_type=telegram_stream.mime_type,
             size=telegram_stream.size,

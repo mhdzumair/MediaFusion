@@ -54,6 +54,7 @@ from utils.const import CONTENT_TYPE_HEADERS_MAPPING
 from utils.lock import acquire_redis_lock, release_redis_lock
 from utils.network import encode_mediaflow_proxy_url, get_user_data, get_user_public_ip
 from utils.nzb_storage import generate_signed_nzb_url
+from utils.telegram_file_id import extract_document_id_from_file_id
 from utils.telegram_bot import telegram_content_bot
 
 # Seconds until when the Video URLs are cached
@@ -1144,14 +1145,23 @@ def _build_mediaflow_telegram_url(
     query_params = {
         "api_password": mediaflow_config.api_password,
         "chat_id": forward.forwarded_chat_id,
-        "message_id": str(forward.forwarded_message_id),
     }
 
-    # Include file metadata as hints for MediaFlow
+    # Preferred stable identifier for MediaFlow side lookup with user sessions.
+    document_id = stream.document_id
+    if document_id is None and stream.file_id:
+        document_id = extract_document_id_from_file_id(stream.file_id)
+    if document_id is not None:
+        query_params["document_id"] = str(document_id)
+
+    # Backward-compatible hints for current MediaFlow implementations.
     if stream.file_id:
         query_params["file_id"] = stream.file_id
     if stream.size:
         query_params["file_size"] = str(stream.size)
+    if document_id is None and not stream.file_id:
+        # Legacy fallback for very old rows without file_id/document_id.
+        query_params["message_id"] = str(forward.forwarded_message_id)
 
     # Enable transcoding for browser playback (converts unsupported codecs to HLS)
     if transcode:
@@ -1193,7 +1203,8 @@ async def telegram_playback_endpoint(
     1. Require MediaFlow Proxy configuration
     2. Look up the TelegramStream from DB (contains file_id)
     3. Get or create a per-user forwarded copy (bot sends video using file_id to viewer's DM)
-    4. Generate MediaFlow Telegram streaming URL with user's forwarded chat_id + message_id
+    4. Generate MediaFlow Telegram streaming URL with user's forwarded chat_id and
+       stable media identifiers (document_id/file_id)
     5. Redirect to MediaFlow
 
     User's MediaFlow must be configured with their own Telegram session (API ID, hash,

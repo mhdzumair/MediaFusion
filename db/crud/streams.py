@@ -62,6 +62,7 @@ from db.models import (
     User,
     YouTubeStream,
 )
+from utils.telegram_file_id import extract_document_id_from_file_id
 
 logger = logging.getLogger(__name__)
 
@@ -1358,7 +1359,12 @@ async def update_telegram_stream_file_id(
     """
     from sqlalchemy import update as sa_update
 
-    stmt = sa_update(TelegramStream).where(TelegramStream.file_unique_id == file_unique_id).values(file_id=new_file_id)
+    document_id = extract_document_id_from_file_id(new_file_id)
+    stmt = (
+        sa_update(TelegramStream)
+        .where(TelegramStream.file_unique_id == file_unique_id)
+        .values(file_id=new_file_id, document_id=document_id)
+    )
     result = await session.exec(stmt)
     await session.commit()
     return result.rowcount > 0
@@ -1374,6 +1380,7 @@ async def create_telegram_stream(
     chat_username: str | None = None,
     file_id: str | None = None,
     file_unique_id: str | None = None,
+    document_id: int | None = None,
     file_name: str | None = None,
     mime_type: str | None = None,
     size: int | None = None,
@@ -1421,6 +1428,7 @@ async def create_telegram_stream(
         chat_username: Channel @username (without @)
         file_id: Telegram file_id for Bot API downloads (bot-specific)
         file_unique_id: Universal file identifier (same across all bots)
+        document_id: Stable Telegram document ID (decoded from file_id when omitted)
         file_name: Original filename
         mime_type: MIME type of the file
         size: File size in bytes
@@ -1470,6 +1478,7 @@ async def create_telegram_stream(
         message_id=message_id,
         file_id=file_id,
         file_unique_id=file_unique_id,
+        document_id=document_id if document_id is not None else extract_document_id_from_file_id(file_id),
         file_name=file_name,
         mime_type=mime_type,
         size=size,
@@ -1583,6 +1592,7 @@ async def update_telegram_stream(
     telegram_fields = {
         "chat_username",
         "file_id",
+        "document_id",
         "file_name",
         "mime_type",
         "size",
@@ -1591,6 +1601,9 @@ async def update_telegram_stream(
 
     stream_updates = {k: v for k, v in updates.items() if k in stream_fields}
     telegram_updates = {k: v for k, v in updates.items() if k in telegram_fields}
+
+    if "file_id" in telegram_updates and "document_id" not in telegram_updates:
+        telegram_updates["document_id"] = extract_document_id_from_file_id(telegram_updates.get("file_id"))
 
     # Update Stream
     if stream_updates:

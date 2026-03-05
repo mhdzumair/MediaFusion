@@ -507,6 +507,7 @@ class TelegramStream(SQLModel, table=True):
         UniqueConstraint("stream_id"),  # 1:1 with Stream
         Index("idx_telegram_chat_message", "chat_id", "message_id"),
         Index("idx_telegram_file_unique_id", "file_unique_id"),  # For cross-bot matching
+        Index("idx_telegram_document_id", "document_id"),
     )
 
     id: int = Field(default=None, primary_key=True)
@@ -520,6 +521,7 @@ class TelegramStream(SQLModel, table=True):
     # File identifiers
     file_id: str | None = None  # Bot-specific file_id for sendVideo
     file_unique_id: str | None = None  # Universal identifier (same across all bots)
+    document_id: int | None = Field(default=None, sa_type=BigInteger)  # Stable Telegram document ID (MTProto)
 
     # File metadata
     size: int | None = Field(default=None, sa_type=BigInteger)
