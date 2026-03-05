@@ -26,6 +26,24 @@ class TorrentStatus(Enum):
 SEEDR_TORRENT_DETAILS_CONCURRENCY = 4
 
 
+def _map_seedr_exception(error: SeedrException) -> ProviderException:
+    """Convert Seedr SDK exceptions to user-facing provider exceptions."""
+    error_message = str(error).strip()
+    normalized = error_message.lower()
+
+    if "unauthorized" in normalized or "forbidden" in normalized:
+        return ProviderException("Invalid Seedr token", "invalid_token.mp4")
+
+    if "timeout" in normalized or "timed out" in normalized:
+        return ProviderException("Seedr request timed out", "debrid_service_down_error.mp4")
+
+    # aioseedrcc may wrap timeout/cancel events as a generic "Request failed:".
+    if normalized.startswith("request failed"):
+        return ProviderException("Seedr request failed. Please try again.", "debrid_service_down_error.mp4")
+
+    return ProviderException("Seedr server error", "debrid_service_down_error.mp4")
+
+
 def clean_filename(name: str | None, replace: str = "") -> str:
     """Clean filename of special characters."""
     if not name:
@@ -47,13 +65,18 @@ async def get_seedr_client(streaming_provider: StreamingProvider) -> AsyncGenera
     except ProviderException as error:
         raise error
     except SeedrException as error:
-        if "Unauthorized" in str(error):
-            raise ProviderException("Invalid Seedr token", "invalid_token.mp4")
-        logging.exception(error)
-        raise ProviderException("Seedr server error", "debrid_service_down_error.mp4")
+        mapped_error = _map_seedr_exception(error)
+        if mapped_error.video_file_name == "invalid_token.mp4":
+            logging.warning("Seedr authentication failed: %s", error)
+        else:
+            logging.warning("Seedr request failed: %s", error)
+        raise mapped_error from error
+    except asyncio.TimeoutError as error:
+        logging.warning("Seedr request timed out: %s", error)
+        raise ProviderException("Seedr request timed out", "debrid_service_down_error.mp4") from error
     except Exception as error:
-        logging.exception(error)
-        raise error
+        logging.exception("Unexpected Seedr client error")
+        raise ProviderException("Seedr server error", "debrid_service_down_error.mp4") from error
 
 
 async def get_folder_by_info_hash(seedr: Seedr, info_hash: str) -> dict[str, Any] | None:
