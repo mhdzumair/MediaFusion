@@ -250,6 +250,12 @@ export interface PrefilledData {
   magnetLink?: string
   torrentUrl?: string
   torrentFileName?: string
+  torrentFileData?: {
+    name: string
+    type?: string
+    base64: string
+  }
+  torrentPrefetchWarning?: string
   pageTitle?: string
   pageUrl?: string
   contentType?: ContentType

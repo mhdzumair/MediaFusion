@@ -100,6 +100,23 @@ function normalizeTitleForManualSearch(rawTitle: string): string {
   return title
 }
 
+function deserializePrefilledTorrentFile(
+  serialized?: PrefilledData['torrentFileData']
+): File | null {
+  if (!serialized?.name || !serialized.base64) {
+    return null
+  }
+
+  const binaryString = window.atob(serialized.base64)
+  const uint8Array = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    uint8Array[i] = binaryString.charCodeAt(i)
+  }
+  return new File([uint8Array], serialized.name, {
+    type: serialized.type || 'application/x-bittorrent',
+  })
+}
+
 export function ImportTab({ settings, prefilledData, onImportComplete }: ImportTabProps) {
   // Input state
   const [magnetLink, setMagnetLink] = useState(prefilledData?.magnetLink || '')
@@ -152,19 +169,26 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
   const [manualSearchYear, setManualSearchYear] = useState('')
   const [manualSearching, setManualSearching] = useState(false)
   const [manualSearchError, setManualSearchError] = useState<string | null>(null)
+  const [torrentPrefetchWarning, setTorrentPrefetchWarning] = useState<string | null>(null)
 
   // Keep form in sync when parent opens an advanced flow from bulk list.
   useEffect(() => {
     if (!prefilledData) return
 
-    const nextMagnetLink = prefilledData.magnetLink || ''
+    const nextTorrentFile = deserializePrefilledTorrentFile(prefilledData.torrentFileData)
+    const nextMagnetLink = nextTorrentFile ? '' : (prefilledData.magnetLink || '')
+    const sourceTitleForDetection = nextMagnetLink || nextTorrentFile?.name || ''
     const nextContentType = prefilledData.contentType
-      || (nextMagnetLink ? detectContentType(nextMagnetLink) : 'movie')
+      || (sourceTitleForDetection ? detectContentType(sourceTitleForDetection) : 'movie')
 
     setMagnetLink(nextMagnetLink)
-    setTorrentFile(null)
+    setTorrentFile(nextTorrentFile)
+    setTorrentPrefetchWarning(prefilledData.torrentPrefetchWarning || null)
     setContentType(nextContentType)
-    if (nextContentType !== 'sports') {
+    if (nextContentType === 'sports') {
+      const detectedCategory = detectSportsCategory(sourceTitleForDetection)
+      setSportsCategory(detectedCategory || '')
+    } else {
       setSportsCategory('')
     }
 
@@ -184,18 +208,27 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
     setManualSearchTitle('')
     setManualSearchYear('')
     setManualSearchError(null)
+    setTorrentPrefetchWarning(null)
     setStep('input')
-  }, [prefilledData?.magnetLink, prefilledData?.torrentUrl, prefilledData?.contentType])
+  }, [
+    prefilledData?.magnetLink,
+    prefilledData?.torrentUrl,
+    prefilledData?.torrentFileData,
+    prefilledData?.contentType,
+  ])
 
   // Load torrent file when advanced flow passes a remote torrent URL.
   useEffect(() => {
-    if (!prefilledData?.torrentUrl || prefilledData?.magnetLink) return
+    if (!prefilledData?.torrentUrl || prefilledData?.magnetLink || prefilledData?.torrentFileData) return
 
     let cancelled = false
 
     const loadTorrentFromUrl = async () => {
       try {
-        const response = await fetch(prefilledData.torrentUrl!)
+        const response = await fetch(prefilledData.torrentUrl!, {
+          credentials: 'include',
+          referrer: prefilledData.pageUrl || undefined,
+        })
         if (!response.ok) {
           throw new Error(`Failed to download torrent file (${response.status})`)
         }
@@ -232,7 +265,8 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load torrent file')
+          const baseMessage = err instanceof Error ? err.message : 'Failed to load torrent file'
+          setError(`${baseMessage}. This site may block cross-context torrent downloads; upload the .torrent file manually if this keeps failing.`)
         }
       }
     }
@@ -242,7 +276,7 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
     return () => {
       cancelled = true
     }
-  }, [prefilledData?.torrentUrl, prefilledData?.magnetLink, prefilledData?.contentType])
+  }, [prefilledData?.torrentUrl, prefilledData?.magnetLink, prefilledData?.torrentFileData, prefilledData?.contentType, prefilledData?.pageUrl])
 
   // Auto-analyze for prefilled magnet links.
   useEffect(() => {
@@ -259,7 +293,8 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
 
   // Auto-analyze for prefilled torrent URLs after the file is downloaded.
   useEffect(() => {
-    if (!prefilledData?.torrentUrl || !settings.autoAnalyze || !torrentFile || magnetLink || step !== 'input') {
+    const hasPrefilledTorrentSource = !!prefilledData?.torrentUrl || !!prefilledData?.torrentFileData
+    if (!hasPrefilledTorrentSource || !settings.autoAnalyze || !torrentFile || magnetLink || step !== 'input') {
       return
     }
 
@@ -268,7 +303,7 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [prefilledData?.torrentUrl, settings.autoAnalyze, torrentFile, magnetLink, step])
+  }, [prefilledData?.torrentUrl, prefilledData?.torrentFileData, settings.autoAnalyze, torrentFile, magnetLink, step])
 
   // Auto-detect content type and sports category from magnet link
   useEffect(() => {
@@ -948,6 +983,13 @@ export function ImportTab({ settings, prefilledData, onImportComplete }: ImportT
       )}
 
       {/* Magnet Link Input */}
+      {torrentPrefetchWarning && !torrentFile && prefilledData?.torrentUrl && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{torrentPrefetchWarning}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="magnet" className="flex items-center gap-1">
           <Link2 className="h-3 w-3" />

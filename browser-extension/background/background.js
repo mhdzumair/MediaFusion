@@ -591,6 +591,8 @@ const handleMessage = async (message, sender, sendResponse) => {
           await mediaFusionAPI.savePrefilledData({
             magnetLink: popupData.magnetLink,
             torrentUrl: popupData.torrentUrl,
+            torrentFileData: popupData.torrentFileData,
+            torrentPrefetchWarning: popupData.torrentPrefetchWarning,
             contentType: popupData.contentType,
             pageUrl: popupData.sourceUrl,
             pageTitle: popupData.title,

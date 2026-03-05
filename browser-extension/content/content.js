@@ -669,6 +669,17 @@ class MediaFusionContentScript {
       // Get the magnet link or torrent URL
       const magnetLink = type === "magnet" ? linkElement.href : null;
       const torrentUrl = type === "torrent" ? linkElement.href : null;
+      let torrentFileData = null;
+      let torrentPrefetchWarning = null;
+      if (torrentUrl) {
+        try {
+          torrentFileData = await this.downloadTorrent(torrentUrl);
+        } catch (downloadError) {
+          const warningMessage = downloadError?.message || String(downloadError);
+          torrentPrefetchWarning = `Could not pre-load torrent file in page context (${warningMessage}). Falling back to URL download in popup.`;
+          console.warn("Failed to prefetch torrent file, falling back to URL:", downloadError);
+        }
+      }
       const contentType = this.guessContentType(linkElement);
 
       // Send message to background script to open popup with data
@@ -677,6 +688,8 @@ class MediaFusionContentScript {
         data: {
           magnetLink: magnetLink,
           torrentUrl: torrentUrl,
+          torrentFileData: torrentFileData,
+          torrentPrefetchWarning: torrentPrefetchWarning,
           contentType: contentType,
           sourceUrl: window.location.href,
           title: document.title,
@@ -746,11 +759,70 @@ class MediaFusionContentScript {
   }
 
   async downloadTorrent(url) {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      credentials: "include",
+    });
     if (!response.ok) {
-      throw new Error("Failed to download torrent file");
+      throw new Error(`Failed to download torrent file (${response.status})`);
     }
-    return await response.blob();
+    const blob = await response.blob();
+    if (blob.size === 0) {
+      throw new Error("Downloaded torrent file is empty");
+    }
+    if (blob.size > 2 * 1024 * 1024) {
+      throw new Error("Torrent file is too large to transfer to popup");
+    }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const fileName = this.getTorrentFileName(response, url);
+    const base64Data = this.arrayBufferToBase64(arrayBuffer);
+
+    return {
+      name: fileName,
+      type: blob.type || "application/x-bittorrent",
+      base64: base64Data,
+    };
+  }
+
+  arrayBufferToBase64(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  }
+
+  getTorrentFileName(response, url) {
+    const disposition = response.headers.get("content-disposition") || "";
+    const fileNameMatch =
+      disposition.match(/filename\*=UTF-8''([^;]+)/i) ||
+      disposition.match(/filename="([^"]+)"/i) ||
+      disposition.match(/filename=([^;]+)/i);
+
+    if (fileNameMatch && fileNameMatch[1]) {
+      try {
+        const decodedName = decodeURIComponent(fileNameMatch[1].trim().replace(/^["']|["']$/g, ""));
+        return decodedName.endsWith(".torrent") ? decodedName : `${decodedName}.torrent`;
+      } catch {
+        const rawName = fileNameMatch[1].trim().replace(/^["']|["']$/g, "");
+        return rawName.endsWith(".torrent") ? rawName : `${rawName}.torrent`;
+      }
+    }
+
+    try {
+      const parsed = new URL(url);
+      const candidate = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+      if (candidate) {
+        return candidate.endsWith(".torrent") ? candidate : `${candidate}.torrent`;
+      }
+    } catch {
+      // Ignore URL parse errors and fall back to default name.
+    }
+
+    return "downloaded.torrent";
   }
 
   guessContentType(linkElement) {
