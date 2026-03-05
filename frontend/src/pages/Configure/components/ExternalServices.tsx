@@ -145,6 +145,10 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
                     {mfc.pu && !isValidUrl(mfc.pu) && (
                       <p className="text-xs text-destructive">Please enter a valid HTTP/HTTPS URL</p>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      Base URL of your MediaFlow Proxy instance (for example:
+                      <code className="bg-muted px-1 py-0.5 rounded ml-1">http://your-server:8888</code>).
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -168,6 +172,11 @@ export function ExternalServices({ config, onChange }: ConfigSectionProps) {
                         {showMediaFlowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      This must match the
+                      <code className="bg-muted px-1 py-0.5 rounded mx-1">API_PASSWORD</code>
+                      configured in your MediaFlow deployment.
+                    </p>
                   </div>
 
                   <div className="space-y-2">
