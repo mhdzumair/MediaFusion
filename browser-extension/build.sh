@@ -100,6 +100,25 @@ cd ..
 
 cd ..
 
+# Create clean source package for Firefox review
+echo ""
+echo "🧾 Creating clean source package for Firefox review..."
+zip -r "dist/mediafusion-extension-firefox-source.zip" . \
+  -x "dist/*" \
+     "node_modules/*" \
+     ".git/*" \
+     ".DS_Store" \
+     ".DS_Store*" \
+     "*.log" \
+     "*.tmp" \
+     "*.swp" \
+     "*.swo" \
+     ".env" \
+     ".env.*" \
+     ".cursor/*" \
+     ".vscode/*" \
+     "web-ext-artifacts/*" > /dev/null
+
 echo ""
 echo "✅ Build completed successfully!"
 echo ""
@@ -110,6 +129,7 @@ echo "   - dist/edge/              (Edge development files)"
 echo "   - dist/mediafusion-extension-firefox.zip"
 echo "   - dist/mediafusion-extension-chrome.zip"
 echo "   - dist/mediafusion-extension-edge.zip"
+echo "   - dist/mediafusion-extension-firefox-source.zip"
 echo ""
 echo "🔧 Installation Instructions:"
 echo ""
