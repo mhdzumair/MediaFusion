@@ -9,14 +9,16 @@ from fastapi import APIRouter, Depends, Response
 
 from db import crud, schemas
 from db.config import settings
-from db.database import get_read_session_context
+from db.database import get_async_session_context, get_read_session_context
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.retry_utils import run_db_read_with_primary_fallback
 from utils import const, wrappers
 from utils.network import get_user_data
 from utils.parser import generate_manifest
 
 router = APIRouter()
 MANIFEST_CACHE_TTL_SECONDS = 300
+logger = logging.getLogger(__name__)
 
 
 def _get_manifest_cache_key(user_data: schemas.UserData) -> str:
@@ -61,16 +63,37 @@ async def get_manifest(
         )
 
     # Fetch all genres in a single efficient query
-    try:
+    async def _fetch_genres_from_read_replica() -> dict[str, list[str]]:
         async with get_read_session_context() as session:
-            genres = await crud.get_all_genres_by_type(session)
-    except Exception as e:
-        logging.exception("Error fetching genres: %s", e)
+            return await crud.get_all_genres_by_type(session)
+
+    async def _fetch_genres_from_primary() -> dict[str, list[str]]:
+        async with get_async_session_context() as session:
+            return await crud.get_all_genres_by_type(session)
+
+    genres_fetch_failed = False
+    try:
+        genres = await run_db_read_with_primary_fallback(
+            _fetch_genres_from_read_replica,
+            _fetch_genres_from_primary,
+            operation_name="stremio manifest genre fetch",
+            on_fallback=lambda exc: logger.warning(
+                "Read replica conflict for manifest genres, retrying on primary: %s",
+                exc,
+            ),
+        )
+    except Exception as exc:
+        logger.exception(
+            "Error fetching genres for manifest from both replica and primary: %s",
+            exc,
+        )
         genres = {"movie": [], "series": [], "tv": []}
+        genres_fetch_failed = True
 
     manifest = await generate_manifest(user_data, genres)
     manifest_json = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
-    await REDIS_ASYNC_CLIENT.set(manifest_cache_key, manifest_json, ex=manifest_cache_ttl)
+    if not genres_fetch_failed:
+        await REDIS_ASYNC_CLIENT.set(manifest_cache_key, manifest_json, ex=manifest_cache_ttl)
     return Response(
         content=manifest_json,
         media_type="application/json",

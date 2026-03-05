@@ -833,7 +833,7 @@ async def run_dmm_hashlist_full_ingestion(
     }
 
 
-@dramatiq.actor(time_limit=6 * 60 * 60 * 1000, priority=5, queue_name="scrapy")
+@dramatiq.actor(time_limit=float("inf"), priority=5, queue_name="scrapy")
 async def run_dmm_hashlist_full_ingestion_job(
     *,
     max_iterations: int = DEFAULT_FULL_INGEST_MAX_ITERATIONS,

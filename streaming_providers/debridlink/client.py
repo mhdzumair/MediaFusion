@@ -1,9 +1,15 @@
+import logging
 from typing import Any
 
 import aiohttp
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
+
+logger = logging.getLogger(__name__)
+
+DL_TORRENT_LIST_PAGE_SIZE = 50
+DL_TORRENT_LIST_MAX_PAGES = 100
 
 
 class DebridLink(DebridClient):
@@ -149,13 +155,66 @@ class DebridLink(DebridClient):
             )
         return response.get("value", {})
 
-    async def get_user_torrent_list(self) -> dict[str, Any]:
-        return await self._make_request("GET", f"{self.BASE_URL}/seedbox/list")
+    async def get_user_torrent_list(
+        self,
+        page: int | None = None,
+        per_page: int | None = None,
+        ids: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if ids is not None:
+            params["ids"] = ids
+        if page is not None:
+            params["page"] = page
+        if per_page is not None:
+            params["perPage"] = per_page
+        return await self._make_request("GET", f"{self.BASE_URL}/seedbox/list", params=params or None)
+
+    @staticmethod
+    def _extract_torrents_from_list_response(response: dict[str, Any]) -> list[dict[str, Any]]:
+        if "error" in response:
+            raise ProviderException("Failed to get torrent list from Debrid-Link", "transfer_error.mp4")
+        torrents = response.get("value")
+        if not isinstance(torrents, list):
+            raise ProviderException("Invalid torrent list response from Debrid-Link", "api_error.mp4")
+        return torrents
+
+    async def get_all_user_torrents(
+        self,
+        per_page: int = DL_TORRENT_LIST_PAGE_SIZE,
+        max_pages: int = DL_TORRENT_LIST_MAX_PAGES,
+    ) -> list[dict[str, Any]]:
+        all_torrents: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        for page in range(max_pages):
+            page_response = await self.get_user_torrent_list(page=page, per_page=per_page)
+            page_torrents = self._extract_torrents_from_list_response(page_response)
+
+            # Some API deployments ignore paging and return all torrents in one response.
+            if page == 0 and len(page_torrents) > per_page:
+                return page_torrents
+
+            newly_added = 0
+            for torrent in page_torrents:
+                torrent_id = str(torrent.get("id", ""))
+                if torrent_id and torrent_id in seen_ids:
+                    continue
+                if torrent_id:
+                    seen_ids.add(torrent_id)
+                all_torrents.append(torrent)
+                newly_added += 1
+
+            if newly_added == 0 or len(page_torrents) < per_page:
+                break
+
+        return all_torrents
 
     async def get_torrent_info(self, torrent_id) -> dict[str, Any]:
-        response = await self._make_request("GET", f"{self.BASE_URL}/seedbox/list", params={"ids": torrent_id})
-        if response.get("value"):
-            return response.get("value")[0]
+        response = await self.get_user_torrent_list(ids=torrent_id, page=0, per_page=1)
+        torrents = self._extract_torrents_from_list_response(response)
+        if torrents:
+            return torrents[0]
         raise ProviderException("Failed to get torrent info from Debrid-Link", "transfer_error.mp4")
 
     async def get_torrent_files_list(self, torrent_id) -> dict[str, Any]:
@@ -173,14 +232,33 @@ class DebridLink(DebridClient):
         )
 
     async def get_available_torrent(self, info_hash: str) -> dict[str, Any] | None:
-        torrent_list_response = await self.get_user_torrent_list()
-        if "error" in torrent_list_response:
-            raise ProviderException("Failed to get torrent info from Debrid-Link", "transfer_error.mp4")
+        normalized_info_hash = info_hash.lower()
 
-        available_torrents = torrent_list_response["value"]
-        for torrent in available_torrents:
-            if torrent["hashString"] == info_hash:
-                return torrent
+        for page in range(DL_TORRENT_LIST_MAX_PAGES):
+            try:
+                torrent_list_response = await self.get_user_torrent_list(
+                    page=page,
+                    per_page=DL_TORRENT_LIST_PAGE_SIZE,
+                )
+                page_torrents = self._extract_torrents_from_list_response(torrent_list_response)
+            except ProviderException as error:
+                if error.retryable:
+                    logger.warning(
+                        "Debrid-Link seedbox/list returned malformed JSON (page=%s), skipping cached lookup",
+                        page,
+                    )
+                    return None
+                raise
+
+            for torrent in page_torrents:
+                if str(torrent.get("hashString", "")).lower() == normalized_info_hash:
+                    return torrent
+
+            if page == 0 and len(page_torrents) > DL_TORRENT_LIST_PAGE_SIZE:
+                return None
+            if len(page_torrents) < DL_TORRENT_LIST_PAGE_SIZE:
+                break
+
         return None
 
     async def get_user_info(self) -> dict[str, Any]:

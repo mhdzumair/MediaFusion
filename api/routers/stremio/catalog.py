@@ -1,13 +1,16 @@
 """Stremio catalog routes."""
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from pydantic import ValidationError
 
 from db import crud, public_schemas
 from db.config import settings
-from db.database import get_read_session_context
+from db.database import get_async_session_context, get_read_session_context
 from db.enums import MediaType
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.retry_utils import run_db_read_with_primary_fallback
 from db.schemas import UserData
 from scrapers.rpdb import update_rpdb_posters
 from streaming_providers import mapper
@@ -17,6 +20,7 @@ from utils.parser import fetch_downloaded_info_hashes
 from utils.runtime_const import DELETE_ALL_META
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def get_cache_key(
@@ -224,8 +228,9 @@ async def get_catalog(
                 None,
             )
             if list_config:
-                async with get_read_session_context() as session:
-                    meta_list = await crud.get_mdblist_meta_list(
+
+                async def _get_mdblist_meta_list_with_session(session):
+                    return await crud.get_mdblist_meta_list(
                         session=session,
                         user_data=user_data,
                         background_tasks=background_tasks,
@@ -235,6 +240,26 @@ async def get_catalog(
                         skip=skip,
                         limit=50,
                     )
+
+                async def _get_mdblist_meta_list_from_read_replica():
+                    async with get_read_session_context() as session:
+                        return await _get_mdblist_meta_list_with_session(session)
+
+                async def _get_mdblist_meta_list_from_primary():
+                    async with get_async_session_context() as session:
+                        return await _get_mdblist_meta_list_with_session(session)
+
+                meta_list = await run_db_read_with_primary_fallback(
+                    _get_mdblist_meta_list_from_read_replica,
+                    _get_mdblist_meta_list_from_primary,
+                    operation_name=f"stremio mdblist catalog {catalog_type.value}:{catalog_id}",
+                    on_fallback=lambda exc: logger.warning(
+                        "Read replica conflict for stremio MDBList catalog %s:%s, retrying on primary: %s",
+                        catalog_type.value,
+                        catalog_id,
+                        exc,
+                    ),
+                )
                 metas = public_schemas.Metas(metas=meta_list)
                 # Cache result if applicable
                 if cache_key:
@@ -248,8 +273,8 @@ async def get_catalog(
         return public_schemas.Metas(metas=[])
 
     # Get metadata list with sorting preferences
-    async with get_read_session_context() as session:
-        metas = await crud.get_catalog_meta_list(
+    async def _get_catalog_meta_list_with_session(session):
+        return await crud.get_catalog_meta_list(
             session=session,
             catalog_type=catalog_type,
             catalog_id=catalog_id,
@@ -262,6 +287,26 @@ async def get_catalog(
             sort=sort,
             sort_dir=sort_dir,
         )
+
+    async def _get_catalog_meta_list_from_read_replica():
+        async with get_read_session_context() as session:
+            return await _get_catalog_meta_list_with_session(session)
+
+    async def _get_catalog_meta_list_from_primary():
+        async with get_async_session_context() as session:
+            return await _get_catalog_meta_list_with_session(session)
+
+    metas = await run_db_read_with_primary_fallback(
+        _get_catalog_meta_list_from_read_replica,
+        _get_catalog_meta_list_from_primary,
+        operation_name=f"stremio catalog {catalog_type.value}:{catalog_id}",
+        on_fallback=lambda exc: logger.warning(
+            "Read replica conflict for stremio catalog %s:%s, retrying on primary: %s",
+            catalog_type.value,
+            catalog_id,
+            exc,
+        ),
+    )
 
     # Handle watchlist special case: add "Delete All" option for providers that support it
     if (

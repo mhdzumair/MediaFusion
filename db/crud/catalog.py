@@ -110,6 +110,7 @@ async def get_catalog_meta_list(
     # Build base query - use media.id internally, external_id translation happens at Stremio boundary
     query = select(Media.id, Media.title).where(Media.type == catalog_type)
     is_my_library_catalog = catalog_id in MY_LIBRARY_CATALOG_TYPE_MAP
+    has_stream_join = False
 
     # Handle personal My Library catalogs
     if is_my_library_catalog:
@@ -132,6 +133,7 @@ async def get_catalog_meta_list(
             .join(TorrentStream, TorrentStream.stream_id == Stream.id)
             .where(TorrentStream.info_hash.in_([h.lower() for h in info_hashes]))
         )
+        has_stream_join = True
     else:
         # Standard catalog filter
         if catalog_type != MediaType.TV:
@@ -165,12 +167,12 @@ async def get_catalog_meta_list(
 
     # Add TV-specific filters
     if catalog_type == MediaType.TV and not is_my_library_catalog:
-        query = (
-            query.join(TVMetadata, TVMetadata.media_id == Media.id)
-            .join(StreamMediaLink, StreamMediaLink.media_id == Media.id)
-            .join(Stream, Stream.id == StreamMediaLink.stream_id)
-            .where(Stream.is_active.is_(True), Stream.is_blocked.is_(False))
-        )
+        query = query.join(TVMetadata, TVMetadata.media_id == Media.id)
+        if not has_stream_join:
+            query = query.join(StreamMediaLink, StreamMediaLink.media_id == Media.id).join(
+                Stream, Stream.id == StreamMediaLink.stream_id
+            )
+        query = query.where(Stream.is_active.is_(True), Stream.is_blocked.is_(False))
 
     # Add genre filter
     if genre:

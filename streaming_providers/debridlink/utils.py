@@ -91,12 +91,8 @@ async def fetch_downloaded_info_hashes_from_dl(streaming_provider: StreamingProv
     """Fetches the info_hashes of all torrents downloaded in the DebridLink account."""
     try:
         async with DebridLink(token=streaming_provider.token) as dl_client:
-            available_torrents = await dl_client.get_user_torrent_list()
-            if "error" in available_torrents:
-                return []
-            return [
-                torrent["hashString"] for torrent in available_torrents["value"] if torrent["downloadPercent"] == 100
-            ]
+            available_torrents = await dl_client.get_all_user_torrents()
+            return [torrent["hashString"] for torrent in available_torrents if torrent["downloadPercent"] == 100]
 
     except ProviderException:
         return []
@@ -109,13 +105,11 @@ async def fetch_torrent_details_from_dl(streaming_provider: StreamingProvider, *
     """
     try:
         async with DebridLink(token=streaming_provider.token) as dl_client:
-            available_torrents = await dl_client.get_user_torrent_list()
-            if "error" in available_torrents:
-                return []
+            available_torrents = await dl_client.get_all_user_torrents()
             target_hashes = {str(info_hash).lower() for info_hash in kwargs.get("target_hashes", set()) if info_hash}
 
             result = []
-            for torrent in available_torrents["value"]:
+            for torrent in available_torrents:
                 if torrent["downloadPercent"] != 100:
                     continue
                 torrent_hash = torrent.get("hashString", "").lower()
@@ -148,18 +142,16 @@ async def fetch_torrent_details_from_dl(streaming_provider: StreamingProvider, *
 async def delete_all_torrents_from_dl(streaming_provider: StreamingProvider, **kwargs):
     """Deletes all torrents from the DebridLink account."""
     async with DebridLink(token=streaming_provider.token) as dl_client:
-        torrents = await dl_client.get_user_torrent_list()
-        await asyncio.gather(*[dl_client.delete_torrent(torrent["id"]) for torrent in torrents["value"]])
+        torrents = await dl_client.get_all_user_torrents()
+        await asyncio.gather(*[dl_client.delete_torrent(torrent["id"]) for torrent in torrents])
 
 
 async def delete_torrent_from_dl(streaming_provider: StreamingProvider, info_hash: str, **kwargs) -> bool:
     """Deletes a specific torrent from DebridLink by info_hash."""
     try:
         async with DebridLink(token=streaming_provider.token) as dl_client:
-            torrents = await dl_client.get_user_torrent_list()
-            if "error" in torrents:
-                return False
-            for torrent in torrents["value"]:
+            torrents = await dl_client.get_all_user_torrents()
+            for torrent in torrents:
                 if torrent.get("hashString", "").lower() == info_hash.lower():
                     await dl_client.delete_torrent(torrent["id"])
                     return True

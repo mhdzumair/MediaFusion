@@ -12,10 +12,11 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db import crud, schemas
-from db.database import get_read_session_context
+from db.database import get_async_session_context, get_read_session_context
 from db.models.links import MediaGenreLink
 from db.models.reference import Genre
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.retry_utils import run_db_read_with_primary_fallback
 from db.schemas.media import MediaFusionEventsMetaData
 from utils import poster
 from utils.poster import PosterFetchError, PosterURLDeadError
@@ -109,23 +110,48 @@ async def get_poster(
         imdb_rating = None
         is_add_title_to_poster = mediafusion_data.is_add_title_to_poster
     else:
-        async with get_read_session_context() as session:
+
+        async def _get_poster_data_with_session(session: AsyncSession):
             # Get from database - returns Media model directly (new schema)
             media = await crud.get_metadata_by_id(session, mediafusion_id)
             if not media:
-                return raise_poster_error("MediaFusion ID not found.")
+                return None
 
             # Get poster from MediaImage table (v5 schema)
             poster_image = await crud.get_primary_image(session, media.id, "poster")
-            poster_url = poster_image.url if poster_image else None
             meta_id = await crud.get_canonical_external_id(session, media.id)
             title = media.title
             imdb_rating = None  # Now in MediaRating table
             is_add_title_to_poster = media.is_add_title_to_poster
+            poster_url = poster_image.url if poster_image else None
 
             # For sports content with no stored poster, pick a random one from sports artifacts
             if not poster_url and is_add_title_to_poster:
                 poster_url = await _get_sports_poster_url(session, media.id)
+            return poster_url, meta_id, title, imdb_rating, is_add_title_to_poster
+
+        async def _get_poster_data_from_read_replica():
+            async with get_read_session_context() as session:
+                return await _get_poster_data_with_session(session)
+
+        async def _get_poster_data_from_primary():
+            async with get_async_session_context() as session:
+                return await _get_poster_data_with_session(session)
+
+        poster_data = await run_db_read_with_primary_fallback(
+            _get_poster_data_from_read_replica,
+            _get_poster_data_from_primary,
+            operation_name=f"stremio poster fetch {catalog_type}:{mediafusion_id}",
+            on_fallback=lambda exc: logger.warning(
+                "Read replica conflict for stremio poster %s:%s, retrying on primary: %s",
+                catalog_type,
+                mediafusion_id,
+                exc,
+            ),
+        )
+        if not poster_data:
+            return raise_poster_error("MediaFusion ID not found.")
+        poster_url, meta_id, title, imdb_rating, is_add_title_to_poster = poster_data
 
     if not poster_url:
         return raise_poster_error("Poster not found.")

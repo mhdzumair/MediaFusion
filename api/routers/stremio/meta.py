@@ -1,19 +1,22 @@
 """Stremio meta routes - using new DB architecture."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import ValidationError
 
 from db import crud, public_schemas, schemas
 from db.config import settings
-from db.database import get_read_session_context
+from db.database import get_async_session_context, get_read_session_context
 from db.enums import MediaType
 from db.redis_database import REDIS_ASYNC_CLIENT
-from db.retry_utils import run_db_operation_with_retry
+from db.retry_utils import run_db_read_with_primary_fallback
 from utils import const, wrappers
 
 META_CACHE_PREFIX = "meta:"
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _get_image_url(media, image_type: str) -> str | None:
@@ -65,28 +68,42 @@ async def get_meta(
         except ValidationError:
             pass
 
-    async def _fetch_meta_and_canonical_id():
+    async def _fetch_meta_and_canonical_id_with_session(session):
+        # Use the appropriate CRUD function that loads relationships
+        if catalog_type == MediaType.MOVIE:
+            media = await crud.get_movie_data_by_id(session, meta_id)
+        elif catalog_type == MediaType.SERIES:
+            media = await crud.get_series_data_by_id(session, meta_id)
+        elif catalog_type == MediaType.TV:
+            media = await crud.get_tv_data_by_id(session, meta_id)
+        else:
+            media = await crud.get_metadata_by_id(session, meta_id, load_relations=True)
+
+        if not media:
+            return None, None
+
+        # Get canonical external_id for Stremio
+        canonical_ext_id = await crud.get_canonical_external_id(session, media.id)
+        return media, canonical_ext_id
+
+    async def _fetch_meta_from_read_replica():
         async with get_read_session_context() as session:
-            # Use the appropriate CRUD function that loads relationships
-            if catalog_type == MediaType.MOVIE:
-                media = await crud.get_movie_data_by_id(session, meta_id)
-            elif catalog_type == MediaType.SERIES:
-                media = await crud.get_series_data_by_id(session, meta_id)
-            elif catalog_type == MediaType.TV:
-                media = await crud.get_tv_data_by_id(session, meta_id)
-            else:
-                media = await crud.get_metadata_by_id(session, meta_id, load_relations=True)
+            return await _fetch_meta_and_canonical_id_with_session(session)
 
-            if not media:
-                return None, None
+    async def _fetch_meta_from_primary():
+        async with get_async_session_context() as session:
+            return await _fetch_meta_and_canonical_id_with_session(session)
 
-            # Get canonical external_id for Stremio
-            canonical_ext_id = await crud.get_canonical_external_id(session, media.id)
-            return media, canonical_ext_id
-
-    media, canonical_ext_id = await run_db_operation_with_retry(
-        _fetch_meta_and_canonical_id,
+    media, canonical_ext_id = await run_db_read_with_primary_fallback(
+        _fetch_meta_from_read_replica,
+        _fetch_meta_from_primary,
         operation_name=f"stremio meta fetch {catalog_type.value}:{meta_id}",
+        on_fallback=lambda exc: logger.warning(
+            "Read replica conflict for stremio meta %s:%s, retrying on primary: %s",
+            catalog_type.value,
+            meta_id,
+            exc,
+        ),
     )
 
     if not media:

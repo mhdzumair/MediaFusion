@@ -1,18 +1,22 @@
 """Stremio search routes."""
 
+import logging
+
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import ValidationError
 
 from db import crud, public_schemas
-from db.database import get_read_session_context
+from db.database import get_async_session_context, get_read_session_context
 from db.enums import MediaType
 from db.redis_database import REDIS_ASYNC_CLIENT
+from db.retry_utils import run_db_read_with_primary_fallback
 from db.schemas import UserData
 from scrapers.rpdb import update_rpdb_posters
 from utils import const, wrappers
 from utils.network import get_request_namespace, get_user_data
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def get_search_cache_key(
@@ -75,15 +79,35 @@ async def search_meta(
         except ValidationError:
             pass
 
-    # Perform search
-    async with get_read_session_context() as session:
-        metas = await crud.search_metadata(
+    async def _search_with_session(session):
+        return await crud.search_metadata(
             session=session,
             catalog_type=catalog_type,
             search_query=search_query,
             user_data=user_data,
             namespace=namespace,
         )
+
+    async def _search_on_read_replica():
+        async with get_read_session_context() as session:
+            return await _search_with_session(session)
+
+    async def _search_on_primary():
+        async with get_async_session_context() as session:
+            return await _search_with_session(session)
+
+    # Perform search with read replica retry + primary fallback.
+    metas = await run_db_read_with_primary_fallback(
+        _search_on_read_replica,
+        _search_on_primary,
+        operation_name=f"stremio search {catalog_type.value}:{catalog_id}:{search_query}",
+        on_fallback=lambda exc: logger.warning(
+            "Read replica conflict for stremio search %s:%s, retrying on primary: %s",
+            catalog_type.value,
+            catalog_id,
+            exc,
+        ),
+    )
 
     # Cache the results (5 minutes for search results)
     await REDIS_ASYNC_CLIENT.set(
