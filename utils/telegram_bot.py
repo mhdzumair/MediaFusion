@@ -16,6 +16,7 @@ import aiohttp
 import PTT
 import pytz
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import func, select
 
 from db import crud
@@ -5358,12 +5359,18 @@ class TelegramContentBot:
 
         return {"success": True, "message": message}
 
-    async def link_telegram_user(self, login_token: str, mediafusion_user_id: int) -> dict:
+    async def link_telegram_user(
+        self,
+        login_token: str,
+        mediafusion_user_id: int,
+        replace_existing: bool = False,
+    ) -> dict:
         """Link Telegram user to MediaFusion user account.
 
         Args:
             login_token: Login token from /login command
             mediafusion_user_id: MediaFusion user ID
+            replace_existing: If True, transfer an existing Telegram link from another user
 
         Returns:
             Dict with result
@@ -5376,6 +5383,8 @@ class TelegramContentBot:
         login_data = json.loads(raw)
         telegram_user_id = login_data["telegram_user_id"]
 
+        previous_telegram_user_id: str | None = None
+
         # Store mapping at user level (not profile level)
         async with get_async_session_context() as session:
             # Get the user
@@ -5387,18 +5396,74 @@ class TelegramContentBot:
                 REDIS_SYNC_CLIENT.delete(f"telegram:login_token:{login_token}")
                 return {"success": False, "message": "User not found"}
 
+            telegram_user_id_str = str(telegram_user_id)
+            previous_telegram_user_id = user.telegram_user_id
+
+            # If this Telegram account is already linked to another MediaFusion user,
+            # require explicit confirmation before transferring ownership.
+            conflicting_user_query = select(User).where(
+                User.telegram_user_id == telegram_user_id_str,
+                User.id != mediafusion_user_id,
+            )
+            conflicting_user_result = await session.exec(conflicting_user_query)
+            conflicting_user = conflicting_user_result.first()
+
+            if conflicting_user and not replace_existing:
+                return {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": (
+                        "This Telegram account is already linked to another MediaFusion account. "
+                        "Do you want to replace the existing link and continue?"
+                    ),
+                }
+
+            if conflicting_user and replace_existing:
+                conflicting_user.telegram_user_id = None
+                conflicting_user.telegram_linked_at = None
+                session.add(conflicting_user)
+
             # Update user with Telegram linking info
-            user.telegram_user_id = str(telegram_user_id)
+            user.telegram_user_id = telegram_user_id_str
             user.telegram_linked_at = datetime.now(pytz.UTC)
 
             session.add(user)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                logger.warning(
+                    "Telegram link conflict for telegram_user_id=%s mediafusion_user_id=%s: %s",
+                    telegram_user_id,
+                    mediafusion_user_id,
+                    exc,
+                )
+                return {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": (
+                        "This Telegram account is already linked to another MediaFusion account. "
+                        "Please confirm replacement and try again."
+                    ),
+                }
 
         # Update Redis cache
         try:
             REDIS_SYNC_CLIENT.setex(self._user_mapping_key(telegram_user_id), 3600, str(mediafusion_user_id))
         except Exception as e:
             logger.debug(f"Failed to update user mapping cache in Redis: {e}")
+
+        # Remove stale mapping if user switched from a different Telegram account
+        if previous_telegram_user_id and previous_telegram_user_id != str(telegram_user_id):
+            try:
+                REDIS_SYNC_CLIENT.delete(self._user_mapping_key(int(previous_telegram_user_id)))
+            except (ValueError, TypeError):
+                logger.debug(
+                    "Skipping stale Telegram mapping cleanup for non-numeric id %s",
+                    previous_telegram_user_id,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to clear stale user mapping cache in Redis: {e}")
 
         # Get user details for notification
         async with get_async_session_context() as session:
@@ -5444,6 +5509,38 @@ class TelegramContentBot:
             "success": True,
             "message": f"Telegram account linked successfully to MediaFusion user {mediafusion_user_id}",
         }
+
+    async def unlink_telegram_user(self, mediafusion_user_id: int) -> dict:
+        """Unlink Telegram user from a MediaFusion user account."""
+        telegram_user_id: str | None = None
+
+        async with get_async_session_context() as session:
+            query = select(User).where(User.id == mediafusion_user_id)
+            result = await session.exec(query)
+            user = result.first()
+
+            if not user:
+                return {"success": False, "message": "User not found"}
+
+            if not user.telegram_user_id:
+                return {"success": True, "message": "Telegram account is already unlinked"}
+
+            telegram_user_id = user.telegram_user_id
+            user.telegram_user_id = None
+            user.telegram_linked_at = None
+
+            session.add(user)
+            await session.commit()
+
+        if telegram_user_id:
+            try:
+                REDIS_SYNC_CLIENT.delete(self._user_mapping_key(int(telegram_user_id)))
+            except (ValueError, TypeError):
+                logger.debug("Skipping Telegram mapping cleanup for non-numeric id %s", telegram_user_id)
+            except Exception as e:
+                logger.debug(f"Failed to clear Telegram mapping cache in Redis: {e}")
+
+        return {"success": True, "message": "Telegram account unlinked successfully"}
 
     async def handle_callback_query(
         self,

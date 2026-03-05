@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, AlertCircle, Loader2, MessageCircle } from 'lucide-react'
+import { Check, AlertCircle, Loader2, MessageCircle, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Logo, LogoText } from '@/components/ui/logo'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import { telegramApi } from '@/lib/api/telegram'
+import { ApiRequestError } from '@/lib/api/client'
 
 export function TelegramLoginPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth()
@@ -17,6 +18,8 @@ export function TelegramLoginPage() {
   const [linking, setLinking] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [requiresConfirmation, setRequiresConfirmation] = useState(false)
+  const [confirmationMessage, setConfirmationMessage] = useState<string | null>(null)
 
   const token = searchParams.get('token')
   const addonName = instanceInfo?.addon_name || 'MediaFusion'
@@ -37,35 +40,69 @@ export function TelegramLoginPage() {
   }, [authLoading, isAuthenticated, navigate, token])
 
   // Set linking state when we should initiate (during render, not in effect)
-  if (!authLoading && isAuthenticated && token && !linking && !success && !error) {
+  if (!authLoading && isAuthenticated && token && !linking && !success && !error && !requiresConfirmation) {
     setLinking(true)
   }
 
   // Link Telegram account when linking is true (API call in effect - async)
+  const getErrorMessage = useCallback((err: unknown): string => {
+    if (err instanceof ApiRequestError) {
+      if (typeof err.data?.detail === 'string' && err.data.detail.trim().length > 0) {
+        return err.data.detail
+      }
+      return err.message
+    }
+    if (err instanceof Error) {
+      return err.message
+    }
+    return 'Failed to link Telegram account'
+  }, [])
+
+  const executeLink = useCallback(
+    async (replaceExisting = false) => {
+      if (!token) {
+        return
+      }
+
+      setLinking(true)
+      setError(null)
+
+      try {
+        const response = await telegramApi.linkAccount(token, replaceExisting)
+
+        if (response.success) {
+          setRequiresConfirmation(false)
+          setConfirmationMessage(null)
+          setSuccess(true)
+          setTimeout(() => {
+            navigate('/dashboard', { replace: true })
+          }, 3000)
+          return
+        }
+
+        if (response.requires_confirmation) {
+          setRequiresConfirmation(true)
+          setConfirmationMessage(response.message)
+          return
+        }
+
+        setError(response.message || 'Failed to link Telegram account')
+      } catch (err) {
+        setError(getErrorMessage(err))
+      } finally {
+        setLinking(false)
+      }
+    },
+    [getErrorMessage, navigate, token],
+  )
+
   const hasInitiatedRef = useRef(false)
   useEffect(() => {
     if (!authLoading && isAuthenticated && token && linking && !hasInitiatedRef.current) {
       hasInitiatedRef.current = true
-      telegramApi
-        .linkAccount(token)
-        .then((response) => {
-          if (response.success) {
-            setSuccess(true)
-            setTimeout(() => {
-              navigate('/dashboard', { replace: true })
-            }, 3000)
-          } else {
-            setError(response.message || 'Failed to link Telegram account')
-          }
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Failed to link Telegram account')
-        })
-        .finally(() => {
-          setLinking(false)
-        })
+      void executeLink(false)
     }
-  }, [authLoading, isAuthenticated, token, linking, navigate])
+  }, [authLoading, isAuthenticated, token, linking, executeLink])
 
   // Show loading state while checking auth or waiting for redirect
   if (authLoading || !isAuthenticated) {
@@ -163,6 +200,41 @@ export function TelegramLoginPage() {
                 <p className="font-medium">Linking your Telegram account...</p>
                 <p className="text-sm text-muted-foreground mt-1">Please wait while we connect your accounts.</p>
               </div>
+            ) : requiresConfirmation ? (
+              <Alert className="border-yellow-500/30 bg-yellow-500/10">
+                <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                <AlertTitle>Replace Existing Link?</AlertTitle>
+                <AlertDescription className="space-y-4">
+                  <p>{confirmationMessage || 'This Telegram account is already linked to another account.'}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1"
+                      variant="destructive"
+                      onClick={() => {
+                        void executeLink(true)
+                      }}
+                      disabled={linking}
+                    >
+                      {linking ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Replacing...
+                        </>
+                      ) : (
+                        'Yes, replace link'
+                      )}
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      variant="outline"
+                      onClick={() => navigate('/dashboard', { replace: true })}
+                      disabled={linking}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
             ) : (
               <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
                 <p className="text-sm text-muted-foreground text-center">
@@ -170,25 +242,7 @@ export function TelegramLoginPage() {
                 </p>
                 <Button
                   onClick={() => {
-                    setLinking(true)
-                    telegramApi
-                      .linkAccount(token)
-                      .then((response) => {
-                        if (response.success) {
-                          setSuccess(true)
-                          setTimeout(() => {
-                            navigate('/dashboard', { replace: true })
-                          }, 3000)
-                        } else {
-                          setError(response.message || 'Failed to link Telegram account')
-                        }
-                      })
-                      .catch((err) => {
-                        setError(err instanceof Error ? err.message : 'Failed to link Telegram account')
-                      })
-                      .finally(() => {
-                        setLinking(false)
-                      })
+                    void executeLink(false)
                   }}
                   className="w-full mt-4"
                   size="lg"

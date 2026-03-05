@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { Send, Link, Unlink, Info, CheckCircle2, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { ProfileConfig } from './types'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getAppConfig } from '@/lib/api'
 import { apiClient } from '@/lib/api/client'
+import { telegramApi } from '@/lib/api/telegram'
 
 interface TelegramConfig {
   enabled: boolean
@@ -34,6 +36,8 @@ interface TelegramSettingsProps {
 }
 
 export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
+  const queryClient = useQueryClient()
+
   // Fetch app config to check if Telegram is enabled on instance
   const { data: appConfig, isLoading: appConfigLoading } = useQuery({
     queryKey: ['appConfig'],
@@ -57,6 +61,18 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
 
   // Local state
   const [enableTelegram, setEnableTelegram] = useState(config.ets ?? false)
+  const [unlinkError, setUnlinkError] = useState<string | null>(null)
+
+  const unlinkMutation = useMutation({
+    mutationFn: () => telegramApi.unlinkAccount(),
+    onSuccess: () => {
+      setUnlinkError(null)
+      void queryClient.invalidateQueries({ queryKey: ['telegramConfig'] })
+    },
+    onError: (error) => {
+      setUnlinkError(error instanceof Error ? error.message : 'Failed to unlink Telegram account')
+    },
+  })
 
   // Sync with config changes (during render, not in effect)
   const [prevEts, setPrevEts] = useState(config.ets)
@@ -184,6 +200,42 @@ export function TelegramSettings({ config, onChange }: TelegramSettingsProps) {
                   MediaFusion Telegram bot.
                 </span>
               </AlertDescription>
+            </Alert>
+          )}
+
+          {telegramLinked && (
+            <Alert>
+              <Unlink className="h-4 w-4" />
+              <AlertDescription className="flex items-center justify-between gap-4">
+                <span>Need to switch Telegram accounts? Unlink this account first, then run /login again.</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!window.confirm('Unlink this Telegram account from MediaFusion?')) {
+                      return
+                    }
+                    unlinkMutation.mutate()
+                  }}
+                  disabled={unlinkMutation.isPending}
+                >
+                  {unlinkMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                      Unlinking...
+                    </>
+                  ) : (
+                    'Unlink Telegram'
+                  )}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {unlinkError && (
+            <Alert variant="destructive">
+              <Info className="h-4 w-4" />
+              <AlertDescription>{unlinkError}</AlertDescription>
             </Alert>
           )}
 
