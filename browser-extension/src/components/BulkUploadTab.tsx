@@ -342,15 +342,18 @@ export function BulkUploadTab({
         return
       }
 
-      // Get the best match
+      const normalizedBulkImdbId = bulkImdbId.trim()
+      const hasBulkImdbId = normalizedBulkImdbId.length > 0
+
+      // Get the best match (or allow explicit IMDb override)
       const match = analysis.matches?.[0]
-      if (!match && item.contentType !== 'sports') {
+      if (!match && !hasBulkImdbId && item.contentType !== 'sports') {
         updateItem(index, { status: 'error', error: 'No metadata match found' })
         return
       }
 
-      const matchTitle = match?.title || analysis.parsed_title
-      const matchId = bulkImdbId || match?.imdb_id || match?.id
+      const matchTitle = match?.title || analysis.parsed_title || analysis.torrent_name || item.torrent.title
+      const matchId = normalizedBulkImdbId || match?.imdb_id || match?.id
 
       if (!autoImport) {
         updateItem(index, { 
@@ -365,7 +368,7 @@ export function BulkUploadTab({
       updateItem(index, { status: 'importing', matchTitle, matchId })
 
       const getMetaId = () => {
-        if (bulkImdbId) return bulkImdbId
+        if (hasBulkImdbId) return normalizedBulkImdbId
         if (!match) return undefined
         if (match.imdb_id) return match.imdb_id
         if (match.tmdb_id) return `tmdb:${match.tmdb_id}`
