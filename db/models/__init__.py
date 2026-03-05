@@ -100,6 +100,7 @@ from db.models.stats import DailyStats
 # Stream models (unified architecture)
 from db.models.streams import (
     AceStreamStream,
+    AnnotationRequestDismissal,
     ExternalLinkStream,
     FileMediaLink,  # Replaces StreamEpisodeFile - flexible file-to-media linking
     FileType,
@@ -192,6 +193,7 @@ __all__ = [
     "TrackerStatus",
     "FileType",
     "LinkSource",
+    "AnnotationRequestDismissal",
     "Stream",
     "Tracker",
     "StreamFile",

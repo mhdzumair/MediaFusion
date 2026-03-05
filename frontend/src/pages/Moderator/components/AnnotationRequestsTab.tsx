@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FileAnnotationDialog, type EditedFileLink, type FileLink } from '@/components/stream'
-import { useStreamsNeedingAnnotation, useUpdateFileLinks } from '@/hooks'
+import { useDismissAnnotationRequest, useStreamsNeedingAnnotation, useUpdateFileLinks } from '@/hooks'
 import { fileLinksApi } from '@/lib/api/fileLinks'
 
 import { formatBytes, formatTimeAgo } from './helpers'
@@ -23,6 +23,7 @@ export function AnnotationRequestsTab() {
     search: search || undefined,
   })
   const updateFileLinks = useUpdateFileLinks()
+  const dismissAnnotationRequest = useDismissAnnotationRequest()
 
   const [selectedStream, setSelectedStream] = useState<{
     streamId: number
@@ -122,6 +123,18 @@ export function AnnotationRequestsTab() {
       setTimeout(() => setCopiedInfoHashStreamId(null), 1500)
     } catch (error) {
       console.error('Failed to copy info hash:', error)
+    }
+  }
+
+  const handleDismissRequest = async (streamId: number, mediaId: number) => {
+    try {
+      await dismissAnnotationRequest.mutateAsync({
+        streamId,
+        mediaId,
+      })
+      refetch()
+    } catch (error) {
+      console.error('Failed to dismiss annotation request:', error)
     }
   }
 
@@ -263,6 +276,15 @@ export function AnnotationRequestsTab() {
                       className="rounded-lg"
                       onSuccess={() => refetch()}
                     />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="rounded-lg border-red-500/40 text-red-500 hover:text-red-400"
+                      onClick={() => handleDismissRequest(stream.stream_id, stream.media_id)}
+                      disabled={dismissAnnotationRequest.isPending || isLoadingFiles}
+                    >
+                      Discard
+                    </Button>
                     <Button
                       size="sm"
                       className="rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500"

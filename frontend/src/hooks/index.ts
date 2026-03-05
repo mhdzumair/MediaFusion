@@ -43,6 +43,8 @@ export {
   useDeleteContribution,
   usePendingContributions,
   useReviewContribution,
+  useFlagContributionForAdminReview,
+  useAdminRejectApprovedContribution,
   useBulkReviewContributions,
   useAllContributionStats,
 } from './useContributions'
@@ -85,7 +87,15 @@ export {
 } from './useMetrics'
 
 // Users hooks (Admin)
-export { useUsers, useInfiniteUsers, useUser, useUpdateUser, useUpdateUserRole, useDeleteUser } from './useUsers'
+export {
+  useUsers,
+  useInfiniteUsers,
+  useUser,
+  useUpdateUser,
+  useUpdateUserRole,
+  useDeleteUser,
+  useSendUploadWarning,
+} from './useUsers'
 
 // Content Import hooks
 export {
@@ -266,7 +276,13 @@ export {
 export { useDeleteStream } from './useStreams'
 
 // File Links hooks (for annotation)
-export { useStreamsNeedingAnnotation, useStreamFileLinks, useUpdateFileLinks, fileLinksKeys } from './useFileLinks'
+export {
+  useStreamsNeedingAnnotation,
+  useStreamFileLinks,
+  useUpdateFileLinks,
+  useDismissAnnotationRequest,
+  fileLinksKeys,
+} from './useFileLinks'
 
 // User Metadata hooks
 export {

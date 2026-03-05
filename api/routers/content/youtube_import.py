@@ -15,6 +15,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
+from api.routers.content.import_title_validation import resolve_and_validate_import_title
+from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.user.auth import require_auth
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from db.crud.media import get_media_by_external_id
@@ -369,6 +371,7 @@ async def import_youtube_video(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
+    await enforce_upload_permissions(user, session)
 
     video_id = extract_youtube_video_id(youtube_url)
 
@@ -397,13 +400,23 @@ async def import_youtube_video(
             else []
         )
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            title,
+            f"YouTube Video ({video_id})",
+        )
+        if title_validation_error:
+            return YouTubeImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data
         contribution_data = {
             "video_id": video_id,
             "youtube_url": youtube_url,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title or f"YouTube Video ({video_id})",
+            "title": resolved_title,
             "poster": poster,
             "background": background,
             "resolution": resolution,

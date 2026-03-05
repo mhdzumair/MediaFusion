@@ -92,6 +92,8 @@ export interface SuggestionListParams {
 export interface PendingSuggestionParams {
   field_name?: string
   status?: SuggestionStatus | 'all'
+  uploader_query?: string
+  reviewer_query?: string
   page?: number
   page_size?: number
 }
@@ -129,6 +131,8 @@ export const suggestionsApi = {
     const searchParams = new URLSearchParams()
     if (params?.field_name) searchParams.set('field_name', params.field_name)
     if (params?.status) searchParams.set('status', params.status)
+    if (params?.uploader_query) searchParams.set('uploader_query', params.uploader_query)
+    if (params?.reviewer_query) searchParams.set('reviewer_query', params.reviewer_query)
     if (params?.page) searchParams.set('page', params.page.toString())
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString())
 

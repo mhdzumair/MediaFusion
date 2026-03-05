@@ -1,10 +1,12 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import {
   contributionsApi,
   type ContributionListParams,
   type ContributionBulkReviewRequest,
   type ContributionBulkReviewResponse,
   type ContributionCreateRequest,
+  type ContributionAdminFlagRequest,
+  type ContributionAdminRejectRequest,
   type ContributionReviewRequest,
   type ContributionType,
 } from '@/lib/api'
@@ -15,6 +17,7 @@ export function useContributions(params: ContributionListParams = {}) {
   return useQuery({
     queryKey: [...CONTRIBUTIONS_QUERY_KEY, params],
     queryFn: () => contributionsApi.list(params),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -81,6 +84,30 @@ export function useReviewContribution() {
   return useMutation({
     mutationFn: ({ contributionId, data }: { contributionId: string; data: ContributionReviewRequest }) =>
       contributionsApi.review(contributionId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CONTRIBUTIONS_QUERY_KEY })
+    },
+  })
+}
+
+export function useFlagContributionForAdminReview() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ contributionId, data }: { contributionId: string; data: ContributionAdminFlagRequest }) =>
+      contributionsApi.flagForAdminReview(contributionId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CONTRIBUTIONS_QUERY_KEY })
+    },
+  })
+}
+
+export function useAdminRejectApprovedContribution() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ contributionId, data }: { contributionId: string; data: ContributionAdminRejectRequest }) =>
+      contributionsApi.adminRejectApproved(contributionId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CONTRIBUTIONS_QUERY_KEY })
     },

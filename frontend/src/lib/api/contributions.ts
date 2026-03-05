@@ -21,6 +21,10 @@ export interface Contribution {
   reviewer_name?: string | null
   reviewed_at?: string
   review_notes?: string
+  admin_review_requested?: boolean
+  admin_review_requested_by?: string | null
+  admin_review_requested_at?: string | null
+  admin_review_reason?: string | null
   created_at: string
   updated_at?: string
 }
@@ -28,6 +32,9 @@ export interface Contribution {
 export interface ContributionListParams {
   contribution_type?: ContributionType
   contribution_status?: ContributionStatus
+  uploader_query?: string
+  reviewer_query?: string
+  me_only?: boolean
   page?: number
   page_size?: number
 }
@@ -71,6 +78,14 @@ export interface ContributionBulkReviewResponse {
   skipped: number
 }
 
+export interface ContributionAdminFlagRequest {
+  reason?: string
+}
+
+export interface ContributionAdminRejectRequest {
+  review_notes?: string
+}
+
 export const contributionsApi = {
   /**
    * List contributions (user's own or all for mods)
@@ -79,6 +94,9 @@ export const contributionsApi = {
     const searchParams = new URLSearchParams()
     if (params.contribution_type) searchParams.append('contribution_type', params.contribution_type)
     if (params.contribution_status) searchParams.append('contribution_status', params.contribution_status)
+    if (params.uploader_query) searchParams.append('uploader_query', params.uploader_query)
+    if (params.reviewer_query) searchParams.append('reviewer_query', params.reviewer_query)
+    if (params.me_only) searchParams.append('me_only', 'true')
     if (params.page) searchParams.append('page', params.page.toString())
     if (params.page_size) searchParams.append('page_size', params.page_size.toString())
 
@@ -136,6 +154,20 @@ export const contributionsApi = {
    */
   review: async (contributionId: string, data: ContributionReviewRequest): Promise<Contribution> => {
     return apiClient.patch<Contribution>(`/contributions/${contributionId}/review`, data)
+  },
+
+  /**
+   * Flag approved contribution for admin review (Mod+)
+   */
+  flagForAdminReview: async (contributionId: string, data: ContributionAdminFlagRequest): Promise<Contribution> => {
+    return apiClient.patch<Contribution>(`/contributions/${contributionId}/flag-admin-review`, data)
+  },
+
+  /**
+   * Reject approved contribution with rollback (Admin only)
+   */
+  adminRejectApproved: async (contributionId: string, data: ContributionAdminRejectRequest): Promise<Contribution> => {
+    return apiClient.patch<Contribution>(`/contributions/${contributionId}/admin-reject`, data)
   },
 
   /**

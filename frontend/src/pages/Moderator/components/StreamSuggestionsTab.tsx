@@ -14,9 +14,10 @@ import {
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { usePendingStreamSuggestions, useReviewStreamSuggestion, useStreamSuggestionStats } from '@/hooks'
+import { useDebounce, usePendingStreamSuggestions, useReviewStreamSuggestion, useStreamSuggestionStats } from '@/hooks'
 import type { StreamSuggestion, StreamSuggestionStatus } from '@/lib/api'
 
 import { formatStreamFieldName, formatStreamSuggestionType, parseEpisodeLinkField, formatTimeAgo } from './helpers'
@@ -29,15 +30,21 @@ interface StreamSuggestionsTabProps {
 export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: StreamSuggestionsTabProps) {
   const [page, setPage] = useState(1)
   const [suggestionType, setSuggestionType] = useState<string>('all')
+  const [uploaderQuery, setUploaderQuery] = useState('')
+  const [reviewerQuery, setReviewerQuery] = useState('')
   const [selectedSuggestion, setSelectedSuggestion] = useState<StreamSuggestion | null>(null)
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
+  const debouncedUploaderQuery = useDebounce(uploaderQuery, 350)
+  const debouncedReviewerQuery = useDebounce(reviewerQuery, 350)
 
   const { data, isLoading, refetch } = usePendingStreamSuggestions({
     page,
     page_size: 20,
     suggestion_type: suggestionType === 'all' ? undefined : suggestionType,
     status: statusFilter,
+    uploader_query: debouncedUploaderQuery.trim() || undefined,
+    reviewer_query: debouncedReviewerQuery.trim() || undefined,
   })
   const { data: stats } = useStreamSuggestionStats()
   const reviewSuggestion = useReviewStreamSuggestion()
@@ -86,15 +93,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-16 rounded-xl" />
-        ))}
-      </div>
-    )
-  }
+  const showInitialLoading = isLoading && !data
 
   return (
     <div className="space-y-4">
@@ -121,7 +120,7 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
         </div>
       )}
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <Select
           value={suggestionType}
           onValueChange={(value) => {
@@ -161,9 +160,33 @@ export function StreamSuggestionsTab({ statusFilter, onStatusFilterChange }: Str
             <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
+        <Input
+          value={uploaderQuery}
+          onChange={(event) => {
+            setUploaderQuery(event.target.value)
+            setPage(1)
+          }}
+          placeholder="Submitted by (username or ID)"
+          className="w-[220px] rounded-xl"
+        />
+        <Input
+          value={reviewerQuery}
+          onChange={(event) => {
+            setReviewerQuery(event.target.value)
+            setPage(1)
+          }}
+          placeholder="Approved by (username or ID)"
+          className="w-[220px] rounded-xl"
+        />
       </div>
 
-      {!data?.suggestions.length ? (
+      {showInitialLoading ? (
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
+        </div>
+      ) : !data?.suggestions.length ? (
         <div className="text-center py-12">
           <Film className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-muted-foreground">No stream suggestions found</p>

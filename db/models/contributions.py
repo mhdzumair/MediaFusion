@@ -23,6 +23,7 @@ class Contribution(TimestampMixin, table=True):
         Index("idx_contribution_user", "user_id"),
         Index("idx_contribution_status", "status"),
         Index("idx_contribution_type", "contribution_type"),
+        Index("idx_contribution_admin_review_requested", "admin_review_requested"),
     )
 
     id: str = Field(
@@ -37,6 +38,10 @@ class Contribution(TimestampMixin, table=True):
     reviewed_by: str | None = Field(default=None)  # User ID of reviewer
     reviewed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     review_notes: str | None = Field(default=None)
+    admin_review_requested: bool = Field(default=False)
+    admin_review_requested_by: str | None = Field(default=None)
+    admin_review_requested_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    admin_review_reason: str | None = Field(default=None)
 
     # Relationships
     user: Optional["User"] = Relationship(back_populates="contributions")

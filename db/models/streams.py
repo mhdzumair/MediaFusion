@@ -376,6 +376,28 @@ class FileMediaLink(TimestampMixin, table=True):
     file: StreamFile = Relationship(back_populates="media_links")
 
 
+class AnnotationRequestDismissal(SQLModel, table=True):
+    """Moderator dismissal state for stream/media annotation queue entries."""
+
+    __tablename__ = "annotation_request_dismissal"
+    __table_args__ = (
+        UniqueConstraint("stream_id", "media_id"),
+        Index("idx_annotation_dismissal_stream", "stream_id"),
+        Index("idx_annotation_dismissal_media", "media_id"),
+    )
+
+    id: int = Field(default=None, primary_key=True)
+    stream_id: int = Field(foreign_key="stream.id", index=True, ondelete="CASCADE")
+    media_id: int = Field(foreign_key="media.id", index=True, ondelete="CASCADE")
+    dismissed_by: str = Field(nullable=False)
+    dismiss_reason: str | None = Field(default=None)
+    dismissed_at: datetime = Field(
+        default_factory=lambda: datetime.now(pytz.UTC),
+        nullable=False,
+        sa_type=DateTime(timezone=True),
+    )
+
+
 # NOTE: TorrentFile and StreamEpisodeFile have been REMOVED
 # Use StreamFile for file structure and FileMediaLink for media linking
 

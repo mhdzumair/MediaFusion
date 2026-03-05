@@ -37,11 +37,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { useBulkReviewContributions, useContributions, useReviewContribution } from '@/hooks'
+import {
+  useAdminRejectApprovedContribution,
+  useAuth,
+  useBulkReviewContributions,
+  useContributions,
+  useDebounce,
+  useFlagContributionForAdminReview,
+  useReviewContribution,
+} from '@/hooks'
 import type { Contribution, ContributionStatus, ContributionType } from '@/lib/api'
 
 import {
@@ -62,8 +71,11 @@ interface ContributionsTabProps {
 }
 
 export function ContributionsTab({ statusFilter, onStatusFilterChange }: ContributionsTabProps) {
+  const { user } = useAuth()
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [uploaderQuery, setUploaderQuery] = useState('')
+  const [reviewerQuery, setReviewerQuery] = useState('')
   const [selectedContribution, setSelectedContribution] = useState<Contribution | null>(null)
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
@@ -86,14 +98,27 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
   const selectedImdbId =
     selectedMediaPreview?.metaId?.toLowerCase().startsWith('tt') === true ? selectedMediaPreview.metaId : null
 
+  const debouncedUploaderQuery = useDebounce(uploaderQuery, 350)
+  const debouncedReviewerQuery = useDebounce(reviewerQuery, 350)
+
   const { data, isLoading, refetch } = useContributions({
     contribution_type: typeFilter === 'all' ? undefined : (typeFilter as ContributionType),
     contribution_status: statusFilter === 'all' ? undefined : statusFilter,
+    uploader_query: debouncedUploaderQuery.trim() || undefined,
+    reviewer_query: debouncedReviewerQuery.trim() || undefined,
     page,
     page_size: 20,
   })
   const reviewContribution = useReviewContribution()
+  const flagForAdminReview = useFlagContributionForAdminReview()
+  const adminRejectApprovedContribution = useAdminRejectApprovedContribution()
   const bulkReviewContributions = useBulkReviewContributions()
+  const isAdmin = user?.role === 'admin'
+  const isAnyActionPending =
+    reviewContribution.isPending ||
+    bulkReviewContributions.isPending ||
+    flagForAdminReview.isPending ||
+    adminRejectApprovedContribution.isPending
   const pendingContributions = (data?.items ?? []).filter((contribution) => contribution.status === 'pending')
   const getReviewerLabel = (contribution: Contribution): string | null => {
     if (contribution.status === 'pending') return null
@@ -160,19 +185,43 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-xl" />
-        ))}
-      </div>
-    )
+  const handleFlagForAdmin = async () => {
+    if (!selectedContribution) return
+    try {
+      await flagForAdminReview.mutateAsync({
+        contributionId: selectedContribution.id,
+        data: { reason: reviewNotes || undefined },
+      })
+      setReviewDialogOpen(false)
+      setSelectedContribution(null)
+      setReviewNotes('')
+      refetch()
+    } catch {
+      // Error handled by mutation
+    }
   }
+
+  const handleAdminRejectApproved = async () => {
+    if (!selectedContribution) return
+    try {
+      await adminRejectApprovedContribution.mutateAsync({
+        contributionId: selectedContribution.id,
+        data: { review_notes: reviewNotes || undefined },
+      })
+      setReviewDialogOpen(false)
+      setSelectedContribution(null)
+      setReviewNotes('')
+      refetch()
+    } catch {
+      // Error handled by mutation
+    }
+  }
+
+  const showInitialLoading = isLoading && !data
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <Select
           value={typeFilter}
           onValueChange={(value) => {
@@ -216,6 +265,26 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
           </SelectContent>
         </Select>
 
+        <Input
+          value={uploaderQuery}
+          onChange={(event) => {
+            setUploaderQuery(event.target.value)
+            setPage(1)
+          }}
+          placeholder="Submitted by (username, anonymous name, or ID)"
+          className="w-[300px] rounded-xl"
+        />
+
+        <Input
+          value={reviewerQuery}
+          onChange={(event) => {
+            setReviewerQuery(event.target.value)
+            setPage(1)
+          }}
+          placeholder='Approved by (username, ID, or "auto")'
+          className="w-[260px] rounded-xl"
+        />
+
         {pendingContributions.length > 0 && (
           <Button
             variant="outline"
@@ -233,7 +302,13 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
         )}
       </div>
 
-      {!data?.items.length ? (
+      {showInitialLoading ? (
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+      ) : !data?.items.length ? (
         <div className="text-center py-12">
           <Magnet className="h-16 w-16 mx-auto text-muted-foreground opacity-50" />
           <p className="mt-4 text-muted-foreground">No content imports found</p>
@@ -282,6 +357,14 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
                         >
                           {contribution.status}
                         </Badge>
+                        {contribution.admin_review_requested && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs bg-violet-500/10 border-violet-500/30 text-violet-500"
+                          >
+                            Admin review requested
+                          </Badge>
+                        )}
                         {!!torrentData.meta_type && (
                           <Badge variant="secondary" className="text-xs capitalize">
                             {String(torrentData.meta_type)}
@@ -571,6 +654,20 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
                   <span>By: {getContributionUploaderLabel(selectedContribution)}</span>
                   <span>•</span>
                   <span>Submitted: {formatTimeAgo(selectedContribution.created_at)}</span>
+                  {selectedContribution.admin_review_requested && (
+                    <>
+                      <span>•</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge
+                          variant="outline"
+                          className="h-5 px-1.5 text-[10px] bg-violet-500/10 border-violet-500/30 text-violet-500"
+                        >
+                          Escalated
+                        </Badge>
+                        <span>{selectedContribution.admin_review_reason || 'Waiting for admin action'}</span>
+                      </span>
+                    </>
+                  )}
                   {selectedReviewerLabel && selectedReviewBadge && (
                     <>
                       <span>•</span>
@@ -604,21 +701,13 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
           </ScrollArea>
 
           <DialogFooter className="gap-2 shrink-0">
-            <Button
-              variant="outline"
-              onClick={() => setReviewDialogOpen(false)}
-              disabled={reviewContribution.isPending}
-            >
+            <Button variant="outline" onClick={() => setReviewDialogOpen(false)} disabled={isAnyActionPending}>
               {selectedContribution?.status === 'pending' ? 'Cancel' : 'Close'}
             </Button>
             {selectedContribution?.status === 'pending' && (
               <>
-                <Button
-                  variant="destructive"
-                  onClick={() => handleReview('rejected')}
-                  disabled={reviewContribution.isPending}
-                >
-                  {reviewContribution.isPending ? (
+                <Button variant="destructive" onClick={() => handleReview('rejected')} disabled={isAnyActionPending}>
+                  {isAnyActionPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <XCircle className="h-4 w-4 mr-2" />
@@ -628,15 +717,46 @@ export function ContributionsTab({ statusFilter, onStatusFilterChange }: Contrib
                 <Button
                   className="bg-emerald-600 hover:bg-emerald-700"
                   onClick={() => handleReview('approved')}
-                  disabled={reviewContribution.isPending}
+                  disabled={isAnyActionPending}
                 >
-                  {reviewContribution.isPending ? (
+                  {isAnyActionPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <CheckCircle2 className="h-4 w-4 mr-2" />
                   )}
                   Approve
                 </Button>
+              </>
+            )}
+            {selectedContribution?.status === 'approved' && (
+              <>
+                {!isAdmin && (
+                  <Button
+                    variant="outline"
+                    onClick={handleFlagForAdmin}
+                    disabled={isAnyActionPending || selectedContribution.admin_review_requested === true}
+                  >
+                    {isAnyActionPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : selectedContribution.admin_review_requested ? (
+                      'Already Flagged'
+                    ) : (
+                      'Flag for Admin Reject'
+                    )}
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button variant="destructive" onClick={handleAdminRejectApproved} disabled={isAnyActionPending}>
+                    {isAnyActionPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Reject (Admin)
+                      </>
+                    )}
+                  </Button>
+                )}
               </>
             )}
           </DialogFooter>

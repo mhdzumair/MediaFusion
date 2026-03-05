@@ -4,12 +4,15 @@ Contributions API endpoints for user-submitted metadata corrections and stream a
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Any, Literal
 
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import String, cast, or_
+from sqlalchemy.orm import aliased
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -18,7 +21,20 @@ from api.routers.user.auth import require_auth, require_role
 from db.crud.media import get_media_by_external_id
 from db.database import get_async_session, get_read_session
 from db.enums import ContributionStatus, UserRole
-from db.models import Contribution, ContributionSettings, Stream, StreamSuggestion, TelegramStream, User
+from db.models import (
+    AceStreamStream,
+    Contribution,
+    ContributionSettings,
+    HTTPStream,
+    Stream,
+    StreamMediaLink,
+    StreamSuggestion,
+    TelegramStream,
+    TorrentStream,
+    UsenetStream,
+    User,
+    YouTubeStream,
+)
 from utils.notification_registry import send_pending_contribution_notification
 
 router = APIRouter(prefix="/api/v1/contributions", tags=["Contributions"])
@@ -48,6 +64,18 @@ class ContributionReview(BaseModel):
 
     status: ContributionStatus = Field(..., description="APPROVED or REJECTED")
     review_notes: str | None = None
+
+
+class ContributionAdminFlagRequest(BaseModel):
+    """Request schema for flagging an approved contribution for admin review."""
+
+    reason: str | None = Field(None, max_length=1000)
+
+
+class ContributionAdminRejectRequest(BaseModel):
+    """Request schema for admin rejection of an already-approved contribution."""
+
+    review_notes: str | None = Field(None, max_length=2000)
 
 
 class ContributionBulkReviewRequest(BaseModel):
@@ -82,6 +110,10 @@ class ContributionResponse(BaseModel):
     reviewer_name: str | None = None  # Reviewer's username or auto label
     reviewed_at: datetime | None = None
     review_notes: str | None = None
+    admin_review_requested: bool = False
+    admin_review_requested_by: str | None = None
+    admin_review_requested_at: datetime | None = None
+    admin_review_reason: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -135,6 +167,10 @@ def contribution_to_response(
         reviewer_name=reviewer_name,
         reviewed_at=contribution.reviewed_at,
         review_notes=contribution.review_notes,
+        admin_review_requested=contribution.admin_review_requested,
+        admin_review_requested_by=contribution.admin_review_requested_by,
+        admin_review_requested_at=contribution.admin_review_requested_at,
+        admin_review_reason=contribution.admin_review_reason,
         created_at=contribution.created_at,
         updated_at=contribution.updated_at,
     )
@@ -190,6 +226,15 @@ async def get_reviewer_name(session: AsyncSession, reviewed_by: str | None) -> s
         return None
     reviewer_map = await get_reviewer_name_map(session, {reviewed_by})
     return reviewer_map.get(reviewed_by)
+
+
+def _normalize_filter_query(value: str | None) -> str | None:
+    """Normalize optional query string filters."""
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    return normalized or None
 
 
 def _extract_contribution_meta_candidates(contribution: Contribution) -> list[str]:
@@ -256,6 +301,91 @@ async def process_telegram_import(
 def _append_review_note(existing_notes: str | None, note: str) -> str:
     """Append a system-generated note preserving optional moderator notes."""
     return f"{existing_notes or ''}\n{note}".strip()
+
+
+def _extract_stream_id_from_review_notes(review_notes: str | None) -> int | None:
+    """Extract a stream_id marker from review notes if present."""
+    if not review_notes:
+        return None
+
+    match = re.search(r"stream_id=(\d+)", review_notes)
+    if not match:
+        return None
+
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _resolve_stream_for_contribution(session: AsyncSession, contribution: Contribution) -> Stream | None:
+    """Resolve the stream created/affected by a contribution."""
+    stream_id = _extract_stream_id_from_review_notes(contribution.review_notes)
+    if stream_id:
+        stream = await session.get(Stream, stream_id)
+        if stream:
+            return stream
+
+    data = contribution.data if isinstance(contribution.data, dict) else {}
+    contribution_type = contribution.contribution_type
+    stream_id = None
+
+    if contribution_type == "torrent":
+        info_hash = str(data.get("info_hash") or "").strip().lower()
+        if info_hash:
+            result = await session.exec(select(TorrentStream.stream_id).where(TorrentStream.info_hash == info_hash))
+            stream_id = result.first()
+    elif contribution_type == "nzb":
+        nzb_guid = str(data.get("nzb_guid") or "").strip()
+        if nzb_guid:
+            result = await session.exec(select(UsenetStream.stream_id).where(UsenetStream.nzb_guid == nzb_guid))
+            stream_id = result.first()
+    elif contribution_type == "http":
+        url = str(data.get("url") or "").strip()
+        if url:
+            media_id = await resolve_contribution_media_id(session, contribution)
+            http_query = select(HTTPStream.stream_id).where(HTTPStream.url == url)
+            if media_id is not None:
+                http_query = http_query.join(StreamMediaLink, StreamMediaLink.stream_id == HTTPStream.stream_id).where(
+                    StreamMediaLink.media_id == media_id
+                )
+            http_query = http_query.order_by(col(HTTPStream.stream_id).desc())
+            result = await session.exec(http_query)
+            stream_id = result.first()
+    elif contribution_type == "youtube":
+        video_id = str(data.get("video_id") or "").strip()
+        if video_id:
+            result = await session.exec(select(YouTubeStream.stream_id).where(YouTubeStream.video_id == video_id))
+            stream_id = result.first()
+    elif contribution_type == "acestream":
+        content_id = str(data.get("content_id") or "").strip().lower()
+        info_hash = str(data.get("info_hash") or "").strip().lower()
+        if content_id:
+            result = await session.exec(
+                select(AceStreamStream.stream_id).where(AceStreamStream.content_id == content_id)
+            )
+            stream_id = result.first()
+        if stream_id is None and info_hash:
+            result = await session.exec(select(AceStreamStream.stream_id).where(AceStreamStream.info_hash == info_hash))
+            stream_id = result.first()
+    elif contribution_type == "telegram":
+        file_unique_id = str(data.get("file_unique_id") or "").strip()
+        file_id = str(data.get("file_id") or "").strip()
+        query = select(TelegramStream.stream_id)
+        if file_unique_id:
+            query = query.where(TelegramStream.file_unique_id == file_unique_id)
+        elif file_id:
+            query = query.where(TelegramStream.file_id == file_id)
+        else:
+            query = None
+        if query is not None:
+            result = await session.exec(query)
+            stream_id = result.first()
+
+    if stream_id is None:
+        return None
+
+    return await session.get(Stream, stream_id)
 
 
 async def get_contribution_settings(session: AsyncSession) -> ContributionSettings:
@@ -406,6 +536,9 @@ async def _apply_contribution_review(
 async def list_contributions(
     contribution_type: str | None = Query(None, pattern=_CONTRIBUTION_TYPE_PATTERN),
     contribution_status: ContributionStatus | None = Query(None),
+    uploader_query: str | None = Query(None, max_length=120),
+    reviewer_query: str | None = Query(None, max_length=120),
+    me_only: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: User = Depends(require_auth),
@@ -422,7 +555,7 @@ async def list_contributions(
     query = select(Contribution)
     count_query = select(func.count(Contribution.id))
 
-    if not is_mod_or_admin:
+    if not is_mod_or_admin or me_only:
         query = query.where(Contribution.user_id == user.id)
         count_query = count_query.where(Contribution.user_id == user.id)
 
@@ -433,6 +566,52 @@ async def list_contributions(
     if contribution_status:
         query = query.where(Contribution.status == contribution_status)
         count_query = count_query.where(Contribution.status == contribution_status)
+
+    normalized_uploader_query = _normalize_filter_query(uploader_query)
+    if normalized_uploader_query:
+        uploader_alias = aliased(User)
+        query = query.outerjoin(uploader_alias, Contribution.user_id == uploader_alias.id)
+        count_query = count_query.outerjoin(uploader_alias, Contribution.user_id == uploader_alias.id)
+
+        anonymous_display_name_expr = cast(Contribution.data["anonymous_display_name"], String)
+
+        if normalized_uploader_query.isdigit():
+            uploader_id = int(normalized_uploader_query)
+            uploader_condition = or_(
+                Contribution.user_id == uploader_id,
+                uploader_alias.username.ilike(f"%{normalized_uploader_query}%"),
+                anonymous_display_name_expr.ilike(f"%{normalized_uploader_query}%"),
+            )
+        else:
+            uploader_condition = or_(
+                uploader_alias.username.ilike(f"%{normalized_uploader_query}%"),
+                anonymous_display_name_expr.ilike(f"%{normalized_uploader_query}%"),
+            )
+
+        query = query.where(uploader_condition)
+        count_query = count_query.where(uploader_condition)
+
+    normalized_reviewer_query = _normalize_filter_query(reviewer_query)
+    if normalized_reviewer_query:
+        if normalized_reviewer_query.lower() == "auto":
+            query = query.where(Contribution.reviewed_by == "auto")
+            count_query = count_query.where(Contribution.reviewed_by == "auto")
+        else:
+            reviewer_alias = aliased(User)
+            query = query.join(reviewer_alias, cast(reviewer_alias.id, String) == Contribution.reviewed_by)
+            count_query = count_query.join(reviewer_alias, cast(reviewer_alias.id, String) == Contribution.reviewed_by)
+
+            if normalized_reviewer_query.isdigit():
+                reviewer_id = int(normalized_reviewer_query)
+                reviewer_condition = or_(
+                    Contribution.reviewed_by == str(reviewer_id),
+                    reviewer_alias.username.ilike(f"%{normalized_reviewer_query}%"),
+                )
+            else:
+                reviewer_condition = reviewer_alias.username.ilike(f"%{normalized_reviewer_query}%")
+
+            query = query.where(reviewer_condition)
+            count_query = count_query.where(reviewer_condition)
 
     # Get total count
     total_result = await session.exec(count_query)
@@ -787,6 +966,88 @@ async def review_contribution(
     )
 
     session.add(contribution)
+    await session.commit()
+    await session.refresh(contribution)
+
+    username = await get_contribution_username(session, contribution.user_id)
+    reviewer_name = await get_reviewer_name(session, contribution.reviewed_by)
+    media_id = await resolve_contribution_media_id(session, contribution)
+    return contribution_to_response(contribution, username, media_id, reviewer_name)
+
+
+@router.patch("/{contribution_id}/flag-admin-review", response_model=ContributionResponse)
+async def flag_contribution_for_admin_review(
+    contribution_id: str,
+    request: ContributionAdminFlagRequest,
+    user: User = Depends(require_role(UserRole.MODERATOR)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Flag an already-approved contribution for admin-only rejection review."""
+    contribution = await session.get(Contribution, contribution_id)
+    if not contribution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contribution not found",
+        )
+
+    if contribution.status != ContributionStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Only approved contributions can be flagged (current status: {contribution.status})",
+        )
+
+    contribution.admin_review_requested = True
+    contribution.admin_review_requested_by = str(user.id)
+    contribution.admin_review_requested_at = datetime.now(pytz.UTC)
+    contribution.admin_review_reason = request.reason.strip() if request.reason else None
+    session.add(contribution)
+    await session.commit()
+    await session.refresh(contribution)
+
+    username = await get_contribution_username(session, contribution.user_id)
+    reviewer_name = await get_reviewer_name(session, contribution.reviewed_by)
+    media_id = await resolve_contribution_media_id(session, contribution)
+    return contribution_to_response(contribution, username, media_id, reviewer_name)
+
+
+@router.patch("/{contribution_id}/admin-reject", response_model=ContributionResponse)
+async def admin_reject_approved_contribution(
+    contribution_id: str,
+    request: ContributionAdminRejectRequest,
+    user: User = Depends(require_role(UserRole.ADMIN)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Reject an approved contribution and make its imported stream non-public/inactive."""
+    contribution = await session.get(Contribution, contribution_id)
+    if not contribution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contribution not found",
+        )
+
+    if contribution.status != ContributionStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Only approved contributions can be admin-rejected (current status: {contribution.status})",
+        )
+
+    stream = await _resolve_stream_for_contribution(session, contribution)
+    rollback_note = "Admin rejection rollback: no linked stream could be resolved."
+    if stream:
+        stream.is_public = False
+        stream.is_active = False
+        session.add(stream)
+        rollback_note = f"Admin rejection rollback applied: stream_id={stream.id}, is_public=False, is_active=False."
+
+    contribution.status = ContributionStatus.REJECTED
+    contribution.reviewed_by = str(user.id)
+    contribution.reviewed_at = datetime.now(pytz.UTC)
+    contribution.admin_review_requested = False
+    contribution.review_notes = _append_review_note(contribution.review_notes, rollback_note)
+    if request.review_notes:
+        contribution.review_notes = _append_review_note(contribution.review_notes, request.review_notes.strip())
+    session.add(contribution)
+
     await session.commit()
     await session.refresh(contribution)
 

@@ -10,7 +10,8 @@ from typing import Literal, TypedDict
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, or_
+from sqlalchemy.orm import aliased
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -267,6 +268,14 @@ async def get_username(session: AsyncSession, user_id: int) -> str | None:
     query = select(User.username).where(User.id == user_id)
     result = await session.exec(query)
     return result.first()
+
+
+def _normalize_filter_query(value: str | None) -> str | None:
+    """Normalize optional query string filters."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 async def should_auto_approve(user: User, session: AsyncSession) -> bool:
@@ -666,6 +675,8 @@ async def list_pending_suggestions(
     suggestion_status: Literal["pending", "approved", "rejected", "auto_approved", "all"] | None = Query(
         None, alias="status"
     ),
+    uploader_query: str | None = Query(None, max_length=120),
+    reviewer_query: str | None = Query(None, max_length=120),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(require_role(UserRole.MODERATOR)),
@@ -692,6 +703,52 @@ async def list_pending_suggestions(
     if field_name:
         base_query = base_query.where(MetadataSuggestion.field_name == field_name)
         count_query = count_query.where(MetadataSuggestion.field_name == field_name)
+
+    normalized_uploader_query = _normalize_filter_query(uploader_query)
+    if normalized_uploader_query:
+        uploader_alias = aliased(User)
+        base_query = base_query.join(uploader_alias, MetadataSuggestion.user_id == uploader_alias.id)
+        count_query = count_query.join(uploader_alias, MetadataSuggestion.user_id == uploader_alias.id)
+
+        if normalized_uploader_query.isdigit():
+            uploader_id = int(normalized_uploader_query)
+            uploader_condition = or_(
+                MetadataSuggestion.user_id == uploader_id,
+                uploader_alias.username.ilike(f"%{normalized_uploader_query}%"),
+            )
+        else:
+            uploader_condition = uploader_alias.username.ilike(f"%{normalized_uploader_query}%")
+
+        base_query = base_query.where(uploader_condition)
+        count_query = count_query.where(uploader_condition)
+
+    normalized_reviewer_query = _normalize_filter_query(reviewer_query)
+    if normalized_reviewer_query:
+        if normalized_reviewer_query.lower() == "auto":
+            base_query = base_query.where(MetadataSuggestion.reviewed_by == "auto")
+            count_query = count_query.where(MetadataSuggestion.reviewed_by == "auto")
+        else:
+            reviewer_alias = aliased(User)
+            base_query = base_query.join(
+                reviewer_alias,
+                cast(reviewer_alias.id, String) == MetadataSuggestion.reviewed_by,
+            )
+            count_query = count_query.join(
+                reviewer_alias,
+                cast(reviewer_alias.id, String) == MetadataSuggestion.reviewed_by,
+            )
+
+            if normalized_reviewer_query.isdigit():
+                reviewer_id = int(normalized_reviewer_query)
+                reviewer_condition = or_(
+                    MetadataSuggestion.reviewed_by == str(reviewer_id),
+                    reviewer_alias.username.ilike(f"%{normalized_reviewer_query}%"),
+                )
+            else:
+                reviewer_condition = reviewer_alias.username.ilike(f"%{normalized_reviewer_query}%")
+
+            base_query = base_query.where(reviewer_condition)
+            count_query = count_query.where(reviewer_condition)
 
     # Order and paginate
     base_query = base_query.order_by(MetadataSuggestion.created_at.asc())

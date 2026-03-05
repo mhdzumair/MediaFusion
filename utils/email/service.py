@@ -120,6 +120,35 @@ class EmailService:
             inline_images=inline_images,
         )
 
+    async def send_upload_warning_email(self, to: str, reason: str, username: str | None = None) -> None:
+        """Send an upload policy warning email to a user."""
+        greeting_name = username or "there"
+        common_context = self._common_context()
+        common_context["logo_url"], inline_images = await self._get_inline_logo(common_context["logo_url"])
+        html = (
+            f"<p>Hi {greeting_name},</p>"
+            f"<p>We detected upload activity on your {settings.addon_name} account that triggered our moderation safeguards.</p>"
+            f"<p><strong>Reason:</strong> {reason}</p>"
+            "<p>If this was unintentional, please slow down and retry later. "
+            "Continued abuse may lead to account restrictions.</p>"
+            f"<p>Thanks,<br>{settings.addon_name} Team</p>"
+        )
+        text = (
+            f"Hi {greeting_name},\n\n"
+            f"We detected upload activity on your {settings.addon_name} account that triggered our moderation safeguards.\n"
+            f"Reason: {reason}\n\n"
+            "If this was unintentional, please slow down and retry later. "
+            "Continued abuse may lead to account restrictions.\n\n"
+            f"Thanks,\n{settings.addon_name} Team"
+        )
+        await self.provider.send(
+            to=to,
+            subject=f"Upload warning - {settings.addon_name}",
+            html=html,
+            text=text,
+            inline_images=inline_images,
+        )
+
 
 def get_email_service() -> EmailService | None:
     """Return an EmailService instance if email is configured, else None."""

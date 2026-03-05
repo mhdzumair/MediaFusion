@@ -13,9 +13,11 @@ from pydantic import BaseModel, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.routers.user.auth import require_auth
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
+from api.routers.content.import_title_validation import resolve_and_validate_import_title
+from api.routers.content.upload_guard import enforce_upload_permissions
+from api.routers.user.auth import require_auth
 from db.config import settings
 from db.crud.media import (
     add_external_id,
@@ -684,6 +686,8 @@ async def import_magnet(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
+    async with get_async_session_context() as session:
+        await enforce_upload_permissions(user, session)
 
     if not settings.enable_fetching_torrent_metadata_from_p2p:
         raise HTTPException(
@@ -751,13 +755,23 @@ async def import_magnet(
         if not parsed_file_data and torrent_data.get("file_data"):
             parsed_file_data = torrent_data.get("file_data", [])
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            title,
+            torrent_data.get("title"),
+        )
+        if title_validation_error:
+            return ImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data with all fields
         contribution_data = {
             "info_hash": info_hash,
             "magnet_link": magnet_link,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title or torrent_data.get("title"),
+            "title": resolved_title,
             "name": torrent_data.get("torrent_name"),
             "total_size": torrent_data.get("total_size"),
             "catalogs": [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else [],
@@ -902,6 +916,8 @@ async def import_torrent_file(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
+    async with get_async_session_context() as session:
+        await enforce_upload_permissions(user, session)
 
     if not torrent_file.filename or not torrent_file.filename.endswith(".torrent"):
         return ImportResponse(
@@ -968,12 +984,22 @@ async def import_torrent_file(
         if not parsed_file_data and torrent_data.get("file_data"):
             parsed_file_data = torrent_data.get("file_data", [])
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            title,
+            torrent_data.get("title"),
+        )
+        if title_validation_error:
+            return ImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data with all fields
         contribution_data = {
             "info_hash": info_hash,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title or torrent_data.get("title"),
+            "title": resolved_title,
             "name": torrent_data.get("torrent_name"),
             "total_size": torrent_data.get("total_size"),
             "catalogs": [c.strip() for c in catalogs.split(",") if c.strip()] if catalogs else [],

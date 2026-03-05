@@ -10,6 +10,7 @@ export interface User {
   role: UserRole
   is_verified: boolean
   is_active: boolean
+  uploads_restricted?: boolean
   created_at: string
   last_login: string | null
   // Contribution stats

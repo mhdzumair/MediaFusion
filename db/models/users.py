@@ -33,6 +33,7 @@ class User(TimestampMixin, table=True):
         Index("idx_user_username", "username"),
         Index("idx_user_contribution_level", "contribution_level"),
         Index("idx_user_telegram_user_id", "telegram_user_id"),
+        Index("idx_user_uploads_restricted", "uploads_restricted"),
     )
 
     # Integer auto-increment PK
@@ -59,6 +60,7 @@ class User(TimestampMixin, table=True):
 
     # Contribution preferences
     contribute_anonymously: bool = Field(default=False)  # Default to show name on contributions
+    uploads_restricted: bool = Field(default=False, index=True)
 
     # Relationships
     profiles: list["UserProfile"] = Relationship(

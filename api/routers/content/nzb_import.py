@@ -18,6 +18,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
+from api.routers.content.import_title_validation import resolve_and_validate_import_title
+from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from api.routers.user.auth import require_auth
 from db.config import settings
@@ -482,6 +484,7 @@ async def import_nzb_file(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
+    await enforce_upload_permissions(user, session)
 
     if not nzb_file.filename or not nzb_file.filename.endswith(".nzb"):
         return NZBImportResponse(
@@ -547,6 +550,16 @@ async def import_nzb_file(
                 {"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)
             ]
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            title,
+            parsed.get("title") or nzb_title,
+        )
+        if title_validation_error:
+            return NZBImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data — nzb_url is None for file uploads since
         # the file is in our storage and download URLs are generated on-the-fly.
         contribution_data = {
@@ -554,7 +567,7 @@ async def import_nzb_file(
             "nzb_url": None,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title or parsed.get("title") or nzb_title,
+            "title": resolved_title,
             "name": nzb_title,
             "total_size": nzb_data.total_size,
             "indexer": indexer,
@@ -682,6 +695,7 @@ async def import_nzb_url(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = data.is_anonymous if data.is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(data.anonymous_display_name)
+    await enforce_upload_permissions(user, session)
 
     try:
         # Download the NZB file
@@ -730,13 +744,23 @@ async def import_nzb_url(
         # Convert NZBFile objects to dicts
         files_data = [{"filename": f.filename, "size": f.size, "index": i} for i, f in enumerate(nzb_data.files)]
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            data.title,
+            parsed.get("title") or nzb_title,
+        )
+        if title_validation_error:
+            return NZBImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data (URL only, no raw content)
         contribution_data = {
             "nzb_guid": nzb_guid,
             "nzb_url": data.nzb_url,
             "meta_type": data.meta_type,
             "meta_id": data.meta_id,
-            "title": data.title or parsed.get("title") or nzb_title,
+            "title": resolved_title,
             "name": nzb_title,
             "total_size": nzb_data.total_size,
             "indexer": data.indexer or "URL Import",

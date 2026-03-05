@@ -3,7 +3,7 @@ Stream Linking API endpoints for managing stream-to-media relationships.
 Supports linking single streams to multiple media entries (e.g., multi-movie torrents).
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -21,7 +21,8 @@ from db.crud import (
 )
 from db.database import get_async_session
 from db.enums import MediaType, UserRole
-from db.models import Stream, StreamMediaLink, User
+from db.models import AnnotationRequestDismissal, Stream, StreamMediaLink, User
+from utils.annotation_autofix import auto_map_episode_links_from_filename
 
 router = APIRouter(prefix="/api/v1/stream-links", tags=["Stream Linking"])
 
@@ -698,6 +699,82 @@ class StreamsNeedingAnnotationResponse(BaseModel):
     pages: int
 
 
+class AnnotationDismissRequest(BaseModel):
+    """Request payload to dismiss an annotation queue entry."""
+
+    reason: str | None = Field(None, max_length=1000)
+
+
+class AnnotationDismissResponse(BaseModel):
+    """Response payload after dismissing an annotation queue entry."""
+
+    status: str
+    stream_id: int
+    media_id: int
+    dismissed_at: datetime
+
+
+@router.post(
+    "/needs-annotation/{stream_id}/media/{media_id}/dismiss",
+    response_model=AnnotationDismissResponse,
+)
+async def dismiss_annotation_request(
+    stream_id: int,
+    media_id: int,
+    request: AnnotationDismissRequest,
+    current_user: User = Depends(require_role(UserRole.MODERATOR)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Dismiss an annotation queue entry for a specific stream/media pair."""
+    stream = await get_stream_by_id(session, stream_id)
+    if not stream:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stream not found",
+        )
+
+    media = await get_media_by_id(session, media_id)
+    if not media:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Media not found",
+        )
+
+    existing = await session.exec(
+        select(AnnotationRequestDismissal).where(
+            AnnotationRequestDismissal.stream_id == stream_id,
+            AnnotationRequestDismissal.media_id == media_id,
+        )
+    )
+    dismissal = existing.first()
+    now = datetime.now(UTC)
+    reason = request.reason.strip() if request.reason else None
+
+    if dismissal:
+        dismissal.dismissed_by = str(current_user.id)
+        dismissal.dismiss_reason = reason
+        dismissal.dismissed_at = now
+    else:
+        dismissal = AnnotationRequestDismissal(
+            stream_id=stream_id,
+            media_id=media_id,
+            dismissed_by=str(current_user.id),
+            dismiss_reason=reason,
+            dismissed_at=now,
+        )
+
+    session.add(dismissal)
+    await session.commit()
+    await session.refresh(dismissal)
+
+    return AnnotationDismissResponse(
+        status="success",
+        stream_id=dismissal.stream_id,
+        media_id=dismissal.media_id,
+        dismissed_at=dismissal.dismissed_at,
+    )
+
+
 @router.get("/needs-annotation", response_model=StreamsNeedingAnnotationResponse)
 async def get_streams_needing_annotation(
     page: int = Query(1, ge=1),
@@ -774,6 +851,14 @@ async def get_streams_needing_annotation(
             SELECT nep.stream_id, nep.media_id
             FROM null_episode_pairs nep
         ),
+        active_pairs AS (
+            SELECT up.stream_id, up.media_id
+            FROM unmapped_pairs up
+            LEFT JOIN annotation_request_dismissal ard
+              ON ard.stream_id = up.stream_id
+             AND ard.media_id = up.media_id
+            WHERE ard.id IS NULL
+        ),
         annotated_streams AS (
             SELECT
                 s.id as stream_id,
@@ -787,7 +872,7 @@ async def get_streams_needing_annotation(
                 m.title as media_title,
                 m.year as media_year,
                 m.type::text as media_type
-            FROM unmapped_pairs up
+            FROM active_pairs up
             INNER JOIN stream s ON s.id = up.stream_id
             INNER JOIN torrent_stream ts ON ts.stream_id = s.id
             INNER JOIN media m ON m.id = up.media_id
@@ -804,6 +889,55 @@ async def get_streams_needing_annotation(
 
     result = await session.exec(data_sql, params=params)
     rows = result.all()
+
+    # Self-heal queue entries when season/episode can be inferred from filename.
+    # This prevents obvious cases (e.g., 1x01, S01E01) from requiring manual annotation.
+    if rows:
+        healed_any = False
+        changed_any = False
+        visible_pairs: set[tuple[int, int]] = set()
+        for row in rows:
+            try:
+                pair_resolved, change_count, relevant_video_files = await auto_map_episode_links_from_filename(
+                    session,
+                    row.stream_id,
+                    row.media_id,
+                    apply_changes=True,
+                )
+                if relevant_video_files > 0 and not pair_resolved:
+                    visible_pairs.add((row.stream_id, row.media_id))
+                healed_any = healed_any or pair_resolved or relevant_video_files == 0
+                changed_any = changed_any or change_count > 0
+            except Exception:
+                # Keep queue behavior safe even if parser-based auto-linking fails.
+                visible_pairs.add((row.stream_id, row.media_id))
+
+        if changed_any:
+            await session.commit()
+
+        if healed_any:
+            result = await session.exec(data_sql, params=params)
+            rows = result.all()
+
+            filtered_rows = []
+            for row in rows:
+                if (row.stream_id, row.media_id) in visible_pairs:
+                    filtered_rows.append(row)
+                    continue
+
+                try:
+                    pair_resolved, _, relevant_video_files = await auto_map_episode_links_from_filename(
+                        session,
+                        row.stream_id,
+                        row.media_id,
+                        apply_changes=False,
+                    )
+                    if relevant_video_files > 0 and not pair_resolved:
+                        filtered_rows.append(row)
+                except Exception:
+                    filtered_rows.append(row)
+
+            rows = filtered_rows
 
     if not rows:
         return StreamsNeedingAnnotationResponse(

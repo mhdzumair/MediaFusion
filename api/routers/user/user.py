@@ -3,7 +3,7 @@ User Management API endpoints for admin operations.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -11,6 +11,7 @@ from api.routers.user.auth import UserResponse, require_role
 from db.database import get_async_session
 from db.enums import UserRole
 from db.models import User
+from utils.email.service import get_email_service
 
 router = APIRouter(prefix="/api/v1/users", tags=["User Management"])
 
@@ -32,10 +33,15 @@ class UserUpdateRequest(BaseModel):
     username: str | None = None
     is_active: bool | None = None
     is_verified: bool | None = None
+    uploads_restricted: bool | None = None
 
 
 class RoleUpdateRequest(BaseModel):
     role: str
+
+
+class SendUploadWarningRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
 
 
 # ============================================
@@ -96,6 +102,7 @@ async def list_users(
                 last_login=u.last_login,
                 contribution_points=u.contribution_points,
                 contribution_level=u.contribution_level,
+                uploads_restricted=u.uploads_restricted,
             )
             for u in users
         ],
@@ -132,6 +139,7 @@ async def get_user(
         last_login=user.last_login,
         contribution_points=user.contribution_points,
         contribution_level=user.contribution_level,
+        uploads_restricted=user.uploads_restricted,
     )
 
 
@@ -168,6 +176,9 @@ async def update_user(
     if update_data.is_verified is not None:
         user.is_verified = update_data.is_verified
 
+    if update_data.uploads_restricted is not None:
+        user.uploads_restricted = update_data.uploads_restricted
+
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -184,6 +195,7 @@ async def update_user(
         last_login=user.last_login,
         contribution_points=user.contribution_points,
         contribution_level=user.contribution_level,
+        uploads_restricted=user.uploads_restricted,
     )
 
 
@@ -235,6 +247,7 @@ async def update_user_role(
         last_login=user.last_login,
         contribution_points=user.contribution_points,
         contribution_level=user.contribution_level,
+        uploads_restricted=user.uploads_restricted,
     )
 
 
@@ -263,3 +276,45 @@ async def delete_user(
     await session.commit()
 
     return {"message": "User deleted successfully"}
+
+
+@router.post("/{user_id}/send-upload-warning")
+async def send_upload_warning(
+    user_id: int,
+    request: SendUploadWarningRequest,
+    _admin: User = Depends(require_role(UserRole.ADMIN)),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Send a manual upload warning email to a user (Admin only)."""
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if not user.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User has no email address",
+        )
+
+    email_service = get_email_service()
+    if email_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email service is not configured on this instance",
+        )
+
+    reason = (
+        request.reason.strip()
+        if request.reason and request.reason.strip()
+        else ("We detected upload activity that may violate contribution policies.")
+    )
+    await email_service.send_upload_warning_email(
+        to=user.email,
+        username=user.username,
+        reason=reason,
+    )
+
+    return {"message": f"Upload warning email sent to {user.email}"}

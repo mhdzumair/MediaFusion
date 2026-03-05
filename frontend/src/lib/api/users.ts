@@ -20,10 +20,15 @@ export interface UserUpdateRequest {
   username?: string
   is_active?: boolean
   is_verified?: boolean
+  uploads_restricted?: boolean
 }
 
 export interface RoleUpdateRequest {
   role: UserRole
+}
+
+export interface SendUploadWarningRequest {
+  reason?: string
 }
 
 export const usersApi = {
@@ -60,6 +65,13 @@ export const usersApi = {
    */
   updateRole: async (userId: string, data: RoleUpdateRequest): Promise<User> => {
     return apiClient.patch<User>(`/users/${userId}/role`, data)
+  },
+
+  /**
+   * Send a manual upload warning email (Admin only)
+   */
+  sendUploadWarning: async (userId: string, data: SendUploadWarningRequest = {}): Promise<{ message: string }> => {
+    return apiClient.post<{ message: string }>(`/users/${userId}/send-upload-warning`, data)
   },
 
   /**

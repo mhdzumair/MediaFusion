@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { useInstance } from '@/contexts/InstanceContext'
+import { useOptionalInstance } from '@/contexts/InstanceContext'
 
 type Theme = 'dark' | 'light' | 'system'
 
@@ -179,7 +179,8 @@ function getSystemTheme(): 'dark' | 'light' {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const { instanceInfo } = useInstance()
+  const instanceContext = useOptionalInstance()
+  const instanceInfo = instanceContext?.instanceInfo
 
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'system'

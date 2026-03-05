@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   suggestionsApi,
   type SuggestionCreateRequest,
@@ -38,6 +38,7 @@ export function usePendingSuggestions(params?: PendingSuggestionParams) {
   return useQuery({
     queryKey: suggestionKeys.pending(params),
     queryFn: () => suggestionsApi.listPending(params),
+    placeholderData: keepPreviousData,
   })
 }
 

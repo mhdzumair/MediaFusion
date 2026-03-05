@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -54,7 +55,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useUsers, useUpdateUser, useUpdateUserRole, useDeleteUser, useUserStats } from '@/hooks'
+import {
+  toast,
+  useDeleteUser,
+  useSendUploadWarning,
+  useUpdateUser,
+  useUpdateUserRole,
+  useUsers,
+  useUserStats,
+} from '@/hooks'
 import type { UserRole } from '@/types'
 
 const roleConfig: Record<UserRole, { label: string; icon: typeof Shield; color: string }> = {
@@ -76,6 +85,8 @@ export function UserManagementPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [editUserId, setEditUserId] = useState<string | null>(null)
   const [roleDialogUser, setRoleDialogUser] = useState<{ id: string; role: UserRole } | null>(null)
+  const [warningEmailDialogUserId, setWarningEmailDialogUserId] = useState<string | null>(null)
+  const [warningEmailReason, setWarningEmailReason] = useState('')
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
 
   const { data: usersData, isLoading } = useUsers({
@@ -88,6 +99,7 @@ export function UserManagementPage() {
   const updateUser = useUpdateUser()
   const updateRole = useUpdateUserRole()
   const deleteUser = useDeleteUser()
+  const sendUploadWarning = useSendUploadWarning()
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -100,6 +112,37 @@ export function UserManagementPage() {
 
   const handleToggleVerified = async (userId: string, currentVerified: boolean) => {
     await updateUser.mutateAsync({ userId, data: { is_verified: !currentVerified } })
+  }
+
+  const handleToggleUploadRestriction = async (userId: string, isRestricted: boolean | undefined) => {
+    await updateUser.mutateAsync({
+      userId,
+      data: { uploads_restricted: !isRestricted },
+    })
+  }
+
+  const handleSendUploadWarning = async () => {
+    if (!warningEmailDialogUserId) return
+    try {
+      const response = await sendUploadWarning.mutateAsync({
+        userId: warningEmailDialogUserId,
+        data: {
+          reason: warningEmailReason.trim() || undefined,
+        },
+      })
+      toast({
+        title: 'Warning email sent',
+        description: response.message,
+      })
+      setWarningEmailDialogUserId(null)
+      setWarningEmailReason('')
+    } catch {
+      toast({
+        title: 'Failed to send warning email',
+        description: 'Please verify SMTP configuration and try again.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleUpdateRole = async () => {
@@ -169,6 +212,7 @@ export function UserManagementPage() {
   })()
 
   const selectedUser = usersData?.items.find((u) => u.id === editUserId)
+  const warningEmailUser = usersData?.items.find((u) => u.id === warningEmailDialogUserId)
 
   return (
     <div className="space-y-6">
@@ -454,6 +498,11 @@ export function UserManagementPage() {
                                 </Badge>
                               )}
                               {user.is_verified && <CheckCircle className="h-4 w-4 text-emerald-500" />}
+                              {user.uploads_restricted && (
+                                <Badge variant="secondary" className="text-amber-500 bg-amber-500/10">
+                                  Uploads Restricted
+                                </Badge>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -503,6 +552,22 @@ export function UserManagementPage() {
                                       Verify
                                     </>
                                   )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleUploadRestriction(user.id, user.uploads_restricted)}
+                                >
+                                  <Ban className="mr-2 h-4 w-4" />
+                                  {user.uploads_restricted ? 'Allow Uploads' : 'Restrict Uploads'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setWarningEmailDialogUserId(user.id)
+                                    setWarningEmailReason('')
+                                  }}
+                                  disabled={sendUploadWarning.isPending}
+                                >
+                                  <Mail className="mr-2 h-4 w-4" />
+                                  Send Warning Email
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive" onClick={() => setDeleteUserId(user.id)}>
@@ -622,6 +687,9 @@ export function UserManagementPage() {
                 <Badge variant={selectedUser.is_verified ? 'default' : 'secondary'}>
                   {selectedUser.is_verified ? 'Verified' : 'Unverified'}
                 </Badge>
+                <Badge variant={selectedUser.uploads_restricted ? 'secondary' : 'default'}>
+                  {selectedUser.uploads_restricted ? 'Uploads Restricted' : 'Uploads Allowed'}
+                </Badge>
               </div>
             </div>
           )}
@@ -670,6 +738,50 @@ export function UserManagementPage() {
               className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
             >
               {updateRole.isPending ? 'Updating...' : 'Update Role'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Warning Email Dialog */}
+      <Dialog open={!!warningEmailDialogUserId} onOpenChange={() => setWarningEmailDialogUserId(null)}>
+        <DialogContent className="glass border-border/50 sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Send Warning Email</DialogTitle>
+            <DialogDescription>
+              {warningEmailUser
+                ? `Send a warning email to ${warningEmailUser.username || warningEmailUser.email}.`
+                : 'Send a warning email to this user.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            <Label htmlFor="warning-email-reason">Reason (optional)</Label>
+            <Textarea
+              id="warning-email-reason"
+              value={warningEmailReason}
+              onChange={(event) => setWarningEmailReason(event.target.value)}
+              placeholder="Describe why this warning is being sent..."
+              rows={4}
+              maxLength={500}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setWarningEmailDialogUserId(null)}
+              className="rounded-xl"
+              disabled={sendUploadWarning.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendUploadWarning}
+              disabled={sendUploadWarning.isPending}
+              className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
+            >
+              {sendUploadWarning.isPending ? 'Sending...' : 'Send Email'}
             </Button>
           </DialogFooter>
         </DialogContent>

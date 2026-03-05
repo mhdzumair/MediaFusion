@@ -72,6 +72,17 @@ export interface StreamsNeedingAnnotationParams {
   search?: string
 }
 
+export interface AnnotationDismissRequest {
+  reason?: string
+}
+
+export interface AnnotationDismissResponse {
+  status: string
+  stream_id: number
+  media_id: number
+  dismissed_at: string
+}
+
 export const fileLinksApi = {
   /**
    * Get all file links for a stream and media combination
@@ -101,6 +112,20 @@ export const fileLinksApi = {
     const queryString = searchParams.toString()
     return apiClient.get<StreamsNeedingAnnotationResponse>(
       `/stream-links/needs-annotation${queryString ? `?${queryString}` : ''}`,
+    )
+  },
+
+  /**
+   * Dismiss an annotation queue entry
+   */
+  dismissAnnotationRequest: async (
+    streamId: number,
+    mediaId: number,
+    request: AnnotationDismissRequest = {},
+  ): Promise<AnnotationDismissResponse> => {
+    return apiClient.post<AnnotationDismissResponse>(
+      `/stream-links/needs-annotation/${streamId}/media/${mediaId}/dismiss`,
+      request,
     )
   },
 }

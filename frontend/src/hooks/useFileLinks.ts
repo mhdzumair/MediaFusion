@@ -50,3 +50,20 @@ export function useUpdateFileLinks() {
     },
   })
 }
+
+/**
+ * Hook to dismiss an annotation request entry (moderator only)
+ */
+export function useDismissAnnotationRequest() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ streamId, mediaId, reason }: { streamId: number; mediaId: number; reason?: string }) =>
+      fileLinksApi.dismissAnnotationRequest(streamId, mediaId, { reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: fileLinksKeys.all,
+      })
+    },
+  })
+}

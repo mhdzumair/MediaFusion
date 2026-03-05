@@ -125,3 +125,7 @@ export function useInstance() {
   }
   return context
 }
+
+export function useOptionalInstance() {
+  return useContext(InstanceContext)
+}

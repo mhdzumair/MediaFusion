@@ -114,6 +114,8 @@ export interface StreamSuggestionListParams {
   status?: StreamSuggestionStatus
   page?: number
   page_size?: number
+  uploader_query?: string
+  reviewer_query?: string
 }
 
 export interface BrokenReportStatus {
@@ -176,6 +178,8 @@ export const streamSuggestionsApi = {
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())
     if (params.suggestion_type) searchParams.set('suggestion_type', params.suggestion_type)
+    if (params.uploader_query) searchParams.set('uploader_query', params.uploader_query)
+    if (params.reviewer_query) searchParams.set('reviewer_query', params.reviewer_query)
 
     const queryString = searchParams.toString()
     return apiClient.get<StreamSuggestionListResponse>(

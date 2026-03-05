@@ -1,5 +1,11 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
-import { usersApi, type UserListParams, type UserUpdateRequest, type RoleUpdateRequest } from '@/lib/api'
+import {
+  usersApi,
+  type UserListParams,
+  type UserUpdateRequest,
+  type RoleUpdateRequest,
+  type SendUploadWarningRequest,
+} from '@/lib/api'
 
 const USERS_QUERY_KEY = ['users']
 
@@ -58,6 +64,19 @@ export function useDeleteUser() {
     mutationFn: (userId: string) => usersApi.delete(userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY })
+    },
+  })
+}
+
+export function useSendUploadWarning() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ userId, data }: { userId: string; data?: SendUploadWarningRequest }) =>
+      usersApi.sendUploadWarning(userId, data),
+    onSuccess: (_, { userId }) => {
+      queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: [...USERS_QUERY_KEY, userId] })
     },
   })
 }

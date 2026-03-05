@@ -15,6 +15,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
+from api.routers.content.import_title_validation import resolve_and_validate_import_title
+from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.user.auth import require_auth
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from db.crud.media import get_media_by_external_id, get_media_by_title_year
@@ -474,6 +476,7 @@ async def import_acestream(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
+    await enforce_upload_permissions(user, session)
     # Normalize and validate identifiers
     normalized_content_id = extract_acestream_id(content_id) if content_id else None
     normalized_info_hash = info_hash.lower().strip() if info_hash else None
@@ -516,13 +519,23 @@ async def import_acestream(
                         message=f"AceStream with info_hash {normalized_info_hash[:16]}... already exists.",
                     )
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            title,
+            "AceStream Content",
+        )
+        if title_validation_error:
+            return AceStreamImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data
         contribution_data = {
             "content_id": normalized_content_id,
             "info_hash": normalized_info_hash,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title,
+            "title": resolved_title,
             "languages": [lang.strip() for lang in languages.split(",") if lang.strip()] if languages else [],
             "resolution": resolution,
             "quality": quality,

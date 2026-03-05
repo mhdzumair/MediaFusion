@@ -81,6 +81,7 @@ class UserResponse(BaseModel):
     contribution_level: str = "new"
     # Contribution preferences
     contribute_anonymously: bool = False
+    uploads_restricted: bool = False
 
 
 class LinkConfigRequest(BaseModel):
@@ -449,6 +450,7 @@ async def register(
             contribution_points=user.contribution_points,
             contribution_level=user.contribution_level,
             contribute_anonymously=user.contribute_anonymously,
+            uploads_restricted=user.uploads_restricted,
         ),
     )
 
@@ -514,6 +516,7 @@ async def login(
             contribution_points=user.contribution_points,
             contribution_level=user.contribution_level,
             contribute_anonymously=user.contribute_anonymously,
+            uploads_restricted=user.uploads_restricted,
         ),
     )
 
@@ -569,6 +572,7 @@ async def refresh_token(
             contribution_points=user.contribution_points,
             contribution_level=user.contribution_level,
             contribute_anonymously=user.contribute_anonymously,
+            uploads_restricted=user.uploads_restricted,
         ),
     )
 
@@ -754,6 +758,7 @@ async def get_me(user: User = Depends(require_auth)):
         contribution_points=user.contribution_points,
         contribution_level=user.contribution_level,
         contribute_anonymously=user.contribute_anonymously,
+        uploads_restricted=user.uploads_restricted,
     )
 
 
@@ -803,6 +808,7 @@ async def update_me(
         contribution_points=user.contribution_points,
         contribution_level=user.contribution_level,
         contribute_anonymously=user.contribute_anonymously,
+        uploads_restricted=user.uploads_restricted,
     )
 
 

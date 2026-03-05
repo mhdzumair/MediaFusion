@@ -382,6 +382,7 @@ export function ContributionsPage() {
   const { data: contributions, isLoading } = useContributions({
     contribution_status: statusFilter,
     contribution_type: typeFilter,
+    me_only: true,
     page,
     page_size: 20,
   })

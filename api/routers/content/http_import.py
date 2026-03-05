@@ -15,6 +15,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
 from api.routers.content.contributions import award_import_approval_points
+from api.routers.content.import_title_validation import resolve_and_validate_import_title
+from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.user.auth import require_auth
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from db.crud.media import get_media_by_external_id
@@ -421,6 +423,8 @@ async def import_http_stream(
     # Resolve anonymity: explicit param > user preference
     resolved_is_anonymous = is_anonymous if is_anonymous is not None else user.contribute_anonymously
     normalized_anonymous_display_name = normalize_anonymous_display_name(anonymous_display_name)
+    async with get_async_session_context() as session:
+        await enforce_upload_permissions(user, session)
 
     if not validate_url(url):
         return HTTPImportResponse(
@@ -458,12 +462,22 @@ async def import_http_stream(
         if not extractor_name:
             extractor_name = detect_extractor_from_url(url)
 
+        resolved_title, title_validation_error = resolve_and_validate_import_title(
+            title,
+            "HTTP Stream",
+        )
+        if title_validation_error:
+            return HTTPImportResponse(
+                status="error",
+                message=title_validation_error,
+            )
+
         # Build contribution data
         contribution_data = {
             "url": url,
             "meta_type": meta_type,
             "meta_id": meta_id,
-            "title": title or "HTTP Stream",
+            "title": resolved_title,
             "extractor_name": extractor_name,
             "request_headers": parsed_request_headers,
             "response_headers": parsed_response_headers,

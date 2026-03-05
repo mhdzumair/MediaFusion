@@ -11,8 +11,8 @@ from typing import Literal
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func
-from sqlalchemy.orm import selectinload
+from sqlalchemy import String, cast, func, or_
+from sqlalchemy.orm import aliased, selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -334,6 +334,14 @@ async def get_username(session: AsyncSession, user_id: int | str | None) -> str 
     query = select(User.username).where(User.id == uid)
     result = await session.exec(query)
     return result.first()
+
+
+def _normalize_filter_query(value: str | None) -> str | None:
+    """Normalize optional query string filters."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 async def should_auto_approve(user: User, session: AsyncSession) -> bool:
@@ -1147,6 +1155,8 @@ async def get_pending_stream_suggestions(
     status_filter: Literal["pending", "approved", "rejected", "auto_approved", "all"] | None = Query(
         None, alias="status"
     ),
+    uploader_query: str | None = Query(None, max_length=120),
+    reviewer_query: str | None = Query(None, max_length=120),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(require_role(UserRole.MODERATOR)),
@@ -1170,6 +1180,52 @@ async def get_pending_stream_suggestions(
     if suggestion_type:
         query = query.where(StreamSuggestion.suggestion_type.startswith(suggestion_type))
         count_query = count_query.where(StreamSuggestion.suggestion_type.startswith(suggestion_type))
+
+    normalized_uploader_query = _normalize_filter_query(uploader_query)
+    if normalized_uploader_query:
+        uploader_alias = aliased(User)
+        query = query.join(uploader_alias, StreamSuggestion.user_id == uploader_alias.id)
+        count_query = count_query.join(uploader_alias, StreamSuggestion.user_id == uploader_alias.id)
+
+        if normalized_uploader_query.isdigit():
+            uploader_id = int(normalized_uploader_query)
+            uploader_condition = or_(
+                StreamSuggestion.user_id == uploader_id,
+                uploader_alias.username.ilike(f"%{normalized_uploader_query}%"),
+            )
+        else:
+            uploader_condition = uploader_alias.username.ilike(f"%{normalized_uploader_query}%")
+
+        query = query.where(uploader_condition)
+        count_query = count_query.where(uploader_condition)
+
+    normalized_reviewer_query = _normalize_filter_query(reviewer_query)
+    if normalized_reviewer_query:
+        if normalized_reviewer_query.lower() == "auto":
+            query = query.where(StreamSuggestion.reviewed_by == "auto")
+            count_query = count_query.where(StreamSuggestion.reviewed_by == "auto")
+        else:
+            reviewer_alias = aliased(User)
+            query = query.join(
+                reviewer_alias,
+                cast(reviewer_alias.id, String) == StreamSuggestion.reviewed_by,
+            )
+            count_query = count_query.join(
+                reviewer_alias,
+                cast(reviewer_alias.id, String) == StreamSuggestion.reviewed_by,
+            )
+
+            if normalized_reviewer_query.isdigit():
+                reviewer_id = int(normalized_reviewer_query)
+                reviewer_condition = or_(
+                    StreamSuggestion.reviewed_by == str(reviewer_id),
+                    reviewer_alias.username.ilike(f"%{normalized_reviewer_query}%"),
+                )
+            else:
+                reviewer_condition = reviewer_alias.username.ilike(f"%{normalized_reviewer_query}%")
+
+            query = query.where(reviewer_condition)
+            count_query = count_query.where(reviewer_condition)
 
     count_result = await session.exec(count_query)
     total = count_result.one()
