@@ -26,6 +26,8 @@ from sqlmodel import select
 from api.services.sync.manager import IntegrationManager
 
 from db import crud, schemas
+from db.crud.scraper_helpers import store_new_torrent_streams
+from db.crud.stream_services import get_cached_live_torrent_fallback_stream
 from db.models import User
 from db.config import settings
 from db.database import get_async_session_context, get_read_session
@@ -165,18 +167,38 @@ async def get_cached_stream_url_and_redirect(
     return None
 
 
-async def fetch_stream_or_404(info_hash: str) -> TorrentStreamData:
+async def persist_fallback_stream_best_effort(stream: TorrentStreamData) -> None:
+    """Persist fallback stream data so future playback can use DB lookup."""
+    try:
+        async with get_async_session_context() as session:
+            stored_count = await store_new_torrent_streams(session, [stream.model_dump(by_alias=True)])
+            if stored_count > 0:
+                await session.commit()
+    except Exception as exc:
+        logging.warning("Failed to persist fallback stream %s: %s", stream.info_hash, exc)
+
+
+async def fetch_stream_or_404(info_hash: str) -> tuple[TorrentStreamData, bool]:
     """
-    Fetches stream by info hash, raises a 404 error if not found.
-    Returns TorrentStreamData (Pydantic model) to avoid lazy loading issues.
+    Fetch stream by info_hash from DB, then fallback cache, else raise 404.
+
+    Returns:
+        tuple of (stream data, recovered_from_fallback_cache)
     """
     async for session in get_read_session():
         torrent_stream = await crud.get_stream_by_info_hash(session, info_hash, load_relations=True)
         if torrent_stream:
             # Convert to Pydantic model to detach from session
-            return TorrentStreamData.from_db(torrent_stream)
+            return TorrentStreamData.from_db(torrent_stream), False
 
-    raise HTTPException(status_code=400, detail="Stream not found.")
+    logging.info("Stream %s missing in DB, attempting live fallback cache lookup", info_hash)
+    fallback_stream = await get_cached_live_torrent_fallback_stream(info_hash)
+    if fallback_stream:
+        logging.info("Recovered stream %s from live fallback cache", info_hash)
+        return fallback_stream, True
+
+    logging.warning("Stream %s not found in DB or live fallback cache", info_hash)
+    raise HTTPException(status_code=404, detail="Stream not found.")
 
 
 async def get_or_create_video_url(
@@ -648,7 +670,9 @@ async def streaming_provider_endpoint(
             return cached_stream_url
 
         # Fetch stream from DB
-        stream = await fetch_stream_or_404(info_hash)
+        stream, recovered_from_fallback = await fetch_stream_or_404(info_hash)
+        if recovered_from_fallback:
+            background_tasks.add_task(persist_fallback_stream_best_effort, stream)
 
         # Acquire Redis lock to prevent duplicate download tasks
         acquired, lock = await acquire_redis_lock(f"{cached_stream_url_key}_locked", timeout=60, block=True)

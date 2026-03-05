@@ -66,6 +66,8 @@ USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav",
 # Redis cache settings for raw stream data
 STREAM_CACHE_TTL = 1800  # 30 minutes
 STREAM_CACHE_PREFIX = "stream_data:"
+LIVE_TORRENT_FALLBACK_CACHE_TTL = 180  # 3 minutes
+LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
 
 logger = logging.getLogger(__name__)
 _scraper_tasks_module = None
@@ -294,6 +296,51 @@ def _merge_unique_usenet_streams(
 
     existing_streams.extend(unique_live_streams)
     return unique_live_streams
+
+
+def _get_live_torrent_fallback_cache_key(info_hash: str) -> str:
+    return f"{LIVE_TORRENT_FALLBACK_CACHE_PREFIX}{info_hash.lower()}"
+
+
+async def cache_live_torrent_fallback_streams(streams: list[TorrentStreamData]) -> None:
+    """Cache live torrent streams by info_hash for playback fallback recovery."""
+    if not streams:
+        return
+
+    try:
+        pipeline = REDIS_ASYNC_CLIENT.pipeline(transaction=False)
+        if pipeline is not None:
+            for stream in streams:
+                # Exclude binary payloads to keep cache compact and JSON-safe.
+                stream_payload = stream.model_dump(mode="json", exclude={"torrent_file"})
+                payload = json.dumps(stream_payload).encode("utf-8")
+                key = _get_live_torrent_fallback_cache_key(stream.info_hash)
+                pipeline.set(key, payload, ex=LIVE_TORRENT_FALLBACK_CACHE_TTL)
+            await pipeline.execute()
+            return
+
+        for stream in streams:
+            stream_payload = stream.model_dump(mode="json", exclude={"torrent_file"})
+            payload = json.dumps(stream_payload).encode("utf-8")
+            key = _get_live_torrent_fallback_cache_key(stream.info_hash)
+            await REDIS_ASYNC_CLIENT.set(key, payload, ex=LIVE_TORRENT_FALLBACK_CACHE_TTL)
+    except Exception as exc:
+        logger.warning("Failed to cache live torrent fallback streams: %s", exc)
+
+
+async def get_cached_live_torrent_fallback_stream(info_hash: str) -> TorrentStreamData | None:
+    """Read a live torrent stream fallback payload from Redis by info_hash."""
+    try:
+        key = _get_live_torrent_fallback_cache_key(info_hash)
+        payload = await REDIS_ASYNC_CLIENT.get(key)
+        if not payload:
+            return None
+
+        stream_payload = json.loads(payload.decode("utf-8"))
+        return TorrentStreamData.model_validate(stream_payload)
+    except Exception as exc:
+        logger.warning("Failed to read live torrent fallback stream for %s: %s", info_hash, exc)
+        return None
 
 
 def _dedupe_raw_streams(
@@ -1186,6 +1233,7 @@ async def get_movie_streams(
         unique_live_usenet_streams = _merge_unique_usenet_streams(usenet_stream_data_list, live_usenet_streams)
 
         if unique_live_torrent_streams or unique_live_usenet_streams:
+            await cache_live_torrent_fallback_streams(unique_live_torrent_streams)
             background_tasks.add_task(
                 _persist_live_search_streams, unique_live_torrent_streams, unique_live_usenet_streams
             )
@@ -1432,6 +1480,7 @@ async def get_series_streams(
         unique_live_usenet_streams = _merge_unique_usenet_streams(usenet_stream_data_list, live_usenet_streams)
 
         if unique_live_torrent_streams or unique_live_usenet_streams:
+            await cache_live_torrent_fallback_streams(unique_live_torrent_streams)
             background_tasks.add_task(
                 _persist_live_search_streams, unique_live_torrent_streams, unique_live_usenet_streams
             )
