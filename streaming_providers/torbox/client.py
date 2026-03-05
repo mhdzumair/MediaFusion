@@ -1,10 +1,13 @@
 import json
+import logging
 from typing import Any
 
 import aiohttp
 
 from streaming_providers.debrid_client import DebridClient
 from streaming_providers.exceptions import ProviderException
+
+logger = logging.getLogger(__name__)
 
 
 class Torbox(DebridClient):
@@ -73,6 +76,13 @@ class Torbox(DebridClient):
             return {"success": True, "data": response}
         if isinstance(response, str):
             stripped = response.strip()
+            normalized = stripped.lower()
+            if normalized.startswith("<!doctype html") or normalized.startswith("<html"):
+                raise ProviderException(
+                    f"Torbox API returned HTML instead of JSON while {context}",
+                    "debrid_service_down_error.mp4",
+                    retryable=True,
+                )
             if stripped.startswith("{") or stripped.startswith("["):
                 try:
                     parsed = json.loads(stripped)
@@ -162,10 +172,16 @@ class Torbox(DebridClient):
         return response.get("data", [])
 
     async def get_available_torrent(self, info_hash) -> dict[str, Any] | None:
-        response = await self.get_user_torrent_list()
+        try:
+            response = await self.get_user_torrent_list()
+        except ProviderException as error:
+            if error.retryable:
+                logger.warning("Torbox mylist returned non-JSON response, skipping cached lookup")
+                return {}
+            raise
         torrent_list = response.get("data", [])
         for torrent in torrent_list:
-            if torrent.get("hash") == info_hash:
+            if str(torrent.get("hash", "")).lower() == str(info_hash).lower():
                 return torrent
         return {}
 
@@ -178,6 +194,9 @@ class Torbox(DebridClient):
                 is_expected_to_fail=True,
             )
         except ProviderException as error:
+            if error.retryable:
+                logger.warning("Torbox queued/getqueued returned non-JSON response, treating queue as empty")
+                return {"data": []}
             if self._is_plan_restricted_error(error.message):
                 raise ProviderException(
                     "Need premium TorBox account to access this API feature",
