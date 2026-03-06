@@ -144,8 +144,17 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
   const minSizeGB = Math.round(minSizeBytes / GB)
   const isNoMinLimit = minSizeBytes === 0 || config.mns === undefined
 
-  // Stream type order
-  const streamTypeOrder = config.sto || STREAM_TYPES.map((t) => t.value)
+  // Stream type order (preserve configured order and append any newly added types)
+  const allowedStreamTypes = STREAM_TYPES.map((streamType) => streamType.value)
+  const streamTypeOrder = [
+    ...(config.sto ?? []).filter(
+      (streamType, index, allTypes): streamType is string =>
+        typeof streamType === 'string' &&
+        allowedStreamTypes.includes(streamType) &&
+        allTypes.indexOf(streamType) === index,
+    ),
+    ...allowedStreamTypes.filter((streamType) => !(config.sto ?? []).includes(streamType)),
+  ]
 
   const moveStreamType = (value: string, direction: 'up' | 'down') => {
     const currentIndex = streamTypeOrder.indexOf(value)

@@ -59,6 +59,7 @@ import {
   TelegramSettings,
   AceStreamSettings,
   DEFAULT_CONFIG,
+  STREAM_TYPES,
 } from './components'
 import type { ProfileConfig } from './components'
 
@@ -79,10 +80,34 @@ function sanitizeResolutionList(resolutions: ProfileConfig['sr']): ProfileConfig
   return deduped
 }
 
+function sanitizeStreamTypeOrder(streamTypes: ProfileConfig['sto']): ProfileConfig['sto'] {
+  const allowedStreamTypes = STREAM_TYPES.map((streamType) => streamType.value)
+  const configuredTypes = (streamTypes ?? []).filter(
+    (streamType): streamType is string =>
+      typeof streamType === 'string' && streamType.length > 0 && allowedStreamTypes.includes(streamType),
+  )
+
+  const deduped: string[] = []
+  for (const streamType of configuredTypes) {
+    if (!deduped.includes(streamType)) {
+      deduped.push(streamType)
+    }
+  }
+
+  for (const streamType of allowedStreamTypes) {
+    if (!deduped.includes(streamType)) {
+      deduped.push(streamType)
+    }
+  }
+
+  return deduped
+}
+
 function sanitizeProfileConfig(config: ProfileConfig): ProfileConfig {
   return {
     ...config,
     sr: sanitizeResolutionList(config.sr),
+    sto: sanitizeStreamTypeOrder(config.sto),
   }
 }
 

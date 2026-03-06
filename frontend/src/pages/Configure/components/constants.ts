@@ -273,7 +273,7 @@ export const DEFAULT_CONFIG: ProfileConfig = {
   lss: false,
   mxs: 25,
   stg: 'separate',
-  sto: ['torrent', 'usenet', 'telegram', 'http', 'acestream'],
+  sto: ['torrent', 'usenet', 'telegram', 'http', 'acestream', 'youtube'],
   pg: 'separate',
   snfm: 'disabled',
   snfp: [],

@@ -2,7 +2,7 @@ export { ContentCard, ContentGrid, ContentList, QuickLike } from './ContentCard'
 export type { ContentCardData, ContentCardProps } from './ContentCard'
 
 export { ContentFilters, DEFAULT_SORT_OPTIONS, LIBRARY_SORT_OPTIONS } from './ContentFilters'
-export type { ContentFiltersProps, ViewMode } from './ContentFilters'
+export type { ContentFiltersProps, ViewMode, SearchMode } from './ContentFilters'
 
 export {
   RatingsDisplay,
