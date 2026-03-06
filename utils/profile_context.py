@@ -111,10 +111,10 @@ def build_user_data_from_config(
             if not full_config[key].get("ak") and not full_config[key].get("api_key"):
                 del full_config[key]
 
-    # Filter out invalid resolutions (empty strings, None values)
+    # Filter out invalid resolutions while preserving None ("Unknown")
     for key in ["selected_resolutions", "sr"]:
         if key in full_config and isinstance(full_config[key], list):
-            full_config[key] = [r for r in full_config[key] if r]
+            full_config[key] = [r for r in full_config[key] if r is None or (isinstance(r, str) and r.strip())]
 
     return UserData(**full_config)
 
