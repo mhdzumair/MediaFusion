@@ -235,16 +235,39 @@ function SingleProviderEditor({
               setOauthDialogOpen(false)
               setOauthDeviceCode(null)
             }, 2000)
+            return
+          }
+
+          if (result.error || result.message) {
+            const resultMessage = (result.message || result.error || 'Authorization failed').trim()
+            const resultMessageLower = resultMessage.toLowerCase()
+
+            if (resultMessageLower.includes('pending') || resultMessageLower.includes('waiting')) {
+              return
+            }
+
+            clearInterval(pollIntervalRef.current!)
+            if (resultMessageLower.includes('expired')) {
+              setOauthError('Authorization expired. Please try again.')
+            } else {
+              setOauthError(resultMessage)
+            }
+            setIsAuthorizing(false)
           }
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-          if (!errorMessage.includes('pending') && !errorMessage.includes('waiting')) {
-            if (errorMessage.includes('expired')) {
-              clearInterval(pollIntervalRef.current!)
-              setOauthError('Authorization expired. Please try again.')
-              setIsAuthorizing(false)
-            }
+          const normalizedErrorMessage = errorMessage.toLowerCase()
+          if (normalizedErrorMessage.includes('pending') || normalizedErrorMessage.includes('waiting')) {
+            return
           }
+
+          clearInterval(pollIntervalRef.current!)
+          if (normalizedErrorMessage.includes('expired')) {
+            setOauthError('Authorization expired. Please try again.')
+          } else {
+            setOauthError(errorMessage)
+          }
+          setIsAuthorizing(false)
         }
       }, pollInterval)
     } catch (err) {
