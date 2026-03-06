@@ -3473,6 +3473,7 @@ class TelegramContentBot:
                     target_id=target_id,
                     data=contribution_data,
                     status=ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING,
+                    admin_review_requested=False,
                     reviewed_by="auto" if should_auto_approve else None,
                     reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
                     review_notes=(

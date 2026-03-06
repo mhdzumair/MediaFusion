@@ -596,6 +596,7 @@ async def import_nzb_file(
             target_id=meta_id,
             data=contribution_data,
             status=initial_status,
+            admin_review_requested=False,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
             review_notes=(
@@ -788,6 +789,7 @@ async def import_nzb_url(
             target_id=data.meta_id,
             data=contribution_data,
             status=initial_status,
+            admin_review_requested=False,
             reviewed_by="auto" if should_auto_approve else None,
             reviewed_at=datetime.now(pytz.UTC) if should_auto_approve else None,
             review_notes=(

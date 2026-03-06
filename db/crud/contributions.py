@@ -209,6 +209,7 @@ async def create_contribution(
         stream_id=stream_id,
         data=data or {},
         status=status,
+        admin_review_requested=False,
     )
     session.add(contribution)
     await session.flush()
