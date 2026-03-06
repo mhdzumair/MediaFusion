@@ -179,7 +179,7 @@ export interface ProfileConfig {
   puot?: boolean // prefer_usenet_over_torrent
   // Telegram settings
   ets?: boolean // enable_telegram_streams
-  tgc?: TelegramConfig // telegram_config
+  tgc?: TelegramConfig | null // telegram_config
   // AceStream settings
   eas?: boolean // enable_acestream_streams
   // Stream display settings

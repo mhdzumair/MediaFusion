@@ -23,6 +23,38 @@ export interface QBittorrentConfigType {
   wdp: string // webdav_downloads_path
 }
 
+export interface SABnzbdConfigType {
+  u: string // url
+  ak: string // api_key
+  cat: string // category
+  wur?: string // webdav_url
+  wus?: string // webdav_username
+  wpw?: string // webdav_password
+  wdp: string // webdav_downloads_path
+}
+
+export interface NZBGetConfigType {
+  u: string // url
+  un: string // username
+  pw: string // password
+  cat: string // category
+  wur?: string // webdav_url
+  wus?: string // webdav_username
+  wpw?: string // webdav_password
+  wdp: string // webdav_downloads_path
+}
+
+export interface NzbDAVConfigType {
+  u: string // url
+  ak: string // api_key
+  cat: string // category
+}
+
+export interface EasynewsConfigType {
+  un: string // username
+  pw: string // password
+}
+
 export interface StreamingProviderConfigType {
   n?: string // name
   sv: string // service
@@ -34,8 +66,13 @@ export interface StreamingProviderConfigType {
   oscs?: boolean // only_show_cached_streams
   stsn?: string // stremthru_store_name
   qbc?: QBittorrentConfigType
+  sbc?: SABnzbdConfigType // sabnzbd_config
+  ngc?: NZBGetConfigType // nzbget_config
+  ndc?: NzbDAVConfigType // nzbdav_config
+  enc?: EasynewsConfigType // easynews_config
   pr?: number // priority
   en?: boolean // enabled
+  umf?: boolean // use_mediaflow
 }
 
 export interface MediaFlowConfigType {
@@ -43,7 +80,8 @@ export interface MediaFlowConfigType {
   ap?: string // api_password
   pip?: string // public_ip
   pls?: boolean // proxy_live_streams
-  pds?: boolean // proxy_debrid_streams
+  ewp?: boolean // enable_web_playback
+  pds?: boolean // legacy proxy_debrid_streams (backward compatibility)
 }
 
 export interface RPDBConfigType {
@@ -71,9 +109,27 @@ export interface CatalogConfigType {
   o?: 'asc' | 'desc' // order
 }
 
+export interface StreamTemplateConfigType {
+  t?: string // title template
+  d?: string // description template
+}
+
 export interface SortingOptionType {
   k: string
   d: 'asc' | 'desc'
+}
+
+export interface NewznabIndexerConfigType {
+  i: string // id
+  n: string // name
+  u: string // url
+  ak: string // api_key
+  en?: boolean // enabled
+  p?: number // priority
+  mc?: number[] // movie_categories
+  tc?: number[] // tv_categories
+  uz?: boolean // use_zyclops
+  zb?: string[] // zyclops_backbones
 }
 
 export interface IndexerInstanceConfigType {
@@ -97,6 +153,22 @@ export interface IndexerConfigType {
   pr?: IndexerInstanceConfigType | null // prowlarr
   jk?: IndexerInstanceConfigType | null // jackett
   tz?: TorznabEndpointConfigType[] // torznab_endpoints
+  nz?: NewznabIndexerConfigType[] // newznab_indexers
+}
+
+export interface TelegramChannelConfigType {
+  i: string // id
+  n: string // name
+  u?: string // username
+  cid?: string // chat_id
+  en?: boolean // enabled
+  p?: number // priority
+}
+
+export interface TelegramConfigType {
+  en?: boolean // enabled
+  ch?: TelegramChannelConfigType[] // channels
+  ugc?: boolean // use_global_channels
 }
 
 export interface ProfileConfig {
@@ -120,7 +192,13 @@ export interface ProfileConfig {
   rpc?: RPDBConfigType | null // rpdb_config
   lss?: boolean // live_search_streams
   mdb?: MDBListConfigType | null // mdblist_config
+  st?: StreamTemplateConfigType | null // stream_template
   ic?: IndexerConfigType | null // indexer_config
+  eus?: boolean // enable_usenet_streams
+  puot?: boolean // prefer_usenet_over_torrent
+  ets?: boolean // enable_telegram_streams
+  tgc?: TelegramConfigType | null // telegram_config
+  eas?: boolean // enable_acestream_streams
   // Stream display settings
   mxs?: number // max_streams (total cap)
   stg?: 'mixed' | 'separate' // stream_type_grouping
@@ -169,8 +247,14 @@ export interface UserDataPayload {
   mediaflow_config?: MediaFlowConfigPayload | null
   rpdb_config?: RPDBConfigPayload | null
   mdblist_config?: MDBListConfigPayload | null
+  stream_template?: StreamTemplatePayload | null
   live_search_streams?: boolean
   indexer_config?: IndexerConfigPayload | null
+  enable_usenet_streams?: boolean
+  prefer_usenet_over_torrent?: boolean
+  enable_telegram_streams?: boolean
+  telegram_config?: TelegramConfigPayload | null
+  enable_acestream_streams?: boolean
   // Stream display settings
   max_streams?: number
   stream_type_grouping?: 'mixed' | 'separate'
@@ -193,6 +277,11 @@ export interface StreamingProviderPayload {
   enable_watchlist_catalogs?: boolean
   qbittorrent_config?: QBittorrentConfigPayload | null
   only_show_cached_streams?: boolean
+  use_mediaflow?: boolean
+  sabnzbd_config?: SABnzbdConfigPayload | null
+  nzbget_config?: NZBGetConfigPayload | null
+  nzbdav_config?: NzbDAVConfigPayload | null
+  easynews_config?: EasynewsConfigPayload | null
   priority?: number
   enabled?: boolean
 }
@@ -211,11 +300,48 @@ export interface QBittorrentConfigPayload {
   webdav_downloads_path?: string
 }
 
+export interface SABnzbdConfigPayload {
+  url?: string
+  api_key?: string
+  category?: string
+  webdav_url?: string
+  webdav_username?: string
+  webdav_password?: string
+  webdav_downloads_path?: string
+}
+
+export interface NZBGetConfigPayload {
+  url?: string
+  username?: string
+  password?: string
+  category?: string
+  webdav_url?: string
+  webdav_username?: string
+  webdav_password?: string
+  webdav_downloads_path?: string
+}
+
+export interface NzbDAVConfigPayload {
+  url?: string
+  api_key?: string
+  category?: string
+}
+
+export interface EasynewsConfigPayload {
+  username?: string
+  password?: string
+}
+
 export interface CatalogConfigPayload {
   catalog_id: string
   enabled?: boolean
   sort?: string | null
   order?: 'asc' | 'desc'
+}
+
+export interface StreamTemplatePayload {
+  title?: string
+  description?: string
 }
 
 export interface SortingOptionPayload {
@@ -228,7 +354,7 @@ export interface MediaFlowConfigPayload {
   api_password?: string
   public_ip?: string
   proxy_live_streams?: boolean
-  proxy_debrid_streams?: boolean
+  enable_web_playback?: boolean
 }
 
 export interface RPDBConfigPayload {
@@ -254,6 +380,7 @@ export interface IndexerConfigPayload {
   prowlarr?: IndexerInstancePayload | null
   jackett?: IndexerInstancePayload | null
   torznab_endpoints?: TorznabEndpointPayload[]
+  newznab_indexers?: NewznabIndexerPayload[]
 }
 
 export interface IndexerInstancePayload {
@@ -273,80 +400,167 @@ export interface TorznabEndpointPayload {
   priority?: number
 }
 
+export interface NewznabIndexerPayload {
+  id: string
+  name: string
+  url: string
+  api_key: string
+  enabled?: boolean
+  priority?: number
+  movie_categories?: number[]
+  tv_categories?: number[]
+  use_zyclops?: boolean
+  zyclops_backbones?: string[]
+}
+
+export interface TelegramChannelPayload {
+  id: string
+  name: string
+  username?: string
+  chat_id?: string
+  enabled?: boolean
+  priority?: number
+}
+
+export interface TelegramConfigPayload {
+  enabled?: boolean
+  channels?: TelegramChannelPayload[]
+  use_global_channels?: boolean
+}
+
 /**
  * Convert ProfileConfig (frontend format) to UserDataPayload (backend format)
  */
+function mapQBittorrentConfig(config?: QBittorrentConfigType): QBittorrentConfigPayload | null {
+  if (!config) return null
+  return {
+    qbittorrent_url: config.qur,
+    qbittorrent_username: config.qus,
+    qbittorrent_password: config.qpw,
+    seeding_time_limit: config.stl,
+    seeding_ratio_limit: config.srl,
+    play_video_after: config.pva,
+    category: config.cat,
+    webdav_url: config.wur,
+    webdav_username: config.wus,
+    webdav_password: config.wpw,
+    webdav_downloads_path: config.wdp,
+  }
+}
+
+function mapSABnzbdConfig(config?: SABnzbdConfigType): SABnzbdConfigPayload | null {
+  if (!config) return null
+  return {
+    url: config.u,
+    api_key: config.ak,
+    category: config.cat,
+    webdav_url: config.wur,
+    webdav_username: config.wus,
+    webdav_password: config.wpw,
+    webdav_downloads_path: config.wdp,
+  }
+}
+
+function mapNZBGetConfig(config?: NZBGetConfigType): NZBGetConfigPayload | null {
+  if (!config) return null
+  return {
+    url: config.u,
+    username: config.un,
+    password: config.pw,
+    category: config.cat,
+    webdav_url: config.wur,
+    webdav_username: config.wus,
+    webdav_password: config.wpw,
+    webdav_downloads_path: config.wdp,
+  }
+}
+
+function mapNzbDAVConfig(config?: NzbDAVConfigType): NzbDAVConfigPayload | null {
+  if (!config) return null
+  return {
+    url: config.u,
+    api_key: config.ak,
+    category: config.cat,
+  }
+}
+
+function mapEasynewsConfig(config?: EasynewsConfigType): EasynewsConfigPayload | null {
+  if (!config) return null
+  return {
+    username: config.un,
+    password: config.pw,
+  }
+}
+
+function mapStreamingProvider(provider: StreamingProviderConfigType): StreamingProviderPayload {
+  return {
+    name: provider.n || 'default',
+    service: provider.sv,
+    stremthru_store_name: provider.stsn,
+    url: provider.u,
+    token: provider.tk,
+    email: provider.em,
+    password: provider.pw,
+    enable_watchlist_catalogs: provider.ewc ?? true,
+    qbittorrent_config: mapQBittorrentConfig(provider.qbc),
+    only_show_cached_streams: provider.oscs ?? false,
+    use_mediaflow: provider.umf ?? true,
+    sabnzbd_config: mapSABnzbdConfig(provider.sbc),
+    nzbget_config: mapNZBGetConfig(provider.ngc),
+    nzbdav_config: mapNzbDAVConfig(provider.ndc),
+    easynews_config: mapEasynewsConfig(provider.enc),
+    priority: provider.pr ?? 0,
+    enabled: provider.en ?? true,
+  }
+}
+
+function mapIndexerInstance(config?: IndexerInstanceConfigType | null): IndexerInstancePayload | null {
+  if (!config) return null
+  return {
+    enabled: config.en,
+    url: config.u,
+    api_key: config.ak,
+    use_global: config.ug,
+  }
+}
+
+function mapTelegramConfig(config?: TelegramConfigType | null): TelegramConfigPayload | null {
+  if (!config) return null
+  return {
+    enabled: config.en,
+    channels: config.ch?.map((channel) => ({
+      id: channel.i,
+      name: channel.n,
+      username: channel.u,
+      chat_id: channel.cid,
+      enabled: channel.en,
+      priority: channel.p,
+    })),
+    use_global_channels: config.ugc,
+  }
+}
+
 export function profileConfigToUserData(config: ProfileConfig, apiPassword?: string | null): UserDataPayload {
   const userData: UserDataPayload = {}
 
   // Convert streaming providers (sps -> streaming_providers)
-  if (config.sps && config.sps.length > 0) {
-    userData.streaming_providers = config.sps.map((sp) => ({
-      name: sp.n || 'default',
-      service: sp.sv,
-      stremthru_store_name: sp.stsn,
-      url: sp.u,
-      token: sp.tk,
-      email: sp.em,
-      password: sp.pw,
-      enable_watchlist_catalogs: sp.ewc ?? true,
-      qbittorrent_config: sp.qbc
-        ? {
-            qbittorrent_url: sp.qbc.qur,
-            qbittorrent_username: sp.qbc.qus,
-            qbittorrent_password: sp.qbc.qpw,
-            seeding_time_limit: sp.qbc.stl,
-            seeding_ratio_limit: sp.qbc.srl,
-            play_video_after: sp.qbc.pva,
-            category: sp.qbc.cat,
-            webdav_url: sp.qbc.wur,
-            webdav_username: sp.qbc.wus,
-            webdav_password: sp.qbc.wpw,
-            webdav_downloads_path: sp.qbc.wdp,
-          }
-        : null,
-      only_show_cached_streams: sp.oscs ?? false,
-      priority: sp.pr ?? 0,
-      enabled: sp.en ?? true,
-    }))
+  if (config.sps !== undefined) {
+    userData.streaming_providers = (config.sps ?? []).map(mapStreamingProvider)
 
-    // Also set legacy single provider for backward compatibility
-    const primaryProvider = config.sps.find((sp) => sp.en !== false)
+    // Also set legacy single provider for backward compatibility.
+    const primaryProvider = (config.sps ?? []).find((provider) => provider.en !== false)
     if (primaryProvider) {
-      userData.streaming_provider = {
-        name: primaryProvider.n || 'default',
-        service: primaryProvider.sv,
-        stremthru_store_name: primaryProvider.stsn,
-        url: primaryProvider.u,
-        token: primaryProvider.tk,
-        email: primaryProvider.em,
-        password: primaryProvider.pw,
-        enable_watchlist_catalogs: primaryProvider.ewc ?? true,
-        qbittorrent_config: primaryProvider.qbc
-          ? {
-              qbittorrent_url: primaryProvider.qbc.qur,
-              qbittorrent_username: primaryProvider.qbc.qus,
-              qbittorrent_password: primaryProvider.qbc.qpw,
-              seeding_time_limit: primaryProvider.qbc.stl,
-              seeding_ratio_limit: primaryProvider.qbc.srl,
-              play_video_after: primaryProvider.qbc.pva,
-              category: primaryProvider.qbc.cat,
-              webdav_url: primaryProvider.qbc.wur,
-              webdav_username: primaryProvider.qbc.wus,
-              webdav_password: primaryProvider.qbc.wpw,
-              webdav_downloads_path: primaryProvider.qbc.wdp,
-            }
-          : null,
-        only_show_cached_streams: primaryProvider.oscs ?? false,
-        priority: primaryProvider.pr ?? 0,
-        enabled: primaryProvider.en ?? true,
-      }
+      userData.streaming_provider = mapStreamingProvider(primaryProvider)
+    } else if (config.sp !== undefined) {
+      userData.streaming_provider = config.sp ? mapStreamingProvider(config.sp) : null
     }
+  } else if (config.sp !== undefined) {
+    userData.streaming_provider = config.sp ? mapStreamingProvider(config.sp) : null
   }
 
   // Convert catalog configs (cc -> catalog_configs)
-  if (config.cc && config.cc.length > 0) {
-    userData.catalog_configs = config.cc.map((c) => ({
+  if (config.cc !== undefined) {
+    userData.catalog_configs = (config.cc ?? []).map((c) => ({
       catalog_id: c.ci,
       enabled: c.en ?? true,
       sort: c.s,
@@ -354,9 +568,11 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
     }))
   }
 
+  if (config.sc !== undefined) userData.selected_catalogs = config.sc
+
   // Simple field mappings
   // Normalize legacy empty-string "Unknown" resolution to null (backend-compatible).
-  if (config.sr) {
+  if (config.sr !== undefined) {
     userData.selected_resolutions = config.sr.map((r) => (typeof r === 'string' && r.trim() === '' ? null : r))
   }
   if (config.ec !== undefined) userData.enable_catalogs = config.ec
@@ -364,98 +580,126 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
   if (config.ms !== undefined) userData.max_size = config.ms
   if (config.mns !== undefined) userData.min_size = config.mns
   if (config.mspr !== undefined) userData.max_streams_per_resolution = config.mspr
-  if (config.nf) userData.nudity_filter = config.nf
-  if (config.cf) userData.certification_filter = config.cf
-  if (config.ls) userData.language_sorting = config.ls
-  if (config.qf) userData.quality_filter = config.qf
+  if (config.nf !== undefined) userData.nudity_filter = config.nf
+  if (config.cf !== undefined) userData.certification_filter = config.cf
+  if (config.ls !== undefined) userData.language_sorting = config.ls
+  if (config.qf !== undefined) userData.quality_filter = config.qf
   if (config.lss !== undefined) userData.live_search_streams = config.lss
+  if (config.eus !== undefined) userData.enable_usenet_streams = config.eus
+  if (config.puot !== undefined) userData.prefer_usenet_over_torrent = config.puot
+  if (config.ets !== undefined) userData.enable_telegram_streams = config.ets
+  if (config.eas !== undefined) userData.enable_acestream_streams = config.eas
 
   // Stream display settings
   if (config.mxs !== undefined) userData.max_streams = config.mxs
   if (config.stg !== undefined) userData.stream_type_grouping = config.stg
-  if (config.sto) userData.stream_type_order = config.sto
+  if (config.sto !== undefined) userData.stream_type_order = config.sto
   if (config.pg !== undefined) userData.provider_grouping = config.pg
 
   // Stream name filter settings
   if (config.snfm !== undefined) userData.stream_name_filter_mode = config.snfm
-  if (config.snfp) userData.stream_name_filter_patterns = config.snfp
+  if (config.snfp !== undefined) userData.stream_name_filter_patterns = config.snfp
   if (config.snfr !== undefined) userData.stream_name_filter_use_regex = config.snfr
 
   // Convert torrent sorting priority (tsp)
-  if (config.tsp && config.tsp.length > 0) {
-    userData.torrent_sorting_priority = config.tsp.map((s) => ({
+  if (config.tsp !== undefined) {
+    userData.torrent_sorting_priority = (config.tsp ?? []).map((s) => ({
       key: s.k,
       direction: s.d,
     }))
   }
 
   // Convert MediaFlow config (mfc -> mediaflow_config)
-  if (config.mfc) {
-    userData.mediaflow_config = {
-      proxy_url: config.mfc.pu,
-      api_password: config.mfc.ap,
-      public_ip: config.mfc.pip,
-      proxy_live_streams: config.mfc.pls,
-      proxy_debrid_streams: config.mfc.pds,
-    }
+  if (config.mfc !== undefined) {
+    userData.mediaflow_config = config.mfc
+      ? {
+          proxy_url: config.mfc.pu,
+          api_password: config.mfc.ap,
+          public_ip: config.mfc.pip,
+          proxy_live_streams: config.mfc.pls,
+          // Support both modern `ewp` and legacy `pds` frontend keys.
+          enable_web_playback: config.mfc.ewp ?? config.mfc.pds,
+        }
+      : null
   }
 
   // Convert RPDB config (rpc -> rpdb_config)
-  if (config.rpc) {
-    userData.rpdb_config = {
-      api_key: config.rpc.ak,
-    }
+  if (config.rpc !== undefined) {
+    userData.rpdb_config = config.rpc
+      ? {
+          api_key: config.rpc.ak,
+        }
+      : null
   }
 
   // Convert MDBList config (mdb -> mdblist_config)
-  if (config.mdb) {
-    userData.mdblist_config = {
-      api_key: config.mdb.ak,
-      lists: config.mdb.l?.map((l) => ({
-        id: l.i,
-        title: l.t,
-        catalog_type: l.ct,
-        sort: l.s,
-        order: l.o,
-        use_filters: l.uf,
-      })),
-    }
+  if (config.mdb !== undefined) {
+    userData.mdblist_config = config.mdb
+      ? {
+          api_key: config.mdb.ak,
+          lists: config.mdb.l?.map((l) => ({
+            id: l.i,
+            title: l.t,
+            catalog_type: l.ct,
+            sort: l.s,
+            order: l.o,
+            use_filters: l.uf,
+          })),
+        }
+      : null
+  }
+
+  // Convert stream template config (st -> stream_template)
+  if (config.st !== undefined) {
+    userData.stream_template = config.st
+      ? {
+          title: config.st.t,
+          description: config.st.d,
+        }
+      : null
   }
 
   // Convert indexer config (ic -> indexer_config)
-  if (config.ic) {
-    userData.indexer_config = {
-      prowlarr: config.ic.pr
-        ? {
-            enabled: config.ic.pr.en,
-            url: config.ic.pr.u,
-            api_key: config.ic.pr.ak,
-            use_global: config.ic.pr.ug,
-          }
-        : null,
-      jackett: config.ic.jk
-        ? {
-            enabled: config.ic.jk.en,
-            url: config.ic.jk.u,
-            api_key: config.ic.jk.ak,
-            use_global: config.ic.jk.ug,
-          }
-        : null,
-      torznab_endpoints: config.ic.tz?.map((t) => ({
-        id: t.i,
-        name: t.n,
-        url: t.u,
-        headers: t.h,
-        enabled: t.en,
-        categories: t.c,
-        priority: t.p,
-      })),
-    }
+  if (config.ic !== undefined) {
+    userData.indexer_config = config.ic
+      ? {
+          prowlarr: mapIndexerInstance(config.ic.pr),
+          jackett: mapIndexerInstance(config.ic.jk),
+          torznab_endpoints: config.ic.tz?.map((t) => ({
+            id: t.i,
+            name: t.n,
+            url: t.u,
+            headers: t.h,
+            enabled: t.en,
+            categories: t.c,
+            priority: t.p,
+          })),
+          newznab_indexers: config.ic.nz?.map((indexer) => ({
+            id: indexer.i,
+            name: indexer.n,
+            url: indexer.u,
+            api_key: indexer.ak,
+            enabled: indexer.en,
+            priority: indexer.p,
+            movie_categories: indexer.mc,
+            tv_categories: indexer.tc,
+            use_zyclops: indexer.uz,
+            zyclops_backbones: indexer.zb,
+          })),
+        }
+      : null
+  }
+
+  // Convert Telegram config (tgc -> telegram_config)
+  if (config.tgc !== undefined) {
+    userData.telegram_config = mapTelegramConfig(config.tgc)
   }
 
   // API password for private instances
   if (apiPassword) {
     userData.api_password = apiPassword
+  } else if (config.ap !== undefined) {
+    userData.api_password = config.ap || null
   }
 
   return userData
@@ -564,12 +808,15 @@ export async function decryptUserData(secretStr: string): Promise<DecryptUserDat
 /**
  * Generate manifest URLs from encrypted string
  */
-export function generateManifestUrls(encryptedStr: string): {
+export function generateManifestUrls(
+  encryptedStr: string,
+  hostUrl?: string,
+): {
   manifestUrl: string
   stremioInstallUrl: string
 } {
-  const baseUrl = window.location.origin
-  const hostWithoutProtocol = baseUrl.replace('https://', '').replace('http://', '')
+  const baseUrl = (hostUrl?.trim() || window.location.origin).replace(/\/+$/, '')
+  const hostWithoutProtocol = baseUrl.replace(/^https?:\/\//, '')
 
   return {
     manifestUrl: `${baseUrl}/${encryptedStr}/manifest.json`,

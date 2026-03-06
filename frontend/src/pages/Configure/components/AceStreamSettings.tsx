@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Radio, Info } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -12,21 +11,15 @@ interface AceStreamSettingsProps {
 }
 
 export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) {
-  const [enableAceStream, setEnableAceStream] = useState(config.eas ?? false)
-
-  // Sync with config changes (during render, not in effect)
-  const [prevEas, setPrevEas] = useState(config.eas)
-  if (config.eas !== prevEas) {
-    setPrevEas(config.eas)
-    setEnableAceStream(config.eas ?? false)
-  }
-
   // Check if MediaFlow is configured
-  const hasMediaFlow = !!(config.mfc?.pu && config.mfc?.ap)
+  const hasMediaFlow = Boolean(config.mfc?.pu?.trim() && config.mfc?.ap?.trim())
+  const enableAceStream = hasMediaFlow ? (config.eas ?? false) : false
 
   // Update parent config
   const handleEnableChange = (checked: boolean) => {
-    setEnableAceStream(checked)
+    if (checked && !hasMediaFlow) {
+      return
+    }
     onChange({
       ...config,
       eas: checked,
@@ -51,10 +44,28 @@ export function AceStreamSettings({ config, onChange }: AceStreamSettingsProps) 
             <Label htmlFor="enable-acestream" className="text-base">
               Enable AceStream Streams
             </Label>
-            <p className="text-sm text-muted-foreground">Show AceStream streams in search results and catalogs</p>
+            <p className="text-sm text-muted-foreground">
+              Show AceStream streams in search results and catalogs
+              {!hasMediaFlow ? ' (configure MediaFlow first)' : ''}
+            </p>
           </div>
-          <Switch id="enable-acestream" checked={enableAceStream} onCheckedChange={handleEnableChange} />
+          <Switch
+            id="enable-acestream"
+            checked={enableAceStream}
+            onCheckedChange={handleEnableChange}
+            disabled={!hasMediaFlow}
+          />
         </div>
+
+        {!hasMediaFlow && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Configure MediaFlow Proxy URL and API Password in <strong>External Services → MediaFlow</strong> to enable
+              AceStream streams.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* AceStream Setup Requirement */}
         {enableAceStream && (

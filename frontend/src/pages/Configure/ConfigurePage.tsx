@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Settings,
   Plus,
@@ -43,6 +44,7 @@ import { useProfiles, useCreateProfile, useUpdateProfile, useDeleteProfile, useS
 import { useAuth } from '@/contexts/AuthContext'
 import { useInstance } from '@/contexts/InstanceContext'
 import type { Profile } from '@/lib/api'
+import { getAppConfig } from '@/lib/api'
 import { encryptUserData, decryptUserData, generateManifestUrls, associateKodiManifest } from '@/lib/api/anonymous'
 import { cn } from '@/lib/utils'
 import {
@@ -103,11 +105,27 @@ function sanitizeStreamTypeOrder(streamTypes: ProfileConfig['sto']): ProfileConf
   return deduped
 }
 
+function hasConfiguredMediaFlow(config: ProfileConfig): boolean {
+  return Boolean(config.mfc?.pu?.trim() && config.mfc?.ap?.trim())
+}
+
 function sanitizeProfileConfig(config: ProfileConfig): ProfileConfig {
+  const mediaFlowConfigured = hasConfiguredMediaFlow(config)
   return {
     ...config,
     sr: sanitizeResolutionList(config.sr),
     sto: sanitizeStreamTypeOrder(config.sto),
+    // AceStream is only valid when MediaFlow is configured.
+    eas: mediaFlowConfigured ? config.eas : false,
+  }
+}
+
+function sanitizeAnonymousProfileConfig(config: ProfileConfig): ProfileConfig {
+  return {
+    ...sanitizeProfileConfig(config),
+    // Telegram streams require a linked account, which anonymous users cannot store.
+    ets: false,
+    tgc: null,
   }
 }
 
@@ -297,7 +315,12 @@ function AnonymousInstallUrls({
   initialKodiCode?: string
 }) {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
-  const urls = generateManifestUrls(encryptedStr)
+  const { data: appConfig } = useQuery({
+    queryKey: ['appConfig'],
+    queryFn: getAppConfig,
+    staleTime: 5 * 60 * 1000,
+  })
+  const urls = generateManifestUrls(encryptedStr, appConfig?.host_url)
 
   const copyToClipboard = async (url: string, type: string) => {
     await navigator.clipboard.writeText(url)
@@ -410,7 +433,7 @@ function AnonymousConfigEditor() {
         return
       }
 
-      setConfig(sanitizeProfileConfig(result.config as ProfileConfig))
+      setConfig(sanitizeAnonymousProfileConfig(result.config as ProfileConfig))
       setExistingSecretStr(secretStrParam)
       setLoadedSecretStr(secretStrParam)
     }
@@ -451,7 +474,7 @@ function AnonymousConfigEditor() {
     setError(null)
 
     try {
-      const result = await encryptUserData(sanitizeProfileConfig(config), existingSecretStr ?? undefined)
+      const result = await encryptUserData(sanitizeAnonymousProfileConfig(config), existingSecretStr ?? undefined)
 
       if (result.status === 'error') {
         setError(result.message || 'Failed to generate configuration')
@@ -617,9 +640,6 @@ function AnonymousConfigEditor() {
           <TabsTrigger value="usenet" className="flex-1 min-w-[100px] py-2.5 px-4 text-sm">
             <span className="mr-2">📰</span> Usenet
           </TabsTrigger>
-          <TabsTrigger value="telegram" className="flex-1 min-w-[100px] py-2.5 px-4 text-sm">
-            <span className="mr-2">📨</span> Telegram
-          </TabsTrigger>
           <TabsTrigger value="acestream" className="flex-1 min-w-[100px] py-2.5 px-4 text-sm">
             <span className="mr-2">📡</span> AceStream
           </TabsTrigger>
@@ -657,10 +677,6 @@ function AnonymousConfigEditor() {
 
         <TabsContent value="usenet" className="mt-6">
           <UsenetSettings config={config} onChange={setConfig} />
-        </TabsContent>
-
-        <TabsContent value="telegram" className="mt-6">
-          <TelegramSettings config={config} onChange={setConfig} />
         </TabsContent>
 
         <TabsContent value="acestream" className="mt-6">
