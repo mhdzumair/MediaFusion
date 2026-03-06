@@ -281,6 +281,7 @@ export {
   NUDITY_STATUS_OPTIONS,
   TORRENT_TYPE_OPTIONS,
 } from './admin'
+export { moderatorApi } from './moderator'
 export {
   contributionSettingsApi,
   type ContributionSettings,

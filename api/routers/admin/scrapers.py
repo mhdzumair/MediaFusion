@@ -10,7 +10,7 @@ from typing import Literal
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlmodel import select
+from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_role
@@ -435,10 +435,21 @@ async def migrate_media(
         )
 
     if from_media.type != to_media.type:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Both media entries must have the same media type.",
+        source_stream_link_count_result = await session.exec(
+            select(func.count()).select_from(StreamMediaLink).where(StreamMediaLink.media_id == from_media.id)
         )
+        source_stream_link_count = source_stream_link_count_result.one()
+        source_file_link_count_result = await session.exec(
+            select(func.count()).select_from(FileMediaLink).where(FileMediaLink.media_id == from_media.id)
+        )
+        source_file_link_count = source_file_link_count_result.one()
+
+        # Allow cross-type cleanup only when source has no links to move.
+        if source_stream_link_count > 0 or source_file_link_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Media type mismatch is only allowed when source has no linked streams/files.",
+            )
 
     if from_media.is_user_created or to_media.is_user_created:
         raise HTTPException(

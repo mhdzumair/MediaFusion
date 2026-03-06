@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useToast } from '@/hooks/use-toast'
-import { adminApi, scrapersApi, type MetadataItem, type MigrateMediaResponse } from '@/lib/api'
+import { moderatorApi, scrapersApi, type MetadataItem, type MigrateMediaResponse } from '@/lib/api'
 
 import { ModeratorMediaPoster } from './ModeratorMediaPoster'
 
@@ -64,7 +64,7 @@ async function searchMetadata(query: string): Promise<MetadataItem[]> {
     const mediaId = Number(normalizedId)
     if (Number.isInteger(mediaId) && mediaId > 0) {
       try {
-        const item = await adminApi.getMetadata(mediaId)
+        const item = await moderatorApi.getMetadata(mediaId)
         return [item]
       } catch {
         return []
@@ -72,7 +72,7 @@ async function searchMetadata(query: string): Promise<MetadataItem[]> {
     }
   }
 
-  const response = await adminApi.listMetadata({
+  const response = await moderatorApi.listMetadata({
     page: 1,
     per_page: 8,
     search: trimmedQuery,
@@ -275,11 +275,20 @@ export function MediaMigrationTab() {
   const validationError = useMemo(() => {
     if (!fromMedia || !toMedia) return 'Select both source and target metadata items.'
     if (fromMedia.id === toMedia.id) return 'Source and target media IDs must be different.'
-    if (fromMedia.type !== toMedia.type) return 'Source and target media must have the same media type.'
+    if (fromMedia.type !== toMedia.type && fromMedia.total_streams > 0) {
+      return 'Media type mismatch is only allowed when source has no linked streams.'
+    }
     if (fromMedia.is_user_created || toMedia.is_user_created) {
       return 'Only non-user-created media can be migrated.'
     }
     return null
+  }, [fromMedia, toMedia])
+
+  const typeMismatchWarning = useMemo(() => {
+    if (!fromMedia || !toMedia) return null
+    if (fromMedia.type === toMedia.type) return null
+    if (fromMedia.total_streams !== 0) return null
+    return 'Type mismatch detected, but allowed because source has no linked streams. This will remove the wrong duplicate metadata.'
   }, [fromMedia, toMedia])
 
   const migrateMutation = useMutation({
@@ -393,6 +402,9 @@ export function MediaMigrationTab() {
           </div>
 
           {validationError ? <p className="text-sm text-destructive">{validationError}</p> : null}
+          {!validationError && typeMismatchWarning ? (
+            <p className="text-sm text-amber-600">{typeMismatchWarning}</p>
+          ) : null}
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
             <Button type="button" onClick={() => setConfirmOpen(true)} disabled={!canMigrate} className="rounded-xl">
@@ -429,6 +441,9 @@ export function MediaMigrationTab() {
               {fromMedia && toMedia
                 ? `Move links from "${fromMedia.title}" (#${fromMedia.id}) to "${toMedia.title}" (#${toMedia.id}) and remove the source metadata.`
                 : 'Select source and target metadata first.'}
+              {fromMedia && toMedia && fromMedia.type !== toMedia.type && fromMedia.total_streams === 0
+                ? ' Type mismatch is allowed here because the source has no linked streams/files.'
+                : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

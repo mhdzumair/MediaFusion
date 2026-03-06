@@ -86,6 +86,7 @@ def _register_routers(app: FastAPI) -> None:
     from api.routers.admin import get_router as get_admin_router
     from api.routers.content import get_router as get_content_router
     from api.routers.instance import get_router as get_instance_router
+    from api.routers.moderator import get_router as get_moderator_router
     from api.routers.rss import get_router as get_rss_router
     from api.routers.streaming import (
         get_provider_router as get_streaming_provider_router,
@@ -106,6 +107,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(
         get_admin_router()
     )  # admin, scheduler, cache, database_admin, contribution_settings, metrics, scrapers
+    app.include_router(get_moderator_router())  # moderator metadata migration/search endpoints
     app.include_router(get_content_router())  # catalog, contributions, content_import, voting, suggestions, scraping
     app.include_router(get_rss_router())  # rss_feeds, user_rss
     app.include_router(get_streaming_router(), prefix="/streaming_provider")  # playback, cache

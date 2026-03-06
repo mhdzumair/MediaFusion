@@ -30,7 +30,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMutation } from '@tanstack/react-query'
-import { adminApi, type ExternalMetadataPreview } from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
+import { adminApi, moderatorApi, type ExternalMetadataPreview } from '@/lib/api'
 
 interface ExternalMetadataPanelProps {
   mediaId: number
@@ -51,6 +52,7 @@ export function ExternalMetadataPanel({
   onMetadataApplied,
   onIdMigrated,
 }: ExternalMetadataPanelProps) {
+  const { user } = useAuth()
   const [provider, setProvider] = useState<'imdb' | 'tmdb'>('imdb')
   const [searchQuery, setSearchQuery] = useState(title)
   const [searchYear, setSearchYear] = useState<string>(year?.toString() || '')
@@ -58,6 +60,7 @@ export function ExternalMetadataPanel({
   const [selectedPreview, setSelectedPreview] = useState<ExternalMetadataPreview | null>(null)
   const [newExternalId, setNewExternalId] = useState('')
   const [migrateDialogOpen, setMigrateDialogOpen] = useState(false)
+  const metadataApi = user?.role === 'moderator' ? moderatorApi : adminApi
 
   const isInternalId = currentExternalId.startsWith('mf:')
   const isTmdbId = currentExternalId.startsWith('tmdb:')
@@ -66,7 +69,7 @@ export function ExternalMetadataPanel({
   // Search mutation
   const searchMutation = useMutation({
     mutationFn: () =>
-      adminApi.searchExternalMetadata({
+      metadataApi.searchExternalMetadata({
         provider,
         title: searchQuery,
         year: searchYear ? parseInt(searchYear) : undefined,
@@ -80,7 +83,7 @@ export function ExternalMetadataPanel({
   // Fetch preview mutation
   const fetchPreviewMutation = useMutation({
     mutationFn: (externalId: string) =>
-      adminApi.fetchExternalMetadata(mediaId, {
+      metadataApi.fetchExternalMetadata(mediaId, {
         provider,
         external_id: externalId,
       }),
@@ -92,7 +95,7 @@ export function ExternalMetadataPanel({
   // Apply metadata mutation
   const applyMutation = useMutation({
     mutationFn: (externalId: string) =>
-      adminApi.applyExternalMetadata(mediaId, {
+      metadataApi.applyExternalMetadata(mediaId, {
         provider,
         external_id: externalId,
       }),
@@ -104,7 +107,7 @@ export function ExternalMetadataPanel({
   // Migrate ID mutation
   const migrateMutation = useMutation({
     mutationFn: () =>
-      adminApi.migrateMetadataId(mediaId, {
+      metadataApi.migrateMetadataId(mediaId, {
         new_external_id: newExternalId,
       }),
     onSuccess: () => {

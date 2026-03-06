@@ -4,6 +4,7 @@ This package contains all API routers organized into logical subpackages:
 - stremio: Stremio addon routes (home, manifest, catalog, meta, stream, etc.)
 - user: User-related routes (auth, profiles, watch_history, downloads, library)
 - admin: Admin routes (admin, scheduler, cache, database_admin, contribution_settings)
+- moderator: Moderator routes (metadata migration/search workflows)
 - content: Content routes (catalog API, contributions, content_import, voting, suggestions)
 - rss: RSS routes (rss_feeds, user_rss)
 - kodi: Kodi device pairing routes (setup code, manifest association)
@@ -17,6 +18,7 @@ __all__ = [
     "stremio",
     "user",
     "admin",
+    "moderator",
     "content",
     "rss",
     "kodi",
