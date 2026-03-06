@@ -236,6 +236,7 @@ export interface CatalogListParams {
   catalog?: string
   genre?: string
   search?: string
+  external_id?: string
   sort?: SortOption
   sort_dir?: SortDirection // Sort direction: 'asc' or 'desc'
   page?: number
@@ -266,6 +267,7 @@ export const catalogApi = {
     if (params.catalog) searchParams.set('catalog', params.catalog)
     if (params.genre) searchParams.set('genre', params.genre)
     if (params.search) searchParams.set('search', params.search)
+    if (params.external_id) searchParams.set('external_id', params.external_id)
     if (params.sort) searchParams.set('sort', params.sort)
     if (params.sort_dir) searchParams.set('sort_dir', params.sort_dir)
     if (params.page) searchParams.set('page', params.page.toString())

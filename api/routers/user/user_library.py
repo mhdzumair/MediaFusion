@@ -15,7 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from api.dependencies import get_profile_context
 from api.routers.user.auth import require_auth
 from db.config import settings
-from db.crud.media import get_all_external_ids_batch
+from db.crud.media import get_all_external_ids_batch, get_media_by_external_id
 from db.database import get_async_session
 from db.models import MediaImage, User, UserLibraryItem
 from utils.profile_context import ProfileContext
@@ -150,6 +150,7 @@ async def _get_library_item_with_media(
 async def get_library(
     catalog_type: Literal["movie", "series", "tv"] | None = Query(None, description="Filter by type"),
     search: str | None = Query(None, description="Search by title"),
+    external_id: str | None = Query(None, description="Search by external ID (IMDb, TMDB, TVDB, etc.)"),
     sort: Literal["added", "title"] | None = Query("added", description="Sort order"),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
@@ -172,6 +173,15 @@ async def get_library(
     if catalog_type:
         base_query = base_query.where(UserLibraryItem.catalog_type == catalog_type)
         count_query = count_query.where(UserLibraryItem.catalog_type == catalog_type)
+
+    # Apply external ID filter
+    if external_id:
+        media = await get_media_by_external_id(session, external_id)
+        if not media:
+            return LibraryListResponse(items=[], total=0, page=page, page_size=page_size, has_more=False)
+
+        base_query = base_query.where(UserLibraryItem.media_id == media.id)
+        count_query = count_query.where(UserLibraryItem.media_id == media.id)
 
     # Apply search filter
     if search:

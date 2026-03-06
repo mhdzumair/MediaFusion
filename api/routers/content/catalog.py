@@ -461,6 +461,7 @@ async def browse_catalog(
     catalog: str | None = Query(None, description="Filter by catalog name"),
     genre: str | None = Query(None, description="Filter by genre"),
     search: str | None = Query(None, description="Search query"),
+    external_id: str | None = Query(None, description="Search by external ID (IMDb, TMDB, TVDB, etc.)"),
     sort: Literal["latest", "popular", "rating", "year", "title", "release_date"] | None = Query("latest"),
     sort_dir: Literal["asc", "desc"] | None = Query("desc", description="Sort direction"),
     page: int = Query(1, ge=1),
@@ -608,6 +609,15 @@ async def browse_catalog(
             .join(Genre, Genre.id == MediaGenreLink.genre_id)
             .where(Genre.name == genre)
         )
+
+    # Apply external ID filter
+    if external_id:
+        media = await crud.get_media_by_external_id(session, external_id, media_type)
+        if not media:
+            return CatalogListResponse(items=[], total=0, page=page, page_size=page_size, has_more=False)
+
+        base_query = base_query.where(Media.id == media.id)
+        count_query = count_query.where(Media.id == media.id)
 
     # Apply search filter - searches in titles, cast, and crew names
     # Uses UNION-based subquery for optimal performance with trigram indexes

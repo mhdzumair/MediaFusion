@@ -9,6 +9,7 @@ import {
   ContentFilters,
   type ContentCardData,
   type ViewMode,
+  type SearchMode,
 } from '@/components/content'
 import {
   useInfiniteCatalog,
@@ -28,6 +29,7 @@ interface BrowseState {
   selectedCatalog: string
   selectedGenre: string
   search: string
+  searchMode: SearchMode
   sort: SortOption
   sortDir: SortDirection
   viewMode: ViewMode
@@ -62,11 +64,16 @@ export function BrowseTab() {
   const urlType = searchParams.get('type') as CatalogType | null
   const urlGenre = searchParams.get('genre')
   const urlSearch = searchParams.get('search')
+  const urlExternalId = searchParams.get('external_id')
+  const urlSearchMode = searchParams.get('search_mode') as SearchMode | null
 
   const [catalogType, setCatalogType] = useState<CatalogType>(urlType || storedState.catalogType || 'movie')
   const [selectedCatalog, setSelectedCatalog] = useState<string>(storedState.selectedCatalog || '')
   const [selectedGenre, setSelectedGenre] = useState<string>(urlGenre || storedState.selectedGenre || '')
-  const [search, setSearch] = useState(urlSearch || storedState.search || '')
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    urlSearchMode || (urlExternalId ? 'external_id' : storedState.searchMode || 'title'),
+  )
+  const [search, setSearch] = useState(urlExternalId || urlSearch || storedState.search || '')
   const [sort, setSort] = useState<SortOption>(storedState.sort || 'latest')
   const [sortDir, setSortDir] = useState<SortDirection>(storedState.sortDir || 'desc')
   const [viewMode, setViewMode] = useState<ViewMode>(storedState.viewMode || 'grid')
@@ -86,7 +93,13 @@ export function BrowseTab() {
   })
 
   // Track previous URL params to detect external navigation
-  const [prevUrlParams, setPrevUrlParams] = useState({ type: urlType, genre: urlGenre, search: urlSearch })
+  const [prevUrlParams, setPrevUrlParams] = useState({
+    type: urlType,
+    genre: urlGenre,
+    search: urlSearch,
+    externalId: urlExternalId,
+    searchMode: urlSearchMode,
+  })
   const [restoredScroll, setRestoredScroll] = useState(false)
 
   // Refs
@@ -99,15 +112,33 @@ export function BrowseTab() {
   const newType = searchParams.get('type') as CatalogType | null
   const newGenre = searchParams.get('genre')
   const newSearch = searchParams.get('search')
+  const newExternalId = searchParams.get('external_id')
+  const newSearchMode = searchParams.get('search_mode') as SearchMode | null
   const prevParams = prevUrlParams
   const isExternalNavigation =
-    newType !== prevParams.type || newGenre !== prevParams.genre || newSearch !== prevParams.search
+    newType !== prevParams.type ||
+    newGenre !== prevParams.genre ||
+    newSearch !== prevParams.search ||
+    newExternalId !== prevParams.externalId ||
+    newSearchMode !== prevParams.searchMode
 
   if (isExternalNavigation) {
-    setPrevUrlParams({ type: newType, genre: newGenre, search: newSearch })
+    setPrevUrlParams({
+      type: newType,
+      genre: newGenre,
+      search: newSearch,
+      externalId: newExternalId,
+      searchMode: newSearchMode,
+    })
     if (newType) setCatalogType(newType)
     setSelectedGenre(newGenre || '')
-    setSearch(newSearch || '')
+    if (newSearchMode === 'external_id' || newExternalId) {
+      setSearchMode('external_id')
+      setSearch(newExternalId || '')
+    } else {
+      setSearchMode('title')
+      setSearch(newSearch || '')
+    }
     window.scrollTo(0, 0)
     setRestoredScroll(true)
   }
@@ -117,7 +148,8 @@ export function BrowseTab() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteCatalog(catalogType, {
     catalog: selectedCatalog || undefined,
     genre: selectedGenre || undefined,
-    search: search || undefined,
+    search: searchMode === 'title' ? search || undefined : undefined,
+    external_id: searchMode === 'external_id' ? search || undefined : undefined,
     sort,
     sort_dir: sortDir,
     page_size: 24,
@@ -140,6 +172,7 @@ export function BrowseTab() {
         selectedCatalog,
         selectedGenre,
         search,
+        searchMode,
         sort,
         sortDir,
         viewMode,
@@ -153,6 +186,7 @@ export function BrowseTab() {
     selectedCatalog,
     selectedGenre,
     search,
+    searchMode,
     sort,
     sortDir,
     viewMode,
@@ -165,9 +199,18 @@ export function BrowseTab() {
   useEffect(() => {
     const params: Record<string, string> = { type: catalogType }
     if (selectedGenre) params.genre = selectedGenre
-    if (search) params.search = search
+    if (searchMode === 'external_id') {
+      params.search_mode = 'external_id'
+    }
+    if (search) {
+      if (searchMode === 'external_id') {
+        params.external_id = search
+      } else {
+        params.search = search
+      }
+    }
     setSearchParams(params, { replace: true })
-  }, [catalogType, selectedGenre, search, setSearchParams])
+  }, [catalogType, selectedGenre, search, searchMode, setSearchParams])
 
   // Restore scroll position after data loads (async - keep in effect)
   useEffect(() => {
@@ -191,6 +234,7 @@ export function BrowseTab() {
           selectedCatalog,
           selectedGenre,
           search,
+          searchMode,
           sort,
           sortDir,
           viewMode,
@@ -206,7 +250,18 @@ export function BrowseTab() {
       window.removeEventListener('scroll', handleScroll)
       clearTimeout(timeoutId)
     }
-  }, [catalogType, selectedCatalog, selectedGenre, search, sort, sortDir, viewMode, workingOnly, myChannels])
+  }, [
+    catalogType,
+    selectedCatalog,
+    selectedGenre,
+    search,
+    searchMode,
+    sort,
+    sortDir,
+    viewMode,
+    workingOnly,
+    myChannels,
+  ])
 
   // Infinite scroll with IntersectionObserver
   useEffect(() => {
@@ -305,7 +360,7 @@ export function BrowseTab() {
   // Reset scroll flag when filters change
   useEffect(() => {
     hasScrolledToSelected.current = false
-  }, [catalogType, selectedCatalog, selectedGenre, search, sort, sortDir])
+  }, [catalogType, selectedCatalog, selectedGenre, search, searchMode, sort, sortDir])
 
   // Store selected item when clicking on a card
   const handleCardClick = (item: ContentCardData) => {
@@ -321,6 +376,12 @@ export function BrowseTab() {
         onCatalogTypeChange={handleCatalogTypeChange}
         search={search}
         onSearchChange={setSearch}
+        searchMode={searchMode}
+        onSearchModeChange={setSearchMode}
+        showSearchMode
+        searchPlaceholder={
+          searchMode === 'external_id' ? 'Search by external ID (e.g., tt0133093, tmdb:603)...' : 'Search...'
+        }
         selectedCatalog={selectedCatalog}
         catalogs={catalogs}
         onCatalogChange={setSelectedCatalog}

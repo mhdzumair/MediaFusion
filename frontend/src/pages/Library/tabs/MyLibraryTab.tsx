@@ -16,6 +16,7 @@ const LIBRARY_SELECTED_ITEM_KEY = 'my_library_selected_item'
 export function MyLibraryTab() {
   const [catalogType, setCatalogType] = useState<CatalogType | ''>('')
   const [search, setSearch] = useState('')
+  const [searchMode, setSearchMode] = useState<'title' | 'external_id'>('title')
   const [sort, setSort] = useState<'added' | 'title'>('added')
   const [page, setPage] = useState(1)
 
@@ -34,7 +35,8 @@ export function MyLibraryTab() {
 
   const { data, isLoading } = useLibrary({
     catalog_type: catalogType || undefined,
-    search: search || undefined,
+    search: searchMode === 'title' ? search || undefined : undefined,
+    external_id: searchMode === 'external_id' ? search || undefined : undefined,
     sort,
     page,
     page_size: 24,
@@ -107,7 +109,7 @@ export function MyLibraryTab() {
   // Reset scroll flag when filters change
   useEffect(() => {
     hasScrolledToSelected.current = false
-  }, [catalogType, search, sort, page])
+  }, [catalogType, search, searchMode, sort, page])
 
   return (
     <div className="space-y-6">
@@ -172,12 +174,35 @@ export function MyLibraryTab() {
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search your library..."
+            placeholder={
+              searchMode === 'external_id'
+                ? 'Search by external ID (e.g., tt0133093, tmdb:603)...'
+                : 'Search your library...'
+            }
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
             className="pl-9 rounded-xl"
           />
         </div>
+
+        <Select
+          value={searchMode}
+          onValueChange={(v) => {
+            setSearchMode(v as 'title' | 'external_id')
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[150px] rounded-xl">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="title">Title</SelectItem>
+            <SelectItem value="external_id">External ID</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Select
           value={catalogType || 'all'}

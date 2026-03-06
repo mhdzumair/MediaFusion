@@ -35,6 +35,7 @@ export interface LibraryStatsResponse {
 export interface LibraryListParams {
   catalog_type?: CatalogType
   search?: string
+  external_id?: string
   sort?: 'added' | 'title'
   page?: number
   page_size?: number
@@ -53,6 +54,7 @@ export const libraryApi = {
 
     if (params.catalog_type) searchParams.set('catalog_type', params.catalog_type)
     if (params.search) searchParams.set('search', params.search)
+    if (params.external_id) searchParams.set('external_id', params.external_id)
     if (params.sort) searchParams.set('sort', params.sort)
     if (params.page) searchParams.set('page', params.page.toString())
     if (params.page_size) searchParams.set('page_size', params.page_size.toString())

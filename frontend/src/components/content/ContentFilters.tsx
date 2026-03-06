@@ -12,6 +12,7 @@ import type { CatalogType, SortOption, SortDirection, GenreResponse, CatalogInfo
 // ============================================
 
 export type ViewMode = 'grid' | 'list'
+export type SearchMode = 'title' | 'external_id'
 
 export interface ContentFiltersProps {
   // Type filter
@@ -23,6 +24,9 @@ export interface ContentFiltersProps {
   search?: string
   onSearchChange?: (search: string) => void
   searchPlaceholder?: string
+  searchMode?: SearchMode
+  onSearchModeChange?: (mode: SearchMode) => void
+  showSearchMode?: boolean
 
   // Catalog filter
   selectedCatalog?: string
@@ -91,6 +95,9 @@ export function ContentFilters({
   search = '',
   onSearchChange,
   searchPlaceholder = 'Search...',
+  searchMode,
+  onSearchModeChange,
+  showSearchMode = false,
 
   // Catalog filter
   selectedCatalog,
@@ -192,24 +199,38 @@ export function ContentFilters({
       <div className="flex flex-wrap items-center gap-2">
         {/* Search Input */}
         {onSearchChange && (
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-9 pr-8 rounded-xl"
+              className={cn('pl-9 rounded-xl', showSearchMode && searchMode && onSearchModeChange ? 'pr-28' : 'pr-8')}
             />
-            {search && (
-              <button
-                type="button"
-                onClick={() => onSearchChange('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-muted transition-colors"
-                title="Clear search"
-              >
-                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-              </button>
-            )}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {showSearchMode && searchMode && onSearchModeChange && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSearchModeChange(searchMode === 'title' ? 'external_id' : 'title')}
+                  className="h-6 rounded-md px-2 text-[11px] leading-none"
+                  title={searchMode === 'title' ? 'Switch to external ID search' : 'Switch to title search'}
+                >
+                  {searchMode === 'title' ? 'Title' : 'Ext ID'}
+                </Button>
+              )}
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => onSearchChange('')}
+                  className="p-1 rounded-full hover:bg-muted transition-colors"
+                  title="Clear search"
+                >
+                  <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                </button>
+              )}
+            </div>
           </div>
         )}
 
