@@ -751,7 +751,7 @@ async def list_pending_suggestions(
             count_query = count_query.where(reviewer_condition)
 
     # Order and paginate
-    base_query = base_query.order_by(MetadataSuggestion.created_at.asc())
+    base_query = base_query.order_by(MetadataSuggestion.created_at.desc())
     base_query = base_query.offset(offset).limit(page_size)
 
     # Execute
