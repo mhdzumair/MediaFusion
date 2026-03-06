@@ -39,6 +39,9 @@ export interface StreamSuggestionCreateRequest {
   related_stream_id?: string
   // Fields for stream re-linking suggestions
   target_media_id?: number // Target media ID to link stream to (for relink_media/add_media_link)
+  target_external_id?: string // External ID used if media does not already exist
+  target_media_type?: 'movie' | 'series' // Required when using target_external_id
+  target_title?: string // Optional fallback title hint for external imports
   file_index?: number // Specific file index within torrent (for multi-file torrents)
 }
 

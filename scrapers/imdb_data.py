@@ -3,7 +3,9 @@ import math
 import re
 from datetime import date, datetime
 from enum import Enum
+from types import SimpleNamespace
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from cinemagoerng import model, piculet, web
@@ -322,6 +324,133 @@ async def get_imdb_rating(movie_id: str) -> float | None:
         return None
 
 
+def _build_search_httpx_kwargs(proxy_url: str | None) -> dict[str, Any] | None:
+    """Build httpx kwargs for IMDb search requests."""
+    if not proxy_url:
+        return None
+    return {"proxy": proxy_url}
+
+
+async def _search_titles_with_retry(
+    title: str,
+    search_filters: SearchFilters,
+    title_types: list[str],
+    count: int,
+    max_retries: int,
+) -> list[Any]:
+    """
+    Execute IMDb title search with retries and proxy fallback.
+
+    Some IMDb responses intermittently return empty payloads
+    (raising parsing errors such as "Document is empty").
+    """
+    last_error: Exception | None = None
+    proxy_candidates = [settings.requests_proxy_url, None] if settings.requests_proxy_url else [None]
+
+    for attempt in range(max_retries):
+        for proxy_url in proxy_candidates:
+            try:
+                return await web.search_titles_async(
+                    title,
+                    filters=search_filters,
+                    count=count,
+                    headers=UA_HEADER,
+                    httpx_kwargs=_build_search_httpx_kwargs(proxy_url),
+                )
+            except Exception as err:
+                last_error = err
+                logging.debug(
+                    "IMDB search attempt %s failed (%s): %s",
+                    attempt + 1,
+                    "with proxy" if proxy_url else "without proxy",
+                    err,
+                )
+
+    fallback_results = await _search_titles_via_suggestion_api(
+        title=title,
+        title_types=title_types,
+        count=count,
+    )
+    if fallback_results:
+        if last_error:
+            logging.warning(
+                "IMDB HTML search unavailable (%s); using suggestion API fallback",
+                last_error,
+            )
+        return fallback_results
+
+    if last_error:
+        raise last_error
+    return []
+
+
+async def _search_titles_via_suggestion_api(
+    title: str,
+    title_types: list[str],
+    count: int,
+) -> list[Any]:
+    """Fallback search using IMDb suggestion JSON API."""
+    normalized_query = " ".join(title.strip().split()).lower()
+    if not normalized_query:
+        return []
+
+    url = f"https://v3.sg.media-imdb.com/suggestion/x/{quote(normalized_query)}.json"
+    proxy_candidates = [settings.requests_proxy_url, None] if settings.requests_proxy_url else [None]
+
+    for proxy_url in proxy_candidates:
+        try:
+            async with httpx.AsyncClient(proxy=proxy_url) as client:
+                response = await client.get(url, timeout=10, headers=UA_HEADER, follow_redirects=True)
+                response.raise_for_status()
+                payload = response.json()
+        except (httpx.HTTPError, ValueError) as err:
+            logging.debug(
+                "IMDb suggestion fallback failed (%s): %s",
+                "with proxy" if proxy_url else "without proxy",
+                err,
+            )
+            continue
+
+        if not isinstance(payload, dict):
+            continue
+        raw_results = payload.get("d")
+        if not isinstance(raw_results, list):
+            continue
+
+        results = []
+        for raw_item in raw_results:
+            if not isinstance(raw_item, dict):
+                continue
+            imdb_id = raw_item.get("id")
+            result_title = raw_item.get("l")
+            type_id = raw_item.get("qid")
+            if not (imdb_id and result_title and type_id):
+                continue
+            if type_id not in title_types:
+                continue
+
+            start_year, end_year = _parse_release_info_years(raw_item.get("yr"))
+            if start_year is None:
+                start_year = _safe_int(raw_item.get("y"))
+            if end_year is None and start_year is not None:
+                end_year = start_year
+
+            results.append(
+                SimpleNamespace(
+                    imdb_id=imdb_id,
+                    title=result_title,
+                    type_id=type_id,
+                    year=start_year,
+                    end_year=end_year,
+                )
+            )
+            if len(results) >= count:
+                break
+        return results
+
+    return []
+
+
 async def search_imdb(
     title: str,
     year: int | None,
@@ -416,10 +545,12 @@ async def search_imdb(
                 else:
                     search_filters.release_date = RangeFilter(max_value=year)
 
-            results = await web.search_titles_async(
+            results = await _search_titles_with_retry(
                 title,
-                filters=search_filters,
                 count=10,
+                search_filters=search_filters,
+                title_types=title_types,
+                max_retries=1,
             )
 
             # Filter by title similarity and calculate year differences
@@ -596,6 +727,7 @@ async def search_multiple_imdb(
     media_type: str | None = None,
     created_year: int | None = None,
     min_similarity: int = 60,
+    max_retries: int = 3,
 ) -> list[dict[str, Any]]:
     """
     Search for multiple matching titles on IMDB.
@@ -678,10 +810,12 @@ async def search_multiple_imdb(
                 # For series, search for titles that started on or before this year
                 search_filters.release_date = RangeFilter(max_value=year)
 
-        results = await web.search_titles_async(
+        results = await _search_titles_with_retry(
             title,
-            filters=search_filters,
             count=20,  # Request more to account for filtering
+            search_filters=search_filters,
+            title_types=title_types,
+            max_retries=max_retries,
         )
 
         candidates = []

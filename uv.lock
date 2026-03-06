@@ -561,7 +561,7 @@ wheels = [
 [[package]]
 name = "cinemagoerng"
 version = "0.7"
-source = { git = "https://github.com/mhdzumair/cinemagoerng.git#921d430a3a1c37c285161582865e6b7829c79cf7" }
+source = { git = "https://github.com/mhdzumair/cinemagoerng.git#f5ed774c74d28b5ba129aabcd88d9a9ffe78b405" }
 dependencies = [
     { name = "httpx" },
     { name = "jmespath" },

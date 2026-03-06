@@ -16,13 +16,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo } from 'lucide-react'
+import { Edit, Trash2, Ban, Loader2, MoreVertical, Flag, FileVideo, Link2 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
 import { useCreateStreamSuggestion, useDeleteStream } from '@/hooks'
 import type { CatalogStreamInfo } from '@/lib/api'
 import { StreamEditSheet } from './StreamEditSheet'
+import { StreamRelinkButton } from './StreamRelinkButton'
 import { StreamReport } from './StreamReport'
 import { FileAnnotationDialog, type FileLink, type EditedFileLink } from './FileAnnotationDialog'
 import { catalogApi } from '@/lib/api'
@@ -264,6 +265,20 @@ export function StreamCard({
                   </DropdownMenuItem>
                 }
               />
+
+              {isAuthenticated && (
+                <StreamRelinkButton
+                  streamId={stream.id}
+                  streamName={rawStreamName}
+                  onSuccess={onDeleted}
+                  trigger={
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <Link2 className="h-4 w-4 mr-2" />
+                      Link to Media
+                    </DropdownMenuItem>
+                  }
+                />
+              )}
 
               {/* Annotate Files option for series */}
               {hasEpisodeFiles && (

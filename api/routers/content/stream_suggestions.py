@@ -18,7 +18,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth, require_role
 from db.database import get_async_session
-from db.enums import UserRole
+from db.enums import MediaType, UserRole
+from db.crud.media import get_media_by_external_id, parse_external_id
 from db.models import (
     AudioChannel,
     AudioFormat,
@@ -174,6 +175,8 @@ SuggestionTypeLiteral = Literal[
     "other",
 ]
 
+TargetMediaTypeLiteral = Literal["movie", "series"]
+
 StreamFieldLiteral = Literal[
     "torrent_name",
     "resolution",
@@ -209,6 +212,18 @@ class StreamSuggestionCreateRequest(BaseModel):
     # Fields for stream re-linking suggestions
     target_media_id: int | None = Field(
         None, description="Target media ID to link stream to (for relink_media/add_media_link)"
+    )
+    target_external_id: str | None = Field(
+        None,
+        description="External ID (e.g., tt1234567, tmdb:550) used when target media does not yet exist",
+    )
+    target_media_type: TargetMediaTypeLiteral | None = Field(
+        None,
+        description="Media type for target_external_id (movie or series)",
+    )
+    target_title: str | None = Field(
+        None,
+        description="Optional target title hint used when creating media from external ID",
     )
     file_index: int | None = Field(None, description="Specific file index within torrent (for multi-file torrents)")
 
@@ -344,6 +359,77 @@ def _normalize_filter_query(value: str | None) -> str | None:
     return normalized or None
 
 
+def _normalize_external_id_input(value: str | None) -> str | None:
+    """Normalize manual external ID input to supported internal formats."""
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    # Friendly shorthand: plain numeric IDs are treated as TMDB IDs.
+    if normalized.isdigit():
+        return f"tmdb:{normalized}"
+
+    provider, provider_id = parse_external_id(normalized)
+    if not provider or not provider_id:
+        return normalized
+
+    if provider == "imdb":
+        return provider_id if provider_id.startswith("tt") else f"tt{provider_id}"
+    if provider == "mediafusion":
+        return f"mf:{provider_id}"
+    return f"{provider}:{provider_id}"
+
+
+async def _resolve_target_media_id(
+    session: AsyncSession,
+    target_media_id: int | None,
+    target_external_id: str | None,
+    target_media_type: TargetMediaTypeLiteral | None,
+    target_title: str | None,
+) -> int | None:
+    """Resolve the final target media ID from internal/external identifiers."""
+    if target_media_id:
+        media_result = await session.exec(select(Media).where(Media.id == target_media_id))
+        target_media = media_result.first()
+        if target_media:
+            return target_media.id
+        logger.error("Target media %s not found", target_media_id)
+        return None
+
+    normalized_external_id = _normalize_external_id_input(target_external_id)
+    if not normalized_external_id:
+        return None
+
+    if normalized_external_id.startswith("mf:"):
+        logger.error("Target media %s not found", normalized_external_id)
+        return None
+
+    media_type_literal = target_media_type or "movie"
+    media_type_enum = MediaType.MOVIE if media_type_literal == "movie" else MediaType.SERIES
+
+    existing_media = await get_media_by_external_id(session, normalized_external_id, media_type_enum)
+    if existing_media:
+        return existing_media.id
+
+    # Import lazily to avoid potential router import cycles during startup.
+    from api.routers.content.torrent_import import fetch_and_create_media_from_external
+
+    created_media = await fetch_and_create_media_from_external(
+        session,
+        normalized_external_id,
+        media_type_literal,
+        fallback_title=target_title,
+    )
+    if created_media:
+        return created_media.id
+
+    logger.error("Failed to resolve or create media for external ID %s", normalized_external_id)
+    return None
+
+
 async def should_auto_approve(user: User, session: AsyncSession) -> bool:
     """Check if user has enough reputation for auto-approval.
 
@@ -401,6 +487,9 @@ async def apply_stream_changes(
     value: str | None,
     session: AsyncSession,
     target_media_id: int | None = None,
+    target_external_id: str | None = None,
+    target_media_type: TargetMediaTypeLiteral | None = None,
+    target_title: str | None = None,
     file_index: int | None = None,
 ) -> bool:
     """Apply suggested changes to stream. Returns True if successful.
@@ -411,16 +500,17 @@ async def apply_stream_changes(
     try:
         if suggestion_type == "relink_media":
             # Re-link stream to different media (replaces current links)
-            if not target_media_id:
-                logger.error("relink_media requires target_media_id")
+            resolved_target_media_id = await _resolve_target_media_id(
+                session,
+                target_media_id=target_media_id,
+                target_external_id=target_external_id,
+                target_media_type=target_media_type,
+                target_title=target_title or base_stream.name,
+            )
+            if not resolved_target_media_id:
+                logger.error("relink_media requires a valid target_media_id or target_external_id")
                 return False
-
-            # Verify target media exists
-            media_result = await session.exec(select(Media).where(Media.id == target_media_id))
-            target_media = media_result.first()
-            if not target_media:
-                logger.error(f"Target media {target_media_id} not found")
-                return False
+            target_media_id = resolved_target_media_id
 
             # Get existing stream media links to find the old media_id(s)
             existing_stream_links = await session.exec(
@@ -489,16 +579,17 @@ async def apply_stream_changes(
 
         elif suggestion_type == "add_media_link":
             # Add additional media link (for collections)
-            if not target_media_id:
-                logger.error("add_media_link requires target_media_id")
+            resolved_target_media_id = await _resolve_target_media_id(
+                session,
+                target_media_id=target_media_id,
+                target_external_id=target_external_id,
+                target_media_type=target_media_type,
+                target_title=target_title or base_stream.name,
+            )
+            if not resolved_target_media_id:
+                logger.error("add_media_link requires a valid target_media_id or target_external_id")
                 return False
-
-            # Verify target media exists
-            media_result = await session.exec(select(Media).where(Media.id == target_media_id))
-            target_media = media_result.first()
-            if not target_media:
-                logger.error(f"Target media {target_media_id} not found")
-                return False
+            target_media_id = resolved_target_media_id
 
             # Check if link already exists
             existing_result = await session.exec(
@@ -879,11 +970,18 @@ async def create_stream_suggestion(
             detail="field_name is required for field_correction suggestions",
         )
 
-    # Validate target_media_id is provided for relink/add_link types
-    if request.suggestion_type in ("relink_media", "add_media_link") and not request.target_media_id:
+    # Validate target media for relink/add_link types
+    if request.suggestion_type in ("relink_media", "add_media_link") and not (
+        request.target_media_id or request.target_external_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="target_media_id is required for relink_media/add_media_link suggestions",
+            detail="target_media_id or target_external_id is required for relink_media/add_media_link suggestions",
+        )
+    if request.target_external_id and not request.target_media_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="target_media_type is required when target_external_id is provided",
         )
 
     # Verify stream exists - query the base Stream table directly
@@ -960,6 +1058,9 @@ async def create_stream_suggestion(
         suggested_value = json.dumps(
             {
                 "target_media_id": request.target_media_id,
+                "target_external_id": request.target_external_id,
+                "target_media_type": request.target_media_type,
+                "target_title": request.target_title,
                 "file_index": request.file_index,
             }
         )
@@ -988,6 +1089,9 @@ async def create_stream_suggestion(
             request.suggested_value,
             session,
             target_media_id=request.target_media_id,
+            target_external_id=request.target_external_id,
+            target_media_type=request.target_media_type,
+            target_title=request.target_title,
             file_index=request.file_index,
         )
 
@@ -1322,11 +1426,17 @@ async def review_stream_suggestion(
 
             # For relink/add_link suggestions, parse target_media_id and file_index from suggested_value
             target_media_id = None
+            target_external_id = None
+            target_media_type = None
+            target_title = None
             file_index = None
             if suggestion_type in ("relink_media", "add_media_link") and suggestion.suggested_value:
                 try:
                     link_data = json.loads(suggestion.suggested_value)
                     target_media_id = link_data.get("target_media_id")
+                    target_external_id = link_data.get("target_external_id")
+                    target_media_type = link_data.get("target_media_type")
+                    target_title = link_data.get("target_title")
                     file_index = link_data.get("file_index")
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse link data from suggestion {suggestion.id}")
@@ -1338,6 +1448,9 @@ async def review_stream_suggestion(
                 suggestion.suggested_value,
                 session,
                 target_media_id=target_media_id,
+                target_external_id=target_external_id,
+                target_media_type=target_media_type,
+                target_title=target_title,
                 file_index=file_index,
             )
             if not apply_success:
@@ -1418,11 +1531,17 @@ async def bulk_review_stream_suggestions(
 
             # For relink/add_link suggestions, parse target_media_id and file_index
             target_media_id = None
+            target_external_id = None
+            target_media_type = None
+            target_title = None
             file_index = None
             if suggestion_type in ("relink_media", "add_media_link") and suggestion.suggested_value:
                 try:
                     link_data = json.loads(suggestion.suggested_value)
                     target_media_id = link_data.get("target_media_id")
+                    target_external_id = link_data.get("target_external_id")
+                    target_media_type = link_data.get("target_media_type")
+                    target_title = link_data.get("target_title")
                     file_index = link_data.get("file_index")
                 except json.JSONDecodeError:
                     pass
@@ -1434,6 +1553,9 @@ async def bulk_review_stream_suggestions(
                 suggestion.suggested_value,
                 session,
                 target_media_id=target_media_id,
+                target_external_id=target_external_id,
+                target_media_type=target_media_type,
+                target_title=target_title,
                 file_index=file_index,
             )
 

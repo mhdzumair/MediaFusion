@@ -155,6 +155,7 @@ export interface EpisodeUpdateRequest {
 export interface MetadataSearchResult {
   id: number
   external_id: string
+  external_ids?: Record<string, string>
   title: string
   year?: number
   type: string

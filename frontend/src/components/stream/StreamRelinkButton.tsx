@@ -1,4 +1,12 @@
-import { useState, useCallback, useEffect } from 'react'
+import {
+  cloneElement,
+  isValidElement,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import {
   Dialog,
   DialogContent,
@@ -18,7 +26,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Loader2, Link2, Unlink, Search, Film, Tv, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react'
-import { useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
+import { getBestExternalId, useCombinedMetadataSearch, type CombinedSearchResult } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useToast } from '@/hooks/use-toast'
 import { useCreateStreamSuggestion } from '@/hooks/useStreamSuggestions'
@@ -43,6 +51,7 @@ interface StreamRelinkButtonProps {
   currentMediaId?: number
   currentMediaTitle?: string
   variant?: 'button' | 'icon'
+  trigger?: ReactNode
   className?: string
   onSuccess?: () => void
 }
@@ -54,11 +63,41 @@ const streamLinkingApi = {
   },
 }
 
+function normalizeExternalIdInput(rawValue: string): string {
+  const value = rawValue.trim()
+  if (!value) return ''
+  if (/^\d+$/.test(value)) return `tmdb:${value}`
+  return value
+}
+
+function getResultExternalIds(result: CombinedSearchResult): string[] {
+  const ids = new Set<string>()
+  if (result.external_id) ids.add(result.external_id)
+  if (result.imdb_id) ids.add(result.imdb_id)
+  if (result.tmdb_id) ids.add(`tmdb:${result.tmdb_id}`)
+  if (result.tvdb_id) ids.add(`tvdb:${result.tvdb_id}`)
+
+  if (result.external_ids) {
+    Object.entries(result.external_ids).forEach(([provider, providerId]) => {
+      if (!providerId) return
+      const normalizedId = String(providerId)
+      if (provider === 'imdb') {
+        ids.add(normalizedId.startsWith('tt') ? normalizedId : `tt${normalizedId}`)
+        return
+      }
+      ids.add(`${provider}:${normalizedId}`)
+    })
+  }
+
+  return Array.from(ids)
+}
+
 export function StreamRelinkButton({
   streamId,
   streamName,
   currentMediaTitle,
   variant = 'button',
+  trigger,
   className,
   onSuccess,
 }: StreamRelinkButtonProps) {
@@ -80,6 +119,8 @@ export function StreamRelinkButton({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchYear, setSearchYear] = useState('')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
+  const [manualExternalId, setManualExternalId] = useState('')
+  const [manualMediaType, setManualMediaType] = useState<'movie' | 'series'>('movie')
   const [fileIndex, setFileIndex] = useState<string>('')
   const [reason, setReason] = useState('')
 
@@ -125,6 +166,8 @@ export function StreamRelinkButton({
       // Reset state when closing
       setSearchQuery('')
       setSelectedMedia(null)
+      setManualExternalId('')
+      setManualMediaType('movie')
       setFileIndex('')
       setReason('')
       setSearchYear('')
@@ -133,39 +176,76 @@ export function StreamRelinkButton({
     }
   }, [open, loadExistingLinks])
 
-  // Handle media selection - only allow internal results (they have media_id)
-  const handleSelectMedia = useCallback(
-    (result: CombinedSearchResult) => {
-      if (result.source !== 'internal' || !result.internal_id) {
-        toast({
-          title: 'Cannot link to external metadata',
-          description: 'External results must be imported first. Go to Content Import to add this metadata.',
-          variant: 'destructive',
-        })
-        return
+  const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
+    setSelectedMedia(result)
+    if (result.source === 'external') {
+      const bestExternalId = normalizeExternalIdInput(getBestExternalId(result))
+      if (bestExternalId) {
+        setManualExternalId(bestExternalId)
       }
-      setSelectedMedia(result)
-      setSearchOpen(false)
-      setSearchQuery('')
-      setSearchYear('')
-    },
-    [toast],
-  )
+      setManualMediaType(result.type === 'series' ? 'series' : 'movie')
+    } else {
+      setManualExternalId('')
+    }
+
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchYear('')
+  }, [])
+
+  const handleSelectManualExternalId = useCallback(() => {
+    const normalizedExternalId = normalizeExternalIdInput(manualExternalId)
+    if (!normalizedExternalId) {
+      toast({
+        title: 'External ID required',
+        description: 'Enter a valid external ID like tt1234567 or tmdb:550.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setManualExternalId(normalizedExternalId)
+    setSelectedMedia({
+      id: `manual-${normalizedExternalId}`,
+      title: `Manual ${manualMediaType} (${normalizedExternalId})`,
+      type: manualMediaType,
+      source: 'external',
+      external_id: normalizedExternalId,
+      provider: normalizedExternalId.startsWith('tt') ? 'imdb' : normalizedExternalId.split(':', 1)[0] || 'external',
+    })
+  }, [manualExternalId, manualMediaType, toast])
 
   // Submit suggestion
   const handleSubmit = useCallback(async () => {
-    if (!selectedMedia || !selectedMedia.internal_id) return
+    const normalizedManualExternalId = normalizeExternalIdInput(manualExternalId)
+    const selectedExternalId =
+      selectedMedia?.source === 'external' ? normalizeExternalIdInput(getBestExternalId(selectedMedia)) : ''
+    const isInternalSelection = selectedMedia?.source === 'internal' && !!selectedMedia.internal_id
+    const targetExternalId = isInternalSelection ? '' : normalizedManualExternalId || selectedExternalId
+
+    if (!isInternalSelection && !targetExternalId) return
 
     try {
       const response = await createSuggestion.mutateAsync({
         streamId,
         data: {
           suggestion_type: linkAction === 'relink' ? 'relink_media' : 'add_media_link',
-          target_media_id: selectedMedia.internal_id,
+          target_media_id: isInternalSelection ? selectedMedia.internal_id : undefined,
+          target_external_id: targetExternalId || undefined,
+          target_media_type: targetExternalId
+            ? selectedMedia?.type === 'series'
+              ? 'series'
+              : manualMediaType
+            : undefined,
+          target_title: selectedMedia?.title || undefined,
           file_index: fileIndex ? parseInt(fileIndex) : undefined,
-          reason: reason || `Link stream to "${selectedMedia.title}"`,
+          reason:
+            reason ||
+            (isInternalSelection
+              ? `Link stream to "${selectedMedia?.title || 'selected media'}"`
+              : `Link stream to external ID "${targetExternalId}"`),
           current_value: currentMediaTitle || existingLinks.map((l) => l.title).join(', ') || undefined,
-          suggested_value: selectedMedia.title,
+          suggested_value: isInternalSelection ? selectedMedia?.title : targetExternalId,
         },
       })
 
@@ -189,6 +269,8 @@ export function StreamRelinkButton({
   }, [
     streamId,
     selectedMedia,
+    manualExternalId,
+    manualMediaType,
     linkAction,
     fileIndex,
     reason,
@@ -199,27 +281,75 @@ export function StreamRelinkButton({
     onSuccess,
   ])
 
+  const normalizedManualExternalId = normalizeExternalIdInput(manualExternalId)
+  const canSubmit = Boolean(
+    (selectedMedia?.source === 'internal' && selectedMedia.internal_id) ||
+    (selectedMedia?.source === 'external' && normalizeExternalIdInput(getBestExternalId(selectedMedia))) ||
+    normalizedManualExternalId,
+  )
+
+  const defaultTrigger = (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {variant === 'icon' ? (
+            <Button variant="ghost" size="icon" className={className} onClick={() => setOpen(true)}>
+              <Link2 className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className={className} onClick={() => setOpen(true)}>
+              <Link2 className="h-4 w-4 mr-2" />
+              Link to Media
+            </Button>
+          )}
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Link this stream to different or additional content</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+
+  const triggerElement = trigger ? (
+    isValidElement(trigger) ? (
+      cloneElement(trigger as ReactElement<Record<string, unknown>>, {
+        onClick: (event: unknown) => {
+          const onClick = (trigger.props as Record<string, unknown>).onClick
+          if (typeof onClick === 'function') {
+            onClick(event)
+          }
+          setOpen(true)
+        },
+        onSelect: (event: unknown) => {
+          const onSelect = (trigger.props as Record<string, unknown>).onSelect
+          if (typeof onSelect === 'function') {
+            onSelect(event)
+          }
+          setOpen(true)
+        },
+      })
+    ) : (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >
+        {trigger}
+      </div>
+    )
+  ) : (
+    defaultTrigger
+  )
+
   return (
     <>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {variant === 'icon' ? (
-              <Button variant="ghost" size="icon" className={className} onClick={() => setOpen(true)}>
-                <Link2 className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" className={className} onClick={() => setOpen(true)}>
-                <Link2 className="h-4 w-4 mr-2" />
-                Link to Media
-              </Button>
-            )}
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Link this stream to different or additional content</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      {triggerElement}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -349,6 +479,22 @@ export function StreamRelinkButton({
                         <Badge variant="outline" className="text-[10px] px-1 py-0">
                           {selectedMedia.type}
                         </Badge>
+                        {selectedMedia.source === 'internal' ? (
+                          <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-green-500/20 text-green-700">
+                            In Library
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700">
+                            {selectedMedia.provider?.toUpperCase() || 'External'}
+                          </Badge>
+                        )}
+                        {getResultExternalIds(selectedMedia)
+                          .slice(0, 2)
+                          .map((externalId) => (
+                            <span key={`${selectedMedia.id}-${externalId}`} className="font-mono text-[10px]">
+                              {externalId}
+                            </span>
+                          ))}
                       </div>
                     </div>
                     <Button
@@ -421,16 +567,11 @@ export function StreamRelinkButton({
                               </div>
                             )}
                             {searchResults.map((result) => {
-                              const isExternal = result.source === 'external'
                               return (
                                 <button
                                   key={result.id}
                                   onClick={() => handleSelectMedia(result)}
-                                  disabled={isExternal}
-                                  className={`w-full flex items-center gap-2 p-2 rounded-md text-left ${
-                                    isExternal ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer'
-                                  }`}
-                                  title={isExternal ? 'External results must be imported first' : undefined}
+                                  className="w-full flex items-center gap-2 p-2 rounded-md text-left hover:bg-muted cursor-pointer"
                                 >
                                   {result.poster ? (
                                     <img
@@ -466,9 +607,16 @@ export function StreamRelinkButton({
                                           variant="secondary"
                                           className="text-[10px] px-1 py-0 bg-yellow-500/20 text-yellow-700"
                                         >
-                                          External
+                                          {result.provider?.toUpperCase() || 'External'}
                                         </Badge>
                                       )}
+                                      {getResultExternalIds(result)
+                                        .slice(0, 2)
+                                        .map((externalId) => (
+                                          <span key={`${result.id}-${externalId}`} className="font-mono text-[10px]">
+                                            {externalId}
+                                          </span>
+                                        ))}
                                     </div>
                                   </div>
                                 </button>
@@ -480,6 +628,53 @@ export function StreamRelinkButton({
                     </PopoverContent>
                   </Popover>
                 )}
+              </div>
+
+              {/* Manual external ID */}
+              <div className="space-y-2 p-2 rounded-lg border border-dashed border-border/70 bg-muted/20">
+                <Label className="text-xs text-muted-foreground">Manual External ID</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    value={manualExternalId}
+                    onChange={(e) => setManualExternalId(e.target.value)}
+                    placeholder="tt1234567, tmdb:550, tvdb:121361"
+                    className="h-8 text-sm col-span-2"
+                  />
+                  <div className="flex items-center gap-1 rounded border border-border/50 p-1">
+                    <Button
+                      type="button"
+                      variant={manualMediaType === 'movie' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-6 px-2 text-xs flex-1"
+                      onClick={() => setManualMediaType('movie')}
+                    >
+                      Movie
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={manualMediaType === 'series' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-6 px-2 text-xs flex-1"
+                      onClick={() => setManualMediaType('series')}
+                    >
+                      Series
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={handleSelectManualExternalId}
+                    disabled={!normalizedManualExternalId}
+                  >
+                    Use ID
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  If this ID does not exist yet, MediaFusion will create media during link approval and attach the
+                  stream.
+                </p>
               </div>
 
               {/* Optional file index for multi-file torrents */}
@@ -518,7 +713,7 @@ export function StreamRelinkButton({
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={!selectedMedia || createSuggestion.isPending}
+              disabled={!canSubmit || createSuggestion.isPending}
               className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
             >
               {createSuggestion.isPending ? (

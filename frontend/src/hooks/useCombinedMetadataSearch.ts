@@ -32,6 +32,7 @@ export interface CombinedSearchResult {
   imdb_id?: string
   tmdb_id?: string
   tvdb_id?: string | number
+  external_ids?: Record<string, string | number | null>
   provider?: string // 'imdb', 'tmdb', 'tvdb', 'mal', 'kitsu'
   description?: string
 }
@@ -55,6 +56,7 @@ function internalToCombined(result: MetadataSearchResult): CombinedSearchResult 
     source: 'internal',
     internal_id: result.id,
     external_id: result.external_id,
+    external_ids: result.external_ids,
     is_user_created: result.is_user_created,
     is_own: result.is_own,
     // Extract IMDB ID if it looks like one
@@ -64,6 +66,13 @@ function internalToCombined(result: MetadataSearchResult): CombinedSearchResult 
 
 // Convert external search result to combined format
 function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | 'series'): CombinedSearchResult {
+  const normalizedExternalIds: Record<string, string | number | null> = {
+    ...(result.external_ids || {}),
+    imdb: result.imdb_id || (result.external_ids?.imdb ?? null),
+    tmdb: result.tmdb_id || (result.external_ids?.tmdb ?? null),
+    tvdb: result.tvdb_id || (result.external_ids?.tvdb ?? null),
+  }
+
   return {
     id: `external-${result.imdb_id || result.tmdb_id || result.id}`,
     title: result.title,
@@ -74,6 +83,7 @@ function externalToCombined(result: ExternalSearchResult, metaType?: 'movie' | '
     imdb_id: result.imdb_id,
     tmdb_id: result.tmdb_id,
     tvdb_id: result.tvdb_id,
+    external_ids: normalizedExternalIds,
     provider: result.provider,
     description: result.description,
     // Use imdb_id as external_id if available, otherwise construct from tmdb

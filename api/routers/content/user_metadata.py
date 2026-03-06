@@ -1604,14 +1604,23 @@ async def search_all_metadata(
             select(MediaExternalID.provider, MediaExternalID.external_id).where(MediaExternalID.media_id == row.id)
         )
         ext_ids = {r.provider: r.external_id for r in ext_result.all()}
+        formatted_ext_ids = {
+            provider: (value if provider == "imdb" else f"{provider}:{value}") for provider, value in ext_ids.items()
+        }
 
         # Determine canonical external ID
-        canonical_id = ext_ids.get("imdb") or ext_ids.get("tmdb") or ext_ids.get("mediafusion") or f"mf:{row.id}"
+        canonical_id = (
+            formatted_ext_ids.get("imdb")
+            or formatted_ext_ids.get("tmdb")
+            or formatted_ext_ids.get("mediafusion")
+            or f"mf:{row.id}"
+        )
 
         results.append(
             {
                 "id": row.id,
                 "external_id": canonical_id,
+                "external_ids": formatted_ext_ids,
                 "title": row.title,
                 "year": row.year,
                 "type": row.type.value.lower(),
