@@ -1354,6 +1354,18 @@ class HTTPStreamData(BaseModel):
         if stream is None:
             stream = http_stream.stream
 
+        # Backward compatibility:
+        # - legacy rows may have used `headers`
+        # - current model stores request/response headers in behavior_hints.proxyHeaders
+        headers = getattr(http_stream, "headers", None)
+        if headers is None:
+            behavior_hints = http_stream.behavior_hints if isinstance(http_stream.behavior_hints, dict) else {}
+            proxy_headers = behavior_hints.get("proxyHeaders")
+            if isinstance(proxy_headers, dict):
+                request_headers = proxy_headers.get("request")
+                if isinstance(request_headers, dict):
+                    headers = request_headers
+
         meta_id = ""
         if media:
             meta_id = f"mf:{media.id}"
@@ -1366,7 +1378,7 @@ class HTTPStreamData(BaseModel):
             format=http_stream.format,
             size=http_stream.size,
             bitrate_kbps=http_stream.bitrate_kbps,
-            headers=http_stream.headers,
+            headers=headers,
             resolution=stream.resolution if stream else None,
             codec=stream.codec if stream else None,
             quality=stream.quality if stream else None,
