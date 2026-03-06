@@ -58,6 +58,47 @@ import {
 import type { IntegrationType, SyncDirection } from '@/lib/api/integrations'
 import { formatDistanceToNow } from 'date-fns'
 
+const SIMKL_OAUTH_CREDENTIALS_STORAGE_KEY = 'simkl_oauth_custom_credentials'
+
+type SimklStoredCredentials = {
+  clientId: string
+  clientSecret: string
+}
+
+function loadSimklStoredCredentials(): SimklStoredCredentials | null {
+  try {
+    const raw = window.sessionStorage.getItem(SIMKL_OAUTH_CREDENTIALS_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as SimklStoredCredentials
+    if (!parsed.clientId || !parsed.clientSecret) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function saveSimklStoredCredentials(clientId: string, clientSecret: string): void {
+  try {
+    window.sessionStorage.setItem(
+      SIMKL_OAUTH_CREDENTIALS_STORAGE_KEY,
+      JSON.stringify({
+        clientId,
+        clientSecret,
+      }),
+    )
+  } catch {
+    // Ignore storage errors in strict/privacy browser modes.
+  }
+}
+
+function clearSimklStoredCredentials(): void {
+  try {
+    window.sessionStorage.removeItem(SIMKL_OAUTH_CREDENTIALS_STORAGE_KEY)
+  } catch {
+    // Ignore storage errors in strict/privacy browser modes.
+  }
+}
+
 // Platform metadata
 const PLATFORM_INFO: Record<
   IntegrationType,
@@ -132,6 +173,7 @@ interface ConnectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   simklOAuthCallback: SimklOAuthCallbackPayload | null
+  simklRedirectUrl: string
 }
 
 type SimklOAuthCallbackPayload = {
@@ -140,10 +182,11 @@ type SimklOAuthCallbackPayload = {
   errorDescription: string | null
 }
 
-function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback }: ConnectDialogProps) {
+function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback, simklRedirectUrl }: ConnectDialogProps) {
+  const storedSimklCredentials = platform === 'simkl' && simklOAuthCallback ? loadSimklStoredCredentials() : null
   const [code, setCode] = useState('')
-  const [customClientId, setCustomClientId] = useState('')
-  const [customClientSecret, setCustomClientSecret] = useState('')
+  const [customClientId, setCustomClientId] = useState(storedSimklCredentials?.clientId ?? '')
+  const [customClientSecret, setCustomClientSecret] = useState(storedSimklCredentials?.clientSecret ?? '')
   const [step, setStep] = useState<'auth' | 'code'>('auth')
   const [connectError, setConnectError] = useState<string | null>(null)
 
@@ -171,6 +214,11 @@ function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback }: Con
   const handleGetAuthUrl = async () => {
     try {
       setConnectError(null)
+      if (platform === 'simkl' && customClientId && customClientSecret) {
+        saveSimklStoredCredentials(customClientId, customClientSecret)
+      } else if (platform === 'simkl') {
+        clearSimklStoredCredentials()
+      }
       const result = await getOAuthUrl.mutateAsync({
         platform,
         clientId: customClientId || undefined,
@@ -205,6 +253,9 @@ function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback }: Con
       setCode('')
       setStep('auth')
       setConnectError(null)
+      if (platform === 'simkl') {
+        clearSimklStoredCredentials()
+      }
     } catch (error) {
       setConnectError(getErrorMessage(error))
     }
@@ -264,6 +315,16 @@ function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback }: Con
                     </a>
                   )}
                 </p>
+                {platform === 'simkl' && (
+                  <div className="space-y-1 rounded-md border bg-muted/40 p-2">
+                    <p className="text-xs text-muted-foreground">
+                      In Simkl app settings, set <strong>Redirect URI</strong> to:
+                    </p>
+                    <code className="block break-all rounded bg-background px-2 py-1 text-[11px]">
+                      {simklRedirectUrl}
+                    </code>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="client-id">Client ID</Label>
                   <Input
@@ -299,6 +360,38 @@ function ConnectDialog({ platform, open, onOpenChange, simklOAuthCallback }: Con
           </div>
         ) : (
           <div className="space-y-4 py-4">
+            {(platform === 'trakt' || platform === 'simkl') && (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  If you authorized with custom app credentials, enter the same Client ID and Client Secret before
+                  connecting.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="client-id">Client ID</Label>
+                  <Input
+                    id="client-id"
+                    placeholder="Leave empty to use server default"
+                    value={customClientId}
+                    onChange={(e) => setCustomClientId(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-secret">Client Secret</Label>
+                  <Input
+                    id="client-secret"
+                    type="password"
+                    placeholder="Leave empty to use server default"
+                    value={customClientSecret}
+                    onChange={(e) => setCustomClientSecret(e.target.value)}
+                  />
+                </div>
+                {(customClientId || customClientSecret) && !(customClientId && customClientSecret) && (
+                  <p className="text-xs text-amber-500">
+                    Both Client ID and Client Secret are required when using custom credentials.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="auth-code">Authorization Code</Label>
               <Input
@@ -573,11 +666,13 @@ function PlatformCard({
 interface ExternalPlatformIntegrationsProps {
   simklOAuthCallback?: SimklOAuthCallbackPayload | null
   onSimklOAuthCallbackConsumed?: () => void
+  simklRedirectUrl: string
 }
 
 export function ExternalPlatformIntegrations({
   simklOAuthCallback = null,
   onSimklOAuthCallbackConsumed,
+  simklRedirectUrl,
 }: ExternalPlatformIntegrationsProps) {
   const { data, isLoading } = useIntegrations()
   const syncAll = useTriggerSyncAll()
@@ -650,6 +745,7 @@ export function ExternalPlatformIntegrations({
             onSimklOAuthCallbackConsumed?.()
           }}
           simklOAuthCallback={activeConnectPlatform === 'simkl' ? simklOAuthCallback : null}
+          simklRedirectUrl={simklRedirectUrl}
         />
       )}
     </div>

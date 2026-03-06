@@ -78,6 +78,9 @@ export function IntegrationsPage() {
       : user.uuid
     : null
   const torznabUrl = appConfig?.host_url ? `${appConfig.host_url}/torznab` : null
+  const simklRedirectUrl = appConfig?.host_url
+    ? `${appConfig.host_url.replace(/\/+$/, '')}/api/v1/integrations/simkl/callback`
+    : '<HOST_URL>/api/v1/integrations/simkl/callback'
 
   const selectedProfile = profiles?.find((p) => p.id === selectedProfileId)
 
@@ -637,6 +640,7 @@ export function IntegrationsPage() {
           <ExternalPlatformIntegrations
             simklOAuthCallback={simklOAuthCallback}
             onSimklOAuthCallbackConsumed={handleSimklOAuthCallbackConsumed}
+            simklRedirectUrl={simklRedirectUrl}
           />
         )}
       </div>

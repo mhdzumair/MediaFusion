@@ -274,7 +274,13 @@ async def simkl_oauth_callback(
         query_params["simkl_error"] = "missing_code"
         query_params["simkl_error_description"] = "Missing authorization code in callback."
 
-    redirect_url = f"{settings.host_url.rstrip('/')}/integrations?{urlencode(query_params)}"
+    host_url = settings.host_url.rstrip("/")
+    if host_url.endswith("/app"):
+        frontend_integrations_url = f"{host_url}/dashboard/integrations"
+    else:
+        frontend_integrations_url = f"{host_url}/app/dashboard/integrations"
+
+    redirect_url = f"{frontend_integrations_url}?{urlencode(query_params)}"
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
