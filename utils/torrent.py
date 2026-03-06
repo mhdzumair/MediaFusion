@@ -36,6 +36,9 @@ _TRACKERS_CACHE_KEY = "mediafusion:trackers:best:v1"
 _TRACKERS_REFRESH_LOCK_KEY = "mediafusion:trackers:refresh_lock"
 _TRACKERS_CACHE_TTL_SECONDS = 60 * 60 * 24
 _TRACKERS_CACHE_WAIT_SECONDS = 5
+_MAX_MAGNET_TRACKERS = 30
+_INFO_HASH_HEX_RE = re.compile(r"^[a-fA-F0-9]{40}$")
+_INFO_HASH_BASE32_RE = re.compile(r"^[A-Z2-7]{32}$")
 
 
 def _filter_valid_trackers(trackers: list[str]) -> list[str]:
@@ -244,11 +247,58 @@ def extract_torrent_metadata(
         return {}
 
 
+def _normalize_info_hash_for_magnet(info_hash: str) -> str:
+    normalized = str(info_hash or "").strip()
+    if not normalized:
+        return ""
+
+    if normalized.lower().startswith("magnet:?"):
+        parsed_hash, _ = parse_magnet(normalized)
+        if parsed_hash:
+            normalized = parsed_hash
+
+    if _INFO_HASH_HEX_RE.fullmatch(normalized):
+        return normalized.lower()
+
+    if _INFO_HASH_BASE32_RE.fullmatch(normalized.upper()):
+        return normalized.upper()
+
+    return ""
+
+
 def convert_info_hash_to_magnet(info_hash: str, trackers: list[str]) -> str:
-    magnet_link = f"magnet:?xt=urn:btih:{info_hash}"
-    for tracker in set(trackers) or TRACKERS:
-        encoded_tracker = quote(tracker, safe="")
-        magnet_link += f"&tr={encoded_tracker}"
+    normalized_info_hash = _normalize_info_hash_for_magnet(info_hash)
+    if not normalized_info_hash:
+        raise ValueError(f"Invalid torrent info hash: {info_hash}")
+
+    raw_trackers = []
+    for tracker in trackers or []:
+        if isinstance(tracker, str):
+            stripped = tracker.strip()
+            if stripped:
+                raw_trackers.append(stripped)
+
+    valid_trackers = _filter_valid_trackers(raw_trackers)
+    unique_trackers = list(dict.fromkeys(valid_trackers))
+    trimmed_trackers = unique_trackers[:_MAX_MAGNET_TRACKERS]
+
+    if len(raw_trackers) != len(valid_trackers):
+        logging.debug(
+            "Dropped %d invalid trackers while building magnet for info_hash=%s",
+            len(raw_trackers) - len(valid_trackers),
+            normalized_info_hash,
+        )
+    if len(unique_trackers) > _MAX_MAGNET_TRACKERS:
+        logging.debug(
+            "Trimmed magnet trackers from %d to %d for info_hash=%s",
+            len(unique_trackers),
+            _MAX_MAGNET_TRACKERS,
+            normalized_info_hash,
+        )
+
+    magnet_link = f"magnet:?xt=urn:btih:{normalized_info_hash}"
+    for tracker in trimmed_trackers:
+        magnet_link += f"&tr={quote(tracker, safe='')}"
     return magnet_link
 
 

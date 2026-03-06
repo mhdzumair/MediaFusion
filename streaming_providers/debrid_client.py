@@ -5,7 +5,7 @@ from contextlib import AsyncContextDecorator
 
 import aiohttp
 from aiohttp import ClientResponse, ClientTimeout, ContentTypeError, FormData
-from aiohttp_socks import ProxyConnector
+from aiohttp_socks import ProxyConnector, ProxyError
 
 from db.config import settings
 from streaming_providers.exceptions import ProviderException
@@ -128,10 +128,27 @@ class DebridClient(AsyncContextDecorator):
 
     @staticmethod
     async def _handle_request_error(error: Exception):
+        error_message = str(error).lower()
+
         if isinstance(error, asyncio.TimeoutError):
-            raise ProviderException("Request timed out.", "torrent_not_downloaded.mp4")
-        elif isinstance(error, aiohttp.ClientConnectorError):
+            raise ProviderException("Debrid service timed out.", "debrid_service_down_error.mp4", retryable=True)
+
+        if isinstance(error, ProxyError):
+            raise ProviderException(
+                "Failed to connect to Debrid service.", "debrid_service_down_error.mp4", retryable=True
+            )
+
+        if isinstance(error, (aiohttp.ClientConnectorError, aiohttp.ClientConnectionError)):
+            raise ProviderException(
+                "Failed to connect to Debrid service.", "debrid_service_down_error.mp4", retryable=True
+            )
+
+        if any(
+            token in error_message
+            for token in ("service unavailable", "connection refused", "temporarily unavailable", "proxy error")
+        ):
             raise ProviderException("Failed to connect to Debrid service.", "debrid_service_down_error.mp4")
+
         raise ProviderException(f"Request error: {str(error)}", "api_error.mp4")
 
     @abstractmethod

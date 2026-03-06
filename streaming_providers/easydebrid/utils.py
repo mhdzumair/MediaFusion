@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from collections.abc import Iterator
 from typing import Any
@@ -7,6 +8,20 @@ from db.schemas import StreamingProvider, TorrentStreamData
 from streaming_providers.easydebrid.client import EasyDebrid
 from streaming_providers.exceptions import ProviderException
 from streaming_providers.parser import select_file_index_from_torrent
+
+
+def _parse_easydebrid_string_response(response_text: str) -> dict[str, Any] | str:
+    stripped_response = response_text.strip()
+    if not stripped_response:
+        return response_text
+
+    if stripped_response.startswith("{") or stripped_response.startswith("["):
+        try:
+            return json.loads(stripped_response)
+        except json.JSONDecodeError:
+            return response_text
+
+    return response_text
 
 
 async def get_video_url_from_easydebrid(
@@ -25,9 +40,29 @@ async def get_video_url_from_easydebrid(
     ) as easydebrid_client:
         torrent_info = await easydebrid_client.create_download_link(magnet_link)
         if isinstance(torrent_info, str):
-            if "too many requests" in torrent_info.lower():
-                raise ProviderException("Too many requests", "too_many_requests.mp4")
-            raise ProviderException("EasyDebrid returned invalid response format", "api_error.mp4")
+            parsed_response = _parse_easydebrid_string_response(torrent_info)
+            if isinstance(parsed_response, dict):
+                torrent_info = parsed_response
+            else:
+                stripped_response = parsed_response.strip()
+                lowered_response = stripped_response.lower()
+                if "too many requests" in lowered_response:
+                    raise ProviderException("Too many requests", "too_many_requests.mp4")
+
+                if "unsupported link" in lowered_response:
+                    await easydebrid_client.add_torrent_file(magnet_link)
+                    raise ProviderException(
+                        "Torrent did not reach downloaded status.",
+                        "torrent_not_downloaded.mp4",
+                    )
+
+                if stripped_response.startswith(("https://", "http://")):
+                    return stripped_response
+
+                raise ProviderException(
+                    f"EasyDebrid returned invalid response format: {stripped_response[:120]}",
+                    "api_error.mp4",
+                )
         if not isinstance(torrent_info, dict):
             raise ProviderException("EasyDebrid returned invalid response payload", "api_error.mp4")
 
@@ -39,6 +74,9 @@ async def get_video_url_from_easydebrid(
                 "Torrent did not reach downloaded status.",
                 "torrent_not_downloaded.mp4",
             )
+        direct_url = torrent_info.get("url")
+        if isinstance(direct_url, str) and direct_url.strip():
+            return direct_url.strip()
         if not isinstance(torrent_info.get("files"), list) or not torrent_info["files"]:
             raise ProviderException("EasyDebrid response missing files", "transfer_error.mp4")
 
@@ -50,7 +88,11 @@ async def get_video_url_from_easydebrid(
             episode=episode,
             name_key="filename",
         )
-        return torrent_info["files"][file_index]["url"]
+        selected_file = torrent_info["files"][file_index]
+        selected_file_url = selected_file.get("url") or selected_file.get("download_link")
+        if not isinstance(selected_file_url, str) or not selected_file_url.strip():
+            raise ProviderException("EasyDebrid selected file URL missing", "transfer_error.mp4")
+        return selected_file_url.strip()
 
 
 def divide_chunks(lst: list[Any], n: int) -> Iterator[list[Any]]:

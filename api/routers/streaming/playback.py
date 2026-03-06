@@ -216,7 +216,10 @@ async def get_or_create_video_url(
     Retrieves or generates the video URL based on stream data and provider info.
     """
     # stream is TorrentStreamData (Pydantic model) with announce_list
-    magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list or [])
+    try:
+        magnet_link = torrent.convert_info_hash_to_magnet(info_hash, stream.announce_list or [])
+    except ValueError as error:
+        raise ProviderException(str(error), "transfer_error.mp4")
     episodes = stream.get_episodes(season, episode)
 
     # Get main file for fallback (largest video file)
