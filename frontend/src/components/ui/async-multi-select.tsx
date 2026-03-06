@@ -23,6 +23,7 @@ export interface AsyncMultiSelectProps {
   onSearch: (search: string) => Promise<AsyncMultiSelectOption[]>
   onLoadMore?: () => Promise<AsyncMultiSelectOption[]>
   hasMore?: boolean
+  loadMoreOnScroll?: boolean
 
   // Optionally pre-load initial options
   initialOptions?: AsyncMultiSelectOption[]
@@ -49,6 +50,7 @@ export function AsyncMultiSelect({
   onSearch,
   onLoadMore,
   hasMore = false,
+  loadMoreOnScroll = false,
   initialOptions = [],
   placeholder = 'Select items...',
   searchPlaceholder = 'Search...',
@@ -70,6 +72,7 @@ export function AsyncMultiSelect({
   const [internalHasMore, setInternalHasMore] = React.useState(hasMore)
 
   const scrollRef = React.useRef<HTMLDivElement>(null)
+  const loadMoreSentinelRef = React.useRef<HTMLDivElement>(null)
 
   // Debounce search input
   React.useEffect(() => {
@@ -91,8 +94,6 @@ export function AsyncMultiSelect({
         const results = await onSearch(debouncedSearch)
         if (!cancelled) {
           setOptions(results)
-          // Reset hasMore when search changes
-          setInternalHasMore(hasMore)
         }
       } catch (error) {
         console.error('Failed to fetch options:', error)
@@ -111,15 +112,12 @@ export function AsyncMultiSelect({
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, open, onSearch, hasMore])
+  }, [debouncedSearch, open, onSearch])
 
-  // Load initial options when popover opens (intentionally one-time on open to avoid loops)
+  // Keep internal has-more state in sync with parent.
   React.useEffect(() => {
-    if (open && options.length === 0 && initialOptions.length === 0) {
-      onSearch('').then(setOptions).catch(console.error)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: adding onSearch/options/initialOptions causes infinite loops
-  }, [open])
+    setInternalHasMore(hasMore)
+  }, [hasMore])
 
   const handleSelect = (value: string) => {
     if (selected.includes(value)) {
@@ -165,7 +163,7 @@ export function AsyncMultiSelect({
     }
   }
 
-  const handleLoadMore = async () => {
+  const handleLoadMore = React.useCallback(async () => {
     if (!onLoadMore || isLoadingMore || !internalHasMore) return
 
     setIsLoadingMore(true)
@@ -180,7 +178,32 @@ export function AsyncMultiSelect({
     } finally {
       setIsLoadingMore(false)
     }
-  }
+  }, [onLoadMore, isLoadingMore, internalHasMore])
+
+  React.useEffect(() => {
+    if (!open || !loadMoreOnScroll || !onLoadMore || !internalHasMore) return
+
+    const rootViewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement | null
+    const sentinel = loadMoreSentinelRef.current
+
+    if (!rootViewport || !sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries
+        if (entry?.isIntersecting) {
+          void handleLoadMore()
+        }
+      },
+      {
+        root: rootViewport,
+        rootMargin: '120px 0px',
+      },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [open, loadMoreOnScroll, onLoadMore, internalHasMore, isLoadingMore, handleLoadMore])
 
   // Check if search term can be added as custom
   const canAddCustom =
@@ -287,23 +310,29 @@ export function AsyncMultiSelect({
                   ))
                 )}
 
-                {/* Load more button */}
-                {internalHasMore && onLoadMore && options.length > 0 && (
-                  <button
-                    onClick={handleLoadMore}
-                    disabled={isLoadingMore}
-                    className="flex items-center justify-center gap-2 w-full px-2 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-sm"
-                  >
-                    {isLoadingMore ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <ChevronDown className="h-4 w-4" />
-                        Load more
-                      </>
-                    )}
-                  </button>
-                )}
+                {/* Auto-pagination sentinel / load-more button */}
+                {internalHasMore && onLoadMore && options.length > 0 ? (
+                  loadMoreOnScroll ? (
+                    <div ref={loadMoreSentinelRef} className="flex items-center justify-center py-2">
+                      {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore}
+                      className="flex items-center justify-center gap-2 w-full px-2 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-sm"
+                    >
+                      {isLoadingMore ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <ChevronDown className="h-4 w-4" />
+                          Load more
+                        </>
+                      )}
+                    </button>
+                  )
+                ) : null}
               </>
             )}
           </div>

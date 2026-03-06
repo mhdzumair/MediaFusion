@@ -135,6 +135,18 @@ export {
   type CatalogListParams,
 } from './useCatalog'
 
+// Metadata reference hooks (non-admin)
+export {
+  useMetadataReferenceGenres,
+  useInfiniteMetadataReferenceGenres,
+  useMetadataReferenceCatalogs,
+  useInfiniteMetadataReferenceCatalogs,
+  useMetadataReferenceStars,
+  useInfiniteMetadataReferenceStars,
+  useMetadataReferenceParentalCertificates,
+  useInfiniteMetadataReferenceParentalCertificates,
+} from './useMetadataReference'
+
 // Library hooks
 export {
   useLibrary,
@@ -222,55 +234,7 @@ export {
 } from './useScheduler'
 
 // Admin Database Management hooks
-export {
-  useAdminStats,
-  useMetadataList,
-  useMetadata,
-  useUpdateMetadata,
-  useDeleteMetadata,
-  useTorrentStreamList,
-  useTorrentStream,
-  useUpdateTorrentStream,
-  useBlockTorrentStream,
-  useUnblockTorrentStream,
-  useTVStreamList,
-  useTVStream,
-  useUpdateTVStream,
-  useToggleTVStreamWorking,
-  useTorrentSources as useAdminTorrentSources,
-  useTVSources,
-  useCountries,
-  useResolutions,
-  // Reference Data hooks (paginated)
-  useGenres as useAdminGenres,
-  useInfiniteGenres,
-  useCreateGenre,
-  useDeleteGenre,
-  useCatalogs,
-  useInfiniteCatalogs,
-  useCreateCatalog,
-  useDeleteCatalog,
-  useLanguages,
-  useInfiniteLanguages,
-  useCreateLanguage,
-  useDeleteLanguage,
-  useStars,
-  useInfiniteStars,
-  useCreateStar,
-  useDeleteStar,
-  useParentalCertificates,
-  useInfiniteParentalCertificates,
-  useCreateParentalCertificate,
-  useDeleteParentalCertificate,
-  useNamespaces,
-  useInfiniteNamespaces,
-  useCreateNamespace,
-  useDeleteNamespace,
-  useAnnounceUrls,
-  useInfiniteAnnounceUrls,
-  useCreateAnnounceUrl,
-  useDeleteAnnounceUrl,
-} from './useAdmin'
+export { useDeleteMetadata, useBlockTorrentStream } from './useAdmin'
 
 // Stream hooks
 export { useDeleteStream } from './useStreams'

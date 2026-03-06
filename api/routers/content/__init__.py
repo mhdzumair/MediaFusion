@@ -26,6 +26,7 @@ def get_router() -> APIRouter:
     from api.routers.content.m3u_import import router as m3u_import_router
     from api.routers.content.metadata import router as metadata_router
     from api.routers.content.nzb_import import router as nzb_import_router
+    from api.routers.content.reference import router as reference_router
     from api.routers.content.scraping import router as scraping_router
     from api.routers.content.streams import router as streams_router
     from api.routers.content.stream_linking import router as stream_linking_router
@@ -59,6 +60,7 @@ def get_router() -> APIRouter:
     combined.include_router(streams_router)
     combined.include_router(stream_linking_router)
     combined.include_router(metadata_router)
+    combined.include_router(reference_router)
     combined.include_router(user_metadata_router)
     combined.include_router(scraping_router)
     _router = combined

@@ -18,6 +18,12 @@ export type EditableField =
   | 'writers'
   | 'imdb_id'
   | 'tmdb_id'
+  | 'tvdb_id'
+  | 'mal_id'
+  | 'kitsu_id'
+  | 'catalogs'
+  | 'parental_certificate'
+  | 'nudity_status'
 
 export interface SuggestionCreateRequest {
   field_name: EditableField

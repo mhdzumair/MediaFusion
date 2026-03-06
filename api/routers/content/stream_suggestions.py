@@ -480,6 +480,22 @@ async def award_points(
     )
 
 
+async def get_stream_for_suggestion_apply(session: AsyncSession, stream_id: int) -> Stream | None:
+    """Load stream with normalized relationships required for field-apply flows."""
+    query = (
+        select(Stream)
+        .where(Stream.id == stream_id)
+        .options(
+            selectinload(Stream.audio_formats),
+            selectinload(Stream.channels),
+            selectinload(Stream.hdr_formats),
+            selectinload(Stream.languages),
+        )
+    )
+    result = await session.exec(query)
+    return result.first()
+
+
 async def apply_stream_changes(
     base_stream: Stream,
     suggestion_type: str,
@@ -777,7 +793,7 @@ async def apply_stream_changes(
         session.add(base_stream)
         return True
     except Exception as e:
-        logger.error(f"Failed to apply stream change: {e}")
+        logger.exception(f"Failed to apply stream change: {e}")
         return False
 
 
@@ -984,10 +1000,8 @@ async def create_stream_suggestion(
             detail="target_media_type is required when target_external_id is provided",
         )
 
-    # Verify stream exists - query the base Stream table directly
-    stream_query = select(Stream).where(Stream.id == stream_id)
-    stream_result = await session.exec(stream_query)
-    stream = stream_result.first()
+    # Verify stream exists and load relationships needed for apply logic
+    stream = await get_stream_for_suggestion_apply(session, stream_id)
 
     if not stream:
         raise HTTPException(
@@ -1043,7 +1057,13 @@ async def create_stream_suggestion(
     if not current_value and request.field_name:
         field_value = getattr(stream, request.field_name, None)
         if field_value is not None:
-            current_value = json.dumps(field_value) if isinstance(field_value, (list, dict)) else str(field_value)
+            if isinstance(field_value, list):
+                # Normalize ORM relationship collections to plain strings for storage.
+                current_value = json.dumps([getattr(item, "name", str(item)) for item in field_value])
+            elif isinstance(field_value, dict):
+                current_value = json.dumps(field_value)
+            else:
+                current_value = str(field_value)
 
     # Create suggestion
     # Note: We store field_name in the suggestion_type field for now
@@ -1398,10 +1418,8 @@ async def review_stream_suggestion(
             detail="Suggestion has already been reviewed",
         )
 
-    # Get stream
-    stream_query = select(Stream).where(Stream.id == suggestion.stream_id)
-    stream_result = await session.exec(stream_query)
-    stream = stream_result.first()
+    # Get stream with relationships needed for field apply
+    stream = await get_stream_for_suggestion_apply(session, suggestion.stream_id)
 
     # Get suggestion author
     author_query = select(User).where(User.id == suggestion.user_id)
@@ -1508,9 +1526,7 @@ async def bulk_review_stream_suggestions(
             results["skipped"] += 1
             continue
 
-        stream_query = select(Stream).where(Stream.id == suggestion.stream_id)
-        stream_result = await session.exec(stream_query)
-        stream = stream_result.first()
+        stream = await get_stream_for_suggestion_apply(session, suggestion.stream_id)
 
         # Get author
         author_query = select(User).where(User.id == suggestion.user_id)

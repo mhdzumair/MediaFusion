@@ -269,10 +269,6 @@ export {
   type TVStreamListParams,
   type TVStreamListResponse,
   type TVStreamUpdateRequest,
-  type ReferenceItem,
-  type ReferenceListParams,
-  type ReferenceListResponse,
-  type ReferenceItemCreate,
   type EpisodeFileItem,
   type ExternalMetadataPreview,
   type FetchExternalRequest,
@@ -315,6 +311,12 @@ export {
   type MetadataProvider,
   type ExternalProvider,
 } from './metadata'
+export {
+  metadataReferenceApi,
+  type MetadataReferenceItem,
+  type MetadataReferenceListParams,
+  type MetadataReferenceListResponse,
+} from './metadata-reference'
 export {
   fileLinksApi,
   type FileLink,

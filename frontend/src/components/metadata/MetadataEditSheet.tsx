@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,19 +33,11 @@ import {
   Shield,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  useCreateSuggestion,
-  useCatalogItem,
-  useAdminGenres,
-  useStars,
-  useParentalCertificates,
-  useCatalogs,
-  type CatalogType,
-} from '@/hooks'
+import { useCreateSuggestion, useCatalogItem, type CatalogType } from '@/hooks'
 import type { EditableField } from '@/lib/api/suggestions'
-import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select'
+import { AsyncMultiSelect, type AsyncMultiSelectOption } from '@/components/ui/async-multi-select'
 import { TagInput } from '@/components/ui/tag-input'
-import { NUDITY_STATUS_OPTIONS } from '@/lib/api'
+import { metadataReferenceApi, NUDITY_STATUS_OPTIONS } from '@/lib/api'
 
 // Helper to get original poster URL (exclude RPDB and similar service URLs)
 // The API returns original database URLs, but this provides extra safety
@@ -107,45 +99,124 @@ interface MetadataEditSheetProps {
   onSuccess?: () => void
 }
 
+const PARENTAL_CERTIFICATE_LEVEL_OPTIONS = [
+  { value: 'Unknown', label: 'Unknown' },
+  { value: 'All Ages', label: 'All Ages' },
+  { value: 'Children', label: 'Children' },
+  { value: 'Parental Guidance', label: 'Parental Guidance' },
+  { value: 'Teens', label: 'Teens' },
+  { value: 'Adults', label: 'Adults' },
+  { value: 'Adults+', label: 'Adults+' },
+] as const
+
 export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onSuccess }: MetadataEditSheetProps) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
+  const isTvItem = catalogType === 'tv'
 
   // Fetch full metadata when sheet opens
   const { data: metadata, isLoading: metadataLoading } = useCatalogItem(catalogType, mediaId, { enabled: open })
 
-  // Fetch reference data for dropdowns - only when sheet is open
-  const { data: genresData, isLoading: genresLoading } = useAdminGenres({}, { enabled: open })
-  const { data: starsData, isLoading: starsLoading } = useStars({}, { enabled: open })
-  const { data: parentalData, isLoading: parentalLoading } = useParentalCertificates({}, { enabled: open })
-  const { data: catalogsData, isLoading: catalogsLoading } = useCatalogs({}, { enabled: open })
-
   const createSuggestion = useCreateSuggestion()
+  const [genresHasMore, setGenresHasMore] = useState(false)
+  const [catalogsHasMore, setCatalogsHasMore] = useState(false)
+  const [starsHasMore, setStarsHasMore] = useState(false)
+  const genresSearchState = useRef({ search: '', nextPage: 2 })
+  const catalogsSearchState = useRef({ search: '', nextPage: 2 })
+  const starsSearchState = useRef({ search: '', nextPage: 2 })
+  const referencePerPage = 50
 
-  // Convert reference data to options
-  const genreOptions: MultiSelectOption[] = useMemo(
-    () => genresData?.items?.map((g) => ({ value: g.name, label: g.name })) || [],
-    [genresData],
+  const mapReferenceOptions = useCallback(
+    (items: Array<{ name: string }>): AsyncMultiSelectOption[] =>
+      items.map((item) => ({ value: item.name, label: item.name })),
+    [],
   )
 
-  const starOptions: MultiSelectOption[] = useMemo(
-    () => starsData?.items?.map((s) => ({ value: s.name, label: s.name })) || [],
-    [starsData],
+  const searchGenres = useCallback(
+    async (search: string): Promise<AsyncMultiSelectOption[]> => {
+      const normalizedSearch = search.trim()
+      const response = await metadataReferenceApi.listGenres({
+        search: normalizedSearch || undefined,
+        page: 1,
+        per_page: referencePerPage,
+      })
+      genresSearchState.current = { search: normalizedSearch, nextPage: 2 }
+      setGenresHasMore(response.has_more)
+      return mapReferenceOptions(response.items)
+    },
+    [mapReferenceOptions],
   )
 
-  const parentalOptions: MultiSelectOption[] = useMemo(
-    () => parentalData?.items?.map((p) => ({ value: p.name, label: p.name })) || [],
-    [parentalData],
-  )
-  // Ensure parentalOptions is used (for future expansion)
-  void parentalOptions
+  const loadMoreGenres = useCallback(async (): Promise<AsyncMultiSelectOption[]> => {
+    if (!genresHasMore) return []
+    const { search, nextPage } = genresSearchState.current
+    const response = await metadataReferenceApi.listGenres({
+      search: search || undefined,
+      page: nextPage,
+      per_page: referencePerPage,
+    })
+    genresSearchState.current.nextPage = nextPage + 1
+    setGenresHasMore(response.has_more)
+    return mapReferenceOptions(response.items)
+  }, [genresHasMore, mapReferenceOptions])
 
-  const catalogOptions: MultiSelectOption[] = useMemo(
-    () => catalogsData?.items?.map((c) => ({ value: c.name, label: c.name })) || [],
-    [catalogsData],
+  const searchCatalogs = useCallback(
+    async (search: string): Promise<AsyncMultiSelectOption[]> => {
+      const normalizedSearch = search.trim()
+      const response = await metadataReferenceApi.listCatalogs({
+        search: normalizedSearch || undefined,
+        page: 1,
+        per_page: referencePerPage,
+      })
+      catalogsSearchState.current = { search: normalizedSearch, nextPage: 2 }
+      setCatalogsHasMore(response.has_more)
+      return mapReferenceOptions(response.items)
+    },
+    [mapReferenceOptions],
   )
+
+  const loadMoreCatalogs = useCallback(async (): Promise<AsyncMultiSelectOption[]> => {
+    if (!catalogsHasMore) return []
+    const { search, nextPage } = catalogsSearchState.current
+    const response = await metadataReferenceApi.listCatalogs({
+      search: search || undefined,
+      page: nextPage,
+      per_page: referencePerPage,
+    })
+    catalogsSearchState.current.nextPage = nextPage + 1
+    setCatalogsHasMore(response.has_more)
+    return mapReferenceOptions(response.items)
+  }, [catalogsHasMore, mapReferenceOptions])
+
+  const searchStars = useCallback(
+    async (search: string): Promise<AsyncMultiSelectOption[]> => {
+      const normalizedSearch = search.trim()
+      const response = await metadataReferenceApi.listStars({
+        search: normalizedSearch || undefined,
+        page: 1,
+        per_page: referencePerPage,
+      })
+      starsSearchState.current = { search: normalizedSearch, nextPage: 2 }
+      setStarsHasMore(response.has_more)
+      return mapReferenceOptions(response.items)
+    },
+    [mapReferenceOptions],
+  )
+
+  const loadMoreStars = useCallback(async (): Promise<AsyncMultiSelectOption[]> => {
+    if (!starsHasMore) return []
+    const { search, nextPage } = starsSearchState.current
+    const response = await metadataReferenceApi.listStars({
+      search: search || undefined,
+      page: nextPage,
+      per_page: referencePerPage,
+    })
+    starsSearchState.current.nextPage = nextPage + 1
+    setStarsHasMore(response.has_more)
+    return mapReferenceOptions(response.items)
+  }, [starsHasMore, mapReferenceOptions])
 
   // Field states - initialized from metadata
   const getInitialFields = useCallback((): Record<FieldName, FieldState> => {
@@ -207,7 +278,11 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
         original: metadata?.external_ids?.kitsu || '',
         isModified: false,
       },
-      parental_certificate: { value: '', original: '', isModified: false }, // Not in API yet
+      parental_certificate: {
+        value: metadata?.certification || '',
+        original: metadata?.certification || '',
+        isModified: false,
+      },
       catalogs: {
         value: metadata?.catalogs?.join(', ') || '',
         original: metadata?.catalogs?.join(', ') || '',
@@ -296,6 +371,9 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
 
     // Check string fields
     Object.entries(fields).forEach(([key, state]) => {
+      if (!isTvItem && (key === 'country' || key === 'language')) {
+        return
+      }
       if (state.isModified && !['genres', 'cast', 'directors', 'writers', 'catalogs', 'aka_titles'].includes(key)) {
         result.push({ field: key as FieldName, currentValue: state.original, newValue: state.value })
       }
@@ -361,6 +439,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
     selectedWriters,
     selectedCatalogs,
     akaTitles,
+    isTvItem,
   ])
 
   const modifiedCount = modifiedFields.length
@@ -374,9 +453,6 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
 
     for (const { field, currentValue, newValue } of modifiedFields) {
       try {
-        if (field === 'parental_certificate') continue // Skip for now
-        if (field === 'catalogs') continue // Skip - might not be in suggestions API
-
         await createSuggestion.mutateAsync({
           mediaId,
           data: {
@@ -404,7 +480,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
     }
   }
 
-  const isLoading = metadataLoading || genresLoading || starsLoading || parentalLoading || catalogsLoading
+  const isLoading = metadataLoading
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -608,38 +684,42 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                 </div>
               </div>
 
-              <Separator />
+              {isTvItem && (
+                <>
+                  <Separator />
 
-              {/* Classification Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Globe className="h-4 w-4" />
-                  Classification
-                </div>
+                  {/* Classification Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Globe className="h-4 w-4" />
+                      Classification
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Country</Label>
-                    <Input
-                      value={fields.country.value}
-                      onChange={(e) => updateField('country', e.target.value)}
-                      placeholder="United States"
-                      className={cn('rounded-xl', fields.country.isModified && 'border-primary/50 bg-primary/5')}
-                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Country</Label>
+                        <Input
+                          value={fields.country.value}
+                          onChange={(e) => updateField('country', e.target.value)}
+                          placeholder="United States"
+                          className={cn('rounded-xl', fields.country.isModified && 'border-primary/50 bg-primary/5')}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Language</Label>
+                        <Input
+                          value={fields.language.value}
+                          onChange={(e) => updateField('language', e.target.value)}
+                          placeholder="English"
+                          className={cn('rounded-xl', fields.language.isModified && 'border-primary/50 bg-primary/5')}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Language</Label>
-                    <Input
-                      value={fields.language.value}
-                      onChange={(e) => updateField('language', e.target.value)}
-                      placeholder="English"
-                      className={cn('rounded-xl', fields.language.isModified && 'border-primary/50 bg-primary/5')}
-                    />
-                  </div>
-                </div>
-              </div>
 
-              <Separator />
+                  <Separator />
+                </>
+              )}
 
               {/* Content Guidance Section */}
               <div className="space-y-4">
@@ -676,6 +756,40 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                   </Select>
                   <p className="text-xs text-muted-foreground">Used for content filtering and parental controls</p>
                 </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Parental Certificate</Label>
+                    {fields.parental_certificate.isModified && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-primary/20 text-primary">
+                        Modified
+                      </Badge>
+                    )}
+                  </div>
+                  <Select
+                    value={fields.parental_certificate.value || 'Unknown'}
+                    onValueChange={(value) => updateField('parental_certificate', value)}
+                  >
+                    <SelectTrigger
+                      className={cn(
+                        'rounded-xl',
+                        fields.parental_certificate.isModified && 'border-primary/50 bg-primary/5',
+                      )}
+                    >
+                      <SelectValue placeholder="Select certification category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PARENTAL_CERTIFICATE_LEVEL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Selecting a category saves all mapped parental certificates for that level.
+                  </p>
+                </div>
               </div>
 
               <Separator />
@@ -697,14 +811,17 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                         </Badge>
                       )}
                     </div>
-                    <MultiSelect
-                      options={genreOptions}
+                    <AsyncMultiSelect
                       selected={selectedGenres}
                       onChange={setSelectedGenres}
+                      onSearch={searchGenres}
+                      onLoadMore={loadMoreGenres}
+                      hasMore={genresHasMore}
+                      loadMoreOnScroll
+                      initialOptions={selectedGenres.map((value) => ({ value, label: value }))}
                       placeholder="Select genres..."
                       searchPlaceholder="Search genres..."
                       allowCustom
-                      isLoading={genresLoading}
                     />
                   </div>
 
@@ -717,13 +834,16 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                         </Badge>
                       )}
                     </div>
-                    <MultiSelect
-                      options={catalogOptions}
+                    <AsyncMultiSelect
                       selected={selectedCatalogs}
                       onChange={setSelectedCatalogs}
+                      onSearch={searchCatalogs}
+                      onLoadMore={loadMoreCatalogs}
+                      hasMore={catalogsHasMore}
+                      loadMoreOnScroll
+                      initialOptions={selectedCatalogs.map((value) => ({ value, label: value }))}
                       placeholder="Select catalogs..."
                       searchPlaceholder="Search catalogs..."
-                      isLoading={catalogsLoading}
                     />
                   </div>
                 </div>
@@ -748,14 +868,17 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                         </Badge>
                       )}
                     </div>
-                    <MultiSelect
-                      options={starOptions}
+                    <AsyncMultiSelect
                       selected={selectedCast}
                       onChange={setSelectedCast}
+                      onSearch={searchStars}
+                      onLoadMore={loadMoreStars}
+                      hasMore={starsHasMore}
+                      loadMoreOnScroll
+                      initialOptions={selectedCast.map((value) => ({ value, label: value }))}
                       placeholder="Select cast members..."
                       searchPlaceholder="Search people..."
                       allowCustom
-                      isLoading={starsLoading}
                       maxDisplayed={5}
                     />
                   </div>
@@ -769,14 +892,17 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                         </Badge>
                       )}
                     </div>
-                    <MultiSelect
-                      options={starOptions}
+                    <AsyncMultiSelect
                       selected={selectedDirectors}
                       onChange={setSelectedDirectors}
+                      onSearch={searchStars}
+                      onLoadMore={loadMoreStars}
+                      hasMore={starsHasMore}
+                      loadMoreOnScroll
+                      initialOptions={selectedDirectors.map((value) => ({ value, label: value }))}
                       placeholder="Select directors..."
                       searchPlaceholder="Search people..."
                       allowCustom
-                      isLoading={starsLoading}
                     />
                   </div>
 
@@ -789,14 +915,17 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                         </Badge>
                       )}
                     </div>
-                    <MultiSelect
-                      options={starOptions}
+                    <AsyncMultiSelect
                       selected={selectedWriters}
                       onChange={setSelectedWriters}
+                      onSearch={searchStars}
+                      onLoadMore={loadMoreStars}
+                      hasMore={starsHasMore}
+                      loadMoreOnScroll
+                      initialOptions={selectedWriters.map((value) => ({ value, label: value }))}
                       placeholder="Select writers..."
                       searchPlaceholder="Search people..."
                       allowCustom
-                      isLoading={starsLoading}
                     />
                   </div>
                 </div>

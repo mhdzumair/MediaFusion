@@ -4,6 +4,7 @@ Includes auto-approval for trusted users and points-based reputation system.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Literal, TypedDict
 
@@ -16,9 +17,30 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth, require_role
+from db.crud import add_external_id
+from db.crud.providers import get_or_create_provider
 from db.database import get_async_session
-from db.enums import UserRole
-from db.models import ContributionSettings, Media, MediaImage, MetadataSuggestion, User
+from db.enums import MediaType, NudityStatus, UserRole
+from db.models import (
+    AkaTitle,
+    Catalog,
+    ContributionSettings,
+    Genre,
+    Media,
+    MediaCast,
+    MediaCatalogLink,
+    MediaCrew,
+    MediaExternalID,
+    MediaGenreLink,
+    MediaImage,
+    MediaParentalCertificateLink,
+    MetadataSuggestion,
+    ParentalCertificate,
+    Person,
+    TVMetadata,
+    User,
+)
+from utils.const import CERTIFICATION_MAPPING
 from utils.notification_registry import send_pending_metadata_suggestion_notification
 
 logger = logging.getLogger(__name__)
@@ -54,10 +76,16 @@ EDITABLE_FIELDS = [
     "writers",
     "imdb_id",
     "tmdb_id",
+    "tvdb_id",
+    "mal_id",
+    "kitsu_id",
+    "catalogs",
+    "parental_certificate",
+    "nudity_status",
 ]
 
 # Fields that require JSON handling (arrays)
-JSON_FIELDS = ["genres", "aka_titles", "cast", "directors", "writers"]
+JSON_FIELDS = ["genres", "aka_titles", "cast", "directors", "writers", "catalogs", "parental_certificate"]
 
 
 # ============================================
@@ -81,6 +109,12 @@ EditableFieldLiteral = Literal[
     "writers",
     "imdb_id",
     "tmdb_id",
+    "tvdb_id",
+    "mal_id",
+    "kitsu_id",
+    "catalogs",
+    "parental_certificate",
+    "nudity_status",
 ]
 
 
@@ -333,6 +367,247 @@ async def award_points(
     )
 
 
+RUNTIME_MINUTES_PATTERN = re.compile(
+    r"^\s*(?:(?P<hours>\d+)\s*h(?:ours?)?)?\s*(?:(?P<minutes>\d+)\s*m(?:in(?:utes?)?)?)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_list(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _expand_parental_certificate_selection(value: str) -> list[str]:
+    normalized = value.strip()
+    if not normalized:
+        return []
+
+    mapped = CERTIFICATION_MAPPING.get(normalized)
+    if mapped is None:
+        # Backward compatibility for older suggestions that stored raw CSV values.
+        if "," in normalized:
+            return _parse_list(normalized)
+        return [normalized]
+
+    expanded: list[str] = []
+    for certificate in mapped:
+        if certificate is None:
+            continue
+        name = str(certificate).strip()
+        if name and name not in expanded:
+            expanded.append(name)
+    return expanded
+
+
+def _parse_runtime_minutes(value: str) -> int | None:
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+
+    if normalized.isdigit():
+        return int(normalized)
+
+    runtime_match = RUNTIME_MINUTES_PATTERN.match(normalized)
+    if runtime_match:
+        hours = int(runtime_match.group("hours") or 0)
+        minutes = int(runtime_match.group("minutes") or 0)
+        if hours == 0 and minutes == 0:
+            return None
+        return hours * 60 + minutes
+
+    min_match = re.search(r"(\d+)\s*min", normalized)
+    if min_match:
+        return int(min_match.group(1))
+
+    return None
+
+
+async def _get_or_create_genre(session: AsyncSession, name: str) -> Genre:
+    result = await session.exec(select(Genre).where(Genre.name == name))
+    genre = result.first()
+    if genre:
+        return genre
+
+    genre = Genre(name=name)
+    session.add(genre)
+    await session.flush()
+    return genre
+
+
+async def _get_or_create_catalog(session: AsyncSession, name: str) -> Catalog:
+    result = await session.exec(select(Catalog).where(Catalog.name == name))
+    catalog = result.first()
+    if catalog:
+        return catalog
+
+    catalog = Catalog(name=name)
+    session.add(catalog)
+    await session.flush()
+    return catalog
+
+
+async def _get_or_create_person(session: AsyncSession, name: str) -> Person:
+    result = await session.exec(select(Person).where(Person.name == name))
+    person = result.first()
+    if person:
+        return person
+
+    person = Person(name=name)
+    session.add(person)
+    await session.flush()
+    return person
+
+
+async def _get_or_create_parental_certificate(session: AsyncSession, name: str) -> ParentalCertificate:
+    result = await session.exec(select(ParentalCertificate).where(ParentalCertificate.name == name))
+    certificate = result.first()
+    if certificate:
+        return certificate
+
+    certificate = ParentalCertificate(name=name)
+    session.add(certificate)
+    await session.flush()
+    return certificate
+
+
+async def _replace_genres(session: AsyncSession, media_id: int, names: list[str]) -> None:
+    existing = (await session.exec(select(MediaGenreLink).where(MediaGenreLink.media_id == media_id))).all()
+    for link in existing:
+        await session.delete(link)
+
+    for name in names:
+        genre = await _get_or_create_genre(session, name)
+        session.add(MediaGenreLink(media_id=media_id, genre_id=genre.id))
+
+
+async def _replace_catalogs(session: AsyncSession, media_id: int, names: list[str]) -> None:
+    existing = (await session.exec(select(MediaCatalogLink).where(MediaCatalogLink.media_id == media_id))).all()
+    for link in existing:
+        await session.delete(link)
+
+    for name in names:
+        catalog = await _get_or_create_catalog(session, name)
+        session.add(MediaCatalogLink(media_id=media_id, catalog_id=catalog.id))
+
+
+async def _replace_aka_titles(session: AsyncSession, media_id: int, titles: list[str]) -> None:
+    existing = (await session.exec(select(AkaTitle).where(AkaTitle.media_id == media_id))).all()
+    for aka in existing:
+        await session.delete(aka)
+
+    for title in titles:
+        session.add(AkaTitle(media_id=media_id, title=title))
+
+
+async def _replace_cast(session: AsyncSession, media_id: int, names: list[str]) -> None:
+    existing = (await session.exec(select(MediaCast).where(MediaCast.media_id == media_id))).all()
+    for cast_member in existing:
+        await session.delete(cast_member)
+
+    for index, name in enumerate(names):
+        person = await _get_or_create_person(session, name)
+        session.add(MediaCast(media_id=media_id, person_id=person.id, display_order=index))
+
+
+async def _replace_directors(session: AsyncSession, media_id: int, names: list[str]) -> None:
+    existing = (
+        await session.exec(
+            select(MediaCrew).where(
+                MediaCrew.media_id == media_id,
+                func.lower(cast(MediaCrew.job, String)) == "director",
+            )
+        )
+    ).all()
+    for crew in existing:
+        await session.delete(crew)
+
+    for name in names:
+        person = await _get_or_create_person(session, name)
+        session.add(MediaCrew(media_id=media_id, person_id=person.id, department="Directing", job="Director"))
+
+
+async def _replace_writers(session: AsyncSession, media_id: int, names: list[str]) -> None:
+    existing = (
+        await session.exec(
+            select(MediaCrew).where(
+                MediaCrew.media_id == media_id,
+                func.lower(cast(MediaCrew.job, String)).in_(["writer", "screenplay", "story"]),
+            )
+        )
+    ).all()
+    for crew in existing:
+        await session.delete(crew)
+
+    for name in names:
+        person = await _get_or_create_person(session, name)
+        session.add(MediaCrew(media_id=media_id, person_id=person.id, department="Writing", job="Writer"))
+
+
+async def _replace_parental_certificates(session: AsyncSession, media_id: int, names: list[str]) -> None:
+    existing = (
+        await session.exec(
+            select(MediaParentalCertificateLink).where(MediaParentalCertificateLink.media_id == media_id)
+        )
+    ).all()
+    for link in existing:
+        await session.delete(link)
+
+    for name in names:
+        certificate = await _get_or_create_parental_certificate(session, name)
+        session.add(MediaParentalCertificateLink(media_id=media_id, certificate_id=certificate.id))
+
+
+async def _set_external_id(session: AsyncSession, media_id: int, provider: str, value: str) -> bool:
+    normalized = value.strip()
+    if provider == "imdb" and normalized and not normalized.startswith("tt"):
+        return False
+
+    if provider in {"tmdb", "tvdb", "mal", "kitsu"} and normalized.startswith(f"{provider}:"):
+        normalized = normalized.split(":", 1)[1]
+
+    existing = (
+        await session.exec(
+            select(MediaExternalID).where(MediaExternalID.media_id == media_id, MediaExternalID.provider == provider)
+        )
+    ).all()
+
+    if not normalized:
+        for item in existing:
+            await session.delete(item)
+        return True
+
+    await add_external_id(session, media_id, provider, normalized)
+    return True
+
+
+async def _set_media_image(session: AsyncSession, media_id: int, image_type: str, value: str) -> bool:
+    normalized = value.strip()
+    image_types = ["background", "backdrop"] if image_type == "background" else [image_type]
+
+    existing = (
+        await session.exec(
+            select(MediaImage).where(MediaImage.media_id == media_id, MediaImage.image_type.in_(image_types))
+        )
+    ).all()
+    for image in existing:
+        await session.delete(image)
+
+    if not normalized:
+        return True
+
+    user_provider = await get_or_create_provider(session, "user")
+    session.add(
+        MediaImage(
+            media_id=media_id,
+            provider_id=user_provider.id,
+            image_type="backdrop" if image_type == "background" else image_type,
+            url=normalized,
+            is_primary=True,
+        )
+    )
+    return True
+
+
 async def apply_metadata_changes(
     meta: Media,
     field_name: str,
@@ -348,35 +623,65 @@ async def apply_metadata_changes(
         elif field_name == "year":
             meta.year = int(value)
         elif field_name == "poster":
-            meta.poster = value
+            return await _set_media_image(session, meta.id, "poster", value)
         elif field_name == "background":
-            meta.background = value
+            return await _set_media_image(session, meta.id, "background", value)
         elif field_name == "runtime":
-            meta.runtime = value
-        elif field_name == "country":
-            meta.country = value
-        elif field_name == "language":
-            meta.tv_language = value
-        elif field_name == "imdb_id":
-            # Validate IMDB ID format
-            if value and not value.startswith("tt"):
+            runtime_minutes = _parse_runtime_minutes(value)
+            if runtime_minutes is None and value.strip():
                 return False
-            meta.imdb_id = value
+            meta.runtime_minutes = runtime_minutes
+        elif field_name == "country":
+            if meta.type != MediaType.TV:
+                return False
+            tv_metadata_result = await session.exec(select(TVMetadata).where(TVMetadata.media_id == meta.id))
+            tv_metadata = tv_metadata_result.first()
+            if not tv_metadata:
+                tv_metadata = TVMetadata(media_id=meta.id)
+            tv_metadata.country = value.strip() or None
+            session.add(tv_metadata)
+        elif field_name == "language":
+            if meta.type != MediaType.TV:
+                return False
+            tv_metadata_result = await session.exec(select(TVMetadata).where(TVMetadata.media_id == meta.id))
+            tv_metadata = tv_metadata_result.first()
+            if not tv_metadata:
+                tv_metadata = TVMetadata(media_id=meta.id)
+            tv_metadata.tv_language = value.strip() or None
+            session.add(tv_metadata)
+        elif field_name == "imdb_id":
+            return await _set_external_id(session, meta.id, "imdb", value)
         elif field_name == "tmdb_id":
-            # Validate TMDB ID format
+            return await _set_external_id(session, meta.id, "tmdb", value)
+        elif field_name == "tvdb_id":
+            return await _set_external_id(session, meta.id, "tvdb", value)
+        elif field_name == "mal_id":
+            return await _set_external_id(session, meta.id, "mal", value)
+        elif field_name == "kitsu_id":
+            return await _set_external_id(session, meta.id, "kitsu", value)
+        elif field_name == "nudity_status":
             try:
-                tmdb_val = int(value) if value else None
-                meta.tmdb_id = tmdb_val
+                meta.nudity_status = NudityStatus(value.strip() or NudityStatus.UNKNOWN.value)
             except ValueError:
                 return False
-        # JSON fields would need special handling through related tables
-        # genres, aka_titles, cast, directors, writers
-        # For now, we'll note they need more complex handling
+        elif field_name == "genres":
+            await _replace_genres(session, meta.id, _parse_list(value))
+        elif field_name == "catalogs":
+            await _replace_catalogs(session, meta.id, _parse_list(value))
+        elif field_name == "aka_titles":
+            await _replace_aka_titles(session, meta.id, _parse_list(value))
+        elif field_name == "cast":
+            await _replace_cast(session, meta.id, _parse_list(value))
+        elif field_name == "directors":
+            await _replace_directors(session, meta.id, _parse_list(value))
+        elif field_name == "writers":
+            await _replace_writers(session, meta.id, _parse_list(value))
+        elif field_name == "parental_certificate":
+            await _replace_parental_certificates(session, meta.id, _expand_parental_certificate_selection(value))
         elif field_name in JSON_FIELDS:
-            # These are stored in related tables, need special handling
-            logger.warning(f"JSON field {field_name} requires special handling")
-            # Still mark as successful - the suggestion is recorded
-            return True
+            return False
+        else:
+            return False
 
         session.add(meta)
         return True

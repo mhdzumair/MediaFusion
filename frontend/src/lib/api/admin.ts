@@ -1,35 +1,6 @@
 import { apiClient } from './client'
 
 // ============================================
-// Types - Reference Data
-// ============================================
-
-export interface ReferenceItem {
-  id: number
-  name: string
-  usage_count: number
-}
-
-export interface ReferenceListParams {
-  page?: number
-  per_page?: number
-  search?: string
-}
-
-export interface ReferenceListResponse {
-  items: ReferenceItem[]
-  total: number
-  page: number
-  per_page: number
-  pages: number
-  has_more: boolean
-}
-
-export interface ReferenceItemCreate {
-  name: string
-}
-
-// ============================================
 // Types - Episode Files
 // ============================================
 
@@ -401,32 +372,6 @@ function buildQueryString<T extends object>(params: T): string {
 // We need to bypass the standard client's base URL handling
 const ADMIN_BASE = '/api/v1/admin'
 
-async function adminGet<T>(endpoint: string): Promise<T> {
-  const token = apiClient.getAccessToken()
-  const apiKey = apiClient.getApiKey()
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  if (apiKey) {
-    headers['X-API-Key'] = apiKey
-  }
-
-  const response = await fetch(`${ADMIN_BASE}${endpoint}`, {
-    method: 'GET',
-    headers,
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: `HTTP error ${response.status}` }))
-    throw new Error(error.detail || 'An error occurred')
-  }
-
-  return response.json()
-}
-
 async function adminPost<T>(endpoint: string, data?: unknown): Promise<T> {
   const token = apiClient.getAccessToken()
   const apiKey = apiClient.getApiKey()
@@ -442,33 +387,6 @@ async function adminPost<T>(endpoint: string, data?: unknown): Promise<T> {
 
   const response = await fetch(`${ADMIN_BASE}${endpoint}`, {
     method: 'POST',
-    headers,
-    body: data ? JSON.stringify(data) : undefined,
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: `HTTP error ${response.status}` }))
-    throw new Error(error.detail || 'An error occurred')
-  }
-
-  return response.json()
-}
-
-async function adminPatch<T>(endpoint: string, data?: unknown): Promise<T> {
-  const token = apiClient.getAccessToken()
-  const apiKey = apiClient.getApiKey()
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  if (apiKey) {
-    headers['X-API-Key'] = apiKey
-  }
-
-  const response = await fetch(`${ADMIN_BASE}${endpoint}`, {
-    method: 'PATCH',
     headers,
     body: data ? JSON.stringify(data) : undefined,
   })
@@ -562,29 +480,8 @@ export interface SearchExternalResponse {
 
 export const adminApi = {
   // ============================================
-  // Stats
-  // ============================================
-
-  getStats: async (): Promise<MetadataStatsResponse> => {
-    return adminGet<MetadataStatsResponse>('/stats')
-  },
-
-  // ============================================
   // Metadata
   // ============================================
-
-  listMetadata: async (params: MetadataListParams = {}): Promise<MetadataListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<MetadataListResponse>(`/metadata${query}`)
-  },
-
-  getMetadata: async (mediaId: number): Promise<MetadataItem> => {
-    return adminGet<MetadataItem>(`/metadata/${mediaId}`)
-  },
-
-  updateMetadata: async (mediaId: number, data: MetadataUpdateRequest): Promise<MetadataItem> => {
-    return adminPatch<MetadataItem>(`/metadata/${mediaId}`, data)
-  },
 
   deleteMetadata: async (mediaId: number): Promise<{ message: string }> => {
     return adminDelete<{ message: string }>(`/metadata/${mediaId}`)
@@ -610,229 +507,12 @@ export const adminApi = {
     return adminPost<BlockMediaResponse>(`/metadata/${mediaId}/unblock`, {})
   },
 
-  /**
-   * List all blocked media (Moderator/Admin only).
-   */
-  listBlockedMedia: async (params: { page?: number; per_page?: number } = {}): Promise<MetadataListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<MetadataListResponse>(`/blocked-media${query}`)
-  },
-
-  // ============================================
-  // External Metadata (ID Migration & Data Fetch)
-  // ============================================
-
-  /**
-   * Preview external metadata from IMDb or TMDB without applying changes.
-   */
-  fetchExternalMetadata: async (mediaId: number, request: FetchExternalRequest): Promise<ExternalMetadataPreview> => {
-    return adminPost<ExternalMetadataPreview>(`/metadata/${mediaId}/fetch-external`, request)
-  },
-
-  /**
-   * Fetch and apply external metadata from IMDb or TMDB.
-   */
-  applyExternalMetadata: async (mediaId: number, request: FetchExternalRequest): Promise<MetadataItem> => {
-    return adminPost<MetadataItem>(`/metadata/${mediaId}/apply-external`, request)
-  },
-
-  /**
-   * Migrate internal mf/mftmdb ID to proper external ID.
-   */
-  migrateMetadataId: async (mediaId: number, request: MigrateIdRequest): Promise<MetadataItem> => {
-    return adminPost<MetadataItem>(`/metadata/${mediaId}/migrate-id`, request)
-  },
-
-  /**
-   * Search external providers for metadata.
-   */
-  searchExternalMetadata: async (request: SearchExternalRequest): Promise<SearchExternalResponse> => {
-    return adminPost<SearchExternalResponse>('/metadata/search-external', request)
-  },
-
   // ============================================
   // Torrent Streams
   // ============================================
 
-  listTorrentStreams: async (params: TorrentStreamListParams = {}): Promise<TorrentStreamListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<TorrentStreamListResponse>(`/torrent-streams${query}`)
-  },
-
-  getTorrentStream: async (streamId: string): Promise<TorrentStreamItem> => {
-    return adminGet<TorrentStreamItem>(`/torrent-streams/${streamId}`)
-  },
-
-  updateTorrentStream: async (streamId: string, data: TorrentStreamUpdateRequest): Promise<TorrentStreamItem> => {
-    return adminPatch<TorrentStreamItem>(`/torrent-streams/${streamId}`, data)
-  },
-
   blockTorrentStream: async (streamId: number): Promise<{ message: string }> => {
     return adminPost<{ message: string }>(`/torrent-streams/${streamId}/block`)
-  },
-
-  unblockTorrentStream: async (streamId: number): Promise<{ message: string }> => {
-    return adminPost<{ message: string }>(`/torrent-streams/${streamId}/unblock`)
-  },
-
-  // ============================================
-  // TV Streams
-  // ============================================
-
-  listTVStreams: async (params: TVStreamListParams = {}): Promise<TVStreamListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<TVStreamListResponse>(`/tv-streams${query}`)
-  },
-
-  getTVStream: async (streamId: number): Promise<TVStreamItem> => {
-    return adminGet<TVStreamItem>(`/tv-streams/${streamId}`)
-  },
-
-  updateTVStream: async (streamId: number, data: TVStreamUpdateRequest): Promise<TVStreamItem> => {
-    return adminPatch<TVStreamItem>(`/tv-streams/${streamId}`, data)
-  },
-
-  toggleTVStreamActive: async (streamId: number): Promise<{ message: string; is_active: boolean }> => {
-    return adminPost<{ message: string; is_active: boolean }>(`/tv-streams/${streamId}/toggle-active`)
-  },
-
-  // ============================================
-  // Utility / Filter Options
-  // ============================================
-
-  getTorrentSources: async (): Promise<{ sources: string[] }> => {
-    return adminGet<{ sources: string[] }>('/sources/torrent')
-  },
-
-  getTVSources: async (): Promise<{ sources: string[] }> => {
-    return adminGet<{ sources: string[] }>('/sources/tv')
-  },
-
-  getCountries: async (): Promise<{ countries: string[] }> => {
-    return adminGet<{ countries: string[] }>('/countries')
-  },
-
-  getResolutions: async (): Promise<{ resolutions: string[] }> => {
-    return adminGet<{ resolutions: string[] }>('/resolutions')
-  },
-
-  // ============================================
-  // Reference Data - Genres
-  // ============================================
-
-  listGenres: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/genres${query}`)
-  },
-
-  createGenre: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/genres', data)
-  },
-
-  deleteGenre: async (genreId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/genres/${genreId}`)
-  },
-
-  // ============================================
-  // Reference Data - Catalogs
-  // ============================================
-
-  listCatalogs: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/catalogs${query}`)
-  },
-
-  createCatalog: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/catalogs', data)
-  },
-
-  deleteCatalog: async (catalogId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/catalogs/${catalogId}`)
-  },
-
-  // ============================================
-  // Reference Data - Languages
-  // ============================================
-
-  listLanguages: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/languages${query}`)
-  },
-
-  createLanguage: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/languages', data)
-  },
-
-  deleteLanguage: async (languageId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/languages/${languageId}`)
-  },
-
-  // ============================================
-  // Reference Data - Stars
-  // ============================================
-
-  listStars: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/stars${query}`)
-  },
-
-  createStar: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/stars', data)
-  },
-
-  deleteStar: async (starId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/stars/${starId}`)
-  },
-
-  // ============================================
-  // Reference Data - Parental Certificates
-  // ============================================
-
-  listParentalCertificates: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/parental-certificates${query}`)
-  },
-
-  createParentalCertificate: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/parental-certificates', data)
-  },
-
-  deleteParentalCertificate: async (certId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/parental-certificates/${certId}`)
-  },
-
-  // ============================================
-  // Reference Data - Namespaces
-  // ============================================
-
-  listNamespaces: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/namespaces${query}`)
-  },
-
-  createNamespace: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/namespaces', data)
-  },
-
-  deleteNamespace: async (namespaceId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/namespaces/${namespaceId}`)
-  },
-
-  // ============================================
-  // Reference Data - Announce URLs
-  // ============================================
-
-  listAnnounceUrls: async (params: ReferenceListParams = {}): Promise<ReferenceListResponse> => {
-    const query = buildQueryString(params)
-    return adminGet<ReferenceListResponse>(`/reference/announce-urls${query}`)
-  },
-
-  createAnnounceUrl: async (data: ReferenceItemCreate): Promise<ReferenceItem> => {
-    return adminPost<ReferenceItem>('/reference/announce-urls', data)
-  },
-
-  deleteAnnounceUrl: async (urlId: number): Promise<{ message: string }> => {
-    return adminDelete<{ message: string }>(`/reference/announce-urls/${urlId}`)
   },
 }
 

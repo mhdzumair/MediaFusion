@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.routers.admin.admin import (
+from api.schemas.metadata_management import (
     ExternalMetadataPreview,
     FetchExternalRequest,
     MetadataListResponse,
@@ -13,14 +13,9 @@ from api.routers.admin.admin import (
     MigrateIdRequest,
     SearchExternalRequest,
     SearchExternalResponse,
-    apply_external_metadata as admin_apply_external_metadata,
-    fetch_external_metadata as admin_fetch_external_metadata,
-    get_metadata as admin_get_metadata,
-    list_metadata as admin_list_metadata,
-    migrate_metadata_id as admin_migrate_metadata_id,
-    search_external_metadata as admin_search_external_metadata,
 )
 from api.routers.user.auth import require_role
+from api.services import moderator_metadata_service
 from db.database import get_async_session
 from db.enums import UserRole
 from db.models import User
@@ -39,14 +34,13 @@ async def moderator_list_metadata(
     session: AsyncSession = Depends(get_async_session),
 ):
     """List metadata for moderator migration workflows."""
-    return await admin_list_metadata(
+    return await moderator_metadata_service.list_metadata(
+        session=session,
         page=page,
         per_page=per_page,
         media_type=media_type,
         search=search,
         has_streams=has_streams,
-        _admin=moderator,
-        session=session,
     )
 
 
@@ -57,10 +51,9 @@ async def moderator_get_metadata(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Get one metadata item for moderator migration workflows."""
-    return await admin_get_metadata(
-        media_id=media_id,
-        _admin=moderator,
+    return await moderator_metadata_service.get_metadata(
         session=session,
+        media_id=media_id,
     )
 
 
@@ -70,9 +63,8 @@ async def moderator_search_external_metadata(
     moderator: User = Depends(require_role(UserRole.MODERATOR)),
 ):
     """Search external providers for metadata candidates."""
-    return await admin_search_external_metadata(
+    return await moderator_metadata_service.search_external_metadata(
         request=request,
-        _admin=moderator,
     )
 
 
@@ -84,11 +76,10 @@ async def moderator_fetch_external_metadata(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Preview external metadata from IMDb or TMDB."""
-    return await admin_fetch_external_metadata(
+    return await moderator_metadata_service.fetch_external_metadata(
+        session=session,
         media_id=media_id,
         request=request,
-        _admin=moderator,
-        session=session,
     )
 
 
@@ -100,11 +91,10 @@ async def moderator_apply_external_metadata(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Apply external metadata from IMDb or TMDB."""
-    return await admin_apply_external_metadata(
+    return await moderator_metadata_service.apply_external_metadata(
+        session=session,
         media_id=media_id,
         request=request,
-        _admin=moderator,
-        session=session,
     )
 
 
@@ -116,9 +106,8 @@ async def moderator_migrate_metadata_id(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Migrate metadata IDs for moderator workflows."""
-    return await admin_migrate_metadata_id(
+    return await moderator_metadata_service.migrate_metadata_id(
+        session=session,
         media_id=media_id,
         request=request,
-        _admin=moderator,
-        session=session,
     )

@@ -83,6 +83,7 @@ import {
   ScrapeContentButton,
   ExternalIdsDisplay,
   BlockContentButton,
+  DeleteContentButton,
 } from '@/components/metadata'
 import { RatingsDisplay, ContentGuidance, SeriesEpisodePicker, TrailerButton } from '@/components/content'
 import { PlayerDialog, ExternalPlayerMenu } from '@/components/player'
@@ -903,6 +904,7 @@ export function ContentDetailPage() {
   const { rpdbApiKey } = useRpdb()
   const mediaId = parseInt(id || '0', 10)
   const isModerator = hasMinimumRole('moderator')
+  const isAdmin = hasMinimumRole('admin')
 
   // Read initial season/episode from URL query params (for deep linking from history)
   const initialSeason = searchParams.get('season') ? parseInt(searchParams.get('season')!, 10) : undefined
@@ -1618,6 +1620,7 @@ export function ContentDetailPage() {
                       blockReason={item.block_reason}
                     />
                   )}
+                  {isAdmin && <DeleteContentButton mediaId={mediaId} mediaTitle={item.title} mediaType={catalogType} />}
                 </div>
                 {(item.last_refreshed_at || item.last_scraped_at) && (
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
@@ -1696,7 +1699,7 @@ export function ContentDetailPage() {
             setSelectedEpisode(undefined)
           }}
           onEpisodeChange={setSelectedEpisode}
-          isAdmin={hasMinimumRole('admin')}
+          isAdmin={isAdmin}
           onDeleteEpisode={handleDeleteEpisode}
           isDeletingEpisode={deleteEpisodeAdmin.isPending}
         />
