@@ -20,6 +20,7 @@ export interface IntegrationStatus {
   last_sync_at: string | null
   last_sync_status: string | null
   last_sync_error: string | null
+  last_sync_stats: Record<string, unknown> | null
 }
 
 export interface IntegrationListResponse {

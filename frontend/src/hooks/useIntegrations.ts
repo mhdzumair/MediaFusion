@@ -16,6 +16,7 @@ import type {
 
 // Query keys
 const INTEGRATIONS_KEY = 'integrations'
+const SYNC_REFRESH_DELAYS_MS = [1500, 3000, 6000, 10000, 15000]
 
 /**
  * Hook to fetch all integrations for the current profile
@@ -29,6 +30,11 @@ export function useIntegrations() {
     queryKey: [INTEGRATIONS_KEY, 'list', profileId],
     queryFn: () => integrationsApi.list(profileId!),
     enabled: !!user && !!profileId,
+    refetchInterval: (query) => {
+      const data = query.state.data as IntegrationListResponse | undefined
+      if (!data?.integrations?.length) return false
+      return data.integrations.some((integration) => integration.last_sync_status === 'in_progress') ? 3000 : false
+    },
   })
 }
 
@@ -138,8 +144,15 @@ export function useTriggerSync() {
       fullSync?: boolean
     }) => integrationsApi.triggerSync(defaultProfile!.id, platform, direction, fullSync),
     onSuccess: () => {
-      // Invalidate sync status after triggering
+      // Refresh list + status so cards reflect in-progress and final stats.
+      queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] })
       queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY, 'status'] })
+      for (const delayMs of SYNC_REFRESH_DELAYS_MS) {
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] })
+          queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY, 'status'] })
+        }, delayMs)
+      }
     },
   })
 }
@@ -154,7 +167,14 @@ export function useTriggerSyncAll() {
   return useMutation({
     mutationFn: () => integrationsApi.triggerSyncAll(defaultProfile!.id),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] })
       queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY, 'status'] })
+      for (const delayMs of SYNC_REFRESH_DELAYS_MS) {
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY] })
+          queryClient.invalidateQueries({ queryKey: [INTEGRATIONS_KEY, 'status'] })
+        }, delayMs)
+      }
     },
   })
 }

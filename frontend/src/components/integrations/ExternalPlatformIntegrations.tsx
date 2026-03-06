@@ -435,7 +435,26 @@ interface PlatformCardProps {
   lastSyncAt: string | null
   lastSyncStatus: string | null
   lastSyncError: string | null
+  lastSyncStats: Record<string, unknown> | null
   onConnect: () => void
+}
+
+function getNumberStat(stats: Record<string, unknown>, key: string): number {
+  const value = stats[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function formatSyncStats(stats: Record<string, unknown> | null): string | null {
+  if (!stats) return null
+
+  const imported = getNumberStat(stats, 'imported')
+  const exported = getNumberStat(stats, 'exported')
+  const skipped = getNumberStat(stats, 'import_skipped') + getNumberStat(stats, 'export_skipped')
+  const errors = getNumberStat(stats, 'import_errors') + getNumberStat(stats, 'export_errors')
+  const conflicts = getNumberStat(stats, 'conflicts')
+  const duration = getNumberStat(stats, 'duration_seconds')
+
+  return `Imported ${imported} • Exported ${exported} • Skipped ${skipped} • Errors ${errors} • Conflicts ${conflicts} • ${duration.toFixed(1)}s`
 }
 
 function PlatformCard({
@@ -446,6 +465,7 @@ function PlatformCard({
   lastSyncAt,
   lastSyncStatus,
   lastSyncError,
+  lastSyncStats,
   onConnect,
 }: PlatformCardProps) {
   const info = PLATFORM_INFO[platform]
@@ -488,6 +508,7 @@ function PlatformCard({
   }
 
   const isSyncing = triggerSync.isPending
+  const statsSummary = formatSyncStats(lastSyncStats)
 
   return (
     <Card className="relative overflow-hidden">
@@ -530,8 +551,12 @@ function PlatformCard({
                   Last synced{' '}
                   {(() => {
                     try {
-                      // Handle both ISO format with and without timezone
-                      const date = new Date(lastSyncAt.endsWith('Z') ? lastSyncAt : lastSyncAt + 'Z')
+                      // Prefer explicit timezone from backend (UTC). Fallback to UTC when timezone is absent.
+                      let date = new Date(lastSyncAt)
+                      const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(lastSyncAt)
+                      if (isNaN(date.getTime()) && !hasTimezone) {
+                        date = new Date(`${lastSyncAt}Z`)
+                      }
                       if (isNaN(date.getTime())) return 'unknown'
                       return formatDistanceToNow(date, { addSuffix: true })
                     } catch {
@@ -540,6 +565,7 @@ function PlatformCard({
                   })()}
                 </span>
                 {lastSyncStatus === 'success' && <Check className="h-3 w-3 text-green-500" />}
+                {lastSyncStatus === 'in_progress' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
                 {lastSyncStatus === 'failed' && (
                   <Tooltip>
                     <TooltipTrigger>
@@ -549,6 +575,12 @@ function PlatformCard({
                   </Tooltip>
                 )}
               </div>
+            )}
+            {lastSyncStatus === 'in_progress' && (
+              <p className="text-xs text-blue-500">Sync in progress... stats will appear when completed.</p>
+            )}
+            {lastSyncStatus === 'success' && statsSummary && (
+              <p className="text-xs text-muted-foreground">{statsSummary}</p>
             )}
 
             {/* Settings */}
@@ -729,6 +761,7 @@ export function ExternalPlatformIntegrations({
             lastSyncAt={integration.last_sync_at}
             lastSyncStatus={integration.last_sync_status}
             lastSyncError={integration.last_sync_error}
+            lastSyncStats={integration.last_sync_stats}
             onConnect={() => setConnectPlatform(integration.platform)}
           />
         ))}
