@@ -246,6 +246,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     # Paths that don't require API key validation
     EXEMPT_PATH_PREFIXES = (
         "/api/v1/instance/",  # Must be accessible to know if key is needed
+        "/api/v1/integrations/simkl/callback",  # OAuth callback must be browser-accessible without API key header
         "/api/v1/telegram/webhook",  # Telegram webhook - uses secret token authentication instead
         "/api/v1/telegram/login",  # Telegram login - uses login token authentication instead
         "/health",

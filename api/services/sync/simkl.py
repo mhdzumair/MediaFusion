@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 # Simkl API endpoints
 SIMKL_API_URL = "https://api.simkl.com"
 SIMKL_AUTH_URL = "https://simkl.com/oauth"
+SIMKL_OAUTH_TOKEN_URL = "https://api.simkl.com/oauth/token"
 SIMKL_CALLBACK_PATH = "/api/v1/integrations/simkl/callback"
+SIMKL_OAUTH_USER_AGENT = "MediaFusion/1.0"
 
 # Default client ID
 DEFAULT_SIMKL_CLIENT_ID = getattr(settings, "simkl_client_id", None)
@@ -31,6 +33,16 @@ DEFAULT_SIMKL_CLIENT_SECRET = getattr(settings, "simkl_client_secret", None)
 def get_simkl_redirect_uri() -> str:
     """Build Simkl OAuth callback URL from HOST_URL."""
     return f"{settings.host_url.rstrip('/')}{SIMKL_CALLBACK_PATH}"
+
+
+def get_simkl_oauth_headers(client_id: str) -> dict[str, str]:
+    """Headers for Simkl OAuth token endpoints."""
+    return {
+        "User-Agent": SIMKL_OAUTH_USER_AGENT,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "simkl-api-key": client_id,
+    }
 
 
 class SimklSyncService(BaseSyncService[SimklConfig]):
@@ -99,7 +111,7 @@ class SimklSyncService(BaseSyncService[SimklConfig]):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{SIMKL_AUTH_URL}/token",
+                    SIMKL_OAUTH_TOKEN_URL,
                     json={
                         "refresh_token": self.config.refresh_token,
                         "client_id": self.client_id,
@@ -107,10 +119,15 @@ class SimklSyncService(BaseSyncService[SimklConfig]):
                         "redirect_uri": get_simkl_redirect_uri(),
                         "grant_type": "refresh_token",
                     },
+                    headers=get_simkl_oauth_headers(self.client_id),
                 )
 
                 if response.status_code != 200:
-                    logger.error(f"Simkl token refresh failed: {response.text}")
+                    logger.error(
+                        "Simkl token refresh failed with status %s: %s",
+                        response.status_code,
+                        response.text[:1000],
+                    )
                     return None
 
                 data = response.json()
@@ -426,7 +443,7 @@ async def exchange_simkl_code(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{SIMKL_AUTH_URL}/token",
+                SIMKL_OAUTH_TOKEN_URL,
                 json={
                     "code": code,
                     "client_id": cid,
@@ -434,10 +451,15 @@ async def exchange_simkl_code(
                     "redirect_uri": get_simkl_redirect_uri(),
                     "grant_type": "authorization_code",
                 },
+                headers=get_simkl_oauth_headers(cid),
             )
 
             if response.status_code != 200:
-                logger.error(f"Simkl token exchange failed: {response.text}")
+                logger.error(
+                    "Simkl token exchange failed with status %s: %s",
+                    response.status_code,
+                    response.text[:1000],
+                )
                 return None
 
             data = response.json()
