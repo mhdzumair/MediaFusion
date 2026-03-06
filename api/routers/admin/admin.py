@@ -597,12 +597,58 @@ def _parse_media_id_search(search: str) -> int | None:
     return None
 
 
+def _parse_prefixed_media_id_search(search: str) -> int | None:
+    normalized_search = search.strip().lower()
+    if normalized_search.startswith("mf:"):
+        candidate = normalized_search[3:]
+        if candidate.isdigit():
+            return int(candidate)
+    return None
+
+
+def _parse_external_id_search(search: str) -> tuple[str, str] | None:
+    normalized_search = search.strip().lower()
+    if not normalized_search:
+        return None
+
+    if normalized_search.startswith("tt"):
+        return "imdb", normalized_search
+
+    provider_prefixes = ("imdb", "tmdb", "tvdb", "mal", "kitsu")
+    for provider in provider_prefixes:
+        prefix = f"{provider}:"
+        if normalized_search.startswith(prefix):
+            external_id = normalized_search[len(prefix) :]
+            if external_id:
+                return provider, external_id
+
+    return None
+
+
 def _build_metadata_search_condition(search: str):
     search_pattern = f"%{search.strip()}%"
     conditions = [Media.title.ilike(search_pattern)]
+
     parsed_media_id = _parse_media_id_search(search)
     if parsed_media_id is not None:
         conditions.append(Media.id == parsed_media_id)
+
+    prefixed_media_id = _parse_prefixed_media_id_search(search)
+    if prefixed_media_id is not None:
+        conditions.append(Media.id == prefixed_media_id)
+
+    parsed_external = _parse_external_id_search(search)
+    if parsed_external:
+        provider, external_id = parsed_external
+        conditions.append(
+            Media.id.in_(
+                select(MediaExternalID.media_id).where(
+                    MediaExternalID.provider == provider,
+                    func.lower(MediaExternalID.external_id) == external_id,
+                )
+            )
+        )
+
     return or_(*conditions)
 
 
