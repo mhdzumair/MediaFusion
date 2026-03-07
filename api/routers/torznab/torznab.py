@@ -5,8 +5,8 @@ Implements the Torznab protocol to expose MediaFusion's torrent database
 to external applications like Sonarr, Radarr, and Prowlarr.
 
 Authentication:
-- If api_password is set: apikey format is "password:user-uuid"
-- If api_password is not set: apikey is just "user-uuid"
+- Public instances: apikey is "user-uuid"
+- Private instances: apikey format is "password:user-uuid"
 """
 
 import logging
@@ -83,8 +83,8 @@ async def validate_apikey(
     Validate the API key and return the user.
 
     API key format:
-    - With api_password: "password:user-uuid"
-    - Without api_password: "user-uuid"
+    - Public instances: "user-uuid"
+    - Private instances: "password:user-uuid"
 
     Returns None if validation fails.
     """
@@ -93,8 +93,9 @@ async def validate_apikey(
 
     user_uuid = apikey
 
-    # If api_password is configured, require it in the apikey
-    if settings.api_password:
+    # Require password only for private instances to match frontend app-config.
+    require_password = bool(settings.api_password) and not settings.is_public_instance
+    if require_password:
         if ":" not in apikey:
             return None
         parts = apikey.split(":", 1)
@@ -295,7 +296,10 @@ def build_rss_xml(results: list[dict], request: Request) -> ET.Element:
 async def torznab_api(
     request: Request,
     t: str = Query(..., description="Request type (caps, search, movie, tvsearch)"),
-    apikey: str | None = Query(None, description="API key (user UUID or password:uuid)"),
+    apikey: str | None = Query(
+        None,
+        description="API key (public: user UUID, private: password:uuid)",
+    ),
     q: str | None = Query(None, description="Search query"),
     imdbid: str | None = Query(None, description="IMDb ID"),
     tmdbid: str | None = Query(None, description="TMDB ID"),
