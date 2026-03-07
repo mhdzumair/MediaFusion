@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, DateTime, Index, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Index, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 from db.enums import ContributionStatus
@@ -41,7 +41,7 @@ class Contribution(TimestampMixin, table=True):
     admin_review_requested: bool = Field(default=False)
     admin_review_requested_by: str | None = Field(default=None)
     admin_review_requested_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    admin_review_reason: str | None = Field(default=None)
+    admin_review_reason: str | None = Field(default=None, sa_type=Text)
 
     # Relationships
     user: Optional["User"] = Relationship(back_populates="contributions")

@@ -60,7 +60,7 @@ class User(TimestampMixin, table=True):
 
     # Contribution preferences
     contribute_anonymously: bool = Field(default=False)  # Default to show name on contributions
-    uploads_restricted: bool = Field(default=False, index=True)
+    uploads_restricted: bool = Field(default=False)
 
     # Relationships
     profiles: list["UserProfile"] = Relationship(

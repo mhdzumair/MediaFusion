@@ -141,6 +141,7 @@ class StreamMediaLink(SQLModel, table=True):
     __table_args__ = (
         Index("idx_stream_media_stream", "stream_id"),
         Index("idx_stream_media_media", "media_id"),
+        Index("idx_stream_media_stream_media", "stream_id", "media_id"),  # Composite for annotation queue joins
         Index("idx_stream_media_link_media_stream", "media_id", "stream_id"),  # Composite for lookups
         Index("idx_stream_media_user", "linked_by_user_id"),
         Index("idx_stream_media_primary", "stream_id", "is_primary"),

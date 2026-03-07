@@ -14,7 +14,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 import pytz
-from sqlalchemy import JSON, BigInteger, DateTime, Index, LargeBinary, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, DateTime, Index, LargeBinary, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -120,6 +120,7 @@ class Stream(TimestampMixin, table=True):
         Index("idx_stream_public", "is_public"),
         # Composite index for common query pattern
         Index("idx_stream_active_blocked", "is_active", "is_blocked"),
+        Index("idx_stream_active_blocked_created", "is_active", "is_blocked", "created_at"),
         # Partial index for streams with uploader_user_id set
         Index(
             "idx_stream_uploader_user",
@@ -348,6 +349,7 @@ class FileMediaLink(TimestampMixin, table=True):
         Index("idx_file_media_link_file", "file_id"),
         Index("idx_file_media_link_media", "media_id"),
         Index("idx_file_media_link_episode", "media_id", "season_number", "episode_number"),
+        Index("idx_file_media_link_file_media_episode", "file_id", "media_id", "episode_number"),
         # Composite index for annotation queries (checking unmapped files)
         Index("idx_file_media_link_file_episode", "file_id", "episode_number"),
     )
@@ -387,10 +389,10 @@ class AnnotationRequestDismissal(SQLModel, table=True):
     )
 
     id: int = Field(default=None, primary_key=True)
-    stream_id: int = Field(foreign_key="stream.id", index=True, ondelete="CASCADE")
-    media_id: int = Field(foreign_key="media.id", index=True, ondelete="CASCADE")
+    stream_id: int = Field(foreign_key="stream.id", ondelete="CASCADE")
+    media_id: int = Field(foreign_key="media.id", ondelete="CASCADE")
     dismissed_by: str = Field(nullable=False)
-    dismiss_reason: str | None = Field(default=None)
+    dismiss_reason: str | None = Field(default=None, sa_type=Text)
     dismissed_at: datetime = Field(
         default_factory=lambda: datetime.now(pytz.UTC),
         nullable=False,
