@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import selectinload
 from sqlmodel import func, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -38,12 +39,19 @@ from db.models import (
     Person,
     SeriesMetadata,
     Stream,
+    StreamFile,
     StreamLanguageLink,
     StreamMediaLink,
+    FileMediaLink,
     TorrentStream,
     TorrentTrackerLink,
     Tracker,
     TVMetadata,
+    YouTubeStream,
+    UsenetStream,
+    TelegramStream,
+    ExternalLinkStream,
+    AceStreamStream,
     User,
 )
 
@@ -847,21 +855,40 @@ async def delete_metadata(
             detail="Metadata not found",
         )
 
-    # Delete associated streams via StreamMediaLink
-    # In new architecture, streams are linked to media via StreamMediaLink table
-    # First get stream IDs linked to this media
-    stream_links = await session.exec(select(StreamMediaLink).where(StreamMediaLink.media_id == base.id))
-    linked_stream_ids = [link.stream_id for link in stream_links.all()]
+    # Collect all stream IDs linked to this media:
+    # - StreamMediaLink (direct stream→media links)
+    # - FileMediaLink via StreamFile (series episode file links)
+    linked_stream_ids: set[int] = set()
 
-    # Delete the links first
-    for link in stream_links.all():
-        await session.delete(link)
+    stream_links_result = await session.exec(
+        select(StreamMediaLink.stream_id).where(StreamMediaLink.media_id == base.id)
+    )
+    linked_stream_ids.update(stream_links_result.all())
 
-    # Delete associated streams (this will cascade to type-specific tables)
-    for stream_id in linked_stream_ids:
-        stream = await session.get(Stream, stream_id)
-        if stream:
-            await session.delete(stream)
+    file_streams_result = await session.exec(
+        select(StreamFile.stream_id)
+        .join(FileMediaLink, FileMediaLink.file_id == StreamFile.id)
+        .where(FileMediaLink.media_id == base.id)
+    )
+    linked_stream_ids.update(file_streams_result.all())
+
+    # Remove link rows to this media first.
+    await session.exec(sa_delete(StreamMediaLink).where(StreamMediaLink.media_id == base.id))
+    await session.exec(sa_delete(FileMediaLink).where(FileMediaLink.media_id == base.id))
+
+    # Delete associated streams using explicit SQL order.
+    # Avoid ORM 1:1 relationship de-association that can try setting
+    # torrent_stream.stream_id = NULL (violates NOT NULL).
+    if linked_stream_ids:
+        stream_ids = list(linked_stream_ids)
+        await session.exec(sa_delete(TorrentStream).where(TorrentStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(HTTPStream).where(HTTPStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(YouTubeStream).where(YouTubeStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(UsenetStream).where(UsenetStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(TelegramStream).where(TelegramStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(ExternalLinkStream).where(ExternalLinkStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(AceStreamStream).where(AceStreamStream.stream_id.in_(stream_ids)))
+        await session.exec(sa_delete(Stream).where(Stream.id.in_(stream_ids)))
 
     # Delete type-specific metadata
     if base.type == MediaType.MOVIE:
