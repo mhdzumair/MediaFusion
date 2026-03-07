@@ -100,14 +100,26 @@ export interface RunDMMHashlistFullRequest {
 }
 
 export interface MigrateMediaRequest {
-  from_media_id: number
+  from_media_id?: number
+  from_media_ids?: number[]
   to_media_id: number
+}
+
+export interface MigratedMediaSourceResult {
+  from_media_id: number
+  stream_links_migrated: number
+  stream_links_deleted_as_duplicates: number
+  file_links_migrated: number
+  file_links_deleted_as_duplicates: number
 }
 
 export interface MigrateMediaResponse {
   status: string
   message: string
-  from_media_id: number
+  from_media_id?: number
+  from_media_ids: number[]
+  migrated_sources_count: number
+  migrated_sources: MigratedMediaSourceResult[]
   to_media_id: number
   stream_links_migrated: number
   stream_links_deleted_as_duplicates: number

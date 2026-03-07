@@ -85,11 +85,14 @@ interface SearchColumnProps {
   inputId: string
   query: string
   onQueryChange: (value: string) => void
-  selected: MetadataItem | null
-  onSelect: (item: MetadataItem) => void
+  selectedIds: number[]
+  onToggleSelect: (item: MetadataItem) => void
   results: MetadataItem[]
   isLoading: boolean
-  allowDuplicateSelection?: boolean
+  isMultiSelect?: boolean
+  isItemDisabled?: (item: MetadataItem) => boolean
+  onSelectAllResults?: () => void
+  onClearSelection?: () => void
 }
 
 function SearchColumn({
@@ -97,18 +100,49 @@ function SearchColumn({
   inputId,
   query,
   onQueryChange,
-  selected,
-  onSelect,
+  selectedIds,
+  onToggleSelect,
   results,
   isLoading,
-  allowDuplicateSelection = true,
+  isMultiSelect = false,
+  isItemDisabled,
+  onSelectAllResults,
+  onClearSelection,
 }: SearchColumnProps) {
   const trimmedQuery = query.trim()
+  const selectedCount = selectedIds.length
 
   return (
     <div className="space-y-3">
       <div className="space-y-2">
-        <Label htmlFor={inputId}>{title}</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={inputId}>{title}</Label>
+          {isMultiSelect ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{selectedCount} selected</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={onSelectAllResults}
+                disabled={results.length === 0}
+              >
+                Select all
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={onClearSelection}
+                disabled={selectedCount === 0}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : null}
+        </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -138,8 +172,8 @@ function SearchColumn({
             <ScrollArea className="h-44 pr-1">
               <div className="space-y-2">
                 {results.map((item) => {
-                  const isSelected = selected?.id === item.id
-                  const isDisabled = !allowDuplicateSelection && selected?.id !== item.id
+                  const isSelected = selectedIds.includes(item.id)
+                  const isDisabled = isItemDisabled ? isItemDisabled(item) : false
                   return (
                     <div
                       key={item.id}
@@ -153,7 +187,7 @@ function SearchColumn({
                         <button
                           type="button"
                           disabled={isDisabled}
-                          onClick={() => onSelect(item)}
+                          onClick={() => onToggleSelect(item)}
                           className="flex-1 min-w-0 text-left"
                         >
                           <div className="flex items-center gap-3">
@@ -196,7 +230,7 @@ function SearchColumn({
   )
 }
 
-function SelectedPreview({ item }: { item: MetadataItem | null }) {
+function SelectedPreview({ item, onRemove }: { item: MetadataItem | null; onRemove?: () => void }) {
   if (!item) {
     return <p className="text-xs text-muted-foreground">No media selected.</p>
   }
@@ -220,7 +254,14 @@ function SelectedPreview({ item }: { item: MetadataItem | null }) {
             <p className="text-xs text-muted-foreground mt-1">{renderMediaSummary(item)}</p>
           </div>
         </div>
-        <Badge variant="outline">{getMediaTypeLabel(item.type)}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">{getMediaTypeLabel(item.type)}</Badge>
+          {onRemove ? (
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRemove}>
+              Remove
+            </Button>
+          ) : null}
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">
         Canonical ID: <span className="text-foreground">{getCanonicalExternalId(item)}</span>
@@ -250,7 +291,7 @@ export function MediaMigrationTab() {
   const { toast } = useToast()
   const [fromQuery, setFromQuery] = useState('')
   const [toQuery, setToQuery] = useState('')
-  const [fromMedia, setFromMedia] = useState<MetadataItem | null>(null)
+  const [fromMedia, setFromMedia] = useState<MetadataItem[]>([])
   const [toMedia, setToMedia] = useState<MetadataItem | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [lastResult, setLastResult] = useState<MigrateMediaResponse | null>(null)
@@ -272,33 +313,76 @@ export function MediaMigrationTab() {
     staleTime: 10_000,
   })
 
+  const selectedSourceIds = useMemo(() => fromMedia.map((item) => item.id), [fromMedia])
+
+  const toggleSourceSelection = (item: MetadataItem) => {
+    if (toMedia?.id === item.id) return
+    setFromMedia((prev) => {
+      const exists = prev.some((source) => source.id === item.id)
+      if (exists) {
+        return prev.filter((source) => source.id !== item.id)
+      }
+      return [...prev, item]
+    })
+  }
+
+  const clearSourceSelection = () => {
+    setFromMedia([])
+  }
+
+  const selectAllVisibleSources = () => {
+    setFromMedia((prev) => {
+      const existingIds = new Set(prev.map((item) => item.id))
+      const additions = fromResults.filter((item) => !existingIds.has(item.id) && item.id !== toMedia?.id)
+      return [...prev, ...additions]
+    })
+  }
+
+  const removeSourceById = (mediaId: number) => {
+    setFromMedia((prev) => prev.filter((item) => item.id !== mediaId))
+  }
+
+  const selectTarget = (item: MetadataItem) => {
+    setToMedia(item)
+    setFromMedia((prev) => prev.filter((source) => source.id !== item.id))
+  }
+
   const validationError = useMemo(() => {
-    if (!fromMedia || !toMedia) return 'Select both source and target metadata items.'
-    if (fromMedia.id === toMedia.id) return 'Source and target media IDs must be different.'
-    if (fromMedia.type !== toMedia.type && fromMedia.total_streams > 0) {
-      return 'Media type mismatch is only allowed when source has no linked streams.'
+    if (fromMedia.length === 0 || !toMedia) return 'Select at least one source and one target metadata item.'
+    if (fromMedia.some((source) => source.id === toMedia.id)) return 'Source and target media IDs must be different.'
+
+    const mismatchedSourceWithStreams = fromMedia.find(
+      (source) => source.type !== toMedia.type && source.total_streams > 0,
+    )
+    if (mismatchedSourceWithStreams) {
+      return `Media type mismatch is only allowed when source has no linked streams. Source #${mismatchedSourceWithStreams.id} has linked streams.`
     }
-    if (fromMedia.is_user_created || toMedia.is_user_created) {
+    if (fromMedia.some((source) => source.is_user_created) || toMedia.is_user_created) {
       return 'Only non-user-created media can be migrated.'
     }
     return null
   }, [fromMedia, toMedia])
 
   const typeMismatchWarning = useMemo(() => {
-    if (!fromMedia || !toMedia) return null
-    if (fromMedia.type === toMedia.type) return null
-    if (fromMedia.total_streams !== 0) return null
-    return 'Type mismatch detected, but allowed because source has no linked streams. This will remove the wrong duplicate metadata.'
+    if (fromMedia.length === 0 || !toMedia) return null
+
+    const mismatchedSources = fromMedia.filter((source) => source.type !== toMedia.type)
+    if (mismatchedSources.length === 0) return null
+
+    const hasInvalidMismatch = mismatchedSources.some((source) => source.total_streams !== 0)
+    if (hasInvalidMismatch) return null
+
+    return `${mismatchedSources.length} source item(s) have type mismatch, but are allowed because they have no linked streams/files.`
   }, [fromMedia, toMedia])
 
   const migrateMutation = useMutation({
     mutationFn: async () => {
-      if (!fromMedia || !toMedia) {
+      if (fromMedia.length === 0 || !toMedia) {
         throw new Error('Select source and target metadata before migration.')
       }
 
       return scrapersApi.migrateMedia({
-        from_media_id: fromMedia.id,
+        from_media_ids: fromMedia.map((item) => item.id),
         to_media_id: toMedia.id,
       })
     },
@@ -307,9 +391,9 @@ export function MediaMigrationTab() {
       setConfirmOpen(false)
       toast({
         title: 'Media migrated',
-        description: `Moved ${result.stream_links_migrated} stream links and ${result.file_links_migrated} file links.`,
+        description: `Migrated ${result.migrated_sources_count} source item(s). Moved ${result.stream_links_migrated} stream links and ${result.file_links_migrated} file links.`,
       })
-      setFromMedia(null)
+      setFromMedia([])
       setFromQuery('')
     },
     onError: (error: Error) => {
@@ -322,15 +406,18 @@ export function MediaMigrationTab() {
   })
 
   const handleSwap = () => {
-    const nextFrom = toMedia
-    const nextTo = fromMedia
+    if (!toMedia || fromMedia.length > 1) return
+
+    const nextFrom = [toMedia]
+    const nextTo = fromMedia.length === 1 ? fromMedia[0] : null
     setFromMedia(nextFrom)
     setToMedia(nextTo)
-    setFromQuery(nextFrom ? `${nextFrom.title} #${nextFrom.id}` : '')
+    setFromQuery(`${toMedia.title} #${toMedia.id}`)
     setToQuery(nextTo ? `${nextTo.title} #${nextTo.id}` : '')
   }
 
-  const canMigrate = !!fromMedia && !!toMedia && !validationError && !migrateMutation.isPending
+  const canMigrate = fromMedia.length > 0 && !!toMedia && !validationError && !migrateMutation.isPending
+  const canSwap = !!toMedia && fromMedia.length <= 1
 
   return (
     <div className="space-y-5">
@@ -343,8 +430,8 @@ export function MediaMigrationTab() {
                 Duplicate Media Migration
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Search metadata, preview both items, then migrate links from source to target. Source metadata is
-                removed after migration.
+                Search metadata, preview source items and target item, then migrate links from all selected sources to
+                target. Source metadata is removed after migration.
               </p>
             </div>
             <div className="text-xs px-2 py-1 rounded-md bg-amber-500/10 text-amber-600 flex items-center gap-1">
@@ -359,20 +446,18 @@ export function MediaMigrationTab() {
               inputId="fromMediaSearch"
               query={fromQuery}
               onQueryChange={setFromQuery}
-              selected={fromMedia}
-              onSelect={setFromMedia}
+              selectedIds={selectedSourceIds}
+              onToggleSelect={toggleSourceSelection}
               results={fromResults}
               isLoading={isSearchingFrom}
+              isMultiSelect
+              isItemDisabled={(item) => toMedia?.id === item.id}
+              onSelectAllResults={selectAllVisibleSources}
+              onClearSelection={clearSourceSelection}
             />
 
             <div className="flex lg:h-full items-center justify-center">
-              <Button
-                variant="outline"
-                type="button"
-                onClick={handleSwap}
-                disabled={!fromMedia && !toMedia}
-                className="rounded-xl"
-              >
+              <Button variant="outline" type="button" onClick={handleSwap} disabled={!canSwap} className="rounded-xl">
                 <ArrowRightLeft className="h-4 w-4 mr-2" />
                 Swap
               </Button>
@@ -383,17 +468,28 @@ export function MediaMigrationTab() {
               inputId="toMediaSearch"
               query={toQuery}
               onQueryChange={setToQuery}
-              selected={toMedia}
-              onSelect={setToMedia}
+              selectedIds={toMedia ? [toMedia.id] : []}
+              onToggleSelect={selectTarget}
               results={toResults}
               isLoading={isSearchingTo}
+              isItemDisabled={(item) => selectedSourceIds.includes(item.id)}
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Source Preview</Label>
-              <SelectedPreview item={fromMedia} />
+              {fromMedia.length === 0 ? (
+                <SelectedPreview item={null} />
+              ) : (
+                <ScrollArea className="max-h-96 pr-1">
+                  <div className="space-y-2">
+                    {fromMedia.map((source) => (
+                      <SelectedPreview key={source.id} item={source} onRemove={() => removeSourceById(source.id)} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Target Preview</Label>
@@ -420,8 +516,14 @@ export function MediaMigrationTab() {
           {lastResult ? (
             <div className="text-sm text-muted-foreground border border-border/50 rounded-lg p-3">
               <p>
-                Migrated <span className="font-medium text-foreground">#{lastResult.from_media_id}</span> to{' '}
-                <span className="font-medium text-foreground">#{lastResult.to_media_id}</span>.
+                Migrated <span className="font-medium text-foreground">{lastResult.migrated_sources_count}</span> source
+                item(s) to <span className="font-medium text-foreground">#{lastResult.to_media_id}</span>.
+              </p>
+              <p className="mt-1">
+                Sources:{' '}
+                <span className="font-medium text-foreground">
+                  {lastResult.from_media_ids.map((mediaId) => `#${mediaId}`).join(', ')}
+                </span>
               </p>
               <p className="mt-1">
                 Stream links moved:{' '}
@@ -438,11 +540,13 @@ export function MediaMigrationTab() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Duplicate Migration</AlertDialogTitle>
             <AlertDialogDescription>
-              {fromMedia && toMedia
-                ? `Move links from "${fromMedia.title}" (#${fromMedia.id}) to "${toMedia.title}" (#${toMedia.id}) and remove the source metadata.`
+              {fromMedia.length > 0 && toMedia
+                ? `Move links from ${fromMedia.length} source item(s) to "${toMedia.title}" (#${toMedia.id}) and remove source metadata.`
                 : 'Select source and target metadata first.'}
-              {fromMedia && toMedia && fromMedia.type !== toMedia.type && fromMedia.total_streams === 0
-                ? ' Type mismatch is allowed here because the source has no linked streams/files.'
+              {fromMedia.length > 0 &&
+              toMedia &&
+              fromMedia.some((source) => source.type !== toMedia.type && source.total_streams === 0)
+                ? ' Type mismatch is allowed for source items that have no linked streams/files.'
                 : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>

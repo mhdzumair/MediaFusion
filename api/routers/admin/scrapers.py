@@ -9,7 +9,7 @@ from typing import Literal
 
 import pytz
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -109,8 +109,41 @@ class UpdateImagesRequest(BaseModel):
 class MigrateMediaRequest(BaseModel):
     """Request to merge duplicate media entries by internal IDs."""
 
-    from_media_id: int = Field(..., ge=1, description="Source media ID to migrate and delete")
+    from_media_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Legacy single source media ID to migrate and delete",
+    )
+    from_media_ids: list[int] | None = Field(
+        default=None,
+        description="Source media IDs to migrate and delete in one operation",
+    )
     to_media_id: int = Field(..., ge=1, description="Target media ID to keep")
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> "MigrateMediaRequest":
+        source_ids: list[int] = []
+        if self.from_media_ids:
+            source_ids.extend(self.from_media_ids)
+        if self.from_media_id is not None:
+            source_ids.append(self.from_media_id)
+
+        if not source_ids:
+            raise ValueError("At least one source media ID is required.")
+
+        normalized_ids: list[int] = []
+        seen_ids: set[int] = set()
+        for source_id in source_ids:
+            if source_id < 1:
+                raise ValueError("Source media IDs must be positive integers.")
+            if source_id in seen_ids:
+                continue
+            seen_ids.add(source_id)
+            normalized_ids.append(source_id)
+
+        self.from_media_ids = normalized_ids
+        self.from_media_id = normalized_ids[0]
+        return self
 
 
 class DeleteTorrentRequest(BaseModel):
@@ -419,85 +452,134 @@ async def migrate_media(
     moderator: User = Depends(require_role(UserRole.MODERATOR)),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Merge duplicate non-user-created media entries by internal IDs."""
-    if request.from_media_id == request.to_media_id:
+    """Merge duplicate non-user-created media entries into one target by internal IDs."""
+    source_media_ids = request.from_media_ids or []
+    if request.to_media_id in source_media_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="from_media_id and to_media_id must be different.",
+            detail="Source and target media IDs must be different.",
         )
 
-    from_media = await session.get(Media, request.from_media_id)
     to_media = await session.get(Media, request.to_media_id)
-    if not from_media or not to_media:
+    if not to_media:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="One or both media IDs were not found.",
+            detail=f"Target media ID {request.to_media_id} was not found.",
         )
 
-    if from_media.type != to_media.type:
-        source_stream_link_count_result = await session.exec(
-            select(func.count()).select_from(StreamMediaLink).where(StreamMediaLink.media_id == from_media.id)
-        )
-        source_stream_link_count = source_stream_link_count_result.one()
-        source_file_link_count_result = await session.exec(
-            select(func.count()).select_from(FileMediaLink).where(FileMediaLink.media_id == from_media.id)
-        )
-        source_file_link_count = source_file_link_count_result.one()
-
-        # Allow cross-type cleanup only when source has no links to move.
-        if source_stream_link_count > 0 or source_file_link_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Media type mismatch is only allowed when source has no linked streams/files.",
-            )
-
-    if from_media.is_user_created or to_media.is_user_created:
+    if to_media.is_user_created:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only non-user-created media can be migrated with this endpoint.",
         )
 
-    old_canonical_id = await crud.get_canonical_external_id(session, from_media.id)
+    source_media_result = await session.exec(select(Media).where(Media.id.in_(source_media_ids)))
+    source_media_items = source_media_result.all()
+    source_media_by_id = {media.id: media for media in source_media_items}
+    missing_source_ids = [media_id for media_id in source_media_ids if media_id not in source_media_by_id]
+    if missing_source_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source media IDs not found: {', '.join(str(media_id) for media_id in missing_source_ids)}",
+        )
+
+    for source_media_id in source_media_ids:
+        source_media = source_media_by_id[source_media_id]
+        if source_media.is_user_created:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Source media #{source_media_id} is user-created and cannot be migrated.",
+            )
+
+        if source_media.type != to_media.type:
+            source_stream_link_count_result = await session.exec(
+                select(func.count()).select_from(StreamMediaLink).where(StreamMediaLink.media_id == source_media.id)
+            )
+            source_stream_link_count = source_stream_link_count_result.one()
+            source_file_link_count_result = await session.exec(
+                select(func.count()).select_from(FileMediaLink).where(FileMediaLink.media_id == source_media.id)
+            )
+            source_file_link_count = source_file_link_count_result.one()
+
+            # Allow cross-type cleanup only when source has no links to move.
+            if source_stream_link_count > 0 or source_file_link_count > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Media type mismatch is only allowed when source has no linked streams/files. "
+                        f"Source #{source_media_id} has streams/files linked."
+                    ),
+                )
+
+    migrated_sources: list[dict[str, int]] = []
+    total_stream_links_migrated = 0
+    total_stream_links_deleted = 0
+    total_file_links_migrated = 0
+    total_file_links_deleted = 0
+    stream_cache_media_ids: set[int] = {to_media.id}
     target_meta_id = f"mf:{to_media.id}"
-    source_meta_id = f"mf:{from_media.id}"
+    meta_cache_ids: set[str] = {target_meta_id}
 
-    migration_stats = await migrate_media_links(session, from_media.id, to_media.id)
+    for source_media_id in source_media_ids:
+        source_media = source_media_by_id[source_media_id]
+        source_meta_id = f"mf:{source_media.id}"
+        old_canonical_id = await crud.get_canonical_external_id(session, source_media.id)
+        migration_stats = await migrate_media_links(session, source_media.id, to_media.id)
 
-    to_media.migrated_from_id = old_canonical_id
+        total_stream_links_migrated += migration_stats["stream_links_migrated"]
+        total_stream_links_deleted += migration_stats["stream_links_deleted_as_duplicates"]
+        total_file_links_migrated += migration_stats["file_links_migrated"]
+        total_file_links_deleted += migration_stats["file_links_deleted_as_duplicates"]
+
+        if old_canonical_id and not to_media.migrated_from_id:
+            to_media.migrated_from_id = old_canonical_id
+
+        deleted = await delete_metadata(session, source_meta_id, new_media_id=to_media.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete source media #{source_media.id} after migration.",
+            )
+
+        stream_cache_media_ids.add(source_media.id)
+        meta_cache_ids.add(source_meta_id)
+        migrated_sources.append({"from_media_id": source_media.id, **migration_stats})
+
     to_media.migrated_by_user_id = moderator.id
     to_media.migrated_at = datetime.now(pytz.UTC)
     session.add(to_media)
 
-    deleted = await delete_metadata(session, source_meta_id, new_media_id=to_media.id)
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete source media after migration.",
-        )
-
     await update_meta_stream(session, target_meta_id, to_media.type.value)
-    await invalidate_media_stream_cache(from_media.id)
-    await invalidate_media_stream_cache(to_media.id)
-    await crud.invalidate_meta_cache(source_meta_id)
-    await crud.invalidate_meta_cache(target_meta_id)
+
+    for media_id in stream_cache_media_ids:
+        await invalidate_media_stream_cache(media_id)
+    for meta_id in meta_cache_ids:
+        await crud.invalidate_meta_cache(meta_id)
 
     await session.commit()
 
     logger.info(
-        "Moderator %s migrated media %s -> %s (streams=%s, files=%s)",
+        "Moderator %s migrated media %s -> %s (sources=%s, streams=%s, files=%s)",
         moderator.username,
-        request.from_media_id,
+        source_media_ids,
         request.to_media_id,
-        migration_stats["stream_links_migrated"],
-        migration_stats["file_links_migrated"],
+        len(source_media_ids),
+        total_stream_links_migrated,
+        total_file_links_migrated,
     )
 
     return {
         "status": "success",
-        "message": f"Migrated media {request.from_media_id} to {request.to_media_id}",
-        "from_media_id": request.from_media_id,
+        "message": f"Migrated {len(source_media_ids)} media item(s) to {request.to_media_id}",
+        "from_media_id": source_media_ids[0],
+        "from_media_ids": source_media_ids,
+        "migrated_sources_count": len(source_media_ids),
+        "migrated_sources": migrated_sources,
         "to_media_id": request.to_media_id,
-        **migration_stats,
+        "stream_links_migrated": total_stream_links_migrated,
+        "stream_links_deleted_as_duplicates": total_stream_links_deleted,
+        "file_links_migrated": total_file_links_migrated,
+        "file_links_deleted_as_duplicates": total_file_links_deleted,
     }
 
 
