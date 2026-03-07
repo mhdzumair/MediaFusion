@@ -17,6 +17,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth, require_role
+from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from db.database import get_async_session
 from db.enums import MediaType, UserRole
 from db.crud.media import get_media_by_external_id, parse_external_id
@@ -427,9 +428,6 @@ async def _resolve_target_media_id(
             media_type_literal,
         )
         return existing_media_any_type.id
-
-    # Import lazily to avoid potential router import cycles during startup.
-    from api.routers.content.torrent_import import fetch_and_create_media_from_external
 
     created_media = await fetch_and_create_media_from_external(
         session,

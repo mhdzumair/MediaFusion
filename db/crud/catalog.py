@@ -147,6 +147,7 @@ async def get_catalog_meta_list(
     if catalog_type in [MediaType.MOVIE, MediaType.SERIES] and not is_my_library_catalog:
         specific_model = MovieMetadata if catalog_type == MediaType.MOVIE else SeriesMetadata
         query = query.join(specific_model, specific_model.media_id == Media.id)
+        query = query.where(Media.total_streams > 0)
 
         # Apply nudity filter
         if "Disable" not in user_data.nudity_filter:

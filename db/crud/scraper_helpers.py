@@ -300,8 +300,7 @@ async def get_or_create_metadata(
     media_type_enum = type_map.get(media_type, MediaType.MOVIE)
 
     title = metadata_data.get("title")
-    year_value = metadata_data.get("year")
-    year: int | None = year_value if isinstance(year_value, int) else None
+    year = _normalize_year_value(metadata_data.get("year"))
 
     # Try to find existing media by any available provider ID.
     candidate_external_ids: list[str] = []
@@ -350,7 +349,7 @@ async def get_or_create_metadata(
     media = Media(
         type=media_type_enum,
         title=metadata_data.get("title", "Unknown"),
-        year=metadata_data.get("year"),
+        year=year,
         description=metadata_data.get("description") or metadata_data.get("overview"),
         runtime_minutes=metadata_data.get("runtime"),
         end_date=end_date,
@@ -421,11 +420,30 @@ async def get_or_create_metadata(
         )
         session.add(tv_meta)
 
-    # Create MediaExternalID records for the new architecture
-    await _create_external_id_from_metadata(session, media.id, external_id, metadata_data)
+    # Create MediaExternalID records for the new architecture.
+    # If another request created the provider ID first, reuse that media and
+    # remove this transient row to avoid duplicate media entries.
+    canonical_media_id = await _create_external_id_from_metadata(session, media.id, external_id, metadata_data)
+    if canonical_media_id and canonical_media_id != media.id:
+        canonical_media = await session.get(Media, canonical_media_id)
+        if canonical_media:
+            await session.exec(sa_delete(Media).where(Media.id == media.id))
+            await session.flush()
+            return canonical_media
 
     await session.flush()
     return media
+
+
+def _normalize_year_value(year_value: Any) -> int | None:
+    """Normalize mixed year values from scrapers/importers."""
+    if isinstance(year_value, int):
+        return year_value
+    if isinstance(year_value, str):
+        cleaned = year_value.strip()
+        if cleaned.isdigit():
+            return int(cleaned)
+    return None
 
 
 async def _create_external_id_from_metadata(
@@ -433,7 +451,7 @@ async def _create_external_id_from_metadata(
     media_id: int,
     external_id: str | None,
     metadata_data: dict[str, Any],
-) -> None:
+) -> int | None:
     """Create MediaExternalID records from scraped metadata.
 
     This extracts all available provider IDs from the metadata and creates
@@ -443,33 +461,47 @@ async def _create_external_id_from_metadata(
     if external_id:
         provider, provider_id = parse_external_id(str(external_id))
         if provider and provider_id:
-            await add_external_id(session, media_id, provider, provider_id)
+            external_id_record = await add_external_id(session, media_id, provider, provider_id)
+            if external_id_record and external_id_record.media_id != media_id:
+                return external_id_record.media_id
 
     # Add additional provider IDs if available in metadata
     # IMDb ID
     imdb_id = metadata_data.get("imdb_id")
     if imdb_id and imdb_id != external_id:
-        await add_external_id(session, media_id, "imdb", imdb_id)
+        external_id_record = await add_external_id(session, media_id, "imdb", str(imdb_id))
+        if external_id_record and external_id_record.media_id != media_id:
+            return external_id_record.media_id
 
     # TMDB ID
     tmdb_id = metadata_data.get("tmdb_id")
     if tmdb_id:
-        await add_external_id(session, media_id, "tmdb", str(tmdb_id))
+        external_id_record = await add_external_id(session, media_id, "tmdb", str(tmdb_id))
+        if external_id_record and external_id_record.media_id != media_id:
+            return external_id_record.media_id
 
     # TVDB ID
     tvdb_id = metadata_data.get("tvdb_id")
     if tvdb_id:
-        await add_external_id(session, media_id, "tvdb", str(tvdb_id))
+        external_id_record = await add_external_id(session, media_id, "tvdb", str(tvdb_id))
+        if external_id_record and external_id_record.media_id != media_id:
+            return external_id_record.media_id
 
     # MAL ID (for anime)
     mal_id = metadata_data.get("mal_id")
     if mal_id:
-        await add_external_id(session, media_id, "mal", str(mal_id))
+        external_id_record = await add_external_id(session, media_id, "mal", str(mal_id))
+        if external_id_record and external_id_record.media_id != media_id:
+            return external_id_record.media_id
 
     # Kitsu ID (for anime)
     kitsu_id = metadata_data.get("kitsu_id")
     if kitsu_id:
-        await add_external_id(session, media_id, "kitsu", str(kitsu_id))
+        external_id_record = await add_external_id(session, media_id, "kitsu", str(kitsu_id))
+        if external_id_record and external_id_record.media_id != media_id:
+            return external_id_record.media_id
+
+    return None
 
 
 async def update_metadata(
@@ -614,17 +646,15 @@ async def recalculate_last_stream_added(
     Recalculate last_stream_added from actual stream data.
 
     Returns the calculated last_stream_added time, or None if no streams exist.
-    Only updates the database if streams exist (to preserve NOT NULL constraint).
+    Persists NULL when no streams exist.
     """
     # Get the latest stream creation time for this media
     latest_query = select(func.max(StreamMediaLink.created_at)).where(StreamMediaLink.media_id == media_id)
     result = await session.exec(latest_query)
     latest_stream_time = result.first()
 
-    # Only update if we have a valid stream time (preserve NOT NULL constraint)
-    if latest_stream_time is not None:
-        await session.exec(sa_update(Media).where(Media.id == media_id).values(last_stream_added=latest_stream_time))
-        await session.flush()
+    await session.exec(sa_update(Media).where(Media.id == media_id).values(last_stream_added=latest_stream_time))
+    await session.flush()
 
     return latest_stream_time
 
@@ -1334,6 +1364,7 @@ async def store_new_torrent_streams(
     media_ids_to_update = set()
 
     streams_to_create = []
+    media_latest_stream_time: dict[int, datetime] = {}
 
     for info_hash, meta_id, stream_data in valid_streams:
         # Skip if stream already exists
@@ -1431,6 +1462,10 @@ async def store_new_torrent_streams(
             episode=stream_data.get("episode"),
         )
         session.add(link)
+        link_created_at = link.created_at or datetime.now(pytz.UTC)
+        current_latest = media_latest_stream_time.get(media.id)
+        if current_latest is None or link_created_at > current_latest:
+            media_latest_stream_time[media.id] = link_created_at
 
         # Media stream counts will be updated in batch at the end
 
@@ -1573,7 +1608,6 @@ async def store_new_torrent_streams(
 
     # Step 8: Batch update media stream counts
     if media_ids_to_update:
-        now = datetime.now(pytz.UTC)
         # Count streams per media from the links we just created
         media_stream_counts = Counter()
         for _, _, _, media in streams_to_create:
@@ -1581,12 +1615,16 @@ async def store_new_torrent_streams(
 
         # Update each media's stream count
         for media_id, count in media_stream_counts.items():
+            latest_stream_time = media_latest_stream_time.get(media_id, datetime.now(pytz.UTC))
             await session.exec(
                 sa_update(Media)
                 .where(Media.id == media_id)
                 .values(
                     total_streams=Media.total_streams + count,
-                    last_stream_added=now,
+                    last_stream_added=func.greatest(
+                        func.coalesce(Media.last_stream_added, latest_stream_time),
+                        latest_stream_time,
+                    ),
                 )
             )
 
@@ -1711,6 +1749,7 @@ async def store_new_usenet_streams(
         media_ids_to_update.add(media.id)
 
     # Create all streams
+    media_latest_stream_time: dict[int, datetime] = {}
     for nzb_guid, meta_id, stream_data, media in streams_to_create:
         # Create base Stream
         stream = Stream(
@@ -1751,6 +1790,10 @@ async def store_new_usenet_streams(
         # Create StreamMediaLink
         stream_link = StreamMediaLink(stream_id=stream.id, media_id=media.id)
         session.add(stream_link)
+        stream_link_created_at = stream_link.created_at or datetime.now(pytz.UTC)
+        current_latest = media_latest_stream_time.get(media.id)
+        if current_latest is None or stream_link_created_at > current_latest:
+            media_latest_stream_time[media.id] = stream_link_created_at
 
         # Add language links
         languages = _normalize_string_values(stream_data.get("languages"))
@@ -1832,18 +1875,21 @@ async def store_new_usenet_streams(
 
     # Step 7: Batch update media stream counts
     if media_ids_to_update:
-        now = datetime.now(pytz.UTC)
         media_stream_counts = Counter()
         for _, _, _, media in streams_to_create:
             media_stream_counts[media.id] += 1
 
         for media_id, count in media_stream_counts.items():
+            latest_stream_time = media_latest_stream_time.get(media_id, datetime.now(pytz.UTC))
             await session.exec(
                 sa_update(Media)
                 .where(Media.id == media_id)
                 .values(
                     total_streams=Media.total_streams + count,
-                    last_stream_added=now,
+                    last_stream_added=func.greatest(
+                        func.coalesce(Media.last_stream_added, latest_stream_time),
+                        latest_stream_time,
+                    ),
                 )
             )
 

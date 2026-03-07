@@ -6,6 +6,10 @@ This script only migrates duplicates when an external-ID anchor is clear:
 - Exactly one media item in the cluster has external IDs (target anchor).
 - Sources are media rows with no external IDs (or explicit shared-ID sources).
 
+Optional heuristic mode can be enabled for production cleanup where anchors are
+ambiguous or missing. In that mode, the script picks a deterministic target row
+per cluster and still keeps source selection conservative by default.
+
 Default mode is dry-run. Use --apply to execute migrations.
 """
 
@@ -90,6 +94,24 @@ def canonical_external_id_for_row(row: MediaRow, preferred_provider: str = "imdb
 
     provider, external_id = first_provider_external.split(":", 1)
     return format_provider_external_id(provider, external_id)
+
+
+def _created_sort_value(row: MediaRow) -> datetime:
+    return row.created_at or datetime.max
+
+
+def pick_heuristic_target(cluster: list[MediaRow]) -> MediaRow:
+    """Pick a deterministic target row when anchor is ambiguous/missing."""
+    ranked = sorted(
+        cluster,
+        key=lambda row: (
+            -row.external_id_count,
+            -(row.total_streams or 0),
+            _created_sort_value(row),
+            row.media_id,
+        ),
+    )
+    return ranked[0]
 
 
 async def load_candidates(include_types: set[MediaType]) -> list[MediaRow]:
@@ -266,6 +288,9 @@ async def migrate_cluster(
 
 
 async def run(args: argparse.Namespace) -> None:
+    if args.include_empty_external_sources and not args.only_empty_sources:
+        raise ValueError("--include-empty-external-sources requires --only-empty-sources for safety.")
+
     include_types = {MediaType.MOVIE, MediaType.SERIES, MediaType.TV}
     if args.media_type != "all":
         include_types = {MediaType(args.media_type)}
@@ -298,19 +323,29 @@ async def run(args: argparse.Namespace) -> None:
     total_skipped_non_empty = 0
     total_skipped_ambiguous = 0
     total_skipped_no_anchor = 0
+    total_skipped_no_sources = 0
+    total_heuristic_targets = 0
 
     for index, cluster in enumerate(duplicate_clusters, start=1):
         cluster_external_rows = [row for row in cluster if row.external_id_count > 0]
+        target_selection = "single_external_anchor"
 
         if not cluster_external_rows:
-            total_skipped_no_anchor += 1
-            continue
-
-        if len(cluster_external_rows) > 1:
-            total_skipped_ambiguous += 1
-            continue
-
-        target = cluster_external_rows[0]
+            if not args.allow_heuristic_targets:
+                total_skipped_no_anchor += 1
+                continue
+            target = pick_heuristic_target(cluster)
+            total_heuristic_targets += 1
+            target_selection = "heuristic_no_anchor"
+        elif len(cluster_external_rows) > 1:
+            if not args.allow_heuristic_targets:
+                total_skipped_ambiguous += 1
+                continue
+            target = pick_heuristic_target(cluster_external_rows)
+            total_heuristic_targets += 1
+            target_selection = "heuristic_ambiguous_anchor"
+        else:
+            target = cluster_external_rows[0]
 
         # Default safe behavior: only source rows with no external IDs.
         sources = [row for row in cluster if row.media_id != target.media_id and row.external_id_count == 0]
@@ -327,16 +362,33 @@ async def run(args: argparse.Namespace) -> None:
             ]
             sources.extend(shared_external_sources)
 
+        # Optional safety mode: allow deleting empty external-ID sources in the same
+        # duplicate cluster (requires --only-empty-sources).
+        if args.include_empty_external_sources:
+            sources.extend([row for row in cluster if row.media_id != target.media_id and row.external_id_count > 0])
+
+        # Deduplicate sources list by media_id while preserving order.
+        seen_source_ids: set[int] = set()
+        deduped_sources: list[MediaRow] = []
+        for source in sources:
+            if source.media_id in seen_source_ids:
+                continue
+            seen_source_ids.add(source.media_id)
+            deduped_sources.append(source)
+        sources = deduped_sources
+
         if not sources:
+            total_skipped_no_sources += 1
             continue
 
         total_sources += len(sources)
         logger.info(
-            "Cluster type=%s title=%r year=%s -> target media_id=%s (target_external_ids=%s, sources=%s)",
+            "Cluster type=%s title=%r year=%s -> target media_id=%s (selection=%s, target_external_ids=%s, sources=%s)",
             target.media_type.value,
             target.title,
             target.year,
             target.media_id,
+            target_selection,
             format_external_ids(target.external_ids) if target.external_ids else f"count={target.external_id_count}",
             [source.media_id for source in sources],
         )
@@ -373,6 +425,8 @@ async def run(args: argparse.Namespace) -> None:
     logger.info("source_media_skipped_non_empty=%s", total_skipped_non_empty)
     logger.info("clusters_skipped_ambiguous_anchors=%s", total_skipped_ambiguous)
     logger.info("clusters_skipped_no_external_anchor=%s", total_skipped_no_anchor)
+    logger.info("clusters_skipped_no_sources=%s", total_skipped_no_sources)
+    logger.info("clusters_using_heuristic_target=%s", total_heuristic_targets)
 
 
 def parse_args() -> argparse.Namespace:
@@ -414,6 +468,22 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=500,
         help="Log progress every N clusters (0 disables progress logs).",
+    )
+    parser.add_argument(
+        "--allow-heuristic-targets",
+        action="store_true",
+        help=(
+            "Allow deterministic target selection when clusters have ambiguous or missing "
+            "external-ID anchors. Safe default remains disabled."
+        ),
+    )
+    parser.add_argument(
+        "--include-empty-external-sources",
+        action="store_true",
+        help=(
+            "Include external-ID rows as dedupe sources too, but only in combination with "
+            "--only-empty-sources (so only empty rows are removed)."
+        ),
     )
     return parser.parse_args()
 

@@ -376,7 +376,7 @@ async def increment_stream_count(
         .where(Media.id == media_id)
         .values(
             total_streams=Media.total_streams + 1,
-            last_stream_added=func.greatest(Media.last_stream_added, created_at),
+            last_stream_added=func.greatest(func.coalesce(Media.last_stream_added, created_at), created_at),
         )
     )
 

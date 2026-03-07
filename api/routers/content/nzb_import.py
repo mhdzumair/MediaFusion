@@ -25,9 +25,10 @@ from api.routers.user.auth import require_auth
 from db.config import settings
 from db.crud.media import get_media_by_external_id
 from db.crud.reference import get_or_create_language
+from db.crud.scraper_helpers import get_or_create_metadata
 from db.database import get_async_session
-from db.enums import ContributionStatus, MediaType, UserRole
-from db.models import Contribution, Media, Stream, StreamFile, StreamMediaLink, User
+from db.enums import ContributionStatus, UserRole
+from db.models import Contribution, Stream, StreamFile, StreamMediaLink, User
 from db.models.streams import (
     FileMediaLink,
     StreamLanguageLink,
@@ -264,14 +265,15 @@ async def process_nzb_import(
             )
         except Exception as e:
             logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
-            # Create a basic media record as fallback
-            media_type_enum = MediaType.MOVIE if meta_type == "movie" else MediaType.SERIES
-            media = Media(
-                title=title,
-                type=media_type_enum,
+            media = await get_or_create_metadata(
+                session,
+                {
+                    "id": meta_id or f"nzb_{nzb_guid[:8]}",
+                    "title": title,
+                    "year": contribution_data.get("year"),
+                },
+                meta_type,
             )
-            session.add(media)
-            await session.flush()
 
     uploader_name, uploader_user_id = resolve_uploader_identity(user, is_anonymous, anonymous_display_name)
 
@@ -312,6 +314,7 @@ async def process_nzb_import(
         media_id=media.id,
     )
     session.add(stream_media_link)
+    primary_stream_link_time = stream_media_link.created_at or datetime.now(pytz.UTC)
 
     # Add languages
     languages = contribution_data.get("languages", [])
@@ -348,7 +351,7 @@ async def process_nzb_import(
 
     # Update media stream count
     media.total_streams = (media.total_streams or 0) + 1
-    media.last_stream_added = datetime.now(pytz.UTC)
+    media.last_stream_added = primary_stream_link_time
 
     await session.flush()
 

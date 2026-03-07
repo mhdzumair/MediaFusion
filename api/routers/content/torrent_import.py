@@ -22,7 +22,6 @@ from api.routers.content.upload_guard import enforce_upload_permissions
 from api.routers.user.auth import require_auth
 from db.config import settings
 from db.crud.media import (
-    add_external_id,
     get_canonical_external_id,
     get_primary_image,
     get_or_create_metadata_provider,
@@ -31,7 +30,6 @@ from db.crud.media import (
     get_media_by_external_id,
     get_media_by_id,
     get_media_by_title_year,
-    parse_external_id,
 )
 from db.crud.reference import get_or_create_catalog, get_or_create_language
 from db.crud.scraper_helpers import get_or_create_metadata
@@ -465,7 +463,7 @@ async def _search_existing_sports_matches(
         select(Media)
         .where(Media.type.in_([MediaType.MOVIE, MediaType.SERIES]))
         .where(or_(*conditions))
-        .order_by(Media.last_stream_added.desc())
+        .order_by(Media.last_stream_added.desc().nullslast())
     )
     if year:
         query = query.where(or_(Media.year == year, Media.year.is_(None)))
@@ -480,7 +478,7 @@ async def _search_existing_sports_matches(
         fallback_query = (
             select(Media)
             .where(Media.type.in_([MediaType.MOVIE, MediaType.SERIES]))
-            .order_by(Media.last_stream_added.desc())
+            .order_by(Media.last_stream_added.desc().nullslast())
         )
         if year:
             fallback_query = fallback_query.where(
@@ -798,24 +796,21 @@ async def process_torrent_import(
                 )
             except Exception as e:
                 logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
-                # Create a basic media record as fallback
                 media_type_map = {
                     "movie": MediaType.MOVIE,
                     "series": MediaType.SERIES,
                     "sports": sports_media_type,
                 }
                 media_type_enum = media_type_map.get(meta_type, MediaType.MOVIE)
-                media = Media(
-                    title=title,
-                    type=media_type_enum,
+                media = await get_or_create_metadata(
+                    session,
+                    {
+                        "id": meta_id or f"user_{info_hash[:8]}",
+                        "title": title,
+                        "year": contribution_data.get("year"),
+                    },
+                    "series" if media_type_enum == MediaType.SERIES else "movie",
                 )
-                session.add(media)
-                await session.flush()
-                # Add external ID to MediaExternalID table
-                ext_id_to_add = meta_id or f"user_{info_hash[:8]}"
-                provider, ext_id = parse_external_id(ext_id_to_add)
-                if provider and ext_id:
-                    await add_external_id(session, media.id, provider, ext_id)
 
     release_date = _parse_iso_date(contribution_data.get("created_at"))
     if release_date and (meta_type == "sports" or media.release_date is None):
@@ -862,6 +857,7 @@ async def process_torrent_import(
         media_id=media.id,
     )
     session.add(stream_media_link)
+    primary_stream_link_time = stream_media_link.created_at or datetime.now(pytz.UTC)
 
     # Add languages
     languages = contribution_data.get("languages", [])
@@ -955,6 +951,7 @@ async def process_torrent_import(
             )
 
     # Create StreamMediaLink for each unique media (multi-content support)
+    extra_media_link_times: dict[int, datetime] = {}
     for extra_media_id in linked_media_ids:
         if extra_media_id != media.id:  # Primary already linked above
             extra_link = StreamMediaLink(
@@ -963,13 +960,14 @@ async def process_torrent_import(
                 is_primary=False,
             )
             session.add(extra_link)
+            extra_media_link_times[extra_media_id] = extra_link.created_at or datetime.now(pytz.UTC)
 
     # Series detail page relies on season/episode metadata entries.
     await _ensure_series_episode_metadata(session, media, primary_series_file_entries, title)
 
     # Update media stream count for primary media
     media.total_streams = (media.total_streams or 0) + 1
-    media.last_stream_added = datetime.now(pytz.UTC)
+    media.last_stream_added = primary_stream_link_time
 
     # Also update stream count for linked media
     for extra_media_id in linked_media_ids:
@@ -977,7 +975,7 @@ async def process_torrent_import(
             extra_media = await session.get(Media, extra_media_id)
             if extra_media:
                 extra_media.total_streams = (extra_media.total_streams or 0) + 1
-                extra_media.last_stream_added = datetime.now(pytz.UTC)
+                extra_media.last_stream_added = extra_media_link_times.get(extra_media_id, primary_stream_link_time)
 
     # Apply catalog links selected during import.
     for catalog_name in catalogs:

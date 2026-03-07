@@ -21,10 +21,11 @@ from api.routers.user.auth import require_auth
 from api.routers.content.torrent_import import fetch_and_create_media_from_external
 from db.crud.media import get_media_by_external_id
 from db.crud.reference import get_or_create_language
+from db.crud.scraper_helpers import get_or_create_metadata
 from db.crud.streams import create_youtube_stream
 from db.database import get_async_session
 from db.enums import ContributionStatus, MediaType, UserRole
-from db.models import Contribution, Media, Stream, User
+from db.models import Contribution, Stream, User
 from db.models.streams import (
     StreamLanguageLink,
     YouTubeStream,
@@ -222,19 +223,15 @@ async def process_youtube_import(
             )
         except Exception as e:
             logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
-            media_type_map = {
-                "movie": MediaType.MOVIE,
-                "series": MediaType.SERIES,
-                "tv": MediaType.TV,
-                "sports": _resolve_sports_media_type(sports_category),
-            }
-            media_type_enum = media_type_map.get(meta_type, MediaType.MOVIE)
-            media = Media(
-                title=title,
-                type=media_type_enum,
+            media = await get_or_create_metadata(
+                session,
+                {
+                    "id": meta_id or f"yt_{video_id}",
+                    "title": title,
+                    "year": contribution_data.get("year"),
+                },
+                _resolve_fetch_media_type(meta_type, sports_category),
             )
-            session.add(media)
-            await session.flush()
 
     uploader_name, uploader_user_id = resolve_uploader_identity(user, is_anonymous, anonymous_display_name)
 
@@ -273,10 +270,6 @@ async def process_youtube_import(
                 session.add(lang_link)
             except Exception as e:
                 logger.warning(f"Failed to add language {lang_name}: {e}")
-
-    # Update media stream count
-    media.total_streams = (media.total_streams or 0) + 1
-    media.last_stream_added = datetime.now(pytz.UTC)
 
     await session.flush()
 

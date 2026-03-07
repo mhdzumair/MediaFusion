@@ -1778,7 +1778,11 @@ async def import_from_external(
             existing_by_imdb = await get_media_by_external_id(session, data["imdb_id"], media_type)
             if existing_by_imdb:
                 # Add the provider's external ID to the existing media if missing
-                await add_external_id(session, existing_by_imdb.id, request.provider, external_id)
+                provider_link = await add_external_id(session, existing_by_imdb.id, request.provider, external_id)
+                if provider_link and provider_link.media_id != existing_by_imdb.id:
+                    canonical_media = await session.get(Media, provider_link.media_id)
+                    if canonical_media:
+                        existing_by_imdb = canonical_media
                 await session.commit()
                 logger.info(
                     f"User {user.id} imported existing {media_type.value} (found via IMDb) from {request.provider}: "
@@ -1817,19 +1821,55 @@ async def import_from_external(
         await session.flush()
 
         # Add mediafusion external ID
-        await add_external_id(session, media.id, "mediafusion", mf_external_id)
+        mediafusion_link = await add_external_id(session, media.id, "mediafusion", mf_external_id)
+        if mediafusion_link and mediafusion_link.media_id != media.id:
+            await session.exec(sa_delete(Media).where(Media.id == media.id))
+            await session.commit()
+            canonical_media = await session.get(Media, mediafusion_link.media_id)
+            if canonical_media:
+                return await format_media_response(session, canonical_media, include_seasons=True)
 
         # Add external IDs from the fetched data
         if data.get("imdb_id"):
-            await add_external_id(session, media.id, "imdb", data["imdb_id"])
+            imdb_link = await add_external_id(session, media.id, "imdb", data["imdb_id"])
+            if imdb_link and imdb_link.media_id != media.id:
+                await session.exec(sa_delete(Media).where(Media.id == media.id))
+                await session.commit()
+                canonical_media = await session.get(Media, imdb_link.media_id)
+                if canonical_media:
+                    return await format_media_response(session, canonical_media, include_seasons=True)
         if data.get("tmdb_id"):
-            await add_external_id(session, media.id, "tmdb", str(data["tmdb_id"]))
+            tmdb_link = await add_external_id(session, media.id, "tmdb", str(data["tmdb_id"]))
+            if tmdb_link and tmdb_link.media_id != media.id:
+                await session.exec(sa_delete(Media).where(Media.id == media.id))
+                await session.commit()
+                canonical_media = await session.get(Media, tmdb_link.media_id)
+                if canonical_media:
+                    return await format_media_response(session, canonical_media, include_seasons=True)
         if data.get("tvdb_id"):
-            await add_external_id(session, media.id, "tvdb", str(data["tvdb_id"]))
+            tvdb_link = await add_external_id(session, media.id, "tvdb", str(data["tvdb_id"]))
+            if tvdb_link and tvdb_link.media_id != media.id:
+                await session.exec(sa_delete(Media).where(Media.id == media.id))
+                await session.commit()
+                canonical_media = await session.get(Media, tvdb_link.media_id)
+                if canonical_media:
+                    return await format_media_response(session, canonical_media, include_seasons=True)
         if data.get("mal_id"):
-            await add_external_id(session, media.id, "mal", str(data["mal_id"]))
+            mal_link = await add_external_id(session, media.id, "mal", str(data["mal_id"]))
+            if mal_link and mal_link.media_id != media.id:
+                await session.exec(sa_delete(Media).where(Media.id == media.id))
+                await session.commit()
+                canonical_media = await session.get(Media, mal_link.media_id)
+                if canonical_media:
+                    return await format_media_response(session, canonical_media, include_seasons=True)
         if data.get("kitsu_id"):
-            await add_external_id(session, media.id, "kitsu", str(data["kitsu_id"]))
+            kitsu_link = await add_external_id(session, media.id, "kitsu", str(data["kitsu_id"]))
+            if kitsu_link and kitsu_link.media_id != media.id:
+                await session.exec(sa_delete(Media).where(Media.id == media.id))
+                await session.commit()
+                canonical_media = await session.get(Media, kitsu_link.media_id)
+                if canonical_media:
+                    return await format_media_response(session, canonical_media, include_seasons=True)
 
         # Add genres
         if data.get("genres"):

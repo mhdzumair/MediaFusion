@@ -22,6 +22,7 @@ from api.routers.content.torrent_import import fetch_and_create_media_from_exter
 from db.crud.media import get_media_by_external_id, get_media_by_title_year
 from db.crud.providers import get_or_create_provider
 from db.crud.reference import get_or_create_language
+from db.crud.scraper_helpers import get_or_create_metadata
 from db.crud.streams import (
     create_acestream_stream,
     get_acestream_by_content_id,
@@ -29,7 +30,7 @@ from db.crud.streams import (
 )
 from db.database import get_async_session
 from db.enums import ContributionStatus, MediaType, UserRole
-from db.models import Contribution, Media, Stream, User
+from db.models import Contribution, Stream, User
 from db.models.providers import MediaImage
 from db.models.streams import (
     StreamLanguageLink,
@@ -282,14 +283,15 @@ async def process_acestream_import(
 
     # 4. Create new media entry as fallback
     if not media:
-        media = Media(
-            title=title,
-            type=media_type_enum,
-            is_user_created=True,
-            created_by_user_id=user.id if user else None,
+        media = await get_or_create_metadata(
+            session,
+            {
+                "id": meta_id or f"mf_tmp_{title}_{contribution_data.get('year', 'unknown')}",
+                "title": title,
+                "year": contribution_data.get("year"),
+            },
+            "series" if media_type_enum == MediaType.SERIES else "movie",
         )
-        session.add(media)
-        await session.flush()
         is_new_media = True
 
     # Add images for new media entries (or entries without images)
@@ -358,10 +360,6 @@ async def process_acestream_import(
                 session.add(lang_link)
             except Exception as e:
                 logger.warning(f"Failed to add language {lang_name}: {e}")
-
-    # Update media stream count
-    media.total_streams = (media.total_streams or 0) + 1
-    media.last_stream_added = datetime.now(pytz.UTC)
 
     await session.flush()
 

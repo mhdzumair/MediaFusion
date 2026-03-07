@@ -245,9 +245,9 @@ class Media(TimestampMixin, table=True):
 
     # Aggregates
     total_streams: int = Field(default=0, index=True)
-    last_stream_added: datetime = Field(
-        default_factory=lambda: datetime.now(pytz.UTC),
-        nullable=False,
+    last_stream_added: datetime | None = Field(
+        default=None,
+        nullable=True,
         index=True,
         sa_type=DateTime(timezone=True),
     )
