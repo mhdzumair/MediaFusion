@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils'
 import { useCombinedMetadataSearch, getBestExternalId, type CombinedSearchResult } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
 import { userMetadataApi, type ImportProvider, type TorrentFile } from '@/lib/api'
-import { DatePickerInput } from './DatePickerInput'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
 import type { FileAnnotation } from './types'
 
 // Provider options for manual ID input

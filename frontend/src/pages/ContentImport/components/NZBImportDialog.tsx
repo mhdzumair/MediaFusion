@@ -29,7 +29,7 @@ import { TechSpecsEditor } from './TechSpecsEditor'
 import { type ExtendedMatch } from './MatchResultsGrid'
 import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
-import { DatePickerInput } from './DatePickerInput'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
 import type { NZBImportFormData } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 import {

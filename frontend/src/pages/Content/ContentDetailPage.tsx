@@ -50,6 +50,7 @@ import {
   useCreateStreamSuggestion,
   useProfiles,
   useDeleteEpisodeAdmin,
+  useDeleteSeasonAdmin,
   useUpdateWatchProgress,
   useDeleteStream,
   type CatalogType,
@@ -57,6 +58,7 @@ import {
 import { useBlockTorrentStream } from '@/hooks/useAdmin'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRpdb } from '@/contexts/RpdbContext'
+import { useToast } from '@/hooks/use-toast'
 import type { StreamingProviderInfo } from '@/lib/api'
 import {
   StreamVoteButtons,
@@ -902,6 +904,7 @@ export function ContentDetailPage() {
   const catalogType = type as CatalogType
   const { isAuthenticated, hasMinimumRole } = useAuth()
   const { rpdbApiKey } = useRpdb()
+  const { toast } = useToast()
   const mediaId = parseInt(id || '0', 10)
   const isModerator = hasMinimumRole('moderator')
   const isAdmin = hasMinimumRole('admin')
@@ -981,7 +984,7 @@ export function ContentDetailPage() {
   }
 
   // Fetch data
-  const { data: item, isLoading } = useCatalogItem(catalogType, mediaId)
+  const { data: item, isLoading, refetch: refetchCatalogItem } = useCatalogItem(catalogType, mediaId)
   const { data: libraryStatus } = useLibraryCheck(mediaId)
 
   // Use the Stremio catalog streams API (handles debrid, caching, user preferences)
@@ -1019,6 +1022,7 @@ export function ContentDetailPage() {
 
   // Episode delete mutation (moderator only)
   const deleteEpisodeAdmin = useDeleteEpisodeAdmin()
+  const deleteSeasonAdmin = useDeleteSeasonAdmin()
 
   // Handle episode deletion (moderator only)
   // seasonNumber and episodeNumber are passed from SeriesEpisodePicker for potential toast messages
@@ -1026,10 +1030,43 @@ export function ContentDetailPage() {
     if (!item?.id) return
     try {
       await deleteEpisodeAdmin.mutateAsync({ mediaId: item.id, episodeId })
+      await refetchCatalogItem()
     } catch (error) {
       console.error('Failed to delete episode:', error)
       throw error
     }
+  }
+
+  const handleDeleteSeason = async (seasonNumber: number) => {
+    if (!item?.id) return
+    try {
+      await deleteSeasonAdmin.mutateAsync({ mediaId: item.id, seasonNumber })
+      if (selectedSeason === seasonNumber) {
+        setSelectedSeason(undefined)
+        setSelectedEpisode(undefined)
+      }
+      await refetchCatalogItem()
+      toast({
+        title: 'Season deleted',
+        description: `Season ${seasonNumber} was removed successfully.`,
+      })
+    } catch (error) {
+      console.error('Failed to delete season:', error)
+      toast({
+        title: 'Failed to delete season',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      })
+      throw error
+    }
+  }
+
+  const handleEpisodeEditSuccess = async () => {
+    await refetchCatalogItem()
+    toast({
+      title: 'Episode edit submitted',
+      description: 'Your episode changes were submitted and the list has been refreshed.',
+    })
   }
 
   // Calculate available seasons and episodes
@@ -1702,6 +1739,9 @@ export function ContentDetailPage() {
           isAdmin={isAdmin}
           onDeleteEpisode={handleDeleteEpisode}
           isDeletingEpisode={deleteEpisodeAdmin.isPending}
+          onDeleteSeason={handleDeleteSeason}
+          isDeletingSeason={deleteSeasonAdmin.isPending}
+          onEpisodeEditSuccess={handleEpisodeEditSuccess}
         />
       )}
 

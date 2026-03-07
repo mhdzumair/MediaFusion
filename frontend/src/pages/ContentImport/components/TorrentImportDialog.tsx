@@ -32,7 +32,7 @@ import { CatalogSelector } from './CatalogSelector'
 import { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 import { ValidationWarningDialog } from './ValidationWarningDialog'
 import { MultiContentWizard } from './MultiContentWizard'
-import { DatePickerInput } from './DatePickerInput'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
 import type { FileAnnotation, TorrentDialogQueueItem, TorrentImportFormData, TorrentImportSubmitOptions } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 import {

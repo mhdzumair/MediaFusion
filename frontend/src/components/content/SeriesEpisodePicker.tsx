@@ -52,6 +52,9 @@ interface SeriesEpisodePickerProps {
   isAdmin?: boolean
   onDeleteEpisode?: (episodeId: number, seasonNumber: number, episodeNumber: number) => Promise<void>
   isDeletingEpisode?: boolean
+  onDeleteSeason?: (seasonNumber: number) => Promise<void>
+  isDeletingSeason?: boolean
+  onEpisodeEditSuccess?: () => void
   // Series info for episode edit context
   seriesTitle?: string
   className?: string
@@ -67,6 +70,9 @@ export function SeriesEpisodePicker({
   isAdmin = false,
   onDeleteEpisode,
   isDeletingEpisode = false,
+  onDeleteSeason,
+  isDeletingSeason = false,
+  onEpisodeEditSuccess,
   seriesTitle,
   className,
 }: SeriesEpisodePickerProps) {
@@ -74,6 +80,7 @@ export function SeriesEpisodePicker({
     selectedSeason ? [selectedSeason] : seasons.length > 0 ? [seasons[0].season_number] : [],
   )
   const [deletingEpisodeId, setDeletingEpisodeId] = useState<number | null>(null)
+  const [deletingSeasonNumber, setDeletingSeasonNumber] = useState<number | null>(null)
   const { isAuthenticated } = useAuth()
 
   const currentSeason = useMemo(
@@ -168,11 +175,61 @@ export function SeriesEpisodePicker({
           <div className="space-y-2">
             {/* Episode count indicator */}
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-              <span>
-                {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
-              </span>
-              {episodes.filter((e) => isAired(e.released)).length !== episodes.length && (
-                <span className="text-primary">{episodes.filter((e) => !isAired(e.released)).length} upcoming</span>
+              <div className="flex items-center gap-2">
+                <span>
+                  {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
+                </span>
+                {episodes.filter((e) => isAired(e.released)).length !== episodes.length && (
+                  <span className="text-primary">{episodes.filter((e) => !isAired(e.released)).length} upcoming</span>
+                )}
+              </div>
+              {isAdmin && onDeleteSeason && selectedSeason !== undefined && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 rounded-md text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={isDeletingSeason}
+                    >
+                      {deletingSeasonNumber === selectedSeason ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Delete Season
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Season?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete season {selectedSeason}
+                        {currentSeason.name && ` - "${currentSeason.name}"`}.
+                        <br />
+                        <br />
+                        All episodes in this season will be removed. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          setDeletingSeasonNumber(selectedSeason)
+                          try {
+                            await onDeleteSeason(selectedSeason)
+                          } finally {
+                            setDeletingSeasonNumber(null)
+                          }
+                        }}
+                      >
+                        Delete Season
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
 
@@ -271,27 +328,21 @@ export function SeriesEpisodePicker({
                                 series_title: seriesTitle,
                               } as EpisodeData
                             }
+                            onSuccess={onEpisodeEditSuccess}
                             trigger={
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className={cn(
-                                        'h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
-                                        'text-muted-foreground hover:text-primary hover:bg-primary/10',
-                                      )}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Suggest edit</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className={cn(
+                                  'h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
+                                  'text-muted-foreground hover:text-primary hover:bg-primary/10',
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label="Suggest edit"
+                                title="Suggest edit"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
                             }
                           />
                         )}

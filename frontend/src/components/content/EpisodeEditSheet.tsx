@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
 import {
   Sheet,
   SheetContent,
@@ -273,11 +274,11 @@ export function EpisodeEditSheet({ episode, trigger, onSuccess }: EpisodeEditShe
                       </Badge>
                     )}
                   </div>
-                  <Input
-                    type="date"
+                  <DatePickerInput
                     value={fields.air_date.value}
-                    onChange={(e) => updateField('air_date', e.target.value)}
-                    className={cn('rounded-xl', fields.air_date.isModified && 'border-primary/50 bg-primary/5')}
+                    onChange={(value) => updateField('air_date', value)}
+                    placeholder="Select air date"
+                    className={cn('h-10 rounded-xl', fields.air_date.isModified && 'border-primary/50 bg-primary/5')}
                   />
                 </div>
 
