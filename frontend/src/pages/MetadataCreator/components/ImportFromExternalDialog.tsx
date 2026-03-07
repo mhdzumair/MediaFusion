@@ -248,16 +248,16 @@ export function ImportFromExternalDialog({ open, onOpenChange, onSuccess }: Impo
                     {preview.year && <span className="text-sm text-muted-foreground">({preview.year})</span>}
                   </div>
 
-                  {preview.genres.length > 0 && (
+                  {(preview.genres?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {preview.genres.slice(0, 3).map((genre) => (
+                      {preview.genres?.slice(0, 3).map((genre) => (
                         <Badge key={genre} variant="secondary" className="text-xs">
                           {genre}
                         </Badge>
                       ))}
-                      {preview.genres.length > 3 && (
+                      {(preview.genres?.length ?? 0) > 3 && (
                         <Badge variant="outline" className="text-xs">
-                          +{preview.genres.length - 3}
+                          +{(preview.genres?.length ?? 0) - 3}
                         </Badge>
                       )}
                     </div>

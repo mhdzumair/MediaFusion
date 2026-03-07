@@ -1478,9 +1478,9 @@ export function ContentDetailPage() {
             </div>
 
             {/* Genres - clickable to filter */}
-            {item.genres.length > 0 && (
+            {(item.genres?.length ?? 0) > 0 && (
               <div className="flex flex-wrap gap-2">
-                {item.genres.map((genre) => (
+                {item.genres?.map((genre) => (
                   <Link key={genre} to={`/dashboard/library?tab=browse&genre=${encodeURIComponent(genre)}`}>
                     <Badge
                       variant="secondary"

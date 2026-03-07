@@ -274,9 +274,9 @@ export function ExternalMetadataPanel({
                     <span>{selectedPreview.imdb_rating.toFixed(1)}</span>
                   </div>
                 )}
-                {selectedPreview.genres.length > 0 && (
+                {(selectedPreview.genres?.length ?? 0) > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {selectedPreview.genres.slice(0, 4).map((genre) => (
+                    {selectedPreview.genres?.slice(0, 4).map((genre) => (
                       <Badge key={genre} variant="secondary" className="text-xs">
                         {genre}
                       </Badge>
