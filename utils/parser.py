@@ -460,20 +460,25 @@ async def parse_stream_data(
         # --- Per-provider naming and URL setup ---
         has_streaming_provider = current_provider is not None
         provider_name = current_provider.name if current_provider else "default"
-        streaming_provider_name = (
-            STREAMING_PROVIDERS_SHORT_NAMES.get(current_provider.service, "P2P") if current_provider else "P2P"
-        )
-
-        # Stream type indicator for addon name
-        if is_telegram:
-            stream_type_indicator = "📱"
-        elif is_usenet:
-            stream_type_indicator = "📰"
+        if current_provider:
+            streaming_provider_name = STREAMING_PROVIDERS_SHORT_NAMES.get(current_provider.service, "P2P")
+        elif is_telegram:
+            streaming_provider_name = "TG"
+        elif is_http:
+            streaming_provider_name = "WEB"
         elif is_youtube:
-            stream_type_indicator = "▶️"
+            streaming_provider_name = "YT"
         else:
-            stream_type_indicator = ""
-        addon_name = f"{settings.addon_name} {streaming_provider_name} {stream_type_indicator}".strip()
+            streaming_provider_name = "P2P"
+
+        # Keep legacy provider-prefixed addon naming for provider-backed streams,
+        # but avoid mislabeling direct streams (Telegram/HTTP/YouTube) as P2P.
+        if is_telegram or is_http or is_youtube:
+            addon_name = settings.addon_name
+        else:
+            addon_name = f"{settings.addon_name} {streaming_provider_name}".strip()
+            if is_usenet:
+                addon_name = f"{addon_name} 📰".strip()
 
         # Telegram, HTTP, and YouTube streams don't require a debrid provider
         if is_telegram or is_http or is_youtube:
@@ -901,11 +906,27 @@ def _build_stream_entries(
                 "seadexBest": False,
                 "provider_type": provider_type,
             }
+            if current_provider:
+                service_name = current_provider.service
+                service_short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(
+                    current_provider.service, streaming_provider_name
+                )
+            elif is_telegram:
+                service_name = "telegram"
+                service_short_name = "TG"
+            elif is_http:
+                service_name = "http"
+                service_short_name = "WEB"
+            elif is_youtube:
+                service_name = "youtube"
+                service_short_name = "YT"
+            else:
+                service_name = "p2p"
+                service_short_name = "P2P"
+
             service_context = {
-                "name": current_provider.service if current_provider else streaming_provider_name,
-                "shortName": STREAMING_PROVIDERS_SHORT_NAMES.get(
-                    current_provider.service if current_provider else streaming_provider_name, streaming_provider_name
-                ),
+                "name": service_name,
+                "shortName": service_short_name,
                 "cached": cached if has_streaming_provider else False,
             }
             addon_context = {"name": addon_name}
@@ -992,7 +1013,13 @@ def _build_stream_entries(
                     uploaded_at=stream_data.created_at.isoformat() if stream_data.created_at else None,
                     cached=cached,
                     stream_type=stream_type,
-                    provider_name=current_provider.service if current_provider else "p2p",
+                    provider_name=(
+                        current_provider.service
+                        if current_provider
+                        else (
+                            "telegram" if is_telegram else ("http" if is_http else ("youtube" if is_youtube else "p2p"))
+                        )
+                    ),
                     provider_short_name=streaming_provider_name,
                     filename=file_name or stream_data.name,
                     video_width=video_width,

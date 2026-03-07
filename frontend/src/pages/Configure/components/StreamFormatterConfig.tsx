@@ -21,10 +21,10 @@ import { cn } from '@/lib/utils'
 import type { ConfigSectionProps } from './types'
 
 // Default templates using MediaFusion simplified syntax
-// Stream type indicators: 🧲 Torrent, 📰 Usenet, 🔗 HTTP/Direct
-const DEFAULT_TITLE_TEMPLATE = `{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}`
+// Stream type indicators: 🧲 Torrent, 📰 Usenet, 📱 Telegram, ▶️ YouTube, 🌐 HTTP/Direct
+const DEFAULT_TITLE_TEMPLATE = `{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}`
 const DEFAULT_DESCRIPTION_TEMPLATE = `{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}
-{if stream.size > 0}📦 {stream.size|bytes} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}
+{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}
 {if stream.languages}🌐 {stream.languages|join(' + ')}{/if}
 🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}`
 
@@ -55,12 +55,12 @@ const PRESETS = {
   detailed: {
     name: 'Detailed',
     description: 'Maximum information density',
-    title: `{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}`,
+    title: `{addon.name} {if stream.type = torrent}🧲 {service.shortName} {if service.cached}⚡️{else}⏳{/if}{elif stream.type = usenet}📰 {service.shortName}{elif stream.type = telegram}📱{elif stream.type = youtube}▶️{elif stream.type = http}🌐{else}🔗{/if} {if stream.resolution}{stream.resolution}{/if}`,
     desc: `📂 {stream.name}
 {if stream.type = torrent}🧲 Torrent{elif stream.type = usenet}📰 Usenet/NZB{elif stream.type = http}🔗 Direct Stream{else}📺 {stream.type|title}{/if}
 {if stream.quality}🎥 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.bit_depth}{stream.bit_depth}-bit {/if}
 {if stream.hdr_formats}🎨 {stream.hdr_formats|join(' ')} {/if}{if stream.audio_formats}🎧 {stream.audio_formats|join(' ')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')} {/if}
-{if stream.size > 0}📦 {stream.size|bytes} {/if}{if stream.seeders > 0}👤 {stream.seeders} seeders {/if}
+{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders} seeders {/if}
 {if stream.languages}🌐 {stream.languages|join(' | ')}{/if}
 🔗 {stream.source}{if stream.release_group} | 🏷️ {stream.release_group}{/if}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}`,
   },
@@ -102,6 +102,7 @@ const PREVIEW_CONTEXTS = {
         languageCodes: ['EN'],
         smallLanguageCodes: ['en'],
         size: 26560123456,
+        folderSize: 26560123456,
         seeders: 512,
         source: 'TGx Movies',
         release_group: 'FraMeSToR',
@@ -134,6 +135,7 @@ const PREVIEW_CONTEXTS = {
         languageCodes: ['EN'],
         smallLanguageCodes: ['en'],
         size: 14560123456,
+        folderSize: 97601234567,
         seeders: 342,
         source: 'TGx Series',
         release_group: 'NTb',
@@ -166,6 +168,7 @@ const PREVIEW_CONTEXTS = {
         languageCodes: ['EN', 'ES'],
         smallLanguageCodes: ['en', 'es'],
         size: 4123456789,
+        folderSize: 4123456789,
         seeders: 0,
         source: 'Prowlarr Series',
         release_group: 'NOGRP',
@@ -198,6 +201,7 @@ const PREVIEW_CONTEXTS = {
         languageCodes: ['EN'],
         smallLanguageCodes: ['en'],
         size: 0,
+        folderSize: 0,
         seeders: 0,
         source: 'Live TV',
         release_group: '',

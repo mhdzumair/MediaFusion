@@ -1883,13 +1883,27 @@ async def get_catalog_item_streams(
         }
 
         # Build service context for template
+        if selected_provider_obj:
+            service_name = selected_provider_obj.service
+            service_short_name = STREAMING_PROVIDERS_SHORT_NAMES.get(selected_provider_obj.service, "P2P")
+        elif stream.stream_type == StreamType.TELEGRAM:
+            service_name = "telegram"
+            service_short_name = "TG"
+        elif stream.stream_type == StreamType.HTTP:
+            service_name = "http"
+            service_short_name = "WEB"
+        elif stream.stream_type == StreamType.YOUTUBE:
+            service_name = "youtube"
+            service_short_name = "YT"
+        else:
+            service_name = "p2p"
+            service_short_name = "P2P"
+
         service_context = {
             # StreamingProvider schema has no numeric id; use configured provider name as stable identifier.
             "id": (selected_provider_obj.name or selected_provider_obj.service) if selected_provider_obj else None,
-            "name": selected_provider_obj.service if selected_provider_obj else "p2p",
-            "shortName": STREAMING_PROVIDERS_SHORT_NAMES.get(
-                selected_provider_obj.service if selected_provider_obj else "", "P2P"
-            ),
+            "name": service_name,
+            "shortName": service_short_name,
             "cached": is_cached or False,
         }
 

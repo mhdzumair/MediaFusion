@@ -281,7 +281,7 @@ class StreamTemplate(BaseModel):
     - Stream: name, filename, type, resolution, quality, codec, bit_depth
     - Stream types: torrent, usenet, telegram, http, youtube
     - Stream arrays: audio_formats, channels, hdr_formats, languages, language_flags
-    - Stream info: size, seeders, source, release_group, uploader, cached
+    - Stream info: size, folderSize, seeders, source, release_group, uploader, cached
     - Service: service.name, service.shortName, service.cached
     - Addon: addon.name
     """
@@ -293,7 +293,7 @@ class StreamTemplate(BaseModel):
     )
     description: str = Field(
         default="{if stream.hdr_formats}🎨 {stream.hdr_formats|join('|')} {/if}{if stream.quality}📺 {stream.quality} {/if}{if stream.codec}🎞️ {stream.codec} {/if}{if stream.audio_formats}🎵 {stream.audio_formats|join('|')} {/if}{if stream.channels}🔊 {stream.channels|join(' ')}{/if}\n"
-        "{if stream.size > 0}📦 {stream.size|bytes} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n"
+        "{if stream.size > 0}📦 {stream.size|bytes}{if stream.folderSize > stream.size} / {stream.folderSize|bytes}{/if} {/if}{if stream.seeders > 0}👤 {stream.seeders}{/if}\n"
         "{if stream.languages}🌐 {stream.languages|join(' + ')}{/if}\n"
         "🔗 {stream.source}{if stream.uploader} | 🧑‍💻 {stream.uploader}{/if}",
         alias="d",
