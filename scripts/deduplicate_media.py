@@ -21,11 +21,12 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Add project root to import path.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from db.crud.media import get_canonical_external_id, invalidate_meta_cache
+from db.crud.media import invalidate_meta_cache
 from db.crud.scraper_helpers import delete_metadata, migrate_media_links, update_meta_stream
 from db.crud.stream_services import invalidate_media_stream_cache
 from db.database import get_async_session_context
@@ -33,17 +34,6 @@ from db.enums import MediaType
 from db.models import FileMediaLink, Media, MediaExternalID, StreamMediaLink
 
 logger = logging.getLogger("deduplicate_media")
-
-
-def extract_count_value(value) -> int:
-    if value is None:
-        return 0
-    if isinstance(value, int):
-        return value
-    try:
-        return int(value[0])
-    except (TypeError, ValueError, IndexError, KeyError):
-        return int(value)
 
 
 @dataclass
@@ -68,17 +58,38 @@ def format_external_ids(external_ids: tuple[str, ...]) -> str:
     return ", ".join(external_ids)
 
 
-def choose_target(cluster: list[MediaRow]) -> MediaRow:
-    # Prefer rows with external IDs, then with more streams, then oldest.
-    return sorted(
-        cluster,
-        key=lambda row: (
-            0 if row.external_id_count > 0 else 1,
-            -row.total_streams,
-            row.created_at or datetime.max,
-            row.media_id,
-        ),
-    )[0]
+def format_provider_external_id(provider: str, external_id: str) -> str:
+    if provider == "imdb":
+        return external_id if external_id.startswith("tt") else f"tt{external_id}"
+    return f"{provider}:{external_id}"
+
+
+def canonical_external_id_for_row(row: MediaRow, preferred_provider: str = "imdb") -> str:
+    if not row.external_ids:
+        return f"mf:{row.media_id}"
+
+    id_by_provider: dict[str, str] = {}
+    for provider_external in row.external_ids:
+        if ":" not in provider_external:
+            continue
+        provider, external_id = provider_external.split(":", 1)
+        id_by_provider[provider] = external_id
+
+    preferred_provider = preferred_provider.lower()
+    if preferred_provider in id_by_provider:
+        return format_provider_external_id(preferred_provider, id_by_provider[preferred_provider])
+
+    priority_order = ["imdb", "tvdb", "tmdb", "mal", "kitsu"]
+    for provider in priority_order:
+        if provider in id_by_provider:
+            return format_provider_external_id(provider, id_by_provider[provider])
+
+    first_provider_external = row.external_ids[0]
+    if ":" not in first_provider_external:
+        return f"mf:{row.media_id}"
+
+    provider, external_id = first_provider_external.split(":", 1)
+    return format_provider_external_id(provider, external_id)
 
 
 async def load_candidates(include_types: set[MediaType]) -> list[MediaRow]:
@@ -141,11 +152,36 @@ def attach_external_ids(rows: list[MediaRow], external_id_map: dict[int, set[str
         row.external_id_count = len(row.external_ids)
 
 
+async def load_source_link_counts(
+    session: AsyncSession,
+    source_ids: list[int],
+) -> tuple[dict[int, int], dict[int, int]]:
+    if not source_ids:
+        return {}, {}
+
+    stream_counts_result = await session.exec(
+        select(StreamMediaLink.media_id, func.count(StreamMediaLink.id))
+        .where(StreamMediaLink.media_id.in_(source_ids))
+        .group_by(StreamMediaLink.media_id)
+    )
+    stream_counts = {media_id: int(count) for media_id, count in stream_counts_result.all()}
+
+    file_counts_result = await session.exec(
+        select(FileMediaLink.media_id, func.count(FileMediaLink.id))
+        .where(FileMediaLink.media_id.in_(source_ids))
+        .group_by(FileMediaLink.media_id)
+    )
+    file_counts = {media_id: int(count) for media_id, count in file_counts_result.all()}
+
+    return stream_counts, file_counts
+
+
 async def migrate_cluster(
     target: MediaRow,
     sources: list[MediaRow],
     apply_changes: bool,
     only_empty_sources: bool,
+    verbose_source_logs: bool,
 ) -> dict[str, int]:
     moved_stream_links = 0
     moved_file_links = 0
@@ -156,42 +192,43 @@ async def migrate_cluster(
         return {"moved_stream_links": 0, "moved_file_links": 0, "sources_deleted": 0, "sources_skipped": 0}
 
     async with get_async_session_context() as session:
+        source_ids = [source.media_id for source in sources]
+        stream_counts, file_counts = await load_source_link_counts(session, source_ids)
+
+        target_media = None
+        if apply_changes:
+            target_media = await session.get(Media, target.media_id)
+
+        stream_cache_media_ids: set[int] = set()
+        meta_cache_ids: set[str] = set()
+
         for source in sources:
-            source_canonical_id = await get_canonical_external_id(session, source.media_id)
-            stream_link_count_row = (
-                await session.exec(
-                    select(func.count(StreamMediaLink.id)).where(StreamMediaLink.media_id == source.media_id)
-                )
-            ).one()
-            file_link_count_row = (
-                await session.exec(
-                    select(func.count(FileMediaLink.id)).where(FileMediaLink.media_id == source.media_id)
-                )
-            ).one()
-            stream_link_count = extract_count_value(stream_link_count_row)
-            file_link_count = extract_count_value(file_link_count_row)
+            stream_link_count = stream_counts.get(source.media_id, 0)
+            file_link_count = file_counts.get(source.media_id, 0)
             is_empty_source = (stream_link_count or 0) == 0 and (file_link_count or 0) == 0
 
             if only_empty_sources and not is_empty_source:
                 skipped_non_empty += 1
-                logger.info(
-                    "skip media_id=%s (non-empty source: stream_links=%s file_links=%s)",
-                    source.media_id,
-                    stream_link_count,
-                    file_link_count,
-                )
+                if verbose_source_logs:
+                    logger.info(
+                        "skip media_id=%s (non-empty source: stream_links=%s file_links=%s)",
+                        source.media_id,
+                        stream_link_count,
+                        file_link_count,
+                    )
                 continue
 
             if not apply_changes:
-                logger.info(
-                    "[DRY-RUN] %s media_id=%s (%s) -> media_id=%s (stream_links=%s file_links=%s)",
-                    "delete-empty" if is_empty_source else "merge",
-                    source.media_id,
-                    source_canonical_id,
-                    target.media_id,
-                    stream_link_count,
-                    file_link_count,
-                )
+                if verbose_source_logs:
+                    logger.info(
+                        "[DRY-RUN] %s media_id=%s (%s) -> media_id=%s (stream_links=%s file_links=%s)",
+                        "delete-empty" if is_empty_source else "merge",
+                        source.media_id,
+                        canonical_external_id_for_row(source),
+                        target.media_id,
+                        stream_link_count,
+                        file_link_count,
+                    )
                 continue
 
             if not is_empty_source:
@@ -199,22 +236,26 @@ async def migrate_cluster(
                 moved_stream_links += stats["stream_links_migrated"]
                 moved_file_links += stats["file_links_migrated"]
 
-            target_media = await session.get(Media, target.media_id)
             if target_media and not target_media.migrated_from_id:
+                source_canonical_id = canonical_external_id_for_row(source)
                 target_media.migrated_from_id = source_canonical_id
                 session.add(target_media)
 
             await delete_metadata(session, f"mf:{source.media_id}", new_media_id=target.media_id)
-            await update_meta_stream(session, f"mf:{target.media_id}", target.media_type.value)
-
-            await invalidate_media_stream_cache(source.media_id)
-            await invalidate_media_stream_cache(target.media_id)
-            await invalidate_meta_cache(f"mf:{source.media_id}")
-            await invalidate_meta_cache(f"mf:{target.media_id}")
+            stream_cache_media_ids.add(source.media_id)
+            stream_cache_media_ids.add(target.media_id)
+            meta_cache_ids.add(f"mf:{source.media_id}")
+            meta_cache_ids.add(f"mf:{target.media_id}")
             deleted_sources += 1
 
         if apply_changes:
+            if deleted_sources > 0:
+                await update_meta_stream(session, f"mf:{target.media_id}", target.media_type.value)
             await session.commit()
+
+    if apply_changes and deleted_sources > 0:
+        await asyncio.gather(*(invalidate_media_stream_cache(media_id) for media_id in stream_cache_media_ids))
+        await asyncio.gather(*(invalidate_meta_cache(meta_id) for meta_id in meta_cache_ids))
 
     return {
         "moved_stream_links": moved_stream_links,
@@ -230,8 +271,12 @@ async def run(args: argparse.Namespace) -> None:
         include_types = {MediaType(args.media_type)}
 
     rows = await load_candidates(include_types)
-    external_id_map = await load_external_id_map(include_types)
-    attach_external_ids(rows, external_id_map)
+
+    # Loading every external ID is expensive on large databases.
+    # Only fetch full external IDs when needed for source matching or verbose logs.
+    if args.include_external_sources or args.verbose_source_logs:
+        external_id_map = await load_external_id_map(include_types)
+        attach_external_ids(rows, external_id_map)
 
     groups: dict[tuple[MediaType, str, int | None], list[MediaRow]] = defaultdict(list)
     for row in rows:
@@ -254,7 +299,7 @@ async def run(args: argparse.Namespace) -> None:
     total_skipped_ambiguous = 0
     total_skipped_no_anchor = 0
 
-    for cluster in duplicate_clusters:
+    for index, cluster in enumerate(duplicate_clusters, start=1):
         cluster_external_rows = [row for row in cluster if row.external_id_count > 0]
 
         if not cluster_external_rows:
@@ -272,12 +317,13 @@ async def run(args: argparse.Namespace) -> None:
 
         # Optional: include source rows with an exact shared external-ID pair.
         if args.include_external_sources:
+            target_external_ids_set = set(target.external_ids)
             shared_external_sources = [
                 row
                 for row in cluster
                 if row.media_id != target.media_id
                 and row.external_id_count > 0
-                and set(row.external_ids).intersection(set(target.external_ids))
+                and set(row.external_ids).intersection(target_external_ids_set)
             ]
             sources.extend(shared_external_sources)
 
@@ -291,7 +337,7 @@ async def run(args: argparse.Namespace) -> None:
             target.title,
             target.year,
             target.media_id,
-            format_external_ids(target.external_ids),
+            format_external_ids(target.external_ids) if target.external_ids else f"count={target.external_id_count}",
             [source.media_id for source in sources],
         )
 
@@ -300,11 +346,22 @@ async def run(args: argparse.Namespace) -> None:
             sources,
             apply_changes=args.apply,
             only_empty_sources=args.only_empty_sources,
+            verbose_source_logs=args.verbose_source_logs,
         )
         total_moved_stream_links += stats["moved_stream_links"]
         total_moved_file_links += stats["moved_file_links"]
         total_deleted += stats["sources_deleted"]
         total_skipped_non_empty += stats["sources_skipped"]
+
+        if args.progress_every and index % args.progress_every == 0:
+            logger.info(
+                "Progress clusters=%s/%s sources=%s deleted=%s skipped_non_empty=%s",
+                index,
+                len(duplicate_clusters),
+                total_sources,
+                total_deleted,
+                total_skipped_non_empty,
+            )
 
     logger.info("------ Summary ------")
     logger.info("mode=%s", "APPLY" if args.apply else "DRY-RUN")
@@ -346,6 +403,17 @@ def parse_args() -> argparse.Namespace:
         "--only-empty-sources",
         action="store_true",
         help="Only remove duplicate sources that have no stream/file links.",
+    )
+    parser.add_argument(
+        "--verbose-source-logs",
+        action="store_true",
+        help="Log every source media action/skip. Disabled by default for performance.",
+    )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=500,
+        help="Log progress every N clusters (0 disables progress logs).",
     )
     return parser.parse_args()
 
