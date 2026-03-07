@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from sqlalchemy.exc import DBAPIError, PendingRollbackError
+from sqlalchemy.exc import DBAPIError, PendingRollbackError, TimeoutError as SQLAlchemyTimeoutError
 
 T = TypeVar("T")
 
@@ -20,16 +20,23 @@ RETRYABLE_DB_ERROR_MARKERS = (
     "unexpected connection_lost() call",
     "conflict with recovery",
     "canceling statement due to conflict with recovery",
+    "queuepool limit",
+    "connection timed out",
 )
 
 
 def is_retryable_db_error(exc: BaseException) -> bool:
     """Return True when exception chain indicates a transient DB disconnect."""
-    current: BaseException | None = exc
+    to_visit: list[BaseException] = [exc]
     visited: set[int] = set()
-    while current is not None and id(current) not in visited:
+
+    while to_visit:
+        current = to_visit.pop()
+        if id(current) in visited:
+            continue
         visited.add(id(current))
-        if isinstance(current, (BrokenPipeError, ConnectionError, TimeoutError)):
+
+        if isinstance(current, (BrokenPipeError, ConnectionError, TimeoutError, SQLAlchemyTimeoutError)):
             return True
         if isinstance(current, PendingRollbackError):
             return True
@@ -40,8 +47,19 @@ def is_retryable_db_error(exc: BaseException) -> bool:
         if any(marker in message for marker in RETRYABLE_DB_ERROR_MARKERS):
             return True
 
-        next_exc = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
-        current = next_exc if isinstance(next_exc, BaseException) else None
+        cause = getattr(current, "__cause__", None)
+        if isinstance(cause, BaseException):
+            to_visit.append(cause)
+
+        context = getattr(current, "__context__", None)
+        if isinstance(context, BaseException):
+            to_visit.append(context)
+
+        grouped_errors = getattr(current, "exceptions", None)
+        if isinstance(grouped_errors, tuple):
+            for grouped_error in grouped_errors:
+                if isinstance(grouped_error, BaseException):
+                    to_visit.append(grouped_error)
 
     return False
 

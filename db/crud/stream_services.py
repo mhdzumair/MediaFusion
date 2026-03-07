@@ -13,6 +13,7 @@ import importlib
 import json
 import logging
 import time
+from collections.abc import Awaitable
 from typing import Any
 
 from fastapi import BackgroundTasks
@@ -67,6 +68,7 @@ USENET_CAPABLE_PROVIDERS = {"torbox", "debrider", "sabnzbd", "nzbget", "nzbdav",
 STREAM_CACHE_TTL = 1800  # 30 minutes
 STREAM_CACHE_PREFIX = "stream_data:"
 LIVE_TORRENT_FALLBACK_CACHE_TTL = 180  # 3 minutes
+RELATED_MEDIA_FETCH_CONCURRENCY = 4
 LIVE_TORRENT_FALLBACK_CACHE_PREFIX = "live_torrent_fallback:"
 
 logger = logging.getLogger(__name__)
@@ -253,6 +255,24 @@ async def _run_live_search_scrapers(
             logger.warning("Live usenet scraping failed for %s: %s", metadata.external_id, exc)
 
     return torrent_streams, usenet_streams
+
+
+async def _gather_with_concurrency_limit(coros: list[Awaitable[Any]], limit: int) -> list[Any]:
+    """Run awaitables with bounded concurrency and stable result ordering."""
+    if not coros:
+        return []
+    if limit <= 0:
+        return await asyncio.gather(*coros)
+
+    semaphore = asyncio.Semaphore(limit)
+    results: list[Any] = [None] * len(coros)
+
+    async def _run_one(index: int, coro: Awaitable[Any]) -> None:
+        async with semaphore:
+            results[index] = await coro
+
+    await asyncio.gather(*(_run_one(index, coro) for index, coro in enumerate(coros)))
+    return results
 
 
 def _merge_unique_torrent_streams(
@@ -1180,8 +1200,9 @@ async def get_movie_streams(
 
     # Get cached or fresh raw stream data
     if related_media_ids:
-        raw_payloads = await asyncio.gather(
-            *[_get_cached_movie_streams(media_id, visibility_filter, user_id) for media_id in related_media_ids]
+        raw_payloads = await _gather_with_concurrency_limit(
+            [_get_cached_movie_streams(media_id, visibility_filter, user_id) for media_id in related_media_ids],
+            RELATED_MEDIA_FETCH_CONCURRENCY,
         )
         raw_data = _merge_raw_stream_payloads(raw_payloads)
     else:
@@ -1425,11 +1446,12 @@ async def get_series_streams(
 
     # Get cached or fresh raw stream data
     if related_media_ids:
-        raw_payloads = await asyncio.gather(
-            *[
+        raw_payloads = await _gather_with_concurrency_limit(
+            [
                 _get_cached_series_streams(media_id, season, episode, visibility_filter, user_id)
                 for media_id in related_media_ids
-            ]
+            ],
+            RELATED_MEDIA_FETCH_CONCURRENCY,
         )
         raw_data = _merge_raw_stream_payloads(raw_payloads)
     else:
