@@ -13,11 +13,13 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Download,
   Loader2,
   Film,
   Tv,
+  Trophy,
   HardDrive,
   FileVideo,
   Search,
@@ -33,6 +35,7 @@ import { useDebounce } from '@/hooks/useDebounce'
 import { ImportFileAnnotationDialog, MultiContentWizard } from '@/pages/ContentImport/components'
 import type { MissingTorrentItem, FileAnnotationData } from '@/lib/api/watchlist'
 import type { TorrentFile, TorrentAnalyzeResponse } from '@/lib/api'
+import { SPORTS_CATEGORY_OPTIONS, type SportsCategory } from '@/lib/constants'
 import {
   getStoredAnonymousDisplayName,
   normalizeAnonymousDisplayName,
@@ -73,7 +76,7 @@ function hasEpisodePattern(value: string): boolean {
   )
 }
 
-function inferInitialContentType(torrent: MissingTorrentItem): 'movie' | 'series' {
+function inferInitialContentType(torrent: MissingTorrentItem): 'movie' | 'series' | 'sports' {
   const videoPaths = torrent.files
     .filter((file) => VIDEO_EXTENSIONS.some((ext) => file.path.toLowerCase().endsWith(ext)))
     .map((file) => file.path.split('/').pop() || file.path)
@@ -90,6 +93,17 @@ function inferInitialContentType(torrent: MissingTorrentItem): 'movie' | 'series
   return 'movie'
 }
 
+function inferInitialSportsCategory(torrent: MissingTorrentItem): SportsCategory | '' {
+  const source = `${torrent.name || ''} ${torrent.parsed_title || ''}`.toLowerCase()
+  if (/\bmotogp\b|\bmoto\s*gp\b|\bmoto2\b|\bmoto3\b/.test(source)) {
+    return 'motogp_racing'
+  }
+  if (/\bformula\s*[123]\b|\bformula[123]\b|\bf[123]\b|\bindycar\b|\bnascar\b/.test(source)) {
+    return 'formula_racing'
+  }
+  return ''
+}
+
 export function AdvancedImportDialog({
   open,
   onOpenChange,
@@ -101,12 +115,21 @@ export function AdvancedImportDialog({
   onSuccess,
 }: AdvancedImportDialogProps) {
   const { user } = useAuth()
+  const initialContentType = inferInitialContentType(torrent)
+  const initialSportsCategory = inferInitialSportsCategory(torrent)
 
   // Form state
-  const [contentType, setContentType] = useState<'movie' | 'series'>(inferInitialContentType(torrent))
+  const [contentType, setContentType] = useState<'movie' | 'series' | 'sports'>(initialContentType)
+  const [sportsCategory, setSportsCategory] = useState<SportsCategory | ''>(
+    initialContentType === 'sports' ? initialSportsCategory : '',
+  )
   const [importMode, setImportMode] = useState<ImportMode>('single')
   const [searchQuery, setSearchQuery] = useState(torrent.parsed_title || '')
   const [searchYear, setSearchYear] = useState(torrent.parsed_year ? String(torrent.parsed_year) : '')
+  const [manualTitle, setManualTitle] = useState(torrent.parsed_title || '')
+  const [poster, setPoster] = useState('')
+  const [background, setBackground] = useState('')
+  const [releaseDate, setReleaseDate] = useState('')
   const [selectedMedia, setSelectedMedia] = useState<CombinedSearchResult | null>(null)
   const [fileAnnotations, setFileAnnotations] = useState<FileAnnotation[]>([])
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
@@ -130,6 +153,11 @@ export function AdvancedImportDialog({
   // Check if in multi-content mode
   const isMultiContentMode = importMode === 'collection' || importMode === 'pack'
 
+  const sportsSearchType = useMemo<'movie' | 'series'>(
+    () => (sportsCategory === 'formula_racing' || sportsCategory === 'motogp_racing' ? 'series' : 'movie'),
+    [sportsCategory],
+  )
+
   // Search for metadata (combined internal + external search)
   const {
     data: searchResults = [],
@@ -138,7 +166,7 @@ export function AdvancedImportDialog({
   } = useCombinedMetadataSearch(
     {
       query: debouncedQuery,
-      type: contentType,
+      type: contentType === 'sports' ? sportsSearchType : contentType,
       limit: 15,
       year: validSearchYear,
     },
@@ -156,7 +184,8 @@ export function AdvancedImportDialog({
       }))
   }, [torrent.files])
 
-  const showAnnotationButton = torrentFiles.length > 1 || (contentType === 'series' && torrentFiles.length > 0)
+  const showAnnotationButton =
+    contentType !== 'sports' && (torrentFiles.length > 1 || (contentType === 'series' && torrentFiles.length > 0))
 
   // Create a mock analysis object for the MultiContentWizard
   const mockAnalysis: TorrentAnalyzeResponse = useMemo(
@@ -177,6 +206,9 @@ export function AdvancedImportDialog({
 
   const handleSelectMedia = useCallback((result: CombinedSearchResult) => {
     setSelectedMedia(result)
+    setManualTitle(result.title)
+    setPoster(result.poster || '')
+    setBackground('')
     setImportResult(null)
   }, [])
 
@@ -217,7 +249,11 @@ export function AdvancedImportDialog({
               meta_type: contentType,
               // For multi-content, use the first file's meta_id as the primary
               meta_id: annotations[0]?.meta_id || '',
-              title: torrent.parsed_title,
+              title: manualTitle || torrent.parsed_title,
+              poster: poster || undefined,
+              background: background || undefined,
+              release_date: releaseDate || undefined,
+              sports_category: contentType === 'sports' ? sportsCategory || undefined : undefined,
               file_data: fileData,
             },
           ],
@@ -245,6 +281,11 @@ export function AdvancedImportDialog({
       torrent.info_hash,
       torrent.parsed_title,
       contentType,
+      manualTitle,
+      poster,
+      background,
+      releaseDate,
+      sportsCategory,
       provider,
       profileId,
       advancedImport,
@@ -255,7 +296,8 @@ export function AdvancedImportDialog({
   )
 
   const handleImport = useCallback(async () => {
-    if (!selectedMedia) return
+    if (contentType !== 'sports' && !selectedMedia) return
+    if (contentType === 'sports' && !manualTitle.trim()) return
 
     // Build file_data from annotations or use defaults
     const fileData: FileAnnotationData[] =
@@ -292,8 +334,12 @@ export function AdvancedImportDialog({
           {
             info_hash: torrent.info_hash,
             meta_type: contentType,
-            meta_id: getBestExternalId(selectedMedia),
-            title: selectedMedia.title,
+            meta_id: selectedMedia ? getBestExternalId(selectedMedia) : undefined,
+            title: manualTitle.trim() || selectedMedia?.title || torrent.parsed_title || torrent.name,
+            sports_category: contentType === 'sports' ? sportsCategory || undefined : undefined,
+            poster: poster || undefined,
+            background: background || undefined,
+            release_date: releaseDate || undefined,
             file_data: fileData.length > 0 ? fileData : undefined,
           },
         ],
@@ -318,10 +364,17 @@ export function AdvancedImportDialog({
     }
   }, [
     selectedMedia,
+    manualTitle,
     fileAnnotations,
     torrentFiles,
     torrent.info_hash,
+    torrent.parsed_title,
+    torrent.name,
     contentType,
+    sportsCategory,
+    poster,
+    background,
+    releaseDate,
     provider,
     profileId,
     advancedImport,
@@ -334,8 +387,14 @@ export function AdvancedImportDialog({
     onOpenChange(false)
     // Reset state after close
     setTimeout(() => {
-      setContentType(inferInitialContentType(torrent))
+      const resetContentType = inferInitialContentType(torrent)
+      setContentType(resetContentType)
+      setSportsCategory(resetContentType === 'sports' ? inferInitialSportsCategory(torrent) : '')
       setSearchQuery(torrent.parsed_title || '')
+      setManualTitle(torrent.parsed_title || '')
+      setPoster('')
+      setBackground('')
+      setReleaseDate('')
       setSelectedMedia(null)
       setFileAnnotations([])
       setImportResult(null)
@@ -350,10 +409,12 @@ export function AdvancedImportDialog({
           { value: 'single', label: 'Single Movie', icon: Film, description: 'One movie file' },
           { value: 'collection', label: 'Movie Collection', icon: Layers, description: 'Multiple movies' },
         ]
-      : [
-          { value: 'single', label: 'Single Series', icon: Tv, description: 'Episodes of one show' },
-          { value: 'pack', label: 'Series Pack', icon: FolderOpen, description: 'Multiple series' },
-        ]
+      : contentType === 'series'
+        ? [
+            { value: 'single', label: 'Single Series', icon: Tv, description: 'Episodes of one show' },
+            { value: 'pack', label: 'Series Pack', icon: FolderOpen, description: 'Multiple series' },
+          ]
+        : [{ value: 'single', label: 'Single Sports Event', icon: Trophy, description: 'One sports event import' }]
 
   return (
     <>
@@ -471,11 +532,12 @@ export function AdvancedImportDialog({
                   {/* Content Type & Import Mode */}
                   <div className="space-y-3">
                     <Label>Content Type & Import Mode</Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setContentType('movie')
+                          setSportsCategory('')
                           setImportMode('single')
                           setSelectedMedia(null)
                         }}
@@ -498,6 +560,7 @@ export function AdvancedImportDialog({
                         type="button"
                         onClick={() => {
                           setContentType('series')
+                          setSportsCategory('')
                           setImportMode('single')
                           setSelectedMedia(null)
                         }}
@@ -515,6 +578,30 @@ export function AdvancedImportDialog({
                           )}
                         />
                         <p className={cn('text-sm font-medium', contentType === 'series' && 'text-primary')}>Series</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setContentType('sports')
+                          setImportMode('single')
+                          setSelectedMedia(null)
+                          setAnnotationDialogOpen(false)
+                          setFileAnnotations([])
+                        }}
+                        className={cn(
+                          'p-3 rounded-lg border-2 text-left transition-all',
+                          contentType === 'sports'
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border/50 hover:border-primary/30',
+                        )}
+                      >
+                        <Trophy
+                          className={cn(
+                            'h-4 w-4 mb-1',
+                            contentType === 'sports' ? 'text-primary' : 'text-muted-foreground',
+                          )}
+                        />
+                        <p className={cn('text-sm font-medium', contentType === 'sports' && 'text-primary')}>Sports</p>
                       </button>
                     </div>
 
@@ -544,6 +631,23 @@ export function AdvancedImportDialog({
                         )
                       })}
                     </div>
+                    {contentType === 'sports' && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Sports Category</Label>
+                        <Select value={sportsCategory} onValueChange={(v) => setSportsCategory(v as SportsCategory)}>
+                          <SelectTrigger className="h-9 text-sm">
+                            <SelectValue placeholder="Select sports category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SPORTS_CATEGORY_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
 
                   {/* Metadata Search */}
@@ -569,6 +673,35 @@ export function AdvancedImportDialog({
                         value={searchYear}
                         onChange={(e) => setSearchYear(e.target.value)}
                         className="w-24 shrink-0"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Media Details */}
+                  <div className="space-y-2">
+                    <Label>Media Details</Label>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={manualTitle}
+                        onChange={(e) => setManualTitle(e.target.value)}
+                        placeholder="Title"
+                        className="sm:col-span-2"
+                      />
+                      <Input
+                        value={poster}
+                        onChange={(e) => setPoster(e.target.value)}
+                        placeholder="Poster URL (optional)"
+                      />
+                      <Input
+                        value={background}
+                        onChange={(e) => setBackground(e.target.value)}
+                        placeholder="Background URL (optional)"
+                      />
+                      <Input
+                        type="date"
+                        value={releaseDate}
+                        onChange={(e) => setReleaseDate(e.target.value)}
+                        placeholder="Release date"
                       />
                     </div>
                   </div>
@@ -614,6 +747,8 @@ export function AdvancedImportDialog({
                                   <div className="w-10 h-14 bg-muted rounded flex items-center justify-center">
                                     {contentType === 'movie' ? (
                                       <Film className="h-4 w-4 text-muted-foreground" />
+                                    ) : contentType === 'sports' ? (
+                                      <Trophy className="h-4 w-4 text-muted-foreground" />
                                     ) : (
                                       <Tv className="h-4 w-4 text-muted-foreground" />
                                     )}
@@ -665,6 +800,8 @@ export function AdvancedImportDialog({
                           <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
                             {contentType === 'movie' ? (
                               <Film className="h-5 w-5 text-muted-foreground" />
+                            ) : contentType === 'sports' ? (
+                              <Trophy className="h-5 w-5 text-muted-foreground" />
                             ) : (
                               <Tv className="h-5 w-5 text-muted-foreground" />
                             )}
@@ -718,7 +855,12 @@ export function AdvancedImportDialog({
                   {importResult?.status === 'success' ? 'Done' : 'Cancel'}
                 </Button>
                 {importResult?.status !== 'success' && (
-                  <Button onClick={handleImport} disabled={!selectedMedia || advancedImport.isPending}>
+                  <Button
+                    onClick={handleImport}
+                    disabled={
+                      advancedImport.isPending || (contentType === 'sports' ? !manualTitle.trim() : !selectedMedia)
+                    }
+                  >
                     {advancedImport.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -744,9 +886,12 @@ export function AdvancedImportDialog({
         onOpenChange={setAnnotationDialogOpen}
         torrentName={torrent.name}
         files={torrentFiles}
+        isSports={contentType === 'sports'}
         onConfirm={handleAnnotationConfirm}
-        allowMultiContent={true}
-        defaultMetaType={contentType}
+        allowMultiContent={contentType === 'movie' || contentType === 'series'}
+        defaultMetaType={
+          contentType === 'series' || (contentType === 'sports' && sportsSearchType === 'series') ? 'series' : 'movie'
+        }
       />
     </>
   )

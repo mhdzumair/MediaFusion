@@ -730,6 +730,7 @@ export interface RelatedReference {
   referenced_column: string
   row_count: number
   preview: Record<string, unknown> | null
+  navigation_value?: string | null
 }
 
 export interface RelatedRecordsResponse {

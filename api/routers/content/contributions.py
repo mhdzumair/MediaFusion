@@ -259,6 +259,20 @@ async def resolve_contribution_media_id(session: AsyncSession, contribution: Con
         media = await get_media_by_external_id(session, candidate)
         if media:
             return media.id
+
+    # Fallback: resolve via the stream linked to this contribution.
+    # This covers imports where no meta_id/target_id was provided (common for sports/events).
+    stream = await _resolve_stream_for_contribution(session, contribution)
+    if stream:
+        result = await session.exec(
+            select(StreamMediaLink.media_id)
+            .where(StreamMediaLink.stream_id == stream.id)
+            .order_by(col(StreamMediaLink.id))
+        )
+        linked_media_id = result.first()
+        if linked_media_id is not None:
+            return linked_media_id
+
     return None
 
 

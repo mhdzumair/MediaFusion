@@ -132,8 +132,10 @@ export function RelatedRecordsPanel({
                               variant="outline"
                               size="sm"
                               className="h-6 px-2 text-xs gap-1"
-                              onClick={() => onNavigate(ref.referenced_table, ref.referenced_column, rowId)}
-                              disabled={ref.row_count === 0}
+                              onClick={() =>
+                                onNavigate(ref.referenced_table, ref.referenced_column, ref.navigation_value ?? rowId)
+                              }
+                              disabled={ref.row_count === 0 || !ref.navigation_value}
                             >
                               Go to
                               <ExternalLink className="h-3 w-3" />
@@ -183,7 +185,7 @@ export function RelatedRecordsPanel({
                                 variant="outline"
                                 size="sm"
                                 className="h-6 px-2 text-xs gap-1 shrink-0"
-                                onClick={() => onNavigate(ref.table, ref.column, rowId)}
+                                onClick={() => onNavigate(ref.table, ref.column, ref.navigation_value ?? rowId)}
                               >
                                 View
                                 <ExternalLink className="h-3 w-3" />

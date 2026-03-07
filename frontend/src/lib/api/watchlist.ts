@@ -59,7 +59,7 @@ export interface MissingTorrentItem {
   files: MissingTorrentFile[]
   parsed_title?: string
   parsed_year?: number
-  parsed_type?: 'movie' | 'series'
+  parsed_type?: 'movie' | 'series' | 'sports'
   matched_title?: string
   external_ids?: MissingExternalIds
 }
@@ -75,7 +75,8 @@ export interface MissingTorrentsResponse {
 export interface TorrentOverride {
   title?: string
   year?: number
-  type?: 'movie' | 'series'
+  type?: 'movie' | 'series' | 'sports'
+  sports_category?: string
 }
 
 export interface ImportRequest {
@@ -122,14 +123,24 @@ export interface FileAnnotationData {
   // Multi-content: link this file to a different media
   meta_id?: string
   meta_title?: string
-  meta_type?: 'movie' | 'series'
+  meta_type?: 'movie' | 'series' | 'sports'
 }
 
 export interface AdvancedTorrentImport {
   info_hash: string
-  meta_type: 'movie' | 'series'
-  meta_id: string // Primary media external ID (e.g., tt1234567)
+  meta_type: 'movie' | 'series' | 'sports'
+  meta_id?: string // Primary media external ID (e.g., tt1234567)
   title?: string
+  sports_category?: string
+  poster?: string
+  background?: string
+  logo?: string
+  release_date?: string
+  resolution?: string
+  quality?: string
+  codec?: string
+  languages?: string[]
+  catalogs?: string[]
   file_data?: FileAnnotationData[]
 }
 

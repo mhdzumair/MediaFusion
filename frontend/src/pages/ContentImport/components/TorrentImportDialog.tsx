@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,7 +22,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TorrentAnalyzeResponse, ImportResponse } from '@/lib/api'
-import type { ContentType, SportsCategory, ImportMode } from '@/lib/constants'
+import { RESOLUTION_OPTIONS, type ContentType, type SportsCategory, type ImportMode } from '@/lib/constants'
+import { catalogApi } from '@/lib/api/catalog'
 import { ContentTypeSelector } from './ContentTypeSelector'
 import { TechSpecsEditor } from './TechSpecsEditor'
 import { type ExtendedMatch } from './MatchResultsGrid'
@@ -31,6 +32,7 @@ import { CatalogSelector } from './CatalogSelector'
 import { ImportFileAnnotationDialog } from './ImportFileAnnotationDialog'
 import { ValidationWarningDialog } from './ValidationWarningDialog'
 import { MultiContentWizard } from './MultiContentWizard'
+import { DatePickerInput } from './DatePickerInput'
 import type { FileAnnotation, TorrentDialogQueueItem, TorrentImportFormData, TorrentImportSubmitOptions } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -76,6 +78,24 @@ export function TorrentImportDialog({
   queueItems = [],
   prefillData,
 }: TorrentImportDialogProps) {
+  const normalizeResolutionValue = useCallback((value?: string | null): string | undefined => {
+    if (!value) return undefined
+    const normalized = value.trim()
+    if (!normalized) return undefined
+
+    const exact = RESOLUTION_OPTIONS.find((option) => option.value === normalized)
+    if (exact) return exact.value
+
+    const lower = normalized.toLowerCase()
+    const caseInsensitive = RESOLUTION_OPTIONS.find((option) => option.value.toLowerCase() === lower)
+    if (caseInsensitive) return caseInsensitive.value
+
+    if (lower === '4k' || lower.includes('2160')) {
+      return '4K'
+    }
+    return undefined
+  }, [])
+
   const { user } = useAuth()
   // Note: magnetLink and torrentFile props are kept for parent context but handled there
   void _magnetLink
@@ -110,7 +130,7 @@ export function TorrentImportDialog({
   // Catalogs
   const [selectedCatalogs, setSelectedCatalogs] = useState<string[]>([])
 
-  // Series/Sports specific
+  // Series-specific
   const [episodeParser, setEpisodeParser] = useState('')
   const [fileAnnotations, setFileAnnotations] = useState<FileAnnotation[]>([])
 
@@ -126,12 +146,28 @@ export function TorrentImportDialog({
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
   const [validationDialogOpen, setValidationDialogOpen] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Array<{ type: string; message: string }>>([])
+  const [selectedEpisodeReleaseByNumber, setSelectedEpisodeReleaseByNumber] = useState<Record<number, string>>({})
 
   // Derive selected match from index
   const selectedMatch = useMemo(() => {
     if (selectedMatchIndex === null || !analysis?.matches) return null
     return analysis.matches[selectedMatchIndex] as ExtendedMatch | null
   }, [selectedMatchIndex, analysis?.matches])
+  const sportsSearchType = useMemo<'movie' | 'series'>(
+    () => (sportsCategory === 'formula_racing' || sportsCategory === 'motogp_racing' ? 'series' : 'movie'),
+    [sportsCategory],
+  )
+  const annotationFilesWithExistingDates = useMemo(() => {
+    if (!analysis?.files || analysis.files.length === 0) return analysis?.files || []
+    if (contentType !== 'sports') return analysis.files
+    if (Object.keys(selectedEpisodeReleaseByNumber).length === 0) return analysis.files
+
+    return analysis.files.map((file) => {
+      const releaseDate = file.episode_number ? selectedEpisodeReleaseByNumber[file.episode_number] : undefined
+      if (!releaseDate) return file
+      return { ...file, release_date: releaseDate }
+    })
+  }, [analysis, contentType, selectedEpisodeReleaseByNumber])
 
   const selectableQueueItems = useMemo(() => {
     if (typeof currentIndex !== 'number') return []
@@ -146,18 +182,23 @@ export function TorrentImportDialog({
   }
   if (analysis && open && (!prevOpen || prevAnalysis !== analysis)) {
     const prefills = prefillData || {}
-    const isFirstOpen = !prevOpen
+    const resolvedContentType = prefills.contentType || initialContentType
+    const analysisCreatedDate = analysis.created_at?.slice(0, 10)
+    const hasExistingSportsMatches = resolvedContentType === 'sports' && (analysis.matches?.length || 0) > 0
     setPrevOpen(open)
     setPrevAnalysis(analysis)
-    setContentType(prefills.contentType || initialContentType)
-    setSportsCategory(prefills.sportsCategory)
-    setResolution(prefills.resolution || analysis.resolution)
+    setContentType(resolvedContentType)
+    const detectedSportsCategory =
+      resolvedContentType === 'sports' ? (analysis.sports_category as SportsCategory | undefined) : undefined
+    setSportsCategory(prefills.sportsCategory || detectedSportsCategory)
+    setResolution(normalizeResolutionValue(prefills.resolution || analysis.resolution))
     setQuality(prefills.quality || analysis.quality)
     setCodec(prefills.codec || analysis.codec)
     setAudio(prefills.audio || analysis.audio || [])
     setHdr(prefills.hdr || analysis.hdr || [])
     setLanguages(prefills.languages || analysis.languages || [])
-    setSelectedCatalogs(prefills.catalogs || [])
+    const defaultSportsCatalogs = detectedSportsCategory ? [detectedSportsCategory] : []
+    setSelectedCatalogs(prefills.catalogs || defaultSportsCatalogs)
     setEpisodeParser(prefills.episodeNameParser || '')
     setForceImport(prefills.forceImport ?? false)
     setIsAnonymous(prefills.isAnonymous ?? user?.contribute_anonymously ?? false)
@@ -165,7 +206,10 @@ export function TorrentImportDialog({
     setFileAnnotations(prefills.fileData || [])
     setPoster(prefills.poster || '')
     setBackground(prefills.background || '')
-    setReleaseDate(prefills.releaseDate || '')
+    setReleaseDate(
+      prefills.releaseDate ||
+        (resolvedContentType === 'sports' && !hasExistingSportsMatches ? analysisCreatedDate || '' : ''),
+    )
     setMetaId(prefills.metaId || '')
     setTitle(prefills.title || analysis.parsed_title || analysis.torrent_name || '')
     setApplyToSelected(false)
@@ -173,15 +217,19 @@ export function TorrentImportDialog({
 
     if (analysis.matches && analysis.matches.length > 0) {
       const firstMatch = analysis.matches[0] as ExtendedMatch
-      setSelectedMatchIndex(0)
-      if (!prefills.metaId) setMetaId(firstMatch.imdb_id || firstMatch.id)
-      if (!prefills.title) setTitle(firstMatch.title)
-      if (!prefills.poster && firstMatch.poster) setPoster(firstMatch.poster)
-      if (!prefills.background && firstMatch.background) setBackground(firstMatch.background)
-      if (!prefills.releaseDate && firstMatch.release_date) setReleaseDate(firstMatch.release_date)
-      // Only auto-detect content type from match on first open, not on re-analysis
-      // where the user has explicitly chosen a content type
-      if (isFirstOpen && firstMatch.type && !prefills.contentType) setContentType(firstMatch.type as ContentType)
+      const shouldAutoSelectMatch = resolvedContentType !== 'sports'
+      if (shouldAutoSelectMatch) {
+        setSelectedMatchIndex(0)
+        if (!prefills.metaId) setMetaId(firstMatch.imdb_id || firstMatch.id)
+        if (!prefills.title) setTitle(firstMatch.title)
+        if (!prefills.poster && firstMatch.poster) setPoster(firstMatch.poster)
+        if (!prefills.background && firstMatch.background) setBackground(firstMatch.background)
+        if (!prefills.releaseDate && firstMatch.release_date) {
+          setReleaseDate(firstMatch.release_date)
+        }
+      } else {
+        setSelectedMatchIndex(null)
+      }
     } else {
       setSelectedMatchIndex(null)
     }
@@ -190,14 +238,60 @@ export function TorrentImportDialog({
   }
 
   // Handle match selection
-  const handleMatchSelect = useCallback((match: ExtendedMatch, index: number) => {
-    setSelectedMatchIndex(index)
-    setMetaId(match.imdb_id || match.id)
-    setTitle(match.title)
-    if (match.poster) setPoster(match.poster)
-    if (match.background) setBackground(match.background)
-    if (match.release_date) setReleaseDate(match.release_date)
-  }, [])
+  const handleMatchSelect = useCallback(
+    (match: ExtendedMatch, index: number) => {
+      // Allow toggling off a selected match.
+      if (selectedMatchIndex === index) {
+        setSelectedMatchIndex(null)
+        setSelectedEpisodeReleaseByNumber({})
+        return
+      }
+      setSelectedMatchIndex(index)
+      setMetaId(match.imdb_id || match.id)
+      setTitle(match.title)
+      if (match.poster) setPoster(match.poster)
+      if (match.background) setBackground(match.background)
+      if (match.release_date) setReleaseDate(match.release_date)
+    },
+    [selectedMatchIndex],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadSelectedMatchEpisodeDetails = async () => {
+      if (contentType !== 'sports' || !selectedMatch || selectedMatch.type !== 'series' || !selectedMatch.media_id) {
+        setSelectedEpisodeReleaseByNumber({})
+        return
+      }
+
+      try {
+        const detail = await catalogApi.getCatalogItem('series', selectedMatch.media_id)
+        if (cancelled) return
+
+        const releaseByEpisode: Record<number, string> = {}
+        for (const season of detail.seasons || []) {
+          for (const episode of season.episodes || []) {
+            if (typeof episode.episode_number === 'number' && episode.released) {
+              releaseByEpisode[episode.episode_number] = episode.released
+            }
+          }
+        }
+        setSelectedEpisodeReleaseByNumber(releaseByEpisode)
+
+        if (!poster && detail.poster) setPoster(detail.poster)
+      } catch {
+        if (!cancelled) {
+          setSelectedEpisodeReleaseByNumber({})
+        }
+      }
+    }
+
+    void loadSelectedMatchEpisodeDetails()
+    return () => {
+      cancelled = true
+    }
+  }, [contentType, selectedMatch, poster])
 
   // Handle tech spec changes
   const handleTechSpecChange = useCallback((field: string, value: string | string[] | undefined) => {
@@ -266,12 +360,12 @@ export function TorrentImportDialog({
       hdr: hdr.length > 0 ? hdr : undefined,
       languages: languages.length > 0 ? languages : undefined,
       catalogs: selectedCatalogs.length > 0 ? selectedCatalogs : undefined,
-      episodeNameParser: episodeParser || undefined,
+      episodeNameParser: contentType === 'series' ? episodeParser || undefined : undefined,
       releaseDate: releaseDate || undefined,
       forceImport,
       isAnonymous,
       anonymousDisplayName: isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined,
-      fileData: fileAnnotations.length > 0 ? fileAnnotations : undefined,
+      fileData: contentType === 'series' && fileAnnotations.length > 0 ? fileAnnotations : undefined,
     }
   }, [
     contentType,
@@ -309,7 +403,7 @@ export function TorrentImportDialog({
         // Show validation warning dialog
         setValidationErrors(result.errors || [{ type: 'unknown', message: result.message }])
         setValidationDialogOpen(true)
-      } else if (result.status === 'needs_annotation') {
+      } else if (result.status === 'needs_annotation' && contentType === 'series') {
         // Open annotation dialog
         setAnnotationDialogOpen(true)
       }
@@ -317,7 +411,7 @@ export function TorrentImportDialog({
     } catch (error) {
       console.error('Import failed:', error)
     }
-  }, [buildFormData, onImport, applyToSelected, selectedQueueIndices])
+  }, [buildFormData, onImport, applyToSelected, selectedQueueIndices, contentType])
 
   // Handle force import from validation dialog
   const handleForceImport = useCallback(async () => {
@@ -390,10 +484,12 @@ export function TorrentImportDialog({
     ],
   )
 
-  // Check if series/sports needs annotation
+  // Check if series needs annotation
   const needsAnnotation = useMemo(() => {
-    return (contentType === 'series' || contentType === 'sports') && analysis?.files && analysis.files.length > 0
+    return contentType === 'series' && !!analysis?.files && analysis.files.length > 0
   }, [contentType, analysis])
+  const canProceedWithoutExternalMetadata = contentType === 'sports' && !!sportsCategory
+  const canProceed = canProceedWithoutExternalMetadata || !!selectedMatch || !!metaId
 
   // Step indicator
   const steps = [
@@ -527,6 +623,11 @@ export function TorrentImportDialog({
                       setMetaId('')
                       setPoster('')
                       setBackground('')
+                      if (newType !== 'series') {
+                        // Sports/movie flows do not require episode parser or manual episode annotations.
+                        setEpisodeParser('')
+                        setFileAnnotations([])
+                      }
                       // Reset import mode when content type changes
                       if (onImportModeChange) {
                         onImportModeChange('single')
@@ -536,12 +637,26 @@ export function TorrentImportDialog({
                         onReanalyze(newType)
                       }
                     }}
-                    onSportsCategoryChange={setSportsCategory}
+                    onSportsCategoryChange={(newCategory) => {
+                      setSportsCategory(newCategory)
+                      // Keep sports catalog aligned with chosen sport by default.
+                      setSelectedCatalogs([newCategory])
+                    }}
                     onImportModeChange={onImportModeChange}
                     showImportMode={contentType !== 'sports'}
                   />
 
                   {/* Match Results with Search */}
+                  {contentType === 'sports' && (
+                    <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                      <p className="text-sm font-medium">Sports title parser detected event metadata</p>
+                      <p className="text-xs text-muted-foreground">
+                        Category: <span className="font-medium">{sportsCategory || 'Not detected'}</span>
+                        {analysis.sports_event ? ` | Event: ${analysis.sports_event}` : ''}
+                        {analysis.sports_league ? ` | League: ${analysis.sports_league}` : ''}
+                      </p>
+                    </div>
+                  )}
                   <MatchSearchSection
                     initialMatches={(analysis.matches || []) as ExtendedMatch[]}
                     selectedIndex={selectedMatchIndex}
@@ -549,7 +664,9 @@ export function TorrentImportDialog({
                     onSelectMatch={handleMatchSelect}
                     metaId={metaId}
                     onMetaIdChange={setMetaId}
-                    contentType={contentType === 'sports' ? 'movie' : contentType === 'tv' ? 'movie' : contentType}
+                    contentType={
+                      contentType === 'sports' ? sportsSearchType : contentType === 'tv' ? 'movie' : contentType
+                    }
                     initialYear={analysis.year}
                   />
                 </div>
@@ -603,12 +720,7 @@ export function TorrentImportDialog({
                           <Calendar className="h-3 w-3" />
                           Release Date
                         </Label>
-                        <Input
-                          type="date"
-                          value={releaseDate}
-                          onChange={(e) => setReleaseDate(e.target.value)}
-                          className="rounded-lg"
-                        />
+                        <DatePickerInput value={releaseDate} onChange={setReleaseDate} className="h-10" />
                       </div>
                     </div>
                   </div>
@@ -636,8 +748,8 @@ export function TorrentImportDialog({
                     quality={quality}
                   />
 
-                  {/* Series/Sports Options */}
-                  {(contentType === 'series' || contentType === 'sports') && (
+                  {/* Series Options */}
+                  {contentType === 'series' && (
                     <div className="space-y-4 pt-4 border-t">
                       <Label className="text-sm font-medium">Episode Options</Label>
 
@@ -831,7 +943,7 @@ export function TorrentImportDialog({
                 {currentStep !== 'confirm' ? (
                   <Button
                     onClick={goForward}
-                    disabled={!selectedMatch && !metaId}
+                    disabled={!canProceed}
                     className="bg-gradient-to-r from-primary to-primary/80"
                   >
                     Next
@@ -840,7 +952,7 @@ export function TorrentImportDialog({
                 ) : (
                   <Button
                     onClick={handleImport}
-                    disabled={isImporting || (!selectedMatch && !metaId)}
+                    disabled={isImporting || !canProceed}
                     className="bg-gradient-to-r from-primary to-primary/80"
                   >
                     {isImporting ? (
@@ -867,8 +979,11 @@ export function TorrentImportDialog({
         open={annotationDialogOpen}
         onOpenChange={setAnnotationDialogOpen}
         torrentName={analysis.torrent_name || analysis.parsed_title || 'Unknown'}
-        files={analysis.files || []}
+        files={annotationFilesWithExistingDates}
         isSports={contentType === 'sports'}
+        defaultReleaseDate={
+          releaseDate || ((analysis.matches?.length || 0) === 0 ? analysis.created_at?.slice(0, 10) : undefined)
+        }
         onConfirm={handleAnnotationConfirm}
         allowMultiContent={contentType === 'movie' || contentType === 'series'}
         defaultMetaType={contentType === 'series' ? 'series' : 'movie'}

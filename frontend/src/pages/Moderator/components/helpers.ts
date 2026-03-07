@@ -25,7 +25,23 @@ function getMediaTypeLabel(mediaType: Suggestion['media_type']): string {
   if (mediaType === 'movie') return 'Movie'
   if (mediaType === 'series') return 'Series'
   if (mediaType === 'tv') return 'TV'
+  if (mediaType === 'sports') return 'Sports'
   return 'Unknown type'
+}
+
+const SPORTS_SERIES_CATEGORIES = new Set(['formula_racing', 'motogp_racing'])
+
+function normalizeContributionMetaType(data: Record<string, unknown>, rawMetaType: string | null): string | null {
+  if (rawMetaType !== 'sports') {
+    return rawMetaType
+  }
+
+  const sportsCategoryValue = typeof data.sports_category === 'string' ? data.sports_category.trim() : ''
+  if (SPORTS_SERIES_CATEGORIES.has(sportsCategoryValue)) {
+    return 'series'
+  }
+
+  return 'movie'
 }
 
 export function getSuggestionMediaSummary(suggestion: Suggestion): string {
@@ -189,7 +205,8 @@ export function getContributionMediaPreview(contribution: Contribution): {
     getNormalizedString(data.meta_poster) ??
     getNormalizedString(data.thumbnail) ??
     null
-  const metaType = getNormalizedString(data.meta_type)
+  const rawMetaType = getNormalizedString(data.meta_type)
+  const metaType = normalizeContributionMetaType(data, rawMetaType)
   const metaId = getNormalizedString(data.meta_id) ?? getNormalizedString(contribution.target_id)
   const yearValue = data.year
   const year =
@@ -236,6 +253,8 @@ export function getInternalMediaId(value: unknown): number | null {
 
 export function getContentDetailLink(preview: { metaType: string | null }, mediaId: number | null): string | null {
   if (!mediaId) return null
-  if (preview.metaType !== 'movie' && preview.metaType !== 'series' && preview.metaType !== 'tv') return null
+  if (preview.metaType !== 'movie' && preview.metaType !== 'series' && preview.metaType !== 'tv') {
+    return null
+  }
   return `/dashboard/content/${preview.metaType}/${mediaId}`
 }

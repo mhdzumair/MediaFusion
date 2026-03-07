@@ -10,6 +10,7 @@ export interface TorrentFile {
 
 export interface TorrentMatch {
   id: string
+  media_id?: number
   title: string
   year?: number
   poster?: string
@@ -36,6 +37,7 @@ export interface TorrentAnalyzeResponse {
   torrent_name?: string
   total_size?: number
   total_size_readable?: string
+  created_at?: string
   file_count?: number
   files?: TorrentFile[]
   parsed_title?: string
@@ -46,6 +48,10 @@ export interface TorrentAnalyzeResponse {
   audio?: string[]
   hdr?: string[]
   languages?: string[]
+  sports_category?: string
+  sports_event?: string
+  sports_league?: string
+  sports_event_date?: string
   matches?: TorrentMatch[]
   error?: string
   // Validation error details

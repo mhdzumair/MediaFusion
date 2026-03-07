@@ -230,6 +230,7 @@ export interface AvailableCatalogsResponse {
   movies: CatalogInfo[]
   series: CatalogInfo[]
   tv: CatalogInfo[]
+  sports: CatalogInfo[]
 }
 
 export interface CatalogListParams {

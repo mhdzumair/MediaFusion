@@ -48,6 +48,7 @@ from utils.network import get_user_public_ip
 from utils.notification_registry import send_pending_contribution_notification
 from utils.profile_context import ProfileDataProvider
 from utils.profile_crypto import profile_crypto
+from utils.sports_parser import clean_sports_context_title, detect_sports_category, parse_sports_title
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,8 @@ TORRENT_DETAILS_CACHE_TTL_SECONDS = 120
 IMPORT_PREPARE_CONCURRENCY = 6
 IMPORT_DB_BATCH_SIZE = 25
 TORRENT_DETAILS_CACHE_KEY_PREFIX = "watchlist:torrent_details"
+VIDEO_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v")
+SAMPLE_FILENAME_PATTERN = re.compile(r"(?:^|[._\-\s])sample(?:[._\-\s]|$)", re.IGNORECASE)
 
 
 def _pending_contribution_payload(
@@ -147,7 +150,7 @@ class MissingTorrentItem(BaseModel):
     # Parsed metadata (best-effort from torrent name)
     parsed_title: str | None = None
     parsed_year: int | None = None
-    parsed_type: str | None = None  # movie, series
+    parsed_type: str | None = None  # movie, series, sports
     matched_title: str | None = None
     external_ids: MissingExternalIds | None = None
 
@@ -166,7 +169,8 @@ class TorrentOverride(BaseModel):
 
     title: str | None = None
     year: int | None = None
-    type: str | None = None  # movie, series
+    type: str | None = None  # movie, series, sports
+    sports_category: str | None = None
 
 
 class ImportRequest(BaseModel):
@@ -224,16 +228,26 @@ class FileAnnotationData(BaseModel):
     # Multi-content: link this file to a different media
     meta_id: str | None = None
     meta_title: str | None = None
-    meta_type: str | None = None  # movie, series
+    meta_type: str | None = None  # movie, series, sports
 
 
 class AdvancedTorrentImport(BaseModel):
     """Advanced import data for a single torrent."""
 
     info_hash: str
-    meta_type: str  # movie, series
-    meta_id: str  # Primary media external ID (e.g., tt1234567)
+    meta_type: str  # movie, series, sports
+    meta_id: str | None = None  # Primary media external ID (e.g., tt1234567)
     title: str | None = None
+    sports_category: str | None = None
+    poster: str | None = None
+    background: str | None = None
+    logo: str | None = None
+    release_date: str | None = None
+    resolution: str | None = None
+    quality: str | None = None
+    codec: str | None = None
+    languages: list[str] | None = None
+    catalogs: list[str] | None = None
     file_data: list[FileAnnotationData] | None = None
 
 
@@ -323,32 +337,41 @@ async def set_cached_torrent_details(
     return torrents_by_hash
 
 
+def _extract_filename(file_path: str) -> str:
+    return file_path.split("/")[-1] if "/" in file_path else file_path
+
+
+def _is_video_file_path(file_path: str) -> bool:
+    return any(file_path.lower().endswith(ext) for ext in VIDEO_EXTENSIONS)
+
+
+def _is_sample_filename(filename: str) -> bool:
+    return bool(SAMPLE_FILENAME_PATTERN.search(filename))
+
+
+def _should_include_video_file(file_path: str) -> bool:
+    filename = _extract_filename(file_path)
+    return _is_video_file_path(file_path) and not _is_sample_filename(filename)
+
+
+def _collect_video_files(torrent_files: list[dict[str, Any]]) -> list[tuple[int, str, dict[str, Any]]]:
+    collected: list[tuple[int, str, dict[str, Any]]] = []
+    for idx, file_info in enumerate(torrent_files):
+        file_path = str(file_info.get("path", ""))
+        if not _should_include_video_file(file_path):
+            continue
+        collected.append((idx, _extract_filename(file_path), file_info))
+    return collected
+
+
 def build_stream_files_from_torrent(torrent_files: list[dict[str, Any]]) -> list[StreamFileData]:
     files = []
-    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"}
-
-    for idx, file_info in enumerate(torrent_files):
-        file_path = file_info.get("path", "")
-        if any(file_path.lower().endswith(ext) for ext in video_extensions):
-            files.append(
-                StreamFileData(
-                    file_index=idx,
-                    filename=file_path.split("/")[-1] if "/" in file_path else file_path,
-                    size=file_info.get("size", 0),
-                    file_type="video",
-                )
-            )
-
-    # If no video files found but we have files, use the largest one
-    if not files and torrent_files:
-        largest = max(torrent_files, key=lambda x: x.get("size", 0))
+    for idx, filename, file_info in _collect_video_files(torrent_files):
         files.append(
             StreamFileData(
-                file_index=0,
-                filename=largest.get("path", "").split("/")[-1]
-                if "/" in largest.get("path", "")
-                else largest.get("path", ""),
-                size=largest.get("size", 0),
+                file_index=idx,
+                filename=filename,
+                size=file_info.get("size", 0),
                 file_type="video",
             )
         )
@@ -466,7 +489,13 @@ async def prepare_import_item(
             if override.year:
                 parsed["year"] = override.year
 
-        if not parsed.get("title"):
+        # Determine media type (use override if provided)
+        if override and override.type:
+            media_type = override.type
+        else:
+            media_type = parse_torrent_for_type(parsed, torrent.get("files", []))
+
+        if media_type != "sports" and not parsed.get("title"):
             return ImportPreparationResult(
                 index=index,
                 result_item=ImportResultItem(
@@ -476,52 +505,84 @@ async def prepare_import_item(
                 ),
             )
 
-        # Determine media type (use override if provided)
-        if override and override.type:
-            media_type = override.type
+        if media_type == "sports":
+            parsed_sports = parse_sports_title(torrent_name or parsed.get("title") or "")
+            sports_category = override.sports_category if override else None
+            if not sports_category:
+                sports_category = parsed_sports.category
+            if not sports_category:
+                for file_info in torrent.get("files", [])[:10]:
+                    detected = detect_sports_category(str(file_info.get("path") or ""))
+                    if detected:
+                        sports_category = detected
+                        break
+            sports_category = sports_category or "other_sports"
+            sports_title = clean_sports_context_title(
+                parsed_sports.title or parsed_sports.event or parsed.get("title") or torrent_name
+            )
+            resolved_year = parsed_sports.year or parsed.get("year")
+            external_id = f"user_{info_hash[:8]}"
+            metadata = {
+                "id": external_id,
+                "title": sports_title or "Sports Event",
+                "year": resolved_year,
+                "sports_category": sports_category,
+                "sports_league": parsed_sports.league,
+                "resolution": parsed_sports.resolution,
+                "quality": parsed_sports.quality,
+                "codec": parsed_sports.codec,
+            }
         else:
-            media_type = parse_torrent_for_type(parsed, torrent.get("files", []))
+            search_results = await meta_fetcher.search_multiple_results(
+                title=parsed["title"],
+                year=parsed.get("year"),
+                media_type=media_type,
+                limit=5,
+                min_similarity=70,
+            )
 
-        search_results = await meta_fetcher.search_multiple_results(
-            title=parsed["title"],
-            year=parsed.get("year"),
-            media_type=media_type,
-            limit=5,
-            min_similarity=70,
-        )
+            if not search_results:
+                return ImportPreparationResult(
+                    index=index,
+                    result_item=ImportResultItem(
+                        info_hash=info_hash,
+                        status="failed",
+                        message=f"No TMDB/IMDB match found for '{parsed['title']}'",
+                    ),
+                )
 
-        if not search_results:
+            best_match = search_results[0]
+            raw_external_id = best_match.get("imdb_id") or best_match.get("id")
+            if not raw_external_id:
+                return ImportPreparationResult(
+                    index=index,
+                    result_item=ImportResultItem(
+                        info_hash=info_hash,
+                        status="failed",
+                        message="No valid external ID found",
+                    ),
+                )
+            external_id = str(raw_external_id)
+            metadata = {
+                "id": external_id,
+                "title": best_match.get("title", parsed["title"]),
+                "year": best_match.get("year", parsed.get("year")),
+                "poster": best_match.get("poster"),
+                "background": best_match.get("background"),
+                "description": best_match.get("description"),
+                "genres": best_match.get("genres", []),
+            }
+
+        stream_files = build_stream_files_from_torrent(torrent.get("files", []))
+        if not stream_files:
             return ImportPreparationResult(
                 index=index,
                 result_item=ImportResultItem(
                     info_hash=info_hash,
                     status="failed",
-                    message=f"No TMDB/IMDB match found for '{parsed['title']}'",
+                    message="No valid video files found (non-video/sample files are excluded)",
                 ),
             )
-
-        best_match = search_results[0]
-        raw_external_id = best_match.get("imdb_id") or best_match.get("id")
-        if not raw_external_id:
-            return ImportPreparationResult(
-                index=index,
-                result_item=ImportResultItem(
-                    info_hash=info_hash,
-                    status="failed",
-                    message="No valid external ID found",
-                ),
-            )
-        external_id = str(raw_external_id)
-
-        metadata = {
-            "id": external_id,
-            "title": best_match.get("title", parsed["title"]),
-            "year": best_match.get("year", parsed.get("year")),
-            "poster": best_match.get("poster"),
-            "background": best_match.get("background"),
-            "description": best_match.get("description"),
-            "genres": best_match.get("genres", []),
-        }
 
         stream_data = TorrentStreamData(
             info_hash=info_hash,
@@ -529,10 +590,12 @@ async def prepare_import_item(
             name=torrent_name,
             size=torrent.get("size", 0),
             source="debrid_import",
-            files=build_stream_files_from_torrent(torrent.get("files", [])),
-            resolution=parsed.get("resolution"),
-            codec=parsed.get("codec"),
-            quality=parsed.get("quality"),
+            files=stream_files,
+            resolution=(metadata.get("resolution") if media_type == "sports" else parsed.get("resolution"))
+            or parsed.get("resolution"),
+            codec=(metadata.get("codec") if media_type == "sports" else parsed.get("codec")) or parsed.get("codec"),
+            quality=(metadata.get("quality") if media_type == "sports" else parsed.get("quality"))
+            or parsed.get("quality"),
             bit_depth=parsed.get("bit_depth"),
             release_group=parsed.get("group"),
             audio_formats=parsed.get("audio", []) if isinstance(parsed.get("audio"), list) else [],
@@ -716,14 +779,25 @@ async def get_existing_info_hashes(session: AsyncSession, info_hashes: list[str]
 
 
 def parse_torrent_for_type(parsed_data: dict, files: list[dict]) -> str:
-    """Determine if torrent is movie or series based on parsed data and files."""
+    """Determine if torrent is movie, series, or sports based on parsed data and files."""
+    title_candidates: list[str] = []
+    parsed_title = str(parsed_data.get("title") or "").strip()
+    if parsed_title:
+        title_candidates.append(parsed_title)
+    for file_info in files[:10]:
+        file_path = str(file_info.get("path") or "").strip()
+        if file_path:
+            title_candidates.append(file_path)
+
+    if any(detect_sports_category(candidate) for candidate in title_candidates):
+        return "sports"
+
     # Check if PTT detected season/episode
     if parsed_data.get("season") or parsed_data.get("episode"):
         return "series"
 
     # Check file count - multiple video files often indicate series
-    video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"}
-    video_files = [f for f in files if any(f.get("path", "").lower().endswith(ext) for ext in video_extensions)]
+    video_files = _collect_video_files(files)
     if len(video_files) > 3:
         return "series"
 
@@ -1051,29 +1125,40 @@ async def get_missing_torrents(
         torrent_name = torrent.get("filename", "")
         parsed = parse_title(torrent_name, True) if torrent_name else {}
 
-        # Convert files to response format
+        # Convert files to response format (video-only, sample excluded)
+        video_files = _collect_video_files(torrent.get("files", []))
+        if not video_files:
+            continue
         files = [
             MissingTorrentFile(
-                path=f.get("path", ""),
-                size=f.get("size", 0),
+                path=filename,
+                size=file_info.get("size", 0),
             )
-            for f in torrent.get("files", [])
+            for _, filename, file_info in video_files
         ]
 
         # Determine type
         parsed_type = parse_torrent_for_type(parsed, torrent.get("files", []))
+        parsed_title = parsed.get("title")
+        parsed_year = parsed.get("year")
+        if parsed_type == "sports":
+            parsed_sports = parse_sports_title(torrent_name or parsed_title or "")
+            parsed_title = clean_sports_context_title(
+                parsed_sports.title or parsed_sports.event or parsed_title or torrent_name
+            )
+            parsed_year = parsed_sports.year or parsed_year
 
         missing_item = MissingTorrentItem(
             info_hash=info_hash,
             name=torrent_name,
             size=torrent.get("size", 0),
             files=files,
-            parsed_title=parsed.get("title"),
-            parsed_year=parsed.get("year"),
+            parsed_title=parsed_title,
+            parsed_year=parsed_year,
             parsed_type=parsed_type,
         )
         missing_items.append(missing_item)
-        if missing_item.parsed_title:
+        if missing_item.parsed_title and parsed_type != "sports":
             metadata_candidates.append(
                 (len(missing_items) - 1, missing_item.parsed_title, missing_item.parsed_year, parsed_type)
             )
@@ -1222,7 +1307,7 @@ async def import_torrents(
                 prepared_items.append(prep_result.prepared_item)
 
     if prepared_items:
-        from api.routers.content.torrent_import import process_torrent_import
+        from api.routers.content.torrent_import import _normalize_sports_import_metadata, process_torrent_import
 
         async for write_session in get_async_session():
             for batch in iter_chunks(prepared_items, IMPORT_DB_BATCH_SIZE):
@@ -1257,11 +1342,14 @@ async def import_torrents(
                             "meta_id": item.external_id,
                             "title": item.metadata.get("title") or item.stream_data.name,
                             "name": item.stream_data.name,
+                            "torrent_name": item.stream_data.name,
+                            "year": item.metadata.get("year"),
                             "total_size": item.stream_data.size,
                             "resolution": item.stream_data.resolution,
                             "quality": item.stream_data.quality,
                             "codec": item.stream_data.codec,
                             "languages": item.stream_data.languages,
+                            "sports_category": item.metadata.get("sports_category"),
                             "file_data": contribution_file_data,
                             "file_count": len(contribution_file_data) or 1,
                             "is_anonymous": resolved_is_anonymous,
@@ -1269,6 +1357,13 @@ async def import_torrents(
                                 normalized_anonymous_display_name if resolved_is_anonymous else None
                             ),
                         }
+                        contribution_data, resolved_sports_category = _normalize_sports_import_metadata(
+                            item.media_type,
+                            contribution_data,
+                            contribution_data.get("sports_category"),
+                        )
+                        if resolved_sports_category:
+                            contribution_data["sports_category"] = resolved_sports_category
 
                         contribution = Contribution(
                             user_id=None if resolved_is_anonymous else current_user.id,
@@ -1386,7 +1481,7 @@ async def advanced_import_torrents(
     enabling movie collections and multi-series packs where each file
     is linked to a different media entry.
     """
-    from api.routers.content.torrent_import import process_torrent_import
+    from api.routers.content.torrent_import import _normalize_sports_import_metadata, process_torrent_import
 
     # Validate provider supports import
     if provider not in IMPORT_SUPPORTED_PROVIDERS:
@@ -1457,6 +1552,16 @@ async def advanced_import_torrents(
 
     for import_data in import_request.advanced_imports:
         info_hash_lower = import_data.info_hash.lower()
+        if import_data.meta_type != "sports" and not import_data.meta_id:
+            results.append(
+                ImportResultItem(
+                    info_hash=info_hash_lower,
+                    status="failed",
+                    message="meta_id is required for movie and series imports",
+                )
+            )
+            failed += 1
+            continue
 
         # Skip if already exists
         if info_hash_lower in existing_hashes:
@@ -1493,10 +1598,13 @@ async def advanced_import_torrents(
                 # Use provided annotations
                 for f in import_data.file_data:
                     if f.included:
+                        filename = str(f.filename or "")
+                        if not _should_include_video_file(filename):
+                            continue
                         file_data.append(
                             {
                                 "index": f.index,
-                                "filename": f.filename,
+                                "filename": filename,
                                 "size": f.size or 0,
                                 "season_number": f.season_number,
                                 "episode_number": f.episode_number,
@@ -1508,44 +1616,66 @@ async def advanced_import_torrents(
                         )
             else:
                 # Build from torrent files (video files only)
-                video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v"}
-                for idx, f in enumerate(torrent.get("files", [])):
-                    file_path = f.get("path", "")
-                    if any(file_path.lower().endswith(ext) for ext in video_extensions):
-                        filename = file_path.split("/")[-1] if "/" in file_path else file_path
-                        file_data.append(
-                            {
-                                "index": idx,
-                                "filename": filename,
-                                "size": f.get("size", 0),
-                            }
-                        )
+                for idx, filename, file_info in _collect_video_files(torrent.get("files", [])):
+                    file_data.append(
+                        {
+                            "index": idx,
+                            "filename": filename,
+                            "size": file_info.get("size", 0),
+                        }
+                    )
+
+            if not file_data:
+                results.append(
+                    ImportResultItem(
+                        info_hash=info_hash_lower,
+                        status="failed",
+                        message="No valid video files found (non-video/sample files are excluded)",
+                    )
+                )
+                failed += 1
+                continue
 
             # Build contribution data for process_torrent_import
             contribution_data = {
                 "info_hash": info_hash_lower,
                 "meta_type": import_data.meta_type,
-                "meta_id": import_data.meta_id,
+                "meta_id": import_data.meta_id or f"user_{info_hash_lower[:8]}",
                 "title": import_data.title or parsed.get("title", torrent_name),
                 "name": torrent_name,
+                "torrent_name": torrent_name,
+                "year": parsed.get("year"),
                 "total_size": torrent.get("size", 0),
                 "file_data": file_data,
                 "file_count": len(file_data) or 1,
                 # Quality attributes from PTT
-                "resolution": parsed.get("resolution"),
-                "codec": parsed.get("codec"),
-                "quality": parsed.get("quality"),
+                "resolution": import_data.resolution or parsed.get("resolution"),
+                "codec": import_data.codec or parsed.get("codec"),
+                "quality": import_data.quality or parsed.get("quality"),
                 "audio": parsed.get("audio", []) if isinstance(parsed.get("audio"), list) else [],
                 "hdr": parsed.get("hdr", []) if isinstance(parsed.get("hdr"), list) else [],
-                "languages": parsed.get("languages", []),
+                "languages": import_data.languages or parsed.get("languages", []),
+                "sports_category": import_data.sports_category,
+                "poster": import_data.poster,
+                "background": import_data.background,
+                "logo": import_data.logo,
+                "created_at": import_data.release_date,
+                "catalogs": import_data.catalogs or [],
                 "is_anonymous": resolved_is_anonymous,
                 "anonymous_display_name": (normalized_anonymous_display_name if resolved_is_anonymous else None),
             }
+            contribution_data, resolved_sports_category = _normalize_sports_import_metadata(
+                import_data.meta_type,
+                contribution_data,
+                contribution_data.get("sports_category"),
+            )
+            if resolved_sports_category:
+                contribution_data["sports_category"] = resolved_sports_category
 
             contribution = Contribution(
                 user_id=None if resolved_is_anonymous else current_user.id,
                 contribution_type="torrent",
-                target_id=import_data.meta_id,
+                target_id=contribution_data.get("meta_id"),
                 data=contribution_data,
                 status=ContributionStatus.APPROVED if should_auto_approve else ContributionStatus.PENDING,
                 admin_review_requested=False,

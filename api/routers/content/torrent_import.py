@@ -4,13 +4,15 @@ Torrent Import API endpoints for importing magnet links and torrent files.
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
 import pytz
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlmodel import select
+from sqlalchemy import or_
+from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.content.anonymous_utils import normalize_anonymous_display_name, resolve_uploader_identity
@@ -22,25 +24,118 @@ from db.config import settings
 from db.crud.media import (
     add_external_id,
     get_canonical_external_id,
+    get_primary_image,
+    get_or_create_metadata_provider,
+    get_or_create_episode,
+    get_or_create_season,
     get_media_by_external_id,
     get_media_by_id,
+    get_media_by_title_year,
     parse_external_id,
 )
-from db.crud.reference import get_or_create_language
+from db.crud.reference import get_or_create_catalog, get_or_create_language
 from db.crud.scraper_helpers import get_or_create_metadata
 from db.database import get_async_session_context
 from db.enums import ContributionStatus, MediaType, TorrentType, UserRole
-from db.models import Contribution, Media, Stream, StreamFile, StreamMediaLink, User
+from db.models import (
+    Contribution,
+    Episode,
+    Media,
+    MediaCatalogLink,
+    MediaImage,
+    Season,
+    SeriesMetadata,
+    Stream,
+    StreamFile,
+    StreamMediaLink,
+    User,
+)
 from db.models.streams import (
     FileMediaLink,
     StreamLanguageLink,
     StreamType,
     TorrentStream,
 )
-from utils.notification_registry import send_pending_contribution_notification
 from utils import torrent
+from utils.notification_registry import send_pending_contribution_notification
+from utils.parser import convert_bytes_to_readable
+from utils.sports_parser import (
+    build_sports_match_search_terms,
+    clean_sports_context_title,
+    derive_sports_episode_title,
+    detect_sports_category,
+    normalize_sports_match_text,
+    parse_sports_title,
+    pick_best_sports_source_title,
+    tokenize_sports_match_text,
+)
 
 logger = logging.getLogger(__name__)
+SPORTS_SERIES_CATEGORIES = {"formula_racing", "motogp_racing"}
+
+
+def _resolve_sports_media_type(sports_category: str | None) -> MediaType:
+    """Map sports categories to persisted media types."""
+    if sports_category in SPORTS_SERIES_CATEGORIES:
+        return MediaType.SERIES
+    return MediaType.MOVIE
+
+
+def _resolve_fetch_media_type(meta_type: str, sports_category: str | None = None) -> str:
+    """Map import meta_type to fetch/create media_type expected by metadata helpers."""
+    if meta_type == "series":
+        return "series"
+    if meta_type == "sports":
+        return "series" if _resolve_sports_media_type(sports_category) == MediaType.SERIES else "movie"
+    return "movie"
+
+
+async def _upsert_import_media_images(
+    session: AsyncSession,
+    media_id: int,
+    *,
+    poster: str | None = None,
+    background: str | None = None,
+    logo: str | None = None,
+) -> None:
+    """Persist user-supplied media images for imports."""
+    image_values = {
+        "poster": poster,
+        "background": background,
+        "logo": logo,
+    }
+    normalized_images = {
+        image_type: str(url).strip()
+        for image_type, url in image_values.items()
+        if isinstance(url, str) and str(url).strip()
+    }
+    if not normalized_images:
+        return
+
+    provider = await get_or_create_metadata_provider(session, "mediafusion", "MediaFusion")
+
+    for image_type, image_url in normalized_images.items():
+        existing_result = await session.exec(
+            select(MediaImage).where(
+                MediaImage.media_id == media_id,
+                MediaImage.image_type == image_type,
+                MediaImage.is_primary.is_(True),
+            )
+        )
+        existing = existing_result.first()
+        if existing:
+            existing.url = image_url
+            existing.provider_id = provider.id
+        else:
+            session.add(
+                MediaImage(
+                    media_id=media_id,
+                    provider_id=provider.id,
+                    image_type=image_type,
+                    url=image_url,
+                    is_primary=True,
+                )
+            )
 
 
 async def _notify_pending_contribution(
@@ -154,6 +249,383 @@ def _resolve_import_languages(form_languages: str | None, torrent_data: dict[str
     return _normalize_string_list(torrent_data.get("languages"))
 
 
+def _resolve_created_at_date(form_created_at: str | None, torrent_data: dict[str, Any]) -> str | None:
+    """Resolve release date (YYYY-MM-DD) from form input or torrent metadata."""
+    if form_created_at:
+        return form_created_at
+    created_at = torrent_data.get("created_at")
+    if isinstance(created_at, datetime):
+        return created_at.date().isoformat()
+    return None
+
+
+def _parse_iso_date(value: str | None):
+    """Parse ISO date/datetime into a date object."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+        except ValueError:
+            return None
+
+
+def _select_sports_source_title(torrent_data: dict[str, Any]) -> str:
+    """Pick the most informative title candidate for sports parsing."""
+    parsed_title = (torrent_data.get("title") or "").strip()
+    torrent_name = (torrent_data.get("torrent_name") or "").strip()
+    return pick_best_sports_source_title(parsed_title, torrent_name)
+
+
+def _enrich_sports_file_data(file_data: list[dict[str, Any]], context_title: str) -> list[dict[str, Any]]:
+    """Enrich sports file entries with better episode titles and ordering."""
+    enriched_files: list[dict[str, Any]] = []
+    for idx, file_info in enumerate(file_data):
+        file_entry = dict(file_info)
+        filename = str(file_entry.get("filename") or "")
+        file_entry["episode_title"] = derive_sports_episode_title(filename, context_title)
+        if file_entry.get("episode_number") is None:
+            file_entry["episode_number"] = idx + 1
+        enriched_files.append(file_entry)
+    return enriched_files
+
+
+def _build_torrent_analysis_fields(meta_type: str, torrent_data: dict[str, Any]) -> dict[str, Any]:
+    """Build analysis fields, using sports parser when importing sports content."""
+    if meta_type != "sports":
+        return {
+            "parsed_title": torrent_data.get("title"),
+            "year": torrent_data.get("year"),
+            "resolution": torrent_data.get("resolution"),
+            "quality": torrent_data.get("quality"),
+            "codec": torrent_data.get("codec"),
+            "audio": _normalize_string_list(torrent_data.get("audio")),
+            "hdr": _normalize_string_list(torrent_data.get("hdr")),
+            "languages": _normalize_string_list(torrent_data.get("languages")),
+            "sports_category": None,
+            "sports_event": None,
+            "sports_league": None,
+            "sports_event_date": None,
+        }
+
+    source_title = _select_sports_source_title(torrent_data)
+    parsed = parse_sports_title(source_title)
+    cleaned_context_title = clean_sports_context_title(source_title)
+    file_data = torrent_data.get("file_data", []) or []
+    if not parsed.category:
+        for file_info in file_data:
+            detected = detect_sports_category(str(file_info.get("filename") or ""))
+            if detected:
+                parsed.category = detected
+                break
+
+    enriched_file_data = _enrich_sports_file_data(file_data, source_title) if file_data else file_data
+    torrent_data["file_data"] = enriched_file_data
+
+    parsed_audio = [parsed.audio] if parsed.audio else []
+    raw_audio = _normalize_string_list(torrent_data.get("audio"))
+    merged_audio = parsed_audio + [item for item in raw_audio if item not in parsed_audio]
+    languages = parsed.languages if parsed.languages else _normalize_string_list(torrent_data.get("languages"))
+
+    return {
+        "parsed_title": cleaned_context_title
+        or parsed.title
+        or torrent_data.get("title")
+        or torrent_data.get("torrent_name"),
+        "year": parsed.year or torrent_data.get("year"),
+        "resolution": parsed.resolution or torrent_data.get("resolution"),
+        "quality": parsed.quality or torrent_data.get("quality"),
+        "codec": parsed.codec or torrent_data.get("codec"),
+        "audio": merged_audio,
+        "hdr": _normalize_string_list(torrent_data.get("hdr")),
+        "languages": languages,
+        "sports_category": parsed.category,
+        "sports_event": clean_sports_context_title(parsed.event or "") or parsed.event,
+        "sports_league": parsed.league,
+        "sports_event_date": parsed.event_date.isoformat() if parsed.event_date else None,
+    }
+
+
+def _resolve_catalogs(meta_type: str, raw_catalogs: str | None, sports_category: str | None) -> list[str]:
+    """Resolve final catalog list, ensuring sports content has a sports catalog."""
+    catalogs = _parse_csv_form_values(raw_catalogs)
+    if meta_type == "sports":
+        resolved_sports_category = sports_category or "other_sports"
+        if resolved_sports_category not in catalogs:
+            catalogs.insert(0, resolved_sports_category)
+    return catalogs
+
+
+def _normalize_import_file_data(file_entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Normalize incoming file annotations from UI/analyzer payloads."""
+    normalized: list[dict[str, Any]] = []
+    for raw_entry in file_entries or []:
+        if not isinstance(raw_entry, dict):
+            continue
+        entry = dict(raw_entry)
+
+        # UI sends per-file sports episode names as "title".
+        raw_manual_title = entry.get("title")
+        if raw_manual_title is not None:
+            manual_title = str(raw_manual_title).strip()
+            if manual_title and not entry.get("episode_title"):
+                entry["episode_title"] = manual_title
+
+        normalized.append(entry)
+    return normalized
+
+
+def _should_replace_episode_title(
+    current_title: str | None,
+    proposed_title: str,
+    filename: str | None,
+    episode_number: int,
+) -> bool:
+    """Replace auto/filename placeholders, but keep real editorial titles."""
+    cleaned_current = str(current_title or "").strip()
+    if not cleaned_current:
+        return True
+    if cleaned_current == proposed_title:
+        return False
+
+    cleaned_filename = str(filename or "").strip()
+    if cleaned_filename and cleaned_current.casefold() == cleaned_filename.casefold():
+        return True
+
+    if re.fullmatch(rf"Episode\s+{episode_number}", cleaned_current, flags=re.IGNORECASE):
+        return True
+    if re.fullmatch(r"Episode\s+\d+", cleaned_current, flags=re.IGNORECASE):
+        return True
+
+    return False
+
+
+def _normalize_sports_import_metadata(
+    meta_type: str,
+    torrent_data: dict[str, Any],
+    sports_category: str | None,
+) -> tuple[dict[str, Any], str | None]:
+    """Normalize parsed torrent metadata for sports imports."""
+    if meta_type != "sports":
+        return torrent_data, sports_category
+
+    source_title = _select_sports_source_title(torrent_data)
+    parsed = parse_sports_title(source_title)
+    cleaned_context_title = clean_sports_context_title(source_title)
+    normalized = dict(torrent_data)
+    file_data = normalized.get("file_data", []) or []
+    if file_data:
+        normalized["file_data"] = _enrich_sports_file_data(file_data, source_title)
+
+    if cleaned_context_title:
+        normalized["title"] = cleaned_context_title
+    elif parsed.title:
+        normalized["title"] = parsed.title
+    if parsed.year:
+        normalized["year"] = parsed.year
+    if parsed.resolution and not normalized.get("resolution"):
+        normalized["resolution"] = parsed.resolution
+    if parsed.quality and not normalized.get("quality"):
+        normalized["quality"] = parsed.quality
+    if parsed.codec and not normalized.get("codec"):
+        normalized["codec"] = parsed.codec
+    if parsed.audio and not normalized.get("audio"):
+        normalized["audio"] = [parsed.audio]
+    if parsed.languages and not normalized.get("languages"):
+        normalized["languages"] = parsed.languages
+
+    if not parsed.category:
+        for file_info in file_data:
+            detected = detect_sports_category(str(file_info.get("filename") or ""))
+            if detected:
+                parsed.category = detected
+                break
+
+    resolved_sports_category = sports_category or parsed.category or "other_sports"
+    return normalized, resolved_sports_category
+
+
+async def _search_existing_sports_matches(
+    session: AsyncSession,
+    parsed_title: str | None,
+    event_name: str | None,
+    year: int | None,
+    sports_league: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Search existing movie/series media as selectable sports matches."""
+    search_terms = build_sports_match_search_terms(parsed_title, event_name, sports_league)
+    if not search_terms:
+        return []
+
+    conditions = [Media.title.ilike(f"%{term}%") for term in search_terms]
+    query = (
+        select(Media)
+        .where(Media.type.in_([MediaType.MOVIE, MediaType.SERIES]))
+        .where(or_(*conditions))
+        .order_by(Media.last_stream_added.desc())
+    )
+    if year:
+        query = query.where(or_(Media.year == year, Media.year.is_(None)))
+    query = query.limit(limit)
+
+    result = await session.exec(query)
+    medias = result.all()
+
+    # Fallback: token-overlap matching for cases where titles differ by
+    # broadcaster noise/round formatting between 1080p and 4k uploads.
+    if not medias:
+        fallback_query = (
+            select(Media)
+            .where(Media.type.in_([MediaType.MOVIE, MediaType.SERIES]))
+            .order_by(Media.last_stream_added.desc())
+        )
+        if year:
+            fallback_query = fallback_query.where(
+                or_(Media.year == year, Media.year == year - 1, Media.year == year + 1, Media.year.is_(None))
+            )
+        fallback_query = fallback_query.limit(200)
+
+        fallback_result = await session.exec(fallback_query)
+        fallback_candidates = fallback_result.all()
+
+        target_tokens: set[str] = set()
+        for term in search_terms:
+            target_tokens.update(tokenize_sports_match_text(term))
+
+        if target_tokens:
+            scored_candidates: list[tuple[int, Media]] = []
+            for candidate in fallback_candidates:
+                candidate_tokens = tokenize_sports_match_text(candidate.title or "")
+                overlap = target_tokens & candidate_tokens
+                if len(overlap) < 2:
+                    continue
+
+                score = len(overlap) * 10
+                if year and candidate.year == year:
+                    score += 5
+                elif candidate.year is None:
+                    score += 1
+
+                candidate_norm = normalize_sports_match_text(candidate.title or "")
+                if any(
+                    term_norm and (term_norm in candidate_norm or candidate_norm in term_norm)
+                    for term_norm in (normalize_sports_match_text(term) for term in search_terms)
+                ):
+                    score += 3
+
+                scored_candidates.append((score, candidate))
+
+            scored_candidates.sort(key=lambda item: item[0], reverse=True)
+            medias = [media for _, media in scored_candidates[:limit]]
+
+    matches: list[dict[str, Any]] = []
+    for media in medias:
+        external_id = await get_canonical_external_id(session, media.id)
+        match_id = external_id or f"mf:{media.id}"
+        poster_image = await get_primary_image(session, media.id, "poster")
+        background_image = await get_primary_image(session, media.id, "background")
+        logo_image = await get_primary_image(session, media.id, "logo")
+        matches.append(
+            {
+                "id": match_id,
+                "media_id": media.id,
+                "title": media.title,
+                "year": media.year,
+                "type": "series" if media.type == MediaType.SERIES else "movie",
+                "imdb_id": external_id if external_id and external_id.startswith("tt") else None,
+                "description": media.description,
+                "poster": poster_image.url if poster_image else None,
+                "background": background_image.url if background_image else None,
+                "logo": logo_image.url if logo_image else None,
+                "release_date": media.release_date.isoformat() if media.release_date else None,
+            }
+        )
+    return matches
+
+
+async def _ensure_series_episode_metadata(
+    session: AsyncSession,
+    media: Media,
+    file_entries: list[dict[str, Any]],
+    fallback_title: str,
+) -> None:
+    """Ensure series metadata has seasons/episodes for file-linked imports."""
+    if media.type != MediaType.SERIES:
+        return
+
+    result = await session.exec(select(SeriesMetadata).where(SeriesMetadata.media_id == media.id))
+    series_meta = result.first()
+    if not series_meta:
+        series_meta = SeriesMetadata(media_id=media.id)
+        session.add(series_meta)
+        await session.flush()
+
+    normalized_entries = file_entries or [
+        {
+            "season_number": 1,
+            "episode_number": 1,
+            "episode_title": fallback_title or media.title or "Episode 1",
+        }
+    ]
+
+    touched_season_ids: set[int] = set()
+    for idx, file_info in enumerate(normalized_entries):
+        season_number = file_info.get("season_number")
+        episode_number = file_info.get("episode_number")
+
+        if season_number is None:
+            season_number = 1
+        if episode_number is None:
+            episode_number = idx + 1
+
+        season = await get_or_create_season(
+            session,
+            series_meta.id,
+            season_number,
+            name=f"Season {season_number}",
+        )
+        touched_season_ids.add(season.id)
+
+        raw_episode_title = (
+            file_info.get("episode_title")
+            or file_info.get("title")
+            or file_info.get("filename")
+            or f"Episode {episode_number}"
+        )
+        episode_title = str(raw_episode_title).strip() or f"Episode {episode_number}"
+        episode = await get_or_create_episode(session, season.id, episode_number, title=episode_title)
+        if _should_replace_episode_title(
+            episode.title,
+            episode_title,
+            str(file_info.get("filename") or ""),
+            episode_number,
+        ):
+            episode.title = episode_title
+        parsed_air_date = _parse_iso_date(file_info.get("release_date"))
+        if parsed_air_date and (episode.air_date is None or episode.air_date != parsed_air_date):
+            episode.air_date = parsed_air_date
+
+    # Refresh aggregate counters to keep series UI fully functional.
+    for season_id in touched_season_ids:
+        episode_count_result = await session.exec(select(func.count(Episode.id)).where(Episode.season_id == season_id))
+        episode_count = int(episode_count_result.one() or 0)
+        season = await session.get(Season, season_id)
+        if season:
+            season.episode_count = episode_count
+
+    total_seasons_result = await session.exec(select(func.count(Season.id)).where(Season.series_id == series_meta.id))
+    total_episodes_result = await session.exec(
+        select(func.count(Episode.id))
+        .join(Season, Episode.season_id == Season.id)
+        .where(Season.series_id == series_meta.id)
+    )
+    series_meta.total_seasons = int(total_seasons_result.one() or 0)
+    series_meta.total_episodes = int(total_episodes_result.one() or 0)
+
+
 async def fetch_and_create_media_from_external(
     session: AsyncSession,
     external_id: str,
@@ -261,6 +733,13 @@ async def process_torrent_import(
     title = contribution_data.get("title", "Unknown")
     name = contribution_data.get("name", title)
     total_size = contribution_data.get("total_size", 0)
+    sports_category = contribution_data.get("sports_category")
+    sports_media_type = _resolve_sports_media_type(sports_category)
+    catalogs: list[str] = [item for item in contribution_data.get("catalogs", []) if item]
+    if meta_type == "sports":
+        resolved_sports_category = sports_category or "other_sports"
+        if resolved_sports_category not in catalogs:
+            catalogs.insert(0, resolved_sports_category)
 
     is_anonymous = contribution_data.get("is_anonymous", False)
     anonymous_display_name = contribution_data.get("anonymous_display_name")
@@ -288,32 +767,66 @@ async def process_torrent_import(
     # Get or create media metadata
     media = None
     if meta_id:
-        media = await get_media_by_external_id(session, meta_id)
+        if meta_id.startswith("mf:"):
+            try:
+                media_id = int(meta_id.split(":", 1)[1])
+                media = await get_media_by_id(session, media_id)
+            except (TypeError, ValueError):
+                media = None
+        if not media:
+            media = await get_media_by_external_id(session, meta_id)
 
     if not media:
-        # Try to fetch full metadata from external provider and create
-        try:
-            media = await fetch_and_create_media_from_external(
-                session,
-                meta_id or f"user_{info_hash[:8]}",
-                meta_type,
-                fallback_title=title,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
-            # Create a basic media record as fallback
-            media_type_enum = MediaType.MOVIE if meta_type == "movie" else MediaType.SERIES
-            media = Media(
-                title=title,
-                type=media_type_enum,
-            )
-            session.add(media)
-            await session.flush()
-            # Add external ID to MediaExternalID table
-            ext_id_to_add = meta_id or f"user_{info_hash[:8]}"
-            provider, ext_id = parse_external_id(ext_id_to_add)
-            if provider and ext_id:
-                await add_external_id(session, media.id, provider, ext_id)
+        if meta_type == "sports":
+            media = await get_media_by_title_year(session, title, contribution_data.get("year"), sports_media_type)
+            if not media:
+                media = Media(
+                    title=title,
+                    type=sports_media_type,
+                    year=contribution_data.get("year"),
+                )
+                session.add(media)
+                await session.flush()
+        else:
+            # Try to fetch full metadata from external provider and create
+            try:
+                media = await fetch_and_create_media_from_external(
+                    session,
+                    meta_id or f"user_{info_hash[:8]}",
+                    meta_type,
+                    fallback_title=title,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch/create media for {meta_id}: {e}")
+                # Create a basic media record as fallback
+                media_type_map = {
+                    "movie": MediaType.MOVIE,
+                    "series": MediaType.SERIES,
+                    "sports": sports_media_type,
+                }
+                media_type_enum = media_type_map.get(meta_type, MediaType.MOVIE)
+                media = Media(
+                    title=title,
+                    type=media_type_enum,
+                )
+                session.add(media)
+                await session.flush()
+                # Add external ID to MediaExternalID table
+                ext_id_to_add = meta_id or f"user_{info_hash[:8]}"
+                provider, ext_id = parse_external_id(ext_id_to_add)
+                if provider and ext_id:
+                    await add_external_id(session, media.id, provider, ext_id)
+
+    release_date = _parse_iso_date(contribution_data.get("created_at"))
+    if release_date and (meta_type == "sports" or media.release_date is None):
+        media.release_date = release_date
+    await _upsert_import_media_images(
+        session,
+        media.id,
+        poster=contribution_data.get("poster"),
+        background=contribution_data.get("background"),
+        logo=contribution_data.get("logo"),
+    )
 
     uploader_name, uploader_user_id = resolve_uploader_identity(user, is_anonymous, anonymous_display_name)
 
@@ -367,6 +880,7 @@ async def process_torrent_import(
     # Track all media IDs we need to link the stream to
     linked_media_ids = {media.id}  # Start with the primary media
 
+    primary_series_file_entries: list[dict[str, Any]] = []
     for idx, file_info in enumerate(file_data):
         stream_file = StreamFile(
             stream_id=stream.id,
@@ -389,6 +903,9 @@ async def process_torrent_import(
             if not file_media:
                 file_meta_title = file_info.get("meta_title")
                 file_meta_type = file_info.get("meta_type", meta_type)
+                if file_meta_type == "sports":
+                    file_sports_category = file_info.get("sports_category") or sports_category
+                    file_meta_type = _resolve_fetch_media_type(file_meta_type, file_sports_category)
 
                 try:
                     # Fetch full metadata from external provider
@@ -407,15 +924,35 @@ async def process_torrent_import(
         # Fall back to primary media if no per-file metadata
         target_media = file_media or media
 
+        # Ensure series-linked files always have season/episode values.
+        link_season_number = file_info.get("season_number")
+        link_episode_number = file_info.get("episode_number")
+        if target_media.type == MediaType.SERIES:
+            if link_season_number is None:
+                link_season_number = 1
+            if link_episode_number is None:
+                link_episode_number = idx + 1
+
         # Link file to media with season/episode info if present
         file_media_link = FileMediaLink(
             file_id=stream_file.id,
             media_id=target_media.id,
-            season_number=file_info.get("season_number"),
-            episode_number=file_info.get("episode_number"),
+            season_number=link_season_number,
+            episode_number=link_episode_number,
             episode_end=file_info.get("episode_end"),
         )
         session.add(file_media_link)
+
+        if target_media.id == media.id and target_media.type == MediaType.SERIES:
+            primary_series_file_entries.append(
+                {
+                    "season_number": link_season_number,
+                    "episode_number": link_episode_number,
+                    "episode_title": file_info.get("episode_title") or file_info.get("title"),
+                    "release_date": file_info.get("release_date"),
+                    "filename": file_info.get("filename"),
+                }
+            )
 
     # Create StreamMediaLink for each unique media (multi-content support)
     for extra_media_id in linked_media_ids:
@@ -426,6 +963,9 @@ async def process_torrent_import(
                 is_primary=False,
             )
             session.add(extra_link)
+
+    # Series detail page relies on season/episode metadata entries.
+    await _ensure_series_episode_metadata(session, media, primary_series_file_entries, title)
 
     # Update media stream count for primary media
     media.total_streams = (media.total_streams or 0) + 1
@@ -438,6 +978,22 @@ async def process_torrent_import(
             if extra_media:
                 extra_media.total_streams = (extra_media.total_streams or 0) + 1
                 extra_media.last_stream_added = datetime.now(pytz.UTC)
+
+    # Apply catalog links selected during import.
+    for catalog_name in catalogs:
+        if not catalog_name:
+            continue
+        try:
+            catalog = await get_or_create_catalog(session, catalog_name)
+            existing_link_query = select(MediaCatalogLink).where(
+                MediaCatalogLink.media_id == media.id,
+                MediaCatalogLink.catalog_id == catalog.id,
+            )
+            existing_link_result = await session.exec(existing_link_query)
+            if not existing_link_result.first():
+                session.add(MediaCatalogLink(media_id=media.id, catalog_id=catalog.id))
+        except Exception as error:
+            logger.warning("Failed to link catalog '%s' to media %s: %s", catalog_name, media.id, error)
 
     await session.flush()
 
@@ -480,6 +1036,7 @@ class TorrentAnalyzeResponse(BaseModel):
     torrent_name: str | None = None  # Original torrent name
     total_size: int | None = None
     total_size_readable: str | None = None
+    created_at: str | None = None
     file_count: int | None = None
     files: list[dict[str, Any]] | None = None
     parsed_title: str | None = None
@@ -490,6 +1047,10 @@ class TorrentAnalyzeResponse(BaseModel):
     audio: list[str] | None = None
     hdr: list[str] | None = None
     languages: list[str] | None = None
+    sports_category: str | None = None
+    sports_event: str | None = None
+    sports_league: str | None = None
+    sports_event_date: str | None = None
     matches: list[dict[str, Any]] | None = None
     error: str | None = None
 
@@ -517,7 +1078,6 @@ async def analyze_magnet(
     Analyze a magnet link and return torrent metadata.
     Also searches for matching content in IMDb/TMDB.
     """
-    from db.config import settings
     from scrapers.scraper_tasks import meta_fetcher
 
     if not settings.enable_fetching_torrent_metadata_from_p2p:
@@ -548,16 +1108,11 @@ async def analyze_magnet(
 
         # Convert size to readable format
         total_size = torrent_data.get("total_size", 0)
-        if total_size > 0:
-            from utils.parser import convert_bytes_to_readable
-
-            size_readable = convert_bytes_to_readable(total_size)
-        else:
-            size_readable = "Unknown"
+        size_readable = convert_bytes_to_readable(total_size) if total_size > 0 else "Unknown"
 
         # Search for matching content if title is available
         matches = []
-        if torrent_data.get("title"):
+        if data.meta_type != "sports" and torrent_data.get("title"):
             try:
                 matches = await meta_fetcher.search_multiple_results(
                     title=torrent_data["title"],
@@ -567,23 +1122,29 @@ async def analyze_magnet(
             except Exception:
                 pass  # Ignore search errors
 
+        analysis_fields = _build_torrent_analysis_fields(data.meta_type, torrent_data)
+        if data.meta_type == "sports":
+            async with get_async_session_context() as session:
+                matches = await _search_existing_sports_matches(
+                    session,
+                    analysis_fields.get("parsed_title"),
+                    analysis_fields.get("sports_event"),
+                    analysis_fields.get("year"),
+                    analysis_fields.get("sports_league"),
+                )
+
+        created_at = torrent_data.get("created_at")
         return TorrentAnalyzeResponse(
             status="success",
             info_hash=info_hash.lower(),
             torrent_name=torrent_data.get("torrent_name"),
             total_size=total_size,
             total_size_readable=size_readable,
+            created_at=created_at.isoformat() if isinstance(created_at, datetime) else None,
             file_count=len(torrent_data.get("file_data", [])),
             files=torrent_data.get("file_data", []),
-            parsed_title=torrent_data.get("title"),
-            year=torrent_data.get("year"),
-            resolution=torrent_data.get("resolution"),
-            quality=torrent_data.get("quality"),
-            codec=torrent_data.get("codec"),
-            audio=_normalize_string_list(torrent_data.get("audio")),
-            hdr=_normalize_string_list(torrent_data.get("hdr")),
-            languages=_normalize_string_list(torrent_data.get("languages")),
             matches=matches,
+            **analysis_fields,
         )
 
     except ExceptionGroup as e:
@@ -635,16 +1196,11 @@ async def analyze_torrent_file(
 
         # Convert size to readable format
         total_size = torrent_data.get("total_size", 0)
-        if total_size > 0:
-            from utils.parser import convert_bytes_to_readable
-
-            size_readable = convert_bytes_to_readable(total_size)
-        else:
-            size_readable = "Unknown"
+        size_readable = convert_bytes_to_readable(total_size) if total_size > 0 else "Unknown"
 
         # Search for matching content
         matches = []
-        if torrent_data.get("title"):
+        if meta_type != "sports" and torrent_data.get("title"):
             try:
                 matches = await meta_fetcher.search_multiple_results(
                     title=torrent_data["title"],
@@ -654,23 +1210,29 @@ async def analyze_torrent_file(
             except Exception:
                 pass
 
+        analysis_fields = _build_torrent_analysis_fields(meta_type, torrent_data)
+        if meta_type == "sports":
+            async with get_async_session_context() as session:
+                matches = await _search_existing_sports_matches(
+                    session,
+                    analysis_fields.get("parsed_title"),
+                    analysis_fields.get("sports_event"),
+                    analysis_fields.get("year"),
+                    analysis_fields.get("sports_league"),
+                )
+
+        created_at = torrent_data.get("created_at")
         return TorrentAnalyzeResponse(
             status="success",
             info_hash=torrent_data.get("info_hash", "").lower(),
             torrent_name=torrent_data.get("torrent_name"),
             total_size=total_size,
             total_size_readable=size_readable,
+            created_at=created_at.isoformat() if isinstance(created_at, datetime) else None,
             file_count=len(torrent_data.get("file_data", [])),
             files=torrent_data.get("file_data", []),
-            parsed_title=torrent_data.get("title"),
-            year=torrent_data.get("year"),
-            resolution=torrent_data.get("resolution"),
-            quality=torrent_data.get("quality"),
-            codec=torrent_data.get("codec"),
-            audio=_normalize_string_list(torrent_data.get("audio")),
-            hdr=_normalize_string_list(torrent_data.get("hdr")),
-            languages=_normalize_string_list(torrent_data.get("languages")),
             matches=matches,
+            **analysis_fields,
         )
 
     except ValueError as e:
@@ -693,6 +1255,7 @@ async def import_magnet(
     title: str = Form(None),
     poster: str = Form(None),
     background: str = Form(None),
+    logo: str = Form(None),
     catalogs: str = Form(None),
     languages: str = Form(None),
     resolution: str = Form(None),
@@ -701,6 +1264,8 @@ async def import_magnet(
     audio: str = Form(None),
     hdr: str = Form(None),
     file_data: str = Form(None),  # JSON stringified array
+    created_at: str | None = Form(None),
+    sports_category: str | None = Form(None),
     force_import: bool = Form(False),
     is_anonymous: bool | None = Form(None),  # None means use user's preference
     anonymous_display_name: str | None = Form(None),
@@ -775,6 +1340,11 @@ async def import_magnet(
             )
 
         torrent_data = torrent_data_list[0]
+        torrent_data, resolved_sports_category = _normalize_sports_import_metadata(
+            meta_type, torrent_data, sports_category
+        )
+        resolved_catalogs = _resolve_catalogs(meta_type, catalogs, resolved_sports_category)
+        resolved_created_at = _resolve_created_at_date(created_at, torrent_data)
 
         # Parse file_data if provided, otherwise use from torrent
         parsed_file_data = []
@@ -786,6 +1356,7 @@ async def import_magnet(
 
         if not parsed_file_data and torrent_data.get("file_data"):
             parsed_file_data = torrent_data.get("file_data", [])
+        parsed_file_data = _normalize_import_file_data(parsed_file_data)
 
         resolved_title, title_validation_error = resolve_and_validate_import_title(
             title,
@@ -806,7 +1377,7 @@ async def import_magnet(
             "title": resolved_title,
             "name": torrent_data.get("torrent_name"),
             "total_size": torrent_data.get("total_size"),
-            "catalogs": _parse_csv_form_values(catalogs),
+            "catalogs": resolved_catalogs,
             "languages": _resolve_import_languages(languages, torrent_data),
             "resolution": resolution or torrent_data.get("resolution"),
             "quality": quality or torrent_data.get("quality"),
@@ -815,8 +1386,12 @@ async def import_magnet(
             "hdr": _parse_csv_form_values(hdr),
             "file_data": parsed_file_data,
             "file_count": len(parsed_file_data) or len(torrent_data.get("file_data", [])) or 1,
+            "created_at": resolved_created_at,
             "poster": poster,
             "background": background,
+            "logo": logo,
+            "year": torrent_data.get("year"),
+            "sports_category": resolved_sports_category,
             "is_anonymous": resolved_is_anonymous,
             "anonymous_display_name": normalized_anonymous_display_name,
         }
@@ -924,6 +1499,7 @@ async def import_torrent_file(
     title: str = Form(None),
     poster: str = Form(None),
     background: str = Form(None),
+    logo: str = Form(None),
     catalogs: str = Form(None),
     languages: str = Form(None),
     resolution: str = Form(None),
@@ -932,6 +1508,8 @@ async def import_torrent_file(
     audio: str = Form(None),
     hdr: str = Form(None),
     file_data: str = Form(None),  # JSON stringified array
+    created_at: str | None = Form(None),
+    sports_category: str | None = Form(None),
     force_import: bool = Form(False),
     is_anonymous: bool | None = Form(None),  # None means use user's preference
     anonymous_display_name: str | None = Form(None),
@@ -974,6 +1552,11 @@ async def import_torrent_file(
                 status="error",
                 message="Failed to parse torrent file.",
             )
+        torrent_data, resolved_sports_category = _normalize_sports_import_metadata(
+            meta_type, torrent_data, sports_category
+        )
+        resolved_catalogs = _resolve_catalogs(meta_type, catalogs, resolved_sports_category)
+        resolved_created_at = _resolve_created_at_date(created_at, torrent_data)
 
         info_hash = torrent_data.get("info_hash", "").lower()
 
@@ -1016,6 +1599,7 @@ async def import_torrent_file(
 
         if not parsed_file_data and torrent_data.get("file_data"):
             parsed_file_data = torrent_data.get("file_data", [])
+        parsed_file_data = _normalize_import_file_data(parsed_file_data)
 
         resolved_title, title_validation_error = resolve_and_validate_import_title(
             title,
@@ -1035,7 +1619,7 @@ async def import_torrent_file(
             "title": resolved_title,
             "name": torrent_data.get("torrent_name"),
             "total_size": torrent_data.get("total_size"),
-            "catalogs": _parse_csv_form_values(catalogs),
+            "catalogs": resolved_catalogs,
             "languages": _resolve_import_languages(languages, torrent_data),
             "resolution": resolution or torrent_data.get("resolution"),
             "quality": quality or torrent_data.get("quality"),
@@ -1044,8 +1628,12 @@ async def import_torrent_file(
             "hdr": _parse_csv_form_values(hdr),
             "file_data": parsed_file_data,
             "file_count": len(parsed_file_data) or len(torrent_data.get("file_data", [])) or 1,
+            "created_at": resolved_created_at,
             "poster": poster,
             "background": background,
+            "logo": logo,
+            "year": torrent_data.get("year"),
+            "sports_category": resolved_sports_category,
             "is_anonymous": resolved_is_anonymous,
             "anonymous_display_name": normalized_anonymous_display_name,
         }

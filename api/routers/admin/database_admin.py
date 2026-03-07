@@ -263,6 +263,7 @@ class RelatedReference(BaseModel):
     referenced_column: str
     row_count: int = 0
     preview: dict[str, Any] | None = None
+    navigation_value: str | None = None
 
 
 class RelatedRecordsResponse(BaseModel):
@@ -1431,6 +1432,8 @@ async def bulk_delete(
             )
 
         id_col_type = col_type_row[0].lower()
+        safe_table = request.table.replace('"', '""')
+        safe_id_column = request.id_column.replace('"', '""')
 
         # Build params with proper type conversion
         placeholders = ", ".join([f":id_{i}" for i in range(len(request.ids))])
@@ -1442,15 +1445,26 @@ async def bulk_delete(
                 params[f"id_{i}"] = id_val
 
         total_deleted = 0
+        orphan_candidate_stream_ids: list[int] = []
+        cascade_delete_children = None
 
         # If cascade is enabled, find and delete child records first
         if request.cascade:
-            # Find all foreign keys referencing this table
+            # For media deletes, capture potentially affected streams before FK links are removed.
+            if request.table == "media":
+                stream_id_result = await session.execute(
+                    text(f'SELECT DISTINCT "stream_id" FROM "stream_media_link" WHERE "media_id" IN ({placeholders})'),
+                    params,
+                )
+                orphan_candidate_stream_ids = [int(row[0]) for row in stream_id_result.all() if row[0] is not None]
+
+            # Build complete FK graph and delete recursively (deep cascade).
             fk_result = await session.execute(
                 text("""
                     SELECT
                         tc.table_name AS child_table,
                         kcu.column_name AS child_column,
+                        ccu.table_name AS parent_table,
                         ccu.column_name AS parent_column
                     FROM information_schema.table_constraints tc
                     JOIN information_schema.key_column_usage kcu
@@ -1458,32 +1472,78 @@ async def bulk_delete(
                     JOIN information_schema.constraint_column_usage ccu
                         ON tc.constraint_name = ccu.constraint_name
                     WHERE tc.constraint_type = 'FOREIGN KEY'
-                        AND ccu.table_name = :table_name
                         AND tc.table_schema = 'public'
+                        AND ccu.table_schema = 'public'
                 """),
-                {"table_name": request.table},
             )
 
-            foreign_keys = fk_result.all()
+            fk_rows = fk_result.all()
+            fk_children_by_parent: dict[str, list[tuple[str, str, str]]] = {}
+            for child_table, child_column, parent_table, parent_column in fk_rows:
+                fk_children_by_parent.setdefault(parent_table, []).append((child_table, child_column, parent_column))
 
-            # Delete from child tables first
-            for child_table, child_column, parent_column in foreign_keys:
-                # Recursively delete from child tables
-                delete_child_query = f"""
-                    DELETE FROM {child_table}
-                    WHERE {child_column} IN (
-                        SELECT {parent_column} FROM {request.table}
-                        WHERE {request.id_column} IN ({placeholders})
+            def _quote_identifier(name: str) -> str:
+                return '"' + name.replace('"', '""') + '"'
+
+            async def _cascade_delete_children(
+                parent_table: str,
+                parent_where_clause: str,
+                query_params: dict[str, Any] | None = None,
+                path: tuple[str, ...] = (),
+            ) -> int:
+                if query_params is None:
+                    query_params = params
+                deleted = 0
+                for child_table, child_column, parent_column in fk_children_by_parent.get(parent_table, []):
+                    child_where_clause = (
+                        f"{_quote_identifier(child_column)} IN ("
+                        f"SELECT {_quote_identifier(parent_column)} "
+                        f"FROM {_quote_identifier(parent_table)} "
+                        f"WHERE {parent_where_clause}"
+                        ")"
                     )
-                """
-                child_result = await session.execute(text(delete_child_query), params)
-                total_deleted += child_result.rowcount
-                logger.info(f"Cascade deleted {child_result.rowcount} records from {child_table}")
+
+                    # Prevent infinite loops on cyclic FK graphs.
+                    if child_table not in path:
+                        deleted += await _cascade_delete_children(
+                            child_table,
+                            child_where_clause,
+                            query_params,
+                            (*path, parent_table),
+                        )
+
+                    child_delete_query = f"DELETE FROM {_quote_identifier(child_table)} WHERE {child_where_clause}"
+                    child_result = await session.execute(text(child_delete_query), query_params)
+                    deleted += int(child_result.rowcount or 0)
+                return deleted
+
+            cascade_delete_children = _cascade_delete_children
+
+            root_where_clause = f"{_quote_identifier(request.id_column)} IN ({placeholders})"
+            total_deleted += await _cascade_delete_children(request.table, root_where_clause, params)
 
         # Delete from main table
-        query = f"DELETE FROM {request.table} WHERE {request.id_column} IN ({placeholders})"
+        query = f'DELETE FROM "{safe_table}" WHERE "{safe_id_column}" IN ({placeholders})'
         result = await session.execute(text(query), params)
         total_deleted += result.rowcount
+
+        # If media rows were deleted with cascade, prune stream rows that no longer
+        # have any stream_media_link references.
+        if request.cascade and request.table == "media" and orphan_candidate_stream_ids and cascade_delete_children:
+            stream_placeholders = ", ".join([f":stream_id_{i}" for i in range(len(orphan_candidate_stream_ids))])
+            stream_params = {f"stream_id_{i}": stream_id for i, stream_id in enumerate(orphan_candidate_stream_ids)}
+
+            orphan_stream_where = (
+                f'"id" IN ({stream_placeholders}) AND NOT EXISTS ('
+                'SELECT 1 FROM "stream_media_link" sml WHERE sml."stream_id" = "stream"."id"'
+                ")"
+            )
+
+            total_deleted += await cascade_delete_children("stream", orphan_stream_where, stream_params)
+
+            delete_orphan_streams_query = f'DELETE FROM "stream" WHERE {orphan_stream_where}'
+            orphan_streams_result = await session.execute(text(delete_orphan_streams_query), stream_params)
+            total_deleted += int(orphan_streams_result.rowcount or 0)
 
         await session.commit()
 
@@ -2120,6 +2180,7 @@ async def get_related_records(
                         referenced_column=foreign_col,
                         row_count=1 if preview else 0,
                         preview=preview,
+                        navigation_value=str(fk_value) if fk_value is not None else None,
                     )
                 )
 
@@ -2166,6 +2227,7 @@ async def get_related_records(
                     referenced_table=table_name,
                     referenced_column=referenced_column,
                     row_count=count,
+                    navigation_value=row_id,
                 )
             )
 

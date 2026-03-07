@@ -29,6 +29,7 @@ import { TechSpecsEditor } from './TechSpecsEditor'
 import { type ExtendedMatch } from './MatchResultsGrid'
 import { MatchSearchSection } from './MatchSearchSection'
 import { CatalogSelector } from './CatalogSelector'
+import { DatePickerInput } from './DatePickerInput'
 import type { NZBImportFormData } from './types'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -414,12 +415,7 @@ export function NZBImportDialog({
                         <Calendar className="h-3 w-3" />
                         Release Date
                       </Label>
-                      <Input
-                        type="date"
-                        value={releaseDate}
-                        onChange={(e) => setReleaseDate(e.target.value)}
-                        className="rounded-lg"
-                      />
+                      <DatePickerInput value={releaseDate} onChange={setReleaseDate} className="h-10" />
                     </div>
                   </div>
                 </div>

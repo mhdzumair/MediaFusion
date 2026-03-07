@@ -90,7 +90,10 @@ export function useImportTorrents() {
       provider: string
       infoHashes: string[]
       profileId?: number
-      overrides?: Record<string, { title?: string; year?: number; type?: 'movie' | 'series' }>
+      overrides?: Record<
+        string,
+        { title?: string; year?: number; type?: 'movie' | 'series' | 'sports'; sports_category?: string }
+      >
       isAnonymous?: boolean
       anonymousDisplayName?: string
     }) => watchlistApi.importTorrents(provider, infoHashes, profileId, overrides, isAnonymous, anonymousDisplayName),

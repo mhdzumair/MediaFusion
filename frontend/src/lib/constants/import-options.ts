@@ -137,20 +137,16 @@ export const LANGUAGE_OPTIONS = [
 ] as const
 
 export const SPORTS_CATEGORY_OPTIONS = [
-  { value: 'football', label: 'Football' },
+  { value: 'football', label: 'Football/Soccer' },
   { value: 'american_football', label: 'American Football' },
   { value: 'basketball', label: 'Basketball' },
   { value: 'baseball', label: 'Baseball' },
   { value: 'hockey', label: 'Hockey' },
-  { value: 'cricket', label: 'Cricket' },
   { value: 'rugby', label: 'Rugby' },
-  { value: 'tennis', label: 'Tennis' },
-  { value: 'golf', label: 'Golf' },
-  { value: 'mma', label: 'MMA / UFC' },
-  { value: 'boxing', label: 'Boxing' },
-  { value: 'wrestling', label: 'Wrestling' },
-  { value: 'motorsport', label: 'Motorsport' },
-  { value: 'other', label: 'Other Sports' },
+  { value: 'fighting', label: 'Combat Sports (UFC/Boxing/Wrestling)' },
+  { value: 'formula_racing', label: 'Formula Racing' },
+  { value: 'motogp_racing', label: 'MotoGP' },
+  { value: 'other_sports', label: 'Other Sports' },
 ] as const
 
 export type ContentType = (typeof CONTENT_TYPE_OPTIONS)[number]['value']

@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Film,
   Tv,
+  Trophy,
   HardDrive,
   FileVideo,
   Edit3,
@@ -37,6 +38,7 @@ import {
 } from '@/lib/anonymousDisplayName'
 import { cn } from '@/lib/utils'
 import { AdvancedImportDialog } from '@/components/watchlist/AdvancedImportDialog'
+import { SPORTS_CATEGORY_OPTIONS, type SportsCategory } from '@/lib/constants'
 
 // Providers that support import functionality
 const IMPORT_SUPPORTED_PROVIDERS = new Set([
@@ -53,7 +55,8 @@ const IMPORT_SUPPORTED_PROVIDERS = new Set([
 interface TorrentEdit {
   title?: string
   year?: number
-  type?: 'movie' | 'series'
+  type?: 'movie' | 'series' | 'sports'
+  sports_category?: SportsCategory
 }
 
 function hasResolvedExternalIds(torrent: MissingTorrentItem): boolean {
@@ -134,6 +137,8 @@ function TorrentItem({
         <div className="flex items-start gap-2">
           {displayType === 'series' ? (
             <Tv className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+          ) : displayType === 'sports' ? (
+            <Trophy className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
           ) : (
             <Film className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
           )}
@@ -211,13 +216,19 @@ function EditPanel({
 }) {
   const [title, setTitle] = useState(edit?.title || torrent.parsed_title || '')
   const [year, setYear] = useState(edit?.year?.toString() || torrent.parsed_year?.toString() || '')
-  const [type, setType] = useState<'movie' | 'series'>(edit?.type || torrent.parsed_type || 'movie')
+  const [type, setType] = useState<'movie' | 'series' | 'sports'>(
+    (edit?.type || torrent.parsed_type || 'movie') as 'movie' | 'series' | 'sports',
+  )
+  const [sportsCategory, setSportsCategory] = useState<SportsCategory | ''>(
+    (edit?.sports_category as SportsCategory | undefined) || '',
+  )
 
   const handleSave = () => {
     onSave({
       title: title || undefined,
       year: year ? parseInt(year, 10) : undefined,
       type,
+      sports_category: type === 'sports' ? sportsCategory || undefined : undefined,
     })
   }
 
@@ -269,7 +280,7 @@ function EditPanel({
             <Label htmlFor="debrid-edit-type" className="text-xs">
               Type
             </Label>
-            <Select value={type} onValueChange={(v) => setType(v as 'movie' | 'series')}>
+            <Select value={type} onValueChange={(v) => setType(v as 'movie' | 'series' | 'sports')}>
               <SelectTrigger id="debrid-edit-type" className="h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
@@ -286,10 +297,35 @@ function EditPanel({
                     Series
                   </div>
                 </SelectItem>
+                <SelectItem value="sports">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-3.5 w-3.5" />
+                    Sports
+                  </div>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
+        {type === 'sports' && (
+          <div className="space-y-1.5">
+            <Label htmlFor="debrid-edit-sports-category" className="text-xs">
+              Sports Category
+            </Label>
+            <Select value={sportsCategory} onValueChange={(v) => setSportsCategory(v as SportsCategory)}>
+              <SelectTrigger id="debrid-edit-sports-category" className="h-8 text-sm">
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {SPORTS_CATEGORY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <Button
@@ -503,7 +539,10 @@ export function DebridTab() {
     setImportResults(null)
     const normalizedAnonymousDisplayName = isAnonymous ? normalizeAnonymousDisplayName(anonymousDisplayName) : undefined
 
-    const overrides: Record<string, { title?: string; year?: number; type?: 'movie' | 'series' }> = {}
+    const overrides: Record<
+      string,
+      { title?: string; year?: number; type?: 'movie' | 'series' | 'sports'; sports_category?: SportsCategory }
+    > = {}
     edits.forEach((edit, hash) => {
       if (edit.title || edit.year || edit.type) {
         overrides[hash] = edit

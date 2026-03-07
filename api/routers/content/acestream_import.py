@@ -37,8 +37,23 @@ from db.models.streams import (
 from utils.notification_registry import send_pending_contribution_notification
 
 logger = logging.getLogger(__name__)
+SPORTS_SERIES_CATEGORIES = {"formula_racing", "motogp_racing"}
 
 router = APIRouter(prefix="/api/v1/import", tags=["Content Import"])
+
+
+def _resolve_sports_media_type(sports_category: str | None) -> MediaType:
+    if sports_category in SPORTS_SERIES_CATEGORIES:
+        return MediaType.SERIES
+    return MediaType.MOVIE
+
+
+def _resolve_fetch_media_type(meta_type: str, sports_category: str | None = None) -> str:
+    if meta_type == "series":
+        return "series"
+    if meta_type == "sports":
+        return "series" if _resolve_sports_media_type(sports_category) == MediaType.SERIES else "movie"
+    return "movie"
 
 
 async def _notify_pending_contribution(
@@ -229,11 +244,12 @@ async def process_acestream_import(
             return {"status": "exists", "message": "AceStream info_hash already exists in database"}
 
     # Map meta_type string to MediaType enum
+    sports_category = contribution_data.get("sports_category")
     media_type_map = {
         "movie": MediaType.MOVIE,
         "series": MediaType.SERIES,
         "tv": MediaType.TV,
-        "sports": MediaType.EVENTS,
+        "sports": _resolve_sports_media_type(sports_category),
     }
     media_type_enum = media_type_map.get(meta_type, MediaType.MOVIE)
 
@@ -256,7 +272,7 @@ async def process_acestream_import(
             media = await fetch_and_create_media_from_external(
                 session,
                 meta_id,
-                meta_type,
+                _resolve_fetch_media_type(meta_type, sports_category),
                 fallback_title=title,
             )
             if media:

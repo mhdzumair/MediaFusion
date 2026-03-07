@@ -364,6 +364,7 @@ class AvailableCatalogsResponse(BaseModel):
     movies: list[CatalogInfo]
     series: list[CatalogInfo]
     tv: list[CatalogInfo]
+    sports: list[CatalogInfo]
 
 
 # ============================================
@@ -412,6 +413,7 @@ async def get_available_catalogs(
     movies = {}  # name -> CatalogInfo
     series = {}
     tv = {}
+    sports = {}
 
     for name, display_name, media_type in catalogs:
         catalog_info = CatalogInfo(name=name, display_name=display_name or format_catalog_name(name))
@@ -424,12 +426,16 @@ async def get_available_catalogs(
         elif media_type == MediaType.TV:
             if name not in tv:
                 tv[name] = catalog_info
+        elif media_type == MediaType.EVENTS:
+            if name not in sports:
+                sports[name] = catalog_info
 
     # Sort by display name
     return AvailableCatalogsResponse(
         movies=sorted(movies.values(), key=lambda c: c.display_name),
         series=sorted(series.values(), key=lambda c: c.display_name),
         tv=sorted(tv.values(), key=lambda c: c.display_name),
+        sports=sorted(sports.values(), key=lambda c: c.display_name),
     )
 
 

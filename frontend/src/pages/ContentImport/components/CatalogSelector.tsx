@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Folder, Film, Tv, Trophy, Check, ChevronsUpDown } from 'lucide-react'
 import { useAvailableCatalogs } from '@/hooks'
-import type { ContentType } from '@/lib/constants'
+import { SPORTS_CATEGORY_OPTIONS, type ContentType } from '@/lib/constants'
 import type { CatalogInfo } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -34,6 +34,11 @@ const QUALITY_CATALOG_MAP: Record<string, string[]> = {
   TeleSync: ['mediafusion_movies_tcrip', 'mediafusion_movies_predvd'],
 }
 
+const SPORTS_FALLBACK_CATALOGS: CatalogInfo[] = SPORTS_CATEGORY_OPTIONS.map((option) => ({
+  name: option.value,
+  display_name: option.label,
+}))
+
 export function CatalogSelector({
   contentType,
   selectedCatalogs,
@@ -47,16 +52,28 @@ export function CatalogSelector({
 
   // Get catalogs based on content type
   const filteredCatalogs = useMemo((): CatalogInfo[] => {
-    if (!availableCatalogs) return []
+    if (!availableCatalogs) {
+      return contentType === 'sports' ? SPORTS_FALLBACK_CATALOGS : []
+    }
 
     switch (contentType) {
       case 'movie':
         return availableCatalogs.movies || []
       case 'series':
         return availableCatalogs.series || []
-      case 'sports':
-        // Sports might use series or a separate category
-        return availableCatalogs.series || []
+      case 'sports': {
+        const mergedCatalogs = [...(availableCatalogs.sports || []), ...(availableCatalogs.series || [])]
+        const catalogMap = new Map<string, CatalogInfo>()
+        for (const catalog of mergedCatalogs) {
+          catalogMap.set(catalog.name, catalog)
+        }
+        for (const fallbackCatalog of SPORTS_FALLBACK_CATALOGS) {
+          if (!catalogMap.has(fallbackCatalog.name)) {
+            catalogMap.set(fallbackCatalog.name, fallbackCatalog)
+          }
+        }
+        return Array.from(catalogMap.values())
+      }
       default:
         return []
     }
@@ -177,7 +194,11 @@ export function CatalogSelector({
                       )}
                       onClick={() => handleToggle(catalog.name)}
                     >
-                      <Checkbox checked={isSelected} onCheckedChange={() => handleToggle(catalog.name)} />
+                      <Checkbox
+                        checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
+                        onCheckedChange={() => handleToggle(catalog.name)}
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm truncate">{catalog.display_name || catalog.name}</p>
                         {isSuggested && !isSelected && (

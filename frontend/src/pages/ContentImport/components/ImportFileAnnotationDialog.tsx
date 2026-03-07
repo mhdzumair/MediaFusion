@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { useCombinedMetadataSearch, getBestExternalId, type CombinedSearchResult } from '@/hooks'
 import { useDebounce } from '@/hooks/useDebounce'
 import { userMetadataApi, type ImportProvider, type TorrentFile } from '@/lib/api'
+import { DatePickerInput } from './DatePickerInput'
 import type { FileAnnotation } from './types'
 
 // Provider options for manual ID input
@@ -66,6 +67,8 @@ interface ImportFileAnnotationDialogProps {
   allowMultiContent?: boolean
   /** Default metadata type for search */
   defaultMetaType?: 'movie' | 'series'
+  /** Default release date applied to sports episode annotations */
+  defaultReleaseDate?: string
 }
 
 // Extract just the filename from a full path
@@ -498,6 +501,7 @@ export function ImportFileAnnotationDialog({
   isLoading = false,
   allowMultiContent = false,
   defaultMetaType = 'movie',
+  defaultReleaseDate,
 }: ImportFileAnnotationDialogProps) {
   const [editedFiles, setEditedFiles] = useState<EditedFile[]>([])
   const [highlightedIndices, setHighlightedIndices] = useState<Set<number>>(new Set())
@@ -516,21 +520,22 @@ export function ImportFileAnnotationDialog({
       )
       setEditedFiles(
         sorted.map((f, idx) => {
+          const fileWithExtras = f as TorrentFile & { episode_title?: string; release_date?: string }
           const inferredEpisode = detectEpisodeMetadata(f.filename)
           return {
             filename: f.filename,
             size: f.size,
             index: f.index ?? idx,
-            season_number: f.season_number ?? inferredEpisode.season_number,
-            episode_number: f.episode_number ?? inferredEpisode.episode_number,
+            season_number: f.season_number ?? inferredEpisode.season_number ?? (isSports ? 1 : null),
+            episode_number: f.episode_number ?? inferredEpisode.episode_number ?? null,
             episode_end: inferredEpisode.episode_end,
             included: true,
             isModified: false,
             // Sports-specific
-            title: undefined,
+            title: isSports ? (fileWithExtras.episode_title ?? undefined) : undefined,
             overview: undefined,
             thumbnail: undefined,
-            release_date: undefined,
+            release_date: isSports ? (fileWithExtras.release_date ?? defaultReleaseDate ?? undefined) : undefined,
             // Multi-content specific
             meta_id: undefined,
             meta_title: undefined,
@@ -542,7 +547,7 @@ export function ImportFileAnnotationDialog({
       // Reset mode when dialog opens
       setAnnotationMode('episode')
     }
-  }, [open, files])
+  }, [open, files, isSports, defaultReleaseDate])
 
   // Update file metadata link
   const updateFileMetadata = useCallback((index: number, result: CombinedSearchResult | null) => {
@@ -1102,10 +1107,9 @@ export function ImportFileAnnotationDialog({
                     <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-border/30">
                       <div className="space-y-1">
                         <Label className="text-[10px] text-muted-foreground">Release Date</Label>
-                        <Input
-                          type="date"
+                        <DatePickerInput
                           value={file.release_date ?? ''}
-                          onChange={(e) => updateFile(index, 'release_date', e.target.value || null)}
+                          onChange={(value) => updateFile(index, 'release_date', value || null)}
                           className="h-8 text-sm"
                         />
                       </div>

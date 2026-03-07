@@ -9,6 +9,9 @@ Exports:
     - SPORTS_CATEGORY_KEYWORDS: Category key to detection keywords mapping
     - detect_sports_category(): Auto-detect sports category from title
     - clean_sports_event_title(): Remove quality/codec markers from title
+    - clean_sports_context_title(): Strip broadcaster/provider labels
+    - derive_sports_episode_title(): Derive human-readable episode labels
+    - pick_best_sports_source_title(): Pick best title candidate for parsing
     - parse_sports_title(): Full parsing with structured output
     - SportsParsedTitle: Dataclass with parsed title components
 """
@@ -37,6 +40,40 @@ SPORTS_CATEGORIES: dict[str, str] = {
     "motogp_racing": "MotoGP",
     "other_sports": "Other Sports",
 }
+
+# Broadcaster/provider labels that should not appear in parsed event names.
+# Keep this centralized so all import paths use the same cleanup rules.
+SPORTS_BROADCASTER_TOKEN_PATTERN = (
+    r"(?:"
+    r"SkyF1(?:HD|UHD)?|"
+    r"Sky\s*Sports(?:\s*[A-Za-z0-9]+){0,2}|"
+    r"SkySports(?:\s*[A-Za-z0-9]+){0,2}|"
+    r"Sky(?:HD|UHD)?|"
+    r"F1TV(?:\s*Pro)?|"
+    r"BTSportHD|"
+    r"TNTSportsHD|"
+    r"V\s*Sport(?:\s*Ultra\s*HD)?"
+    r")"
+)
+
+SPORTS_MATCH_STOPWORDS = {
+    "grand",
+    "prix",
+    "race",
+    "round",
+    "press",
+    "conference",
+    "practice",
+    "free",
+    "one",
+    "two",
+    "three",
+    "show",
+    "team",
+    "drivers",
+    "principals",
+}
+SPORTS_MATCH_KEEP_SHORT = {"f1", "f2", "f3", "ufc", "wwe", "nba", "nfl", "mlb", "nhl"}
 
 # Keywords to auto-detect sports category from title
 # Merged from telegram_bot.py and rss_scraper.py
@@ -706,6 +743,160 @@ def clean_sports_event_title(raw_name: str) -> str:
     return cleaned if cleaned else "Sports Event"
 
 
+def clean_sports_context_title(raw_title: str) -> str:
+    """Normalize a sports context title and strip broadcaster suffixes."""
+    cleaned = clean_sports_event_title(raw_title or "")
+    cleaned = re.sub(rf"\b{SPORTS_BROADCASTER_TOKEN_PATTERN}\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        rf"(?:\s*\b{SPORTS_BROADCASTER_TOKEN_PATTERN}\b)+\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def derive_sports_episode_title(filename: str, context_title: str) -> str:
+    """Derive a readable sports episode title from a file name."""
+    cleaned_file = clean_sports_event_title(filename)
+    cleaned_context = clean_sports_context_title(context_title)
+
+    # Remove file index prefix, e.g. "01 ", "07 ".
+    episode_title = re.sub(r"^\s*\d{1,3}\s+", "", cleaned_file).strip()
+
+    if cleaned_context:
+        context_pattern = re.compile(rf"^{re.escape(cleaned_context)}\s*", re.IGNORECASE)
+        episode_title = context_pattern.sub("", episode_title).strip()
+
+    # Remove trailing broadcaster/provider tails.
+    episode_title = re.sub(
+        rf"(?:\s*\b{SPORTS_BROADCASTER_TOKEN_PATTERN}\b)+\s*$",
+        "",
+        episode_title,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Fallback when nothing meaningful remains.
+    if not episode_title:
+        parsed = parse_sports_title(filename)
+        episode_title = (parsed.event or parsed.title or cleaned_file).strip()
+
+    return re.sub(r"\s+", " ", episode_title).strip()
+
+
+def pick_best_sports_source_title(
+    parsed_title: str | None,
+    raw_title: str | None,
+    file_names: list[str] | None = None,
+) -> str:
+    """Pick the most informative title candidate for sports parsing.
+
+    PTT can collapse sports torrents to short league-only titles (e.g., "Serie A"),
+    while the raw torrent/file name usually carries the real event/date details.
+    """
+    candidates: list[str] = []
+    seen_candidates: set[str] = set()
+    for candidate in [raw_title, parsed_title, *(file_names or [])]:
+        value = str(candidate or "").strip()
+        dedupe_key = value.casefold()
+        if value and dedupe_key not in seen_candidates:
+            seen_candidates.add(dedupe_key)
+            candidates.append(value)
+
+    if not candidates:
+        return ""
+
+    best_title = candidates[0]
+    best_score: tuple[int, int] = (-1, -1)
+
+    for candidate in candidates:
+        parsed = parse_sports_title(candidate)
+        candidate_score = 0
+
+        # Prefer titles that contain concrete event structure.
+        if parsed.event_date:
+            candidate_score += 4
+        if len(parsed.teams) == 2:
+            candidate_score += 4
+        if parsed.event and parsed.event.strip() and parsed.event.strip().casefold() != "sports event":
+            candidate_score += 3
+        if parsed.league:
+            candidate_score += 2
+
+        cleaned_len = len(clean_sports_context_title(candidate))
+        score_key = (candidate_score, cleaned_len)
+        if score_key > best_score:
+            best_score = score_key
+            best_title = candidate
+
+    return best_title
+
+
+def normalize_sports_match_text(text: str) -> str:
+    """Normalize sports title text for fuzzy matching across encodes/releases."""
+    normalized = clean_sports_context_title(text or "")
+    normalized = re.sub(r"\b(19|20)\d{2}\b", "", normalized)
+    normalized = re.sub(r"\bR\d{1,2}\b", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bFormula\s*([123])\b", r"F\1", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bMoto\s*GP\b", "MotoGP", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"[^A-Za-z0-9]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip().lower()
+
+
+def tokenize_sports_match_text(text: str) -> set[str]:
+    """Tokenize normalized sports title text for overlap scoring."""
+    normalized = normalize_sports_match_text(text)
+    if not normalized:
+        return set()
+
+    tokens: set[str] = set()
+    for token in normalized.split():
+        if token in SPORTS_MATCH_STOPWORDS:
+            continue
+        if len(token) >= 3 or token in SPORTS_MATCH_KEEP_SHORT:
+            tokens.add(token)
+    return tokens
+
+
+def build_sports_match_search_terms(
+    parsed_title: str | None,
+    event_name: str | None,
+    sports_league: str | None = None,
+) -> list[str]:
+    """Build deduplicated search terms for sports existing-media matching."""
+    raw_terms = [
+        term.strip() for term in [parsed_title, event_name, sports_league] if isinstance(term, str) and term.strip()
+    ]
+    search_terms: list[str] = []
+    seen_terms: set[str] = set()
+    for term in raw_terms:
+        candidates = [term, clean_sports_context_title(term)]
+        for candidate in candidates:
+            normalized_candidate = re.sub(r"\s+", " ", candidate).strip()
+            if not normalized_candidate:
+                continue
+            dedupe_key = normalized_candidate.casefold()
+            if dedupe_key not in seen_terms:
+                seen_terms.add(dedupe_key)
+                search_terms.append(normalized_candidate)
+
+    relaxed_terms: list[str] = []
+    for term in search_terms:
+        relaxed = re.sub(r"\b(19|20)\d{2}\b", "", term)
+        relaxed = re.sub(r"\bR\d{1,2}\b", "", relaxed, flags=re.IGNORECASE)
+        relaxed = re.sub(r"\s+", " ", relaxed).strip()
+        if relaxed and relaxed.lower() != term.lower():
+            relaxed_terms.append(relaxed)
+        if re.search(r"\bF1\b", term, flags=re.IGNORECASE):
+            relaxed_terms.append(re.sub(r"\bF1\b", "Formula 1", term, flags=re.IGNORECASE))
+        if re.search(r"\bFormula\s*1\b", term, flags=re.IGNORECASE):
+            relaxed_terms.append(re.sub(r"\bFormula\s*1\b", "F1", term, flags=re.IGNORECASE))
+        if re.search(r"\bMoto\s*GP\b", term, flags=re.IGNORECASE):
+            relaxed_terms.append(re.sub(r"\bMoto\s*GP\b", "MotoGP", term, flags=re.IGNORECASE))
+
+    return list(dict.fromkeys([*search_terms, *relaxed_terms]))
+
+
 def normalize_resolution(resolution: str | None) -> str | None:
     """Normalize resolution to standard format.
 
@@ -811,28 +1002,30 @@ def extract_teams_from_title(title: str) -> list[str]:
     # Normalize separators
     normalized = re.sub(r"[._-]+", " ", title)
 
-    # Look for "vs" or "versus" pattern
+    # Capture compact team names around matchup separators.
     patterns = [
-        r"(.+?)\s+(?:vs\.?|versus|v\.?)\s+(.+)",
-        r"(.+?)\s+@\s+(.+)",  # "Team1 @ Team2" format
+        r"\b([A-Za-z][A-Za-z0-9&'.-]*(?:\s+[A-Za-z][A-Za-z0-9&'.-]*){0,5})\s+(?:vs\.?|versus|v\.?)\s+([A-Za-z][A-Za-z0-9&'.-]*(?:\s+[A-Za-z][A-Za-z0-9&'.-]*){0,5})\b",
+        r"\b([A-Za-z][A-Za-z0-9&'.-]*(?:\s+[A-Za-z][A-Za-z0-9&'.-]*){0,5})\s+@\s+([A-Za-z][A-Za-z0-9&'.-]*(?:\s+[A-Za-z][A-Za-z0-9&'.-]*){0,5})\b",
     ]
 
     for pattern in patterns:
-        match = re.search(pattern, normalized, re.IGNORECASE)
-        if match:
-            team1 = match.group(1).strip()
-            team2 = match.group(2).strip()
+        matches = list(re.finditer(pattern, normalized, re.IGNORECASE))
+        if not matches:
+            continue
 
-            # Clean up team names (remove quality indicators from team2)
-            for indicator in QUALITY_INDICATORS + CODEC_INDICATORS:
-                team2 = re.sub(
-                    rf"\s*{re.escape(indicator)}.*$",
-                    "",
-                    team2,
-                    flags=re.IGNORECASE,
-                )
+        # Prefer the last matchup in the string; prefixes often contain league/date.
+        match = matches[-1]
+        team1 = match.group(1).strip()
+        team2 = match.group(2).strip()
 
-            return [team1.strip(), team2.strip()] if team1 and team2 else []
+        for indicator in QUALITY_INDICATORS + CODEC_INDICATORS + AUDIO_INDICATORS + RELEASE_FLAGS:
+            team1 = re.sub(rf"\s*{re.escape(indicator)}\s*$", "", team1, flags=re.IGNORECASE)
+            team2 = re.sub(rf"\s*{re.escape(indicator)}\s*$", "", team2, flags=re.IGNORECASE)
+
+        team1 = re.sub(r"\s+", " ", team1).strip(" .-_")
+        team2 = re.sub(r"\s+", " ", team2).strip(" .-_")
+        if team1 and team2 and team1.casefold() != team2.casefold():
+            return [team1, team2]
 
     return []
 
@@ -1008,7 +1201,19 @@ def _build_event_name(
 
     # If we have teams, the event is the matchup
     if len(teams) == 2:
-        return f"{teams[0]} vs {teams[1]}"
+        cleaned_teams: list[str] = []
+        for team in teams:
+            candidate = team
+            if league:
+                candidate = re.sub(rf"^{re.escape(league)}\s*", "", candidate, flags=re.IGNORECASE)
+            # Remove leading date tokens like "2026 03 04".
+            candidate = re.sub(r"^(?:\d{4}\s+\d{2}\s+\d{2}\s*)", "", candidate)
+            candidate = re.sub(r"^(?:\d{2}\s+\d{2}\s+\d{4}\s*)", "", candidate)
+            candidate = re.sub(r"\s+", " ", candidate).strip(" .-_")
+            cleaned_teams.append(candidate)
+
+        if cleaned_teams[0] and cleaned_teams[1]:
+            return f"{cleaned_teams[0]} vs {cleaned_teams[1]}"
 
     # Try to extract event name by removing league and date from clean title
     event = clean_title
