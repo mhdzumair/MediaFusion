@@ -44,6 +44,38 @@ def _map_seedr_exception(error: SeedrException) -> ProviderException:
     return ProviderException("Seedr server error", "debrid_service_down_error.mp4")
 
 
+def _extract_seedr_item_id(item: dict[str, Any]) -> str | None:
+    """Extract an item ID from Seedr responses across variants."""
+    for key in ("id", "torrent_id", "folder_file_id"):
+        value = item.get(key)
+        if value is not None:
+            return str(value)
+    return None
+
+
+async def _delete_folder_contents(seedr: Seedr, folder_id: str, delete_torrents: bool) -> None:
+    """Delete sub-items inside a folder, optionally removing active torrents."""
+    sub_content = await seedr.list_contents(folder_id)
+
+    for torrent in sub_content.get("torrents", []):
+        if not delete_torrents:
+            raise ProviderException("An existing torrent is being downloaded", "torrent_downloading.mp4")
+
+        torrent_id = _extract_seedr_item_id(torrent)
+        if not torrent_id:
+            logging.warning("Seedr torrent entry missing id while clearing folder %s: %s", folder_id, torrent)
+            continue
+        await seedr.delete_item(torrent_id, "torrent")
+
+    for subfolder in sub_content.get("folders", []):
+        subfolder_id = _extract_seedr_item_id(subfolder)
+        if not subfolder_id:
+            logging.warning("Seedr subfolder entry missing id while clearing folder %s: %s", folder_id, subfolder)
+            continue
+        await _delete_folder_contents(seedr, subfolder_id, delete_torrents=delete_torrents)
+        await seedr.delete_item(subfolder_id, "folder")
+
+
 def clean_filename(name: str | None, replace: str = "") -> str:
     """Clean filename of special characters."""
     if not name:
@@ -125,15 +157,14 @@ async def ensure_space_available(seedr: Seedr, required_space: int | float) -> N
         if available_space >= required_space:
             break
 
-        # Delete folder contents first
-        sub_content = await seedr.list_contents(folder["id"])
-        if sub_content["torrents"]:
-            # Raise exception if torrent is still downloading.
-            raise ProviderException("An existing torrent is being downloaded", "torrent_downloading.mp4")
-        for subfolder in sub_content["folders"]:
-            await seedr.delete_item(subfolder["id"], "folder")
+        folder_id = _extract_seedr_item_id(folder)
+        if not folder_id:
+            logging.warning("Seedr folder entry missing id while ensuring space: %s", folder)
+            continue
 
-        await seedr.delete_item(folder["id"], "folder")
+        # For playback flow we keep existing behavior: do not auto-delete active downloads.
+        await _delete_folder_contents(seedr, folder_id, delete_torrents=False)
+        await seedr.delete_item(folder_id, "folder")
         available_space += folder["size"]
 
 
@@ -357,7 +388,24 @@ async def fetch_torrent_details_from_seedr(streaming_provider: StreamingProvider
 async def delete_all_torrents_from_seedr(streaming_provider: StreamingProvider, **kwargs) -> None:
     """Delete all torrents from the user's account."""
     async with get_seedr_client(streaming_provider) as seedr:
-        await ensure_space_available(seedr, math.inf)
+        root_content = await seedr.list_contents()
+
+        # Delete root-level active torrents first.
+        for torrent in root_content.get("torrents", []):
+            torrent_id = _extract_seedr_item_id(torrent)
+            if not torrent_id:
+                logging.warning("Seedr root torrent missing id while clearing account: %s", torrent)
+                continue
+            await seedr.delete_item(torrent_id, "torrent")
+
+        # Delete all folders and their contents, including active torrents.
+        for folder in root_content.get("folders", []):
+            folder_id = _extract_seedr_item_id(folder)
+            if not folder_id:
+                logging.warning("Seedr root folder missing id while clearing account: %s", folder)
+                continue
+            await _delete_folder_contents(seedr, folder_id, delete_torrents=True)
+            await seedr.delete_item(folder_id, "folder")
 
 
 async def delete_torrent_from_seedr(streaming_provider: StreamingProvider, info_hash: str, **kwargs) -> bool:
