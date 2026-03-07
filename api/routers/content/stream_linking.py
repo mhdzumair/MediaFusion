@@ -684,6 +684,7 @@ class StreamNeedingAnnotation(BaseModel):
     media_year: int | None = None
     media_type: str
     media_external_id: str | None = None
+    media_poster: str | None = None
 
     class Config:
         from_attributes = True
@@ -871,11 +872,20 @@ async def get_streams_needing_annotation(
                 m.id as media_id,
                 m.title as media_title,
                 m.year as media_year,
-                m.type::text as media_type
+                m.type::text as media_type,
+                poster_img.url as media_poster
             FROM active_pairs up
             INNER JOIN stream s ON s.id = up.stream_id
             INNER JOIN torrent_stream ts ON ts.stream_id = s.id
             INNER JOIN media m ON m.id = up.media_id
+            LEFT JOIN LATERAL (
+                SELECT mi.url
+                FROM media_image mi
+                WHERE mi.media_id = m.id
+                  AND mi.image_type = 'poster'
+                ORDER BY mi.is_primary DESC, mi.display_order ASC, mi.id ASC
+                LIMIT 1
+            ) poster_img ON true
             WHERE 1=1
               {search_condition}
         )
@@ -976,6 +986,7 @@ async def get_streams_needing_annotation(
                 media_year=row.media_year,
                 media_type=media_type,
                 media_external_id=media_external_id_map.get(row.media_id),
+                media_poster=row.media_poster,
             )
         )
 

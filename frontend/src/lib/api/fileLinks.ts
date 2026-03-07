@@ -29,6 +29,31 @@ export interface FileLinkUpdateResponse {
   errors: string[]
 }
 
+export interface StreamMediaLinkInfo {
+  link_id: number
+  media_id: number
+  external_id: string
+  title: string
+  year: number | null
+  type: string
+  file_index: number | null
+  season: number | null
+  episode: number | null
+}
+
+export interface StreamMediaLinksResponse {
+  stream_id: number
+  media_entries: StreamMediaLinkInfo[]
+}
+
+export interface StreamMediaLinkCreateRequest {
+  stream_id: number
+  media_id: number
+  file_index?: number | null
+  season?: number | null
+  episode?: number | null
+}
+
 export interface StreamFileLinksResponse {
   stream_id: number
   media_id: number
@@ -56,6 +81,7 @@ export interface StreamNeedingAnnotation {
   media_year: number | null
   media_type: string
   media_external_id: string | null
+  media_poster: string | null
 }
 
 export interface StreamsNeedingAnnotationResponse {
@@ -96,6 +122,27 @@ export const fileLinksApi = {
    */
   updateFileLinks: async (request: BulkFileLinkUpdateRequest): Promise<FileLinkUpdateResponse> => {
     return apiClient.put<FileLinkUpdateResponse>('/stream-links/files', request)
+  },
+
+  /**
+   * Get all media links for a stream
+   */
+  getMediaForStream: async (streamId: number): Promise<StreamMediaLinksResponse> => {
+    return apiClient.get<StreamMediaLinksResponse>(`/stream-links/stream/${streamId}`)
+  },
+
+  /**
+   * Create a stream-media link (optionally file-specific via file_index)
+   */
+  createStreamLink: async (request: StreamMediaLinkCreateRequest) => {
+    return apiClient.post('/stream-links', request)
+  },
+
+  /**
+   * Delete a stream-media link by link ID
+   */
+  deleteStreamLink: async (linkId: number): Promise<void> => {
+    return apiClient.delete(`/stream-links/${linkId}`)
   },
 
   /**

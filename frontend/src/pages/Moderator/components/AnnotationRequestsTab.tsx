@@ -1,5 +1,18 @@
 import { useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, Copy, FileVideo, HardDrive, Hash, Loader2, Search, Tv } from 'lucide-react'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileVideo,
+  HardDrive,
+  Hash,
+  Loader2,
+  Search,
+  Tv,
+} from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { StreamRelinkButton } from '@/components/stream'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +25,15 @@ import { useDismissAnnotationRequest, useStreamsNeedingAnnotation, useUpdateFile
 import { fileLinksApi } from '@/lib/api/fileLinks'
 
 import { formatBytes, formatTimeAgo } from './helpers'
+import { ModeratorMediaPoster } from './ModeratorMediaPoster'
+
+function getMediaRouteType(mediaType: string | null | undefined): 'movie' | 'series' | 'tv' {
+  const normalized = (mediaType || '').toLowerCase()
+  if (normalized === 'movie' || normalized === 'series' || normalized === 'tv') {
+    return normalized
+  }
+  return 'series'
+}
 
 export function AnnotationRequestsTab() {
   const [page, setPage] = useState(1)
@@ -61,6 +83,7 @@ export function AnnotationRequestsTab() {
         fileLinksResponse.files.map((f) => ({
           file_id: f.file_id,
           file_name: f.file_name,
+          file_index: f.file_index,
           size: f.size,
           season_number: f.season_number,
           episode_number: f.episode_number,
@@ -109,6 +132,63 @@ export function AnnotationRequestsTab() {
       setSelectedStream(null)
     } catch (error) {
       console.error('Failed to save annotations:', error)
+      throw error
+    } finally {
+      setIsSavingAnnotation(false)
+    }
+  }
+
+  const handleSaveMediaLinks = async (editedFiles: EditedFileLink[]) => {
+    if (!selectedStream) return
+
+    const mappedFiles = editedFiles
+      .filter((f) => f.included && f.target_media_id != null && f.file_index != null)
+      .map((f) => ({
+        file_index: f.file_index as number,
+        media_id: f.target_media_id as number,
+      }))
+
+    if (mappedFiles.length === 0) {
+      throw new Error('Select at least one file and link it to a movie')
+    }
+
+    setIsSavingAnnotation(true)
+    try {
+      const existingLinks = await fileLinksApi.getMediaForStream(selectedStream.streamId)
+      const linksToRemove = existingLinks.media_entries.filter((link) => link.media_id === selectedStream.mediaId)
+
+      const existingKeys = new Set(
+        existingLinks.media_entries.map((link) => `${link.media_id}:${link.file_index ?? 'all'}`),
+      )
+
+      const uniqueTargets = new Map<string, { file_index: number; media_id: number }>()
+      mappedFiles.forEach((mapped) => {
+        uniqueTargets.set(`${mapped.media_id}:${mapped.file_index}`, mapped)
+      })
+
+      for (const mapped of uniqueTargets.values()) {
+        const key = `${mapped.media_id}:${mapped.file_index}`
+        if (existingKeys.has(key)) {
+          continue
+        }
+
+        await fileLinksApi.createStreamLink({
+          stream_id: selectedStream.streamId,
+          media_id: mapped.media_id,
+          file_index: mapped.file_index,
+        })
+        existingKeys.add(key)
+      }
+
+      if (linksToRemove.length > 0) {
+        await Promise.all(linksToRemove.map((link) => fileLinksApi.deleteStreamLink(link.link_id)))
+      }
+
+      refetch()
+      setAnnotationDialogOpen(false)
+      setSelectedStream(null)
+    } catch (error) {
+      console.error('Failed to save media links:', error)
       throw error
     } finally {
       setIsSavingAnnotation(false)
@@ -189,8 +269,15 @@ export function AnnotationRequestsTab() {
             <Card key={stream.stream_id} className="glass border-border/50 hover:border-cyan-500/30 transition-colors">
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-xl flex-shrink-0 bg-cyan-500/10">
-                    <FileVideo className="h-5 w-5 text-cyan-500" />
+                  <div className="w-14 h-20 rounded-lg overflow-hidden border border-border/60 bg-muted/20 flex-shrink-0">
+                    <ModeratorMediaPoster
+                      mediaType={stream.media_type}
+                      mediaId={stream.media_id}
+                      imdbId={stream.media_external_id}
+                      posterUrl={stream.media_poster}
+                      title={stream.media_title}
+                      fallbackIconSizeClassName="h-4 w-4"
+                    />
                   </div>
 
                   <div className="flex-1 min-w-0 space-y-2">
@@ -266,6 +353,15 @@ export function AnnotationRequestsTab() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <Button variant="outline" size="sm" className="rounded-lg" asChild>
+                      <Link
+                        to={`/dashboard/content/${getMediaRouteType(stream.media_type)}/${stream.media_id}`}
+                        target="_blank"
+                      >
+                        <ExternalLink className="h-4 w-4 mr-1" />
+                        Library
+                      </Link>
+                    </Button>
                     <StreamRelinkButton
                       streamId={stream.stream_id}
                       streamName={stream.stream_name}
@@ -359,6 +455,8 @@ export function AnnotationRequestsTab() {
             .join(' • ')})`}
           initialFiles={annotationFiles}
           onSave={handleSaveAnnotation}
+          onSaveMediaLinks={handleSaveMediaLinks}
+          allowMediaLinking
           isLoading={isSavingAnnotation}
         />
       )}
