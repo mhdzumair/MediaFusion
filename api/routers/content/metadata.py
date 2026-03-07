@@ -8,17 +8,34 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import inspect
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.routers.user.auth import require_auth
 from db import crud
 from db.database import get_async_session
-from db.models import MediaExternalID, User
+from db.models import Media, MediaExternalID, User
 from scrapers.scraper_tasks import meta_fetcher
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/metadata", tags=["Metadata"])
+
+
+def _require_user_id(user: User) -> int:
+    """Extract authenticated user ID without triggering lazy-loading."""
+    identity = inspect(user).identity
+    if identity and isinstance(identity[0], int):
+        return identity[0]
+
+    # require_auth guarantees an authenticated DB-backed user; reaching here
+    # indicates an unexpected detached/transient instance state.
+    logger.error("Authenticated user instance has no persistent identity: %r", user)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Failed to resolve authenticated user identity.",
+    )
 
 
 # ============================================
@@ -140,9 +157,7 @@ async def refresh_metadata(
     Fetches fresh data from all configured providers and updates the metadata.
     If specific providers are requested, only fetches from those.
     """
-    from sqlmodel import select
-
-    from db.models import Media
+    user_id = _require_user_id(user)
 
     # Get the media record
     result = await session.exec(select(Media).where(Media.id == media_id))
@@ -218,7 +233,12 @@ async def refresh_metadata(
     # Commit changes
     await session.commit()
 
-    logger.info(f"User {user.id} refreshed metadata for media_id={media_id} from providers: {refreshed_providers}")
+    logger.info(
+        "User %s refreshed metadata for media_id=%s from providers: %s",
+        user_id,
+        media_id,
+        refreshed_providers,
+    )
 
     return RefreshMetadataResponse(
         status="success",
@@ -243,9 +263,7 @@ async def link_external_id(
     1. Add the external ID to the media's external IDs
     2. Optionally fetch and update metadata from the provider
     """
-    from sqlmodel import select
-
-    from db.models import Media
+    user_id = _require_user_id(user)
 
     # Validate external ID format based on provider
     external_id = request.external_id.strip()
@@ -327,7 +345,13 @@ async def link_external_id(
     # Commit changes
     await session.commit()
 
-    logger.info(f"User {user.id} linked {request.provider}:{external_id} to media {media_id}")
+    logger.info(
+        "User %s linked %s:%s to media %s",
+        user_id,
+        request.provider,
+        external_id,
+        media_id,
+    )
 
     return LinkExternalIdResponse(
         status="success",
@@ -353,9 +377,7 @@ async def link_multiple_external_ids(
     This is useful when a search result contains multiple IDs (IMDb, TMDB, TVDB)
     and you want to link all of them in one operation.
     """
-    from sqlmodel import select
-
-    from db.models import Media
+    user_id = _require_user_id(user)
 
     # Check if media exists
     result = await session.exec(select(Media).where(Media.id == media_id))
@@ -463,7 +485,7 @@ async def link_multiple_external_ids(
     # Commit changes
     await session.commit()
 
-    logger.info(f"User {user.id} linked {linked_providers} to media {media_id}")
+    logger.info("User %s linked %s to media %s", user_id, linked_providers, media_id)
 
     return LinkMultipleExternalIdsResponse(
         status="success" if linked_providers else "partial",
