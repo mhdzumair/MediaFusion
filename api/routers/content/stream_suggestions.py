@@ -410,9 +410,23 @@ async def _resolve_target_media_id(
     media_type_literal = target_media_type or "movie"
     media_type_enum = MediaType.MOVIE if media_type_literal == "movie" else MediaType.SERIES
 
+    # Primary lookup with the requested media type.
     existing_media = await get_media_by_external_id(session, normalized_external_id, media_type_enum)
     if existing_media:
         return existing_media.id
+
+    # Fallback lookup without media-type filter so manual type selection mistakes
+    # still resolve to the already linked media in DB.
+    existing_media_any_type = await get_media_by_external_id(session, normalized_external_id, None)
+    if existing_media_any_type:
+        logger.info(
+            "Resolved external ID %s to media %s with type %s despite requested type %s",
+            normalized_external_id,
+            existing_media_any_type.id,
+            existing_media_any_type.type.value if existing_media_any_type.type else "unknown",
+            media_type_literal,
+        )
+        return existing_media_any_type.id
 
     # Import lazily to avoid potential router import cycles during startup.
     from api.routers.content.torrent_import import fetch_and_create_media_from_external

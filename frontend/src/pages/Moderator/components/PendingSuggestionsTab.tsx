@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useDebounce, usePendingSuggestions, useReviewSuggestion } from '@/hooks'
+import { useToast } from '@/hooks/use-toast'
 import type { Suggestion, SuggestionStatus } from '@/lib/api'
 
 import { formatTimeAgo, getSuggestionMediaSummary, statusConfig, type ReviewDecision } from './helpers'
@@ -20,6 +21,7 @@ interface PendingSuggestionsTabProps {
 }
 
 export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: PendingSuggestionsTabProps) {
+  const { toast } = useToast()
   const [page, setPage] = useState(1)
   const [uploaderQuery, setUploaderQuery] = useState('')
   const [reviewerQuery, setReviewerQuery] = useState('')
@@ -58,11 +60,20 @@ export function PendingSuggestionsTab({ statusFilter, onStatusFilterChange }: Pe
 
   const handleReview = async (decision: ReviewDecision, notes?: string) => {
     if (!selectedSuggestion) return
-    await reviewSuggestion.mutateAsync({
-      suggestionId: selectedSuggestion.id,
-      data: { action: decision, review_notes: notes },
-    })
-    refetch()
+    try {
+      await reviewSuggestion.mutateAsync({
+        suggestionId: selectedSuggestion.id,
+        data: { action: decision, review_notes: notes },
+      })
+      refetch()
+    } catch (error) {
+      toast({
+        title: 'Review failed',
+        description: error instanceof Error ? error.message : 'Unable to review suggestion',
+        variant: 'destructive',
+      })
+      throw error
+    }
   }
 
   const showInitialLoading = isLoading && !data

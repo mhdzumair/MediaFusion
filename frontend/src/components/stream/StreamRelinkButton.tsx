@@ -221,6 +221,7 @@ export function StreamRelinkButton({
     const selectedExternalId =
       selectedMedia?.source === 'external' ? normalizeExternalIdInput(getBestExternalId(selectedMedia)) : ''
     const isInternalSelection = selectedMedia?.source === 'internal' && !!selectedMedia.internal_id
+    const isManualExternalSelection = selectedMedia?.source === 'external' && selectedMedia.id.startsWith('manual-')
     const targetExternalId = isInternalSelection ? '' : normalizedManualExternalId || selectedExternalId
 
     if (!isInternalSelection && !targetExternalId) return
@@ -237,7 +238,8 @@ export function StreamRelinkButton({
               ? 'series'
               : manualMediaType
             : undefined,
-          target_title: selectedMedia?.title || undefined,
+          target_title:
+            !isInternalSelection && !isManualExternalSelection ? (selectedMedia?.title ?? undefined) : undefined,
           file_index: fileIndex ? parseInt(fileIndex) : undefined,
           reason:
             reason ||

@@ -39,18 +39,30 @@ interface ReviewDialogProps {
 export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isReviewing }: ReviewDialogProps) {
   const [notes, setNotes] = useState('')
   const [confirmReject, setConfirmReject] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
 
   const handleApprove = async () => {
-    await onReview('approve', notes || undefined)
-    setNotes('')
-    onOpenChange(false)
+    try {
+      setReviewError(null)
+      await onReview('approve', notes || undefined)
+      setNotes('')
+      onOpenChange(false)
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : 'Unable to approve suggestion')
+    }
   }
 
   const handleReject = async () => {
-    await onReview('reject', notes || undefined)
-    setNotes('')
-    setConfirmReject(false)
-    onOpenChange(false)
+    try {
+      setReviewError(null)
+      await onReview('reject', notes || undefined)
+      setNotes('')
+      setConfirmReject(false)
+      onOpenChange(false)
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : 'Unable to reject suggestion')
+      setConfirmReject(false)
+    }
   }
 
   if (!suggestion) return null
@@ -150,6 +162,8 @@ export function ReviewDialog({ open, onOpenChange, suggestion, onReview, isRevie
                   rows={3}
                 />
               </div>
+
+              {reviewError ? <p className="text-sm text-destructive">{reviewError}</p> : null}
             </div>
           </ScrollArea>
 

@@ -92,6 +92,12 @@ interface FieldState {
   isModified: boolean
 }
 
+interface SubmitResult {
+  field: string
+  success: boolean
+  error?: string
+}
+
 interface MetadataEditSheetProps {
   mediaId: number
   catalogType?: CatalogType
@@ -113,7 +119,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitResults, setSubmitResults] = useState<{ field: string; success: boolean }[]>([])
+  const [submitResults, setSubmitResults] = useState<SubmitResult[]>([])
   const isTvItem = catalogType === 'tv'
 
   // Fetch full metadata when sheet opens
@@ -449,7 +455,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
 
     setIsSubmitting(true)
     setSubmitResults([])
-    const results: { field: string; success: boolean }[] = []
+    const results: SubmitResult[] = []
 
     for (const { field, currentValue, newValue } of modifiedFields) {
       try {
@@ -463,8 +469,9 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
           },
         })
         results.push({ field, success: true })
-      } catch {
-        results.push({ field, success: false })
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to submit suggestion'
+        results.push({ field, success: false, error: errorMessage })
       }
     }
 
@@ -971,7 +978,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
               {submitResults.length > 0 && (
                 <div className="p-4 rounded-xl bg-muted/50 space-y-2">
                   <p className="text-sm font-medium">Results</p>
-                  {submitResults.map(({ field, success }) => (
+                  {submitResults.map(({ field, success, error }) => (
                     <div key={field} className="flex items-center gap-2 text-sm">
                       {success ? (
                         <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -979,6 +986,7 @@ export function MetadataEditSheet({ mediaId, catalogType = 'movie', trigger, onS
                         <AlertCircle className="h-4 w-4 text-red-500" />
                       )}
                       <span className="capitalize">{field.replace('_', ' ')}</span>
+                      {!success ? <span className="text-xs text-red-500/90">{error}</span> : null}
                     </div>
                   ))}
                 </div>

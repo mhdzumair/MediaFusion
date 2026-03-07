@@ -15,9 +15,10 @@ from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import aliased
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.responses import JSONResponse
 
 from api.routers.user.auth import require_auth, require_role
-from db.crud import add_external_id
+from db.crud import add_external_id, get_canonical_external_id, invalidate_external_id_cache
 from db.crud.providers import get_or_create_provider
 from db.database import get_async_session
 from db.enums import MediaType, NudityStatus, UserRole
@@ -86,6 +87,25 @@ EDITABLE_FIELDS = [
 
 # Fields that require JSON handling (arrays)
 JSON_FIELDS = ["genres", "aka_titles", "cast", "directors", "writers", "catalogs", "parental_certificate"]
+EXTERNAL_ID_FIELD_TO_PROVIDER: dict[str, str] = {
+    "imdb_id": "imdb",
+    "tmdb_id": "tmdb",
+    "tvdb_id": "tvdb",
+    "mal_id": "mal",
+    "kitsu_id": "kitsu",
+}
+
+
+def _api_error_response(detail: str, status_code: int) -> JSONResponse:
+    """Return API-style error payload with HTTP 200."""
+    return JSONResponse(
+        status_code=200,
+        content={
+            "error": True,
+            "detail": detail,
+            "status_code": status_code,
+        },
+    )
 
 
 # ============================================
@@ -574,10 +594,132 @@ async def _set_external_id(session: AsyncSession, media_id: int, provider: str, 
     if not normalized:
         for item in existing:
             await session.delete(item)
+        if existing:
+            await invalidate_external_id_cache(media_id)
+        return True
+
+    # Do not allow hijacking an external ID already attached to another media.
+    global_existing = (
+        await session.exec(
+            select(MediaExternalID).where(
+                MediaExternalID.provider == provider,
+                MediaExternalID.external_id == normalized,
+            )
+        )
+    ).first()
+    if global_existing and global_existing.media_id != media_id:
+        logger.warning(
+            "Cannot assign %s:%s to media %s because it already belongs to media %s",
+            provider,
+            normalized,
+            media_id,
+            global_existing.media_id,
+        )
+        return False
+
+    # Replacement semantics: keep at most one ID per provider for a media.
+    changed_existing_ids = False
+    for item in existing:
+        if item.external_id != normalized:
+            await session.delete(item)
+            changed_existing_ids = True
+
+    if changed_existing_ids:
+        await invalidate_external_id_cache(media_id)
+
+    if any(item.external_id == normalized for item in existing):
         return True
 
     await add_external_id(session, media_id, provider, normalized)
     return True
+
+
+def _format_conflicting_media_label(conflicting_media: Media | None, conflict_media_id: int) -> str:
+    """Build a friendly label for conflict messages."""
+    if not conflicting_media:
+        return f"media #{conflict_media_id}"
+
+    title = conflicting_media.title or f"Media #{conflict_media_id}"
+    year_suffix = f" ({conflicting_media.year})" if conflicting_media.year else ""
+    media_type = conflicting_media.type.value if conflicting_media.type else "unknown"
+    return f'"{title}{year_suffix}" [{media_type}, media_id={conflict_media_id}]'
+
+
+async def _build_external_id_conflict_message(
+    session: AsyncSession,
+    provider: str,
+    normalized_external_id: str,
+    conflict_media_id: int,
+) -> str:
+    """Create a clear conflict error message with remediation guidance."""
+    conflict_media = await session.get(Media, conflict_media_id)
+    conflict_label = _format_conflicting_media_label(conflict_media, conflict_media_id)
+    canonical_conflict_id = await get_canonical_external_id(session, conflict_media_id)
+    provider_label = "IMDb" if provider == "imdb" else provider.upper()
+
+    return (
+        f'{provider_label} ID "{normalized_external_id}" is already attached to {conflict_label} '
+        f"(canonical ID: {canonical_conflict_id}). If streams are linked to the wrong media, "
+        "do not change media external IDs. Use Stream Link -> Replace Link to fix stream-media links."
+    )
+
+
+def _normalize_external_id_suggestion_value(provider: str, suggested_value: str) -> str | None:
+    """Normalize user-entered external ID values to storage format."""
+    normalized = suggested_value.strip()
+    if not normalized:
+        return ""
+
+    if provider == "imdb":
+        return normalized if normalized.startswith("tt") else None
+
+    if provider in {"tmdb", "tvdb", "mal", "kitsu"} and normalized.startswith(f"{provider}:"):
+        return normalized.split(":", 1)[1]
+
+    return normalized
+
+
+async def _get_external_id_conflict_message(
+    session: AsyncSession,
+    media_id: int,
+    field_name: str,
+    suggested_value: str,
+) -> str | None:
+    """Return a conflict message when external ID suggestion collides with another media."""
+    provider = EXTERNAL_ID_FIELD_TO_PROVIDER.get(field_name)
+    if not provider:
+        return None
+
+    normalized_external_id = _normalize_external_id_suggestion_value(provider, suggested_value)
+    if normalized_external_id is None:
+        if provider == "imdb":
+            return (
+                f'Invalid IMDb ID "{suggested_value.strip()}". Use IMDb format like "tt1234567". '
+                "If streams are linked to the wrong media, use Stream Link -> Replace Link."
+            )
+        return None
+
+    if not normalized_external_id:
+        # Clearing the provider ID is allowed.
+        return None
+
+    existing = (
+        await session.exec(
+            select(MediaExternalID).where(
+                MediaExternalID.provider == provider,
+                MediaExternalID.external_id == normalized_external_id,
+            )
+        )
+    ).first()
+    if not existing or existing.media_id == media_id:
+        return None
+
+    return await _build_external_id_conflict_message(
+        session,
+        provider,
+        normalized_external_id,
+        existing.media_id,
+    )
 
 
 async def _set_media_image(session: AsyncSession, media_id: int, image_type: str, value: str) -> bool:
@@ -742,6 +884,17 @@ async def create_suggestion(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Metadata not found",
         )
+
+    # Validate external ID edits early so users get immediate feedback instead of
+    # a suggestion that can never be safely applied.
+    external_id_conflict_message = await _get_external_id_conflict_message(
+        session,
+        media_id,
+        request.field_name,
+        request.suggested_value,
+    )
+    if external_id_conflict_message:
+        return _api_error_response(external_id_conflict_message, status.HTTP_400_BAD_REQUEST)
 
     # Check pending suggestions limit
     if await check_pending_limit(current_user.id, session):
@@ -1146,25 +1299,58 @@ async def bulk_review_suggestions(
         author_result = await session.exec(author_query)
         author = author_result.first()
 
-        suggestion.status = STATUS_APPROVED if action == "approve" else STATUS_REJECTED
-        suggestion.reviewed_by = str(current_user.id)
-        suggestion.reviewed_at = now
-        suggestion.review_notes = review_notes
-        suggestion.updated_at = now
-
         if action == "approve":
+            external_id_conflict_message = await _get_external_id_conflict_message(
+                session,
+                suggestion.media_id,
+                suggestion.field_name,
+                suggestion.suggested_value,
+            )
+            if external_id_conflict_message:
+                logger.warning(
+                    "Skipping suggestion %s due to external ID conflict: %s",
+                    suggestion.id,
+                    external_id_conflict_message,
+                )
+                results["skipped"] += 1
+                continue
+
             meta_query = select(Media).where(Media.id == suggestion.media_id)
             meta_result = await session.exec(meta_query)
             meta = meta_result.first()
+            if not meta:
+                logger.warning(
+                    "Skipping suggestion %s because metadata %s was not found", suggestion.id, suggestion.media_id
+                )
+                results["skipped"] += 1
+                continue
 
-            if meta:
-                await apply_metadata_changes(meta, suggestion.field_name, suggestion.suggested_value, session)
+            apply_success = await apply_metadata_changes(
+                meta, suggestion.field_name, suggestion.suggested_value, session
+            )
+
+            if not apply_success:
+                logger.warning("Skipping suggestion %s because apply_metadata_changes returned false", suggestion.id)
+                results["skipped"] += 1
+                continue
+
+            suggestion.status = STATUS_APPROVED
+            suggestion.reviewed_by = str(current_user.id)
+            suggestion.reviewed_at = now
+            suggestion.review_notes = review_notes
+            suggestion.updated_at = now
 
             if author:
                 await award_points(author, settings.points_per_metadata_edit, "metadata", session)
 
             results["approved"] += 1
         else:
+            suggestion.status = STATUS_REJECTED
+            suggestion.reviewed_by = str(current_user.id)
+            suggestion.reviewed_at = now
+            suggestion.review_notes = review_notes
+            suggestion.updated_at = now
+
             if author and settings.points_for_rejection_penalty < 0:
                 await award_points(author, settings.points_for_rejection_penalty, "metadata", session)
             results["rejected"] += 1
@@ -1423,33 +1609,42 @@ async def review_suggestion(
     author_result = await session.exec(author_query)
     author = author_result.first()
 
-    # Update suggestion status
     now = datetime.now(pytz.UTC)
-    suggestion.status = STATUS_APPROVED if request.action == "approve" else STATUS_REJECTED
-    suggestion.reviewed_by = str(current_user.id)
-    suggestion.reviewed_at = now
-    suggestion.review_notes = request.review_notes
-    suggestion.updated_at = now
 
     # If approved, update the metadata and award points
     if request.action == "approve":
+        external_id_conflict_message = await _get_external_id_conflict_message(
+            session,
+            suggestion.media_id,
+            suggestion.field_name,
+            suggestion.suggested_value,
+        )
+        if external_id_conflict_message:
+            return _api_error_response(external_id_conflict_message, status.HTTP_400_BAD_REQUEST)
+
         meta_query = select(Media).where(Media.id == suggestion.media_id)
         meta_result = await session.exec(meta_query)
         meta = meta_result.first()
+        if not meta:
+            return _api_error_response("Metadata not found for this suggestion", status.HTTP_404_NOT_FOUND)
 
-        if meta:
-            apply_success = await apply_metadata_changes(
-                meta, suggestion.field_name, suggestion.suggested_value, session
+        apply_success = await apply_metadata_changes(meta, suggestion.field_name, suggestion.suggested_value, session)
+
+        if not apply_success:
+            return _api_error_response(
+                ("Failed to apply this metadata suggestion. Please verify the suggested value format and try again."),
+                status.HTTP_400_BAD_REQUEST,
             )
 
-            if apply_success and author:
-                # Award points for approved suggestion
-                await award_points(
-                    author,
-                    settings.points_per_metadata_edit,
-                    "metadata",
-                    session,
-                )
+        if author:
+            # Award points for approved suggestion
+            await award_points(
+                author,
+                settings.points_per_metadata_edit,
+                "metadata",
+                session,
+            )
+        suggestion.status = STATUS_APPROVED
     elif request.action == "reject" and author:
         # Apply rejection penalty if configured
         if settings.points_for_rejection_penalty < 0:
@@ -1459,6 +1654,14 @@ async def review_suggestion(
                 "metadata",
                 session,
             )
+        suggestion.status = STATUS_REJECTED
+    elif request.action == "reject":
+        suggestion.status = STATUS_REJECTED
+
+    suggestion.reviewed_by = str(current_user.id)
+    suggestion.reviewed_at = now
+    suggestion.review_notes = request.review_notes
+    suggestion.updated_at = now
 
     session.add(suggestion)
     await session.commit()
