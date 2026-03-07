@@ -16,7 +16,7 @@ const ADMIN_BASE = '/api/v1/admin'
 export interface ExceptionSummary {
   fingerprint: string
   type: string
-  message: string
+  message?: string | null
   count: number
   first_seen: string
   last_seen: string

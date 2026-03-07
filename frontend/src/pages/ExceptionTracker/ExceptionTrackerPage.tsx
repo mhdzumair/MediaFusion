@@ -65,6 +65,14 @@ function formatDate(isoString: string): string {
   return new Date(isoString).toLocaleString()
 }
 
+function normalizeExceptionMessage(message: unknown): string {
+  if (typeof message !== 'string') {
+    return 'No message provided'
+  }
+  const trimmed = message.trim()
+  return trimmed.length > 0 ? trimmed : 'No message provided'
+}
+
 // ============================================
 // Exception Detail Dialog
 // ============================================
@@ -82,6 +90,7 @@ function ExceptionDetailDialog({
   const clearMutation = useClearException()
   const { toast } = useToast()
   const [copied, setCopied] = useState(false)
+  const normalizedMessage = normalizeExceptionMessage(data?.message)
 
   const handleCopy = async () => {
     if (!data?.traceback) return
@@ -117,7 +126,7 @@ function ExceptionDetailDialog({
           </DialogTitle>
           <DialogDescription>
             {data
-              ? `${data.type}: ${data.message.slice(0, 100)}${data.message.length > 100 ? '...' : ''}`
+              ? `${data.type}: ${normalizedMessage.slice(0, 100)}${normalizedMessage.length > 100 ? '...' : ''}`
               : 'Loading...'}
           </DialogDescription>
         </DialogHeader>
@@ -156,7 +165,7 @@ function ExceptionDetailDialog({
               {/* Message */}
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-1">Message</p>
-                <p className="text-sm bg-muted/50 rounded-md p-3 break-all">{data.message}</p>
+                <p className="text-sm bg-muted/50 rounded-md p-3 break-all">{normalizedMessage}</p>
               </div>
 
               {/* Traceback */}
@@ -214,6 +223,8 @@ function ExceptionRow({
   onClear: () => void
   isClearing: boolean
 }) {
+  const normalizedMessage = normalizeExceptionMessage(item.message)
+
   return (
     <div
       role="button"
@@ -240,7 +251,7 @@ function ExceptionRow({
             </Badge>
             <span className="text-[11px] text-muted-foreground">{timeAgo(item.last_seen)}</span>
           </div>
-          <p className="text-sm truncate text-foreground">{item.message}</p>
+          <p className="text-sm truncate text-foreground">{normalizedMessage}</p>
           <p className="text-xs text-muted-foreground font-mono truncate">{item.source}</p>
         </div>
 

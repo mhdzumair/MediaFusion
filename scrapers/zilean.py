@@ -22,6 +22,16 @@ class ZileanScraper(BaseScraper):
         super().__init__(cache_key_prefix=self.cache_key_prefix, logger_name=__name__)
         self.semaphore = asyncio.Semaphore(10)
 
+    @staticmethod
+    def _normalize_size(size_value: Any) -> int:
+        """Normalize provider size values to a non-negative integer."""
+        if size_value is None:
+            return 0
+        try:
+            return max(int(size_value), 0)
+        except (TypeError, ValueError):
+            return 0
+
     @BaseScraper.cache(ttl=ZILEAN_SEARCH_TTL)
     @BaseScraper.rate_limit(calls=5, period=timedelta(seconds=1))
     async def _scrape_and_parse(
@@ -137,7 +147,7 @@ class ZileanScraper(BaseScraper):
                     meta_id=metadata.get_canonical_id(),
                     name=stream["raw_title"],
                     announce_list=[],
-                    size=stream["size"],
+                    size=self._normalize_size(stream.get("size")),
                     source="Zilean DMM",
                     # Single-value quality attributes
                     resolution=torrent_data.get("resolution"),

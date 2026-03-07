@@ -24,6 +24,11 @@ def _parse_easydebrid_string_response(response_text: str) -> dict[str, Any] | st
     return response_text
 
 
+def _looks_like_html_response(response_text: str) -> bool:
+    lowered = response_text.strip().lower()
+    return lowered.startswith("<!doctype html") or lowered.startswith("<html") or "<html" in lowered[:200]
+
+
 async def get_video_url_from_easydebrid(
     magnet_link: str,
     streaming_provider: StreamingProvider,
@@ -58,6 +63,13 @@ async def get_video_url_from_easydebrid(
 
                 if stripped_response.startswith(("https://", "http://")):
                     return stripped_response
+
+                if _looks_like_html_response(stripped_response):
+                    raise ProviderException(
+                        "EasyDebrid service temporarily unavailable. Received unexpected HTML response.",
+                        "debrid_service_down_error.mp4",
+                        retryable=True,
+                    )
 
                 raise ProviderException(
                     f"EasyDebrid returned invalid response format: {stripped_response[:120]}",
