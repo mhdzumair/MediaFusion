@@ -157,6 +157,14 @@ export const QUALITY_GROUPS = [
   { id: 'Unknown', label: 'Unknown', desc: 'Unknown quality sources' },
 ]
 
+export const HDR_FORMATS = [
+  { id: 'HDR10', label: 'HDR10', desc: 'HDR10 streams' },
+  { id: 'HDR10+', label: 'HDR10+', desc: 'HDR10+ streams' },
+  { id: 'Dolby Vision', label: 'Dolby Vision', desc: 'Dolby Vision streams' },
+  { id: 'HLG', label: 'HLG', desc: 'Hybrid Log-Gamma streams' },
+  { id: 'SDR', label: 'SDR', desc: 'Standard dynamic range or unknown HDR metadata' },
+]
+
 export const SORTING_OPTIONS = [
   { key: 'cached', label: 'Cached', desc: 'Cached results first', asc: 'Uncached results first' },
   { key: 'resolution', label: 'Resolution', desc: 'Highest resolution first', asc: 'Lowest resolution first' },
@@ -270,6 +278,7 @@ export const DEFAULT_CONFIG: ProfileConfig = {
   cf: ['Adults+'],
   ls: LANGUAGES,
   qf: ['BluRay/UHD', 'WEB/HD', 'DVD/TV/SAT', 'CAM/Screener', 'Unknown'],
+  hf: ['HDR10', 'HDR10+', 'Dolby Vision', 'HLG', 'SDR'],
   lss: false,
   mxs: 25,
   stg: 'separate',

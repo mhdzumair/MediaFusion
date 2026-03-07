@@ -111,10 +111,12 @@ async def filter_and_sort_streams(
     # Convert to sets for faster lookups
     selected_resolutions_set = set(user_data.selected_resolutions)
     quality_filter_set = set(quality for group in user_data.quality_filter for quality in const.QUALITY_GROUPS[group])
+    hdr_filter_set = set(user_data.hdr_filter)
     language_filter_set = set(user_data.language_sorting)
 
     valid_resolutions = const.SUPPORTED_RESOLUTIONS
     valid_qualities = const.SUPPORTED_QUALITIES
+    valid_hdr_formats = const.SUPPORTED_HDR_FORMATS
     valid_languages = const.SUPPORTED_LANGUAGES
 
     # Pre-compile stream name filter patterns
@@ -143,6 +145,7 @@ async def filter_and_sort_streams(
         "Max Size Exceeded": 0,
         "Min Size Not Met": 0,
         "Quality Not Selected": 0,
+        "HDR Not Selected": 0,
         "Language Not Selected": 0,
         "Strict 18+ Keyword Filter": 0,
         "Stream Name Filter": 0,
@@ -172,6 +175,11 @@ async def filter_and_sort_streams(
             stream.resolution if getattr(stream, "resolution", None) in valid_resolutions else None
         )
         stream.filtered_quality = stream.quality if getattr(stream, "quality", None) in valid_qualities else None
+        stream_hdr_formats = getattr(stream, "hdr_formats", []) or []
+        stream.filtered_hdr_formats = [hdr for hdr in stream_hdr_formats if hdr in valid_hdr_formats]
+        # Treat missing/unknown HDR metadata as SDR so users can explicitly include/exclude it.
+        if not stream.filtered_hdr_formats:
+            stream.filtered_hdr_formats = ["SDR"]
         stream_languages = getattr(stream, "languages", []) or []
         stream.filtered_languages = [lang for lang in stream_languages if lang in valid_languages] or [None]
         stream.cached = False
@@ -190,6 +198,10 @@ async def filter_and_sort_streams(
 
         if stream.filtered_quality not in quality_filter_set:
             filtered_reasons["Quality Not Selected"] += 1
+            continue
+
+        if not any(hdr in hdr_filter_set for hdr in stream.filtered_hdr_formats):
+            filtered_reasons["HDR Not Selected"] += 1
             continue
 
         if not any(lang in language_filter_set for lang in stream.filtered_languages):

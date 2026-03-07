@@ -51,6 +51,7 @@ export interface UserConfig {
   selected_catalogs: string[] // Deprecated: use catalog_configs
   selected_resolutions: string[]
   quality_filter: string[]
+  hdr_filter: string[]
   max_size: number
   min_size: number
   torrent_sorting_priority: SortingOption[]

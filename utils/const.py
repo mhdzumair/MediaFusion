@@ -503,6 +503,15 @@ QUALITY_GROUPS = {
 
 SUPPORTED_QUALITIES = {quality for qualities in QUALITY_GROUPS.values() for quality in qualities}
 
+HDR_FORMATS_FILTERS = [
+    "HDR10",
+    "HDR10+",
+    "Dolby Vision",
+    "HLG",
+    "SDR",
+]
+SUPPORTED_HDR_FORMATS = set(HDR_FORMATS_FILTERS)
+
 QUALITY_RANKING = {
     quality: rank for rank, qualities in enumerate(reversed(QUALITY_GROUPS.values())) for quality in qualities
 }

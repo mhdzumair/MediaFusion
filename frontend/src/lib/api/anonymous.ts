@@ -188,6 +188,7 @@ export interface ProfileConfig {
   ap?: string // api_password
   ls?: (string | null)[] // language_sorting
   qf?: string[] // quality_filter
+  hf?: string[] // hdr_filter
   mfc?: MediaFlowConfigType | null // mediaflow_config
   rpc?: RPDBConfigType | null // rpdb_config
   lss?: boolean // live_search_streams
@@ -243,6 +244,7 @@ export interface UserDataPayload {
   certification_filter?: string[]
   language_sorting?: (string | null)[]
   quality_filter?: string[]
+  hdr_filter?: string[]
   api_password?: string | null
   mediaflow_config?: MediaFlowConfigPayload | null
   rpdb_config?: RPDBConfigPayload | null
@@ -584,6 +586,7 @@ export function profileConfigToUserData(config: ProfileConfig, apiPassword?: str
   if (config.cf !== undefined) userData.certification_filter = config.cf
   if (config.ls !== undefined) userData.language_sorting = config.ls
   if (config.qf !== undefined) userData.quality_filter = config.qf
+  if (config.hf !== undefined) userData.hdr_filter = config.hf
   if (config.lss !== undefined) userData.live_search_streams = config.lss
   if (config.eus !== undefined) userData.enable_usenet_streams = config.eus
   if (config.puot !== undefined) userData.prefer_usenet_over_torrent = config.puot

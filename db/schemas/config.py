@@ -551,6 +551,7 @@ class UserData(BaseModel):
     api_password: str | None = Field(default=None, alias="ap")
     language_sorting: list[str | None] = Field(default=const.LANGUAGES_FILTERS, alias="ls")
     quality_filter: list[str] = Field(default=list[str](const.QUALITY_GROUPS.keys()), alias="qf")
+    hdr_filter: list[str] = Field(default=const.HDR_FORMATS_FILTERS, alias="hf")
     mediaflow_config: MediaFlowConfig | None = Field(default=None, alias="mfc")
     rpdb_config: RPDBConfig | None = Field(default=None, alias="rpc")
     live_search_streams: bool = Field(default=False, alias="lss")
@@ -637,6 +638,13 @@ class UserData(BaseModel):
         for quality in v:
             if quality not in const.QUALITY_GROUPS:
                 raise ValueError("Invalid quality")
+        return v
+
+    @field_validator("hdr_filter", mode="after")
+    def validate_hdr_filter(cls, v):
+        for hdr in v:
+            if hdr not in const.SUPPORTED_HDR_FORMATS:
+                raise ValueError("Invalid hdr format")
         return v
 
     @field_validator("language_sorting", mode="after")

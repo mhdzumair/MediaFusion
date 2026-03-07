@@ -147,6 +147,7 @@ export interface ProfileConfig {
   ap?: string // api_password
   ls?: (string | null)[] // language_sorting
   qf?: string[] // quality_filter
+  hf?: string[] // hdr_filter
   mfc?: MediaFlowConfig | null // mediaflow_config
   rpc?: RPDBConfig | null // rpdb_config
   lss?: boolean // live_search_streams

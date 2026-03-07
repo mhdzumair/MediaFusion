@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { RESOLUTIONS, QUALITY_GROUPS, SORTING_OPTIONS, LANGUAGES, STREAM_TYPES } from './constants'
+import { RESOLUTIONS, QUALITY_GROUPS, HDR_FORMATS, SORTING_OPTIONS, LANGUAGES, STREAM_TYPES } from './constants'
 import type { ConfigSectionProps, SortingOption } from './types'
 
 const MAX_STREAM_NAME_FILTER_PATTERNS = 10
@@ -41,6 +41,7 @@ function validateStreamNameFilterPattern(pattern: string, useRegex: boolean): st
 export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
   const selectedResolutions = config.sr || RESOLUTIONS.map((r) => r.value)
   const selectedQualities = config.qf || QUALITY_GROUPS.map((q) => q.id)
+  const selectedHdrFormats = config.hf || HDR_FORMATS.map((h) => h.id)
   const sortingPriority = config.tsp || SORTING_OPTIONS.map((o) => ({ k: o.key, d: 'desc' as const }))
   const selectedLanguages = config.ls || LANGUAGES
   const getLanguageLabel = (language: string | null) => language ?? 'Unknown'
@@ -79,6 +80,24 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
     const [item] = newQualities.splice(currentIndex, 1)
     newQualities.splice(newIndex, 0, item)
     onChange({ ...config, qf: newQualities })
+  }
+
+  const toggleHdrFormat = (id: string) => {
+    const newHdrFormats = selectedHdrFormats.includes(id)
+      ? selectedHdrFormats.filter((hdr) => hdr !== id)
+      : [...selectedHdrFormats, id]
+    onChange({ ...config, hf: newHdrFormats })
+  }
+
+  const moveHdrFormat = (id: string, direction: 'up' | 'down') => {
+    const currentIndex = selectedHdrFormats.indexOf(id)
+    if (currentIndex === -1) return
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (newIndex < 0 || newIndex >= selectedHdrFormats.length) return
+    const newHdrFormats = [...selectedHdrFormats]
+    const [item] = newHdrFormats.splice(currentIndex, 1)
+    newHdrFormats.splice(newIndex, 0, item)
+    onChange({ ...config, hf: newHdrFormats })
   }
 
   const toggleSortingOption = (key: string) => {
@@ -200,7 +219,7 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">⚙️ Streaming Preferences</CardTitle>
-        <CardDescription>Configure resolution, quality, and sorting preferences for streams</CardDescription>
+        <CardDescription>Configure resolution, quality, HDR, and sorting preferences for streams</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Resolution Selection & Order */}
@@ -393,6 +412,112 @@ export function StreamingPreferences({ config, onChange }: ConfigSectionProps) {
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>{quality.desc}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* HDR Formats */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>HDR Filter</Label>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{selectedHdrFormats.length} selected</Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  onChange({
+                    ...config,
+                    hf: selectedHdrFormats.length === HDR_FORMATS.length ? [] : HDR_FORMATS.map((h) => h.id),
+                  })
+                }
+              >
+                {selectedHdrFormats.length === HDR_FORMATS.length ? 'Clear' : 'All'}
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Include or exclude streams by HDR format; SDR also covers missing HDR metadata.
+          </p>
+
+          {/* Selected HDR formats - reorderable */}
+          {selectedHdrFormats.length > 0 && (
+            <div className="space-y-1">
+              {selectedHdrFormats.map((hdrId, index) => {
+                const hdr = HDR_FORMATS.find((h) => h.id === hdrId)
+                if (!hdr) return null
+                return (
+                  <TooltipProvider key={hdrId}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1.5 p-1.5 rounded-md border border-primary/30 bg-primary/5">
+                          <Badge variant="outline" className="text-[10px] w-5 h-5 justify-center p-0 shrink-0">
+                            {index + 1}
+                          </Badge>
+                          <div className="flex flex-col gap-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-4 w-4"
+                              onClick={() => moveHdrFormat(hdrId, 'up')}
+                              disabled={index === 0}
+                            >
+                              <ChevronUp className="h-2.5 w-2.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-4 w-4"
+                              onClick={() => moveHdrFormat(hdrId, 'down')}
+                              disabled={index === selectedHdrFormats.length - 1}
+                            >
+                              <ChevronDown className="h-2.5 w-2.5" />
+                            </Button>
+                          </div>
+                          <span className="flex-1 text-sm font-medium">{hdr.label}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 text-muted-foreground hover:text-red-500 shrink-0"
+                            onClick={() => toggleHdrFormat(hdrId)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{hdr.desc}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Available HDR formats to add */}
+          {HDR_FORMATS.filter((h) => !selectedHdrFormats.includes(h.id)).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {HDR_FORMATS.filter((h) => !selectedHdrFormats.includes(h.id)).map((hdr) => (
+                <TooltipProvider key={hdr.id}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleHdrFormat(hdr.id)}
+                        className="h-7 text-xs"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        {hdr.label}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{hdr.desc}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

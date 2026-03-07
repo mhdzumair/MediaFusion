@@ -6,6 +6,7 @@ Covers:
 - Resolution sorting by user-defined order
 - Quality filtering (selected vs not selected)
 - Quality sorting by user-defined order
+- HDR filtering (selected vs not selected)
 - Language filtering (selected vs not selected)
 - Language sorting by user-defined order
 - Max file size filtering
@@ -41,6 +42,7 @@ def make_stream(
     size: int = 2 * GB,
     resolution: str | None = "1080p",
     quality: str | None = "WEB-DL",
+    hdr_formats: list[str] | None = None,
     languages: list[str] | None = None,
     seeders: int = 10,
     created_at: datetime | None = None,
@@ -63,6 +65,7 @@ def make_stream(
         source="test",
         resolution=resolution,
         quality=quality,
+        hdr_formats=hdr_formats or [],
         languages=languages or ["English"],
         seeders=seeders,
         created_at=created_at or datetime.now(UTC),
@@ -75,6 +78,7 @@ def make_user_data(**overrides) -> UserData:
     defaults = {
         "sr": ["1080p", "720p", "480p"],
         "qf": ["WEB/HD", "BluRay/UHD"],
+        "hf": ["HDR10", "HDR10+", "Dolby Vision", "HLG", "SDR"],
         "ls": ["English", "Hindi", "Tamil"],
         "tsp": [
             {"k": "resolution", "d": "desc"},
@@ -212,6 +216,44 @@ class TestQualitySorting:
         result, _ = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
         names = [s.name for s in result]
         assert names == ["S.WEB", "S.BR"]
+
+
+# ---------------------------------------------------------------------------
+# HDR filtering
+# ---------------------------------------------------------------------------
+
+
+class TestHDRFiltering:
+    @pytest.mark.asyncio
+    async def test_selected_hdr_passes(self):
+        streams = [
+            make_stream(name="S.HDR10", hdr_formats=["HDR10"]),
+            make_stream(name="S.DV", hdr_formats=["Dolby Vision"]),
+        ]
+        user_data = make_user_data(hf=["HDR10", "Dolby Vision"])
+        result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert len(result) == 2
+        assert reasons["HDR Not Selected"] == 0
+
+    @pytest.mark.asyncio
+    async def test_unselected_hdr_filtered(self):
+        streams = [
+            make_stream(name="S.HDR10", hdr_formats=["HDR10"]),
+            make_stream(name="S.SDR", hdr_formats=[]),
+        ]
+        user_data = make_user_data(hf=["Dolby Vision"])
+        result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert len(result) == 0
+        assert reasons["HDR Not Selected"] == 2
+
+    @pytest.mark.asyncio
+    async def test_missing_hdr_metadata_treated_as_sdr(self):
+        streams = [make_stream(name="S.UnknownHDR", hdr_formats=[])]
+        user_data = make_user_data(hf=["SDR"])
+        result, reasons = await filter_and_sort_streams(streams, user_data, "tt1234567:1:1")
+        assert len(result) == 1
+        assert result[0].name == "S.UnknownHDR"
+        assert reasons["HDR Not Selected"] == 0
 
 
 # ---------------------------------------------------------------------------
