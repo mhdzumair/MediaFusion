@@ -60,10 +60,15 @@ class ExtToSpider(scrapy.Spider):
     keyword_patterns: re.Pattern
     scraped_info_hash_key: str
 
-    def __init__(self, scrape_all: str = "False", total_pages: int = None, *args, **kwargs):
+    def __init__(self, scrape_all: str = "False", total_pages: int | str | None = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.scrape_all = scrape_all.lower() == "true"
-        self.total_pages = total_pages
+        self.total_pages = None
+        if total_pages is not None:
+            try:
+                self.total_pages = int(total_pages)
+            except (TypeError, ValueError):
+                self.logger.warning("Invalid total_pages value '%s'; pagination limit disabled.", total_pages)
         self.redis = REDIS_ASYNC_CLIENT
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -86,6 +91,10 @@ class ExtToSpider(scrapy.Spider):
         with catalog-specific rules.
         """
         return None
+
+    def _should_process_torrent(self, torrent_name: str, uploader: str | None) -> bool:
+        """Hook for spider-specific filtering after uploader inference."""
+        return True
 
     async def start(self):
         domain = self.allowed_domains[0] if self.allowed_domains else "ext.to"
@@ -163,8 +172,6 @@ class ExtToSpider(scrapy.Spider):
                 self.logger.debug(f"Skipping non-video content: {torrent_name}")
                 continue
 
-            self.logger.info(f"Found: {torrent_name}")
-
             size_text = None
             for wrapper in row.css("td.nowrap-td .add-block-wrapper"):
                 label = wrapper.css("span.add-block::text").get()
@@ -186,6 +193,10 @@ class ExtToSpider(scrapy.Spider):
             ext_id = detail_link.rstrip("/").rsplit("-", 1)[-1] if detail_link else None
             inferred_uploader = self._infer_uploader_from_torrent_name(torrent_name)
             item_uploader = page_uploader or row_uploader or inferred_uploader
+            if not self._should_process_torrent(torrent_name, item_uploader):
+                self.logger.debug(f"Skipping torrent (custom filter): {torrent_name}")
+                continue
+            self.logger.info(f"Found: {torrent_name}")
 
             torrent_data = {
                 "torrent_title": torrent_name,
@@ -381,6 +392,7 @@ class FormulaExtSpider(ExtToSpider):
     name = "formula_ext"
     uploader_profiles = [
         "egortech",
+        "f1carreras",
         "smcgill1969",
     ]
     search_queries = [
@@ -392,7 +404,7 @@ class FormulaExtSpider(ExtToSpider):
     background_image = "https://i.postimg.cc/S4wcrGRZ/f1background.png?dl=1"
     logo_image = "https://i.postimg.cc/Sqf4V8tj/f1logo.png?dl=1"
 
-    keyword_patterns = re.compile(r"formula[ .+]*[1234e]+", re.IGNORECASE)
+    keyword_patterns = re.compile(r"(?:formula[ ._+]*[1234e]|\bf[123e]\b)", re.IGNORECASE)
     scraped_info_hash_key = "formula_ext_scraped_info_hash"
 
     _known_uploader_aliases = {
@@ -409,6 +421,26 @@ class FormulaExtSpider(ExtToSpider):
             if re.search(rf"(?i)(?:^|[.\-_\[\]\s]){re.escape(alias)}(?:$|[.\-_\[\]\s])", torrent_name):
                 return canonical
         return None
+
+    def _should_process_torrent(self, torrent_name: str, uploader: str | None) -> bool:
+        lowered = torrent_name.lower()
+
+        # Keep non-racing doc/season packs out of race-event pipeline.
+        if "drive to survive" in lowered:
+            return False
+
+        known_aliases = set(self._known_uploader_aliases.keys())
+        if uploader and uploader.lower() in known_aliases:
+            return True
+
+        inferred_uploader = self._infer_uploader_from_torrent_name(torrent_name)
+        if inferred_uploader and inferred_uploader.lower() in known_aliases:
+            return True
+
+        # Fallback: allow clear race-event naming even when uploader is missing.
+        has_formula_marker = bool(re.search(r"(?:^|[ ._])(?:formula[ ._]*[123]|f[123])(?:[ ._]|$)", lowered))
+        has_round_marker = bool(re.search(r"(?:\br(?:ound)?[ ._-]?\d{1,2}\b|x\d{2})", lowered))
+        return has_formula_marker and has_round_marker
 
     custom_settings = {
         "ITEM_PIPELINES": {

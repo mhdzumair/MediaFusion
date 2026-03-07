@@ -5,7 +5,7 @@ from datetime import datetime
 from scrapy.exceptions import DropItem
 
 from db.schemas import StreamFileData
-from utils.sports_parser import RESOLUTION_MAP
+from utils.sports_parser import RESOLUTION_MAP, derive_sports_episode_title
 
 
 class FormulaParserPipeline:
@@ -39,6 +39,15 @@ class FormulaParserPipeline:
             r"\.(?P<Event>.+?)\s(?P<Year>\d{4})"
             rf"\.(?P<Broadcaster>{_broadcasters})"
             r"\.(?P<Resolution>\d+P)"
+            r"(?:\.Multi)?$",
+            re.IGNORECASE,
+        )
+        self._short_form_no_resolution_pattern = re.compile(
+            r"(?:Formula[.\s]?)?F?(?P<Series>[123])"
+            r"\.(?P<Year>\d{4})"
+            r"(?:\.R(?P<Round>\d+))?"
+            r"\.(?P<Event>.+?)"
+            rf"\.(?P<Broadcaster>{_broadcasters})"
             r"(?:\.Multi)?$",
             re.IGNORECASE,
         )
@@ -219,13 +228,17 @@ class FormulaParserPipeline:
             "smcgill1969": self.parse_smcgill1969_description,
         }
 
-    def _episode_title_from_filename(self, filename: str) -> str:
+    def _episode_title_from_filename(self, filename: str, context_title: str = "") -> str:
         """Derive a human-readable episode title from a torrent filename.
 
         Strips the file extension, broadcaster tags, resolution suffixes, and
         replaces dots with spaces.  e.g.
           "Free.Practice.1.SkyF1HD.1080p.mkv" -> "Free Practice 1"
         """
+        parsed_title = derive_sports_episode_title(filename, context_title)
+        if parsed_title:
+            return parsed_title
+
         name = re.sub(r"\.[^.]+$", "", filename)
         name = self._broadcaster_pattern.split(name)[0]
         name = re.sub(r"[\._](\d+[Pp]|4K|SD|UHD|2160P|1080P).*", "", name)
@@ -249,6 +262,53 @@ class FormulaParserPipeline:
         )
         return title.strip(". ")
 
+    @staticmethod
+    def _clean_title_candidate(raw: str) -> str:
+        """Trim common site prefixes from title candidates before parsing."""
+        if not raw:
+            return ""
+        cleaned = re.sub(
+            r"^\s*(?:www\.)?[A-Za-z0-9.-]+\s*-\s*",
+            "",
+            str(raw).strip(),
+            flags=re.IGNORECASE,
+        )
+        return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+    def _iter_title_candidates(self, item: dict):
+        seen: set[str] = set()
+        for raw_candidate in (item.get("torrent_name"), item.get("torrent_title")):
+            cleaned = self._clean_title_candidate(raw_candidate)
+            if not cleaned:
+                continue
+            normalized = self._normalize_title(cleaned)
+            key = normalized.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            yield normalized
+
+    @staticmethod
+    def _resolution_from_broadcaster(broadcaster: str | None) -> str | None:
+        if not broadcaster:
+            return None
+        normalized = broadcaster.lower()
+        if "uhd" in normalized or "4k" in normalized:
+            return "4k"
+        if "hd" in normalized:
+            return "1080p"
+        return None
+
+    def _parse_title_with_candidates(self, uploader: str, item: dict) -> str | None:
+        parse_fn = self.title_parser_functions[uploader]
+        for candidate in self._iter_title_candidates(item):
+            candidate_item = dict(item)
+            parse_fn(candidate, candidate_item)
+            if candidate_item.get("title") and candidate_item.get("year"):
+                item.update(candidate_item)
+                return candidate
+        return None
+
     def process_item(self, item):
         uploader = item.get("uploader")
         if not uploader or uploader not in self.title_parser_functions:
@@ -259,15 +319,16 @@ class FormulaParserPipeline:
         item.pop("title", None)
         item.pop("year", None)
 
-        title = self._normalize_title(item["torrent_title"])
-        self.title_parser_functions[uploader](title, item)
-        if not item.get("title"):
-            raise DropItem(f"Title not parsed: {title}")
+        parsed_title = self._parse_title_with_candidates(uploader, item)
+        if not parsed_title:
+            fallback_title = self._normalize_title(item.get("torrent_title", ""))
+            raise DropItem(f"Title not parsed: {fallback_title}")
         if not item.get("year"):
-            raise DropItem(f"Year not parsed: {title}")
+            raise DropItem(f"Year not parsed: {parsed_title}")
         self.description_parser_functions[uploader](item)
         if not item.get("episodes"):
-            raise DropItem(f"Episodes not parsed: {item!r}")
+            source_name = item.get("torrent_name") or item.get("torrent_title")
+            raise DropItem(f"Episodes not parsed for: {source_name}")
         return item
 
     def _apply_egortech_match(self, data: dict, torrent_data: dict):
@@ -275,6 +336,8 @@ class FormulaParserPipeline:
         series = f"Formula {data['Series']}"
         formula_round = f"R{data['Round']}" if data.get("Round") else None
         formula_event = data.get("Event").replace(".", " ").replace(" Grand Prix", "") if data.get("Event") else None
+        raw_resolution = data.get("Resolution") or self._resolution_from_broadcaster(data.get("Broadcaster"))
+        resolution = raw_resolution.lower().replace("k", "K") if raw_resolution else None
         torrent_data.update(
             {
                 "title": " ".join(
@@ -291,7 +354,7 @@ class FormulaParserPipeline:
                     )
                 ),
                 "year": int(data["Year"]),
-                "resolution": data["Resolution"].lower().replace("k", "K"),
+                "resolution": resolution,
             }
         )
 
@@ -310,6 +373,13 @@ class FormulaParserPipeline:
 
         # Fallback 2: special/documentary (Formula 2.Title YYYY.Broadcaster.Res)
         match = self._special_form_pattern.match(title)
+        if match:
+            self._apply_egortech_match(match.groupdict(), torrent_data)
+            return
+
+        # Fallback 3: short-form without explicit numeric resolution.
+        # Some egortech rows expose only "Sky Sports F1 UHD/HD" in listing titles.
+        match = self._short_form_no_resolution_pattern.match(title)
         if match:
             self._apply_egortech_match(match.groupdict(), torrent_data)
             return
@@ -395,10 +465,11 @@ class FormulaParserPipeline:
         logging.warning(f"Failed to parse title: {title}")
 
     def parse_egortech_description(self, torrent_data: dict):
-        torrent_description = torrent_data.get("description")
+        torrent_description = torrent_data.get("description") or ""
         file_data = torrent_data.get("file_data")
         if not file_data:
             return
+        episode_context = torrent_data.get("torrent_name") or torrent_data.get("torrent_title", "")
 
         quality_match = re.search(r"Quality:\s*(\S+)", torrent_description)
         codec_match = re.search(r"Video:\s*([A-Za-z0-9]+)", torrent_description)
@@ -435,7 +506,7 @@ class FormulaParserPipeline:
         else:
             for index, file_detail in enumerate(file_data):
                 file_name = file_detail.get("filename", "")
-                episode_title = self._episode_title_from_filename(file_name)
+                episode_title = self._episode_title_from_filename(file_name, episode_context)
 
                 episodes.append(
                     StreamFileData(
@@ -496,7 +567,7 @@ class FormulaParserPipeline:
         ]
 
     def parse_smcgill1969_description(self, torrent_data: dict):
-        torrent_description = torrent_data.get("description")
+        torrent_description = torrent_data.get("description") or ""
         file_data = torrent_data.get("file_data")
         if not file_data:
             return
@@ -510,11 +581,14 @@ class FormulaParserPipeline:
         torrent_data["is_add_title_to_poster"] = True
 
         episode_name = torrent_data.get("episode_name", "")
+        episode_context = torrent_data.get("torrent_name") or torrent_data.get("torrent_title", "")
 
         episodes = []
         for index, file_detail in enumerate(file_data):
             file_name = file_detail.get("filename", "")
-            title = self._episode_title_from_filename(file_name) if len(file_data) > 1 else episode_name
+            title = (
+                self._episode_title_from_filename(file_name, episode_context) if len(file_data) > 1 else episode_name
+            )
 
             episodes.append(
                 StreamFileData(
