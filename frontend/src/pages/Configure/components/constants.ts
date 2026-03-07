@@ -158,10 +158,10 @@ export const QUALITY_GROUPS = [
 ]
 
 export const SORTING_OPTIONS = [
-  { key: 'language', label: 'Language', desc: 'Preferred languages first', asc: 'Least preferred languages first' },
   { key: 'cached', label: 'Cached', desc: 'Cached results first', asc: 'Uncached results first' },
   { key: 'resolution', label: 'Resolution', desc: 'Highest resolution first', asc: 'Lowest resolution first' },
   { key: 'quality', label: 'Quality', desc: 'Best quality first', asc: 'Lower quality first' },
+  { key: 'language', label: 'Language', desc: 'Preferred languages first', asc: 'Least preferred languages first' },
   { key: 'size', label: 'Size', desc: 'Largest size first', asc: 'Smallest size first' },
   { key: 'seeders', label: 'Seeders', desc: 'Most seeders first', asc: 'Fewest seeders first' },
   { key: 'created_at', label: 'Created At', desc: 'Newest first', asc: 'Oldest first' },
@@ -258,10 +258,10 @@ export const DEFAULT_CONFIG: ProfileConfig = {
   mns: 0,
   mspr: 10,
   tsp: [
-    { k: 'language', d: 'desc' },
     { k: 'cached', d: 'desc' },
     { k: 'resolution', d: 'desc' },
     { k: 'quality', d: 'desc' },
+    { k: 'language', d: 'desc' },
     { k: 'size', d: 'desc' },
     { k: 'seeders', d: 'desc' },
     { k: 'created_at', d: 'desc' },

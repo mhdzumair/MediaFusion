@@ -160,10 +160,10 @@ NO_CACHE_HEADERS = {
 }
 
 TORRENT_SORTING_PRIORITY = [
-    "language",
     "cached",
     "resolution",
     "quality",
+    "language",
     "size",
     "seeders",
     "created_at",
